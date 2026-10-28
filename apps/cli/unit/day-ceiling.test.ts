@@ -94,3 +94,15 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
     expect(stop).toBe('could not check the daily ceiling: store unreachable — taking no work')
   })
 })
+
+describe('the daily ceiling while spend is rebuilt (#680)', () => {
+  it('takes no work even when the half-built table reads under the ceiling', async () => {
+    const stop = await dayCeilingStop(createMemoryEventStore(), {
+      ...ports(async () => [spend(5n, 1000)]),
+      rebuilding: () => 'the spend projection is being rebuilt after a model was priced',
+    })
+    expect(stop).toBe(
+      'could not check the daily ceiling: the spend projection is being rebuilt after a model was priced — taking no work',
+    )
+  })
+})

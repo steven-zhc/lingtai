@@ -2269,3 +2269,11 @@ onto the new code:
 The rebuild prices every row at the rate in force on its own day, from the
 shipped card and the dated snapshot, so the figures match what a live fold
 writes.
+
+**#680 — a model that gains its first price rebuilds `spend`.** When the daily
+rate refresh prices a model that had no row, the conductor replays `spend`
+itself, so nothing needs running by hand. The replay is O(events) and runs
+inside the refresh, so a `shutdown` or `restart` waits for it. While it runs the
+daily ceiling answers *could not check* and takes no new work; a pass in flight
+keeps going. If the replay does not finish, `lingtai doctor`'s `rates:` line
+warns and names `lingtai projection rebuild spend`.

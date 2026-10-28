@@ -1084,7 +1084,18 @@ export function ratesCheck(from: NodeJS.ProcessEnv = process.env): CheckResult {
   const plan = readRateSnapshot(from).some((r) => r.source !== undefined && r.model.startsWith('gpt'))
     ? ". A Codex user on a ChatGPT plan: an estimate from per-token prices is not that plan's bill; the daily ceiling still counts it"
     : ''
-  return { name, status: 'ok', detail: `last fetched ${day}, ok${rejected}${plan}` }
+  const priced =
+    note.priced === undefined ? '' : `; priced ${note.priced.join(', ')}; ${note.rebuilt ?? 'spend not rebuilt'}`
+  // A rebuild that did not finish leaves `spend` behind, which a person repairs by hand.
+  const stuck = note.priced !== undefined && !/rebuilt — at \S+, 0 behind/.test(note.rebuilt ?? '')
+  if (stuck) {
+    return {
+      name,
+      status: 'warn',
+      detail: `last fetched ${day}, ok${priced}${rejected} — run \`lingtai projection rebuild spend\``,
+    }
+  }
+  return { name, status: 'ok', detail: `last fetched ${day}, ok${priced}${rejected}${plan}` }
 }
 
 /**

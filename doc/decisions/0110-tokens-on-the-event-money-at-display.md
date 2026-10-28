@@ -276,9 +276,6 @@ about something else are the three whose spend is not recorded.
 
 ## Not built yet
 
-- **The rebuild on a newly priced model** (decision 5) is not wired. `spend`
-  stores the estimate at fold time and every reader sums it (#679).
-
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.
 - **The rate card names one Codex model, `gpt-5.6-sol`.** `priceRow`

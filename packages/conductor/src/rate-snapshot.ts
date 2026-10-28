@@ -26,6 +26,10 @@ export interface FetchNote {
   error?: string
   /** Models whose entry was out of range or unusable. */
   rejected: string[]
+  /** Models this refresh gave a first price (#680). Absent when none. */
+  priced?: string[]
+  /** What rebuilding the projections that store estimates said; present only with `priced`. */
+  rebuilt?: string
 }
 
 const notePath = (from: NodeJS.ProcessEnv) => {
@@ -50,7 +54,19 @@ export function readFetchNote(from: NodeJS.ProcessEnv = process.env): FetchNote 
     ok: doc.ok,
     ...(doc.error === undefined ? {} : { error: doc.error }),
     rejected: doc.rejected ?? [],
+    ...(doc.priced === undefined ? {} : { priced: doc.priced }),
+    ...(doc.rebuilt === undefined ? {} : { rebuilt: doc.rebuilt }),
   }
+}
+
+/**
+ * Models with no row of any mode in `before` and a priced one in `after`: the
+ * one way a stored estimate goes stale (0110 §5). A model repriced after a
+ * withdrawal is not new, and a change of price for a known model is not either.
+ */
+export function newlyPriced(before: readonly RateRow[], after: readonly RateRow[]): string[] {
+  const known = new Set(before.map((r) => r.model))
+  return [...new Set(after.filter((r) => !known.has(r.model) && r.withdrawn !== true).map((r) => r.model))]
 }
 
 export interface RatePorts {
@@ -62,10 +78,20 @@ export interface RatePorts {
   write: (rows: RateRow[]) => void
   note: (note: FetchNote) => void
   now: () => Date
+  /**
+   * Re-folds the projections that store estimates, after the snapshot is
+   * written (#680). Resolves to a short outcome for the note; may throw.
+   */
+  rebuild?: (priced: string[]) => Promise<string>
 }
 
-export const realRatePorts = (wanted: RatePorts['wanted'], from: NodeJS.ProcessEnv = process.env): RatePorts => ({
+export const realRatePorts = (
+  wanted: RatePorts['wanted'],
+  from: NodeJS.ProcessEnv = process.env,
+  rebuild?: RatePorts['rebuild'],
+): RatePorts => ({
   wanted,
+  ...(rebuild === undefined ? {} : { rebuild }),
   table: async () => {
     const res = await fetch(LITELLM_URL, { signal: AbortSignal.timeout(10_000) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -120,9 +146,27 @@ async function run(ports: RatePorts): Promise<void> {
     const table = await ports.table()
     const day = ports.now().toISOString().slice(0, 10)
     const { rows, rejected } = ratesFromLiteLLM(table, wanted, day)
-    const merged = mergeSnapshot(ports.read(), rows)
+    const before = ports.read()
+    const merged = mergeSnapshot(before, rows)
     if (merged !== null) ports.write(merged)
-    ports.note({ at: ports.now().toISOString(), ok: true, rejected })
+    // After the write: replay reads the snapshot file at fold time.
+    const priced = merged === null ? [] : newlyPriced(before, merged)
+    let rebuilt: string | undefined
+    if (priced.length > 0 && ports.rebuild !== undefined) {
+      try {
+        rebuilt = await ports.rebuild(priced)
+      } catch (err) {
+        // The write stood, so this is not `ok: false`.
+        rebuilt = `rebuild failed: ${(err as Error).message}`
+      }
+    }
+    ports.note({
+      at: ports.now().toISOString(),
+      ok: true,
+      rejected,
+      ...(priced.length === 0 ? {} : { priced }),
+      ...(rebuilt === undefined ? {} : { rebuilt }),
+    })
   } catch (err) {
     fail(err)
   }
