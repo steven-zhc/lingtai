@@ -38,7 +38,16 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
-import { attemptFactOf, cardFactOf, headOf, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
+import {
+  attemptFactOf,
+  cardFactOf,
+  claimShapeOf,
+  headOf,
+  routesOf,
+  stepOutcomesOf,
+  waitBranchOf,
+  waitWords,
+} from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -175,8 +184,10 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
     }
 
     switch (event.type) {
+      case 'TicketContinued':
       case 'TicketClaimed': {
         const d = event.data as PayloadOf<'TicketClaimed'>
+        if (claimShapeOf(event, byRun.keys()) === 'continuation') break
         // A second claim by the same run is the same attempt claiming again,
         // not a new one — the same reason `TicketState.runs` will not list it
         // twice. `continueTicket` (`claim.ts`) writes exactly this, on every
@@ -184,7 +195,6 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
         // `TicketClaimed` naming the run already in `runs`, and `armFor`
         // (below) depends on this guard de-duplicating it — a continuation's
         // own claim must not count as a fresh attempt.
-        if (byRun.has(d.runId)) break
         const attempt: PriorAttempt = {
           n: attempts.length + 1,
           runId: d.runId,

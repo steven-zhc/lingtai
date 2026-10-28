@@ -214,6 +214,21 @@ export const TicketClaimed = z.object({
 })
 
 /**
+ * A person's approval let a held run go on
+ * ([0109](../../../doc/decisions/0109-the-core-takes-a-ticket.md) §5).
+ *
+ * Before this event the conductor appended a second `TicketClaimed` naming the
+ * run already claimed, and every fold had to notice that. The rule is
+ * structural and reads no text: a `TicketClaimed` whose `runId` an earlier
+ * `TicketClaimed` on the same stream carries is read as a continuation, and
+ * `claimShapeOf` (`claims.ts`) is the one place that says so.
+ */
+export const TicketContinued = z.object({
+  runId: z.string(),
+  worker: z.string(),
+})
+
+/**
  * Why a work item was released back to the queue — 0120 §5's four causes,
  * folded from the work item's own `TicketReleased.cause` rather than
  * re-derived from whatever else sits beside it on the stream.
@@ -2054,6 +2069,7 @@ export const PluginFailed = z.object({
 export const EVENTS = {
   TicketDiscovered,
   TicketClaimed,
+  TicketContinued,
   TicketReleased,
   WaitStarted,
   WaitResolved,
@@ -2145,6 +2161,7 @@ const AGENT_STEPS = ['design', 'implement', 'review'] as const
 export const EVENT_AT = {
   TicketDiscovered: ['outside'],
   TicketClaimed: ['claim'],
+  TicketContinued: ['claim'], // 'TicketContinued': nothing appends it yet (#681)
   TicketReleased: ['claim', 'end', 'outside'],
   WaitStarted: ['end', 'outside'],
   WaitResolved: ['outside'],
