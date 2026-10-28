@@ -218,6 +218,16 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
                   <td className="t">
                     <Link href={`/task/${encodeURIComponent(t.ticket)}`}>#{issueOf(t.ticket)}</Link>
                     <div className="why">{t.sentence}</div>
+                    {t.purposeShares.length === 0 ? null : (
+                      <div className="why">
+                        {t.purposeShares.map((p) => `${p.purpose} ${Math.round(p.share * 100)}%`).join(' · ')}
+                      </div>
+                    )}
+                    {t.waits.map((w, i) => (
+                      <div className="why" key={i}>
+                        waited for {w.reason} · triage: {w.cause ?? 'no cause'} · {w.resolution ?? 'unresolved'}
+                      </div>
+                    ))}
                   </td>
                   <td>{t.kind ?? 'unclassified'}</td>
                   <td className="num">{t.fixRounds}</td>
@@ -242,9 +252,12 @@ export function Filters({ query, kinds }: { query: ReportQuery; kinds: readonly 
   return (
     <form className="rp-filters" method="get" action="/report" aria-label="filters">
       {query.project === null ? null : <input type="hidden" name="project" value={query.project} />}
+      <input type="hidden" name="was" value={query.which} />
+      <input type="hidden" name="kinds" value="1" />
       <label>
         window
-        <select name="window" defaultValue={query.which === 'today' ? 'today' : '7d'}>
+        <select name="window" defaultValue={query.which}>
+          {query.which === 'custom' ? <option value="custom">dates below</option> : null}
           <option value="7d">7 days</option>
           <option value="today">today</option>
         </select>

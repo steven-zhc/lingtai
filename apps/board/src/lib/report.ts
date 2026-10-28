@@ -65,7 +65,12 @@ export function reportQuery(params: ReportParams, now: Date): ReportQuery {
   let which: ReportQuery['which'] = first(params.window) === 'today' ? 'today' : '7d'
   let spec: WindowSpec = which
   let note: string | null = null
-  if (from !== undefined || to !== undefined) {
+  // The form sends `was`, the window it was drawn with. A selector moved off it
+  // is the reader choosing a window, so the dates still sitting in the inputs
+  // are not asked for; one left on it with dates typed in is a range.
+  const chose = first(params.window)
+  const moved = (chose === 'today' || chose === '7d') && params.was !== undefined && chose !== first(params.was)
+  if (!moved && (from !== undefined || to !== undefined)) {
     const a = parseDate(from)
     const b = parseDate(to ?? from)
     if (a === null || b === null) note = 'that date range was not read — showing the last 7 days'
@@ -81,7 +86,14 @@ export function reportQuery(params: ReportParams, now: Date): ReportQuery {
       spec = '7d'
     }
   }
-  const kinds = params.kind === undefined ? null : [params.kind].flat().map((k) => (k === '' ? null : k!))
+  // An unchecked box is not sent, so the form sends `kinds` beside the boxes:
+  // present with no `kind` is every box unchecked, which is no kind at all.
+  const kinds =
+    params.kind !== undefined
+      ? [params.kind].flat().map((k) => (k === '' ? null : k!))
+      : params.kinds !== undefined
+        ? []
+        : null
   return {
     which,
     window: resolveWindow(spec, now),
@@ -116,6 +128,7 @@ export function reportHref(q: ReportQuery, change: { sort?: 'rounds' | 'cost' } 
     p.set('from', dateText(q.window.from))
     p.set('to', dateText(new Date(q.window.to.getFullYear(), q.window.to.getMonth(), q.window.to.getDate() - 1)))
   }
+  if (q.kinds !== null && q.kinds.length === 0) p.set('kinds', '1')
   for (const k of q.kinds ?? []) p.append('kind', k ?? '')
   const sort = change.sort ?? q.sort
   if (sort === 'cost') p.set('sort', 'cost')

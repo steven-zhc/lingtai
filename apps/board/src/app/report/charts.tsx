@@ -236,42 +236,45 @@ export function SurvivalPanel({ steps }: { steps: SurvivalStep[] }) {
   const knots = [{ k: 0, survival: 1, atRisk: steps[0]!.atRisk, passed: 0, censored: 0 }, ...steps]
   const line = stepPath(knots.map((p) => ({ x: x(p.k), y: y(p.survival) })))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="share of tickets not yet past review after k reviews">
-      {[0, 0.25, 0.5, 0.75, 1].map((v) => (
-        <g key={v}>
-          <line className="gl" x1={L} x2={W - right} y1={y(v)} y2={y(v)} />
-          <text x={L - 6} y={y(v) + 4} textAnchor="end">
-            {v * 100}%
-          </text>
-        </g>
-      ))}
-      {knots.map((p) => (
-        <text key={p.k} x={x(p.k)} y={H - 8} textAnchor="middle">
-          {p.k}
-        </text>
-      ))}
-      <path d={`${line}V${y(0)}H${x(0)}Z`} fill="var(--s1)" opacity={0.1} />
-      <path d={line} fill="none" stroke="var(--s1)" strokeWidth={2} />
-      <line className="ax" x1={L} x2={W - right} y1={y(0)} y2={y(0)} />
-      {knots.map((p) => (
-        <g key={p.k} className="col">
-          <title>
-            {p.k === 0
-              ? `start\n${p.atRisk} ticket${p.atRisk === 1 ? '' : 's'}`
-              : `after ${p.k} review${p.k === 1 ? '' : 's'}\n${Math.round(p.survival * 100)}% not yet past review\n${p.atRisk} still counted at this review\n${p.passed} passed\n${p.censored} ended without passing`}
-          </title>
-          <rect className="hit" x={x(p.k) - 18} y={T} width={36} height={H - T - B} />
-          <circle cx={x(p.k)} cy={y(p.survival)} r={4.5} fill="var(--s1)" stroke="var(--surface)" strokeWidth={2} />
-          {p.k > 0 ? (
-            <text x={x(p.k) + 7} y={y(p.survival) - 7} className="rp-step">
-              {Math.round(p.survival * 100)}%
+    <>
+      <Legend series={[{ key: 'survival', name: 'share not yet past review', colour: 'var(--s1)' }]} />
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="share of tickets not yet past review after k reviews">
+        {[0, 0.25, 0.5, 0.75, 1].map((v) => (
+          <g key={v}>
+            <line className="gl" x1={L} x2={W - right} y1={y(v)} y2={y(v)} />
+            <text x={L - 6} y={y(v) + 4} textAnchor="end">
+              {v * 100}%
             </text>
-          ) : null}
-          <text x={x(p.k)} y={y(0) - 6} textAnchor="middle" className="rp-risk">
-            n={p.atRisk}
+          </g>
+        ))}
+        {knots.map((p) => (
+          <text key={p.k} x={x(p.k)} y={H - 8} textAnchor="middle">
+            {p.k}
           </text>
-        </g>
-      ))}
-    </svg>
+        ))}
+        <path d={`${line}V${y(0)}H${x(0)}Z`} fill="var(--s1)" opacity={0.1} />
+        <path d={line} fill="none" stroke="var(--s1)" strokeWidth={2} />
+        <line className="ax" x1={L} x2={W - right} y1={y(0)} y2={y(0)} />
+        {knots.map((p) => (
+          <g key={p.k} className="col">
+            <title>
+              {p.k === 0
+                ? `start\n${p.atRisk} ticket${p.atRisk === 1 ? '' : 's'}`
+                : `after ${p.k} review${p.k === 1 ? '' : 's'}\n${Math.round(p.survival * 100)}% not yet past review\n${p.atRisk} still counted at this review\n${p.passed} passed\n${p.censored} ended without passing`}
+            </title>
+            <rect className="hit" x={x(p.k) - 18} y={T} width={36} height={H - T - B} />
+            <circle cx={x(p.k)} cy={y(p.survival)} r={4.5} fill="var(--s1)" stroke="var(--surface)" strokeWidth={2} />
+            {p.k > 0 ? (
+              <text x={x(p.k) + 7} y={y(p.survival) - 7} className="rp-step">
+                {Math.round(p.survival * 100)}%
+              </text>
+            ) : null}
+            <text x={x(p.k)} y={y(0) - 6} textAnchor="middle" className="rp-risk">
+              n={p.atRisk}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </>
   )
 }

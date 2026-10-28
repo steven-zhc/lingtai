@@ -43,6 +43,19 @@ describe('reportQuery', () => {
     expect(reportQuery({}, NOW).kinds).toBeNull()
   })
 
+  it('reads every box unchecked as no kind, not every kind', () => {
+    expect(reportQuery({ kinds: '1' }, NOW).kinds).toEqual([])
+    expect(reportQuery({ kinds: '1', kind: 'bug' }, NOW).kinds).toEqual(['bug'])
+    expect(reportHref(reportQuery({ kinds: '1' }, NOW))).toBe('/report?kinds=1')
+  })
+
+  it('lets a selector moved off the drawn window win over the dates left in the form', () => {
+    const dates = { from: '2026-10-01', to: '2026-10-03' }
+    expect(reportQuery({ ...dates, was: 'custom', window: 'today' }, NOW).which).toBe('today')
+    expect(reportQuery({ ...dates, was: 'custom', window: 'custom' }, NOW).which).toBe('custom')
+    expect(reportQuery({ ...dates, was: '7d', window: '7d' }, NOW).which).toBe('custom')
+  })
+
   it('writes the same query back as an address', () => {
     const q = reportQuery({ project: 'a b', kind: ['bug', ''], from: '2026-10-01', to: '2026-10-03' }, NOW)
     expect(reportHref(q, { sort: 'cost' })).toBe(
