@@ -197,15 +197,14 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  * sibling, for the one state `claimTicket` itself refuses: `approved`,
  * never `backlog`.
  *
- * **The same `TicketClaimed`, naming the same `runId` the approval was
- * about.** The fold already de-duplicates a run already in `runs`
- * (`ticket.ts`'s own `TicketClaimed` case), so this is not a second kind
- * of claim on the log — it is the ordinary one, appended again, onto a run
- * that has already spent its first claim. A close or a second decision
- * landing between the approval and this call is a `ConcurrencyError` the
- * version check catches on its own; `wrong-run` and `not-approved` are read
- * off the state this call itself fetched, for a caller that wants to say
- * *why* before it ever reaches the store.
+ * **A `TicketContinued { runId, worker }` of its own (0109 §5), checked at
+ * the same expected version a claim is.** It carries no title and no kind, and
+ * the fold reads it as a continuation by its type (`claims.ts`), so the run
+ * already in `runs` is not claimed a second time. A close or a second
+ * decision landing between the approval and this call is a
+ * `ConcurrencyError` the version check catches on its own; `wrong-run` and
+ * `not-approved` are read off the state this call itself fetched, for a caller
+ * that wants to say *why* before it ever reaches the store.
  */
 export async function continueTicket(
   ticketId: string,
@@ -228,9 +227,9 @@ export async function continueTicket(
   try {
     const [written] = await store.append(ticketId, state.version, [
       {
-        type: 'TicketClaimed',
+        type: 'TicketContinued',
         actor: 'conductor',
-        data: parsePayload('TicketClaimed', { runId, worker, title: null, kind: null }),
+        data: parsePayload('TicketContinued', { runId, worker }),
       },
     ])
     return { ok: true, claim: { ticketId, runId, worker, version: written!.version } }

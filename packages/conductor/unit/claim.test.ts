@@ -80,7 +80,7 @@ describe('continueTicket', () => {
     expect(result).toEqual({ ok: false, refusal: { reason: 'wrong-run', runId: 'pass-2' } })
   })
 
-  it('claims onto the approved run, with a TicketClaimed the fold recognises', async () => {
+  it('continues the approved run with a TicketContinued, and writes no second TicketClaimed', async () => {
     const { store, ticketId } = await approvedTicket(3, 'pass-3')
 
     const result = await continueTicket(ticketId, 'pass-3', { worker: 'daemon:1', store })
@@ -88,9 +88,11 @@ describe('continueTicket', () => {
     expect(result).toMatchObject({ ok: true, claim: { ticketId, runId: 'pass-3', worker: 'daemon:1' } })
     const state = reduceTicket(await store.read(ticketId))
     expect(state.lifecycle).toEqual({ status: 'claimed', runId: 'pass-3', worker: 'daemon:1' })
-    // The fold's own de-duplication (`ticket.ts`'s `TicketClaimed` case) —
-    // this is the run's second claim, not a second run.
+    // A continuation of the run already in `runs`, not a second run.
     expect(state.runs).toEqual(['pass-3'])
+    const types = (await store.read(ticketId)).map((e) => e.type)
+    expect(types.at(-1)).toBe('TicketContinued')
+    expect(types.filter((t) => t === 'TicketClaimed')).toHaveLength(1)
   })
 
   it('loses the race when something else claimed between the read and the append', async () => {

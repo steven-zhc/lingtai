@@ -2161,7 +2161,7 @@ const AGENT_STEPS = ['design', 'implement', 'review'] as const
 export const EVENT_AT = {
   TicketDiscovered: ['outside'],
   TicketClaimed: ['claim'],
-  TicketContinued: ['claim'], // 'TicketContinued': nothing appends it yet (#681)
+  TicketContinued: ['claim'], // continueTicket appends it (#683)
   TicketReleased: ['claim', 'end', 'outside'],
   WaitStarted: ['end', 'outside'],
   WaitResolved: ['outside'],
