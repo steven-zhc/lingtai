@@ -152,6 +152,9 @@ function spent(
     durationMs: 1000,
     costUsd,
     usage: [],
+    estimatedUsd: null,
+    estimateFetched: null,
+    kind: null,
   }
 }
 

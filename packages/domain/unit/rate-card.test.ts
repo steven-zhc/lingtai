@@ -152,15 +152,17 @@ describe('doc/rate-card.md', () => {
   })
 
   /**
-   * The projector is a fold; a fold may not read this file (0110 §5). Reading
-   * every file's source, not grepping the package, so a mention inside a
-   * comment is caught the same as an import.
+   * Only the `spend` fold prices, and stores the estimate (0110 §5, #679); every
+   * other fold may not read this file. Reading every file's source, not grepping
+   * the package, so a mention inside a comment is caught the same as an import.
    */
-  it('is never read by the projector — task-view.ts included', async () => {
+  it('is never read by the projector outside the spend fold — task-view.ts included', async () => {
     const { readdir } = await import('node:fs/promises')
     const dir = `${root}packages/projector/src`
-    const files = (await readdir(dir)).filter((f) => f.endsWith('.ts'))
-    expect(files).toContain('task-view.ts')
+    const pricing = ['spend.ts', 'rate-snapshot.ts']
+    const all = (await readdir(dir)).filter((f) => f.endsWith('.ts'))
+    expect(all).toContain('task-view.ts')
+    const files = all.filter((f) => !pricing.includes(f))
 
     for (const file of files) {
       const text = await readFile(`${dir}/${file}`, 'utf8')

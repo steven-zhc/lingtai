@@ -188,6 +188,9 @@ function toSpendRow(row: pg.QueryResultRow): SpendRow {
     durationMs: row.duration_ms,
     costUsd: row.cost_usd,
     usage: row.usage,
+    estimatedUsd: row.estimated_usd ?? null,
+    estimateFetched: row.estimate_fetched ?? null,
+    kind: row.kind ?? null,
   }
 }
 

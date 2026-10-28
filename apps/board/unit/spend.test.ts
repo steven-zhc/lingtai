@@ -16,7 +16,6 @@ import {
   totalBill,
   unknownBill,
   withNoSpendFallback,
-  type RateCard,
 } from '../src/lib/spend.ts'
 
 function row(over: Partial<SpendRow> = {}): SpendRow {
@@ -36,6 +35,9 @@ function row(over: Partial<SpendRow> = {}): SpendRow {
     durationMs: 1000,
     costUsd: 0.1,
     usage: [],
+    estimatedUsd: null,
+    estimateFetched: null,
+    kind: null,
     ...over,
   }
 }
@@ -101,13 +103,12 @@ describe('billOf splits a row into reported, estimated or unknown', () => {
     expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
   })
 
-  it('prices a row with no reported figure through an injected rate card, never into reportedCents', () => {
-    const price: RateCard = (r) => (r.runtime === 'codex' ? 0.42 : null)
-    const bills = billOf([row({ costUsd: null, runtime: 'codex' })], price)
+  it('reads the stored estimate of a row with no reported figure, never into reportedCents', () => {
+    const bills = billOf([row({ costUsd: null, runtime: 'codex', estimatedUsd: 0.42, estimateFetched: false })])
     expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [0.42], unknown: 0 })
   })
 
-  it('defaults to no rate card, so #208 having not shipped never invents a price', () => {
+  it('counts a row with no stored estimate as unknown and never invents a price', () => {
     const bills = billOf([row({ costUsd: null })])
     expect(bills.Work.estimates).toEqual([])
     expect(bills.Work.unknown).toBe(1)
@@ -163,14 +164,13 @@ describe('billText renders the one table every reader shows', () => {
   })
 
   it('adds an estimate after the figure and never into it', () => {
-    const price: RateCard = () => 0.5
-    const bills = billOf([row({ costUsd: 3.1 }), row({ costUsd: null })], price)
+    const bills = billOf([row({ costUsd: 3.1 }), row({ costUsd: null, estimatedUsd: 0.5, estimateFetched: false })])
     expect(billText(bills.Work)).toBe('$3.10 ~$0.50 est.')
   })
 
   it('says the fetched-prices note only when asked', () => {
-    const price: RateCard = () => ({ usd: 0.5, fetched: true })
-    const bill = billOf([row({ costUsd: null }), row({ costUsd: null })], price).Work
+    const fetched = { costUsd: null, estimatedUsd: 0.5, estimateFetched: true }
+    const bill = billOf([row(fetched), row(fetched)]).Work
     expect(billText(bill)).toBe('~$1.00 est.')
     expect(billText(bill, { fetchedNote: true })).toBe('~$1.00 est. (2 at fetched LiteLLM prices)')
   })
@@ -183,8 +183,7 @@ describe('billText renders the one table every reader shows', () => {
    * and `unknown`, so the pill that would have shown it never rendered either.
    */
   it('shows the estimate alone when nothing was reported and nothing is unknown', () => {
-    const price: RateCard = () => 0.42
-    const bills = billOf([row({ costUsd: null })], price)
+    const bills = billOf([row({ costUsd: null, estimatedUsd: 0.42, estimateFetched: false })])
     expect(bills.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [0.42], unknown: 0 })
     expect(billText(bills.Work)).toBe('~$0.42 est.')
     expect(billHasAny(bills.Work)).toBe(true)

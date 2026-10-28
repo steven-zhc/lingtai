@@ -19,14 +19,12 @@
  * **Every row goes to exactly one of three arms, and only one of them is
  * money.** `costUsd !== null` is *reported*, counted in cents once and never
  * recomputed from a float a second time (`ledger`'s own rule, carried here).
- * Otherwise the rate card (`@lingtai/domain/rate-card`) may *estimate* it from the row's usage — shown
+ * Otherwise the row carries the fold's stored *estimate* (`estimatedUsd`, 0110 §5) — shown
  * beside the total and never folded into it (0110 §7). Anything left over is
  * *unknown*, and **no path through this file prints `$0.00` for a bill that has
  * an unknown run in it.** A total is a floor (0110 §2) and every reader says so.
  */
 import { fetchedNote } from '@lingtai/conductor'
-import { readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
-import { estimateRow } from '@lingtai/domain/rate-card'
 import { createProjectionRunner, readSpend, spendProjection, type SpendRow } from '@lingtai/projector'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
@@ -122,12 +120,6 @@ export function withNoSpendFallback(
   return { ...bills, Work: addBill(bills.Work, unknownBill(unaccounted)) }
 }
 
-/**
- * A price for a row with no reported figure, or null — unknown. A parameter so
- * a test can hand the estimate arm its own card; the default is the shipped one.
- */
-export type RateCard = (row: SpendRow) => number | { usd: number; fetched: boolean } | null
-
 /** `Action` at round 0 is the work; at round 1 or above it is answering a refusal (0039 §3). */
 function purposeOf(row: SpendRow): Purpose {
   if (row.purpose !== 'Action') return row.purpose
@@ -138,9 +130,7 @@ function purposeOf(row: SpendRow): Purpose {
  * Every row, sorted into its purpose and then into reported, estimated or
  * unknown — the one fold every reader in this directory goes through.
  */
-export function billOf(rows: readonly SpendRow[], price?: RateCard): Record<Purpose, Bill> {
-  const snapshot = readRateSnapshot()
-  const priced: RateCard = price ?? ((row) => estimateRow(row, snapshot))
+export function billOf(rows: readonly SpendRow[]): Record<Purpose, Bill> {
   const bills = emptyBills()
   for (const row of rows) {
     const bill = bills[purposeOf(row)]
@@ -149,10 +139,9 @@ export function billOf(rows: readonly SpendRow[], price?: RateCard): Record<Purp
       bill.reportedRuns += 1
       continue
     }
-    const estimate = priced(row)
-    if (estimate !== null) {
-      bill.estimates.push(typeof estimate === 'number' ? estimate : estimate.usd)
-      if (typeof estimate !== 'number' && estimate.fetched) bill.fetched = (bill.fetched ?? 0) + 1
+    if (row.estimatedUsd !== null) {
+      bill.estimates.push(row.estimatedUsd)
+      if (row.estimateFetched) bill.fetched = (bill.fetched ?? 0) + 1
       continue
     }
     bill.unknown += 1

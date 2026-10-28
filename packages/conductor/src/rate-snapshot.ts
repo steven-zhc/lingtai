@@ -12,11 +12,11 @@
  * network. Under a test with no `LINGTAI_HOME` of its own the snapshot reads
  * empty, so no test prices from the developer's real one.
  */
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { LITELLM_URL, mergeSnapshot, ratesFromLiteLLM, shipped, type RateRow } from '@lingtai/domain/rate-card'
-import { stateDir } from '@lingtai/env'
+import { rateDir, readJson, readRateSnapshot, snapshotPath } from '@lingtai/projector'
 
 /** What the last attempt said, for `doctor` — separate from the snapshot so a failure leaves that byte-for-byte alone. */
 export interface FetchNote {
@@ -28,28 +28,9 @@ export interface FetchNote {
   rejected: string[]
 }
 
-function home(from: NodeJS.ProcessEnv): string | null {
-  const ownHome = Boolean(from['LINGTAI_HOME'])
-  if (!ownHome && (from['VITEST'] || from['LINGTAI_TEST'])) return null
-  return stateDir(from)
-}
-
-const snapshotPath = (from: NodeJS.ProcessEnv) => {
-  const dir = home(from)
-  return dir === null ? null : join(dir, 'rates.json')
-}
 const notePath = (from: NodeJS.ProcessEnv) => {
-  const dir = home(from)
+  const dir = rateDir(from)
   return dir === null ? null : join(dir, 'rates-fetch.json')
-}
-
-function readJson(path: string | null): unknown {
-  if (path === null || !existsSync(path)) return undefined
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'))
-  } catch {
-    return undefined
-  }
 }
 
 function writeAtomic(path: string, value: unknown): void {
@@ -58,11 +39,7 @@ function writeAtomic(path: string, value: unknown): void {
   renameSync(tmp, path)
 }
 
-/** The snapshot's rows. Absent or malformed reads as none, never a throw. */
-export function readRateSnapshot(from: NodeJS.ProcessEnv = process.env): RateRow[] {
-  const doc = readJson(snapshotPath(from)) as { rows?: unknown } | undefined
-  return Array.isArray(doc?.rows) ? (doc.rows as RateRow[]) : []
-}
+export { readRateSnapshot }
 
 /** The last attempt's note, or null where nothing has ever been fetched. */
 export function readFetchNote(from: NodeJS.ProcessEnv = process.env): FetchNote | null {

@@ -3,25 +3,24 @@
  * CLI and the board say the same sentence about the same day.
  *
  * **Unknown cost is not free** (#198). A `spend` row whose `costUsd` is null —
- * every Codex run, and a Claude Code run that was killed — is priced from the
- * rate card by its recorded usage (#645, 0122 §5) and counted as an *estimate*;
- * one the card cannot price is *unknown*, and the ceiling cannot see it. A
+ * every Codex run, and a Claude Code run that was killed — carries the estimate
+ * the `spend` fold stored when it priced the run's usage at its own day's rate
+ * (#645, #679, 0122 §5) and is counted as an *estimate*;
+ * one nothing could price is *unknown*, and the ceiling cannot see it. A
  * reported figure is never repriced, and the estimate is never printed as part
  * of the reported one. The sentence says how much is estimated and how many are
  * unknown on every surface; a ceiling that left them out would read as a
  * guarantee it is not (#332). A process that died before it appended `RunSpent`
  * leaves no row at all, and is not counted either.
  */
-import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope, type Usage } from '@lingtai/domain'
-import { estimateRow } from '@lingtai/domain/rate-card'
+import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
-
-import { readRateSnapshot } from './rate-snapshot.ts'
 
 export interface DayRow {
   at: Date
   costUsd: number | null
-  usage: Usage
+  estimatedUsd: number | null
+  estimateFetched: boolean | null
 }
 
 export interface DaySpend {
@@ -42,11 +41,7 @@ export const startOfLocalDay = (now: Date): Date => new Date(now.getFullYear(), 
 export const nextLocalMidnight = (now: Date): Date => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
 
 /** Today's rows only; each reported row rounded to cents once; estimates are summed first and rounded once. */
-export function daySpend(
-  rows: readonly DayRow[],
-  now: Date,
-  price: (row: DayRow) => number | { usd: number; fetched: boolean } | null = snapshotPricer(),
-): DaySpend {
+export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
   const since = startOfLocalDay(now).getTime()
   const day: DaySpend = {
     reportedCents: 0,
@@ -64,15 +59,13 @@ export function daySpend(
       day.reportedRuns += 1
       continue
     }
-    const estimate = price(row)
-    if (estimate === null) {
+    if (row.estimatedUsd === null) {
       day.unknown += 1
       continue
     }
-    const usd = typeof estimate === 'number' ? estimate : estimate.usd
-    estimatedUsd += usd
+    estimatedUsd += row.estimatedUsd
     day.estimatedRuns += 1
-    if (typeof estimate !== 'number' && estimate.fetched) day.fetchedRuns += 1
+    if (row.estimateFetched) day.fetchedRuns += 1
   }
   // Summed in dollars and rounded once: a run's estimate is often a fraction of a cent, and rounding each would drop spend the board shows.
   day.estimatedCents = Math.round(estimatedUsd * 100)
@@ -104,12 +97,6 @@ export function daySpendText(
 /** Said on `/spend` only, where an estimate is shown that part of it is not from the shipped card; empty otherwise. */
 export const fetchedNote = (day: { fetchedRuns: number }): string =>
   day.fetchedRuns > 0 ? ` (${day.fetchedRuns} at fetched LiteLLM prices)` : ''
-
-/** The default pricer: the shipped card, then the fetched snapshot, read once per call and never the network. */
-export function snapshotPricer(): (row: DayRow) => { usd: number; fetched: boolean } | null {
-  const snapshot = readRateSnapshot()
-  return (row) => estimateRow(row, snapshot)
-}
 
 /** Reached when reported plus estimated cents are at the figure. Unknown rows count toward nothing. */
 export const ceilingReached = (day: DaySpend, ceilingUsd: number): boolean =>
