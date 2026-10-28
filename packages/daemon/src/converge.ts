@@ -78,7 +78,7 @@ import {
   type ProjectState,
   type TicketStatus,
 } from '@lingtai/domain'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type GitHubClient } from '@lingtai/github'
@@ -104,7 +104,7 @@ export interface ProjectClients {
  * **A project with no owner (`#355`) builds no `GitHubClient` and needs no
  * App.** It goes through `ownerlessClient` instead — the same assembly
  * `apps/cli/src/run.ts` and `apps/cli/src/conduct.ts`'s per-project work use
- * — and is attempted whether or not `hasApp()` answers true, because there is
+ * — and is attempted whether or not `hasAuth()` answers true, because there is
  * no GitHub half for an App to gate here. The App check stays, but only on
  * the GitHub branch below: no App there still makes the whole check a no-op
  * for that project rather than an error — a machine with no credentials still
@@ -141,21 +141,21 @@ export interface ProjectClients {
 export async function clientsForProjects(
   projects: readonly ProjectState[],
   options: {
-    hasApp?: () => boolean
+    hasAuth?: () => boolean
     clientFor?: ClientFor
     recipeFor?: RecipeFor
     /** The seam a test needs: `ownerlessClient`'s own third argument, following `projectFilter`'s fourth (`filter.ts`). */
     ticketsOf?: typeof ticketsFor
   } = {},
 ): Promise<ProjectClients> {
-  const hasApp = options.hasApp ?? hasGitHubApp
+  const hasAuth = options.hasAuth ?? hasGitHubAuth
   const clientFor =
     options.clientFor ??
-    ((p: ProjectState) => createGitHubClient({ auth: githubApp(), owner: p.owner!, repo: p.project! }))
+    ((p: ProjectState) => createGitHubClient({ auth: githubClientAuth(), owner: p.owner!, repo: p.project! }))
   const recipeFor = options.recipeFor ?? currentRecipe
   const clients = new Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>()
   const unresolved: UnresolvedProject[] = []
-  const app = hasApp()
+  const reachable = hasAuth()
   for (const p of projects) {
     if (!p.project) continue
 
@@ -173,7 +173,7 @@ export async function clientsForProjects(
       continue
     }
 
-    if (!app) continue
+    if (!reachable) continue
     let client: GitHubClient
     try {
       client = await clientFor(p)

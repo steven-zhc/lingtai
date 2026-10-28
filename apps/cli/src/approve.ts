@@ -15,7 +15,7 @@ import { userInfo } from 'node:os'
  */
 import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 
 import { withProjector } from './projector.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -45,7 +45,7 @@ export async function approveVerdict(
     const resolved = await currentRecipe(project)
     client = (await ownerlessClient(project, resolved.recipe)).client
   } else {
-    if (!hasGitHubApp()) {
+    if (!hasGitHubAuth()) {
       return refusal(
         1,
         'no-github-app',

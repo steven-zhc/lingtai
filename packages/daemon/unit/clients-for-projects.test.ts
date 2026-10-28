@@ -44,7 +44,7 @@ const stubClient = {} as GitHubClient
 
 function seams() {
   return {
-    hasApp: () => true,
+    hasAuth: () => true,
     clientFor: async () => stubClient,
     recipeFor: async (state: ProjectState) => {
       if (state.project === 'broken') throw new Error('RECIPE INVALID — source.kinds.3: Invalid option')
@@ -85,7 +85,7 @@ describe('clientsForProjects, a project with no owner', () => {
 
   it('is still in clients, with no App configured and clientFor never called', async () => {
     const { clients, unresolved } = await clientsForProjects([OK, LOCAL], {
-      hasApp: () => false,
+      hasAuth: () => false,
       clientFor: notReached,
       recipeFor: async (state) =>
         ({
@@ -108,7 +108,7 @@ describe('clientsForProjects, a project with no owner', () => {
 
   it('lands in unresolved with ownerlessRefusal’s own sentence, for a recipe naming no source.tickets: db', async () => {
     const { clients, unresolved } = await clientsForProjects([LOCAL], {
-      hasApp: () => true,
+      hasAuth: () => true,
       clientFor: notReached,
       recipeFor: async () =>
         ({ recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' }) as never,
@@ -123,5 +123,26 @@ describe('clientsForProjects, a project with no owner', () => {
           'or re-run lingtai add <owner>/<repo> to record the owner',
       },
     ])
+  })
+})
+
+describe('clientsForProjects, on a gh machine', () => {
+  it('visits a GitHub project when the machine can reach GitHub, asking clientFor for its client', async () => {
+    const asked: string[] = []
+    const client = { owner: 'steven-zhc', repo: 'ok' } as unknown as GitHubClient
+    const { clients, unresolved } = await clientsForProjects([OK], {
+      hasAuth: () => true,
+      clientFor: async (p) => {
+        asked.push(p.project!)
+        return client
+      },
+      recipeFor: async () =>
+        ({ recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' }) as never,
+      ticketsOf: async () => ({}) as never,
+    })
+
+    expect(asked).toEqual(['ok'])
+    expect(clients.has('ok')).toBe(true)
+    expect(unresolved).toEqual([])
   })
 })

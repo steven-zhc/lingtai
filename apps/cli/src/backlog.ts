@@ -16,7 +16,7 @@ import { userInfo } from 'node:os'
  */
 import { acceptFinding, declineFinding, githubTicketStore, loadProject } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 import {
   type BacklogEntry,
   backlogProjection,
@@ -246,7 +246,7 @@ export async function decideFinding(decision: BacklogDecision, log = console.log
   // No --kind is refused by `acceptFinding` when the entry is open, and not
   // needed when it is already accepted: the log says what the issue carries.
   const kind = decision.kind
-  if (!hasGitHubApp()) {
+  if (!hasGitHubAuth()) {
     log(
       'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
     )

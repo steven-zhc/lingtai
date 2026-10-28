@@ -74,7 +74,9 @@ import {
   directUrlIfSet,
   githubApp,
   githubAppValues,
+  githubAuth,
   hasGitHubApp,
+  hasGitHubAuth,
   machineDatabaseUrl,
   codexTextConfig,
   type CodexTextConfig,
@@ -93,8 +95,8 @@ import { log, logPredatesHold } from '@lingtai/event-store'
 // where the suite learned what a dropped connection costs (#157), and an audit
 // that reds on one would hold `lingtai restart`.
 import { createPostgresLogQueries, type LogQueries, type UnconvergedUpdate } from '@lingtai/event-store/queries'
-import type { GitHubClient } from '@lingtai/github'
-import { REQUIRED_PERMISSIONS } from '@lingtai/github'
+import type { GhRun, GitHubClient } from '@lingtai/github'
+import { ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
   backlogProjection,
   describeShape,
@@ -823,8 +825,47 @@ async function runtimeAuth(fetch: () => ReturnType<typeof everyRuntime> = () => 
   }
 }
 
+/** Whether the machine is elected to the saved `gh` login; a refused or absent election is not `gh`. */
+function usesGh(env: NodeJS.ProcessEnv): boolean {
+  try {
+    return githubAuth(env).kind === 'gh'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `github: gh login`, on a `gh` machine only: every pass asks `gh` for a token,
+ * so a login that is signed out or lacks `repo` and `workflow` fails every pass.
+ * Reads `gh auth status`, never the token.
+ */
+export async function ghLogin(env: NodeJS.ProcessEnv, gh?: GhRun): Promise<CheckResult | null> {
+  if (!usesGh(env)) return null
+  const name = 'github: gh login'
+  const status = await ghStatus(gh)
+  if (!status.ok) return { name, status: 'fail', detail: `${status.detail} — run \`gh auth login\`` }
+  const missing = ['repo', 'workflow'].filter((scope) => !status.scopes.includes(scope))
+  if (missing.length > 0) {
+    return {
+      name,
+      status: 'fail',
+      detail:
+        `gh is signed in as ${status.login} without ${missing.join(' and ')} — run ` +
+        `\`gh auth refresh --hostname github.com --scopes ${missing.join(',')}\``,
+    }
+  }
+  return { name, status: 'ok', detail: `gh is signed in to github.com as ${status.login} with repo and workflow` }
+}
+
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = 'github: app credentials'
+  if (usesGh(env)) {
+    return {
+      name,
+      status: 'skip',
+      detail: 'github.auth is gh — the App is not used for projects, so its credentials are not checked.',
+    }
+  }
   // A source that names an id with no key, or a `config.yml` that cannot be
   // read, is somebody's half-written App — a failure with its reason, never
   // the *not configured* skip, which tells them to write what they just wrote.
@@ -921,6 +962,8 @@ export interface DoctorReach {
   settings: () => Promise<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
   /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
+  /** `gh`'s runner for the `github: gh login` row, injectable so a unit test spawns nothing. */
+  gh?: GhRun
   spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
@@ -1689,7 +1732,7 @@ const offlineClient = new Proxy({} as GitHubClient, {
   get: (_target, key) => {
     // Not a thenable: an `async` function returning this looks for `then`.
     if (key === 'then' || typeof key === 'symbol') return undefined
-    throw new Error(`no GitHub App configured, so GitHub cannot be asked (${String(key)})`)
+    throw new Error(`no GitHub auth configured, so GitHub cannot be asked (${String(key)})`)
   },
 })
 
@@ -1700,7 +1743,7 @@ const offlineClient = new Proxy({} as GitHubClient, {
  * already says the App is missing.
  */
 export function recipeClientFor(env: NodeJS.ProcessEnv): ClientFor {
-  return hasGitHubApp(env) ? githubClientFor : async () => offlineClient
+  return hasGitHubAuth(env) ? githubClientFor : async () => offlineClient
 }
 
 /** One line per value, `key  value ← where`, indented under the row. */
@@ -2762,6 +2805,8 @@ export async function runDoctor(
   }
 
   results.push(githubCredentials(env))
+  const ghRow = await ghLogin(env, reach.gh)
+  if (ghRow !== null) results.push(ghRow)
   results.push(...(await projectRecipes(filters)))
   results.push(...(await declaredEnvironment(env, load, reach)))
   results.push(...(await recipeGovernsItsBase(env, load, reach)))

@@ -30,7 +30,7 @@ import {
 } from '@lingtai/conductor'
 import { tellGitHubAbout } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 
@@ -55,7 +55,7 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
     log('nothing to replay — every ended item with end actions has resolved them')
     return 0
   }
-  if (!hasGitHubApp()) {
+  if (!hasGitHubAuth()) {
     log(
       'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
     )

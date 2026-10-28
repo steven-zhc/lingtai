@@ -17,8 +17,8 @@
  * whether a queue is empty or unreadable.
  */
 import { STEPS, type Step, type ProjectState } from '@lingtai/domain'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
-import { createGitHubClient, type GitHubClient } from '@lingtai/github'
+import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
+import { createGitHubClient, type GhRun, type GitHubClient } from '@lingtai/github'
 import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe, type TurnLimit } from '@lingtai/recipe'
 import {
   assigneeOf,
@@ -215,11 +215,22 @@ export type RecipeFor = (state: ProjectState, client: unknown) => Promise<Resolv
  * road out, and none of the four callers has to remember a second branch. This
  * is where "an App that is misconfigured" stopped being an empty column.
  */
-export async function githubClientFor(state: ProjectState, signal?: AbortSignal): Promise<GitHubClient> {
-  if (!hasGitHubApp()) throw new Error('no GitHub App configured, so GitHub cannot be asked about this project')
+export async function githubClientFor(
+  state: ProjectState,
+  signal?: AbortSignal,
+  /** The `gh` runner a test hands in; read only where the machine is on `gh`. */
+  gh?: GhRun,
+): Promise<GitHubClient> {
+  if (!hasGitHubAuth()) throw new Error('no GitHub App configured, so GitHub cannot be asked about this project')
   if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
   if (!state.owner) throw new Error('no owner recorded — re-run lingtai add to record it')
-  return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project, signal })
+  return createGitHubClient({
+    auth: githubClientAuth(),
+    owner: state.owner,
+    repo: state.project,
+    signal,
+    ...(gh === undefined ? {} : { gh }),
+  })
 }
 
 /**
