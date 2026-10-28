@@ -300,7 +300,8 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
       prefixes: [`${TICKET_STREAM_PREFIX}%`],
-      types: ['TicketClaimed', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
+      // A continuation is claim-shaped (`claimShapeOf`); `reduceTicket` folds it.
+      types: ['TicketClaimed', 'TicketContinued', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
     }),
   )
 }
