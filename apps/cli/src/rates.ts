@@ -8,7 +8,13 @@
 import { currentRecipe, loadProjects } from '@lingtai/conductor'
 import { ratesDue, realRatePorts, refreshRates } from '@lingtai/conductor/rate-snapshot'
 import { LITELLM_PROVIDER } from '@lingtai/domain/rate-card'
-import { createProjectionRunner, readSpend, spendProjection, type ProjectionLag } from '@lingtai/projector'
+import {
+  createProjectionRunner,
+  readSpend,
+  spendProjection,
+  ticketReportProjection,
+  type ProjectionLag,
+} from '@lingtai/projector'
 
 import { holdLiveSpend } from './projector.ts'
 
@@ -53,10 +59,9 @@ export async function modelsSeenInSpend(): Promise<{ model: string; runtime: str
 }
 
 /**
- * The projections that store an estimate (0110 §5). `ticket_report` (0123)
- * joins this list when it lands.
+ * The projections that store an estimate (0110 §5): `spend` and `ticket_report` (0123).
  */
-const ESTIMATE_PROJECTIONS = [spendProjection] as const
+const ESTIMATE_PROJECTIONS = [spendProjection, ticketReportProjection] as const
 
 /**
  * Set while `spend` is being rebuilt, and lifted only by a reading of no lag

@@ -102,6 +102,7 @@ import {
   projectionShape,
   readTasks,
   spendProjection,
+  ticketReportProjection,
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
@@ -665,7 +666,9 @@ async function projectionShapes(
     // Every projection, not the first one: `finding_backlog` (#137) and
     // `spend` (#497) each have a `create table if not exists` of their own,
     // and the same #84 waiting in it.
-    const shapes = await Promise.all([taskViewProjection, backlogProjection, spendProjection].map((p) => fetch(p)))
+    const shapes = await Promise.all(
+      [taskViewProjection, backlogProjection, spendProjection, ticketReportProjection].map((p) => fetch(p)),
+    )
     return {
       name,
       status: shapes.every((s) => s.drift.length === 0) ? 'ok' : 'fail',

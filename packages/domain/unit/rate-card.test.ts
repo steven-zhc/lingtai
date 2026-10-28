@@ -159,7 +159,7 @@ describe('doc/rate-card.md', () => {
   it('is never read by the projector outside the spend fold — task-view.ts included', async () => {
     const { readdir } = await import('node:fs/promises')
     const dir = `${root}packages/projector/src`
-    const pricing = ['spend.ts', 'rate-snapshot.ts']
+    const pricing = ['spend.ts', 'ticket-report.ts', 'rate-snapshot.ts']
     const all = (await readdir(dir)).filter((f) => f.endsWith('.ts'))
     expect(all).toContain('task-view.ts')
     const files = all.filter((f) => !pricing.includes(f))

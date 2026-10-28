@@ -109,7 +109,7 @@ describe('lingtai projection', () => {
     expect(none.err).toContain('lingtai projection rebuild <name>')
     const unknown = await capture(['projection', 'rebuild', 'x'], { projection: r.run })
     expect(unknown.code).toBe(2)
-    expect(unknown.err).toBe('✗ unknown projection "x" — known: task_view, finding_backlog, spend\n')
+    expect(unknown.err).toBe('✗ unknown projection "x" — known: task_view, finding_backlog, spend, ticket_report\n')
     expect(r.seen).toEqual([])
   })
 

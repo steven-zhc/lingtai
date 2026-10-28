@@ -39,6 +39,7 @@ import {
   type Projection,
   type ProjectionRunner,
   spendProjection,
+  ticketReportProjection,
   taskViewProjection,
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
@@ -88,7 +89,7 @@ export async function holdLiveSpend(): Promise<() => Promise<void>> {
 
 /** Registers a runner that follows `spend` so `holdLiveSpend` can stand it down. */
 export function trackLiveSpend(projection: Projection, runner: ProjectionRunner): void {
-  if (projection.name === spendProjection.name) liveSpend.add(runner)
+  if (projection.name === spendProjection.name || projection.name === ticketReportProjection.name) liveSpend.add(runner)
 }
 
 async function followSecondary(
@@ -183,6 +184,7 @@ export async function withProjector<T>(
   }
   const backlog = await followSecondary(backlogProjection, log, predates, runnerFor)
   const spend = await followSecondary(spendProjection, log, predates, runnerFor)
+  const report = await followSecondary(ticketReportProjection, log, predates, runnerFor)
 
   try {
     return await work()
@@ -197,6 +199,7 @@ export async function withProjector<T>(
     await runner?.close().catch(() => {})
     await releaseSecondary(backlogProjection.name, backlog, log)
     await releaseSecondary(spendProjection.name, spend, log)
+    await releaseSecondary(ticketReportProjection.name, report, log)
   }
 }
 
@@ -253,9 +256,10 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
         }
         const backlog = await followSecondary(backlogProjection, log, predates, runnerFor)
         const spend = await followSecondary(spendProjection, log, predates, runnerFor)
-        return { runner, following, backlog, spend }
+        const report = await followSecondary(ticketReportProjection, log, predates, runnerFor)
+        return { runner, following, backlog, spend, report }
       }),
-      ({ runner, following, backlog, spend }) =>
+      ({ runner, following, backlog, spend, report }) =>
         Effect.promise(async () => {
           if (following && runner?.failure) {
             log(`the projection stopped during this run: ${String(runner.failure)}`)
@@ -264,6 +268,7 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
           await runner?.close().catch(() => {})
           await releaseSecondary(backlogProjection.name, backlog, log)
           await releaseSecondary(spendProjection.name, spend, log)
+          await releaseSecondary(ticketReportProjection.name, report, log)
         }),
     ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner?.failure ?? null }))),
   )
