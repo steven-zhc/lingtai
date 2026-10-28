@@ -242,7 +242,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         })
       },
       history: async () => [],
-      doctor: async () => script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
+      doctor: async () => ({
+        text: script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
+        failed: false,
+      }),
     },
   }
 }
