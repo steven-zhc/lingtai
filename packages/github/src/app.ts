@@ -48,6 +48,8 @@ export interface Installation {
    * scope is fixed on (#168). Null only when GitHub did not send one.
    */
   htmlUrl: string | null
+  /** The App's own slug, for its permissions page. Null only when GitHub did not send one. */
+  appSlug: string | null
 }
 
 /** An installation as GitHub's JSON spells it. */
@@ -57,6 +59,7 @@ interface RawInstallation {
   account: { login?: string } | null
   repository_selection: string
   html_url?: string | null
+  app_slug?: string | null
 }
 
 function toInstallation(raw: RawInstallation, owner = ''): Installation {
@@ -66,6 +69,7 @@ function toInstallation(raw: RawInstallation, owner = ''): Installation {
     account: raw.account?.login ?? owner,
     repositorySelection: raw.repository_selection,
     htmlUrl: raw.html_url ?? null,
+    appSlug: raw.app_slug ?? null,
   }
 }
 
@@ -179,6 +183,7 @@ export const REQUIRED_PERMISSIONS: { name: string; level: 'read' | 'write'; why:
   { name: 'issues', level: 'write', why: 'reading work items, writing agent:* labels and comments' },
   { name: 'contents', level: 'write', why: 'cloning, pushing agent/*, merging into base' },
   { name: 'pull_requests', level: 'write', why: 'opening and reading pull requests' },
+  { name: 'workflows', level: 'write', why: 'pushing changes to .github/workflows' },
   { name: 'metadata', level: 'read', why: 'required by GitHub for any App' },
 ]
 
@@ -201,6 +206,24 @@ export function permissionGaps(installation: Installation): PermissionGap[] {
     have: installation.permissions[r.name] ?? 'none',
     why: r.why,
   }))
+}
+
+/**
+ * What to do about a gap, in order. An installation can only accept what the
+ * App already asks for, and a manifest applies only when an App is created — so
+ * for an existing App the first step is the App's own permissions page.
+ */
+export function gapRemedyLines(appSlug: string | null, installationUrl: string | null): string[] {
+  const appPage =
+    appSlug === null
+      ? "the App's permissions page (github.com/settings/apps, or the organisation's equivalent)"
+      : `https://github.com/settings/apps/${appSlug}/permissions ` +
+        `(an organisation's App: https://github.com/organizations/<org>/settings/apps/${appSlug}/permissions)`
+  return [
+    `1. If the App does not ask for them yet, add them at ${appPage}.`,
+    `2. Then accept the new permissions on the installation: ${installationUrl ?? "the installation's settings page"}.`,
+    'Then re-run.',
+  ]
 }
 
 interface CachedToken {

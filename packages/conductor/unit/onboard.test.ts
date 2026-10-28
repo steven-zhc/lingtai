@@ -182,6 +182,7 @@ describe('Recheck', () => {
     account: 'steven-zhc',
     repositorySelection: 'selected',
     htmlUrl: null,
+    appSlug: null,
   }
 
   it('asks GitHub about the installation and registers nothing while the App is not installed', async () => {
@@ -261,10 +262,11 @@ describe('Recheck', () => {
 describe('checkInstallation', () => {
   const INSTALLED: Installation = {
     id: 7,
-    permissions: { issues: 'read', contents: 'write', pull_requests: 'write', metadata: 'read' },
+    permissions: { issues: 'read', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' },
     account: 'steven-zhc',
     repositorySelection: 'selected',
     htmlUrl: null,
+    appSlug: null,
   }
 
   it('returns null and logs the gap when a known installation is missing a permission', async () => {

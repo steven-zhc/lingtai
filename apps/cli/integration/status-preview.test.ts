@@ -62,7 +62,14 @@ const ISSUES: Issue[] = [
 const github: GitHubClient = {
   owner: OWNER,
   repo: PROJECT,
-  installation: { id: 1, permissions: {}, account: OWNER, repositorySelection: 'selected', htmlUrl: null },
+  installation: {
+    id: 1,
+    permissions: {},
+    account: OWNER,
+    repositorySelection: 'selected',
+    htmlUrl: null,
+    appSlug: null,
+  },
   request: async () => {
     throw new Error('not used')
   },
