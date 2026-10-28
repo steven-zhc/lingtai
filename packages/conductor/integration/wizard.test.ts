@@ -108,7 +108,14 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
   return {
     owner: OWNER,
     repo: project,
-    installation: { id: 1, permissions: {}, account: OWNER, repositorySelection: 'selected', htmlUrl: null },
+    installation: {
+      id: 1,
+      permissions: {},
+      account: OWNER,
+      repositorySelection: 'selected',
+      htmlUrl: null,
+      appSlug: null,
+    },
     request: async (method: string) => {
       if (method !== 'GET') throw new Error(`the wizard wrote to GitHub: ${method}`)
       throw new GitHubError(404, '/', 'Not Found')

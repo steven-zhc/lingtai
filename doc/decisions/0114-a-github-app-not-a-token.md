@@ -82,13 +82,14 @@ person pastes is still never accepted: it is the case that fails silently.
    and refreshes it a minute before it expires, one refresh at a time, so a
    token never expires partway through a merge.
 
-3. **The permissions are these four, and only these.**
+3. **The permissions are these five, and only these.**
 
 | Permission | Level | For |
 |---|---|---|
 | Issues | read + write | reading work items, writing `agent:*` labels and comments |
 | Contents | read + write | cloning, pushing `agent/*`, merging into base |
 | Pull requests | read + write | opening and reading pull requests |
+| Workflows | read + write | pushing changes to `.github/workflows` |
 | Metadata | read | required by GitHub for any App |
 
    `REQUIRED_PERMISSIONS` in `packages/github/src/app.ts` is this table in code,
@@ -213,10 +214,6 @@ person pastes is still never accepted: it is the case that fails silently.
 ## Not built yet
 
 - `github.auth`, `--github-auth`, the `gh` token source, the embedded sign-in and the question order (§1, §8); today only the App exists.
-- `Workflows: write` for the App: §3's table gains the row in the same change
-  as `REQUIRED_PERMISSIONS`, since `manifest.test.ts` holds them equal. An App
-  created before it asks its owner to accept the new permission; until then
-  its `permissionGaps` names the gap.
 
 ---
 *Replaces archived 0006 in [decisions-archive](../decisions-archive/).*

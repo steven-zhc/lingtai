@@ -582,7 +582,13 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
         if (url.pathname === '/app/installations' && as === 'app') {
           return installations.map((i) => ({
             id: i.id,
-            permissions: { issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' },
+            permissions: {
+              issues: 'write',
+              contents: 'write',
+              pull_requests: 'write',
+              workflows: 'write',
+              metadata: 'read',
+            },
             account: { login: i.account },
             repository_selection: 'selected',
             html_url: `https://github.com/settings/installations/${i.id}`,
@@ -661,7 +667,13 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
               // `issues` is read, not write — one gap, same shape as a scoped
               // fine-grained token (#394 finding: the detail `add()` would
               // have printed must survive a refusal that never calls `add`).
-              permissions: { issues: 'read', contents: 'write', pull_requests: 'write', metadata: 'read' },
+              permissions: {
+                issues: 'read',
+                contents: 'write',
+                pull_requests: 'write',
+                workflows: 'write',
+                metadata: 'read',
+              },
               account: { login: 'acme' },
               repository_selection: 'selected',
               html_url: 'https://github.com/settings/installations/7',
@@ -693,7 +705,9 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
         'The App can see acme/widget, but its installation on acme is missing permissions.\n' +
           'the installation is missing permissions:\n' +
           '  issues: have read, need write — reading work items, writing agent:* labels and comments\n' +
-          "Grant them on the installation's page: https://github.com/settings/installations/7",
+          "1. If the App does not ask for them yet, add them at the App's permissions page" +
+          " (github.com/settings/apps, or the organisation's equivalent).\n" +
+          '2. Then accept the new permissions on the installation: https://github.com/settings/installations/7.',
       ),
     })
     expect(addCalled).toBe(false)

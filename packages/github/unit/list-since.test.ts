@@ -65,7 +65,14 @@ const client = () =>
     auth: { appId: '1', privateKey },
     owner: 'o',
     repo: 'r',
-    installation: { id: 1, permissions: {}, account: 'o', repositorySelection: 'selected', htmlUrl: null },
+    installation: {
+      id: 1,
+      permissions: {},
+      account: 'o',
+      repositorySelection: 'selected',
+      htmlUrl: null,
+      appSlug: null,
+    },
   })
 
 const at = (minutes: number) => new Date(since.getTime() + minutes * 60_000).toISOString()

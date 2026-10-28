@@ -34,6 +34,7 @@ const installation: Installation = {
   account: 'steven-zhc',
   repositorySelection: 'selected',
   htmlUrl: null,
+  appSlug: null,
 }
 
 /** A raw issue as the REST list endpoint sends one, minus what nothing reads. */

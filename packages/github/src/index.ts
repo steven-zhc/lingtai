@@ -5,6 +5,7 @@ export {
   createTokenSource,
   GITHUB_API,
   GitHubError,
+  gapRemedyLines,
   installationForRepo,
   installationRepositories,
   installationToken,

@@ -42,6 +42,7 @@ import {
   type PermissionGap,
   type VisibleRepository,
   appInstallations,
+  gapRemedyLines,
   installationRepositories,
   parseSlug,
   permissionGaps,
@@ -189,6 +190,8 @@ export type Choice =
       fix: Fix | null
       /** Missing scopes, one by one, when that is the reason. */
       gaps: PermissionGap[]
+      /** The App's slug, when the reason is a gap, so its permissions page can be named. */
+      appSlug?: string | null
     }
 
 /**
@@ -200,11 +203,18 @@ export type Choice =
  * repository page calls neither `choose()` nor this: it is the terminal's
  * command that resolves a choice now.
  */
-export function refusalLines(choice: { why: string; fix: Fix | null; gaps: PermissionGap[] }): string[] {
+export function refusalLines(choice: {
+  why: string
+  fix: Fix | null
+  gaps: PermissionGap[]
+  appSlug?: string | null
+}): string[] {
   const lines = [choice.why]
   if (choice.gaps.length > 0) {
     lines.push('the installation is missing permissions:')
     for (const g of choice.gaps) lines.push(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
+    lines.push(...gapRemedyLines(choice.appSlug ?? null, choice.fix?.href ?? null))
+    return lines
   }
   if (choice.fix !== null) lines.push(`${choice.fix.label}: ${choice.fix.href}`)
   return lines
@@ -277,8 +287,9 @@ export function choose(picker: Picker, input: string): Choice {
       return {
         ok: false,
         why: `The App can see ${found.slug}, but its installation on ${listed.installation.account} is missing permissions.`,
-        fix: settings(listed.installation, "Grant them on the installation's page"),
+        fix: settings(listed.installation, "Accept them on the installation's page"),
         gaps: listed.gaps,
+        appSlug: listed.installation.appSlug,
       }
     }
     return { ok: true, owner: found.owner, repo: found.repo, slug: found.slug, installation: listed.installation }
@@ -310,6 +321,7 @@ export function choose(picker: Picker, input: string): Choice {
           'check the name, or whether it has moved.',
     fix: settings(onOwner.installation, `Add ${repo} on the installation's page`),
     gaps: onOwner.gaps,
+    appSlug: onOwner.installation.appSlug,
   }
 }
 
