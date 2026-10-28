@@ -456,7 +456,13 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
   if (names.length === 0) return []
 
   const streams = await withStreams(options, (it) =>
-    it.streams({ prefixes: names.map((n) => `${ticketStreamsOf(n)}%`), types: ['TicketClaimed'] }),
+    // `TicketContinued` is listed beside the claim so the selection does not
+    // lean on a continuation never being a stream's only claim-shaped event;
+    // `reduceTicket` below is what names the worker (`claimShapeOf`).
+    it.streams({
+      prefixes: names.map((n) => `${ticketStreamsOf(n)}%`),
+      types: ['TicketClaimed', 'TicketContinued'],
+    }),
   )
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same
