@@ -8,7 +8,7 @@
 import { dayCeilingPause, daySpend, daySpendText, startOfLocalDay, type DaySpend } from '@lingtai/conductor'
 import { machineDayCeiling } from '@lingtai/env'
 import { eventStore, type EventStore } from '@lingtai/event-store'
-import { projectionLag, readSpend, type ProjectionLag } from '@lingtai/projector'
+import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
 
 import { spendRebuildHold, spendRebuilds } from './rates.ts'
 
@@ -128,19 +128,19 @@ export async function pausedSentence(ports: {
  */
 export async function readDaySpend(now: Date = new Date()): Promise<{ day: DaySpend; ceilingUsd: number | undefined }> {
   const ceilingUsd = machineDayCeiling()
-  return { day: daySpend(await readSpend({ since: startOfLocalDay(now) }), now), ceilingUsd }
+  return { day: daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot()), ceilingUsd }
 }
 
-/** The one sentence `status` prints; a failure to read is said, not hidden. */
+/** The one sentence `status` prints, with the unknown runs' reasons beside it; a failure to read is said, not hidden, and carries no list. */
 export async function daySpendLine(
   lags: () => Promise<readonly ProjectionLag[]> = () => projectionLag(),
-): Promise<string> {
+): Promise<{ text: string; unknownWhy: DaySpend['unknownWhy'] | null }> {
   try {
     const { day, ceilingUsd } = await readDaySpend()
     const stall = ceilingUsd === undefined ? null : await spendStallIn(await lags(), new Date(), eventStore)
-    if (stall !== null) return `the daily ceiling could not be checked: ${stall}`
-    return daySpendText(day, ceilingUsd)
+    if (stall !== null) return { text: `the daily ceiling could not be checked: ${stall}`, unknownWhy: null }
+    return { text: daySpendText(day, ceilingUsd), unknownWhy: day.unknownWhy }
   } catch (err) {
-    return `today's spend could not be read: ${(err as Error).message}`
+    return { text: `today's spend could not be read: ${(err as Error).message}`, unknownWhy: null }
   }
 }

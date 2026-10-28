@@ -13,6 +13,7 @@ const day = {
   estimatedRuns: 18,
   fetchedRuns: 18,
   unknown: 0,
+  unknownWhy: [],
 }
 
 describe('dayReading', () => {

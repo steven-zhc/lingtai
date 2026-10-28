@@ -178,7 +178,7 @@ export interface StatusReading {
   clientFor?: ClientFor
   recipeFor?: RecipeFor
   /** Today's spend against the ceiling, in the one sentence. */
-  spendLine?: () => Promise<string>
+  spendLine?: () => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
@@ -315,6 +315,8 @@ export interface StatusReport {
   message: string | null
   /** Today's spend across every project, and how much of it is unknown (#637). */
   spend?: string
+  /** Why each unknown run is unknown, beside the sentence; absent where the spend could not be read, since `[]` would claim nothing is unknown. */
+  spendUnknown?: { reason: string; runs: number }[]
 }
 
 /** `verifying` folds into `running`: from an operator's seat they are the same fact. */
@@ -520,7 +522,13 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       ),
     })
   }
-  return { projects: out, message: null, spend: await (reading.spendLine ?? daySpendLine)() }
+  const spend = await (reading.spendLine ?? daySpendLine)()
+  return {
+    projects: out,
+    message: null,
+    spend: spend.text,
+    ...(spend.unknownWhy === null ? {} : { spendUnknown: spend.unknownWhy }),
+  }
 }
 
 /** The state column: the wait's words, the clock, the absence — and the arm, muted. */
@@ -623,6 +631,7 @@ const rowJson = (r: StatusRow): Record<string, unknown> => ({
 export function statusJson(report: StatusReport): Record<string, unknown> {
   return {
     ...(report.spend === undefined ? {} : { spend: report.spend }),
+    ...(report.spendUnknown === undefined ? {} : { spendUnknown: report.spendUnknown }),
     projects: report.projects.map((p) => {
       const byState: Record<string, unknown[]> = {}
       for (const t of p.known)
