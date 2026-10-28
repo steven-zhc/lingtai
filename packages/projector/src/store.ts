@@ -38,6 +38,7 @@ import type { Envelope } from '@lingtai/domain'
 import type { BacklogEntry, BacklogStatus } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
 import type { TaskCard } from './task-view.ts'
+import type { TicketReportRow } from './ticket-report.ts'
 
 /** A row, as a store hands it back. Column names, not field names. */
 export type ProjectionRow = Record<string, unknown>
@@ -241,6 +242,11 @@ export interface SpendQuery {
   since?: Date
 }
 
+/** What `readTicketReport` asks of a store. No window: placing a ticket needs all of its pass times, which the report does. */
+export interface TicketReportQuery {
+  project?: string
+}
+
 /**
  * Every read and write of `task_view`, `task_view_run`, `finding_backlog`,
  * `finding_backlog_run`, `spend` and `spend_stream` (`#497`), and of the
@@ -330,6 +336,9 @@ export interface ProjectionStore {
 
   /** One `RunSpent` per row, oldest first — the order a ledger is read in. */
   spend(query: SpendQuery): Promise<SpendRow[]>
+
+  /** One `ticket_report` row per ticket; a database no projector has started has no table, and that is none. */
+  ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]>
 
   /** Releases whatever this store holds open. */
   close(): Promise<void>

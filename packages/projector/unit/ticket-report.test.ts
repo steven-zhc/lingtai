@@ -9,7 +9,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
-import { ticketReportProjectionWith } from '../src/ticket-report.ts'
+import { ticketReportProjectionWith, toTicketReportRow } from '../src/ticket-report.ts'
 
 const T = 'ticket-pin-1'
 const SNAPSHOT: RateRow[] = [
@@ -204,5 +204,59 @@ describe('ticket_report', () => {
     const live = await fold(events.map((e) => [e]))
     const once = await fold([events])
     expect(once).toEqual(live)
+  })
+})
+
+describe('toTicketReportRow', () => {
+  const raw = {
+    ticket: T,
+    project: 'pin',
+    kind: null,
+    outcome: 'landed',
+    outcome_at: '2026-10-01T12:00:00.000Z',
+    passes: 2,
+    fix_rounds: 3,
+    machine_ms: '60000',
+    intervals_empty: 0,
+    intervals_open: 1,
+    unknown_claims: 0,
+  }
+
+  it('reads jsonb as an object (Postgres) and as a string (SQLite) alike', () => {
+    const cost = { Work: { reportedCents: 5, estimatedUsd: 0, reportedRuns: 1, estimatedRuns: 0, unknown: 0 } }
+    const object = toTicketReportRow({ ...raw, pass_times: ['t'], reviews: [], waits: [], cost })
+    const string = toTicketReportRow({
+      ...raw,
+      pass_times: '["t"]',
+      reviews: '[]',
+      waits: '[]',
+      cost: JSON.stringify(cost),
+    })
+    expect(string).toEqual(object)
+    expect(object).toMatchObject({ machineMs: 60_000, fixRounds: 3, kind: null, passTimes: ['t'] })
+    expect(object.outcomeAt).toEqual(new Date('2026-10-01T12:00:00.000Z'))
+    expect(object).not.toHaveProperty('claims')
+  })
+
+  it('reads a null outcome time as null', () => {
+    const row = toTicketReportRow({ ...raw, outcome: 'open', outcome_at: null })
+    expect(row.outcomeAt).toBeNull()
+  })
+
+  it('is what the store hands back, and none for a database with no table', async () => {
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      expect(await store.ticketReport({})).toEqual([])
+      const projection = ticketReportProjectionWith({ snapshot: () => SNAPSHOT })
+      await store.transact((ctx) => projection.create(ctx))
+      await store.transact((ctx) => projection.apply([claim(makeStream(T), 'pass-pin-a', 'bug', 0)], ctx))
+      const rows = await store.ticketReport({})
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ ticket: T, kind: 'bug', passes: 1, outcome: 'open' })
+      expect(await store.ticketReport({ project: 'nobody' })).toEqual([])
+    } finally {
+      await store.close()
+    }
   })
 })

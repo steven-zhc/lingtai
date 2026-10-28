@@ -20,7 +20,16 @@ import pg from 'pg'
 import type { BacklogEntry } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
 import { CheckpointRewoundError, columnOf } from './store.ts'
-import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, SpendQuery, TaskQuery } from './store.ts'
+import type {
+  BacklogQuery,
+  ProjectionContext,
+  ProjectionLag,
+  ProjectionStore,
+  SpendQuery,
+  TaskQuery,
+  TicketReportQuery,
+} from './store.ts'
+import { toTicketReportRow } from './ticket-report.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
 
@@ -395,6 +404,20 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
       } catch (err) {
         // A database no projector has ever started has no table, and that is
         // no spend rather than a failure — `backlog`'s own reason.
+        if ((err as { code?: string }).code === '42P01') return []
+        throw err
+      }
+    },
+
+    async ticketReport(query: TicketReportQuery) {
+      try {
+        const r =
+          query.project === undefined
+            ? await pool.query('select * from ticket_report order by ticket')
+            : await pool.query('select * from ticket_report where project = $1 order by ticket', [query.project])
+        return r.rows.map(toTicketReportRow)
+      } catch (err) {
+        // `spend`'s own reason: no table is no report, not a failure.
         if ((err as { code?: string }).code === '42P01') return []
         throw err
       }
