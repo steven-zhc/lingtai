@@ -143,6 +143,11 @@ exactly the model id and whose `litellm_provider` is the runtime's own is taken
 leaves the model, or that token class, unknown. A changed price appends a row; a
 second fetch on the same day replaces that day's row.
 
+A model's **first** fetched row also prices its runs from before that fetch: its
+`from` is only the day Lingtai first looked, so it is in force from the beginning
+of time and later rows take over from their own date. The shipped card's dates
+are real price changes and keep the strict rule above.
+
 **This file always wins** for a model it lists, and a user cannot edit the
 snapshot's prices. Pricing reads the snapshot and never the network, and the
 `/spend` page's *today* line and table say `(N at fetched LiteLLM prices)` for an
