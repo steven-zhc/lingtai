@@ -242,13 +242,25 @@ function tableAt(root: unknown, path: readonly string[]): boolean {
   return typeof node === 'object' && node !== null
 }
 
-/** Every non-blank, non-comment line is a `[section]`, a `key = value`/`key: value`, or a continuation. */
+/**
+ * As configparser reads it: a `[section]` header opens a section, a
+ * `key = value`/`key: value` line is only valid inside one, and an indented
+ * line is only valid as the continuation of a key.
+ */
 function iniParses(text: string): boolean {
+  let inSection = false
+  let inKey = false
   return text.split(/\r?\n/).every((raw) => {
     const line = raw.trim()
     if (line === '' || line.startsWith('#') || line.startsWith(';')) return true
-    if (/^\s/.test(raw)) return true
-    return /^\[[^\][]+\]$/.test(line) || /^[^=:\s][^=:]*[=:]/.test(line)
+    if (/^\s/.test(raw)) return inKey
+    if (/^\[[^\][]+\]$/.test(line)) {
+      inSection = true
+      inKey = false
+      return true
+    }
+    inKey = inSection && /^[^=:\s][^=:]*[=:]/.test(line)
+    return inKey
   })
 }
 

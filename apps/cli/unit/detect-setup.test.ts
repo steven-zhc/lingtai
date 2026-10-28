@@ -283,6 +283,17 @@ describe('the Python detector', () => {
     expect(result.notes).toContain('pytest.ini does not parse')
   })
 
+  it('an ini file with an indented malformed header or no section header does not parse', async () => {
+    const indented = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': '  [mypy\n' }))
+    expect(indented.build).toEqual([])
+    expect(indented.notes).toContain('mypy.ini does not parse')
+    const bare = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': 'strict = true\n' }))
+    expect(bare.build).toEqual([])
+    expect(bare.notes).toContain('mypy.ini does not parse')
+    const ok = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': '[mypy]\nplugins =\n  a\n  b\n' }))
+    expect(ok.build.map((b) => b.name)).toEqual(['typecheck'])
+  })
+
   it('Node and Python in one root: Node wins and Python is named in a note', async () => {
     const result = await detectSetup(
       reader({ 'pnpm-lock.yaml': '', 'package.json': pkg({ lint: 'eslint .' }), 'uv.lock': '' }),
