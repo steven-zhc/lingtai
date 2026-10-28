@@ -1,8 +1,8 @@
 /**
  * `ProjectionStore.ticketReport` (#690): rows folded through an in-memory
  * SQLite file read back as `TicketReportRow`s, unit under 0060 §1. The Postgres
- * twin shares `ticketReportRowOf` and is held to the same rows by
- * `test/contract.ts`, which only the integration half runs.
+ * twin shares `ticketReportRowOf`, the one mapper, but its query is not run by
+ * any test: `test/contract.ts` has no `ticketReport` case.
  */
 import type { Envelope } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'

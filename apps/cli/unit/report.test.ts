@@ -228,6 +228,45 @@ describe('lingtai report’s text', () => {
     expect(r.out).not.toMatch(/NaN/)
   })
 
+  it('prints a kind’s median, both shares and mean cost, not the mean of rounds', async () => {
+    const rounds = [0, 0, 12]
+    const r = await run(
+      {},
+      { tickets: async () => rounds.map((fixRounds, i) => row({ ticket: `ticket-lingtai-${i + 1}`, fixRounds })) },
+    )
+    const line = r.out.split('\n').find((l) => /^\s*bug\s/.test(l))
+    expect(r.out).toContain('median fix rounds')
+    expect(line).toMatch(/bug\s+3\s+0\s+67%\s+33%\s+mean \$1\.50 reported/)
+  })
+
+  it('prints a top ticket’s cost, purpose shares and each wait’s cause and resolution', async () => {
+    const wait = {
+      waitId: 'w1',
+      at: day(26).toISOString(),
+      reason: 'FixableLines',
+      triage: { attempt: 1, result: 'advice', cause: 'ConflictingHunks' },
+      resolution: 'answered',
+    }
+    const cost = {
+      Work: { reportedCents: 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
+      Answering: { reportedCents: 300, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
+    }
+    const r = await run({}, { tickets: async () => [row({ waits: [wait], cost })] })
+    expect(r.out).toContain('ticket-lingtai-1  bug  landed  $4.00 reported')
+    expect(r.out).toContain('spent on: Answering 75% · Work 25%')
+    expect(r.out).toContain('wait: FixableLines · cause ConflictingHunks · resolved answered')
+  })
+
+  it('prints survival when the window has no placed ticket and no spend', async () => {
+    const review = { seq: '1', at: day(28, 9).toISOString(), round: 0, blocking: 1, cleared: false }
+    const r = await run(
+      { window: 'today' },
+      { tickets: async () => [row({ outcomeAt: day(29), reviews: [review], passTimes: [day(27).toISOString()] })] },
+    )
+    expect(r.out).not.toContain('no tickets and no spend')
+    expect(r.out).toContain('getting past review')
+  })
+
   it('says how many passes the machine time skipped', async () => {
     const r = await run({}, { tickets: async () => [row({ intervalsEmpty: 2, intervalsOpen: 1 })] })
     expect(r.out).toContain('3 passes left out of machine time: 2 with no sign of life, 1 still open')

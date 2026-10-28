@@ -12,6 +12,7 @@
 import {
   report as computeReport,
   resolveWindow,
+  type LandedFigures,
   type Money,
   type Report,
   type ReportSpendRow,
@@ -138,6 +139,17 @@ function duration(ms: number | null): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
 }
 
+/** A landed ticket's cost: the mean apart for reported and estimated, then the median. */
+function costText(c: LandedFigures['cost']): string {
+  return (
+    `mean ${c.meanReportedCents === null ? DASH : dollars(c.meanReportedCents)} reported` +
+    (c.meanEstimatedCents !== null && c.meanEstimatedCents > 0 ? ` + ${dollars(c.meanEstimatedCents)} estimated` : '') +
+    ` · median ${c.medianCents === null ? DASH : dollars(c.medianCents)}` +
+    (c.medianIncludesEstimate ? ' (includes estimates)' : '') +
+    (c.unknown > 0 ? ` · ${c.unknown} unknown` : '')
+  )
+}
+
 const kindName = (kind: string | null): string => (kind === null ? '(unclassified)' : kind)
 
 /** The text form, as the lines to print. Pure over the report. */
@@ -145,7 +157,8 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
   const label = windowLabel(r)
   const placed = r.counts.landed + r.counts.closed + r.counts.open
   const spent = r.spend.total
-  if (placed === 0 && spent.reportedCents + spent.estimatedCents + spent.unknown === 0) {
+  // Survival is its own cohort (first review in the window), so a window with no placed ticket can still have it.
+  if (placed === 0 && r.survival.length === 0 && spent.reportedCents + spent.estimatedCents + spent.unknown === 0) {
     return [`no tickets and no spend in ${label}`]
   }
 
@@ -174,16 +187,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
         ['fix rounds', spread(l.fixRounds)],
         ['waits', spread(l.waits)],
         ['machine time', spread(l.machineMs, duration)],
-        [
-          'cost',
-          `mean ${l.cost.meanReportedCents === null ? DASH : dollars(l.cost.meanReportedCents)} reported` +
-            (l.cost.meanEstimatedCents !== null && l.cost.meanEstimatedCents > 0
-              ? ` + ${dollars(l.cost.meanEstimatedCents)} estimated`
-              : '') +
-            ` · median ${l.cost.medianCents === null ? DASH : dollars(l.cost.medianCents)}` +
-            (l.cost.medianIncludesEstimate ? ' (includes estimates)' : '') +
-            (l.cost.unknown > 0 ? ` · ${l.cost.unknown} unknown` : ''),
-        ],
+        ['cost', costText(l.cost)],
         ['0 or 1 fix rounds', percent(l.zeroOrOneShare)],
         ['5 or more fix rounds', percent(l.fiveOrMoreShare)],
       ]),
@@ -218,8 +222,16 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
       section(
         'by kind',
         table(
-          ['kind', 'landed', 'fix rounds', 'spend'],
-          r.kinds.map((k) => [kindName(k.kind), String(k.landed), num(k.fixRounds.mean), moneyText(k.spend)]),
+          ['kind', 'landed', 'median fix rounds', '0 or 1', '5 or more', 'mean cost per landed', 'spend'],
+          r.kinds.map((k) => [
+            kindName(k.kind),
+            String(k.landed),
+            num(k.fixRounds.median),
+            percent(k.zeroOrOneShare),
+            percent(k.fiveOrMoreShare),
+            costText(k.cost),
+            moneyText(k.spend),
+          ]),
           options,
         ),
       ),
@@ -231,7 +243,17 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
       '',
       section(
         'most fix rounds',
-        r.top.flatMap((t) => [`${t.ticket}  ${kindName(t.kind)}  ${t.outcome}`, `  ${t.sentence}`]),
+        r.top.flatMap((t) => [
+          `${t.ticket}  ${kindName(t.kind)}  ${t.outcome}  ${moneyText(t.cost)}`,
+          `  ${t.sentence}`,
+          ...(t.purposeShares.length > 0
+            ? [`  spent on: ${t.purposeShares.map((p) => `${p.purpose} ${percent(p.share)}`).join(' · ')}`]
+            : []),
+          ...t.waits.map(
+            (w) =>
+              `  wait: ${w.reason} · cause ${w.cause ?? DASH} · ${w.resolution === null ? 'unresolved' : `resolved ${w.resolution}`}`,
+          ),
+        ]),
       ),
     )
   }
