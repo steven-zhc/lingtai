@@ -129,6 +129,14 @@ chip affordable at all. `recipe` in the filter is the same property, and `#218`
 is the second ticket asked to make `#216`'s argument: one control, naming the
 project in view, absent on `all` where there is no single recipe to name.
 
+`report` (`#689`) is a third such link inside the reading, beside the one to
+`/spend`: how the pipeline converges, what it landed and what it cost, over a
+window rather than the board's cards. It is a second way out of the reading and
+not a fifth object, the same argument `#216` made for the `+` — the row still
+counts *filter, reading, health, headline*, and it carries `?project=` the way
+`/spend` does. The page's own currency (`ticket_report` and `spend` at the head)
+is a chip on that page's bar and not on this one.
+
 **A destination that is not built is a fact deleted.** The row above was right
 that `rounds ×N` does not belong on a rail glanced at every few seconds, and for
 a fortnight the consequence was that 0025 §2's *visible* meant a terminal —

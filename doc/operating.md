@@ -1697,6 +1697,30 @@ Every refusal names itself. The common ones:
 | `a waiver needs a reason` | A waiver records who and why. Both, always. |
 | `stopped: exhausted — 1 run(s)` | The queue still has work; everything left has already been tried this pass. Not the same as `empty`. |
 
+## The report page
+
+`/report` on the board — the *report* link beside the bar's reading — shows how
+the pipeline is doing over a window of local days: the figure tiles, fix rounds
+by bucket, the review survival curve, landings per day, spend per day, why work
+stopped to wait, a table per kind, and the eight tickets that went round most,
+each linking to its task page ([0123](decisions/0123-the-report-counts-what-the-log-holds.md) §7).
+`lingtai report` prints the same figures, because both call one function.
+
+- **The filters are the address.** `?window=today|7d`, `?from=&to=` (a range
+  wins over `window=`), `?kind=` repeated (an empty `kind=` is unclassified),
+  `?project=` and `?sort=cost`. A reload, a shared link and the back button all
+  keep them, and a date that does not parse falls back to seven days and says so.
+- **Two different dollars.** The window's spend is every run whose time falls in
+  the window, whatever became of its ticket; a ticket's own cost is all of that
+  ticket's cost, whenever it ran. They are not meant to match. Money is always a
+  reported figure, `~$x est.` and `n unknown` — an unknown run is never `$0.00`.
+- **The chip on its bar** says whether `ticket_report` and `spend` are at the
+  head: each render folds both first, and `current` means neither is behind.
+  `ticket_report behind 3` means events arrived after the page folded it, and
+  reloading folds them. A failed fold names its repair, `lingtai projection
+  rebuild ticket_report` or `lingtai projection rebuild spend`. A read that
+  fails outright puts one sentence where the panels were; the bar stays.
+
 ## Resetting the log
 
 `lingtai doctor`'s **log: predates the Hold event** row, and the refusal daemon

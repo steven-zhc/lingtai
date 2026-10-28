@@ -673,6 +673,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 : rest}
             {today.short === null ? null : ` · ${today.short}`}
           </Link>
+          {/* `/report` is a second way out of the reading and not a fifth
+              object: the same tab-inside-the-object argument #216 made for
+              the `+`, and for the same reason the row still counts four
+              (the-bar.md). */}
+          <Link
+            className="reading"
+            href={only === undefined ? '/report' : `/report?project=${encodeURIComponent(only)}`}
+            title="how the pipeline converges, what it landed and what it cost"
+          >
+            report
+          </Link>
           {/* One health, out of two facts that were two chips. `#64` asks
               whether what you are looking at is current and `#98` asks whether
               the process that moves it is running the code we merged; both are
