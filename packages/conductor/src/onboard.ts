@@ -71,6 +71,7 @@ import {
 } from '@lingtai/recipe'
 
 import { passCeiling } from './filter.ts'
+import { taken } from './pick-repository.ts'
 import { signedInHere } from './projects.ts'
 
 export interface AddOptions {
@@ -582,6 +583,16 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
 
   const stream = projectStream(repo)
   const existing = await eventStore.read(stream)
+  // The owner guard at the write itself: a check made earlier (the picker's, or
+  // `runGithubBranch`'s under `gh`) can be passed by two adds at once, and the
+  // append below is optimistic on the version read here, so this read is the
+  // one that decides — a later add of the same name by another owner is refused
+  // rather than written over the first's identity.
+  const holder = otherOwner(existing, owner)
+  if (holder !== null) {
+    log(taken({ slug: options.slug, repo, takenBy: holder }))
+    return 1
+  }
   await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
     {
       type: 'ProjectConfigured',
@@ -602,6 +613,12 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
 
   log(registrationLine(existing, repo, resolved))
   return 0
+}
+
+/** Who already holds this project's stream, when it is not `owner` (compared in any case); else null. */
+export function otherOwner(prior: readonly Envelope[], owner: string): string | null {
+  const holder = reduceProject(prior).owner
+  return holder !== null && holder.toLowerCase() !== owner.toLowerCase() ? holder : null
 }
 
 /**
