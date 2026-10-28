@@ -91,7 +91,7 @@ const eventsCommand = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('events').task))
 
-const doctor = Command.make('doctor', { json, noColor }, (args) =>
+const doctor = Command.make('doctor', { json, noColor, verbose: Options.boolean('verbose') }, (args) =>
   Effect.promise(async () => {
     if (args.noColor) applyNoColor()
     try {
@@ -105,7 +105,7 @@ const doctor = Command.make('doctor', { json, noColor }, (args) =>
       report.results.push(await releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
       Object.assign(report, tally(report.results))
       if (args.json) printJson('doctor', doctorJson(report))
-      else for (const line of renderDoctor(report)) console.log(line)
+      else for (const line of renderDoctor(report, { verbose: args.verbose })) console.log(line)
       // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
       // does not refuse on the same number: a failure marked `restartAnswers` exits
       // this 1 and lets a restart through — see `gatingFailures`. A deferred check

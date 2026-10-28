@@ -229,7 +229,7 @@ export interface InitWorld {
    * `./doctor.ts` dynamically; this file's header warns why an eager one would
    * break a fresh machine.
    */
-  doctor: () => Promise<string>
+  doctor: () => Promise<{ text: string; failed: boolean }>
 }
 
 const USAGE =
@@ -483,6 +483,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       `the board did not start — ${why}. Everything chosen above is kept, and lingtai init again continues from here`,
     )
 
+  let github = false
   if (askProject) {
     // Built from `world` directly rather than through a live default (#394's
     // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
@@ -556,9 +557,9 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       ])
       const path = recipePath(chosen.name, home)
       const text = await world.files.read(path)
-      world.log(heading(`Recipe  ${path}`))
-      world.log(text === null ? paint.fail('the recipe could not be read back') : text)
+      fact(world, 'Projects', [['recipe', text === null ? paint.fail('the recipe could not be read back') : path]])
     } else {
+      github = true
       if (chosen.app === 'already') {
         // Nothing upstream asked for a URL on this path — `app.configured` was
         // already true, so `boardUrl()` above was never called.
@@ -586,6 +587,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       world.log('next: lingtai add <owner>/<repo>')
     }
   } else if (app.configured) {
+    github = true
     // Nothing new was asked — the machine already has projects, told above —
     // but a configured App still has its one remaining screen: the wizard
     // that picks a repository for it. Nothing upstream asked for a board yet.
@@ -598,12 +600,17 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   }
 
   let doctorText: string
+  let doctorFailed: boolean
   try {
-    doctorText = await world.doctor()
+    // `failed` counts failures only, never warnings: a fresh machine nearly
+    // always warns, and `--verbose` on every first init would be noise.
+    ;({ text: doctorText, failed: doctorFailed } = await world.doctor())
   } catch (err) {
     doctorText = `doctor did not finish — ${(err as Error).message || String(err)}`
+    doctorFailed = true
   }
   world.log(doctorText)
+  let needBoard = false
 
   const started = boardSoFar()
   world.log(heading('Board'))
@@ -612,12 +619,14 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     // machine (#434 fix round) — `lingtai board` refuses by name rather than
     // confirm that, so the operator is told which is true before reaching for it.
     const running = await world.boardAt(port)
+    needBoard = running === null
     world.log(
       running !== null
         ? paint.muted(`the board was already running at ${running} — this started none`)
-        : `${paint.muted('no board was started')}\nnext: lingtai board`,
+        : paint.muted('no board was started'),
     )
   } else {
+    needBoard = 'refused' in started
     world.log(
       'refused' in started
         ? paint.fail(`the board did not start — ${started.refused}`)
@@ -625,6 +634,16 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
           ? paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again')
           : paint.muted(`the board was already running at ${started.url} — this started none`),
     )
+  }
+  // The GitHub paths end on their own `next:` lines above.
+  if (!github) {
+    const next = [
+      ...(doctorFailed ? ['lingtai doctor --verbose'] : []),
+      ...(needBoard ? ['lingtai board'] : []),
+      'lingtai ticket new',
+      'lingtai run',
+    ]
+    world.log(`next: ${next.join(' · ')}`)
   }
   return 0
 }
@@ -1046,7 +1065,8 @@ export function liveInitWorld(): InitWorld {
     // that outbound request is `doctor` and `upgrade`'s alone to make.
     doctor: async () => {
       const { doctorReport, formatReport } = await import('./doctor.ts')
-      return formatReport(await doctorReport())
+      const report = await doctorReport()
+      return { text: formatReport(report), failed: report.failed > 0 }
     },
   }
 }

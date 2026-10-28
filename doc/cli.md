@@ -700,7 +700,8 @@ Check everything that can be checked.
 Reads only — takes `--json` (version 1).
 
 ```text
-lingtai doctor [--json] [--no-color]
+lingtai doctor [--verbose] [--json] [--no-color]
+  Lists only what needs attention; --verbose lists every check, explained.
   Exits non-zero on any failure. Under --json a failing report is still the
   report document, on exit 1: test .error first (the report could not be
   produced), then .failed.
@@ -708,6 +709,7 @@ lingtai doctor [--json] [--no-color]
 
 ```sh
 lingtai doctor
+lingtai doctor --verbose
 lingtai doctor --json
 ```
 
