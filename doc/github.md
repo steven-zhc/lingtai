@@ -137,7 +137,7 @@ Callers hold the function and resolve it per `git` invocation.
 
 ## How the token reaches `git`, and the two ways it does not
 
-`packages/repo/src/git.ts:45`:
+`packages/repo/src/git.ts:60`:
 
 ```ts
 const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
@@ -166,6 +166,11 @@ env["GIT_TERMINAL_PROMPT"] = "0";
 
 > a hung credential prompt inside a daemon is indistinguishable from a slow
 > clone.
+
+A call that carries the token also gets `-c core.hooksPath=/dev/null` ahead of
+the subcommand, so no hook from the managed repository (a husky `pre-push`, a
+`pre-merge-commit`) runs while the token is in that environment. The `-c` is
+argv but carries no secret; a repository's own checks belong at `build:` (0060).
 
 ## The agent is given nothing
 
