@@ -20,6 +20,7 @@
  * function's.
  */
 import type { WaitId } from './action.ts'
+import { claimShapeOf } from './claims.ts'
 import type { Envelope } from './envelope.ts'
 import type { PayloadOf, SplitChild, Tier } from './events.ts'
 import { agentBranchOf } from './streams.ts'
@@ -222,6 +223,7 @@ export const emptyTicket: TicketState = {
  */
 const LIFECYCLE_EVENTS = new Set([
   'TicketClaimed',
+  'TicketContinued',
   'TicketReleased',
   'WaitStarted',
   'WaitResolved',
@@ -263,8 +265,14 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       }
     }
 
+    case 'TicketContinued':
     case 'TicketClaimed': {
       const d = event.data as PayloadOf<'TicketClaimed'>
+      // One rule for both forms (`claims.ts`). A continuation of a run nobody
+      // claimed continues nothing and records nothing.
+      if (claimShapeOf(event, state.runs) === 'continuation' && !state.runs.includes(d.runId)) {
+        return { ...state, ...at }
+      }
       return {
         ...state,
         ...at,

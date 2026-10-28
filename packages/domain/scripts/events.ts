@@ -235,6 +235,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
 export const STREAMS = {
   TicketDiscovered: ['ticket-'],
   TicketClaimed: ['ticket-'],
+  TicketContinued: ['ticket-'],
   TicketReleased: ['ticket-'],
   WaitStarted: ['ticket-'],
   WaitResolved: ['ticket-'],

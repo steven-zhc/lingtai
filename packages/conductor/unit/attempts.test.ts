@@ -151,6 +151,39 @@ describe('priorAttempts', () => {
     expect(priorAttempts([e('TicketClaimed', claim('pass-1')), e('TicketClaimed', claim('pass-1'))])).toHaveLength(1)
   })
 
+  /** The old form and `TicketContinued` give one output, and it is today's (#682). */
+  it('reads a TicketContinued as the old-form re-claim: one attempt, ended as the wait left it', () => {
+    const wait = {
+      waitId: 'wait-1' as PayloadOf<'WaitStarted'>['waitId'],
+      reason: {
+        _tag: 'MergeRefused' as const,
+        run: { runId: 'pass-1' },
+        reason: 'unexpected' as const,
+        raw: 'agent/59 does not merge into main',
+      },
+    }
+    const build = (continued: boolean) => {
+      const e = stream('ticket-lingtai-59')
+      return [
+        e('TicketClaimed', claim('pass-1')),
+        e('WaitStarted', wait),
+        continued
+          ? e('TicketContinued', { runId: 'pass-1', worker: 'conductor' })
+          : e('TicketClaimed', claim('pass-1')),
+      ]
+    }
+    const expected = [
+      {
+        n: 1,
+        runId: 'pass-1',
+        ended: 'blocked, asking: unexpected: agent/59 does not merge into main',
+        outcome: null,
+      },
+    ]
+    expect(priorAttempts(build(false))).toEqual(expected)
+    expect(priorAttempts(build(true))).toEqual(expected)
+  })
+
   /** An attempt that ended by asking a person ended, and the question is why. */
   it('reads a wait as an ending, with its question', () => {
     const e = stream('ticket-lingtai-59')
