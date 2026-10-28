@@ -41,24 +41,43 @@ export interface GitRunOptions {
   signal?: AbortSignal
 }
 
-export async function git(args: string[], options: GitRunOptions = {}): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...(options.env ?? process.env) }
-  // Resolved here, per invocation, rather than once by the caller — that is the
-  // whole point of accepting a function.
-  const token = typeof options.token === 'function' ? await options.token() : options.token
+/**
+ * What `git` is spawned with, given the already-resolved token.
+ *
+ * A call that carries a token also runs with `core.hooksPath=/dev/null`, so no
+ * code from the managed repository (a husky `pre-push`, say) runs while the
+ * token is in the child's environment. The `-c` is argv and carries no secret;
+ * git reads it only before the subcommand, so it goes first.
+ */
+export function gitInvocation(
+  args: string[],
+  token: string | undefined,
+  baseEnv: NodeJS.ProcessEnv,
+): { args: string[]; env: NodeJS.ProcessEnv } {
+  const env: NodeJS.ProcessEnv = { ...baseEnv }
+  let argv = args
   if (token) {
     const basic = Buffer.from(`x-access-token:${token}`).toString('base64')
     env['GIT_CONFIG_COUNT'] = '1'
     env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
     env['GIT_CONFIG_VALUE_0'] = `AUTHORIZATION: basic ${basic}`
+    argv = ['-c', 'core.hooksPath=/dev/null', ...args]
   }
   // Never prompt: a hung credential prompt inside a daemon is indistinguishable
   // from a slow clone.
   env['GIT_TERMINAL_PROMPT'] = '0'
+  return { args: argv, env }
+}
 
-  const { stdout } = await exec('git', args, {
+export async function git(args: string[], options: GitRunOptions = {}): Promise<string> {
+  // Resolved here, per invocation, rather than once by the caller — that is the
+  // whole point of accepting a function.
+  const token = typeof options.token === 'function' ? await options.token() : options.token
+  const invocation = gitInvocation(args, token, options.env ?? process.env)
+
+  const { stdout } = await exec('git', invocation.args, {
     cwd: options.cwd,
-    env,
+    env: invocation.env,
     maxBuffer: 32 * 1024 * 1024,
     signal: options.signal,
   })
