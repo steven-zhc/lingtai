@@ -68,7 +68,6 @@ import { estimateRow } from '@lingtai/domain/rate-card'
 import { withProjectionStore } from './choose.ts'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
-import type { TicketReportRow } from './ticket-report.ts'
 
 export const SPEND_TABLE = 'spend'
 
@@ -320,9 +319,4 @@ export async function readSpend(options: ReadSpendOptions = {}): Promise<SpendRo
   return withProjectionStore({ url: options.url, max: 1 }, (store) =>
     store.spend({ ticket: options.ticket, project: options.project, since: options.since }),
   )
-}
-
-/** `ticket_report`'s rows, one per ticket and ordered by ticket; none where no projector has built the table. */
-export async function readTicketReport(options: { url?: string; project?: string } = {}): Promise<TicketReportRow[]> {
-  return withProjectionStore({ url: options.url, max: 1 }, (store) => store.ticketReport({ project: options.project }))
 }

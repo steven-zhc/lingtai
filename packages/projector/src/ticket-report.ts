@@ -109,7 +109,11 @@ const json = <T>(value: unknown, fallback: T): T => {
   return (typeof value === 'string' ? JSON.parse(value) : value) as T
 }
 
-/** A `ticket_report` row as a reader hands it on: what the report reads, and none of the fold's own bookkeeping. */
+/**
+ * A `ticket_report` row as a reader sees it: what `report()` in the conductor
+ * takes, less the fold's own bookkeeping (`claims`, `rounds`, `open_intervals`,
+ * `applied_seq`). Declared here because the conductor depends on this package.
+ */
 export interface TicketReportRow {
   ticket: string
   project: string | null
@@ -128,15 +132,12 @@ export interface TicketReportRow {
   cost: Record<string, PurposeCost>
 }
 
-/**
- * A raw `ticket_report` record → `TicketReportRow`, for both stores: jsonb is an
- * object from Postgres and a string from SQLite, and `bigint` arrives as a string.
- */
-export function toTicketReportRow(row: Record<string, unknown>): TicketReportRow {
+/** Both stores' one mapper: SQLite hands JSON back as text and Postgres as a value, `json` takes either. */
+export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow {
   return {
-    ticket: row.ticket as string,
-    project: (row.project as string | null) ?? null,
-    kind: (row.kind as string | null) ?? null,
+    ticket: String(row.ticket),
+    project: (row.project as string | null | undefined) ?? null,
+    kind: (row.kind as string | null | undefined) ?? null,
     outcome: row.outcome as TicketReportRow['outcome'],
     outcomeAt: row.outcome_at === null || row.outcome_at === undefined ? null : new Date(row.outcome_at as string),
     passes: Number(row.passes),

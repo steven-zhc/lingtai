@@ -31,7 +31,8 @@ import type {
 } from './store.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
-import { toTicketReportRow } from './ticket-report.ts'
+import { ticketReportRowOf } from './ticket-report.ts'
+import type { TicketReportRow } from './ticket-report.ts'
 
 /**
  * `checkpoints.updated_at` is `NOT NULL` with no database default —
@@ -409,15 +410,15 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
       }
     },
 
-    async ticketReport(query: TicketReportQuery) {
+    async ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]> {
       try {
         const r =
           query.project === undefined
             ? await pool.query('select * from ticket_report order by ticket')
             : await pool.query('select * from ticket_report where project = $1 order by ticket', [query.project])
-        return r.rows.map(toTicketReportRow)
+        return r.rows.map(ticketReportRowOf)
       } catch (err) {
-        // `spend`'s own reason: no table is no report, not a failure.
+        // `spend`'s own reason: no table is no tickets, not a failure.
         if ((err as { code?: string }).code === '42P01') return []
         throw err
       }

@@ -12,6 +12,7 @@ Generated from `apps/cli/src/commands.ts` and the parser; `lingtai --help` print
 | ask for one ticket ahead of the queue | [lingtai now](#lingtai-now) |
 | follow a run’s log, from the beginning | [lingtai attach](#lingtai-attach) |
 | the minor findings passing steps raised | [lingtai backlog](#lingtai-backlog) |
+| what the pipeline did over a window of days | [lingtai report](#lingtai-report) |
 | a project’s own tickets, where the recipe keeps them | [lingtai ticket](#lingtai-ticket) |
 | serve, stop or inspect the board | [lingtai board](#lingtai-board) |
 | the values a project’s agents are given | [lingtai env](#lingtai-env) |
@@ -159,6 +160,34 @@ lingtai backlog decline <project> <key> --reason <why>
 ```sh
 lingtai backlog lingtai
 lingtai backlog accept lingtai <findingId> --kind tech-debt
+```
+
+### lingtai report
+
+What the pipeline did over a window of days.
+
+Reads only — takes `--json` (version 1).
+
+```text
+lingtai report [--window today|7d] [--kind <k>] [--project <p>]
+                [--json] [--no-color]
+lingtai report --from <date> --to <date> [--kind <k>] [--project <p>]
+  Tickets landed, closed and open, the fix rounds and cost of the
+  landed ones, spend by kind, and the tickets that went round most.
+  --window <w>    today, or 7d: the last seven days (the default)
+  --from <date>   first day of a range, as YYYY-MM-DD, local time
+  --to <date>     last day of it, included; with --from, never with
+                  --window
+  --kind <k>      one kind; unclassified tickets are left out
+  --project <p>   one project; every project by default
+  --json          one document instead of the sections
+  Only reads: it changes nothing, and a projection that is behind
+  is said on stderr while the figures are still printed.
+```
+
+```sh
+lingtai report
+lingtai report --window today --project lingtai --json
 ```
 
 ### lingtai ticket

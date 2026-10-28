@@ -234,17 +234,17 @@ export interface BacklogQuery {
  * row — the whole of `spend`, which is a lot of history on a log this old, so
  * a caller that wants the board's own window passes `since` too.
  */
+export interface TicketReportQuery {
+  /** Absent reads every project's tickets. */
+  project?: string
+}
+
 export interface SpendQuery {
   /** One ticket, or several — a board render asks for every card at once. */
   ticket?: string | readonly string[]
   project?: string
   /** `at >= since`. Absent reads from the beginning, which `readSpend({ ticket })` wants. */
   since?: Date
-}
-
-/** What `readTicketReport` asks of a store. No window: placing a ticket needs all of its pass times, which the report does. */
-export interface TicketReportQuery {
-  project?: string
 }
 
 /**
@@ -337,7 +337,11 @@ export interface ProjectionStore {
   /** One `RunSpent` per row, oldest first — the order a ledger is read in. */
   spend(query: SpendQuery): Promise<SpendRow[]>
 
-  /** One `ticket_report` row per ticket; a database no projector has started has no table, and that is none. */
+  /**
+   * One `ticket_report` row per ticket, in ticket order. Not narrowed by a
+   * window: which window an open ticket belongs to is the report's to say.
+   * A database no projector has ever started has no table, and that is no rows.
+   */
   ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]>
 
   /** Releases whatever this store holds open. */
