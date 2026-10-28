@@ -45,6 +45,15 @@ export interface DetectedSetup {
   notes: string[]
 }
 
+/** What one stack's detector says: whether it is at the root, and what it would run. */
+export type StackFinding = { presence: 'present' | 'absent' | 'unknown' } & DetectedSetup
+
+export interface StackDetector {
+  /** The word a note names this stack by. */
+  stack: string
+  detect(reader: SetupReader): Promise<StackFinding>
+}
+
 type Manager = 'pnpm' | 'yarn' | 'npm'
 
 const LOCKFILES: { path: string; manager: Manager; install: string }[] = [
@@ -84,9 +93,12 @@ function skipReasonFor(name: string, command: string): string | null {
   return null
 }
 
-async function detectInstall(
-  reader: SetupReader,
-): Promise<{ install: DetectedSetup['install']; manager: Manager | null; notes: string[] }> {
+async function detectInstall(reader: SetupReader): Promise<{
+  install: DetectedSetup['install']
+  manager: Manager | null
+  notes: string[]
+  uncertain: boolean
+}> {
   const notes: string[] = []
   const present: typeof LOCKFILES = []
   // A lockfile whose `has` rejected is neither present nor confirmed absent
@@ -102,7 +114,7 @@ async function detectInstall(
   }
   if (present.length === 0) {
     notes.push(uncertain ? 'could not tell whether a lockfile is at the root' : 'no lockfile at the root')
-    return { install: null, manager: null, notes }
+    return { install: null, manager: null, notes, uncertain }
   }
   const [chosen, ...rest] = present
   for (const other of rest) {
@@ -112,57 +124,108 @@ async function detectInstall(
     install: { run: chosen!.install, because: `${chosen!.path} is at the root` },
     manager: chosen!.manager,
     notes,
+    uncertain,
   }
 }
 
-export async function detectSetup(reader: SetupReader): Promise<DetectedSetup> {
-  const { install, manager, notes } = await detectInstall(reader)
+const nodeDetector: StackDetector = {
+  stack: 'Node',
+  async detect(reader) {
+    const { install, manager, notes, uncertain } = await detectInstall(reader)
+    // A lockfile alone is Node (the note below says the package.json is
+    // missing), so presence is "anything confirmed", not "has package.json".
+    const lockfileFound = install !== null
+    const finding = (
+      presence: StackFinding['presence'],
+      build: DetectedSetup['build'],
+      skipped: DetectedSetup['skipped'],
+    ) => ({
+      presence,
+      install,
+      build,
+      skipped,
+      notes,
+    })
+    const unsure = (): StackFinding['presence'] => (uncertain ? 'unknown' : 'absent')
 
-  const build: DetectedSetup['build'] = []
-  const skipped: DetectedSetup['skipped'] = []
+    const build: DetectedSetup['build'] = []
+    const skipped: DetectedSetup['skipped'] = []
 
-  let hasPackageJson: boolean
-  try {
-    hasPackageJson = await reader.has('package.json')
-  } catch {
-    notes.push('could not tell whether package.json is at the root')
-    return { install, build, skipped, notes }
+    let hasPackageJson: boolean
+    try {
+      hasPackageJson = await reader.has('package.json')
+    } catch {
+      notes.push('could not tell whether package.json is at the root')
+      return finding(lockfileFound ? 'present' : 'unknown', build, skipped)
+    }
+
+    if (!hasPackageJson) {
+      notes.push('no package.json at the root')
+      return finding(lockfileFound ? 'present' : unsure(), build, skipped)
+    }
+
+    const text = await reader.read('package.json')
+    if (text === null) {
+      notes.push('package.json could not be read')
+      return finding('present', build, skipped)
+    }
+
+    let scripts: Record<string, string>
+    try {
+      const parsed = JSON.parse(text) as { scripts?: Record<string, unknown> }
+      scripts = Object.fromEntries(
+        Object.entries(parsed.scripts ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+    } catch {
+      notes.push('package.json does not parse')
+      return finding('present', build, skipped)
+    }
+
+    for (const [name, command] of Object.entries(scripts)) {
+      const why = skipReasonFor(name, command)
+      if (why !== null) skipped.push({ script: name, why })
+    }
+    const skippedNames = new Set(skipped.map((s) => s.script))
+
+    for (const { key, names } of BUILD_ORDER) {
+      const name = names.find((n) => Object.hasOwn(scripts, n))
+      if (name === undefined || skippedNames.has(name)) continue
+      const command = scripts[name]!
+      build.push({ name: key, run: runFor(manager, name), because: `\`${name}\` runs \`${command}\`` })
+    }
+
+    return finding('present', build, skipped)
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector]
+
+/**
+ * Asks each detector in order, over the same reader. The first stack present
+ * supplies `install` and `build`; every later one is only named in a note, so
+ * nothing is merged into a command nobody was shown. A stack that could not
+ * tell keeps its notes — its "could not tell" is never turned into silence.
+ */
+export async function detectSetup(
+  reader: SetupReader,
+  detectors: readonly StackDetector[] = DETECTORS,
+): Promise<DetectedSetup> {
+  const findings: { stack: string; found: StackFinding }[] = []
+  for (const detector of detectors) findings.push({ stack: detector.stack, found: await detector.detect(reader) })
+
+  const first = findings.find((f) => f.found.presence === 'present')
+  if (first === undefined) {
+    return { install: null, build: [], skipped: [], notes: findings.flatMap((f) => f.found.notes) }
   }
-
-  if (!hasPackageJson) {
-    notes.push('no package.json at the root')
-    return { install, build, skipped, notes }
+  const notes = [...first.found.notes]
+  for (const other of findings) {
+    if (other === first) continue
+    if (other.found.presence === 'present') {
+      notes.push(`${other.stack} is also at the root; ${first.stack} was used`)
+    } else if (other.found.presence === 'unknown') {
+      notes.push(...other.found.notes)
+    }
   }
-
-  const text = await reader.read('package.json')
-  if (text === null) {
-    notes.push('package.json could not be read')
-    return { install, build, skipped, notes }
-  }
-
-  let scripts: Record<string, string>
-  try {
-    const parsed = JSON.parse(text) as { scripts?: Record<string, unknown> }
-    scripts = Object.fromEntries(
-      Object.entries(parsed.scripts ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    )
-  } catch {
-    notes.push('package.json does not parse')
-    return { install, build, skipped, notes }
-  }
-
-  for (const [name, command] of Object.entries(scripts)) {
-    const why = skipReasonFor(name, command)
-    if (why !== null) skipped.push({ script: name, why })
-  }
-  const skippedNames = new Set(skipped.map((s) => s.script))
-
-  for (const { key, names } of BUILD_ORDER) {
-    const name = names.find((n) => Object.hasOwn(scripts, n))
-    if (name === undefined || skippedNames.has(name)) continue
-    const command = scripts[name]!
-    build.push({ name: key, run: runFor(manager, name), because: `\`${name}\` runs \`${command}\`` })
-  }
-
+  const { install, build, skipped } = first.found
   return { install, build, skipped, notes }
 }

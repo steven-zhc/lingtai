@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { detectSetup, type SetupReader } from '../src/detect-setup.ts'
+import { DETECTORS, detectSetup, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
 
 function reader(files: Record<string, string>, opts: { haveNotRead?: string[] } = {}): SetupReader {
   const haveNotRead = new Set(opts.haveNotRead ?? [])
@@ -132,5 +132,34 @@ describe('detectSetup', () => {
   it('a `has` that is true while `read` is null still detects the lockfile (the large-lockfile case)', async () => {
     const result = await detectSetup(reader({}, { haveNotRead: ['pnpm-lock.yaml'] }))
     expect(result.install).toEqual({ run: 'pnpm install --frozen-lockfile', because: 'pnpm-lock.yaml is at the root' })
+  })
+
+  describe('more than one stack at the root', () => {
+    const stub: StackDetector = {
+      stack: 'Stub',
+      detect: async () => ({
+        presence: 'present',
+        install: { run: 'stub install', because: 'stub.lock is at the root' },
+        build: [{ name: 'test', run: 'stub test', because: 'stub' }],
+        skipped: [{ script: 'stub-e2e', why: 'stub' }],
+        notes: ['a stub note'],
+      }),
+    }
+    const files = { 'pnpm-lock.yaml': '', 'package.json': pkg({ lint: 'eslint .' }) }
+
+    it('the first in the order supplies the commands and the other is named in a note', async () => {
+      const result = await detectSetup(reader(files), [...DETECTORS, stub])
+      expect(result.install?.run).toBe('pnpm install --frozen-lockfile')
+      expect(result.build.map((b) => b.run)).toEqual(['pnpm lint'])
+      expect(result.skipped).toEqual([])
+      expect(result.notes.at(-1)).toBe('Stub is also at the root; Node was used')
+    })
+
+    it('the order decides, not Node', async () => {
+      const result = await detectSetup(reader(files), [stub, ...DETECTORS])
+      expect(result.install?.run).toBe('stub install')
+      expect(result.build.map((b) => b.run)).toEqual(['stub test'])
+      expect(result.notes).toEqual(['a stub note', 'Node is also at the root; Stub was used'])
+    })
   })
 })
