@@ -100,6 +100,8 @@ interface State {
   /** `stream:round`, each distinct pair once. */
   rounds: string[]
   open: OpenInterval[]
+  /** The last event seq folded into this row: an event at or below it is a replay and changes nothing. */
+  appliedSeq: bigint
 }
 
 const json = <T>(value: unknown, fallback: T): T => {
@@ -122,6 +124,7 @@ const fresh = (ticket: string): State => ({
   claims: {},
   rounds: [],
   open: [],
+  appliedSeq: 0n,
 })
 
 async function load(ctx: ProjectionContext, ticket: string): Promise<State> {
@@ -142,6 +145,7 @@ async function load(ctx: ProjectionContext, ticket: string): Promise<State> {
     claims: json(row.claims, {}),
     rounds: json(row.rounds, []),
     open: json(row.open_intervals, []),
+    appliedSeq: BigInt(String(row.applied_seq ?? 0)),
   }
 }
 
@@ -151,9 +155,9 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
     `insert into ticket_report
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
-        claims, rounds, open_intervals)
+        claims, rounds, open_intervals, applied_seq)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb,
-             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb)
+             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19)
      on conflict (ticket) do update set
        project = excluded.project, kind = excluded.kind, outcome = excluded.outcome,
        outcome_at = excluded.outcome_at, passes = excluded.passes, fix_rounds = excluded.fix_rounds,
@@ -161,7 +165,8 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
        intervals_open = excluded.intervals_open, unknown_claims = excluded.unknown_claims,
        pass_times = excluded.pass_times, reviews = excluded.reviews, waits = excluded.waits,
        cost = excluded.cost, claims = excluded.claims, rounds = excluded.rounds,
-       open_intervals = excluded.open_intervals`,
+       open_intervals = excluded.open_intervals, applied_seq = excluded.applied_seq
+     where ticket_report.applied_seq < excluded.applied_seq`,
     [
       s.ticket,
       project,
@@ -181,6 +186,7 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
       JSON.stringify(s.claims),
       JSON.stringify(s.rounds),
       JSON.stringify(s.open),
+      s.appliedSeq.toString(),
     ],
   )
 }
@@ -267,7 +273,8 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         cost            jsonb not null,
         claims          jsonb not null,
         rounds          jsonb not null,
-        open_intervals  jsonb not null
+        open_intervals  jsonb not null,
+        applied_seq     bigint not null default 0
       )`)
     await ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
     // Which ticket a pass or chat stream is about — this projection's own, never `spend_stream`.
@@ -315,7 +322,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
               s.passes += 1
               s.passTimes.push(event.at.toISOString())
               s.claims[d.runId] ??= false
-              if (event.type === 'TicketClaimed' && d.kind !== null) s.kind = d.kind
+              if (event.type === 'TicketClaimed') s.kind = d.kind
             }
             // A new claim after a close reopens the ticket; a landing stays.
             if (s.outcome === 'closed') {
@@ -463,14 +470,20 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         ticket = await ticketOf(ctx, event.streamId)
         if (ticket !== null) {
           const s = await load(ctx, ticket)
-          if (signOfLife(s, event, event.streamId)) await save(ctx, s)
+          if (s.appliedSeq < event.seq && signOfLife(s, event, event.streamId)) {
+            s.appliedSeq = event.seq
+            await save(ctx, s)
+          }
         }
         continue
       }
       if (ticket === null || change === null) continue
 
       const s = await load(ctx, ticket)
+      // A replay (a second follower from an older cursor) must not add twice.
+      if (s.appliedSeq >= event.seq) continue
       change(s)
+      s.appliedSeq = event.seq
       // A pass-stream event is also a sign of life, whatever else it did.
       if (isPassStream(event.streamId)) signOfLife(s, event, event.streamId)
       await save(ctx, s)
