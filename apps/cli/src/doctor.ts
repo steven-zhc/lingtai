@@ -1055,13 +1055,22 @@ export async function daemonLiveness(
   }
 }
 
+/** The `spend` projection's lag right now; undefined where it cannot be read. */
+async function spendLagNow(lags: () => ReturnType<typeof projectionLag>): Promise<bigint | undefined> {
+  try {
+    return (await lags()).find((l) => l.name === 'spend')?.lag
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * The fetched half of the rate card (#658): when prices were last fetched, and
  * what the last attempt said. A failed fetch is a warning, never a failure —
  * pricing reads the snapshot and is unaffected. Never fetched is the offline
  * machine's ordinary state, said plainly.
  */
-export function ratesCheck(from: NodeJS.ProcessEnv = process.env): CheckResult {
+export function ratesCheck(from: NodeJS.ProcessEnv = process.env, spendLag?: bigint): CheckResult {
   const name = 'rates'
   const note = readFetchNote(from)
   if (note === null) {
@@ -1084,7 +1093,22 @@ export function ratesCheck(from: NodeJS.ProcessEnv = process.env): CheckResult {
   const plan = readRateSnapshot(from).some((r) => r.source !== undefined && r.model.startsWith('gpt'))
     ? ". A Codex user on a ChatGPT plan: an estimate from per-token prices is not that plan's bill; the daily ceiling still counts it"
     : ''
-  return { name, status: 'ok', detail: `last fetched ${day}, ok${rejected}${plan}` }
+  const priced =
+    note.priced === undefined ? '' : `; priced ${note.priced.join(', ')}; ${note.rebuilt ?? 'spend not rebuilt'}`
+  // Whether `spend` is behind *now* decides it, not what the refresh once said:
+  // a manual rebuild or the live subscriber catching up clears it. The note is
+  // the fallback only where the projection could not be read.
+  const stuck =
+    note.priced !== undefined &&
+    (spendLag === undefined ? !/rebuilt — at \S+, 0 behind/.test(note.rebuilt ?? '') : spendLag !== 0n)
+  if (stuck) {
+    return {
+      name,
+      status: 'warn',
+      detail: `last fetched ${day}, ok${priced}${rejected} — run \`lingtai projection rebuild spend\``,
+    }
+  }
+  return { name, status: 'ok', detail: `last fetched ${day}, ok${priced}${rejected}${plan}` }
 }
 
 /**
@@ -2671,7 +2695,7 @@ export async function runDoctor(
     results.push(await daemonLiveness(reach.status, reach.pause))
     results.push(await daemonCurrency(reach.status))
     results.push(await spendToday(reach.spend))
-    results.push(ratesCheck())
+    results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag()))))
     results.push(await passRefusals(load))
     results.push(await conductorLock(reach.lockHolder))
     results.push(await readableTypes(queries))
@@ -2710,7 +2734,7 @@ export async function runDoctor(
     // for thirty-nine minutes only one of them was measured.
     results.push(await daemonCurrency())
     results.push(await spendToday())
-    results.push(ratesCheck())
+    results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag())))
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).

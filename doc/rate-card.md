@@ -154,6 +154,12 @@ snapshot's prices. Pricing reads the snapshot and never the network, and the est
 estimate that used it; every other estimate reads `~$X est.` with no note. `lingtai doctor`'s
 `rates:` line says when it was last fetched and why a fetch failed.
 
+**A model that gains its first price rebuilds `spend`** (#680): runs of it were folded
+unpriced, so the refresh that prices it replays the projection and every row is priced by
+its own day (*priced gpt-6-astra; spend rebuilt* on the `rates:` line). A refresh that only
+changes the price of a model already priced rebuilds nothing. While it replays, the daily
+ceiling takes no new work.
+
 ## Not a billing record
 
 Every number computed through this file is an **estimate from token counts**. The

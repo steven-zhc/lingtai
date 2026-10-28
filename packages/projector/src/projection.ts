@@ -147,15 +147,21 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
   let subscription: Subscription | null = null
   let failure: unknown = null
 
+  /** Where this runner's follow began, then the last batch it committed: the fence for `advance`. */
+  let cursor = 0n
+
   async function commitBatch(events: readonly Envelope[]): Promise<void> {
     const last = events[events.length - 1]
     if (!last) return
     const store = await landing()
     await store.transact(async (ctx: ProjectionContext) => {
       await projection.apply(events, ctx)
-      // The whole point: this is not a separate write.
-      await store.advance(ctx, projection.name, last.seq)
+      // The whole point: this is not a separate write. Fenced on `cursor`, so a
+      // rebuild in any process that rewound the checkpoint refuses this batch
+      // rather than have it carried to the head past unfolded history.
+      await store.advance(ctx, projection.name, last.seq, cursor)
     })
+    cursor = last.seq
   }
 
   async function follow(): Promise<void> {
@@ -171,6 +177,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     }
 
     const fromSeq = await (await landing()).checkpoint(projection.name)
+    cursor = fromSeq
     const sub = subscribe({
       fromSeq,
       store,

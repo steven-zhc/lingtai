@@ -45,6 +45,7 @@ import { configPath } from './init.ts'
 import { symbol } from './output.ts'
 import { pauseCommand } from './pause.ts'
 import { PROJECTIONS } from './projection.ts'
+import { trackLiveSpend } from './projector.ts'
 import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
@@ -195,7 +196,7 @@ export async function daemonCommand(
   // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
   // `integration/restart.test.ts` runs and not a copy of it (#167).
   const opened = await openDaemon(restart, {
-    start: () => startDaemon({ projections: PROJECTIONS, log: (line) => console.log(line) }),
+    start: () => startDaemon({ projections: PROJECTIONS, log: (line) => console.log(line), onRunner: trackLiveSpend }),
     code: async () => {
       // The beacon. One timer in the whole system, and it decides nothing — it
       // says "still here", which is the difference between a board that is behind

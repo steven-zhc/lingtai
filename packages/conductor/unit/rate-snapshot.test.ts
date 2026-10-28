@@ -7,6 +7,7 @@ import { LITELLM_FIXTURE } from '@lingtai/domain/test/litellm-fixture'
 import { describe, expect, it } from 'vitest'
 
 import {
+  newlyPriced,
   readRateSnapshot,
   ratesDue,
   realRatePorts,
@@ -66,6 +67,67 @@ describe('refreshRates', () => {
     const changed = { 'gpt-6-astra': { ...LITELLM_FIXTURE['gpt-6-astra'], input_cost_per_token: 0.00002 } }
     await refreshRates({ ...p, table: async () => changed })
     expect(stored().map((r) => [r.from, r.input])).toEqual([['2026-10-27', 20]])
+  })
+})
+
+describe('a model that gains its first price (#680)', () => {
+  it('calls rebuild once, after the write, for a first row', async () => {
+    const order: string[] = []
+    const { p, log } = ports({
+      write: () => order.push('write'),
+      rebuild: async (priced) => {
+        order.push(`rebuild ${priced.join(',')}`)
+        return 'spend rebuilt'
+      },
+    })
+    await refreshRates(p)
+    expect(order).toEqual(['write', 'rebuild gpt-6-astra'])
+    expect(log.notes[0]).toMatchObject({ ok: true, priced: ['gpt-6-astra'], rebuilt: 'spend rebuilt' })
+  })
+
+  it('does not rebuild when only a known model’s price changes', async () => {
+    let rebuilds = 0
+    const { p } = ports({
+      rebuild: async () => {
+        rebuilds += 1
+        return ''
+      },
+    })
+    await refreshRates(p)
+    expect(rebuilds).toBe(1)
+    const changed = { 'gpt-6-astra': { ...LITELLM_FIXTURE['gpt-6-astra'], input_cost_per_token: 0.00002 } }
+    await refreshRates({ ...p, table: async () => changed })
+    expect(rebuilds).toBe(1)
+  })
+
+  it('does not rebuild after a failed fetch', async () => {
+    let rebuilds = 0
+    const { p } = ports({
+      table: async () => {
+        throw new Error('HTTP 503')
+      },
+      rebuild: async () => {
+        rebuilds += 1
+        return ''
+      },
+    })
+    await refreshRates(p)
+    expect(rebuilds).toBe(0)
+  })
+
+  it('a rebuild that throws is an outcome on an ok note', async () => {
+    const { p, log } = ports({
+      rebuild: async () => {
+        throw new Error('boom')
+      },
+    })
+    await refreshRates(p)
+    expect(log.notes[0]).toMatchObject({ ok: true, rebuilt: 'rebuild failed: boom' })
+  })
+
+  it('newlyPriced skips withdrawn rows and models already known', () => {
+    const row = (model: string, withdrawn?: true) => ({ model, withdrawn }) as unknown as RateRow
+    expect(newlyPriced([row('a')], [row('a'), row('b'), row('c', true)])).toEqual(['b'])
   })
 })
 

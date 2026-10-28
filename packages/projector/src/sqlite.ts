@@ -39,7 +39,7 @@ import type { TriageResult } from '@lingtai/domain/wait'
 
 import type { BacklogEntry } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
-import { columnOf } from './store.ts'
+import { CheckpointRewoundError, columnOf } from './store.ts'
 import type {
   BacklogQuery,
   ProjectionContext,
@@ -562,14 +562,19 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
     // and run on the connection the transaction is open on — `translate` is for
     // the projections' own SQL and nothing else. `now` is spelled as the event
     // store spells it, so one file holds one format of time.
-    async advance(_ctx, name, seq) {
-      all(
+    async advance(_ctx, name, seq, from) {
+      const moved = all(
         `insert into checkpoints (name, last_seq, updated_at)
          values (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          on conflict (name) do update
-           set last_seq = excluded.last_seq, updated_at = excluded.updated_at`,
-        [name, seq],
+           set last_seq = case when ? is null then excluded.last_seq
+                               else max(checkpoints.last_seq, excluded.last_seq) end,
+               updated_at = excluded.updated_at
+           where ? is null or checkpoints.last_seq >= ?
+         returning name`,
+        [name, seq, from ?? null, from ?? null, from ?? 0],
       )
+      if (from !== undefined && moved.length === 0) throw new CheckpointRewoundError(name)
     },
 
     async register(_ctx, name) {

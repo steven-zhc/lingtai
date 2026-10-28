@@ -51,6 +51,18 @@ export interface ProjectionDrift {
   unexpected: readonly string[]
 }
 
+/** A fenced `advance` found the checkpoint rewound below where its runner read from. */
+export class CheckpointRewoundError extends Error {
+  // Assigned in the body: a parameter property is refused by Node's type stripping.
+  readonly projection: string
+
+  constructor(projection: string) {
+    super(`the ${projection} checkpoint was rewound by a rebuild under this runner; its batch was not committed`)
+    this.name = 'CheckpointRewoundError'
+    this.projection = projection
+  }
+}
+
 /**
  * A projection whose table no longer matches its DDL, refused rather than
  * followed.
@@ -254,8 +266,16 @@ export interface ProjectionStore {
   /** How far `name` has read. `0n` for a projection with no checkpoint row. */
   checkpoint(name: string): Promise<bigint>
 
-  /** Moves `name`'s checkpoint to `seq`. Inside the fold's transaction, always. */
-  advance(ctx: ProjectionContext, name: string, seq: bigint): Promise<void>
+  /**
+   * Moves `name`'s checkpoint to `seq`. Inside the fold's transaction, always.
+   *
+   * With `from`, the move is **fenced**: it throws, rolling the batch back, when
+   * the stored checkpoint is below `from` — a rebuild rewound it after this
+   * caller read where to start. That is the one check that holds across
+   * processes, since a follower in another process shares the row and not any
+   * in-memory registry.
+   */
+  advance(ctx: ProjectionContext, name: string, seq: bigint, from?: bigint): Promise<void>
 
   /**
    * Puts a row down at zero without moving an existing one.

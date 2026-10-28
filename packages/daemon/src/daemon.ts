@@ -62,6 +62,8 @@ export interface DaemonOptions {
    * the order below can be asserted without a database (#451).
    */
   predatesHold?: () => Promise<LogPredatesHoldError | null>
+  /** Told of each runner as it starts, so the process can stand one down around a rebuild (#680). */
+  onRunner?: (projection: Projection, runner: ProjectionRunner) => void
 }
 
 export type DaemonStart =
@@ -184,6 +186,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
       runners.push(runner)
       try {
         await runner.start()
+        options.onRunner?.(projection, runner)
       } catch (err) {
         // Said here, beside the lag, rather than left to the throw on the way
         // out. A shape that has drifted from its table is the one projection

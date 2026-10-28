@@ -274,6 +274,36 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('refuses a fenced advance once a rebuild rewound the checkpoint below it (#680)', async () => {
+      const f = await make()
+      const n = 'projection_contract_fence'
+      try {
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 5n))
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 9n, 5n))
+        expect(await f.store.checkpoint(n)).toBe(9n)
+        await f.store.transact((ctx) => f.store.rewind(ctx, n))
+        await expect(f.store.transact((ctx) => f.store.advance(ctx, n, 12n, 9n))).rejects.toThrow(/rewound/)
+        expect(await f.store.checkpoint(n)).toBe(0n)
+      } finally {
+        await f.close()
+      }
+    })
+
+    it('a slower follower committing behind a faster one does not lower the checkpoint (#680)', async () => {
+      const f = await make()
+      const n = 'projection_contract_fence_order'
+      try {
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 100n))
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 102n, 100n))
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 101n, 100n))
+        expect(await f.store.checkpoint(n)).toBe(102n)
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 103n, 102n))
+        expect(await f.store.checkpoint(n)).toBe(103n)
+      } finally {
+        await f.close()
+      }
+    })
+
     it("reports a checkpoint's lag against the head it can see", async () => {
       const f = await make()
       const n = 'projection_contract_ledger'
