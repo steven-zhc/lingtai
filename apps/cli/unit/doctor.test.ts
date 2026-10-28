@@ -18,12 +18,14 @@ import type { ProjectFilter } from '@lingtai/conductor'
 import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
+import type { GhRun } from '@lingtai/github'
 import type { Projection } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import {
   areaOf,
   type DoctorReach,
+  ghLogin,
   nodeRow,
   postgresOnlyRows,
   recipeRow,
@@ -426,5 +428,59 @@ describe('spendToday names the unknown runs', () => {
     const r = await spendToday(async () => ({ day, ceilingUsd: 50 }))
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
+  })
+})
+
+describe('github: gh login', () => {
+  const GH_MACHINE = { LINGTAI_HOME: '/nonexistent/lingtai-home', LINGTAI_GITHUB_AUTH: 'gh' }
+  const hosts = (entry: unknown) => JSON.stringify({ hosts: { 'github.com': [entry] } })
+  const signedIn =
+    (scopes: string): GhRun =>
+    async () => ({
+      code: 0,
+      stdout: hosts({ state: 'success', active: true, login: 'op', scopes }),
+      stderr: '',
+    })
+
+  it('is absent on a machine that is not on gh', async () => {
+    expect(await ghLogin({ LINGTAI_HOME: '/nonexistent/lingtai-home' }, signedIn('repo,workflow'))).toBeNull()
+  })
+
+  it('is ok signed in with repo and workflow', async () => {
+    const row = await ghLogin(GH_MACHINE, signedIn('gist, repo, workflow'))
+    expect(row).toMatchObject({ name: 'github: gh login', status: 'ok' })
+  })
+
+  it('fails naming gh auth login when signed out', async () => {
+    const out: GhRun = async () => ({
+      code: 1,
+      stdout: hosts({ state: 'error', active: true }),
+      stderr: '',
+    })
+    const row = await ghLogin(GH_MACHINE, out)
+    expect(row?.status).toBe('fail')
+    expect(row?.detail).toContain('gh auth login')
+  })
+
+  it('fails naming the refresh command when workflow is missing', async () => {
+    const row = await ghLogin(GH_MACHINE, signedIn('repo'))
+    expect(row?.status).toBe('fail')
+    expect(row?.detail).toContain('gh auth refresh --hostname github.com --scopes workflow')
+  })
+
+  it('skips the App credentials row on a gh machine instead of telling it to configure an App', async () => {
+    const report = await runDoctor(
+      GH_MACHINE,
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [],
+      {
+        ...reach,
+        gh: signedIn('repo,workflow'),
+      },
+    )
+    expect(find(report.results, 'github: app credentials').detail).toContain('github.auth is gh')
+    expect(find(report.results, 'github: gh login').status).toBe('ok')
   })
 })

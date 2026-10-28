@@ -70,7 +70,7 @@ describe('reconcile, a project with no owner', () => {
     ])
 
     const { clients, unresolved } = await clientsForProjects([project], {
-      hasApp: () => false,
+      hasAuth: () => false,
       // Never reached: there is no GitHub client to build for a project with
       // no owner.
       clientFor: () => {

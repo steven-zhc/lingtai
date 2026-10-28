@@ -1407,5 +1407,17 @@ export function githubAuth(from: NodeJS.ProcessEnv = process.env): GitHubAuth {
 /** Whether any GitHub auth is configured, without throwing to find out. */
 export function hasGitHubAuth(from: NodeJS.ProcessEnv = process.env): boolean {
   const elected = githubAuthElection(from)
-  return !('refused' in elected) && elected.kind !== null
+  if ('refused' in elected || elected.kind === null) return false
+  // An elected `app` with half a key is not usable, as `hasGitHubApp` already says; `gh` is checked by doctor.
+  return elected.kind === 'gh' || hasGitHubApp(from)
+}
+
+/**
+ * What a project's GitHub client is built from: `{ kind: 'gh' }` where the machine
+ * is elected to `gh` — and `githubApp()` is not called there, so no installation is
+ * ever asked for — and the App's credentials otherwise. Throws as `githubAuth` and
+ * `githubApp` do.
+ */
+export function githubClientAuth(from: NodeJS.ProcessEnv = process.env): GitHubAppCredentials | { kind: 'gh' } {
+  return githubAuth(from).kind === 'gh' ? { kind: 'gh' } : githubApp(from)
 }

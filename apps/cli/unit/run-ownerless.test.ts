@@ -97,7 +97,7 @@ describe('run, for a project with no owner', () => {
 
     const world: RunWorld = {
       // Never reached: there is no owner to check an App for.
-      hasGitHubApp: notReached,
+      hasGitHubAuth: notReached,
       loadProject: async () => OWNERLESS_PROJECT,
       // Never reached: there is no owner to build a `GitHubClient` for.
       createGitHubClient: notReached,
@@ -140,7 +140,7 @@ describe('run, for a project with no owner', () => {
 describe('run, for a GitHub project', () => {
   it('still refuses with no GitHub App configured — the owner-less branch did not swallow this refusal', async () => {
     const world: RunWorld = {
-      hasGitHubApp: () => false,
+      hasGitHubAuth: () => false,
       loadProject: async () => GITHUB_PROJECT,
       // Everything past the App check is never reached.
       createGitHubClient: notReached,

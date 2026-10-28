@@ -52,7 +52,7 @@ import {
   reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
-import { githubApp, hasGitHubApp, machineDayCeiling, repoRoot } from '@lingtai/env'
+import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
@@ -242,7 +242,7 @@ export function conductWork(
         log: options.log,
       }
     } else {
-      const client = await world.createGitHubClient({ auth: githubApp(), owner: project.owner, repo: name })
+      const client = await world.createGitHubClient({ auth: githubClientAuth(), owner: project.owner, repo: name })
       where.ref = project.base ?? (await client.defaultBranch())
       resolved = await world.currentRecipe(project, client, where.ref)
       options.onRecipe?.(name, resolved.recipe)
@@ -508,11 +508,11 @@ export function conductWork(
  */
 export function projectsForPass(
   registered: readonly ProjectState[],
-  hasApp: boolean,
+  canReach: boolean,
   outcome: PassOutcome,
 ): readonly ProjectState[] {
-  const projects = hasApp ? registered : registered.filter((p) => p.owner === null)
-  if (!hasApp && registered.some((p) => p.owner !== null)) {
+  const projects = canReach ? registered : registered.filter((p) => p.owner === null)
+  if (!canReach && registered.some((p) => p.owner !== null)) {
     outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
   }
   return projects
@@ -552,7 +552,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   const control = await readControl()
 
   const registered = await loadProjects()
-  const projects = projectsForPass(registered, hasGitHubApp(), outcome)
+  const projects = projectsForPass(registered, hasGitHubAuth(), outcome)
 
   // Whether a look awaits its pass must not depend on which project is visited
   // first, so with a ceiling and several projects each recipe is asked once up front.
@@ -593,7 +593,7 @@ async function anyWantsMany(
         if (concurrencyOf(recipe) > 1) return true
       } else {
         const client = await world.createGitHubClient({
-          auth: githubApp(),
+          auth: githubClientAuth(),
           owner: project.owner,
           repo: project.project,
         })

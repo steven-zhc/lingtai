@@ -23,7 +23,7 @@ import { userInfo } from 'node:os'
  */
 import { close, loadProject } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 
 import { withProjector } from './projector.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -45,7 +45,7 @@ export async function closeVerdict(options: CloseCommandOptions, progress: (line
   if (!project?.owner) {
     return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
-  if (!hasGitHubApp()) {
+  if (!hasGitHubAuth()) {
     return refusal(
       1,
       'no-github-app',

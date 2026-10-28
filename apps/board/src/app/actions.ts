@@ -60,7 +60,7 @@ import {
 import { isPending, isRegistered } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
@@ -122,7 +122,7 @@ export async function approveCard(input: {
       const resolved = await currentRecipe(state)
       client = (await ownerlessClient(state, resolved.recipe)).client
     } else {
-      if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+      if (!hasGitHubAuth()) return { ok: false, detail: 'no GitHub App configured' }
       client = (await projectClient(state)).client
     }
 
@@ -174,7 +174,7 @@ export async function continueFixingCard(input: {
     const client =
       state.owner === null
         ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
-        : hasGitHubApp()
+        : hasGitHubAuth()
           ? (await projectClient(state)).client
           : null
     if (client === null) return { ok: false, detail: 'no GitHub App configured' }
@@ -348,7 +348,7 @@ export async function closeCard(input: {
 }): Promise<ActionResult> {
   try {
     if (!input.reason.trim()) return { ok: false, detail: 'a close needs a reason' }
-    if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+    if (!hasGitHubAuth()) return { ok: false, detail: 'no GitHub App configured' }
     const state = await project(input.project)
     const { client, resolved } = await projectClient(state)
 

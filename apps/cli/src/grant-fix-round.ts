@@ -3,7 +3,7 @@ import { userInfo } from 'node:os'
 import { currentRecipe, loadProject, ownerlessClient, resolveWait } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { reduceTicket, ticketStream } from '@lingtai/domain'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 
 import { withProjector } from './projector.ts'
@@ -23,7 +23,7 @@ export async function grantFixRoundVerdict(
     const resolved = await currentRecipe(project)
     client = (await ownerlessClient(project, resolved.recipe)).client
   } else {
-    if (!hasGitHubApp()) {
+    if (!hasGitHubAuth()) {
       return refusal(1, 'no-github-app', 'no GitHub App configured')
     }
     client = (await projectClient(project)).client

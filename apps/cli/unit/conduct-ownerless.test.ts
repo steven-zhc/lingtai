@@ -1,5 +1,6 @@
 import { memoryTickets } from '@lingtai/conductor/memory-tickets'
 import type { ControlState, ProjectState } from '@lingtai/domain'
+import { hasGitHubAuth } from '@lingtai/env'
 import type { CreateClientOptions, GitHubClient } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -246,6 +247,14 @@ describe('projectsForPass', () => {
   it('hands every registered project through, and refuses nothing, when there is an App', () => {
     const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
     const projects = projectsForPass([LOCAL_PROJECT, GH_PROJECT], true, outcome)
+    expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
+    expect(outcome.refused).toEqual([])
+  })
+
+  it('keeps GitHub projects and refuses nothing under gh, where the machine can reach GitHub', () => {
+    // `conductorPass` hands `hasGitHubAuth()`, which is true on `gh` with no App at all.
+    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const projects = projectsForPass([LOCAL_PROJECT, GH_PROJECT], hasGitHubAuth({ LINGTAI_GITHUB_AUTH: 'gh' }), outcome)
     expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
     expect(outcome.refused).toEqual([])
   })

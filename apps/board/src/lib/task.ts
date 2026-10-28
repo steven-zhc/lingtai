@@ -25,7 +25,7 @@ import {
   type TicketLifecycle,
 } from '@lingtai/domain'
 import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
-import { hasGitHubApp } from '@lingtai/env'
+import { hasGitHubAuth } from '@lingtai/env'
 /**
  * One task, folded from its streams on demand.
  *
@@ -1906,7 +1906,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
         const client =
           state.owner === null
             ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
-            : hasGitHubApp()
+            : hasGitHubAuth()
               ? (await projectClient(state)).client
               : null
         if (client === null) throw new Error('no GitHub App configured')

@@ -47,7 +47,7 @@ import { PortsLive } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { readControl } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
-import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
+import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import {
@@ -249,7 +249,7 @@ export function statedBeforeDispatch(recipe: Recipe): string[] {
  * about this file's code, not about what built the layer).
  */
 export interface RunWorld {
-  hasGitHubApp: () => boolean
+  hasGitHubAuth: () => boolean
   loadProject: (name: string) => Promise<ProjectState | null>
   createGitHubClient: (options: CreateClientOptions) => Promise<GitHubClient>
   /** `currentRecipe` ignores its second argument; kept so a GitHub project is resolved exactly as it is today. */
@@ -268,7 +268,7 @@ export interface RunWorld {
 /** The real one. `options` and `log` are `run()`'s own, read once to build the three layers. */
 export function liveRunWorld(options: RunOptions, log: (line: string) => void): RunWorld {
   return {
-    hasGitHubApp,
+    hasGitHubAuth,
     loadProject,
     createGitHubClient,
     currentRecipe,
@@ -345,7 +345,7 @@ export async function run(
      */
     let client: GitHubClient | null = null
     if (project.owner !== null) {
-      if (!world.hasGitHubApp()) {
+      if (!world.hasGitHubAuth()) {
         return yield* refuse(
           'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
         )
@@ -353,7 +353,7 @@ export async function run(
       // Bound now: a property narrowing does not survive into the closure below.
       const owner = project.owner
       client = yield* Effect.tryPromise({
-        try: () => world.createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
+        try: () => world.createGitHubClient({ auth: githubClientAuth(), owner, repo: options.project }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.
         catch: (err) => refuse((err as Error).message),
