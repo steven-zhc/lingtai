@@ -14,11 +14,12 @@
  * So the path stays and the screen it serves is the one every setup page that
  * used to decide something is reduced to.
  */
+import { isGhMachine } from '../gh-machine.ts'
 import { TerminalScreen } from '../terminal.tsx'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PickRepository({ searchParams }: { searchParams: Promise<{ requested?: string }> }) {
   const params = await searchParams
-  return <TerminalScreen requested={params.requested === '1'} />
+  return <TerminalScreen requested={params.requested === '1'} gh={isGhMachine()} />
 }

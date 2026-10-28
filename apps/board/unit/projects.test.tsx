@@ -124,6 +124,13 @@ describe('where it lands', () => {
 
 describe('which object on the row this is', () => {
   const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
+
+  it('is handed any GitHub auth, so a gh machine is not sent to create an App (#713)', () => {
+    const src = read('../src/app/page.tsx')
+    expect(src).toContain('app={hasGitHubAuth()}')
+    expect(src).not.toContain('hasGitHubApp')
+  })
+
   const page = read('../src/app/page.tsx')
   const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
 
