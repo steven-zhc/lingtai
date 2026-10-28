@@ -85,6 +85,7 @@ import { question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
+import { liveTrialBuild } from './trial-build.ts'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
 export interface GitResult {
@@ -454,6 +455,15 @@ async function runLocalBranch(
     flags,
     buildFlags,
     defaultBranch: async () => detected,
+    tryBuild: liveTrialBuild({
+      project: name,
+      owner: '',
+      repo: name,
+      base,
+      remote,
+      home: world.home,
+      files: world.files,
+    }),
     history: world.history,
     seeds,
     again: `lingtai add --local ${toplevel}`,
@@ -534,6 +544,7 @@ async function runGithubBranch(
     'reviewer-model',
     'install',
     'build',
+    'check-build',
     'land',
     'rounds',
     'wall',

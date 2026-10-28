@@ -375,3 +375,45 @@ describe('askRecipe — --defaults (#433)', () => {
     expect(files.replaced).toHaveLength(0)
   })
 })
+
+describe('askRecipe — the trial run (#436)', () => {
+  const run = async (flags: Record<string, string>) => {
+    const calls: string[][] = []
+    const result = await askRecipe(defaultsWorld(), {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      flags: { install: 'none', ...flags },
+      buildFlags: ['pnpm test'],
+      seeds: [
+        { path: ['repo', 'base'], value: 'main' },
+        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      ],
+      kept: 'kept',
+      again: 'lingtai add --local /repo',
+      keptBeforeWrite: 'Nothing was written',
+      files: mapFiles(),
+      tryBuild: async (_install, build) => {
+        calls.push(build)
+        return [{ command: 'pnpm test', ok: true, evidence: '' }]
+      },
+    } satisfies RecipeAt)
+    return { result, calls }
+  }
+
+  it('does not run under --defaults', async () => {
+    const { result, calls } = await run({ defaults: '' })
+    expect(result).toEqual({ ok: true })
+    expect(calls).toEqual([])
+  })
+
+  it('runs under --defaults --check-build yes', async () => {
+    const { calls } = await run({ defaults: '', 'check-build': 'yes' })
+    expect(calls).toEqual([['pnpm test']])
+  })
+
+  it('skips --check-build no without asking', async () => {
+    const { calls } = await run({ 'check-build': 'no' })
+    expect(calls).toEqual([])
+  })
+})

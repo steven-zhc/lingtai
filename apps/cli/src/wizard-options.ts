@@ -23,6 +23,7 @@ export const recipeOptions = {
   'reviewer-model': text('reviewer-model'),
   install: text('install'),
   build: Options.text('build').pipe(Options.repeated),
+  'check-build': text('check-build'),
   land: text('land'),
   rounds: text('rounds'),
   wall: text('wall'),

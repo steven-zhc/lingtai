@@ -246,3 +246,36 @@ describe('a command that times out', () => {
     expect(Date.now() - started).toBeLessThan(7_000)
   }, 15_000)
 })
+
+describe('an aborted command with ownGroup', () => {
+  it('is reported only after what its shell started is gone too', async () => {
+    const controller = new AbortController()
+    const pidFile = join(cwd, 'pid')
+    const pending = run({
+      // The inner shell ignores SIGTERM and outlives the outer one.
+      run: `sh -c 'trap "" TERM; sleep 30' & echo $! > ${pidFile}; wait`,
+      ownGroup: true,
+      signal: controller.signal,
+    })
+    await new Promise((r) => setTimeout(r, 500))
+    controller.abort()
+    const outcome = await pending
+    expect(outcome.evidence).toContain('aborted')
+    const pid = Number((await readFile(pidFile, 'utf8')).trim())
+    expect(() => process.kill(pid, 0)).toThrow()
+  }, 15_000)
+})
+
+describe('a timed-out command with ownGroup', () => {
+  it('is reported only after what its shell started is gone too', async () => {
+    const pidFile = join(cwd, 'pid-timeout')
+    const outcome = await run({
+      run: `sh -c 'trap "" TERM; sleep 30' & echo $! > ${pidFile}; wait`,
+      ownGroup: true,
+      timeoutMs: 500,
+    })
+    expect(outcome.timedOut).toBe(true)
+    const pid = Number((await readFile(pidFile, 'utf8')).trim())
+    expect(() => process.kill(pid, 0)).toThrow()
+  }, 15_000)
+})

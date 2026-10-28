@@ -73,6 +73,14 @@ export interface RunCommandOptions {
    *  that correctly is not this file's job. */
   run: string
   timeoutMs: number
+  /**
+   * Run the shell as the leader of its own process group, and send the abort's
+   * signals to the group. `shell: true` makes the direct child a shell, and
+   * `kill` on a shell leaves what it started running — a caller that removes
+   * the tree after an abort needs those gone too. Off by default: a grouped
+   * child no longer receives the terminal's own Ctrl+C.
+   */
+  ownGroup?: boolean
   /** How the timeout is written in the recipe, for the message. `15m`, not `900000`. */
   timeoutLabel?: string
   /** The worktree. Commands run where the agent worked, never anywhere else. */
@@ -312,25 +320,59 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
    */
   let timedOutEvidence: string | null = null
 
+  // With `ownGroup` the signals go to the whole group, for a timeout as for an abort.
+  const signalTree = (signal: NodeJS.Signals) => {
+    try {
+      if (options.ownGroup && child.pid !== undefined) process.kill(-child.pid, signal)
+      else child.kill(signal)
+    } catch {
+      // Nothing left in the group to signal.
+    }
+  }
+
   const timer = setTimeout(() => {
     timedOutEvidence = `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`
     const evidence = timedOutEvidence
     const reportTimeout = () => {
+      // The shell is gone; what it started may not be.
+      if (options.ownGroup) signalTree('SIGKILL')
       endedAt ??= Date.now()
       finish({ ok: false, timedOut: true, exitCode: null, evidence })
     }
     child.once('exit', reportTimeout)
-    child.kill('SIGTERM')
+    signalTree('SIGTERM')
     // A process that ignores SIGTERM still has to go, or the run leaks it.
     setTimeout(() => {
-      child.kill('SIGKILL')
+      signalTree('SIGKILL')
       setTimeout(reportTimeout, 1_000)
     }, 5_000).unref?.()
   }, options.timeoutMs)
 
+  /**
+   * **An abort is reported once the command itself has exited**, on the
+   * timeout's terms above: a caller that removes the tree right after this
+   * resolves (`trial-build.ts`) relies on the command no longer writing, and
+   * `SIGTERM` sent is not `SIGTERM` obeyed. `SIGKILL` at five seconds, and the
+   * report goes out a second after that whatever has happened.
+   */
   const onAbort = () => {
-    child.kill('SIGTERM')
-    finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
+    clearTimeout(timer)
+    const reportAbort = () => {
+      // The shell is gone; what it started may not be.
+      if (options.ownGroup) signalTree('SIGKILL')
+      endedAt ??= Date.now()
+      finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      reportAbort()
+      return
+    }
+    child.once('exit', reportAbort)
+    signalTree('SIGTERM')
+    setTimeout(() => {
+      signalTree('SIGKILL')
+      setTimeout(reportAbort, 1_000).unref?.()
+    }, 5_000).unref?.()
   }
   options.signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -402,6 +444,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
     // stdin is `/dev/null`, as it has always been: a reader gets EOF, not a hang.
     return spawn(options.run, {
       shell: true,
+      detached: options.ownGroup,
       cwd: options.cwd,
       // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
       // board reaches this through the `@lingtai/actions` barrel. This
@@ -414,6 +457,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
 
   const child = spawn(options.run, {
     shell: true,
+    detached: options.ownGroup,
     cwd: options.cwd,
     env: env as NodeJS.ProcessEnv,
     stdio: ['pipe', 'pipe', 'pipe'],

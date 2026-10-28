@@ -61,7 +61,7 @@ export {
   type WorktreeActionSpec,
 } from './worktree-action.ts'
 export { actionsFromRecipe, ActionUnavailableError, type ActionDeps } from './from-recipe.ts'
-export { runCommand, startCommand, type CommandOutcome, type RunCommandOptions } from './command.ts'
+export { boundedEvidence, runCommand, startCommand, type CommandOutcome, type RunCommandOptions } from './command.ts'
 export {
   createSubscriber,
   subjectOf,
