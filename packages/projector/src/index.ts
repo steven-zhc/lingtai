@@ -59,6 +59,14 @@ export {
 } from './backlog.ts'
 export { rateDir, readJson, readRateSnapshot, snapshotPath } from './rate-snapshot.ts'
 export {
+  TICKET_REPORT_TABLE,
+  ticketReportProjection,
+  ticketReportProjectionWith,
+  type PurposeCost,
+  type ReportReview,
+  type ReportWait,
+} from './ticket-report.ts'
+export {
   SPEND_TABLE,
   spendProjectionWith,
   readSpend,

@@ -30,7 +30,7 @@ export type CommandDefinition = {
 }
 
 /** The projections `lingtai projection` knows; `help.test.ts` holds this to `PROJECTIONS` in `projection.ts`. */
-export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend'] as const
+export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend', 'ticket_report'] as const
 
 const define = <const N extends string>(
   definition: CommandDefinition & { readonly name: N },

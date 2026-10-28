@@ -687,7 +687,7 @@ lingtai projection lag [--json] [--no-color]
   How far each projection is behind the log.
 lingtai projection rebuild <name>
   Drop the table, reset the checkpoint, replay.
-Projections: task_view, finding_backlog, spend
+Projections: task_view, finding_backlog, spend, ticket_report
 ```
 
 ```sh

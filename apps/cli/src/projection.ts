@@ -10,6 +10,7 @@ import {
   backlogProjection,
   spendProjection,
   taskViewProjection,
+  ticketReportProjection,
   type ProjectionLag,
   type ProjectionRunner,
 } from '@lingtai/projector'
@@ -20,12 +21,12 @@ import { heading, symbol, table } from './output.ts'
  * Every projection this system runs, named here in the open.
  *
  * A second one exists now (`finding_backlog`, `#137`), and a third (`spend`,
- * `#497`), and `projection rebuild` below says where it has to be added: here,
+ * `#497`), and a fourth (`ticket_report`, #687), and `projection rebuild` below says where it has to be added: here,
  * visibly, or it does not exist. It lives in this file and not `lingtai.ts`
  * because `cli.ts` needs it and cannot import a file that calls `main()` on
  * import; the daemon imports it from here.
  */
-export const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection] as const
+export const PROJECTIONS = [taskViewProjection, backlogProjection, spendProjection, ticketReportProjection] as const
 
 /** `projection lag`, laid out: a heading and a table, or the one line for a log with no checkpoint. */
 export function renderProjectionLag(
