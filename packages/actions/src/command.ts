@@ -320,18 +320,30 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
    */
   let timedOutEvidence: string | null = null
 
+  // With `ownGroup` the signals go to the whole group, for a timeout as for an abort.
+  const signalTree = (signal: NodeJS.Signals) => {
+    try {
+      if (options.ownGroup && child.pid !== undefined) process.kill(-child.pid, signal)
+      else child.kill(signal)
+    } catch {
+      // Nothing left in the group to signal.
+    }
+  }
+
   const timer = setTimeout(() => {
     timedOutEvidence = `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`
     const evidence = timedOutEvidence
     const reportTimeout = () => {
+      // The shell is gone; what it started may not be.
+      if (options.ownGroup) signalTree('SIGKILL')
       endedAt ??= Date.now()
       finish({ ok: false, timedOut: true, exitCode: null, evidence })
     }
     child.once('exit', reportTimeout)
-    child.kill('SIGTERM')
+    signalTree('SIGTERM')
     // A process that ignores SIGTERM still has to go, or the run leaks it.
     setTimeout(() => {
-      child.kill('SIGKILL')
+      signalTree('SIGKILL')
       setTimeout(reportTimeout, 1_000)
     }, 5_000).unref?.()
   }, options.timeoutMs)
@@ -343,14 +355,6 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
    * `SIGTERM` sent is not `SIGTERM` obeyed. `SIGKILL` at five seconds, and the
    * report goes out a second after that whatever has happened.
    */
-  const signalTree = (signal: NodeJS.Signals) => {
-    try {
-      if (options.ownGroup && child.pid !== undefined) process.kill(-child.pid, signal)
-      else child.kill(signal)
-    } catch {
-      // Nothing left in the group to signal.
-    }
-  }
   const onAbort = () => {
     clearTimeout(timer)
     const reportAbort = () => {
