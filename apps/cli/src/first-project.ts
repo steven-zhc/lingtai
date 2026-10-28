@@ -51,11 +51,12 @@ import {
   listRepositories,
   type Picker,
   refusalLines,
+  taken,
 } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
-import { createAppReader, type Installation } from '@lingtai/github'
+import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
 import {
   baseOf,
   diskFiles,
@@ -585,6 +586,14 @@ async function runGithubBranch(
       }
     }
     if (givenSlug === null) return { ok: true, project: 'github', app: 'already' }
+    // The picker's `taken` guard, which this branch skips: a project is keyed by
+    // the repository's name, so another owner's repository of the same name
+    // would be written onto the existing project's stream.
+    const { owner: givenOwner, repo: givenRepo } = parseSlug(givenSlug)
+    const holder = (await world.projects()).find((p) => p.project?.toLowerCase() === givenRepo.toLowerCase())
+    if (holder !== undefined && holder.owner !== null && holder.owner.toLowerCase() !== givenOwner.toLowerCase()) {
+      return { refused: taken({ slug: givenSlug, repo: givenRepo, takenBy: holder.owner }) }
+    }
     const said: string[] = []
     const baseFlag = flags['base']
     const code = await spun(world, `registering ${givenSlug}`, () =>

@@ -5,18 +5,20 @@
  * import this out of it.
  *
  * In order: `--land` against `--base`; then — before a single question is
- * asked or a single answer written, and only where there is an App on this
- * machine to ask — whether it is installed here and grants what Lingtai
+ * asked or a single answer written: on a `gh` machine, whether the saved
+ * login has `repo` and `workflow` and can push to the repository (#708); on an
+ * App machine, whether the App is installed here and grants what Lingtai
  * needs (#402); then one `askRecipe` call (#431) asks the writer and
  * reviewer, the install and build commands, the ticket source and the kinds
  * (#396), the landing branch and the limits, in that order. **An absent
  * recipe is created once, with every one of those first-run answers and the
  * seeds below — `repo.base` and `env.plantAt` — rather than refused (#432).**
  * An existing one is still edited one answer at a time, written as soon as
- * it is given rather than collected for one write at the end. With no App
- * configured at all, every question below still runs: a recipe written for a
- * project whose App does not exist yet is what lets `chooseFirstProject`
- * offer to create it next, in the same run. Null to go on to the
+ * it is given rather than collected for one write at the end. With
+ * nothing configured at a terminal, every question below still runs: a recipe
+ * written for a project whose App does not exist yet is what lets
+ * `chooseFirstProject` offer to create it next, in the same run. With nothing
+ * configured and no terminal, or a refused `github.auth`, it stops first. Null to go on to the
  * registration, or the exit code to stop with. A local project, and a
  * GitHub one picked on the board, reach none of this yet.
  */
@@ -78,8 +80,8 @@ async function defaultBranchOf(owner: string, repo: string, reach?: Reach): Prom
  * contents API leaves `content` empty for a file between 1 and 100 MB, and a
  * `has` built on `fileAt` alone would call the biggest lockfiles absent.
  *
- * With no installation, no ref, or any failure building the client, every
- * question still runs — an empty reader's `has` rejects rather than
+ * With no reach (no installation on an App machine), no ref, or any failure
+ * building the client, every question still runs — an empty reader's `has` rejects rather than
  * resolving `false`, so `detectSetup` reads it as "could not tell" rather
  * than a confirmed absence (#431 fix round, finding 2); a detection
  * suggestion is never worth failing the whole setup over, and
@@ -196,16 +198,17 @@ export async function askBeforeGithubAdd(
 
   const { owner, repo } = parseSlug(slug)
 
-  // With no App configured on this machine at all, there is nothing yet to
-  // check — `checkInstallation`'s default lookup calls `githubApp()`, which
-  // throws rather than answering "not installed". The questions below still
-  // run and still write, exactly as this command did before #402: a recipe
-  // written for a project whose App was never created is what lets
-  // `chooseFirstProject` offer to create one next, in the same run.
+  // Nothing configured at a terminal: there is nothing yet to check —
+  // `checkInstallation`'s default lookup calls `githubApp()`, which throws
+  // rather than answering "not installed". The questions below still run and
+  // still write, exactly as this command did before #402: a recipe written for
+  // a project whose App was never created is what lets `chooseFirstProject`
+  // offer to create one next, in the same run. With no terminal and nothing
+  // configured it is refused above, and a refused `github.auth` likewise.
   //
   // Is the App installed here at all, and does it grant what Lingtai needs —
   // checked before a single question is asked or a single answer written
-  // (#402), when there is an App to check at all. The check prints nothing on
+  // (#402), when the App is the auth. The check prints nothing on
   // success; `add()` runs the same check again later and prints its own
   // lines through `runGithubBranch`'s `said`, and printing them here too
   // would show every successful add the same two lines twice.

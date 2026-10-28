@@ -988,10 +988,44 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       },
     })
     h.world.github.auth = () => 'gh'
+    h.world.github.boardUrl = async () => {
+      calls.board++
+      return null
+    }
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
     expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets' })
-    expect(calls).toMatchObject({ app: 0, wait: 0, picker: 0 })
+    expect(calls).toMatchObject({ app: 0, board: 0, wait: 0, picker: 0 })
     expect(calls.added).toEqual([{ slug: 'acme/widgets', installation: undefined, base: undefined }])
+  })
+
+  it("refuses another owner's repository of a registered project's name, and registers nothing", async () => {
+    let added = 0
+    const h = harness({
+      projects: [project('widgets', 'acme')],
+      add: async () => {
+        added++
+        return 0
+      },
+    })
+    h.world.github.auth = () => 'gh'
+    const result = await chooseFirstProject(h.world, { github: 'other/widgets' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('already acme/widgets') })
+    expect(added).toBe(0)
+  })
+
+  it('re-registers the same owner, in any case', async () => {
+    let added = 0
+    const h = harness({
+      projects: [project('widgets', 'Acme')],
+      add: async () => {
+        added++
+        return 0
+      },
+    })
+    h.world.github.auth = () => 'gh'
+    const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
+    expect(result).toMatchObject({ ok: true })
+    expect(added).toBe(1)
   })
 
   it('refuses --github-app create, which has no App to create here', async () => {
