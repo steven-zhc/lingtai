@@ -3,13 +3,14 @@
  * that will run, whether anyone reads the change, and whether a person approves
  * the first merge — and that taking every default cannot slip past it.
  */
+import type { RateRow } from '@lingtai/domain/rate-card'
 import { type RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import { EMPTY_SETUP_READER } from '../src/detect-setup.ts'
 import { stripColour } from '../src/output.ts'
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipe, ENV_PLANT_AT, type RecipeAt, renderSummary } from '../src/recipe-flow.ts'
+import { askRecipe, ENV_PLANT_AT, priceHints, type RecipeAt, renderSummary, type Summary } from '../src/recipe-flow.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'
 
 const HOME = '/home/me/.lingtai'
@@ -122,7 +123,7 @@ describe('renderSummary', () => {
     const text = stripColour(
       renderSummary(
         'widget',
-        { checks: [], review: null, landsUnattended: true, base: 'main' },
+        { checks: [], review: null, landsUnattended: true, base: 'main', models: [] },
         'lingtai add owner/widget',
       ),
     )
@@ -130,5 +131,54 @@ describe('renderSummary', () => {
     expect(text).toMatch(/checks\s+none — steps\.build is empty/)
     expect(text).toMatch(/review\s+none/)
     expect(text).toMatch(/change\s+lingtai add owner\/widget/)
+  })
+})
+
+describe('the price hint after the summary (#693)', () => {
+  const row = (model: string): RateRow => ({ model }) as unknown as RateRow
+  const hints = (models: Summary['models'], snapshot: RateRow[] = []) => priceHints(models, snapshot)
+
+  it('a shipped model prints nothing extra', () => {
+    expect(hints([{ role: 'writer', model: 'claude-sonnet-5' }])).toEqual([])
+  })
+
+  it('a model in neither the card nor the snapshot names itself and lingtai doctor, once for both roles', () => {
+    const lines = hints([
+      { role: 'writer', model: 'mystery-1' },
+      { role: 'reviewer', model: 'mystery-1' },
+    ])
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('mystery-1 is not priced yet')
+    expect(lines[0]).toContain('lingtai doctor')
+    expect(lines[0]).not.toMatch(/cannot/)
+  })
+
+  it('a model only in the snapshot prints nothing extra', () => {
+    expect(hints([{ role: 'writer', model: 'mystery-1' }], [row('mystery-1')])).toEqual([])
+  })
+
+  it('a null row in the snapshot is skipped, and an unreadable snapshot is said so', () => {
+    const m: Summary['models'] = [{ role: 'writer', model: 'mystery-1' }]
+    expect(hints(m, [null as unknown as RateRow, row('mystery-1')])).toEqual([])
+    expect(hints(m, [null as unknown as RateRow])[0]).toContain('mystery-1 is not priced yet')
+    expect(priceHints(m, null)[0]).toContain('could not be read')
+  })
+
+  it('roles with no model print the runtime-reports line once', () => {
+    const lines = hints([
+      { role: 'writer', model: null },
+      { role: 'reviewer', model: null },
+    ])
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('its runtime reports')
+  })
+
+  it('askRecipe prints the hint after the summary and before the confirm', async () => {
+    const world = terminal()
+    await askRecipe(world, at({ flags: { install: 'none', model: 'mystery-1' }, rates: () => [] }))
+    const shown = index(world.events, /Before registering widget/)
+    const hint = index(world.events, /mystery-1 is not priced yet/)
+    expect(hint).toBeGreaterThan(shown)
+    expect(hint).toBeLessThan(index(world.events, CONFIRM))
   })
 })

@@ -21,7 +21,11 @@
  * (`AskAgentsAt`'s own rule, `agents.ts:108`), and `at.reader` is already
  * built for wherever the file lives — a local directory or a GitHub ref.
  */
+import { existsSync } from 'node:fs'
+
+import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { paint } from '@lingtai/env/colour'
+import { readJson, snapshotPath } from '@lingtai/projector'
 import {
   baseOf,
   diskFiles,
@@ -130,6 +134,8 @@ export interface RecipeAt {
   again: string
   home?: string
   files?: RecipeFiles
+  /** The prices fetched onto this machine, `null` where the file is there and cannot be read; defaults to the real snapshot, which under a test reads as none unless it has its own `LINGTAI_HOME` (#693). */
+  rates?: () => readonly unknown[] | null
 }
 
 /** What the recipe, as written, will do with a change — the three facts a newcomer needs before anything is registered (#542). */
@@ -138,6 +144,40 @@ export interface Summary {
   review: string | null
   landsUnattended: boolean
   base: string
+  /** The model each agent action names, `null` where it names none (#693). */
+  models: readonly { role: 'writer' | 'reviewer'; model: string | null }[]
+}
+
+/** The snapshot's rows; `null` where the file exists and is not a `{ rows: [...] }` document. */
+function fetchedRates(): readonly unknown[] | null {
+  const path = snapshotPath(process.env)
+  if (path === null || !existsSync(path)) return []
+  const doc = readJson(path) as { rows?: unknown } | undefined
+  return Array.isArray(doc?.rows) ? doc.rows : null
+}
+
+/**
+ * The lines that say which chosen models have no price yet (#693). A hint about
+ * what this machine knows now, never a verdict: `init` does not fetch (#658).
+ */
+export function priceHints(models: Summary['models'], snapshot: readonly unknown[] | null): string[] {
+  const lines: string[] = []
+  const unreadable = snapshot === null
+  const priced = (model: string) =>
+    (snapshot ?? []).some((r) => typeof r === 'object' && r !== null && (r as Partial<RateRow>).model === model)
+  const named = new Set<string>()
+  for (const { model } of models) {
+    if (model === null || named.has(model)) continue
+    named.add(model)
+    if (shipped(model) || priced(model)) continue
+    lines.push(
+      `${model} is not priced yet — the shipped rate card does not list it and no fetched price for it is on this machine${unreadable ? ' (the fetched-price snapshot there could not be read)' : ''}. The conductor fetches prices when it starts; check \`lingtai doctor\` after the first run.`,
+    )
+  }
+  if (models.some((m) => m.model === null)) {
+    lines.push('A role with no model is priced by the model its runtime reports on the first run.')
+  }
+  return lines
 }
 
 /** The file as it stands, read the way the pass will read it — never the answers held in memory. */
@@ -153,7 +193,13 @@ export async function summariseRecipe(
     const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[]>
     const checks = (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run']))
     const reviewer = (steps['review'] ?? []).find((a) => typeof a['agent'] === 'string')
+    const writer = (steps['implement'] ?? []).find((a) => typeof a['agent'] === 'string')
+    const modelOf = (role: 'writer' | 'reviewer', action: Record<string, unknown> | undefined) =>
+      action === undefined
+        ? []
+        : [{ role, model: typeof action['model'] === 'string' && action['model'] !== '' ? action['model'] : null }]
     return {
+      models: [...modelOf('writer', writer), ...modelOf('reviewer', reviewer)],
       checks,
       review: reviewer === undefined ? null : String(reviewer['agent']),
       landsUnattended: !(steps['proposed'] ?? []).some((a) => 'human' in a),
@@ -354,6 +400,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   const summary = await summariseRecipe(at.project, fileOptions)
   if ('refused' in summary) return summary
   world.log(renderSummary(at.project, summary, at.again))
+  for (const line of priceHints(summary.models, (at.rates ?? fetchedRates)())) world.log(paint.muted(line))
 
   // Only the defaults can reach here without anyone having looked: a person who
   // typed an answer, or named `--build none` or `--land <branch>`, chose it.
