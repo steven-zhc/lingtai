@@ -163,3 +163,147 @@ describe('detectSetup', () => {
     })
   })
 })
+
+describe('the Python detector', () => {
+  const RUFF = '[tool.ruff]\nline-length = 100\n'
+  const ALL = `${RUFF}\n[tool.mypy]\nstrict = true\n\n[tool.pytest.ini_options]\naddopts = "-q"\n`
+
+  it('uv.lock gives uv sync and a uv run prefix on every build command', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'pyproject.toml': ALL }))
+    expect(result.install).toEqual({ run: 'uv sync --frozen', because: 'uv.lock is at the root' })
+    expect(result.build.map((b) => [b.name, b.run])).toEqual([
+      ['format', 'uv run ruff format --check .'],
+      ['lint', 'uv run ruff check .'],
+      ['typecheck', 'uv run mypy .'],
+      ['test', 'uv run pytest'],
+    ])
+  })
+
+  it('poetry.lock gives poetry install and a poetry run prefix on every build command', async () => {
+    const result = await detectSetup(reader({ 'poetry.lock': '', 'pyproject.toml': ALL }))
+    expect(result.install).toEqual({ run: 'poetry install --no-interaction', because: 'poetry.lock is at the root' })
+    expect(result.build.map((b) => b.run)).toEqual([
+      'poetry run ruff format --check .',
+      'poetry run ruff check .',
+      'poetry run mypy .',
+      'poetry run pytest',
+    ])
+  })
+
+  it('both lockfiles: uv.lock wins and a note names poetry.lock', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'poetry.lock': '' }))
+    expect(result.install?.run).toBe('uv sync --frozen')
+    expect(result.notes).toContain('poetry.lock is also at the root; uv.lock was used')
+  })
+
+  it('only [tool.pytest.ini_options] gives pytest and no ruff or mypy', async () => {
+    const result = await detectSetup(
+      reader({ 'uv.lock': '', 'pyproject.toml': '[tool.pytest.ini_options]\nminversion = "7"\n' }),
+    )
+    expect(result.build.map((b) => b.run)).toEqual(['uv run pytest'])
+  })
+
+  it('[tool.ruff.lint] alone counts as ruff', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'pyproject.toml': '[tool.ruff.lint]\nselect = ["E"]\n' }))
+    expect(result.build.map((b) => b.name)).toEqual(['format', 'lint'])
+  })
+
+  it('standalone files and a tests/ directory count; nothing else does', async () => {
+    const result = await detectSetup(reader({ 'poetry.lock': '', 'ruff.toml': '', 'mypy.ini': '', tests: '' }))
+    expect(result.build.map((b) => [b.name, b.because])).toEqual([
+      ['format', 'ruff.toml is at the root'],
+      ['lint', 'ruff.toml is at the root'],
+      ['typecheck', 'mypy.ini is at the root'],
+      ['test', 'tests/ is at the root'],
+    ])
+    expect((await detectSetup(reader({ 'uv.lock': '', 'pyproject.toml': '[project]\nname = "x"\n' }))).build).toEqual(
+      [],
+    )
+  })
+
+  it('requirements.txt only gives no install, no build, and a note', async () => {
+    const result = await detectSetup(
+      reader({ 'requirements.txt': '', 'pyproject.toml': '[tool.pytest.ini_options]\nx = 1\n' }),
+    )
+    expect(result.install).toBeNull()
+    expect(result.build).toEqual([])
+    expect(result.notes.join('\n')).toMatch(/create a virtual environment and type the install command/)
+    expect(result.notes.join('\n')).toMatch(/only through uv or poetry/)
+  })
+
+  it('a pyproject.toml that does not parse gives a note and nothing from it', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'pyproject.toml': '[tool.ruff\n' }))
+    expect(result.install?.run).toBe('uv sync --frozen')
+    expect(result.build).toEqual([])
+    expect(result.notes).toContain('pyproject.toml does not parse')
+  })
+
+  it('a pyproject.toml that cannot be read gives a note, and tests/ still counts', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', tests: '' }, { haveNotRead: ['pyproject.toml'] }))
+    expect(result.notes).toContain('pyproject.toml could not be read')
+    expect(result.build.map((b) => b.name)).toEqual(['test'])
+  })
+
+  it('a `has` that rejects for a configuration file is "could not tell", not absent', async () => {
+    const base = reader({ 'uv.lock': '', 'pyproject.toml': RUFF })
+    const result = await detectSetup({
+      ...base,
+      has: async (path) => {
+        if (path === 'mypy.ini') throw new Error('network')
+        return base.has(path)
+      },
+    })
+    expect(result.notes).toContain('could not tell whether mypy.ini is at the root')
+    expect(result.build.map((b) => b.name)).toEqual(['format', 'lint'])
+  })
+
+  it('a lockfile `has` that rejects is "could not tell", not "no lockfile"', async () => {
+    const base = reader({ 'requirements.txt': '' })
+    const result = await detectSetup({
+      ...base,
+      has: async (path) => {
+        if (path === 'uv.lock') throw new Error('network')
+        return base.has(path)
+      },
+    })
+    expect(result.install).toBeNull()
+    expect(result.notes).toContain('could not tell whether uv.lock is at the root')
+    expect(result.notes.join('\n')).not.toMatch(/no uv\.lock or poetry\.lock/)
+  })
+
+  it('a ruff.toml that does not parse gives a note and no ruff commands', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'ruff.toml': '[invalid' }))
+    expect(result.build).toEqual([])
+    expect(result.notes).toContain('ruff.toml does not parse')
+  })
+
+  it('a pytest.ini that does not parse gives a note and no pytest command', async () => {
+    const result = await detectSetup(reader({ 'uv.lock': '', 'pytest.ini': '[pytest\n' }))
+    expect(result.build).toEqual([])
+    expect(result.notes).toContain('pytest.ini does not parse')
+  })
+
+  it('an ini file with an indented malformed header or no section header does not parse', async () => {
+    const indented = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': '  [mypy\n' }))
+    expect(indented.build).toEqual([])
+    expect(indented.notes).toContain('mypy.ini does not parse')
+    const bare = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': 'strict = true\n' }))
+    expect(bare.build).toEqual([])
+    expect(bare.notes).toContain('mypy.ini does not parse')
+    const header = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': '  [mypy]\n  strict = true\n' }))
+    expect(header.build.map((b) => b.name)).toEqual(['typecheck'])
+    const key = await detectSetup(reader({ 'uv.lock': '', 'pytest.ini': '[pytest]\n  addopts = -q\n' }))
+    expect(key.build.map((b) => b.name)).toEqual(['test'])
+    const ok = await detectSetup(reader({ 'uv.lock': '', 'mypy.ini': '[mypy]\nplugins =\n  a\n  b\n' }))
+    expect(ok.build.map((b) => b.name)).toEqual(['typecheck'])
+  })
+
+  it('Node and Python in one root: Node wins and Python is named in a note', async () => {
+    const result = await detectSetup(
+      reader({ 'pnpm-lock.yaml': '', 'package.json': pkg({ lint: 'eslint .' }), 'uv.lock': '' }),
+    )
+    expect(result.install?.run).toBe('pnpm install --frozen-lockfile')
+    expect(result.build.map((b) => b.run)).toEqual(['pnpm lint'])
+    expect(result.notes).toContain('Python is also at the root; Node was used')
+  })
+})

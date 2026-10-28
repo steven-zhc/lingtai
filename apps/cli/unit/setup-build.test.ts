@@ -492,3 +492,37 @@ steps:
     expect(lines.some((l) => l.includes('FAIL: 1 test failed'))).toBe(true)
   })
 })
+
+describe('the PATH note', () => {
+  it('a manager that is not on PATH is still suggested, with a line naming it', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = world([])
+    await askInstallAndBuild(
+      w,
+      input({
+        reader: reader({ 'uv.lock': '', 'pyproject.toml': '[tool.pytest.ini_options]\nx = 1\n' }),
+        files,
+        onPath: async () => false,
+      }),
+    )
+    expect(lines).toContain('install: uv sync --frozen — uv.lock is at the root')
+    expect(lines).toContain("uv is not on this machine's PATH; the conductor runs these commands here")
+    expect(lines.filter((l) => l.includes('not on this machine'))).toHaveLength(1)
+  })
+
+  it('a probe that throws logs nothing', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = world([])
+    await askInstallAndBuild(
+      w,
+      input({
+        reader: reader({ 'uv.lock': '' }),
+        files,
+        onPath: async () => {
+          throw new Error('boom')
+        },
+      }),
+    )
+    expect(lines.some((l) => l.includes('PATH'))).toBe(false)
+  })
+})

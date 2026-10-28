@@ -43,6 +43,7 @@ const NOT_OURS: Record<string, string> = {
   NO_COLOR: "the terminal's, and the standard — an operator who set it meant it",
   TERM: "the terminal's, read to believe one that says it cannot do colour",
   HOME: "the operating system's, read to find where a home directory is",
+  PATH: "the operating system's, searched to say whether a setup tool is installed (#695)",
   HOSTNAME: "the operating system's, read to say which machine a daemon is on",
   USER: "the operating system's, read to attribute an approval to a person",
   PORT: "Next's standalone server.js's, set by `lingtai board` for the server it imports (#183)",

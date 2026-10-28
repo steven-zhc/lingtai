@@ -54,6 +54,12 @@ Interactive setup offers to run the confirmed install and build commands once in
 throwaway worktree before it finishes (`--check-build yes|no` answers it, `yes` is
 the default). `--defaults` skips that trial unless `--check-build yes` is given.
 
+Setup suggests install and build commands from the stack it detects at the
+repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
+Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
+and its neighbours configure. A Python project with only `requirements.txt` gets
+a note asking you to type the install command, not a suggestion.
+
 Open one ticket. This writes a complete request to a file and opens the ticket
 from it. Continue when Lingtai prints `created #N`, which is the number you
 approve below:

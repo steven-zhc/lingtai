@@ -10,6 +10,8 @@
  * print before it asks.
  */
 
+import { parse as parseToml } from 'smol-toml'
+
 /** The file seam: a local directory or a GitHub default branch. */
 export interface SetupReader {
   /**
@@ -198,7 +200,203 @@ const nodeDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector]
+type PythonManager = 'uv' | 'poetry'
+
+const PYTHON_LOCKFILES: { path: string; manager: PythonManager; install: string }[] = [
+  { path: 'uv.lock', manager: 'uv', install: 'uv sync --frozen' },
+  { path: 'poetry.lock', manager: 'poetry', install: 'poetry install --no-interaction' },
+]
+
+/** Tri-state: `has` rejecting is "could not tell", never absent. */
+async function hasOrUnknown(reader: SetupReader, path: string): Promise<boolean | 'unknown'> {
+  try {
+    return await reader.has(path)
+  } catch {
+    return 'unknown'
+  }
+}
+
+type PyTool = {
+  key: string
+  run: string
+  /** The `[tool.*]` table in pyproject.toml that configures it, or null. */
+  table: readonly string[] | null
+  /** Standalone files (or a directory) that configure it. */
+  files: readonly string[]
+}
+
+/** In the order the ticket asks for; only what the project configures is suggested. */
+const PYTHON_TOOLS: readonly PyTool[] = [
+  { key: 'format', run: 'ruff format --check .', table: ['ruff'], files: ['ruff.toml'] },
+  { key: 'lint', run: 'ruff check .', table: ['ruff'], files: ['ruff.toml'] },
+  { key: 'typecheck', run: 'mypy .', table: ['mypy'], files: ['mypy.ini'] },
+  { key: 'test', run: 'pytest', table: ['pytest', 'ini_options'], files: ['pytest.ini', 'tests'] },
+]
+
+function tableAt(root: unknown, path: readonly string[]): boolean {
+  let node: unknown = root
+  for (const key of path) {
+    if (typeof node !== 'object' || node === null || !Object.hasOwn(node, key)) return false
+    node = (node as Record<string, unknown>)[key]
+  }
+  return typeof node === 'object' && node !== null
+}
+
+/**
+ * As configparser reads it: a `[section]` header opens a section, a
+ * `key = value`/`key: value` line is only valid inside one, and a line
+ * indented deeper than the key before it continues that key. Any other
+ * indentation is a header or a key in its own right.
+ */
+function iniParses(text: string): boolean {
+  let inSection = false
+  let inKey = false
+  let keyIndent = 0
+  return text.split(/\r?\n/).every((raw) => {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#') || line.startsWith(';')) return true
+    const indent = raw.length - raw.trimStart().length
+    if (inKey && indent > keyIndent) return true
+    if (/^\[[^\][]+\]$/.test(line)) {
+      inSection = true
+      inKey = false
+      return true
+    }
+    inKey = inSection && /^[^=:\s][^=:]*[=:]/.test(line)
+    keyIndent = indent
+    return inKey
+  })
+}
+
+/**
+ * A standalone configuration file counts only if it reads and parses; either
+ * failure is a note ("could not tell"), once per file, and nothing from it.
+ */
+async function configParses(reader: SetupReader, file: string, notes: string[], said: Set<string>): Promise<boolean> {
+  let text: string | null
+  try {
+    text = await reader.read(file)
+  } catch {
+    text = null
+  }
+  if (text === null) {
+    if (!said.has(file)) notes.push(`${file} could not be read`)
+    said.add(file)
+    return false
+  }
+  let ok: boolean
+  if (file.endsWith('.toml')) {
+    try {
+      parseToml(text)
+      ok = true
+    } catch {
+      ok = false
+    }
+  } else {
+    ok = iniParses(text)
+  }
+  if (!ok && !said.has(file)) notes.push(`${file} does not parse`)
+  if (!ok) said.add(file)
+  return ok
+}
+
+const pythonDetector: StackDetector = {
+  stack: 'Python',
+  async detect(reader) {
+    const notes: string[] = []
+    const none = (presence: StackFinding['presence']): StackFinding => ({
+      presence,
+      install: null,
+      build: [],
+      skipped: [],
+      notes,
+    })
+
+    const lockfiles: typeof PYTHON_LOCKFILES = []
+    const unknownLockfiles: string[] = []
+    let uncertain = false
+    for (const lockfile of PYTHON_LOCKFILES) {
+      const found = await hasOrUnknown(reader, lockfile.path)
+      if (found === 'unknown') {
+        uncertain = true
+        unknownLockfiles.push(lockfile.path)
+      } else if (found) lockfiles.push(lockfile)
+    }
+    const pyproject = await hasOrUnknown(reader, 'pyproject.toml')
+    const requirements = await hasOrUnknown(reader, 'requirements.txt')
+    if (pyproject === 'unknown' || requirements === 'unknown') uncertain = true
+
+    const chosen = lockfiles[0]
+    if (chosen === undefined && pyproject !== true && requirements !== true) {
+      if (uncertain) {
+        notes.push('could not tell whether a Python project is at the root')
+        return none('unknown')
+      }
+      return none('absent')
+    }
+
+    let install: DetectedSetup['install'] = null
+    if (chosen !== undefined) {
+      install = { run: chosen.install, because: `${chosen.path} is at the root` }
+      for (const other of lockfiles.slice(1)) notes.push(`${other.path} is also at the root; ${chosen.path} was used`)
+    } else if (unknownLockfiles.length > 0) {
+      for (const path of unknownLockfiles) notes.push(`could not tell whether ${path} is at the root`)
+      if (requirements === true) notes.push('requirements.txt is at the root: type the install command')
+    } else if (requirements === true) {
+      notes.push(
+        'requirements.txt is at the root with no uv.lock or poetry.lock: create a virtual environment and type the install command',
+      )
+    } else {
+      notes.push('no uv.lock or poetry.lock at the root')
+    }
+
+    // pyproject.toml: a table that is absent is "not configured"; a file that
+    // cannot be read or parsed is "could not tell", and nothing comes from it.
+    let toml: unknown = null
+    if (pyproject === 'unknown') {
+      notes.push('could not tell whether pyproject.toml is at the root')
+    } else if (pyproject) {
+      const text = await reader.read('pyproject.toml')
+      if (text === null) {
+        notes.push('pyproject.toml could not be read')
+      } else {
+        try {
+          toml = parseToml(text)
+        } catch {
+          notes.push('pyproject.toml does not parse')
+        }
+      }
+    }
+    const tool = typeof toml === 'object' && toml !== null ? (toml as { tool?: unknown }).tool : undefined
+
+    if (chosen === undefined) {
+      notes.push('build commands are suggested only through uv or poetry, which need uv.lock or poetry.lock')
+      return { ...none('present'), install }
+    }
+
+    const build: DetectedSetup['build'] = []
+    const unreadable = new Set<string>()
+    for (const { key, run, table, files } of PYTHON_TOOLS) {
+      let because: string | null = null
+      if (table !== null && tableAt(tool, table)) because = `[tool.${table.join('.')}] is in pyproject.toml`
+      for (const file of files) {
+        if (because !== null) break
+        const found = await hasOrUnknown(reader, file)
+        if (found === 'unknown') {
+          if (!unreadable.has(file)) notes.push(`could not tell whether ${file} is at the root`)
+          unreadable.add(file)
+        } else if (found) {
+          if (file === 'tests') because = 'tests/ is at the root'
+          else if (await configParses(reader, file, notes, unreadable)) because = `${file} is at the root`
+        }
+      }
+      if (because !== null) build.push({ name: key, run: `${chosen.manager} run ${run}`, because })
+    }
+    return { presence: 'present', install, build, skipped: [], notes }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present
