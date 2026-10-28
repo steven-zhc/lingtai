@@ -111,10 +111,17 @@ export async function ensureMirror(options: {
   const remote = options.remote ?? `https://github.com/${options.owner}/${options.repo}.git`
   const run = { token: options.token, env: options.gitEnv }
 
-  try {
-    await git(['rev-parse', '--git-dir'], { ...run, cwd: path })
+  const present = await git(['rev-parse', '--git-dir'], { ...run, cwd: path }).then(
+    () => true,
+    () => false,
+  )
+  if (present) {
+    // A fetch that fails (a concurrent ref update, the network) says nothing
+    // about the mirror: it is shared with every pass in flight, whose worktrees
+    // point into its metadata and whose unpushed commits live only in it, so it
+    // is never removed on the strength of a failed fetch.
     await git(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
-  } catch {
+  } else {
     await mkdir(dirname(path), { recursive: true })
     await rm(path, { recursive: true, force: true })
     await git(['clone', '--bare', remote, path], run)

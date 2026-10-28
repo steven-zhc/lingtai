@@ -328,9 +328,29 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     }, 5_000).unref?.()
   }, options.timeoutMs)
 
+  /**
+   * **An abort is reported once the command itself has exited**, on the
+   * timeout's terms above: a caller that removes the tree right after this
+   * resolves (`trial-build.ts`) relies on the command no longer writing, and
+   * `SIGTERM` sent is not `SIGTERM` obeyed. `SIGKILL` at five seconds, and the
+   * report goes out a second after that whatever has happened.
+   */
   const onAbort = () => {
+    clearTimeout(timer)
+    const reportAbort = () => {
+      endedAt ??= Date.now()
+      finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      reportAbort()
+      return
+    }
+    child.once('exit', reportAbort)
     child.kill('SIGTERM')
-    finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
+    setTimeout(() => {
+      child.kill('SIGKILL')
+      setTimeout(reportAbort, 1_000).unref?.()
+    }, 5_000).unref?.()
   }
   options.signal?.addEventListener('abort', onAbort, { once: true })
 

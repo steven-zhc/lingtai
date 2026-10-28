@@ -88,6 +88,28 @@ async function keptTimeouts(at: TrialAt): Promise<Map<string, string>> {
   return out
 }
 
+/**
+ * Where the next pass cuts from, and whether it takes submodules: what the file
+ * already says (`baseOf` and `submodulesOf`, `settings.ts` — `worktree:` at
+ * `admit` first, then `repo:`), and only for a recipe that says nothing, the
+ * base the caller was handed. A flag or GitHub's default branch is not where an
+ * existing project's passes run.
+ */
+async function cutOf(at: TrialAt): Promise<{ base: string; submodules: boolean }> {
+  const options = { home: at.home, files: at.files }
+  const read = (path: string[]) => readRecipeKey(at.project, path, options).catch(() => null)
+  const admit = await read(['steps', 'admit'])
+  const declared = Array.isArray(admit)
+    ? (admit.find((a) => a !== null && typeof a === 'object' && 'worktree' in a) as { worktree?: unknown } | undefined)
+    : undefined
+  const wt = (declared?.worktree ?? {}) as { base?: unknown; submodules?: unknown }
+  const repoBase = await read(['repo', 'base'])
+  const repoSubmodules = await read(['repo', 'submodules'])
+  const base = typeof wt.base === 'string' ? wt.base : typeof repoBase === 'string' ? repoBase : at.base
+  const submodules = typeof wt.submodules === 'boolean' ? wt.submodules : repoSubmodules === true
+  return { base, submodules }
+}
+
 export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstallAndBuildInput['tryBuild']> {
   return async (install, build) => {
     const options = { home: at.home, files: at.files }
@@ -114,22 +136,24 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
       timeout: timeouts.get(run) ?? RUN_TIMEOUT,
     }))
 
+    const cut = await cutOf(at)
     const runId = deps.runId()
     const results: TrialResult[] = []
     let interrupted = false
+    let leftBehind = null as string | null
     try {
-      deps.log(`cutting a throwaway worktree at ${at.base} — the first time this clones the repository`)
-      let path: string
+      deps.log(`cutting a throwaway worktree at ${cut.base} — the first time this clones the repository`)
+      let path: string | null
       try {
         path = (
           await deps.provision({
             project: at.project,
             owner: at.owner,
             repo: at.repo,
-            base: at.base,
+            base: cut.base,
             branch: 'setup-trial',
             runId,
-            submodules: false,
+            submodules: cut.submodules,
             plantAt,
             env: env.values,
             token: at.token,
@@ -138,10 +162,13 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
           })
         ).path
       } catch (err) {
-        return [{ command: 'git', ok: false, evidence: boundedEvidence((err as Error).message) }]
+        // Ctrl+C stops git as well, and that is not a git failure.
+        path = null
+        if (at.interrupt?.aborted) interrupted = true
+        else results.push({ command: 'git', ok: false, evidence: boundedEvidence((err as Error).message) })
       }
 
-      for (const [i, command] of commands.entries()) {
+      for (const [i, command] of path === null ? [] : commands.entries()) {
         if (at.interrupt?.aborted) {
           interrupted = true
           break
@@ -150,7 +177,7 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
           run: command.run,
           timeoutMs: parseDuration(command.timeout),
           timeoutLabel: command.timeout,
-          cwd: path,
+          cwd: path!,
           env: runnableEnv(env.values),
           signal: at.interrupt,
         })
@@ -174,10 +201,26 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
         }
       }
     } finally {
-      // A failed cleanup must not replace the failure it cleans up after.
-      await deps.remove({ project: at.project, runId, home: at.home }).catch(() => {})
+      // A failed cleanup must not replace the failure it cleans up after — and
+      // must not be hidden either: the checkout holds a planted env file.
+      await deps.remove({ project: at.project, runId, home: at.home }).catch((err: Error) => {
+        leftBehind = err.message
+      })
+    }
+    if (leftBehind !== null) {
+      deps.log(`could not remove the throwaway checkout (${runId}): ${leftBehind}`)
+      deps.log('it may still hold the env file setup planted — remove it by hand')
     }
     if (interrupted) throw new TrialInterrupted()
+    if (leftBehind !== null) {
+      results.push({
+        command: 'cleanup',
+        ok: false,
+        evidence: boundedEvidence(
+          `the throwaway checkout was not removed and may still hold the planted env file: ${leftBehind}`,
+        ),
+      })
+    }
     return results
   }
 }

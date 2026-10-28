@@ -20,9 +20,13 @@ const outcome = (ok: boolean, extra: Partial<CommandOutcome> = {}): CommandOutco
 
 function fakes(script: Record<string, CommandOutcome>, over: Partial<TrialDeps> = {}) {
   const ran: { run: string; cwd: string; timeoutLabel?: string }[] = []
+  const cuts: { base: string; submodules: boolean }[] = []
   const removed: string[] = []
   const deps: TrialDeps = {
-    provision: async () => ({ path: '/wt' }),
+    provision: async (o) => {
+      cuts.push({ base: o.base, submodules: o.submodules })
+      return { path: '/wt' }
+    },
     remove: async ({ runId }) => void removed.push(runId),
     run: async (o) => {
       ran.push({ run: o.run, cwd: o.cwd, timeoutLabel: o.timeoutLabel })
@@ -33,7 +37,7 @@ function fakes(script: Record<string, CommandOutcome>, over: Partial<TrialDeps> 
     log: () => {},
     ...over,
   }
-  return { deps, ran, removed }
+  return { deps, ran, removed, cuts }
 }
 
 const AT: TrialAt = { project: 'widget', owner: '', repo: 'widget', base: 'main', files, home: '/h' }
@@ -134,5 +138,54 @@ describe('trialBuild', () => {
     const { deps, ran } = fakes({})
     await trialBuild({ ...AT, files: { ...files, read: async () => yml } }, deps)(null, ['pnpm build'])
     expect(ran[0]!.timeoutLabel).toBe('30m')
+  })
+
+  it('cuts from the base and submodules the existing recipe declares, not the one handed in', async () => {
+    const yml = 'repo:\n  base: release\n  submodules: true\n'
+    const { deps, cuts } = fakes({})
+    await trialBuild({ ...AT, files: { ...files, read: async () => yml } }, deps)(null, ['x'])
+    expect(cuts).toEqual([{ base: 'release', submodules: true }])
+  })
+
+  it('prefers the worktree action at admit over repo', async () => {
+    const yml =
+      'repo:\n  base: release\nsteps:\n  admit:\n    - worktree:\n        base: next\n        submodules: true\n'
+    const { deps, cuts } = fakes({})
+    await trialBuild({ ...AT, files: { ...files, read: async () => yml } }, deps)(null, ['x'])
+    expect(cuts).toEqual([{ base: 'next', submodules: true }])
+  })
+
+  it('says so when the checkout could not be removed', async () => {
+    const lines: string[] = []
+    const { deps } = fakes(
+      {},
+      {
+        remove: async () => {
+          throw new Error('EACCES')
+        },
+        log: (l) => void lines.push(l),
+      },
+    )
+    const results = await trialBuild(AT, deps)(null, ['x'])
+    expect(results.at(-1)).toMatchObject({ command: 'cleanup', ok: false })
+    expect(results.at(-1)!.evidence).toContain('EACCES')
+    expect(lines.join('\n')).toContain('remove it by hand')
+  })
+
+  it('treats a provision failure under Ctrl+C as an interruption', async () => {
+    const controller = new AbortController()
+    const { deps, removed } = fakes(
+      {},
+      {
+        provision: async () => {
+          controller.abort()
+          throw new Error('git killed')
+        },
+      },
+    )
+    await expect(trialBuild({ ...AT, interrupt: controller.signal }, deps)(null, ['x'])).rejects.toBeInstanceOf(
+      TrialInterrupted,
+    )
+    expect(removed).toEqual(['setup-1'])
   })
 })
