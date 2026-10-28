@@ -51,8 +51,8 @@ import type {
   TaskQuery,
 } from './store.ts'
 import { waitOf } from './task-view.ts'
-import { toTicketReportRow } from './ticket-report.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
+import { toTicketReportRow } from './ticket-report.ts'
 
 /**
  * `node:sqlite`, loaded when a store is first opened rather than when this file

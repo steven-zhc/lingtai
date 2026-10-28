@@ -29,9 +29,9 @@ import type {
   TaskQuery,
   TicketReportQuery,
 } from './store.ts'
-import { toTicketReportRow } from './ticket-report.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
+import { toTicketReportRow } from './ticket-report.ts'
 
 /**
  * `checkpoints.updated_at` is `NOT NULL` with no database default —
