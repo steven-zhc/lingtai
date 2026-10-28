@@ -282,6 +282,58 @@ describe('waits and the top eight', () => {
   })
 })
 
+describe('the charts’ data', () => {
+  it('keeps two sub-cent estimates as a cost, not as no cost', () => {
+    const cost = {
+      Work: { reportedCents: 0, reportedRuns: 0, estimatedUsd: 0.004, estimatedRuns: 1, unknown: 0 },
+      Answering: { reportedCents: 0, reportedRuns: 0, estimatedUsd: 0.004, estimatedRuns: 1, unknown: 0 },
+    }
+    const t = run([ticket({ cost })]).top[0]!
+    expect(t.cost.estimatedCents).toBe(1)
+    expect(t.purposeShares.map((p) => p.share)).toEqual([0.5, 0.5])
+    expect(t.sentence).not.toContain('no cost')
+  })
+
+  it('buckets landed tickets by fix rounds, stacked by kind, with 5+ together', () => {
+    const r = run([
+      ticket({ fixRounds: 0, kind: 'bug' }),
+      ticket({ fixRounds: 0, kind: null }),
+      ticket({ fixRounds: 5, kind: 'bug' }),
+      ticket({ fixRounds: 9, kind: 'feature' }),
+    ])
+    expect(r.roundBuckets.map((b) => [b.bucket, b.total])).toEqual([
+      ['0', 2],
+      ['1', 0],
+      ['2', 0],
+      ['3', 0],
+      ['4', 0],
+      ['5+', 2],
+    ])
+    expect(r.roundBuckets[0]!.kinds).toEqual([
+      { kind: 'bug', count: 1 },
+      { kind: null, count: 1 },
+    ])
+  })
+
+  it('counts landings per day by kind and spend per day by purpose', () => {
+    const day2 = new Date(2026, 9, 29, 9)
+    const r = run([ticket({ outcomeAt: day2, kind: 'bug' }), ticket({ outcomeAt: inside, kind: 'feature' })], {
+      window: { from: new Date(2026, 9, 28), to: new Date(2026, 9, 30) },
+      spend: [spend({ round: 0 }), spend({ round: 2, costUsd: 3 }), spend({ purpose: 'Judge', costUsd: 4 })],
+    })
+    expect(r.landingDays).toEqual([
+      { day: '2026-10-28', total: 1, kinds: [{ kind: 'feature', count: 1 }] },
+      { day: '2026-10-29', total: 1, kinds: [{ kind: 'bug', count: 1 }] },
+    ])
+    expect(r.spend.days[0]!.byPurpose.map((p) => [p.purpose, p.money.reportedCents])).toEqual([
+      ['Answering', 300],
+      ['Judge', 400],
+      ['Work', 100],
+    ])
+    expect(r.spend.days[1]!.byPurpose).toEqual([])
+  })
+})
+
 describe('an empty window', () => {
   it('says so everywhere and produces no NaN', () => {
     const r = run([ticket({ outcomeAt: before, passTimes: [before.toISOString()] })])

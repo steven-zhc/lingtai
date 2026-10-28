@@ -91,6 +91,28 @@ export interface LandedFigures {
 export interface SpendDay extends Money {
   /** Local date, `YYYY-MM-DD`. */
   day: string
+  /** The day's spend split by purpose: `Action` is Work at round 0 and Answering after. */
+  byPurpose: { purpose: string; money: Money }[]
+}
+
+export interface KindCount {
+  /** Null is unclassified. */
+  kind: string | null
+  count: number
+}
+
+/** Landed tickets by fix rounds: 0, 1, 2, 3, 4, then 5 or more, each stacked by kind. */
+export interface RoundBucket {
+  bucket: '0' | '1' | '2' | '3' | '4' | '5+'
+  total: number
+  kinds: KindCount[]
+}
+
+/** Landed tickets by the local day they landed, stacked by kind; every day of the window is present. */
+export interface LandingDay {
+  day: string
+  total: number
+  kinds: KindCount[]
 }
 
 export interface KindRow extends LandedFigures {
@@ -136,6 +158,10 @@ export interface Report {
   /** Passes skipped across placed tickets (0123 §2). */
   intervals: { empty: number; open: number }
   landed: LandedFigures
+  /** Placed landed tickets. */
+  roundBuckets: RoundBucket[]
+  /** Placed landed tickets, by the day of their landing. */
+  landingDays: LandingDay[]
   /** Every run whose `at` is in the window, whatever its ticket's outcome. */
   spend: { total: Money; days: SpendDay[] }
   kinds: KindRow[]
@@ -160,6 +186,20 @@ const inWindow = (at: Date | string, w: ReportWindow): boolean => {
   const t = typeof at === 'string' ? Date.parse(at) : at.getTime()
   return t >= w.from.getTime() && t < w.to.getTime()
 }
+
+const BUCKETS: RoundBucket['bucket'][] = ['0', '1', '2', '3', '4', '5+']
+
+const countKinds = (kinds: readonly (string | null)[]): KindCount[] => {
+  const m = new Map<string | null, number>()
+  for (const k of kinds) m.set(k, (m.get(k) ?? 0) + 1)
+  return [...m]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => (a.kind === null ? 1 : b.kind === null ? -1 : a.kind.localeCompare(b.kind)))
+}
+
+/** The board's split of `Action` into the work and answering a refusal (`ticket-report.ts`'s `purposeOf`). */
+const spendPurpose = (r: ReportSpendRow): string =>
+  r.purpose === 'Action' ? (r.round !== null && r.round > 0 ? 'Answering' : 'Work') : r.purpose
 
 const dayKey = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -303,7 +343,8 @@ function topTicket(row: ReportTicketRow): TopTicket {
   const cost = ticketMoney(row)
   const byPurpose = Object.entries(row.cost).map(([purpose, c]) => ({
     purpose,
-    cents: c.reportedCents + Math.round(c.estimatedUsd * 100),
+    // Unrounded: two sub-cent estimates must not round to a ticket with no cost.
+    cents: c.reportedCents + c.estimatedUsd * 100,
   }))
   const total = byPurpose.reduce((n, p) => n + p.cents, 0)
   const purposeShares =
@@ -344,7 +385,16 @@ export function report(input: ReportInput): Report {
   const days: SpendDay[] = []
   for (let d = new Date(w.from); d < w.to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
     const key = dayKey(d)
-    days.push({ day: key, ...spendMoney(runs.filter((r) => dayKey(r.at) === key)) })
+    const ofDay = runs.filter((r) => dayKey(r.at) === key)
+    const purposes = [...new Set(ofDay.map(spendPurpose))].sort()
+    days.push({
+      day: key,
+      ...spendMoney(ofDay),
+      byPurpose: purposes.map((purpose) => ({
+        purpose,
+        money: spendMoney(ofDay.filter((r) => spendPurpose(r) === purpose)),
+      })),
+    })
   }
   const total = days.reduce<Money>(addMoney, { reportedCents: 0, estimatedCents: 0, unknown: 0 })
 
@@ -395,6 +445,14 @@ export function report(input: ReportInput): Report {
       open: placed.reduce((n, t) => n + t.intervalsOpen, 0),
     },
     landed: landedFigures(landed),
+    roundBuckets: BUCKETS.map((bucket, i) => {
+      const of = landed.filter((t) => (i === 5 ? t.fixRounds >= 5 : t.fixRounds === i))
+      return { bucket, total: of.length, kinds: countKinds(of.map((t) => t.kind)) }
+    }),
+    landingDays: days.map(({ day }) => {
+      const of = landed.filter((t) => dayKey(t.outcomeAt!) === day)
+      return { day, total: of.length, kinds: countKinds(of.map((t) => t.kind)) }
+    }),
     spend: { total, days },
     kinds: kindKeys.map((kind) => ({
       kind,
