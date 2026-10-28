@@ -30,6 +30,7 @@ import {
   runDoctor,
   schemaChecks,
   seaRow,
+  spendToday,
   unconvergedRow,
 } from '../src/doctor.ts'
 
@@ -75,7 +76,15 @@ const reach: DoctorReach = {
   runtimes: () => [signedInRuntime],
   // No store is opened: today is empty and no ceiling is set.
   spend: async () => ({
-    day: { reportedCents: 0, reportedRuns: 0, estimatedCents: 0, estimatedRuns: 0, fetchedRuns: 0, unknown: 0 },
+    day: {
+      reportedCents: 0,
+      reportedRuns: 0,
+      estimatedCents: 0,
+      estimatedRuns: 0,
+      fetchedRuns: 0,
+      unknown: 0,
+      unknownWhy: [],
+    },
     ceilingUsd: undefined,
   }),
   // Never reached on this machine: `isSea()` is false under vitest, so this
@@ -390,5 +399,32 @@ describe('lingtai doctor — every check has a section', () => {
     for (const name of ['discuss: p signed in', 'discuss: p codex ready', 'triage: p codex ready']) {
       expect(areaOf({ name, status: 'ok', detail: '' })).toBe('Projects')
     }
+  })
+})
+
+describe('spendToday names the unknown runs', () => {
+  const day = {
+    reportedCents: 0,
+    reportedRuns: 0,
+    estimatedCents: 0,
+    estimatedRuns: 0,
+    fetchedRuns: 0,
+    unknown: 2,
+    unknownWhy: [
+      { reason: 'gpt-x', runs: 1 },
+      { reason: 'no usage reported', runs: 1 },
+    ],
+  }
+
+  it('is ok with the names and no ceiling', async () => {
+    const r = await spendToday(async () => ({ day, ceilingUsd: undefined }))
+    expect(r.status).toBe('ok')
+    expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
+  })
+
+  it('warns with the names and a ceiling', async () => {
+    const r = await spendToday(async () => ({ day, ceilingUsd: 50 }))
+    expect(r.status).toBe('warn')
+    expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })
 })

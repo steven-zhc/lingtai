@@ -6,7 +6,7 @@
  */
 import { type DaySpend, dayFigure, daySpend, daySpendText, startOfLocalDay } from '@lingtai/conductor'
 import { machineDayCeiling } from '@lingtai/env'
-import { readSpend } from '@lingtai/projector'
+import { readRateSnapshot, readSpend } from '@lingtai/projector'
 
 export interface DaySpendReading {
   /** The full sentence, for a title or a page. */
@@ -41,7 +41,7 @@ export async function readDayReading(
 ): Promise<DaySpendReading> {
   try {
     const ceilingUsd = machineDayCeiling()
-    const day = daySpend(await readSpend({ since: startOfLocalDay(now) }), now)
+    const day = daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot())
     return dayReading(day, ceilingUsd, options)
   } catch (err) {
     return { text: `today's spend could not be read: ${(err as Error).message}`, short: 'today unreadable' }

@@ -131,22 +131,64 @@ export function estimateRow(
   let total = 0
   let fetched = false
   for (const entry of row.usage) {
-    if (entry.model === undefined) return null
-    if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return null
-    const listed = card.some((r) => r.model === entry.model)
-    const mode = entry.mode ?? ''
-    const rate = listed
-      ? rateFor(card, entry.model, mode, row.at)
-      : (rateFor(snapshot, entry.model, mode, row.at) ?? earliestRow(snapshot, entry.model, mode))
-    if (rate === undefined || rate.withdrawn) return null
-    // A null rate is unknown only for an entry that has tokens of that class.
-    if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return null
-    if ((entry.tokens.cacheWrite ?? 0) > 0 && rate.cacheWrite === null) return null
-    if ((entry.tokens.reasoning ?? 0) > 0 && rate.reasoning === null) return null
-    total += priceTokens(entry.tokens, rate)
-    if (!listed) fetched = true
+    const priced = priceEntry(entry, row.at, snapshot, card)
+    if (!priced.ok) return null
+    total += priceTokens(entry.tokens, priced.rate)
+    if (!priced.listed) fetched = true
   }
   return { usd: total, fetched }
+}
+
+/**
+ * One usage entry's price, or why it has none. The one body `estimateRow` and
+ * `unpricedReason` both walk, so the reason cannot be computed another way than
+ * the fold priced the row.
+ */
+function priceEntry(
+  entry: Usage[number],
+  at: Date,
+  snapshot: readonly RateRow[],
+  card: readonly RateRow[],
+): { ok: true; rate: RateRow; listed: boolean } | { ok: false; why: 'no-usage' | 'unpriced' } {
+  if (entry.model === undefined) return { ok: false, why: 'no-usage' }
+  if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return { ok: false, why: 'no-usage' }
+  const listed = card.some((r) => r.model === entry.model)
+  const mode = entry.mode ?? ''
+  const rate = listed
+    ? rateFor(card, entry.model, mode, at)
+    : (rateFor(snapshot, entry.model, mode, at) ?? earliestRow(snapshot, entry.model, mode))
+  if (rate === undefined || rate.withdrawn) return { ok: false, why: 'unpriced' }
+  // A null rate is unknown only for an entry that has tokens of that class.
+  if ((entry.tokens.cacheRead ?? 0) > 0 && rate.cacheRead === null) return { ok: false, why: 'unpriced' }
+  if ((entry.tokens.cacheWrite ?? 0) > 0 && rate.cacheWrite === null) return { ok: false, why: 'unpriced' }
+  if ((entry.tokens.reasoning ?? 0) > 0 && rate.reasoning === null) return { ok: false, why: 'unpriced' }
+  return { ok: true, rate, listed }
+}
+
+/** What `unpricedReason` says for a run whose usage carried no model or no tokens. */
+export const NO_USAGE_REASON = 'no usage reported'
+
+/** What `unpricedReason` says when every entry is priced now but the stored estimate is null: the fold's snapshot was older. */
+export const REPRICED_REASON = 'priced since, rebuild pending'
+
+/**
+ * Why `estimateRow` is null for a row: the first model with no price in force,
+ * or `NO_USAGE_REASON`. Explains a row already known to be unknown and never
+ * decides that (the stored estimate does). If no entry fails now the snapshot
+ * changed after the fold, and which model the fold lacked a price for is not
+ * recoverable, so no model is named: `REPRICED_REASON`, which a rebuild clears.
+ */
+export function unpricedReason(
+  row: { at: Date; usage: Usage },
+  snapshot: readonly RateRow[],
+  card: readonly RateRow[] = RATE_CARD,
+): string {
+  for (const entry of row.usage) {
+    const priced = priceEntry(entry, row.at, snapshot, card)
+    if (priced.ok) continue
+    return priced.why === 'no-usage' ? NO_USAGE_REASON : (entry.model as string)
+  }
+  return row.usage.length === 0 ? NO_USAGE_REASON : REPRICED_REASON
 }
 
 /** Where a runtime's own prices are listed in LiteLLM's table. A runtime not here asks for nothing. */

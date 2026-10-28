@@ -1,4 +1,5 @@
 import { CONTROL_STREAM, reduceControl } from '@lingtai/domain'
+import { estimateRow, REPRICED_REASON, type RateRow } from '@lingtai/domain/rate-card'
 import { machineDayCeiling, machineFileFrom } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -20,12 +21,14 @@ const today = (costUsd: number | null, estimatedUsd: number | null = null, estim
   costUsd,
   estimatedUsd,
   estimateFetched: estimatedUsd === null ? null : estimateFetched,
+  usage: [],
 })
 const yesterday = (costUsd: number | null): DayRow => ({
   at: new Date(2026, 9, 25, 23, 59, 0),
   costUsd,
   estimatedUsd: null,
   estimateFetched: null,
+  usage: [],
 })
 
 const check = (rows: DayRow[], store: ReturnType<typeof createMemoryEventStore>, at = now, ceilingUsd = 50) =>
@@ -41,6 +44,7 @@ describe('daySpend', () => {
       estimatedRuns: 0,
       fetchedRuns: 0,
       unknown: 1,
+      unknownWhy: [{ reason: 'no usage reported', runs: 1 }],
     })
   })
 })
@@ -158,6 +162,7 @@ describe('dayCeilingPause', () => {
       costUsd: 60,
       estimatedUsd: null,
       estimateFetched: null,
+      usage: [],
     }
     expect(await check([tomorrow], store, next)).not.toBeNull()
     expect(await store.read(CONTROL_STREAM)).toHaveLength(3)
@@ -267,5 +272,72 @@ describe('daySpend sub-cent estimates', () => {
     const day = daySpend(rows, now)
     expect(day).toMatchObject({ estimatedCents: 400, estimatedRuns: 1000, unknown: 0 })
     expect(ceilingReached(day, 1)).toBe(true)
+  })
+})
+
+describe('unknownWhy', () => {
+  const at = new Date(2026, 9, 26, 9, 0, 0)
+  const used = (model?: string) => [{ ...(model === undefined ? {} : { model }), tokens: { fresh: 10, output: 5 } }]
+  const unknownRow = (usage: DayRow['usage']): DayRow => ({
+    at,
+    costUsd: null,
+    estimatedUsd: null,
+    estimateFetched: null,
+    usage,
+  })
+  const withUsage = (n: number, usage: DayRow['usage']) => Array.from({ length: n }, () => unknownRow(usage))
+
+  it('names each unpriced model and the no-usage runs, adding up to unknown', () => {
+    const rows = [...withUsage(2, used('gpt-x')), unknownRow(used('gpt-y')), unknownRow([])]
+    const day = daySpend(rows, now)
+    expect(day.unknown).toBe(4)
+    expect(day.unknownWhy).toEqual([
+      { reason: 'gpt-x', runs: 2 },
+      { reason: 'gpt-y', runs: 1 },
+      { reason: 'no usage reported', runs: 1 },
+    ])
+    expect(day.unknownWhy.reduce((n, w) => n + w.runs, 0)).toBe(day.unknown)
+  })
+
+  it('counts a row once, under the first model that failed', () => {
+    const day = daySpend([unknownRow([...used('gpt-x'), ...used('gpt-y')])], now)
+    expect(day.unknownWhy).toEqual([{ reason: 'gpt-x', runs: 1 }])
+  })
+
+  it('does not call a row the snapshot prices by its earliest row unknown', () => {
+    const snapshot: RateRow[] = [
+      { model: 'gpt-z', mode: '', from: '2026-10-27', input: 1, output: 2, cacheRead: null, cacheWrite: null },
+    ]
+    const row = { at, usage: used('gpt-z') }
+    const est = estimateRow(row, snapshot)
+    expect(est).not.toBeNull()
+    const stored: DayRow = { ...row, costUsd: null, estimatedUsd: est!.usd, estimateFetched: est!.fetched }
+    const day = daySpend([stored], now, snapshot)
+    expect(day.unknown).toBe(0)
+    expect(day.unknownWhy).toEqual([])
+  })
+
+  it('names no model for a row a later snapshot prices, since which one the fold lacked is not known', () => {
+    const rate = { mode: '', from: '2026-10-01', input: 1, output: 2, cacheRead: null, cacheWrite: null }
+    const snapshot: RateRow[] = [
+      { model: 'model-a', ...rate },
+      { model: 'model-b', ...rate },
+    ]
+    const day = daySpend([unknownRow([...used('model-a'), ...used('model-b')])], now, snapshot)
+    expect(day.unknownWhy).toEqual([{ reason: REPRICED_REASON, runs: 1 }])
+  })
+
+  it('prints the reasons after the count and caps them at three plus +N more', () => {
+    const rows = [
+      ...withUsage(2, used('gpt-x')),
+      unknownRow(used('gpt-y')),
+      unknownRow([]),
+      unknownRow(used('gpt-w')),
+      unknownRow(used('gpt-v')),
+    ]
+    const text = daySpendText(daySpend(rows, now), undefined)
+    expect(text).toContain('+ 6 unknown (gpt-x ×2, gpt-v ×1, gpt-w ×1, +2 more) —')
+    expect(daySpendText(daySpend([unknownRow([])], now), undefined)).toContain('+ 1 unknown (no usage reported ×1)')
+    expect(daySpendText(daySpend([], now), undefined)).toContain('+ 0 unknown —')
   })
 })

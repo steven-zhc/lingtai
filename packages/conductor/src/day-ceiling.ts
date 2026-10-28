@@ -14,13 +14,18 @@
  * leaves no row at all, and is not counted either.
  */
 import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope } from '@lingtai/domain'
+import type { Usage } from '@lingtai/domain'
+import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
 import type { EventStore } from '@lingtai/event-store'
+
+import { readRateSnapshot } from './rate-snapshot.ts'
 
 export interface DayRow {
   at: Date
   costUsd: number | null
   estimatedUsd: number | null
   estimateFetched: boolean | null
+  usage: Usage
 }
 
 export interface DaySpend {
@@ -32,6 +37,8 @@ export interface DaySpend {
   /** Of the estimated runs, those priced at least partly from the fetched snapshot (#658). */
   fetchedRuns: number
   unknown: number
+  /** Why each unknown run is, most runs first then by reason; the entries add up to `unknown`. */
+  unknownWhy: { reason: string; runs: number }[]
 }
 
 /** Local midnight at the start of `now`'s day, correct across DST and in any `TZ`. */
@@ -41,7 +48,7 @@ export const startOfLocalDay = (now: Date): Date => new Date(now.getFullYear(), 
 export const nextLocalMidnight = (now: Date): Date => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
 
 /** Today's rows only; each reported row rounded to cents once; estimates are summed first and rounded once. */
-export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
+export function daySpend(rows: readonly DayRow[], now: Date, snapshot: readonly RateRow[] = []): DaySpend {
   const since = startOfLocalDay(now).getTime()
   const day: DaySpend = {
     reportedCents: 0,
@@ -50,7 +57,9 @@ export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
     estimatedRuns: 0,
     fetchedRuns: 0,
     unknown: 0,
+    unknownWhy: [],
   }
+  const why = new Map<string, number>()
   let estimatedUsd = 0
   for (const row of rows) {
     if (row.at.getTime() < since) continue
@@ -61,6 +70,8 @@ export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
     }
     if (row.estimatedUsd === null) {
       day.unknown += 1
+      const reason = unpricedReason(row, snapshot)
+      why.set(reason, (why.get(reason) ?? 0) + 1)
       continue
     }
     estimatedUsd += row.estimatedUsd
@@ -69,6 +80,9 @@ export function daySpend(rows: readonly DayRow[], now: Date): DaySpend {
   }
   // Summed in dollars and rounded once: a run's estimate is often a fraction of a cent, and rounding each would drop spend the board shows.
   day.estimatedCents = Math.round(estimatedUsd * 100)
+  day.unknownWhy = [...why]
+    .map(([reason, runs]) => ({ reason, runs }))
+    .sort((a, b) => b.runs - a.runs || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0))
   return day
 }
 
@@ -89,9 +103,20 @@ export function daySpendText(
   options: { fetchedNote?: boolean } = {},
 ): string {
   const figure = dayFigure(day)
-  const unknown = ` + ~${dollars(day.estimatedCents)} est.${options.fetchedNote ? fetchedNote(day) : ''} + ${day.unknown} unknown`
+  const unknown = ` + ~${dollars(day.estimatedCents)} est.${options.fetchedNote ? fetchedNote(day) : ''} + ${day.unknown} unknown${unknownWhyText(day)}`
   if (ceilingUsd === undefined) return `today ${figure}${unknown} — no daily ceiling (limits.day_usd)`
   return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — reported and estimated count, unknown costs are not`
+}
+
+const WHY_SHOWN = 3
+
+/** ` (a ×n, b ×m, c ×k, +N more)` after the count: three entries at most, N counting entries and not runs. Empty when nothing is unknown. */
+function unknownWhyText(day: DaySpend): string {
+  if (day.unknown === 0 || day.unknownWhy.length === 0) return ''
+  const shown = day.unknownWhy.slice(0, WHY_SHOWN).map((w) => `${w.reason} ×${w.runs}`)
+  const more = day.unknownWhy.length - WHY_SHOWN
+  if (more > 0) shown.push(`+${more} more`)
+  return ` (${shown.join(', ')})`
 }
 
 /** Said on `/spend` only, where an estimate is shown that part of it is not from the shipped card; empty otherwise. */
@@ -180,7 +205,7 @@ export async function dayCeilingPause(options: DayCeilingOptions): Promise<strin
     await liftOwnPause(options.store, now)
     return null
   }
-  const day = daySpend(await options.rows(startOfLocalDay(now)), now)
+  const day = daySpend(await options.rows(startOfLocalDay(now)), now, readRateSnapshot())
   if (!ceilingReached(day, options.ceilingUsd)) {
     await liftOwnPause(options.store, now)
     return null
