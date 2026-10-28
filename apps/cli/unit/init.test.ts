@@ -309,7 +309,8 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     )
     expect(code).toBe(0)
     expect(calls).toEqual({ boardAt: 1, board: 0 })
-    expect(logged.at(-1)).toContain('the board was already running at http://127.0.0.1:17820 — this started none')
+    expect(logged.at(-2)).toContain('the board was already running at http://127.0.0.1:17820 — this started none')
+    expect(logged.at(-1)).toBe('next: lingtai ticket new · lingtai run')
   })
 
   it('the GitHub branch starts the board only when boardUrl() is first asked, and only once', async () => {
