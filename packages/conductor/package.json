@@ -17,6 +17,7 @@
     "./triage": "./src/triage.ts",
     "./filter": "./src/filter.ts",
     "./ceiling": "./src/ceiling.ts",
+    "./report": "./src/report.ts",
     "./branches": "./src/branches.ts",
     "./arms": "./src/arms.ts",
     "./labels": "./src/labels.ts",

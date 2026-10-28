@@ -56,7 +56,7 @@ The operator's decisions in epic #648 are the inputs here.
    | --- | --- |
    | passes | the claims on the ticket's stream, continuations excluded by 0109 §5's rule |
    | fix rounds | distinct `(pass, round)` pairs among the ticket's `RunSpent` events whose `for` is `Action` with `round ≥ 1` (0110 §10), **summed over every pass of the ticket** |
-   | reviews | each review's `StepEnded` on the ticket's pass streams (`outcome.step` is `review`), with its `round`, its time, and the count of its findings that are `blocker` or `major`; a review with none of those passed |
+   | reviews | each review's `StepEnded` on the ticket's pass streams (`outcome.step` is `review`), with its `round`, its time, and the count of its findings that are `blocker` or `major`; a review passed when it has none of those **and** every action of the step cleared, so an interrupted review has not passed |
    | waits | `WaitStarted` on the ticket's stream, each with its reason's tag, its latest `WaitTriaged` cause if any, and its `WaitResolved` resolution |
    | machine time | one interval per claim and per continuation, from it to the earlier of the first `TicketLanded`, `WaitStarted`, `TicketReleased` or `TicketClosed` after it and its last sign of life (below), summed. The approval itself starts nothing; the continuation after it opens its own interval |
    | cost | the ticket's `RunSpent` events, split by purpose: Work, Answering, Judge, Triage, Discussion (`apps/board/src/lib/spend.ts:30`) |
