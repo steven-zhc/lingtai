@@ -38,14 +38,18 @@
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
 import { STEPS, baseProtectedRemedies, parsePayload } from '@lingtai/domain'
-import { githubApp } from '@lingtai/env'
+import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import {
+  GitHubError,
+  type GhRun,
   type Installation,
   NotInstalledError,
   REQUIRED_PERMISSIONS,
   createGitHubClient,
   gapRemedyLines,
+  ghScopeGap,
+  ghStatus,
   installationForRepo,
   parseSlug,
   permissionGaps,
@@ -307,6 +311,96 @@ export async function checkInstallation(
   return installation
 }
 
+/** What a `gh` machine's login is allowed to do to one repository. */
+export interface GhAccess {
+  login: string
+  defaultBranch: string | null
+}
+
+export interface GhAccessDeps {
+  status: typeof ghStatus
+  /** `GET /repos/{owner}/{repo}` with the saved login's token. */
+  repository: (
+    owner: string,
+    repo: string,
+  ) => Promise<{ archived?: boolean; default_branch?: string; permissions?: { push?: boolean } }>
+}
+
+const liveGhAccessDeps = (gh?: GhRun): GhAccessDeps => ({
+  status: () => ghStatus(gh),
+  repository: async (owner, repo) =>
+    (await createGitHubClient({ auth: { kind: 'gh' }, owner, repo, ...(gh === undefined ? {} : { gh }) })).request(
+      'GET',
+      `/repos/${owner}/${repo}`,
+    ),
+})
+
+/**
+ * `checkInstallation`'s counterpart on a `gh` machine (ADR 0114 §8): the saved
+ * login has `repo` and `workflow`, and can push to this repository. Logs its
+ * lines and returns null having refused, as `checkInstallation` does; logs
+ * nothing on success.
+ *
+ * Scopes are checked before the repository is read, because without `repo` a
+ * private repository answers 404 and the refusal would blame visibility for
+ * what is a missing scope. Each failure is named from the response's own
+ * `message` and never guessed: a 404, an organisation's OAuth-app restriction,
+ * SAML enforcement and any other 403 are four different sentences, and a read
+ * that failed on the network is never reported as no access.
+ */
+export async function checkGhAccess(
+  slug: string,
+  log: (line: string) => void,
+  deps: GhAccessDeps = liveGhAccessDeps(),
+): Promise<GhAccess | null> {
+  const { owner, repo } = parseSlug(slug)
+  const status = await deps.status()
+  if (!status.ok) {
+    log(`${status.detail} — run \`gh auth login\``)
+    return null
+  }
+  const gap = ghScopeGap(status)
+  if (gap !== null) {
+    log(gap)
+    return null
+  }
+  let found: Awaited<ReturnType<GhAccessDeps['repository']>>
+  try {
+    found = await deps.repository(owner, repo)
+  } catch (err) {
+    if (err instanceof GitHubError && err.status === 404) {
+      log(`${slug} is not visible to ${status.login} — ${err.message}`)
+    } else if (err instanceof GitHubError && err.status === 403 && /OAuth App access restrictions/i.test(err.message)) {
+      log(
+        `${owner} blocks the GitHub CLI's access to it (${err.message}); this organisation blocks the GitHub ` +
+          "CLI's access — use the App (`--github-auth app`)",
+      )
+    } else if (err instanceof GitHubError && err.status === 403 && /SAML/i.test(err.message)) {
+      log(
+        `${slug} is behind ${owner}'s SAML single sign-on (${err.message}) — authorise gh's token for the ` +
+          `${owner} organisation on GitHub, then run this again`,
+      )
+    } else if (err instanceof GitHubError && err.status === 403) {
+      log(`${slug} is not visible to ${status.login} — ${err.message}`)
+    } else {
+      // A 5xx, a failed fetch, or `gh` signed out between the status and the token.
+      log(`could not read ${slug} — ${(err as Error).message}`)
+    }
+    return null
+  }
+  // Before `permissions.push`: an archived repository can still report the
+  // caller's role as push.
+  if (found.archived === true) {
+    log(`${slug} is archived, so nothing can be pushed to it — unarchive it on GitHub first`)
+    return null
+  }
+  if (found.permissions?.push !== true) {
+    log(`you (${status.login}) cannot push to ${slug} — ask for write access, or add a repository you can push to`)
+    return null
+  }
+  return { login: status.login, defaultBranch: found.default_branch ?? null }
+}
+
 /** `issues, contents, pull requests, workflows write; metadata read`, from the table the check uses. */
 function describeRequired(): string {
   const levels = [...new Set(REQUIRED_PERMISSIONS.map((r) => r.level))].sort().reverse()
@@ -382,14 +476,39 @@ export async function warnIfProtected(
   }
 }
 
-export async function add(options: AddOptions, log = console.log): Promise<number> {
+export interface AddDeps {
+  auth: () => 'app' | 'gh' | null
+  checkGh: (slug: string, log: (line: string) => void) => Promise<GhAccess | null>
+  check: typeof checkInstallation
+}
+
+const liveAddDeps: AddDeps = {
+  auth: () => githubAuthKind(),
+  checkGh: (slug, log) => checkGhAccess(slug, log),
+  check: checkInstallation,
+}
+
+export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<number> {
   const { owner, repo } = parseSlug(options.slug)
-  const auth = githubApp()
 
-  const installation = await checkInstallation(options.slug, log, options.installation)
-  if (installation === null) return 1
+  // On a `gh` machine there is no installation to ask for: the saved login's
+  // scopes and its push right on this repository are the check.
+  const onGh = deps.auth() === 'gh'
+  let installation: Installation | undefined
+  if (onGh) {
+    if ((await deps.checkGh(options.slug, log)) === null) return 1
+  } else {
+    const found = await deps.check(options.slug, log, options.installation)
+    if (found === null) return 1
+    installation = found
+  }
 
-  const client = await createGitHubClient({ auth, owner, repo, installation })
+  const client = await createGitHubClient({
+    auth: onGh ? { kind: 'gh' } : githubClientAuth(),
+    owner,
+    repo,
+    ...(installation === undefined ? {} : { installation }),
+  })
   log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`)
 
   // 3. The recipe, and with it the base — which is the recipe's, not this

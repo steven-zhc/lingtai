@@ -87,6 +87,12 @@ function countedDeps(
   }
   counted.deps = {
     check: (slug, log) => checkInstallation(slug, log, undefined, lookup),
+    auth: () => 'app',
+    interactive: () => true,
+    // The App tests prove `gh` is never touched.
+    ghAccess: async () => {
+      throw new Error('gh was asked on an App machine')
+    },
     picker,
     files: {
       read: async (path) => {

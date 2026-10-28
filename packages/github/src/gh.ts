@@ -136,3 +136,16 @@ export async function ghStatus(run: GhRun = liveGh, signal?: AbortSignal): Promi
     .filter((scope) => scope !== '')
   return { ok: true, login: active.login, scopes }
 }
+
+/**
+ * The sentence for a signed-in login that lacks `repo` or `workflow`, or null when it has both.
+ * Shared by `lingtai doctor` and `lingtai add`, so the fix is worded once.
+ */
+export function ghScopeGap(status: Extract<GhStatus, { ok: true }>): string | null {
+  const missing = ['repo', 'workflow'].filter((scope) => !status.scopes.includes(scope))
+  if (missing.length === 0) return null
+  return (
+    `gh is signed in as ${status.login} without ${missing.join(' and ')} — run ` +
+    `\`gh auth refresh --hostname github.com --scopes ${missing.join(',')}\``
+  )
+}

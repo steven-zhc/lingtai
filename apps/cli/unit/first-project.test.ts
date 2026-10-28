@@ -965,3 +965,39 @@ describe('liveFirstProjectWorld kept (#402 review)', () => {
     )
   })
 })
+
+describe('runGithubBranch on a gh machine (#708)', () => {
+  it('asks no App question, needs no board and no picker, and hands add no installation', async () => {
+    const calls = { app: 0, board: 0, wait: 0, picker: 0, added: [] as unknown[] }
+    const h = harness({
+      app: async () => {
+        calls.app++
+        return { configured: false }
+      },
+      waitForApp: async () => {
+        calls.wait++
+        return { skipped: true }
+      },
+      picker: async () => {
+        calls.picker++
+        throw new Error('no picker')
+      },
+      add: async (options) => {
+        calls.added.push(options)
+        return 0
+      },
+    })
+    h.world.github.auth = () => 'gh'
+    const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
+    expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets' })
+    expect(calls).toMatchObject({ app: 0, wait: 0, picker: 0 })
+    expect(calls.added).toEqual([{ slug: 'acme/widgets', installation: undefined, base: undefined }])
+  })
+
+  it('refuses --github-app create, which has no App to create here', async () => {
+    const h = harness({})
+    h.world.github.auth = () => 'gh'
+    const result = await chooseFirstProject(h.world, { github: 'acme/widgets', 'github-app': 'create' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('github.auth is gh') })
+  })
+})

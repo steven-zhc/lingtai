@@ -45,6 +45,7 @@ export {
 export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'
 export {
   ghExecOptions,
+  ghScopeGap,
   ghStatus,
   ghToken,
   liveGh,

@@ -20,20 +20,26 @@
  * registration, or the exit code to stop with. A local project, and a
  * GitHub one picked on the board, reach none of this yet.
  */
-import { checkInstallation } from '@lingtai/conductor/onboard'
+import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
 
 import { EMPTY_SETUP_READER, type SetupReader } from './detect-setup.ts'
 import { livePicker } from './first-project.ts'
-import { liveAsk, liveSpin } from './prompt.ts'
+import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
+
+/**
+ * How this machine reaches the repository: through the App's installation on
+ * it, or through the saved `gh` login, which has none.
+ */
+export type Reach = { kind: 'app'; installation: Installation } | { kind: 'gh' }
 
 /**
  * The repository's default branch, through the same calls `checkInstallation`
@@ -52,10 +58,13 @@ import { liveTrialBuild } from './trial-build.ts'
  * check below has, and a second request would ask the same question again
  * for no reason (#402).
  */
-async function defaultBranchOf(owner: string, repo: string, installation?: Installation): Promise<string | null> {
+async function defaultBranchOf(owner: string, repo: string, reach?: Reach): Promise<string | null> {
   try {
+    if (reach?.kind === 'gh') {
+      return await (await createGitHubClient({ auth: { kind: 'gh' }, owner, repo })).defaultBranch()
+    }
     const auth = githubApp()
-    const resolved = installation ?? (await installationForRepo(auth, owner, repo))
+    const resolved = reach?.installation ?? (await installationForRepo(auth, owner, repo))
     const client = await createGitHubClient({ auth, owner, repo, installation: resolved })
     return await client.defaultBranch()
   } catch {
@@ -80,13 +89,15 @@ async function defaultBranchOf(owner: string, repo: string, installation?: Insta
 async function liveGithubReader(
   owner: string,
   repo: string,
-  installation: Installation | undefined,
+  reach: Reach | undefined,
   ref: string | null,
 ): Promise<SetupReader> {
-  if (installation === undefined || ref === null) return EMPTY_SETUP_READER
+  if (reach === undefined || ref === null) return EMPTY_SETUP_READER
   try {
-    const auth = githubApp()
-    const client = await createGitHubClient({ auth, owner, repo, installation })
+    const client =
+      reach.kind === 'gh'
+        ? await createGitHubClient({ auth: { kind: 'gh' }, owner, repo })
+        : await createGitHubClient({ auth: githubApp(), owner, repo, installation: reach.installation })
     return {
       has: async (path) => {
         try {
@@ -116,6 +127,12 @@ async function liveGithubReader(
 
 export interface AskBeforeGithubAddDeps {
   check: typeof checkInstallation
+  /** The machine's elected auth — `null` where nothing is configured. Throws where `github.auth` is refused. */
+  auth: () => 'app' | 'gh' | null
+  /** Whether there is a terminal to ask at. */
+  interactive: () => boolean
+  /** On a `gh` machine, `check`'s counterpart: scopes, then `GET /repos` and `permissions.push`. */
+  ghAccess: (slug: string, log: (line: string) => void) => Promise<GhAccess | null>
   /**
    * `choose()`'s own picker — asked only once `deps.check` has already
    * refused, to turn that refusal into the sentence and deep link
@@ -125,12 +142,7 @@ export interface AskBeforeGithubAddDeps {
    */
   picker: () => Promise<Picker>
   files: RecipeFiles
-  reader: (
-    owner: string,
-    repo: string,
-    installation: Installation | undefined,
-    ref: string | null,
-  ) => Promise<SetupReader>
+  reader: (owner: string, repo: string, reach: Reach | undefined, ref: string | null) => Promise<SetupReader>
   ask: QuestionWorld['ask']
   spin?: QuestionWorld['spin']
   /** `askRecipe`'s `runtimes` — already probed, never by this function itself. */
@@ -141,6 +153,12 @@ export interface AskBeforeGithubAddDeps {
 
 const liveDeps: AskBeforeGithubAddDeps = {
   check: checkInstallation,
+  auth: () => githubAuthKind(),
+  interactive: () => {
+    const how = interactivity(false)
+    return how.stdinIsTTY && how.stdoutIsTTY
+  },
+  ghAccess: (slug, log) => checkGhAccess(slug, log),
   picker: livePicker,
   files: diskFiles,
   reader: liveGithubReader,
@@ -191,8 +209,42 @@ export async function askBeforeGithubAdd(
   // success; `add()` runs the same check again later and prints its own
   // lines through `runGithubBranch`'s `said`, and printing them here too
   // would show every successful add the same two lines twice.
-  let installation: Installation | undefined
-  if (hasGitHubApp()) {
+  let kind: 'app' | 'gh' | null
+  try {
+    kind = deps.auth()
+  } catch (err) {
+    console.error(`${(err as Error).message}. Nothing was written`)
+    return 1
+  }
+  if (kind === null && !deps.interactive()) {
+    console.error('no GitHub auth is configured here — run lingtai init. Nothing was written')
+    return 1
+  }
+
+  // On a `gh` machine the saved login is the check: its scopes and its push
+  // right on this repository, read before anything is asked or written. The
+  // App is never consulted — a machine with a full App and `auth: gh` is a
+  // `gh` machine. `reach` is how the repository is read from here on.
+  let reach: Reach | undefined
+  let ghDefaultBranch: string | null = null
+  if (kind === 'gh') {
+    const checked: string[] = []
+    let access: GhAccess | null
+    try {
+      access = await deps.ghAccess(slug, (line) => checked.push(line))
+    } catch (err) {
+      checked.push(`could not check ${slug} — ${(err as Error).message}`)
+      access = null
+    }
+    if (access === null) {
+      console.error(`${checked.filter((l) => l.trim() !== '').join('\n')}. Nothing was written`)
+      return 1
+    }
+    reach = { kind: 'gh' }
+    ghDefaultBranch = access.defaultBranch
+  }
+
+  if (kind !== 'gh' && hasGitHubApp()) {
     const checked: string[] = []
     try {
       const found = await deps.check(slug, (line) => checked.push(line))
@@ -224,7 +276,7 @@ export async function askBeforeGithubAdd(
         )
         return 1
       }
-      installation = found
+      reach = { kind: 'app', installation: found }
     } catch (err) {
       // `githubApp()`, inside `deps.check`'s lookup, rethrows anything that
       // is not `NotInstalledError` — a malformed key, a revoked key (401), an
@@ -260,7 +312,9 @@ export async function askBeforeGithubAdd(
   // `askRecipe` — asking GitHub for the default branch twice for one run is
   // one request nobody needed.
   let cachedDefaultBranch: Promise<string | null> | null = null
-  const defaultBranch = () => (cachedDefaultBranch ??= defaultBranchOf(owner, repo, installation))
+  const defaultBranch = () =>
+    (cachedDefaultBranch ??=
+      ghDefaultBranch !== null ? Promise.resolve(ghDefaultBranch) : defaultBranchOf(owner, repo, reach))
 
   let seeds: readonly RecipeChange[] = []
   if (existing === null) {
@@ -294,7 +348,7 @@ export async function askBeforeGithubAdd(
 
   const runtimes = await deps.runtimes()
   const ref = base ?? (await defaultBranch())
-  const reader = await deps.reader(owner, repo, installation, ref)
+  const reader = await deps.reader(owner, repo, reach, ref)
 
   const recipeResult = await askRecipe(world, {
     project: repo,
@@ -304,7 +358,7 @@ export async function askBeforeGithubAdd(
     flags,
     buildFlags,
     defaultBranch,
-    ...(installation === undefined || ref === null
+    ...(reach === undefined || ref === null
       ? {}
       : {
           tryBuild: liveTrialBuild({
@@ -312,7 +366,15 @@ export async function askBeforeGithubAdd(
             owner,
             repo,
             base: ref,
-            token: async () => (await createGitHubClient({ auth: githubApp(), owner, repo, installation })).token(),
+            token: async () =>
+              (
+                await createGitHubClient({
+                  auth: githubClientAuth(),
+                  owner,
+                  repo,
+                  ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
+                })
+              ).token(),
             files: deps.files,
           }),
         }),
