@@ -48,9 +48,12 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TicketReportQuery,
 } from './store.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
+import { ticketReportRowOf } from './ticket-report.ts'
+import type { TicketReportRow } from './ticket-report.ts'
 
 /**
  * `node:sqlite`, loaded when a store is first opened rather than when this file
@@ -744,6 +747,17 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
            order by seq`,
           args,
         ).map(toSpendRow),
+      )
+    },
+
+    async ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]> {
+      return read(() =>
+        allOrEmpty(
+          query.project === undefined
+            ? 'select * from ticket_report order by ticket'
+            : 'select * from ticket_report where project = ? order by ticket',
+          query.project === undefined ? [] : [query.project],
+        ).map(ticketReportRowOf),
       )
     },
 

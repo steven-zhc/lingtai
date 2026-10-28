@@ -109,6 +109,50 @@ const json = <T>(value: unknown, fallback: T): T => {
   return (typeof value === 'string' ? JSON.parse(value) : value) as T
 }
 
+/**
+ * A `ticket_report` row as a reader sees it: what `report()` in the conductor
+ * takes, less the fold's own bookkeeping (`claims`, `rounds`, `open_intervals`,
+ * `applied_seq`). Declared here because the conductor depends on this package.
+ */
+export interface TicketReportRow {
+  ticket: string
+  project: string | null
+  kind: string | null
+  outcome: 'open' | 'landed' | 'closed'
+  outcomeAt: Date | null
+  passes: number
+  fixRounds: number
+  machineMs: number
+  intervalsEmpty: number
+  intervalsOpen: number
+  unknownClaims: number
+  passTimes: string[]
+  reviews: ReportReview[]
+  waits: ReportWait[]
+  cost: Record<string, PurposeCost>
+}
+
+/** Both stores' one mapper: SQLite hands JSON back as text and Postgres as a value, `json` takes either. */
+export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow {
+  return {
+    ticket: String(row.ticket),
+    project: (row.project as string | null | undefined) ?? null,
+    kind: (row.kind as string | null | undefined) ?? null,
+    outcome: row.outcome as TicketReportRow['outcome'],
+    outcomeAt: row.outcome_at === null || row.outcome_at === undefined ? null : new Date(row.outcome_at as string),
+    passes: Number(row.passes),
+    fixRounds: Number(row.fix_rounds),
+    machineMs: Number(row.machine_ms),
+    intervalsEmpty: Number(row.intervals_empty),
+    intervalsOpen: Number(row.intervals_open),
+    unknownClaims: Number(row.unknown_claims),
+    passTimes: json(row.pass_times, []),
+    reviews: json(row.reviews, []),
+    waits: json(row.waits, []),
+    cost: json(row.cost, {}),
+  }
+}
+
 const fresh = (ticket: string): State => ({
   ticket,
   kind: null,

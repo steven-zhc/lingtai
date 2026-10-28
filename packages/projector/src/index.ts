@@ -37,6 +37,7 @@ export {
   type ProjectionStore,
   type SpendQuery,
   type TaskQuery,
+  type TicketReportQuery,
 } from './store.ts'
 export { projectionStore, withProjectionStore, type ProjectionStoreOptions } from './choose.ts'
 export {
@@ -65,7 +66,9 @@ export {
   type PurposeCost,
   type ReportReview,
   type ReportWait,
+  type TicketReportRow,
 } from './ticket-report.ts'
+export { readTicketReport, type ReadTicketReportOptions } from './read-ticket-report.ts'
 export {
   SPEND_TABLE,
   spendProjectionWith,

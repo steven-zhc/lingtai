@@ -734,6 +734,39 @@ const ticketCommand = Command.make('ticket', {}, () =>
 
 const rest = Args.text({ name: 'arg' }).pipe(Args.repeated)
 
+const reportCommand = Command.make(
+  'report',
+  {
+    window: optionalText('window'),
+    from: optionalText('from'),
+    to: optionalText('to'),
+    kind: optionalText('kind'),
+    project: optionalText('project'),
+    json,
+    noColor,
+  },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      // Loaded here, for the reason `status` gives: the conductor and the store are not for `lingtai version`.
+      await guarded(
+        'report',
+        async () => {
+          const { runReport } = await import('./report.ts')
+          return runReport({
+            window: given(args.window),
+            from: given(args.from),
+            to: given(args.to),
+            kind: given(args.kind),
+            project: given(args.project),
+            json: args.json,
+          })
+        },
+        args.json,
+      )
+    }),
+).pipe(Command.withDescription(definitionOf('report').task))
+
 const backlogList = Command.make(
   'list',
   { project: Args.text({ name: 'project' }).pipe(Args.optional), all: Options.boolean('all'), json, noColor },
@@ -1124,6 +1157,7 @@ export const root = Command.make('lingtai').pipe(
     ticketCommand,
     endCommand,
     backlogCommand,
+    reportCommand,
     envCommand,
     projectionCommand,
     upgradeCommand,
