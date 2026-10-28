@@ -157,6 +157,13 @@ describe('the price hint after the summary (#693)', () => {
     expect(hints([{ role: 'writer', model: 'mystery-1' }], [row('mystery-1')])).toEqual([])
   })
 
+  it('a null row in the snapshot is skipped, and an unreadable snapshot is said so', () => {
+    const m: Summary['models'] = [{ role: 'writer', model: 'mystery-1' }]
+    expect(hints(m, [null as unknown as RateRow, row('mystery-1')])).toEqual([])
+    expect(hints(m, [null as unknown as RateRow])[0]).toContain('mystery-1 is not priced yet')
+    expect(priceHints(m, null)[0]).toContain('could not be read')
+  })
+
   it('roles with no model print the runtime-reports line once', () => {
     const lines = hints([
       { role: 'writer', model: null },

@@ -21,9 +21,11 @@
  * (`AskAgentsAt`'s own rule, `agents.ts:108`), and `at.reader` is already
  * built for wherever the file lives — a local directory or a GitHub ref.
  */
+import { existsSync } from 'node:fs'
+
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { paint } from '@lingtai/env/colour'
-import { readRateSnapshot } from '@lingtai/projector'
+import { readJson, snapshotPath } from '@lingtai/projector'
 import {
   baseOf,
   diskFiles,
@@ -132,8 +134,8 @@ export interface RecipeAt {
   again: string
   home?: string
   files?: RecipeFiles
-  /** The prices fetched onto this machine; defaults to the real snapshot, which reads as none where there is no `LINGTAI_HOME` (#693). */
-  rates?: () => readonly RateRow[]
+  /** The prices fetched onto this machine, `null` where the file is there and cannot be read; defaults to the real snapshot, which under a test reads as none unless it has its own `LINGTAI_HOME` (#693). */
+  rates?: () => readonly unknown[] | null
 }
 
 /** What the recipe, as written, will do with a change — the three facts a newcomer needs before anything is registered (#542). */
@@ -146,19 +148,30 @@ export interface Summary {
   models: readonly { role: 'writer' | 'reviewer'; model: string | null }[]
 }
 
+/** The snapshot's rows; `null` where the file exists and is not a `{ rows: [...] }` document. */
+function fetchedRates(): readonly unknown[] | null {
+  const path = snapshotPath(process.env)
+  if (path === null || !existsSync(path)) return []
+  const doc = readJson(path) as { rows?: unknown } | undefined
+  return Array.isArray(doc?.rows) ? doc.rows : null
+}
+
 /**
  * The lines that say which chosen models have no price yet (#693). A hint about
  * what this machine knows now, never a verdict: `init` does not fetch (#658).
  */
-export function priceHints(models: Summary['models'], snapshot: readonly RateRow[]): string[] {
+export function priceHints(models: Summary['models'], snapshot: readonly unknown[] | null): string[] {
   const lines: string[] = []
+  const unreadable = snapshot === null
+  const priced = (model: string) =>
+    (snapshot ?? []).some((r) => typeof r === 'object' && r !== null && (r as Partial<RateRow>).model === model)
   const named = new Set<string>()
   for (const { model } of models) {
     if (model === null || named.has(model)) continue
     named.add(model)
-    if (shipped(model) || snapshot.some((r) => r.model === model)) continue
+    if (shipped(model) || priced(model)) continue
     lines.push(
-      `${model} is not priced yet — the shipped rate card does not list it and no fetched price for it is on this machine. The conductor fetches prices when it starts; check \`lingtai doctor\` after the first run.`,
+      `${model} is not priced yet — the shipped rate card does not list it and no fetched price for it is on this machine${unreadable ? ' (the fetched-price snapshot there could not be read)' : ''}. The conductor fetches prices when it starts; check \`lingtai doctor\` after the first run.`,
     )
   }
   if (models.some((m) => m.model === null)) {
@@ -387,8 +400,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   const summary = await summariseRecipe(at.project, fileOptions)
   if ('refused' in summary) return summary
   world.log(renderSummary(at.project, summary, at.again))
-  for (const line of priceHints(summary.models, (at.rates ?? (() => readRateSnapshot()))()))
-    world.log(paint.muted(line))
+  for (const line of priceHints(summary.models, (at.rates ?? fetchedRates)())) world.log(paint.muted(line))
 
   // Only the defaults can reach here without anyone having looked: a person who
   // typed an answer, or named `--build none` or `--land <branch>`, chose it.
