@@ -19,7 +19,7 @@ import pg from 'pg'
 
 import type { BacklogEntry } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
-import { columnOf } from './store.ts'
+import { CheckpointRewoundError, columnOf } from './store.ts'
 import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, SpendQuery, TaskQuery } from './store.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
@@ -35,6 +35,14 @@ const ADVANCE_CHECKPOINT = `
   values ($1, $2, now())
   on conflict (name) do update
     set last_seq = excluded.last_seq, updated_at = now()`
+
+const ADVANCE_CHECKPOINT_FENCED = `
+  insert into checkpoints (name, last_seq, updated_at)
+  values ($1, $2, now())
+  on conflict (name) do update
+    set last_seq = excluded.last_seq, updated_at = now()
+    where checkpoints.last_seq >= $3
+  returning name`
 
 const REGISTER_CHECKPOINT = `
   insert into checkpoints (name, last_seq, updated_at)
@@ -230,8 +238,13 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
       return BigInt(r.rows[0]?.last_seq ?? '0')
     },
 
-    async advance(ctx, name, seq) {
-      await ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()])
+    async advance(ctx, name, seq, from) {
+      if (from === undefined) {
+        await ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()])
+        return
+      }
+      const moved = await ctx.query(ADVANCE_CHECKPOINT_FENCED, [name, seq.toString(), from.toString()])
+      if (moved.length === 0) throw new CheckpointRewoundError(name)
     },
 
     async register(ctx, name) {
