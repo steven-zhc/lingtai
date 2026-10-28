@@ -168,12 +168,15 @@ function priceEntry(
 /** What `unpricedReason` says for a run whose usage carried no model or no tokens. */
 export const NO_USAGE_REASON = 'no usage reported'
 
+/** What `unpricedReason` says when every entry is priced now but the stored estimate is null: the fold's snapshot was older. */
+export const REPRICED_REASON = 'priced since, rebuild pending'
+
 /**
  * Why `estimateRow` is null for a row: the first model with no price in force,
  * or `NO_USAGE_REASON`. Explains a row already known to be unknown and never
  * decides that (the stored estimate does). If no entry fails now the snapshot
- * changed after the fold: the first model off the shipped card is named, as the
- * price a later fetch supplied, else the first entry's model.
+ * changed after the fold, and which model the fold lacked a price for is not
+ * recoverable, so no model is named: `REPRICED_REASON`, which a rebuild clears.
  */
 export function unpricedReason(
   row: { at: Date; usage: Usage },
@@ -185,8 +188,7 @@ export function unpricedReason(
     if (priced.ok) continue
     return priced.why === 'no-usage' ? NO_USAGE_REASON : (entry.model as string)
   }
-  const named = row.usage.find((e) => e.model !== undefined && !card.some((r) => r.model === e.model)) ?? row.usage[0]
-  return named?.model ?? NO_USAGE_REASON
+  return row.usage.length === 0 ? NO_USAGE_REASON : REPRICED_REASON
 }
 
 /** Where a runtime's own prices are listed in LiteLLM's table. A runtime not here asks for nothing. */

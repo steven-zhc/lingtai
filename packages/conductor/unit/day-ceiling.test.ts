@@ -1,5 +1,5 @@
 import { CONTROL_STREAM, reduceControl } from '@lingtai/domain'
-import { estimateRow, type RateRow } from '@lingtai/domain/rate-card'
+import { estimateRow, REPRICED_REASON, type RateRow } from '@lingtai/domain/rate-card'
 import { machineDayCeiling, machineFileFrom } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -317,12 +317,14 @@ describe('unknownWhy', () => {
     expect(day.unknownWhy).toEqual([])
   })
 
-  it('names a model a later snapshot would price, since the fold left it unknown', () => {
+  it('names no model for a row a later snapshot prices, since which one the fold lacked is not known', () => {
+    const rate = { mode: '', from: '2026-10-01', input: 1, output: 2, cacheRead: null, cacheWrite: null }
     const snapshot: RateRow[] = [
-      { model: 'gpt-z', mode: '', from: '2026-10-01', input: 1, output: 2, cacheRead: null, cacheWrite: null },
+      { model: 'model-a', ...rate },
+      { model: 'model-b', ...rate },
     ]
-    const day = daySpend([unknownRow(used('gpt-z'))], now, snapshot)
-    expect(day.unknownWhy).toEqual([{ reason: 'gpt-z', runs: 1 }])
+    const day = daySpend([unknownRow([...used('model-a'), ...used('model-b')])], now, snapshot)
+    expect(day.unknownWhy).toEqual([{ reason: REPRICED_REASON, runs: 1 }])
   })
 
   it('prints the reasons after the count and caps them at three plus +N more', () => {
