@@ -51,12 +51,15 @@ export class PermissionDenied extends GitHubError {
   readonly permission: string
   readonly level: 'read' | 'write'
 
-  constructor(denied: GitHubError, permission: string, level: 'read' | 'write') {
+  constructor(denied: GitHubError, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
     super(
       denied.status,
       denied.path,
-      `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
-        `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
+      kind === 'gh'
+        ? `the saved gh login lacks \`${permission}\` access at \`${level}\` for this endpoint — ` +
+            `its account needs access to the repository, or \`gh auth refresh\` must grant the scope (${denied.message})`
+        : `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
+            `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
     )
     this.permission = permission
     this.level = level
@@ -498,7 +501,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       return await run()
     } catch (err) {
       if (err instanceof GitHubError && err.status === 403 && !/rate limit/i.test(err.message)) {
-        throw new PermissionDenied(err, 'issues', level)
+        throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
       }
       throw err
     }
