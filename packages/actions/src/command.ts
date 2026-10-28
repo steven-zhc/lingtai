@@ -73,6 +73,14 @@ export interface RunCommandOptions {
    *  that correctly is not this file's job. */
   run: string
   timeoutMs: number
+  /**
+   * Run the shell as the leader of its own process group, and send the abort's
+   * signals to the group. `shell: true` makes the direct child a shell, and
+   * `kill` on a shell leaves what it started running — a caller that removes
+   * the tree after an abort needs those gone too. Off by default: a grouped
+   * child no longer receives the terminal's own Ctrl+C.
+   */
+  ownGroup?: boolean
   /** How the timeout is written in the recipe, for the message. `15m`, not `900000`. */
   timeoutLabel?: string
   /** The worktree. Commands run where the agent worked, never anywhere else. */
@@ -335,9 +343,19 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
    * `SIGTERM` sent is not `SIGTERM` obeyed. `SIGKILL` at five seconds, and the
    * report goes out a second after that whatever has happened.
    */
+  const signalTree = (signal: NodeJS.Signals) => {
+    try {
+      if (options.ownGroup && child.pid !== undefined) process.kill(-child.pid, signal)
+      else child.kill(signal)
+    } catch {
+      // Nothing left in the group to signal.
+    }
+  }
   const onAbort = () => {
     clearTimeout(timer)
     const reportAbort = () => {
+      // The shell is gone; what it started may not be.
+      if (options.ownGroup) signalTree('SIGKILL')
       endedAt ??= Date.now()
       finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
     }
@@ -346,9 +364,9 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
       return
     }
     child.once('exit', reportAbort)
-    child.kill('SIGTERM')
+    signalTree('SIGTERM')
     setTimeout(() => {
-      child.kill('SIGKILL')
+      signalTree('SIGKILL')
       setTimeout(reportAbort, 1_000).unref?.()
     }, 5_000).unref?.()
   }
@@ -422,6 +440,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
     // stdin is `/dev/null`, as it has always been: a reader gets EOF, not a hang.
     return spawn(options.run, {
       shell: true,
+      detached: options.ownGroup,
       cwd: options.cwd,
       // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
       // board reaches this through the `@lingtai/actions` barrel. This
@@ -434,6 +453,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
 
   const child = spawn(options.run, {
     shell: true,
+    detached: options.ownGroup,
     cwd: options.cwd,
     env: env as NodeJS.ProcessEnv,
     stdio: ['pipe', 'pipe', 'pipe'],

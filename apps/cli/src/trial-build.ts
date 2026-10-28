@@ -180,6 +180,7 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
           cwd: path!,
           env: runnableEnv(env.values),
           signal: at.interrupt,
+          ownGroup: true,
         })
         if (at.interrupt?.aborted) {
           interrupted = true
