@@ -567,10 +567,12 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         `insert into checkpoints (name, last_seq, updated_at)
          values (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          on conflict (name) do update
-           set last_seq = excluded.last_seq, updated_at = excluded.updated_at
+           set last_seq = case when ? is null then excluded.last_seq
+                               else max(checkpoints.last_seq, excluded.last_seq) end,
+               updated_at = excluded.updated_at
            where ? is null or checkpoints.last_seq >= ?
          returning name`,
-        [name, seq, from ?? null, from ?? 0],
+        [name, seq, from ?? null, from ?? null, from ?? 0],
       )
       if (from !== undefined && moved.length === 0) throw new CheckpointRewoundError(name)
     },

@@ -289,6 +289,21 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('a slower follower committing behind a faster one does not lower the checkpoint (#680)', async () => {
+      const f = await make()
+      const n = 'projection_contract_fence_order'
+      try {
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 100n))
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 102n, 100n))
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 101n, 100n))
+        expect(await f.store.checkpoint(n)).toBe(102n)
+        await f.store.transact((ctx) => f.store.advance(ctx, n, 103n, 102n))
+        expect(await f.store.checkpoint(n)).toBe(103n)
+      } finally {
+        await f.close()
+      }
+    })
+
     it("reports a checkpoint's lag against the head it can see", async () => {
       const f = await make()
       const n = 'projection_contract_ledger'

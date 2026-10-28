@@ -40,7 +40,7 @@ const ADVANCE_CHECKPOINT_FENCED = `
   insert into checkpoints (name, last_seq, updated_at)
   values ($1, $2, now())
   on conflict (name) do update
-    set last_seq = excluded.last_seq, updated_at = now()
+    set last_seq = greatest(checkpoints.last_seq, excluded.last_seq), updated_at = now()
     where checkpoints.last_seq >= $3
   returning name`
 

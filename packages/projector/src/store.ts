@@ -51,6 +51,18 @@ export interface ProjectionDrift {
   unexpected: readonly string[]
 }
 
+/** A fenced `advance` found the checkpoint rewound below where its runner read from. */
+export class CheckpointRewoundError extends Error {
+  // Assigned in the body: a parameter property is refused by Node's type stripping.
+  readonly projection: string
+
+  constructor(projection: string) {
+    super(`the ${projection} checkpoint was rewound by a rebuild under this runner; its batch was not committed`)
+    this.name = 'CheckpointRewoundError'
+    this.projection = projection
+  }
+}
+
 /**
  * A projection whose table no longer matches its DDL, refused rather than
  * followed.
@@ -66,14 +78,6 @@ export interface ProjectionDrift {
  * load `pg`. This file imports nothing at runtime, so both twins can. The
  * names are still exported from `shape.ts`, where every reader of them looks.
  */
-/** A fenced `advance` found the checkpoint rewound below where its runner read from. */
-export class CheckpointRewoundError extends Error {
-  constructor(readonly projection: string) {
-    super(`the ${projection} checkpoint was rewound by a rebuild under this runner; its batch was not committed`)
-    this.name = 'CheckpointRewoundError'
-  }
-}
-
 export class ProjectionShapeError extends Error {
   // Assigned in the body, not declared as constructor parameters: a parameter
   // property is the one TypeScript form Node's type stripping refuses, and
