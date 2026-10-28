@@ -14,6 +14,7 @@ import {
   type AddOptions,
   checkInstallation,
   governing,
+  otherOwner,
   recheck,
   registrationLine,
   resumeOnboarding,
@@ -355,6 +356,16 @@ describe('the last line lingtai add prints', () => {
 
   it('says added on a stream with nothing on it at all', async () => {
     expect(registrationLine([], 'nextloom-ai-admin', await resolved())).toContain('added')
+  })
+
+  // The write-time guard: a stream another owner registered while this add
+  // was passing an earlier check is refused, not overwritten (#708).
+  it('names the other owner of a stream already configured, in any case', () => {
+    expect(otherOwner([started, configured], 'other')).toBe('steven-zhc')
+    expect(otherOwner([started, configured], 'Steven-ZHC')).toBeNull()
+    expect(otherOwner([started], 'other')).toBe('steven-zhc')
+    expect(otherOwner([started], 'steven-zhc')).toBeNull()
+    expect(otherOwner([], 'other')).toBeNull()
   })
 })
 

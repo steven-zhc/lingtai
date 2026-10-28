@@ -96,7 +96,7 @@ import { log, logPredatesHold } from '@lingtai/event-store'
 // that reds on one would hold `lingtai restart`.
 import { createPostgresLogQueries, type LogQueries, type UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { GhRun, GitHubClient } from '@lingtai/github'
-import { ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
+import { ghScopeGap, ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
   backlogProjection,
   describeShape,
@@ -844,16 +844,8 @@ export async function ghLogin(env: NodeJS.ProcessEnv, gh?: GhRun): Promise<Check
   const name = 'github: gh login'
   const status = await ghStatus(gh)
   if (!status.ok) return { name, status: 'fail', detail: `${status.detail} — run \`gh auth login\`` }
-  const missing = ['repo', 'workflow'].filter((scope) => !status.scopes.includes(scope))
-  if (missing.length > 0) {
-    return {
-      name,
-      status: 'fail',
-      detail:
-        `gh is signed in as ${status.login} without ${missing.join(' and ')} — run ` +
-        `\`gh auth refresh --hostname github.com --scopes ${missing.join(',')}\``,
-    }
-  }
+  const gap = ghScopeGap(status)
+  if (gap !== null) return { name, status: 'fail', detail: gap }
   return { name, status: 'ok', detail: `gh is signed in to github.com as ${status.login} with repo and workflow` }
 }
 

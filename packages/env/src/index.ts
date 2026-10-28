@@ -1404,6 +1404,17 @@ export function githubAuth(from: NodeJS.ProcessEnv = process.env): GitHubAuth {
   )
 }
 
+/**
+ * Which auth the machine is elected to, or null where nothing is configured.
+ * Throws, by name, only where `github.auth` is refused — unlike `githubAuth`,
+ * which throws for an unconfigured machine too.
+ */
+export function githubAuthKind(from: NodeJS.ProcessEnv = process.env): 'app' | 'gh' | null {
+  const elected = githubAuthElection(from)
+  if ('refused' in elected) throw new Error(elected.refused)
+  return elected.kind
+}
+
 /** Whether any GitHub auth is configured, without throwing to find out. */
 export function hasGitHubAuth(from: NodeJS.ProcessEnv = process.env): boolean {
   const elected = githubAuthElection(from)

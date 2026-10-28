@@ -51,11 +51,12 @@ import {
   listRepositories,
   type Picker,
   refusalLines,
+  taken,
 } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
-import { boardPort, githubApp, stateDir } from '@lingtai/env'
-import { createAppReader, type Installation } from '@lingtai/github'
+import { boardPort, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
+import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
 import {
   baseOf,
   diskFiles,
@@ -140,6 +141,11 @@ export interface FirstProjectWorld extends QuestionWorld {
    */
   githubAppIsTheProject?: boolean
   github: {
+    /**
+     * The machine's elected auth. Absent reads as "not `gh`" — `init`'s world
+     * leaves it out (child 5's), so it keeps the App path it always had.
+     */
+    auth?: () => 'app' | 'gh' | null
     app: () => Promise<AppCheck>
     /** A board already running, or null — `add` starts none of its own. */
     boardUrl: () => Promise<string | null>
@@ -250,7 +256,12 @@ export async function chooseFirstProject(
   // is a second one nobody needed.
   let appCheck: AppCheck | null = null
 
-  if (kind === null) {
+  if (kind === null && world.github.auth?.() === 'gh') {
+    // No App to offer to create, and none to check: the project question only.
+    const asked = await askProjectKind(world, flags)
+    if ('refused' in asked) return { refused: asked.refused }
+    kind = asked.kind
+  } else if (kind === null) {
     const app = await world.github.app()
     appCheck = app
     if (app.configured && !app.ok) {
@@ -563,6 +574,45 @@ async function runGithubBranch(
     }
   }
 
+  if (world.github.auth?.() === 'gh') {
+    // The saved `gh` login is the whole of the auth: no App to ask about or
+    // create, no board to wait on, no picker (`livePicker` reads the App), and
+    // no installation — `add()` checks the login's access itself.
+    if (flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
+      return {
+        refused:
+          `--github-app ${flags['github-app']}, but github.auth is gh here and no App is created. Leave out ` +
+          `--github-app, or pass --github-app skip. ${world.kept}`,
+      }
+    }
+    if (givenSlug === null) return { ok: true, project: 'github', app: 'already' }
+    // The picker's `taken` guard, which this branch skips: a project is keyed by
+    // the repository's name, so another owner's repository of the same name
+    // would be written onto the existing project's stream.
+    const { owner: givenOwner, repo: givenRepo } = parseSlug(givenSlug)
+    const holder = (await world.projects()).find((p) => p.project?.toLowerCase() === givenRepo.toLowerCase())
+    if (holder !== undefined && holder.owner !== null && holder.owner.toLowerCase() !== givenOwner.toLowerCase()) {
+      return { refused: taken({ slug: givenSlug, repo: givenRepo, takenBy: holder.owner }) }
+    }
+    const said: string[] = []
+    const baseFlag = flags['base']
+    const code = await spun(world, `registering ${givenSlug}`, () =>
+      world.github.add(
+        {
+          slug: givenSlug,
+          installation: undefined,
+          base: baseFlag === undefined ? undefined : { ref: baseFlag, named: true },
+        },
+        (line) => said.push(line),
+      ),
+    )
+    if (code !== 0) {
+      return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
+    }
+    for (const line of said) world.log(line)
+    return { ok: true, project: 'github', app: 'already', slug: givenSlug }
+  }
+
   const app = knownApp ?? (await world.github.app())
   if (app.configured && !app.ok) {
     return {
@@ -781,6 +831,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
       ),
     history: liveHistory,
     github: {
+      auth: () => githubAuthKind(),
       app: checkApp,
       boardUrl: () => boardAt(boardPort()),
       waitForApp: (boardUrl) => waitForApp({ log: options.log, ...appWait }, boardUrl, { waitMs: APP_WAIT_MS }),
