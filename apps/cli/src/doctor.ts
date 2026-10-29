@@ -170,6 +170,13 @@ export interface CheckResult {
    * how that waiver becomes a habit that hides the failures it should not (0042).
    */
   restartAnswers?: boolean
+  /** What the row is about, as a sentence a person reads first; absent, `name` is the title. */
+  title?: string
+  /**
+   * The command that fixes it, one per line, a `lingtai env set …` a person can run as written —
+   * the project's real name, never a placeholder. A row with no remedy has none invented.
+   */
+  fix?: string
   /** Milliseconds the call that produced this row took — rows from one call share it. Set by `runDoctor`. */
   ms?: number
 }
@@ -1709,8 +1716,15 @@ async function unconverged(
  * is the parameter `subscriberFailures` takes.
  */
 async function subscribers(queries: LogQueries): Promise<CheckResult> {
-  const name = 'subscribers: failures'
   const rows = await queries.subscriberFailures(new Date(Date.now() - A_DAY_MS)).catch(() => null)
+  return subscriberRow(rows)
+}
+
+type SubscriberFailures = Awaited<ReturnType<LogQueries['subscriberFailures']>>
+
+/** The row for what `subscriberFailures` found; `null` is a log that could not be read. Pure, so its text is testable. */
+export function subscriberRow(rows: SubscriberFailures | null): CheckResult {
+  const name = 'subscribers: failures'
   if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
   const recent = rows.filter((r) => r.recent > 0)
@@ -1725,16 +1739,21 @@ async function subscribers(queries: LogQueries): Promise<CheckResult> {
           : `nothing in the last day; ${older} older failure(s) the log still holds`,
     }
   }
-  return {
+  // A subscriber's own reason can end with a placeholder command (`lingtai env set <project> …`);
+  // the real one is the row's `fix`, so the reason stops at its first ` — `.
+  const reason = (recent[0]?.lastReason ?? '?').split('\n')[0]!.split(' — ')[0]!
+  const counts = recent.length === 1 ? `${recent[0]!.recent}` : recent.map((r) => `${r.name} ×${r.recent}`).join(', ')
+  const row: CheckResult = {
     name,
     status: 'warn',
-    detail:
-      `${recent.map((r) => `${r.name} ×${r.recent}`).join(', ')} in the last day — ` +
-      `last: ${recent[0]?.lastReason ?? '?'}. ` +
-      'A subscriber is never retried (0015), so nothing converges this: what it was going to ' +
-      'do was not done.' +
-      (older > 0 ? ` ${older} older failure(s) besides.` : ''),
+    title: `${recent.map((r) => r.name).join(' and ')} notifications are failing`,
+    detail: `${counts} in the last day · ${reason}`,
   }
+  failingOf.set(
+    row,
+    recent.map((r) => r.name),
+  )
+  return row
 }
 
 /** A client for a reader that asks GitHub nothing; any question it is asked is a bug, said so. */
@@ -2138,18 +2157,33 @@ export function extensionRow(
   recipe: Recipe,
   agentEnv: { names: readonly { name: string; layer: string }[]; merged: Record<string, string>; file: string },
 ): CheckResult {
+  const { result, short } = extensionOutcome(project, recipe, agentEnv)
+  shortOf.set(result, short)
+  return result
+}
+
+/** The row, and the names of the extensions short of a variable — as data, so nobody parses the `fix` to learn them. */
+function extensionOutcome(
+  project: string,
+  recipe: Recipe,
+  agentEnv: { names: readonly { name: string; layer: string }[]; merged: Record<string, string>; file: string },
+): { result: CheckResult; short: Record<DeclaredExtension['where'], string[]> } {
   const name = `env: ${project} extensions`
+  const short: Record<DeclaredExtension['where'], string[]> = { step: [], subscriber: [] }
   const extensions = declaredExtensions(recipe)
   const asking = extensions.filter((e) => e.env.length > 0)
 
   if (asking.length === 0) {
     return {
-      name,
-      status: 'ok',
-      detail:
-        extensions.length === 0
-          ? 'no extension is declared'
-          : `${extensions.length} declared, none asking for a variable — each gets PATH and nothing else`,
+      short,
+      result: {
+        name,
+        status: 'ok',
+        detail:
+          extensions.length === 0
+            ? 'no extension is declared'
+            : `${extensions.length} declared, none asking for a variable — each gets PATH and nothing else`,
+      },
     }
   }
 
@@ -2160,7 +2194,7 @@ export function extensionRow(
     try {
       extensionEnv(agentEnv.merged, extension.env, productionPatterns(recipe.env.refuseHosts))
     } catch (err) {
-      return { name, status: 'fail', detail: `${extension.name}: ${(err as Error).message}` }
+      return { short, result: { name, status: 'fail', detail: `${extension.name}: ${(err as Error).message}` } }
     }
   }
 
@@ -2170,7 +2204,10 @@ export function extensionRow(
     .map((extension) => {
       const names = extension.env.map((variable) => {
         const layer = layerOf.get(variable) ?? 'not set'
-        if (!(variable in agentEnv.merged)) missing[extension.where].push(variable)
+        if (!(variable in agentEnv.merged)) {
+          missing[extension.where].push(variable)
+          if (!short[extension.where].includes(extension.name)) short[extension.where].push(extension.name)
+        }
         return `${variable} ← ${layer === 'project file' ? basename(agentEnv.file) : layer}`
       })
       return `${extension.name}: ${names.join(', ')}`
@@ -2178,22 +2215,51 @@ export function extensionRow(
     .join(' · ')
 
   const absent = [...new Set([...missing.step, ...missing.subscriber])]
-  if (absent.length === 0) return { name, status: 'ok', detail }
+  if (absent.length === 0) return { short, result: { name, status: 'ok', detail } }
 
   // A gate action decides the pass, so one missing name is red however many
   // subscribers are also short: the worst outcome sets the row.
   const inTheLoop = missing.step.length > 0
+  const shortNames = [...short.step, ...short.subscriber]
   return {
-    name,
-    status: inTheLoop ? 'fail' : 'warn',
-    detail:
-      `${detail}\n  ${absent.join(', ')} declared by an extension and not set in either file. ` +
-      `An extension gets only what it declares (0037 §1), so it would run without them — ` +
-      (inTheLoop
-        ? `and a step's action verdict is what the loop waits for, so every pass is refused after a worktree and an install: `
-        : `a subscriber runs off the log and changes no outcome (0015), so what is lost is the notification, once per event, as a PluginFailed: `) +
-      `lingtai env set ${project} ${absent[0]} — it reads the value from stdin, unechoed.`,
+    short,
+    result: {
+      name,
+      status: inTheLoop ? 'fail' : 'warn',
+      title: `${shortNames.join(' and ')} ${shortNames.length === 1 ? 'is' : 'are'} missing environment variables`,
+      detail:
+        `${detail}\n${absent.join(', ')} declared by an extension and not set in either file. ` +
+        `An extension gets only what it declares, so it would run without them — ` +
+        (inTheLoop
+          ? `and a step's action verdict is what the loop waits for, so every pass is refused after a worktree and an install.`
+          : `a subscriber runs off the log and changes no outcome, so what is lost is the notification, once per event, as a PluginFailed.`),
+      fix: [
+        ...absent.map((variable) => `lingtai env set ${project} ${variable}`),
+        // Removing a step extension is the wrong advice: it is the gate.
+        ...(inTheLoop ? [] : short.subscriber.map((n) => `or remove the ${n} subscriber`)),
+      ].join('\n'),
+    },
   }
+}
+
+/** Which extensions each row was short of, and which subscribers a failure row names: facts `shareFixes` reads without parsing text. */
+const shortOf = new WeakMap<CheckResult, Record<DeclaredExtension['where'], string[]>>()
+const failingOf = new WeakMap<CheckResult, string[]>()
+
+/**
+ * The subscriber row takes the `fix` of the one project row that is short of exactly that subscriber, so the
+ * two are one problem drawn once. Nothing is copied when the match is not unique: `subscriberFailures` groups
+ * by name and not by project, so two projects declaring the same subscriber could not be told apart.
+ */
+export function shareFixes(results: readonly CheckResult[]): void {
+  const row = results.find((r) => failingOf.has(r))
+  const failing = row === undefined ? [] : (failingOf.get(row) ?? [])
+  if (row === undefined || failing.length !== 1) return
+  const matches = results.filter((r) => {
+    const s = shortOf.get(r)
+    return s !== undefined && s.step.length === 0 && s.subscriber.length === 1 && s.subscriber[0] === failing[0]
+  })
+  if (matches.length === 1 && matches[0]!.fix !== undefined) row.fix = matches[0]!.fix
 }
 
 /**
@@ -2851,6 +2917,7 @@ export async function runDoctor(
   await step('deferred', () => {
     for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
   })
+  shareFixes(results)
 
   return { results, ...tally(results) }
 }
@@ -2996,6 +3063,28 @@ function seconds(ms: number): string {
 
 export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; next?: boolean } = {}): string[] {
   const { verbose = false, next = true } = opts
+  const lines = [heading('doctor'), '']
+  const notes = report.results.filter((r) => r.status === 'info')
+  if (!verbose) {
+    const todo = toFix(report.results)
+    const tail = `${report.notChecked} not checked here · ${report.deferred} not implemented yet`
+    lines.push(
+      todo.length === 0
+        ? `${paint.pass(`all ${report.ok} passed`)} · ${tail}`
+        : `${todo.some((t) => t.status === 'fail') ? paint.fail(`${todo.length} to fix`) : `${todo.length} to fix`} · ${report.ok} passed · ${tail}`,
+    )
+    for (const t of todo) {
+      lines.push(
+        '',
+        `  ${t.status === 'fail' ? `${symbol.fail()} ` : ''}${t.title ?? t.name}  ${paint.muted(`· ${t.areas.join(', ').toLowerCase()}`)}`,
+        `  ${t.detail.split('\n')[0]}`,
+        ...(t.fix === undefined ? [] : fixLines(t.fix, 2)),
+      )
+    }
+    if (notes.length > 0) lines.push('', ...notes.map((r) => `note  ${r.detail.split('\n')[0]}`))
+    if (next && report.warned + report.failed > 0) lines.push('', 'next: lingtai doctor --verbose')
+    return lines
+  }
   const groups = new Map<string, CheckResult[]>()
   for (const r of report.results) {
     const area = areaOf(r)
@@ -3011,57 +3100,69 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
       if (x.area === NOT_IMPLEMENTED || y.area === NOT_IMPLEMENTED) return x.area === NOT_IMPLEMENTED ? 1 : -1
       return tier(x.rows) - tier(y.rows) || x.order - y.order
     })
-
-  const lines = [heading('doctor'), '']
-  if (!verbose) {
-    // #214's rule, extended: the short view hides no count at zero, `need attention` and `failed` included.
-    const counts = [
-      report.failed === 0 ? paint.pass(`${report.ok} ok`) : `${report.ok} ok`,
-      `${report.warned} need attention`,
-      report.failed > 0 ? paint.fail(`${report.failed} failed`) : `${report.failed} failed`,
-      `${report.notChecked} not checked here`,
-      `${report.deferred} not implemented yet`,
-    ]
-    lines.push(counts.join(' · '), '')
-    for (const { area, rows } of areas) {
-      if (area === NOT_IMPLEMENTED || rows.every((r) => r.status === 'skip')) continue
-      const glyph = rows.some((r) => r.status === 'fail')
-        ? symbol.fail()
-        : rows.some((r) => r.status === 'warn')
-          ? '!'
-          : symbol.pass()
-      const shown = (['fail', 'warn'] as const).flatMap((status) => rows.filter((r) => r.status === status))
-      const checks = shown.flatMap((r) => [
-        `${marker(r.status)}  ${r.name}`,
-        ...r.detail.split('\n').map((line) => `${' '.repeat(6)}${line}`),
-      ])
-      lines.push(...section(`${glyph} ${area}`, checks).split('\n'))
-    }
-    const notes = report.results.filter((r) => r.status === 'info')
-    if (notes.length > 0) lines.push('', ...notes.map((r) => `note  ${r.detail.split('\n')[0]}`))
-    if (next && report.warned + report.failed > 0) lines.push('', 'next: lingtai doctor --verbose')
-    return lines
-  }
   for (const { area, rows } of areas) {
     const ordered = STATUS_ORDER.flatMap((status) => rows.filter((r) => r.status === status))
     const checks = ordered.flatMap((r) => [
       `${marker(r.status)}  ${r.name}${r.ms === undefined ? '' : paint.muted(` ${seconds(r.ms)}`)}`,
       ...r.detail.split('\n').map((line) => `${' '.repeat(6)}${line}`),
+      ...(r.fix === undefined ? [] : fixLines(r.fix, 6)),
     ])
     lines.push(...section(area, checks).split('\n'))
   }
-  const notes =
+  const noted =
     (report.warned > 0 ? `, ${report.warned} need attention` : '') + (report.info > 0 ? `, ${report.info} noted` : '')
   const here = `, ${report.notChecked} not checked here`
   lines.push('')
   lines.push(
     report.failed === 0
-      ? `${paint.pass(`${report.ok} ok`)}${notes}${here}, ${report.deferred} not implemented yet, 0 failed`
+      ? `${paint.pass(`${report.ok} ok`)}${noted}${here}, ${report.deferred} not implemented yet, 0 failed`
       : paint.fail(
-          `${report.failed} check(s) FAILED — ${report.ok} ok${notes}${here}, ${report.deferred} not implemented yet`,
+          `${report.failed} check(s) FAILED — ${report.ok} ok${noted}${here}, ${report.deferred} not implemented yet`,
         ),
   )
   return lines
+}
+
+/** A `fix` block: `fix` and the first command, each further line under it. Never wrapped here — the terminal does that. */
+function fixLines(fix: string, indent: number): string[] {
+  return fix.split('\n').map((line, i) => `${' '.repeat(indent)}${i === 0 ? 'fix  ' : '     '}${line}`)
+}
+
+interface ToFix {
+  status: 'fail' | 'warn'
+  title?: string
+  name: string
+  detail: string
+  fix?: string
+  areas: string[]
+}
+
+/** What the short view draws: `fail`s then `warn`s, each in area order, rows with an identical `fix` drawn once. */
+function toFix(results: readonly CheckResult[]): ToFix[] {
+  const areaRank = (r: CheckResult): number => {
+    const i = [...AREA_OF.map(([a]) => a), OTHER].indexOf(areaOf(r))
+    return i === -1 ? AREA_OF.length + 1 : i
+  }
+  const rows = (['fail', 'warn'] as const).flatMap((status) =>
+    results.filter((r) => r.status === status && r.deferred !== true).sort((x, y) => areaRank(x) - areaRank(y)),
+  )
+  const out: ToFix[] = []
+  for (const r of rows) {
+    const same = r.fix === undefined ? undefined : out.find((o) => o.fix === r.fix)
+    if (same !== undefined) {
+      if (!same.areas.includes(areaOf(r))) same.areas.push(areaOf(r))
+      continue
+    }
+    out.push({
+      status: r.status as 'fail' | 'warn',
+      title: r.title,
+      name: r.name,
+      detail: r.detail,
+      fix: r.fix,
+      areas: [areaOf(r)],
+    })
+  }
+  return out
 }
 
 /** The report as one string: what `lingtai init` shows after it has set up — the short view, and no closing `next:` (init owns its closing line). */
@@ -3092,6 +3193,8 @@ export function doctorJson(report: DoctorReport): Record<string, unknown> {
       detail: r.detail,
       deferred: r.deferred === true,
       restartAnswers: r.restartAnswers === true,
+      ...(r.title === undefined ? {} : { title: r.title }),
+      ...(r.fix === undefined ? {} : { fix: r.fix }),
       ...(r.ms === undefined ? {} : { ms: r.ms }),
     })),
   }

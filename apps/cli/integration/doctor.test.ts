@@ -557,7 +557,7 @@ subscribers:
     expect(row.detail).toContain('SCANNER_TOKEN')
     expect(row.detail).toContain('not set')
     expect(row.detail).toContain('every pass is refused')
-    expect(row.detail).toContain('lingtai env set demo SCANNER_TOKEN')
+    expect(row.fix).toContain('lingtai env set demo SCANNER_TOKEN')
   })
 
   /**
@@ -575,7 +575,7 @@ subscribers:
     expect(row.detail).toContain('not set')
     expect(row.detail).toContain('changes no outcome')
     // A note that names the command that clears it, exactly as the red does.
-    expect(row.detail).toContain('lingtai env set demo TELEGRAM_BOT_TOKEN')
+    expect(row.fix).toContain('lingtai env set demo TELEGRAM_BOT_TOKEN')
   })
 
   /** Both short: the gate action decides the row, because it decides the pass. */
@@ -800,7 +800,7 @@ describe('lingtai doctor — reporting', () => {
   it('says how many failed, and every check says what it found', async () => {
     const report = await runDoctor(env({}), () => undefined, notSetUp)
     expect(report.failed).toBeGreaterThan(0)
-    expect(formatReport(report)).toContain(`${report.failed} failed`)
+    expect(formatReport(report)).toContain(`${report.failed} to fix`)
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true)
   })
 })
@@ -1058,7 +1058,7 @@ steps:
       // subscriber is never retried — so a red doctor here would be red for
       // ever, and a check that is always red is a check nobody reads.
       expect(check.status).toBe('warn')
-      expect(check.detail).toContain('notify')
+      expect(check.title).toContain('notify')
       expect(check.detail).toContain('terminal-notifier exited 127')
     } finally {
       const c = new pg.Client({ connectionString: directPostgresUrl() })

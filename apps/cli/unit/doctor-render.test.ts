@@ -1,7 +1,18 @@
+import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 /** The shape of `lingtai doctor`: the text, the `--json` document, and the command through `@effect/cli` (#619). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { areaOf, doctorJson, type DoctorReport, formatReport, renderDoctor, tally } from '../src/doctor.ts'
+import {
+  areaOf,
+  doctorJson,
+  type DoctorReport,
+  extensionRow,
+  formatReport,
+  renderDoctor,
+  shareFixes,
+  subscriberRow,
+  tally,
+} from '../src/doctor.ts'
 
 const results: DoctorReport['results'] = [
   { name: 'daemon: liveness', status: 'ok', detail: 'up, last beat 2s ago' },
@@ -216,7 +227,7 @@ describe('renderDoctor', () => {
     )
   })
 
-  it('draws no colour under NO_COLOR, and colours the cross but not the ! under FORCE_COLOR', () => {
+  it('draws no colour under NO_COLOR, and colours the cross but not a warn under FORCE_COLOR', () => {
     process.env['NO_COLOR'] = '1'
     delete process.env['FORCE_COLOR']
     expect(renderDoctor(report, { verbose: true }).join('\n')).not.toContain('\u001b')
@@ -229,41 +240,105 @@ describe('renderDoctor', () => {
     expect(coloured.find((l) => l.includes('✗') && l.includes('environment'))).toContain('\u001b')
     const warn = coloured.find((l) => l.includes('!') && l.includes('daemon: currency'))!
     expect(warn).not.toContain('\u001b')
-    expect(renderDoctor(report).find((l) => l.includes('!') && l.includes('daemon: currency'))).not.toContain('\u001b')
+    expect(renderDoctor(report).find((l) => l.includes('daemon: currency'))).not.toContain('✗')
   })
 
-  it('prints a summary, one line per area, and only what needs attention', () => {
+  it('is a flat list of what to fix: fails first, no headings, no !', () => {
     process.env['NO_COLOR'] = '1'
     const lines = renderDoctor(report)
-    expect(lines[0]).toBe('doctor')
-    expect(lines[2]).toBe('3 ok · 1 need attention · 2 failed · 1 not checked here · 1 not implemented yet')
-    const areas = lines.filter((l) => /^\S/.test(l)).slice(2, -1)
-    expect(areas).toEqual(['✗ Store and log', '! Daemon', '✓ Machine', '✓ Other'])
+    expect(lines.slice(0, 3)).toEqual([
+      'doctor',
+      '',
+      '3 to fix · 3 passed · 1 not checked here · 1 not implemented yet',
+    ])
     const text = lines.join('\n')
-    expect(text).toContain('! Daemon\n  !     daemon: currency\n        running 8f3a1c2')
+    expect(text).not.toContain('!')
+    expect(text).not.toContain('Daemon')
     expect(text).not.toContain('daemon: liveness')
-    expect(text).not.toContain('Not implemented here')
+    expect(text).toContain('  ✗ environment  · store and log\n  two databases named')
+    expect(text.indexOf('✗ schema: tables')).toBeLessThan(text.indexOf('daemon: currency'))
+    expect(text).toContain('  daemon: currency  · daemon\n  running 8f3a1c2')
     expect(lines.at(-1)).toBe('next: lingtai doctor --verbose')
+  })
+
+  it('draws the layout the operator chose: one merged cause, its fix, the note', () => {
+    process.env['NO_COLOR'] = '1'
+    const fix =
+      'lingtai env set lingtai TELEGRAM_BOT_TOKEN\nlingtai env set lingtai TELEGRAM_CHAT_ID\nor remove the telegram subscriber'
+    const rs: DoctorReport['results'] = [
+      { name: 'node: at or above the floor', status: 'ok', detail: 'x' },
+      {
+        name: 'subscribers: failures',
+        status: 'warn',
+        title: 'telegram notifications are failing',
+        detail: '31 in the last day · TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set',
+        fix,
+      },
+      {
+        name: 'env: lingtai extensions',
+        status: 'warn',
+        title: 'telegram is missing environment variables',
+        detail: 'telegram: TELEGRAM_BOT_TOKEN ← not set\nsecond line',
+        fix,
+      },
+      { name: 'runtime: other settings in scope', status: 'info', detail: '~/.claude/settings.json also applies' },
+    ]
+    expect(renderDoctor({ results: rs, ...tally(rs) }).join('\n')).toBe(
+      [
+        'doctor',
+        '',
+        '1 to fix · 1 passed · 0 not checked here · 0 not implemented yet',
+        '',
+        '  telegram notifications are failing  · daemon, projects',
+        '  31 in the last day · TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set',
+        '  fix  lingtai env set lingtai TELEGRAM_BOT_TOKEN',
+        '       lingtai env set lingtai TELEGRAM_CHAT_ID',
+        '       or remove the telegram subscriber',
+        '',
+        'note  ~/.claude/settings.json also applies',
+        '',
+        'next: lingtai doctor --verbose',
+      ].join('\n'),
+    )
+  })
+
+  it('shows a fix block in --verbose, and the whole detail', () => {
+    process.env['NO_COLOR'] = '1'
+    const rs: DoctorReport['results'] = [
+      {
+        name: 'env: p extensions',
+        status: 'warn',
+        detail: 'one\ntwo',
+        fix: 'lingtai env set p A\nlingtai env set p B',
+      },
+    ]
+    const text = renderDoctor({ results: rs, ...tally(rs) }, { verbose: true }).join('\n')
+    expect(text).toContain('        two\n        fix  lingtai env set p A\n             lingtai env set p B')
   })
 
   it('formatReport is the short view with no next line', () => {
     process.env['NO_COLOR'] = '1'
     const text = formatReport(report)
-    expect(text).toContain('! Daemon')
+    expect(text).toContain('3 to fix')
     expect(text).not.toContain('next:')
   })
 
-  it('expands nothing and prints no next line when everything is ok', () => {
+  it('says all passed, and draws nothing else, when nothing is to fix', () => {
     process.env['NO_COLOR'] = '1'
     const ok = [{ name: 'node: at or above the floor', status: 'ok' as const, detail: 'x' }]
-    const lines = renderDoctor({ results: ok, ...tally(ok) })
-    expect(lines).toEqual([
+    expect(renderDoctor({ results: ok, ...tally(ok) })).toEqual([
       'doctor',
       '',
-      '1 ok · 0 need attention · 0 failed · 0 not checked here · 0 not implemented yet',
-      '',
-      '✓ Machine',
+      'all 1 passed · 0 not checked here · 0 not implemented yet',
     ])
+  })
+
+  it('carries title and fix in --json without a new version', () => {
+    const rs: DoctorReport['results'] = [{ name: 'a: b', status: 'warn', detail: 'd', title: 'T', fix: 'run it' }]
+    const json = doctorJson({ results: rs, ...tally(rs) })
+    expect((json['checks'] as Record<string, unknown>[])[0]).toMatchObject({ title: 'T', fix: 'run it' })
+    expect(json['failed']).toBe(0)
+    expect(json['warned']).toBe(1)
   })
 })
 
@@ -322,8 +397,7 @@ describe('lingtai doctor through @effect/cli', () => {
     process.env['NO_COLOR'] = '1'
     const { code, out } = await run(['doctor'], async () => green())
     expect(code).toBe(0)
-    expect(out).toContain('2 ok · 0 need attention · 0 failed · 0 not checked here · 0 not implemented yet')
-    expect(out).toContain('✓ Machine')
+    expect(out).toContain('all 2 passed · 0 not checked here · 0 not implemented yet')
   })
 
   it('answers unavailable when the report could not be produced', async () => {
@@ -332,5 +406,97 @@ describe('lingtai doctor through @effect/cli', () => {
     })
     expect(code).toBe(1)
     expect(JSON.parse(out)).toMatchObject({ command: 'doctor', error: { code: 'unavailable', message: 'no store' } })
+  })
+})
+
+describe('the rows that carry a fix (#717)', () => {
+  const recipeWith = (subscribers: string, scanner = ''): string => `
+version: 2
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  required: []
+  plantAt: .env.local
+steps:
+  proposed:
+    - name: scan
+      run: npx scanner${scanner}
+runtime:
+  agent: claude-code
+subscribers:
+${subscribers}
+`
+  const telegram =
+    '  - name: telegram\n    on: [TicketLanded]\n    run: npx t\n    env: [TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]'
+  const notify = '  - name: notify\n    on: [TicketLanded]\n    run: npx n\n    env: [NOTIFY_KEY]'
+  const resolve = async (text: string) =>
+    (await resolveRecipe(async (path, ref) => (ref === 'main' && path === RECIPE_PATH ? text : null), 'main')).recipe
+  const held = (merged: Record<string, string>) => ({
+    merged,
+    names: Object.keys(merged).map((name) => ({ name, layer: 'project file' })),
+    file: '/home/x/.lingtai/env/p.env',
+  })
+
+  it('names one command per missing name, and offers removal only for a subscriber', async () => {
+    const row = extensionRow('lingtai', await resolve(recipeWith(telegram)), held({}))
+    expect(row.status).toBe('warn')
+    expect(row.title).toBe('telegram is missing environment variables')
+    expect(row.fix).toBe(
+      'lingtai env set lingtai TELEGRAM_BOT_TOKEN\nlingtai env set lingtai TELEGRAM_CHAT_ID\nor remove the telegram subscriber',
+    )
+    expect(row.detail).not.toContain('0037')
+    expect(row.detail).not.toContain('0015')
+  })
+
+  it('never offers to remove a step extension, even beside a short subscriber', async () => {
+    const recipe = await resolve(recipeWith(telegram, '\n      env: [SCANNER_TOKEN]'))
+    const row = extensionRow('lingtai', recipe, held({}))
+    expect(row.status).toBe('fail')
+    expect(row.fix).toContain('lingtai env set lingtai SCANNER_TOKEN')
+    expect(row.fix).not.toContain('or remove')
+  })
+
+  it('draws a subscriber row and its project row once, tagged with both areas', async () => {
+    const env = extensionRow('lingtai', await resolve(recipeWith(telegram)), held({}))
+    const sub = subscriberRow([
+      {
+        name: 'telegram',
+        total: 31,
+        recent: 31,
+        last: new Date(),
+        lastReason: 'TELEGRAM_BOT_TOKEN not set — lingtai env set <project> …',
+      },
+    ] as never)
+    expect(sub.title).toBe('telegram notifications are failing')
+    expect(sub.detail).toBe('31 in the last day · TELEGRAM_BOT_TOKEN not set')
+    const rs = [sub, env]
+    shareFixes(rs)
+    expect(sub.fix).toBe(env.fix)
+    process.env['NO_COLOR'] = '1'
+    const text = renderDoctor({ results: rs, ...tally(rs) }).join('\n')
+    expect(text.match(/fix {2}/g)).toHaveLength(1)
+    expect(text).toContain('telegram notifications are failing  · daemon, projects')
+  })
+
+  it('copies nothing with no match, or with two', async () => {
+    const sub = () =>
+      subscriberRow([{ name: 'telegram', total: 1, recent: 1, last: new Date(), lastReason: 'r' }] as never)
+    const none = sub()
+    shareFixes([none, extensionRow('a', await resolve(recipeWith(notify)), held({}))])
+    expect(none.fix).toBeUndefined()
+
+    const two = sub()
+    const recipe = await resolve(recipeWith(telegram))
+    shareFixes([two, extensionRow('a', recipe, held({})), extensionRow('b', recipe, held({}))])
+    expect(two.fix).toBeUndefined()
+  })
+
+  it('copies nothing when the shortage is mixed with a step', async () => {
+    const sub = subscriberRow([{ name: 'telegram', total: 1, recent: 1, last: new Date(), lastReason: 'r' }] as never)
+    const env = extensionRow('a', await resolve(recipeWith(telegram, '\n      env: [SCANNER_TOKEN]')), held({}))
+    shareFixes([sub, env])
+    expect(sub.fix).toBeUndefined()
   })
 })
