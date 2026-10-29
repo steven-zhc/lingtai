@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { coloured, paint, plain, stateInk } from '../src/colour.ts'
+import { badge, coloured, paint, plain, stateInk } from '../src/colour.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const GLOBALS = resolve(root, 'apps/board/src/app/globals.css')
@@ -116,6 +116,28 @@ describe('what a paint does', () => {
     process.env['FORCE_COLOR'] = '1'
     const rendered = Object.values(paint).map((ink) => ink('x'))
     expect(new Set(rendered).size).toBe(rendered.length)
+  })
+})
+
+describe('a badge', () => {
+  it('is ` WORD ` in colour, with the codes the view names, and never amber', () => {
+    clear()
+    process.env['FORCE_COLOR'] = '1'
+    expect(badge('fail', 'problem')).toBe('\u001b[41;97m PROBLEM \u001b[0m')
+    expect(badge('warn', 'problem')).toBe('\u001b[7m PROBLEM \u001b[0m')
+    expect(badge('fix', 'fix')).toBe('\u001b[46;30m FIX \u001b[0m')
+    expect(badge('muted', 'note')).toBe('\u001b[2m NOTE \u001b[0m')
+    for (const kind of ['fail', 'warn', 'fix', 'muted'] as const) expect(badge(kind, 'x')).not.toMatch(/33/)
+  })
+
+  it('is `[word]` when colour is off, as wide as the coloured form', () => {
+    clear()
+    expect(badge('fail', 'problem')).toBe('[problem]')
+    expect(badge('muted', 'next')).toBe('[next]')
+    process.env['FORCE_COLOR'] = '1'
+    expect(badge('fix', 'fix').replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')).toHaveLength(
+      '[fix]'.length,
+    )
   })
 })
 

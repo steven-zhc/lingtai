@@ -108,6 +108,27 @@ export const paint = {
   muted: ink(2),
 } as const
 
+const BADGES = {
+  /** A failure: white on a red ground, `ink`'s `41;97`. */
+  fail: [41, 97],
+  /** A warning: reversed, never a ground of its own — amber is `signal` and is not a badge. */
+  warn: [7],
+  /** A remedy: black on cyan. */
+  fix: [46, 30],
+  /** A label with no ground: dim, as `paint.muted`. */
+  muted: [2],
+} as const
+
+/**
+ * A label drawn as a badge: ` WORD ` on a colour terminal, `[word]` where there is
+ * none, both `word.length + 2` columns wide so a column of them lines up either way.
+ * Not a key on `paint`, which is the identity when colour is off.
+ */
+export function badge(kind: keyof typeof BADGES, word: string): string {
+  if (!coloured()) return `[${word.toLowerCase()}]`
+  return `${ESC}[${BADGES[kind].join(';')}m ${word.toUpperCase()} ${ESC}[0m`
+}
+
 /**
  * A task's state, in the colour its lane wears on the board.
  *

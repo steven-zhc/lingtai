@@ -84,7 +84,7 @@ import {
   repoRoot,
   storeChoice,
 } from '@lingtai/env'
-import { paint } from '@lingtai/env/colour'
+import { badge, paint } from '@lingtai/env/colour'
 // The barrel's `log`, which is the store **this machine wrote down** (0056) and
 // opens nothing until something asks it a question. It is what the rows above
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
@@ -3071,6 +3071,14 @@ function seconds(ms: number): string {
   return ms < 100 ? '<0.1s' : `${(ms / 1000).toFixed(1)}s`
 }
 
+/** The width of the label column in the short view: `[problem]` and ` PROBLEM `. */
+const LABEL_COLUMN = 9
+
+/** A label right-aligned in the column. Padded from the plain word's width, since the rendered badge carries escapes. */
+function labelled(rendered: string, word: string): string {
+  return `${' '.repeat(LABEL_COLUMN - (word.length + 2))}${rendered}`
+}
+
 export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; next?: boolean } = {}): string[] {
   const { verbose = false, next = true } = opts
   const lines = [heading('doctor'), '']
@@ -3081,18 +3089,30 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
     lines.push(
       todo.length === 0
         ? `${paint.pass(`all ${report.ok} passed`)} · ${tail}`
-        : `${todo.some((t) => t.status === 'fail') ? paint.fail(`${todo.length} to fix`) : `${todo.length} to fix`} · ${report.ok} passed · ${tail}`,
+        : `${todo.some((t) => t.status === 'fail') ? paint.fail(`${todo.length} to fix`) : `${todo.length} to fix`} · ${paint.pass(`${report.ok} passed`)} · ${tail}`,
     )
     for (const t of todo) {
       lines.push(
         '',
-        `  ${t.status === 'fail' ? `${symbol.fail()} ` : ''}${t.title ?? t.name}  ${paint.muted(`· ${t.areas.join(', ').toLowerCase()}`)}`,
-        `  ${t.detail.split('\n')[0]}`,
-        ...(t.fix === undefined ? [] : fixLines(t.fix, 2)),
+        `${labelled(badge(t.status, 'problem'), 'problem')} ${t.status === 'fail' ? `${symbol.fail()} ` : ''}${t.title ?? t.name}  ${paint.muted(`· ${t.areas.join(', ').toLowerCase()}`)}`,
+        `${' '.repeat(LABEL_COLUMN + 1)}${t.detail.split('\n')[0]}`,
+        ...(t.fix === undefined
+          ? []
+          : t.fix
+              .split('\n')
+              .map((line, i) =>
+                i === 0
+                  ? `${labelled(badge('fix', 'fix'), 'fix')} ${paint.accent(line)}`
+                  : `${' '.repeat(LABEL_COLUMN + 1)}${paint.accent(line)}`,
+              )),
       )
     }
-    if (notes.length > 0) lines.push('', ...notes.map((r) => `note  ${r.detail.split('\n')[0]}`))
-    if (next && report.warned + report.failed > 0) lines.push('', 'next: lingtai doctor --verbose')
+    if (notes.length > 0) {
+      lines.push('', ...notes.map((r) => `${labelled(badge('muted', 'note'), 'note')} ${r.detail.split('\n')[0]}`))
+    }
+    if (next && report.warned + report.failed > 0) {
+      lines.push('', `${labelled(badge('muted', 'next'), 'next')} lingtai doctor --verbose`)
+    }
     return lines
   }
   const groups = new Map<string, CheckResult[]>()

@@ -51,11 +51,11 @@ describe('an info row (#718)', () => {
     expect(tally(only)).toMatchObject({ ok: 1, warned: 0, failed: 0, info: 1 })
   })
 
-  it('is one note line in the short view, with no next:', () => {
+  it('is one note line in the short view, with no [next]', () => {
     const text = renderDoctor(rep).join('\n')
-    expect(text).toContain('note  first line')
+    expect(text).toContain('[note] first line')
     expect(text).not.toContain('second line')
-    expect(text).not.toContain('next:')
+    expect(text).not.toContain('[next]')
   })
 
   it('is drawn among its area in --verbose', () => {
@@ -256,10 +256,10 @@ describe('renderDoctor', () => {
     expect(text).not.toContain('!')
     expect(text).not.toContain('Daemon')
     expect(text).not.toContain('daemon: liveness')
-    expect(text).toContain('  ✗ environment  · store and log\n  two databases named')
+    expect(text).toContain('[problem] ✗ environment  · store and log\n          two databases named')
     expect(text.indexOf('✗ schema: tables')).toBeLessThan(text.indexOf('daemon: currency'))
-    expect(text).toContain('  daemon: currency  · daemon\n  running 8f3a1c2')
-    expect(lines.at(-1)).toBe('next: lingtai doctor --verbose')
+    expect(text).toContain('[problem] daemon: currency  · daemon\n          running 8f3a1c2')
+    expect(lines.at(-1)).toBe('   [next] lingtai doctor --verbose')
   })
 
   it('draws the layout the operator chose: one merged cause, its fix, the note', () => {
@@ -290,15 +290,15 @@ describe('renderDoctor', () => {
         '',
         '1 to fix · 1 passed · 0 not checked here · 0 not implemented yet',
         '',
-        '  telegram notifications are failing  · daemon, projects',
-        '  31 in the last day · TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set',
-        '  fix  lingtai env set lingtai TELEGRAM_BOT_TOKEN',
-        '       lingtai env set lingtai TELEGRAM_CHAT_ID',
-        '       or remove the telegram subscriber',
+        '[problem] telegram notifications are failing  · daemon, projects',
+        '          31 in the last day · TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set',
+        '    [fix] lingtai env set lingtai TELEGRAM_BOT_TOKEN',
+        '          lingtai env set lingtai TELEGRAM_CHAT_ID',
+        '          or remove the telegram subscriber',
         '',
-        'note  ~/.claude/settings.json also applies',
+        '   [note] ~/.claude/settings.json also applies',
         '',
-        'next: lingtai doctor --verbose',
+        '   [next] lingtai doctor --verbose',
       ].join('\n'),
     )
   })
@@ -321,7 +321,26 @@ describe('renderDoctor', () => {
     process.env['NO_COLOR'] = '1'
     const text = formatReport(report)
     expect(text).toContain('3 to fix')
+    expect(text).not.toContain('[next]')
     expect(text).not.toContain('next:')
+  })
+
+  it('draws labels as badges under colour, aligned with the plain column, never amber', () => {
+    delete process.env['NO_COLOR']
+    delete process.env['TERM']
+    process.env['FORCE_COLOR'] = '1'
+    const strip = (t: string): string => t.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')
+    const text = renderDoctor(report).join('\n')
+    expect(text).toContain('\u001b[41;97m PROBLEM ')
+    expect(text).toContain('\u001b[7m PROBLEM ')
+    const fixed = renderDoctor({
+      results: [{ name: 'x', status: 'fail', detail: 'd', fix: 'run it' }],
+      ...tally([{ name: 'x', status: 'fail', detail: 'd', fix: 'run it' }]),
+    }).join('\n')
+    expect(fixed).toContain('\u001b[46;30m FIX ')
+    expect(text).not.toMatch(new RegExp(`${String.fromCharCode(27)}\\[(?:[0-9;]*;)?33m`))
+    expect(strip(fixed)).toContain('     FIX  run it')
+    expect(strip(text).split('\n').at(-1)).toBe('    NEXT  lingtai doctor --verbose')
   })
 
   it('says all passed, and draws nothing else, when nothing is to fix', () => {
@@ -477,7 +496,7 @@ ${subscribers}
     expect(sub.fix).toBe(env.fix)
     process.env['NO_COLOR'] = '1'
     const text = renderDoctor({ results: rs, ...tally(rs) }).join('\n')
-    expect(text.match(/fix {2}/g)).toHaveLength(1)
+    expect(text.match(/\[fix\]/g)).toHaveLength(1)
     expect(text).toContain('telegram notifications are failing  · daemon, projects')
   })
 
