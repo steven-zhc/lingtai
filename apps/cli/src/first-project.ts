@@ -266,6 +266,15 @@ async function askProjectKind(
   return { kind: 'github' }
 }
 
+/** The repository has no `origin` remote, which is where Lingtai lands finished work. */
+export function noOriginRefusal(toplevel: string, detail: string, kept: string): string {
+  return (
+    `${toplevel} has no origin — ${detail}. Lingtai lands finished work by pushing to the ` +
+    "repository's own origin, and there is nothing to push to " +
+    `without one. Add one with git remote add origin <url>, and run this again. ${kept}`
+  )
+}
+
 export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -382,10 +391,7 @@ async function runLocalBranch(
   const origin = await world.git(toplevel, ['remote', 'get-url', 'origin'])
   if (!origin.ok) {
     return {
-      refused:
-        `${toplevel} has no origin — ${(origin.stderr || origin.stdout).trim()}. The merge lane pushes to the ` +
-        "repository's own origin (packages/actions/src/merge-action.ts:47), and there is nothing to push to " +
-        `without one. Add one with git remote add origin <url>, and run this again. ${world.kept}`,
+      refused: noOriginRefusal(toplevel, (origin.stderr || origin.stdout).trim(), world.kept),
     }
   }
   const remote = resolveRemote(origin.stdout.trim(), toplevel)

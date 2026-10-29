@@ -145,7 +145,7 @@ describe('askTickets', () => {
     const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history })
     expect(result).toEqual({ changes: [], current: 'github' })
     expect(asked).toEqual([])
-    expect(lines.some((l) => l.includes('ticket-app-12') && l.includes('#381'))).toBe(true)
+    expect(lines.some((l) => l.includes('ticket-app-12') && l.includes('same streams'))).toBe(true)
   })
 
   it('with history, a different --tickets is refused rather than switched', async () => {
