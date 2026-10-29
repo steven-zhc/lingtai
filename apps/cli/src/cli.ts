@@ -98,12 +98,22 @@ const doctor = Command.make('doctor', { json, noColor, verbose: Options.boolean(
       // Loaded here, for the reason `status` gives.
       const { doctorReport, doctorJson, renderDoctor, tally } = await import('./doctor.ts')
       const { releaseCheck } = await import('./install.ts')
-      const report = await doctorReport()
-      // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
-      // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
-      // and a restart is neither.
-      report.results.push(await releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
-      Object.assign(report, tally(report.results))
+      const { doctorProgress } = await import('./steps.ts')
+      const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
+      let report
+      try {
+        report = await doctorReport({ onProgress: progress.onProgress })
+        // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
+        // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
+        // and a restart is neither. Timed here, since `runDoctor` never sees it.
+        progress.onProgress({ label: 'releases', phase: 'start', done: report.results.length })
+        const t0 = performance.now()
+        const row = await releaseCheck({ fetch, env: process.env, self: import.meta.filename })
+        report.results.push({ ...row, ms: Math.round(performance.now() - t0) })
+        Object.assign(report, tally(report.results))
+      } finally {
+        progress.clear()
+      }
       if (args.json) printJson('doctor', doctorJson(report))
       else for (const line of renderDoctor(report, { verbose: args.verbose })) console.log(line)
       // Non-zero on any failure. `lingtai restart` runs the same report (0042) but

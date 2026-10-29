@@ -166,6 +166,15 @@ export interface CheckResult {
    * how that waiver becomes a habit that hides the failures it should not (0042).
    */
   restartAnswers?: boolean
+  /** Milliseconds the call that produced this row took — rows from one call share it. Set by `runDoctor`. */
+  ms?: number
+}
+
+/** What `runDoctor` tells a caller about the step it is in: `done` is the rows pushed so far. */
+export interface DoctorProgress {
+  label: string
+  phase: 'start' | 'end'
+  done: number
 }
 
 /**
@@ -942,6 +951,8 @@ const DEFERRED: { name: string; detail: string }[] = [
  * `reach` are unchanged (#242, #349).
  */
 export interface DoctorReach {
+  /** Told when each step starts and ends; `lingtai doctor` draws a spinner from it. */
+  onProgress?: (p: DoctorProgress) => void
   /** As `daemonLiveness` and `daemonCurrency` already take it. */
   status: () => ReturnType<typeof readStatus>
   /** As `daemonLiveness` already takes it. */
@@ -2615,56 +2626,74 @@ export async function runDoctor(
   reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea'> = { sea: probeSeaBuild },
 ): Promise<DoctorReport> {
   const results: CheckResult[] = []
+  // Every row goes in inside a step, so each gets the milliseconds of the call that pushed it and
+  // the caller hears which call is in flight. A step that throws stamps nothing and emits no `end`.
+  const step = async <T>(label: string, run: () => T | Promise<T>): Promise<T> => {
+    const from = results.length
+    reach.onProgress?.({ label, phase: 'start', done: from })
+    const t0 = performance.now()
+    const value = await run()
+    const ms = Math.round(performance.now() - t0)
+    for (let i = from; i < results.length; i++) results[i] = { ...results[i]!, ms }
+    reach.onProgress?.({ label, phase: 'end', done: results.length })
+    return value
+  }
 
   if (isSea()) {
     // A binary has no checkout beside it to read `.node-version` from, and it
     // carries the Node that built it — `release.yml` reads that file too, so
     // the two cannot disagree.
-    results.push({
-      name: 'node: at or above the floor',
-      status: 'ok',
-      detail: `node ${process.version} — the binary carries the Node it was built with`,
-    })
-    results.push({
-      name: 'node: can build a single executable',
-      status: 'skip',
-      // `process.execPath` here is the lingtai binary, not a Node to probe —
-      // building a binary is a checkout's job, and a binary never does it to
-      // itself.
-      detail:
-        "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
+    await step('Node', () => {
+      results.push({
+        name: 'node: at or above the floor',
+        status: 'ok',
+        detail: `node ${process.version} — the binary carries the Node it was built with`,
+      })
+      results.push({
+        name: 'node: can build a single executable',
+        status: 'skip',
+        // `process.execPath` here is the lingtai binary, not a Node to probe —
+        // building a binary is a checkout's job, and a binary never does it to
+        // itself.
+        detail:
+          "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
+      })
     })
   } else {
-    let declaredNode: string | undefined
-    try {
-      declaredNode = (await readFile(join(repoRoot(), '.node-version'), 'utf8')).trim()
-    } catch {
-      declaredNode = undefined
-    }
-    results.push(nodeRow(process.versions.node, declaredNode))
-    results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
+    await step('Node', async () => {
+      let declaredNode: string | undefined
+      try {
+        declaredNode = (await readFile(join(repoRoot(), '.node-version'), 'utf8')).trim()
+      } catch {
+        declaredNode = undefined
+      }
+      results.push(nodeRow(process.versions.node, declaredNode))
+      results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
+    })
   }
 
-  results.push({
-    name: 'packages load under Node',
-    status: 'ok',
-    // Not a freebie: to reach this line, Node's type stripping had to load
-    // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
-    // command imports. A `.js` specifier in a barrel or a constructor parameter
-    // property would have stopped it, and neither `tsc` nor a board build
-    // notices either. See doc/decisions-archive/0010.
-    detail: "every package this command imports loaded under Node's type stripping",
-  })
+  await step('packages', () =>
+    results.push({
+      name: 'packages load under Node',
+      status: 'ok',
+      // Not a freebie: to reach this line, Node's type stripping had to load
+      // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
+      // command imports. A `.js` specifier in a barrel or a constructor parameter
+      // property would have stopped it, and neither `tsc` nor a board build
+      // notices either. See doc/decisions-archive/0010.
+      detail: "every package this command imports loaded under Node's type stripping",
+    }),
+  )
 
   // Before the connection rows, because it is the question they assume an
   // answer to: what this machine says it runs.
   const choice = store()
-  results.push(storeRow(choice))
+  await step('the store', () => results.push(storeRow(choice)))
 
   // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
   // and the `unconverged` rows in both store branches read this same value,
   // rather than each asking every project's recipe again.
-  const filters = await projectFiltersOnce(env, load, reach.recipe)
+  const filters = await step('recipes', () => projectFiltersOnce(env, load, reach.recipe))
   const unresolved = unresolvedProblems(filters)
 
   /**
@@ -2713,7 +2742,7 @@ export async function runDoctor(
           standIn && Boolean(pooled),
           fromFile ? '~/.lingtai/config.yml database.url' : undefined,
         )
-  results.push(envResult)
+  await step('the environment', () => results.push(envResult))
 
   if (fileBacked) {
     // Every row below that is about **a log** rather than about Postgres: each
@@ -2728,33 +2757,37 @@ export async function runDoctor(
     // store runs its own `create table if not exists` — `events` and
     // `daemon_status` — which is how that store is opened at all and how the
     // very next command would open it; not one row goes in.
-    results.push(await logReachable(choice.path, queries))
-    results.push(await projections(undefined, reach.lags))
-    results.push(await projectionShapes(undefined, reach.shapes))
-    results.push(await daemonLiveness(reach.status, reach.pause))
-    results.push(await daemonCurrency(reach.status))
-    results.push(await spendToday(reach.spend))
-    results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag()))))
-    results.push(await passRefusals(load))
-    results.push(await conductorLock(reach.lockHolder))
-    results.push(await readableTypes(queries))
-    results.push(await logPredatesHoldRow(queries))
-    results.push(await orphans(reach.orphans))
+    await step('the log', async () => results.push(await logReachable(choice.path, queries)))
+    await step('projections', async () => results.push(await projections(undefined, reach.lags)))
+    await step('projection shapes', async () => results.push(await projectionShapes(undefined, reach.shapes)))
+    await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
+    await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
+    await step('spend', async () => results.push(await spendToday(reach.spend)))
+    await step('rates', async () =>
+      results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag())))),
+    )
+    await step('refusals', async () => results.push(await passRefusals(load)))
+    await step('the lock', async () => results.push(await conductorLock(reach.lockHolder)))
+    await step('event types', async () => results.push(await readableTypes(queries)))
+    await step('holds', async () => results.push(await logPredatesHoldRow(queries)))
+    await step('orphans', async () => results.push(await orphans(reach.orphans)))
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
-    const titles = await issueTitles(reach.titles)
-    results.push(await unconverged(queries, titles, unresolved))
-    results.push(await subscribers(queries))
-    results.push(await endStepRan(queries, titles))
+    const titles = await step('issue titles', () => issueTitles(reach.titles))
+    await step('unconverged', async () => results.push(await unconverged(queries, titles, unresolved)))
+    await step('subscribers', async () => results.push(await subscribers(queries)))
+    await step('end step', async () => results.push(await endStepRan(queries, titles)))
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
-    for (const row of postgresOnlyRows()) {
-      results.push({
-        name: row.name,
-        status: 'skip',
-        detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
-      })
-    }
+    await step('Postgres-only rows', () => {
+      for (const row of postgresOnlyRows()) {
+        results.push({
+          name: row.name,
+          status: 'skip',
+          detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
+        })
+      }
+    })
   } else if (envResult.status === 'ok' && pooled && direct) {
     // **The direct connection, and not `queries`.** These read the log, and on
     // this machine the log has two connection strings: `log.queries` is the
@@ -2763,49 +2796,55 @@ export async function runDoctor(
     // `LogQueries` so that the file-backed branch above can ask them at all;
     // which connection *this* branch hands them is unchanged.
     const audit = createPostgresLogQueries({ url: direct })
-    results.push(await pooledConnection(pooled))
-    results.push(await directIsSessionMode(direct, standIn))
-    results.push(...(await schema(direct)))
-    results.push(await projections(pooled))
-    results.push(await projectionShapes(pooled))
-    results.push(await daemonLiveness())
+    await step('the pooler', async () => results.push(await pooledConnection(pooled)))
+    await step('the direct connection', async () => results.push(await directIsSessionMode(direct, standIn)))
+    await step('the schema', async () => results.push(...(await schema(direct))))
+    await step('projections', async () => results.push(await projections(pooled)))
+    await step('projection shapes', async () => results.push(await projectionShapes(pooled)))
+    await step('the daemon', async () => results.push(await daemonLiveness()))
     // Beside liveness, never folded into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
-    results.push(await daemonCurrency())
-    results.push(await spendToday())
-    results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag())))
+    await step('daemon currency', async () => results.push(await daemonCurrency()))
+    await step('spend', async () => results.push(await spendToday()))
+    await step('rates', async () => results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag()))))
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
-    results.push(await passRefusals(load))
-    results.push(await conductorLock())
-    results.push(await readableTypes(audit))
-    results.push(await logPredatesHoldRow(audit))
-    results.push(await orphans())
+    await step('refusals', async () => results.push(await passRefusals(load)))
+    await step('the lock', async () => results.push(await conductorLock()))
+    await step('event types', async () => results.push(await readableTypes(audit)))
+    await step('holds', async () => results.push(await logPredatesHoldRow(audit)))
+    await step('orphans', async () => results.push(await orphans()))
     // The projection and not the audit connection: this is what the rows are
     // *called*, not what they assert, so it is read where every other
     // projection read here is read (#258).
-    const titles = await issueTitles()
-    results.push(await unconverged(audit, titles, unresolved))
-    results.push(await subscribers(audit))
-    results.push(await endStepRan(audit, titles))
+    const titles = await step('issue titles', () => issueTitles())
+    await step('unconverged', async () => results.push(await unconverged(audit, titles, unresolved)))
+    await step('subscribers', async () => results.push(await subscribers(audit)))
+    await step('end step', async () => results.push(await endStepRan(audit, titles)))
   } else {
-    results.push({
-      name: 'postgres',
-      status: 'skip',
-      detail: 'not attempted — the environment check failed first',
-    })
+    await step('Postgres', () =>
+      results.push({
+        name: 'postgres',
+        status: 'skip',
+        detail: 'not attempted — the environment check failed first',
+      }),
+    )
   }
 
-  results.push(githubCredentials(env))
-  const ghRow = await ghLogin(env, reach.gh)
-  if (ghRow !== null) results.push(ghRow)
-  results.push(...(await projectRecipes(filters)))
-  results.push(...(await declaredEnvironment(env, load, reach)))
-  results.push(...(await recipeGovernsItsBase(env, load, reach)))
-  results.push(await settingsSources(reach.settings))
-  results.push(await runtimeAuth(reach.runtimes))
-  for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
+  await step('GitHub', async () => {
+    results.push(githubCredentials(env))
+    const ghRow = await ghLogin(env, reach.gh)
+    if (ghRow !== null) results.push(ghRow)
+  })
+  await step('project recipes', async () => results.push(...(await projectRecipes(filters))))
+  await step('declared environment', async () => results.push(...(await declaredEnvironment(env, load, reach))))
+  await step('recipe bases', async () => results.push(...(await recipeGovernsItsBase(env, load, reach))))
+  await step('settings', async () => results.push(await settingsSources(reach.settings)))
+  await step('runtimes', async () => results.push(await runtimeAuth(reach.runtimes)))
+  await step('deferred', () => {
+    for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
+  })
 
   return { results, ...tally(results) }
 }
@@ -2821,12 +2860,15 @@ export async function runDoctor(
  * ran a *slightly* different doctor than the one you type would be the worst of
  * both.
  */
-export async function doctorReport(): Promise<DoctorReport> {
+export async function doctorReport(opts: { onProgress?: (p: DoctorProgress) => void } = {}): Promise<DoctorReport> {
   const env = doctorEnvironment()
   return runDoctor(
     env,
     () => machineDatabaseUrl(env),
     () => storeChoice(env),
+    undefined,
+    undefined,
+    { sea: probeSeaBuild, onProgress: opts.onProgress },
   )
 }
 
@@ -2938,6 +2980,11 @@ function marker(status: CheckStatus): string {
  * with a note; each is the marker and the name, then what it found — which is
  * where the remedy is — on the next line.
  */
+/** A row's time for `--verbose`: one decimal, and `<0.1s` below a tenth of a second. */
+function seconds(ms: number): string {
+  return ms < 100 ? '<0.1s' : `${(ms / 1000).toFixed(1)}s`
+}
+
 export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; next?: boolean } = {}): string[] {
   const { verbose = false, next = true } = opts
   const groups = new Map<string, CheckResult[]>()
@@ -2987,7 +3034,7 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
   for (const { area, rows } of areas) {
     const ordered = STATUS_ORDER.flatMap((status) => rows.filter((r) => r.status === status))
     const checks = ordered.flatMap((r) => [
-      `${marker(r.status)}  ${r.name}`,
+      `${marker(r.status)}  ${r.name}${r.ms === undefined ? '' : paint.muted(` ${seconds(r.ms)}`)}`,
       ...r.detail.split('\n').map((line) => `${' '.repeat(6)}${line}`),
     ])
     lines.push(...section(area, checks).split('\n'))
@@ -3032,6 +3079,7 @@ export function doctorJson(report: DoctorReport): Record<string, unknown> {
       detail: r.detail,
       deferred: r.deferred === true,
       restartAnswers: r.restartAnswers === true,
+      ...(r.ms === undefined ? {} : { ms: r.ms }),
     })),
   }
 }
