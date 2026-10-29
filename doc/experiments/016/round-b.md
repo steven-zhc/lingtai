@@ -756,15 +756,141 @@ doctor
 
 
 
-- [ ] **B.12-a** It asks only what a second repository needs: nothing about the store,
-  the machine or GitHub.
+**B.12, second run, by Claude over ssh with flags** (17:58, the operator's
+call: "你跑我看结果"). Interactive questions are therefore **not tested** here;
+what is tested is that `add` on a set-up machine registers a second project.
+Two attempts before it refused, and say something:
+
+- With no `--defaults` and no terminal: "which model the writer runs on needs
+  an answer: pass --model <name>. Nothing was written" (B9).
+- From inside the clone, the ssh session's Node was a broken Homebrew one, and
+  `add` said "codex is installed and not signed in (dyld[…]: Library not
+  loaded: …libllhttp.9.3.dylib …)" (B10). Not Lingtai's machine problem; how it
+  is worded is.
+
+The run that registered it:
+
+```fish
+set -gx PATH $HOME/.local/share/mise/installs/node/26.13.0/bin $PATH
+set -gx ROUND b
+set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+set -gx TRIAL_SRC $HOME/lingtai-trial/src
+set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+lingtai add --local $CHAPTER_GARDEN_B2 --base main --agent codex --reviewer codex \
+  --install "npm ci" --build "npm run check" --build "npm run build" \
+  --check-build yes --land hold --defaults --no-color </dev/null
+git -C $CHAPTER_GARDEN_B2 worktree list
+lingtai doctor --no-color
+cat $LINGTAI_HOME/chapter-garden-b2/recipe.yml
+```
+
+```paste
+/Users/steven/lingtai-trial/b
+Thu Oct 29 17:58:42 CDT 2026
+which agent's pass this is
+which agent writes the change
+which agent, if any, reads it cold before it moves on
+getting the worktree ready before the agent starts
+what must pass before review
+install: npm ci — package-lock.json is at the root
+running the trial build — this can take minutes
+cutting a throwaway worktree at main — the first time this clones the repository
+where this project's tickets live
+tickets       db — a local project has no GitHub issues to read
+which labels are work, most wanted first
+kinds         bug, feature, documentation
+what the agent's environment is filtered to
+the branch this project governs, and where it pushes
+what happens once a pass is ready to land
+landing       hold — every pass stops at proposed for a person
+what one pass may spend before it comes back to you
+  a pass    up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused it. 2h and no turn limit each, so at most 6h. A pass whose rounds are spent goes to you (runtime.limits.restarts: 0)
+Before registering chapter-garden-b2
+  checks   npm run check · npm run build
+  review   codex
+  landing  held — every pass stops at proposed for a person
+  change   lingtai add --local /Users/steven/lingtai-trial/src/chapter-garden-b2
+A role with no model is priced by the model its runtime reports on the first run.
+added chapter-garden-b2 — tier guarded, 6 action(s) across 5 steps
+exit: 0
+Thu Oct 29 17:59:00 CDT 2026
+/Users/steven/lingtai-trial/src/chapter-garden-b2  f20fcec [main]
+doctor
+
+all 34 passed · 11 not checked here · 3 not implemented yet
+exit: 0
+version: 2
+
+# the branch this project governs, and where it pushes
+repo:
+  base: main
+  remote: /Users/steven/lingtai-trial/src/chapter-garden-b2.git
+
+# what the agent's environment is filtered to
+env:
+  plantAt: .env.local
+
+# which agent's pass this is
+runtime:
+  agent: codex
+  # what one pass may spend before it comes back to you
+  limits:
+    turns: unbounded
+
+steps:
+  # which agent writes the change
+  implement:
+    - name: write the change
+      agent: codex
+      prompt: ""
+  # which agent, if any, reads it cold before it moves on
+  review:
+    - name: review
+      agent: codex
+      prompt: ""
+  # getting the worktree ready before the agent starts
+  prepared:
+    - name: install
+      run: npm ci
+  # what must pass before review
+  build:
+    - name: check
+      run: npm run check
+    - name: build
+      run: npm run build
+  proposed:
+    - name: hold every pass
+      human: Land this? The setup was answered 'hold'.
+
+  # where this project's tickets live
+  tickets: db
+  # which labels are work, most wanted first
+  kinds:
+    - bug
+    - feature
+    - documentation
+```
+
+- [x] **B.12-a** It asks only what a second repository needs: nothing about the store,
+  the machine or GitHub. **Nothing about the store, machine or GitHub was
+  printed or asked**; the interactive questions themselves were not tested
+  (flags).
 - [ ] **B.12-b** The base branch (`main`), install and build are detected.
+  **Install yes** ("install: npm ci — package-lock.json is at the root");
+  **build no** (B2); the base was given with `--base`.
 - [ ] **B.12-c** The trial build runs, reports, and leaves no worktree behind
+  **Runs and leaves no worktree (`worktree list` shows only the checkout); does
+  not report (B4 again)**:
   (`git -C $CHAPTER_GARDEN_B2 worktree list` shows only the checkout).
 - [ ] **B.12-d** It ends with what to do next, and names the new project
+  **Names it ("added chapter-garden-b2 — tier guarded, 6 action(s) across 5
+  steps") but says nothing about what to do next (B11)**:
   (`chapter-garden-b2`, or the name it printed).
-- [ ] **B.12-e** No output cites an ADR, an issue number or a source path.
-- [ ] **B.12-f** `lingtai doctor` lists both projects and passes.
+- [x] **B.12-e** No output cites an ADR, an issue number or a source path.
+  (It does print `runtime.limits.restarts: 0`, as round A did.)
+- [x] **B.12-f** `lingtai doctor` lists both projects and passes. **Passes,
+  `all 34 passed`** (27 with one project; the 7 more are the second project's
+  checks); the short view lists no project names.
 
 No ticket is run on it: the pass is the same as round B's.
 
@@ -838,6 +964,22 @@ all. #2: close it with a reason (`lingtai close`), or approve with one.
 
 **Round B stuck:**
 
+- **B9. A headless `add` cannot say "the runtime's own model".** Asked at a
+  terminal, the writer's model is "empty for the runtime's own default"; with
+  no terminal, `add` refused "which model the writer runs on needs an answer:
+  pass --model <name>", and there is no `--model` value that means empty. Only
+  `--defaults` gets past it.
+- **B10. A runtime that cannot start is called "not signed in".** With a
+  broken `node` on `PATH`, `add` said "codex is installed and not signed in
+  (dyld[…]: Library not loaded: /usr/local/opt/llhttp/lib/libllhttp.9.3.dylib
+  …)", and doctor "chapter-garden-b's runtime agent, codex, is signed out".
+  Signing in would not help: the runtime does not start. The machine was at
+  fault, the words were not.
+- **B11. `add` ends with no next step.** Its last line is "added
+  chapter-garden-b2 — tier guarded, 6 action(s) across 5 steps": no `next:`
+  (`lingtai ticket new --project chapter-garden-b2`), and "tier guarded, 6
+  action(s) across 5 steps" is the code's vocabulary.
+
 - **B8. "use every default? yes" cannot finish on a machine with both
   runtimes signed in.** B.12, `lingtai add` on round B's set-up machine,
   answered `yes`, and the writer question had no default to take: `agents.ts`
@@ -894,10 +1036,20 @@ ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 *B.13 output:*
 
 ```paste
+/Users/steven/lingtai-trial:
+src
 
+/Users/steven/lingtai-trial-archive:
+round-a.tgz
+round-b.tgz
+
+/Users/steven/lingtai-trial/src:
+total 840
+-rw-r--r--@ 1 steven  staff  149237 Oct 29 12:53 round-a.tgz
+-rw-r--r--@ 1 steven  staff  275476 Oct 29 17:59 round-b.tgz
 ```
 
-- [ ] **B.13-a** Both `lsof` lines printed nothing: no board on 17830, and no process
+- [x] **B.13-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] **B.13-b** `round-b.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [x] **B.13-b** `round-b.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `b/`.
