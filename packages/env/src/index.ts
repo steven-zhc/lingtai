@@ -1384,7 +1384,16 @@ export function electGithubAuth(environment: GitHubAppSection, machine: MachineG
 }
 
 function githubAuthElection(from: NodeJS.ProcessEnv): ElectedGitHubAuth {
-  return electGithubAuth(githubSection(environmentProvider(from)), machineGithub(machineFile(from)))
+  return githubAuthElectionFrom(from, machineFile(from))
+}
+
+/**
+ * `githubAuthKind`'s election over a machine file already read — so `init`,
+ * whose tests stand a `Map` in for the file, asks the same question the real
+ * reader does without touching the disk.
+ */
+export function githubAuthElectionFrom(from: NodeJS.ProcessEnv, file: MachineFile): ElectedGitHubAuth {
+  return electGithubAuth(githubSection(environmentProvider(from)), machineGithub(file))
 }
 
 /**

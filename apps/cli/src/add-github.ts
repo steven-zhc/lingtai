@@ -219,7 +219,11 @@ export async function askBeforeGithubAdd(
     console.error(`${(err as Error).message}. Nothing was written`)
     return 1
   }
-  if (kind === null && !deps.interactive()) {
+  // `--github-auth gh` answers the machine's question here too: the login is
+  // checked below, before any recipe question, and `runGithubBranch` writes it.
+  const authFlag = flags['github-auth']
+  if (kind === null && authFlag === 'gh') kind = 'gh'
+  if (kind === null && authFlag === undefined && !deps.interactive()) {
     console.error('no GitHub auth is configured here — run lingtai init. Nothing was written')
     return 1
   }
@@ -372,7 +376,7 @@ export async function askBeforeGithubAdd(
             token: async () =>
               (
                 await createGitHubClient({
-                  auth: githubClientAuth(),
+                  auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
                   owner,
                   repo,
                   ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),

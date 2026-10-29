@@ -41,6 +41,7 @@ export const initOptions = {
   project: text('project'),
   local: text('local'),
   'github-app': text('github-app'),
+  'github-auth': text('github-auth'),
   ...recipeOptions,
 }
 
@@ -49,6 +50,7 @@ export const addOptions = {
   local: text('local'),
   project: text('project'),
   'github-app': text('github-app'),
+  'github-auth': text('github-auth'),
   ...recipeOptions,
 }
 

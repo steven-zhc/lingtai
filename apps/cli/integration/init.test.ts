@@ -192,6 +192,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         db.created = true
         return { ok: true, schema: { created: true, applied: ['Create table "events"'] } }
       },
+      ghStatus: async () => ({ ok: false, reason: 'missing', detail: 'gh is not installed' }),
       app: async () => {
         step('app')
         seen.apps++
