@@ -42,7 +42,8 @@ finding: write it down with its words.
 | 8 | does a cold reviewer read it, and which agent (…, or none) | `codex` | |
 | 9 | on which model (empty for the runtime's own default) | Enter | |
 | 10 | the install command | Enter if it offers `npm ci` | |
-| 11 | run these before review? yes, or no to write your own | `yes` if it lists `npm run check` and `npm run build` | |
+| 11 | run these before review? yes, or no to write your own | `yes` if it lists `npm run check` and `npm run build` | **Not asked for Chapter Garden**: nothing is detected (B2), so 11a comes instead |
+| 11a | a command that must pass before review — empty when done | `npm run check` ⏎, `npm run build` ⏎, then an empty line ⏎ | one command per answer; the empty one ends the list |
 | 12 | run these once against the base before writing them? | `yes` | the trial build, #436 |
 | 13 | which labels are work, comma-separated, first = taken first | Enter | `bug, feature, documentation` |
 | 14 | land this on which branch, or "hold" to hold every pass for a person | `hold` | as round A |
@@ -322,6 +323,15 @@ the directory). The project's name is the directory's, `chapter-garden-b2`.
 No ticket is run on it: the pass is the same as round B's.
 
 **Round B stuck:**
+
+- **B2. Chapter Garden's checks are not detected.** `init` skipped "run these
+  before review?" and went straight to "a command that must pass before
+  review — empty when done". Detection takes four npm script names only,
+  `fmt:check`/`format:check`, `lint`, `typecheck` and `test`
+  (`apps/cli/src/detect-setup.ts:68-73`). Chapter Garden is an Astro site whose
+  scripts are `check` (`astro check`) and `build` (`astro build`), so nothing
+  matched, and the tutorial's own example repository gets no suggestion.
+  Round A never saw this: its `init` was given `--build`.
 
 - **B1. `init` in a directory it does not know, on a machine already set up,
   does not mention that directory.** Run inside the new `chapter-garden-b`
