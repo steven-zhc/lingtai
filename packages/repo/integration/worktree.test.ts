@@ -314,6 +314,6 @@ describe('provisionWorktree', () => {
         at: approvedSha,
         home,
       }),
-    ).rejects.toThrow('the approval is stale')
+    ).rejects.toThrow('the continuation is stale')
   })
 })

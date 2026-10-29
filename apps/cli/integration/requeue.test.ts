@@ -103,9 +103,11 @@ describe('lingtai requeue', () => {
     expect(said.join('\n')).toContain('back in the queue')
 
     const events = await store.read(wi(FROM_CLI))
-    const last = events[events.length - 1]!
-    expect(last.type).toBe('WaitResolved')
-    expect(last.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: NOTE })
+    // The resolution, then the release it asks for (`de6671a4`): the requeue arrives with both.
+    const [resolved, released] = events.slice(-2)
+    expect(resolved!.type).toBe('WaitResolved')
+    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: NOTE })
+    expect(released!.type).toBe('TicketReleased')
     expect(reduceTicket(events).lifecycle.status).toBe('backlog')
   })
 
@@ -131,10 +133,15 @@ describe('lingtai requeue', () => {
     expect(board.ok).toBe(true)
 
     const decided = async (n: number) => {
-      const events = await store.read(wi(n))
-      const { seq, streamId, at, data, ...rest } = events[events.length - 1]!
-      const { waitId, ...restData } = data as { waitId: string; by: string; resolution: unknown; note: string }
-      return { ...rest, data: restData }
+      // The resolution and the release that follows it: both are what a side appends.
+      const events = (await store.read(wi(n))).slice(-2)
+      return events.map((e) => {
+        const { seq, streamId, at, data, ...rest } = e
+        // Each side opened its own wait, so the wait id differs, and the release's run id is named for its issue.
+        const { waitId, runId, cause, ...restData } = data as Record<string, unknown>
+        const { waitId: causeWait, ...restCause } = (cause ?? {}) as Record<string, unknown>
+        return { ...rest, data: { ...restData, ...(cause === undefined ? {} : { cause: restCause }) } }
+      })
     }
 
     expect(await decided(FROM_CLI)).toEqual(await decided(FROM_BOARD))
@@ -165,9 +172,10 @@ describe('lingtai requeue', () => {
     expect(said.join('\n')).toContain('back in the queue')
 
     const events = await store.read(wi(BLANK_NOTE))
-    const last = events[events.length - 1]!
-    expect(last.type).toBe('WaitResolved')
-    expect(last.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: '' })
+    const [resolved, released] = events.slice(-2)
+    expect(resolved!.type).toBe('WaitResolved')
+    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: '' })
+    expect(released!.type).toBe('TicketReleased')
   })
 
   it('says so when the project was never added', async () => {

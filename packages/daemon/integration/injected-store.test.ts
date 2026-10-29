@@ -78,9 +78,14 @@ function recordingStore(events: EventStore, ids: string[]) {
     },
     async streams(query) {
       asked.push(query)
-      // Only the claim query has an answer: `converge`'s asks for five types
-      // under `ticket-%`, and this log holds nothing it would change.
-      return query.types.includes('TicketClaimed') && query.types.length === 1 ? [...ids] : []
+      // Only the claim query has an answer (the claim and its continuation, #683):
+      // `converge`'s asks for more types under `ticket-%`, and this log holds
+      // nothing it would change.
+      return query.types.length === 2 &&
+        query.types.includes('TicketClaimed') &&
+        query.types.includes('TicketContinued')
+        ? [...ids]
+        : []
     },
     async close() {},
   }
@@ -117,7 +122,7 @@ describe("a pass given a store reads that store's log", () => {
     // Asked this store, and folded this store's log. Reading the process-wide
     // Postgres instead returns `[]` for `ticket-pureproj-117`, and an empty fold is
     // not `claimed` — so the orphan is reported as no orphan at all.
-    expect(asked).toEqual([{ prefixes: [`ticket-${PROJECT}-%`], types: ['TicketClaimed'] }])
+    expect(asked).toEqual([{ prefixes: [`ticket-${PROJECT}-%`], types: ['TicketClaimed', 'TicketContinued'] }])
     expect(findings.map((f) => f.stream)).toEqual([CLAIMED])
     expect(findings[0]!.actual).toContain('otherhost:23673')
   })

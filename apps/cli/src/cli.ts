@@ -1327,7 +1327,7 @@ export async function runCli(
     const valueless = valuelessFlag(args.slice(1))
     if (valueless !== null) {
       console.error(`lingtai ${args[0]}: --${valueless} takes a value`)
-      return 1
+      return 2
     }
   }
   const errors: string[] = []

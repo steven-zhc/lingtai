@@ -799,7 +799,8 @@ describe('lingtai doctor — reporting', () => {
 
   it('says how many failed, and every check says what it found', async () => {
     const report = await runDoctor(env({}), () => undefined, notSetUp)
-    expect(formatReport(report)).toContain('FAILED')
+    expect(report.failed).toBeGreaterThan(0)
+    expect(formatReport(report)).toContain(`${report.failed} failed`)
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true)
   })
 })

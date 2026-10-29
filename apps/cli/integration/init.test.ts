@@ -27,6 +27,8 @@ import { flagsFromArgv } from '../test/flags.ts'
  */
 
 const URL_ = 'postgresql://me:secret@db.example:5432/lingtai'
+// Once the App exists, init writes `github.auth` beside whatever the store wrote (first-project.ts).
+const GITHUB_APP = 'github:\n  auth: app\n'
 
 /**
  * Every `askRecipe` (#431) question on the local branch, answered by flag
@@ -160,6 +162,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         // default, same as those, since nothing here is about which labels
         // are work.
         if (/which labels are work/.test(question)) return ''
+        // #710's GitHub-access question, asked before the database one. The
+        // world's `ghStatus` is never ready, so `app` is the one answer that
+        // carries on to the App question these tests were written against.
+        if (/a GitHub App of its own/.test(question)) return 'app'
         // #433's first recipe question, answered with its own default so
         // `acceptingDefaults` wraps the world and every later recipe question
         // takes its default without reaching this `ask` — this suite is about
@@ -274,7 +280,7 @@ describe('lingtai init (#186)', () => {
 
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
 
-    expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
+    expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n${GITHUB_APP}`)
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(seen.opened).toEqual(['http://127.0.0.1:3200/setup/github-app'])
     expect(seen.lines.join('\n')).toContain('lingtai-me, owned by me — it answered')
@@ -479,7 +485,7 @@ describe('lingtai init (#186)', () => {
         const second = world(home, { runtimes, answers: [URL_] }, db)
         expect(await initCommand(flagsFromArgv([]), second.world)).toBe(0)
 
-        expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
+        expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n${GITHUB_APP}`)
         expect(second.seen.opened).toEqual(['http://127.0.0.1:3200/setup/github-app'])
 
         // What the first run settled, the second does not ask again.
@@ -643,7 +649,7 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([URL_])
-    expect(config(home)).toBeNull()
+    expect(config(home)).toBe(GITHUB_APP)
     // It is the process's answer and not the file's, so the file still says nothing.
     expect(seen.lines.join('\n')).toContain('exported into this process')
   })
@@ -963,7 +969,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
       const { world: w, seen } = world(home, {})
       expect(await initCommand(flagsFromArgv(['--store', 'postgres', '--database-url', URL_]), w)).toBe(0)
       expect(seen.asked).toEqual([])
-      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
+      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n${GITHUB_APP}`)
     })
 
     it('--database-url alone, with no --store, still repoints a machine already settled on another database that still answers', async () => {
@@ -976,14 +982,14 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(await initCommand(flagsFromArgv(['--database-url', newer]), w)).toBe(0)
       expect(seen.asked).toEqual([])
       expect(seen.connected).toEqual([newer])
-      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${newer}\n`)
+      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${newer}\n${GITHUB_APP}`)
     })
 
     it('with an exported LINGTAI_DATABASE_URL instead, uses it and writes nothing for it', async () => {
       const home = freshHome()
       const { world: w } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
       expect(await initCommand(flagsFromArgv(['--store', 'postgres']), w)).toBe(0)
-      expect(config(home)).toBeNull()
+      expect(config(home)).toBe(GITHUB_APP)
 
       // Naming the same database is that same run; naming another is refused, never ignored.
       const same = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
@@ -996,7 +1002,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(other.seen.connected).toEqual([])
       expect(other.seen.lines.at(-1)).toContain('exported URL wins')
       expect(other.seen.lines.join('\n')).not.toMatch(/secret|hunter2/)
-      expect(config(home)).toBeNull()
+      expect(config(home)).toBe(GITHUB_APP)
     })
 
     it('--database-url alone, naming another database than an exported LINGTAI_DATABASE_URL, is refused rather than ignored', async () => {
@@ -1066,7 +1072,6 @@ describe('--store answers the store question without a terminal (#345)', () => {
     const home = freshHome()
     const { world: w } = world(home, {})
     expect(await initCommand(flagsFromArgv(['--store', 'mysql']), w)).toBe(2)
-    expect(await initCommand(flagsFromArgv(['--store']), w)).toBe(2)
     expect(config(home)).toBeNull()
   })
 })
