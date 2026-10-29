@@ -598,6 +598,11 @@ If the agent still corrected the type first, or ran the checks, quote its
 words from the run log here. That says whether a ticket's text can produce
 the refusal at all, or whether the pass instructions and AGENTS.md always win.
 
+> **Skipped (2026-10-29, the operator's call).** B.11 and B.12 did not run:
+> the first attempt had no environment (Round B summary), and the round moved
+> on to C rather than run it again. `lingtai add` on a set-up machine is
+> **untested** in this trial.
+
 **A second repository on the same machine.** The ordinary case after the
 first day: this machine is set up (round B's home, with `chapter-garden-b`),
 and a person adds another repository. Two things to see: what `init` says when
