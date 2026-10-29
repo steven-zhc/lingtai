@@ -79,9 +79,13 @@ using them in a terminal.
    | `PROBLEM` | reversed, no hue                        | a check warned                  |
    | `FIX`     | `accent`'s cyan as the background       | the command that resolves it    |
    | `NOTE`    | padded like the others, no background, `muted` | true, and nothing to do  |
-   | `NEXT`    | padded like the others, no background, `muted` | the closing `next:` command |
+   | `NEXT`    | `pass`'s green as the background        | the one command to run next     |
 
-   The fix command itself is drawn in `accent`. Amber is never a badge. In
+   The fix command itself is drawn in `accent`, and so is the command after
+   `NEXT`. Everywhere else green is an outcome — something passed or went
+   right; `NEXT` is the one place it marks something not yet done. It is the
+   last line of the view and is never on a check's title line, so it cannot be
+   read as a check's verdict. Amber is never a badge. In
    plain mode (§3) a label is the same word in brackets and lower case
    (`[problem]`, `[fix]`, `[note]`, `[next]`), so its meaning survives with no
    escape codes.
