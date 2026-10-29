@@ -125,7 +125,7 @@ describe('tellGitHub', () => {
     const gh = fakeGitHub({ fail: true })
     await expect(
       tellGitHub({ store, github: gh.channel, ticketId: id, change: { kind: 'closed' } }),
-    ).resolves.toBeUndefined()
+    ).resolves.toMatchObject({ recorded: 'IssueUpdateFailed' })
 
     const e = await last(id)
     expect(e?.type).toBe('IssueUpdateFailed')
@@ -136,7 +136,7 @@ describe('tellGitHub', () => {
     const gh = fakeGitHub()
     await expect(
       tellGitHub({ store, github: gh.channel, ticketId: 'nonsense', change: { kind: 'closed' } }),
-    ).resolves.toBeUndefined()
+    ).resolves.toEqual({ recorded: null })
     expect(gh.calls, 'no call was made').toHaveLength(0)
   })
 })
