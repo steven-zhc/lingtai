@@ -486,7 +486,7 @@ describe('github: gh login', () => {
     })
     const row = await ghLogin(GH_MACHINE, out)
     expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('gh auth login')
+    expect(row?.fix).toBe('gh auth login')
   })
 
   it('fails naming the refresh command when workflow is missing', async () => {
