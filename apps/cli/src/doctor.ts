@@ -825,7 +825,7 @@ export async function projectionShapes(
  * Never a `fail`: none of this is wrong, and a check that goes red for a
  * `settings.json` everyone has is a check people learn to skip.
  */
-async function settingsSources(
+export async function settingsSources(
   fetch: () => Promise<string | null> = async () => {
     try {
       return await readFile(join(homedir(), '.claude', 'settings.json'), 'utf8')
@@ -845,7 +845,12 @@ async function settingsSources(
   try {
     parsed = JSON.parse(raw) as Record<string, unknown>
   } catch (err) {
-    return { name, status: 'warn', detail: `~/.claude/settings.json does not parse: ${(err as Error).message}` }
+    return {
+      name,
+      status: 'warn',
+      title: "Claude Code's settings file cannot be read",
+      detail: `~/.claude/settings.json does not parse\n${(err as Error).message}`,
+    }
   }
 
   // Only the keys that change what a run does. Everything else there is the
@@ -889,7 +894,9 @@ async function settingsSources(
  * recipe, and it is a `fail` in exactly that case. Neither row is the other's
  * summary.
  */
-async function runtimeAuth(fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime()): Promise<CheckResult> {
+export async function runtimeAuth(
+  fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime(),
+): Promise<CheckResult> {
   const name = 'runtime: signed in'
   // Exactly what a run gets. Not `process.env`.
   const env = runnableEnv({})
@@ -913,9 +920,10 @@ async function runtimeAuth(fetch: () => ReturnType<typeof everyRuntime> = () => 
   return {
     name,
     status: 'fail',
+    title: 'No coding agent on this machine is signed in',
     detail:
-      `${said}, in the filtered environment a run gets ` +
-      `(${Object.keys(env).sort().join(', ')}). ` +
+      'No runtime is signed in, in the filtered environment a run gets\n' +
+      `${said} (${Object.keys(env).sort().join(', ')}). ` +
       "If you are signed in yourself, the run's environment is missing something the credential " +
       'store needs — on macOS that is USER, because a keychain item is found by who is asking.',
   }
@@ -1681,7 +1689,7 @@ function say(titles: TitleBook, ref: string, what: string): string {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
+export async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
   const name = 'steps: end ran on what landed'
   const found = await endedWithoutEndActions(queries).catch(() => null)
   if (found === null) return { name, status: 'ok', detail: 'no log to read yet' }
@@ -1692,11 +1700,13 @@ async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<Check
   return {
     name,
     status: 'fail',
+    title: `${found.length} landed ${found.length === 1 ? 'item was' : 'items were'} never closed out on GitHub`,
     detail:
-      `${found.length} item(s) landed with actions planned at end and none resolved — ` +
+      `${found.length} item(s) landed with actions planned at end and none resolved\n` +
       `${found.map((f) => say(titles, `${f.project}#${f.issue}`, f.outcome)).join(', ')}. ` +
       'Their issues were never closed or labelled, and nothing on GitHub says Lingtai ' +
       'touched them: lingtai end replay resolves the step as it should have been.',
+    fix: [...new Set(found.map((f) => `lingtai end replay ${f.project} --issue ${f.issue}`))].join('\n'),
   }
 }
 
@@ -2039,8 +2049,9 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
     return {
       name: `recipe: ${f.project}`,
       status: 'fail',
+      title: `${f.project} names an agent this conductor will not dispatch`,
       detail:
-        `${wrongAgent.sentence} — every run of this project is refused before its claim, and nothing will be taken. ` +
+        `${wrongAgent.sentence} — every run of this project is refused before its claim, and nothing will be taken.\n` +
         `${agentRemedy(wrongAgent, f.project, dispatched)}\n` +
         provenanceLines(f.provenance),
     }
@@ -2066,6 +2077,7 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
     : {
         name: `recipe: ${f.project}`,
         status: 'fail' as const,
+        title: `${f.project}'s recipe does not resolve`,
         detail:
           `${f.problem} — nothing will be taken from this project, ` +
           // Said even where the log holds no `IssueUpdateFailed` row for this
@@ -2185,8 +2197,10 @@ export function limitsRow(project: string, recipe: Recipe, capabilities: Runtime
   return {
     name,
     status: 'fail',
+    title: `${project}'s ${capabilities.id} ignores a limit its recipe sets`,
     detail:
-      `${detail} — ${carries}, so the recipe declares a spend nothing will stop. ` +
+      `${carries}, so the recipe declares a spend nothing will stop\n` +
+      `${detail} — ` +
       // Both are red; which one this is decides what an overspending run costs.
       (applied.length === 0
         ? 'Nothing will stop a run of this project at all. '
@@ -2462,16 +2476,18 @@ async function dispatchedAuthRow(
   return {
     name,
     status: 'fail',
+    title: `${project}'s ${label} agent, ${agent}, is signed out`,
     detail:
-      `${agent} reports ${status.detail}, and ${project}'s recipe names it at ${keys.join(', ')} — ` +
-      `so that is what its next call constructs and spawns. Sign in, or name a runtime this ` +
+      `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n` +
+      `${project}'s recipe names it at ${keys.join(', ')}, so that is what its next call constructs and spawns. ` +
+      `Sign in, or name a runtime this ` +
       `machine has at ${keys.join(', ')} in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
   }
 }
 
 /** Check the separately billed, tool-free route named by a recipe role. */
-function codexRoleRow(
+export function codexRoleRow(
   project: string,
   role: 'discuss' | 'triage',
   model: string | undefined,
@@ -2480,11 +2496,16 @@ function codexRoleRow(
   const name = `${role}: ${project} codex ready`
   try {
     const config = configured()
-    if (!config) throw new ToolsCannotBeDenied('codex')
+    if (!config) throw new NoCodexText(new ToolsCannotBeDenied('codex'))
     // The same factory used at dispatch; never probe the Codex CLI as a substitute.
     createRuntime('codex', { tools: 'none', codexText: { config } })
     if (model && model !== config.model) {
-      return { name, status: 'fail', detail: `${role}.model differs from codex_text.model and its configured prices` }
+      return {
+        name,
+        status: 'fail',
+        title: `${role}.model in ${project} differs from codex_text`,
+        detail: `${role}.model differs from codex_text.model and its configured prices`,
+      }
     }
     return { name, status: 'ok', detail: `model-only API route ready for ${role}; separately billed` }
   } catch (err) {
@@ -2492,7 +2513,25 @@ function codexRoleRow(
       role === 'triage'
         ? ' — or set triage.tools: full to run the Codex CLI with tools on its own login, which needs no codex_text'
         : ''
-    return { name, status: 'fail', detail: `${role}.agent: ${(err as Error).message}${remedy}` }
+    const noConfig = err instanceof NoCodexText
+    const cause = noConfig ? err.cause : (err as Error)
+    return {
+      name,
+      status: 'fail',
+      title: noConfig
+        ? `${role} on Codex has no model-only route for ${project}`
+        : `${role} on Codex cannot start for ${project}`,
+      detail: `${role}.agent cannot run on Codex's model-only route\n${cause.message}${remedy}`,
+    }
+  }
+}
+
+/** `codexRoleRow`'s own marker for a role with no `codex_text` to run on, so the two throws get two titles. */
+class NoCodexText extends Error {
+  override readonly cause: Error
+  constructor(cause: Error) {
+    super(cause.message)
+    this.cause = cause
   }
 }
 
@@ -2563,11 +2602,19 @@ export async function declaredEnvironment(
             return `${n.name} ← ${where}${held ? ' (denied)' : ''}`
           })
           .join(' · ')
-        results.push({
-          name: label,
-          status: agentEnv.missing.length > 0 ? 'fail' : 'ok',
-          detail: agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail,
-        })
+        const missing = agentEnv.missing.length
+        const listed = agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail
+        results.push(
+          missing > 0
+            ? {
+                name: label,
+                status: 'fail',
+                title: `${project.project} is missing ${missing} required ${missing === 1 ? 'value' : 'values'}`,
+                detail: `${missing} required ${missing === 1 ? 'name is' : 'names are'} not set\n${listed}`,
+                fix: agentEnv.missing.map((n) => `lingtai env set ${project.project} ${n}`).join('\n'),
+              }
+            : { name: label, status: 'ok', detail: listed },
+        )
       }
       results.push(extensionRow(project.project, resolved.recipe, agentEnv))
       results.push(
@@ -2597,7 +2644,13 @@ export async function declaredEnvironment(
           ...row,
           // Two agents in one project are two rows, so the second names itself.
           name: onRuntime ? row.name : `steps: ${project.project} ${agent} signed in`,
-          detail: keys.length > 1 || !onRuntime ? `${row.detail} · needed by ${keys.join(', ')}` : row.detail,
+          ...(!onRuntime && row.title !== undefined
+            ? { title: `${project.project}'s steps need ${agent}, which is signed out` }
+            : {}),
+          detail:
+            keys.length > 1 || !onRuntime
+              ? `${row.detail}${row.status === 'fail' ? '\n' : ' · '}needed by ${keys.join(', ')}`
+              : row.detail,
         })
       }
       for (const role of ['discuss', 'triage'] as const) {
@@ -2618,14 +2671,17 @@ export async function declaredEnvironment(
           results.push({
             ...signedIn,
             detail:
+              `${signedIn.detail}\n` +
               `triage runs the Codex CLI with tools in a disposable checkout of the attempt's head, ` +
-              `billed to the Codex login; codex_text is not read. ${signedIn.detail}`,
+              `billed to the Codex login; codex_text is not read`,
           })
           results.push({
             name: `triage: ${project.project} limits`,
             status: 'warn',
+            title: `${project.project}: Codex triage ignores some limits`,
             detail:
-              'Codex CLI route: wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
+              'Codex CLI route enforces wall, and not turns or usd\n' +
+              'wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
               '(the CLI receipt carries no dollars), so the out-of-usd check never fires',
           })
         } else if (selected?.agent === 'codex') {
@@ -2641,7 +2697,12 @@ export async function declaredEnvironment(
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.
-      results.push({ name: label, status: 'fail', detail: (err as Error).message })
+      results.push({
+        name: label,
+        status: 'fail',
+        title: `${project.project}'s environment could not be read`,
+        detail: (err as Error).message,
+      })
     }
   }
   return results
@@ -2715,7 +2776,15 @@ export async function recipeGovernsItsBase(
       const divergence = baseDivergence(resolved, slug)
       results.push(
         divergence
-          ? { name: label, status: 'fail', detail: divergence }
+          ? {
+              name: label,
+              status: 'fail',
+              title: `${project.project}'s rules and merge target differ`,
+              // The refusal `runOnce` and `add` share, its command on a line of its own.
+              detail: divergence.replace('. Re-register:', '.\nRe-register:'),
+              // A `--local` or owner-less slug is a placeholder; a command with one would not run.
+              ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
+            }
           : {
               name: label,
               status: 'ok',
