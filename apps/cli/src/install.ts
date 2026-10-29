@@ -712,35 +712,49 @@ export async function uninstall(options: { yes: boolean; nothingConducts: boolea
 
 // ---------------------------------------------------------------- doctor --
 
+/** What `releaseCheck` says of the installed version against GitHub's answer, or against its failure. */
+export function releaseRow(
+  current: string,
+  newest: { version: string } | Error,
+): { name: string; status: 'ok' | 'warn'; detail: string; title?: string; fix?: string } {
+  const name = 'release: newest'
+  if (newest instanceof Error) {
+    return {
+      name,
+      status: 'warn',
+      title: 'GitHub could not be reached to look for a newer release',
+      fix: 'lingtai upgrade',
+      detail: `running ${current}, and GitHub Releases could not be asked\n${newest.message}`,
+    }
+  }
+  return compareVersions(newest.version, current) > 0
+    ? {
+        name,
+        status: 'warn',
+        title: 'a newer release is out',
+        fix: 'lingtai upgrade',
+        detail: `running ${current}, and ${newest.version} is out`,
+      }
+    : { name, status: 'ok', detail: `running ${current}, the newest release` }
+}
+
 /** `lingtai doctor`'s row: whether a newer release exists. Asked only of an installed copy. */
 export async function releaseCheck(
   world: Pick<World, 'fetch' | 'env' | 'self'>,
-): Promise<{ name: string; status: 'ok' | 'warn' | 'skip'; detail: string }> {
-  const name = 'release: newest'
+): Promise<{ name: string; status: 'ok' | 'warn' | 'skip'; detail: string; title?: string; fix?: string }> {
   const paths = installPaths(world.env)
   const current = installedVersion(world.self, paths)
   if (current === null) {
     return {
-      name,
+      name: 'release: newest',
       status: 'skip',
       detail: 'a checkout, not an installed copy — git pull is its upgrade, and GitHub was not asked',
     }
   }
   try {
-    const release = await newestRelease(world, 5_000)
-    return compareVersions(release.version, current) > 0
-      ? {
-          name,
-          status: 'warn',
-          detail: `running ${current}, and ${release.version} is out — lingtai upgrade fetches it`,
-        }
-      : { name, status: 'ok', detail: `running ${current}, the newest release` }
+    return releaseRow(current, await newestRelease(world, 5_000))
   } catch (err) {
-    return {
-      name,
-      status: 'warn',
-      detail: `running ${current} — GitHub Releases could not be asked: ${(err as Error).message}`,
-    }
+    return releaseRow(current, err as Error)
   }
 }
 

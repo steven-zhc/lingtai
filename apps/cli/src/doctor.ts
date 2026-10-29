@@ -84,6 +84,7 @@ import {
   postgresUrlIfSet,
   repoRoot,
   storeChoice,
+  type StoreUnchosen,
 } from '@lingtai/env'
 import { badge, paint } from '@lingtai/env/colour'
 // The barrel's `log`, which is the store **this machine wrote down** (0056) and
@@ -244,11 +245,28 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
  * A written `sqlite` is `ok`. It is a log that opens, and what is worth saying
  * about it is `SQLITE_MACHINE`.
  */
+const STORE_REFUSED_TITLE: Record<StoreUnchosen, string> = {
+  'nothing chosen': 'this machine has not chosen a store',
+  'no url': 'the chosen Postgres store has no connection URL',
+  'two keys': 'the machine config names the store twice',
+  unreadable: "the machine's config file cannot be read",
+}
+
 export function storeRow(choice: StoreChoice): CheckResult {
   const name = "store: the machine's written choice"
   const shut =
     'every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url (#179, 0056 §2)'
-  if ('refused' in choice) return { name, status: 'fail', detail: `${choice.refused} · ${shut}` }
+  if ('refused' in choice) {
+    return {
+      name,
+      status: 'fail',
+      title: STORE_REFUSED_TITLE[choice.because],
+      // `lingtai init` refuses an unreadable file by name and changes nothing (`init.ts`), so it is no fix for that one.
+      ...(choice.because === 'unreadable' ? {} : { fix: 'lingtai init' }),
+      // The refusal's own last clause offers `lingtai init` for this one, which refuses it by name.
+      detail: `${choice.because === 'unreadable' ? choice.refused.replace(/, or lingtai init writes it again$/, '') : choice.refused}\n${shut}`,
+    }
+  }
   if (choice.store === 'sqlite') {
     return { name, status: 'ok', detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` }
   }
@@ -299,8 +317,9 @@ export async function logReachable(where: string, queries: LogQueries): Promise<
     return {
       name,
       status: 'fail',
+      title: 'the log cannot be opened',
       detail:
-        `${where} could not be opened or read — ${(err as Error).message}. ` +
+        `${where} could not be opened or read — ${(err as Error).message}\n` +
         'Every command that appends or reads is refused the same way until it can be',
     }
   }
@@ -387,6 +406,16 @@ export function postgresOnlyRows(): { name: string; because: string }[] {
   ]
 }
 
+/** The `environment` row for a config file that would not parse: a file edit, so a title and no `fix`. */
+export function unreadableConfigRow(message: string): CheckResult {
+  return {
+    name: 'environment',
+    status: 'fail',
+    title: "the machine's config file cannot be read",
+    detail: message,
+  }
+}
+
 /**
  * `source` is where the pooled URL was read: the variable, or — with neither
  * variable set — `~/.lingtai/config.yml`, where `lingtai init` writes it (#186).
@@ -402,8 +431,10 @@ export function environment(
     return {
       name: 'environment',
       status: 'fail',
+      title: 'no database connection is configured',
+      fix: 'lingtai init',
       detail:
-        `${missing.join(' and ')} not set, and ~/.lingtai/config.yml names no database.url — ` +
+        `${missing.join(' and ')} not set, and ~/.lingtai/config.yml names no database.url\n` +
         'lingtai init writes one, or export LINGTAI_DATABASE_URL and restart',
     }
   }
@@ -422,15 +453,21 @@ export function environment(
   // any meaning for: the subscriber would be listening to one log while the
   // writer appended to another.
   if (!sameHost || p.database !== d.database) {
-    return { name: 'environment', status: 'fail', detail: `${detail} — they must be one database` }
+    return {
+      name: 'environment',
+      status: 'fail',
+      title: 'the two database URLs name different databases',
+      detail: `they must be one database\n${detail}`,
+    }
   }
   if (d.pgbouncer) {
     return {
       name: 'environment',
       status: 'fail',
+      title: 'the direct database URL goes through a pooler',
       detail: standIn
-        ? `${detail} — LINGTAI_DATABASE_URL carries pgbouncer=true, so it cannot stand in for the direct one: set LINGTAI_DIRECT_DATABASE_URL`
-        : `${detail} — LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true`,
+        ? `LINGTAI_DATABASE_URL carries pgbouncer=true, so it cannot stand in for the direct one: set LINGTAI_DIRECT_DATABASE_URL\n${detail}`
+        : `LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true\n${detail}`,
     }
   }
   return { name: 'environment', status: 'ok', detail }
@@ -447,6 +484,7 @@ async function pooledConnection(url: string): Promise<CheckResult> {
     return {
       name: 'postgres: pooled connection',
       status: 'fail',
+      title: 'the database refused the pooled connection',
       detail: (err as Error).message,
     }
   }
@@ -490,11 +528,12 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
       return {
         name,
         status: 'fail',
+        title: 'the direct database connection is not session mode',
         detail:
           (standIn
             ? 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and ' +
-              'LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. '
-            : 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ') +
+              'LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL\n'
+            : 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode\n') +
           'LISTEN/NOTIFY will fail silently through it (doc/decisions-archive/0009).',
       }
     }
@@ -505,7 +544,7 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
       detail: 'cross-connection NOTIFY delivered after a 1.5s pause',
     }
   } catch (err) {
-    return { name, status: 'fail', detail: (err as Error).message }
+    return { name, status: 'fail', title: 'the direct database connection failed', detail: (err as Error).message }
   } finally {
     await listener.end().catch(() => {})
     await notifier.end().catch(() => {})
@@ -528,13 +567,22 @@ export function schemaChecks(
   ruleRows: readonly { schemaname: string; rulename: string }[],
   triggerRows: readonly { schemaname: string }[],
   schema: string = EVENTS_SCHEMA,
+  { checkout = true }: { checkout?: boolean } = {},
 ): CheckResult[] {
   const out: CheckResult[] = []
+  // `db:bootstrap` is a script in a checkout (`packages/event-store/package.json`); a binary has none, so
+  // there it is said and not offered as a command.
+  const bootstrap = 'pnpm --filter @lingtai/event-store db:bootstrap'
+  const bootstrapLine = checkout
+    ? `run ${bootstrap}`
+    : 'the bootstrap script runs from a checkout of the repository, not from this binary'
 
   const hasUnique = indexRows.some((r) => r.schemaname === schema)
   out.push({
     name: 'schema: optimistic concurrency',
     status: hasUnique ? 'ok' : 'fail',
+    // No fix: `db:bootstrap` checks this index and does not create it, so offering it would run and repair nothing.
+    ...(hasUnique ? {} : { title: 'the log has no guard against two writers' }),
     detail: hasUnique
       ? 'UNIQUE (stream_id, version) present — the whole of the concurrency control'
       : 'UNIQUE (stream_id, version) is MISSING; two workers can claim one work item',
@@ -547,19 +595,23 @@ export function schemaChecks(
   out.push({
     name: 'schema: append-only',
     status: ruleNames.length === 2 ? 'ok' : 'fail',
+    ...(ruleNames.length === 2
+      ? {}
+      : { title: 'the log can be edited or deleted from', ...(checkout ? { fix: bootstrap } : {}) }),
     detail:
       ruleNames.length === 2
         ? 'UPDATE and DELETE on events do nothing'
-        : `only ${ruleNames.join(', ') || 'no'} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
+        : `only ${ruleNames.join(', ') || 'no'} of the two append-only rules are present\n${bootstrapLine}`,
   })
 
   const hasTrigger = triggerRows.some((r) => r.schemaname === schema)
   out.push({
     name: 'schema: notify trigger',
     status: hasTrigger ? 'ok' : 'fail',
+    ...(hasTrigger ? {} : { title: 'appends no longer wake anything', ...(checkout ? { fix: bootstrap } : {}) }),
     detail: hasTrigger
       ? 'every append announces itself on the lingtai channel'
-      : 'lingtai_events_notify is MISSING; nothing would wake on an append — run db:bootstrap',
+      : `the lingtai_events_notify trigger is missing, so nothing would wake on an append\n${bootstrapLine}`,
   })
 
   return out
@@ -589,6 +641,7 @@ async function schema(url: string): Promise<CheckResult[]> {
       out.push({
         name: 'schema: tables',
         status: found.length === 2 ? 'ok' : 'fail',
+        ...(found.length === 2 ? {} : { title: 'the log is missing a table' }),
         detail: found.length === 2 ? found.join(', ') : `found ${found.join(', ') || 'none'} — expected both`,
       })
 
@@ -612,7 +665,7 @@ async function schema(url: string): Promise<CheckResult[]> {
          where c.relname = 'events' and t.tgname = 'lingtai_events_notify' and not t.tgisinternal`,
       )
 
-      out.push(...schemaChecks(uq.rows, rules.rows, trig.rows, EVENTS_SCHEMA))
+      out.push(...schemaChecks(uq.rows, rules.rows, trig.rows, EVENTS_SCHEMA, { checkout: !isSea() }))
 
       const jsonb = await c.query<{ table_name: string; column_name: string; data_type: string }>(
         `select table_name, column_name, data_type from information_schema.columns
@@ -623,6 +676,9 @@ async function schema(url: string): Promise<CheckResult[]> {
       out.push({
         name: 'schema: payload column',
         status: jsonb.rows.length === 1 && wrong.length === 0 ? 'ok' : 'fail',
+        ...(jsonb.rows.length === 1 && wrong.length === 0
+          ? {}
+          : { title: 'the event payload column is the wrong type' }),
         detail:
           jsonb.rows.length === 1 && wrong.length === 0
             ? 'events.data is jsonb'
@@ -634,7 +690,9 @@ async function schema(url: string): Promise<CheckResult[]> {
       return out
     })
   } catch (err) {
-    return [{ name: 'schema', status: 'fail', detail: (err as Error).message }]
+    return [
+      { name: 'schema', status: 'fail', title: 'the log schema could not be read', detail: (err as Error).message },
+    ]
   }
 }
 
@@ -643,7 +701,7 @@ async function schema(url: string): Promise<CheckResult[]> {
  * folds through the one this machine wrote down (#179), which is what lets a
  * file-backed machine have this row at all.
  */
-async function projections(
+export async function projections(
   url?: string,
   fetch: () => ReturnType<typeof projectionLag> = () => projectionLag(url),
 ): Promise<CheckResult> {
@@ -663,7 +721,12 @@ async function projections(
     // real failure and this is where it belongs.
     return { name: 'projections: lag', status: 'ok', detail }
   } catch (err) {
-    return { name: 'projections: lag', status: 'fail', detail: (err as Error).message }
+    return {
+      name: 'projections: lag',
+      status: 'fail',
+      title: 'projection lag could not be read',
+      detail: (err as Error).message,
+    }
   }
 }
 
@@ -684,7 +747,7 @@ async function projections(
  * `information_schema` only, so it obeys the rule at the top of this file and
  * runs on every doctor.
  */
-async function projectionShapes(
+export async function projectionShapes(
   url?: string,
   fetch: (p: Projection) => ReturnType<typeof projectionShape> = (p) => projectionShape(p, url),
 ): Promise<CheckResult> {
@@ -696,13 +759,21 @@ async function projectionShapes(
     const shapes = await Promise.all(
       [taskViewProjection, backlogProjection, spendProjection, ticketReportProjection].map((p) => fetch(p)),
     )
+    const drifting = shapes.filter((s) => s.drift.length > 0)
+    if (drifting.length === 0) {
+      return { name, status: 'ok', detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(' · ') }
+    }
     return {
       name,
-      status: shapes.every((s) => s.drift.length === 0) ? 'ok' : 'fail',
-      detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(' · '),
+      status: 'fail',
+      title: `${drifting.length === 1 ? 'a projection differs' : `${drifting.length} projections differ`} from the declared columns`,
+      fix: drifting.map((s) => `lingtai projection rebuild ${s.projection}`).join('\n'),
+      detail:
+        `${drifting.length} projection(s) differ from the columns their code declares\n` +
+        shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join('\n'),
     }
   } catch (err) {
-    return { name, status: 'fail', detail: (err as Error).message }
+    return { name, status: 'fail', title: 'projection columns could not be read', detail: (err as Error).message }
   }
 }
 
@@ -1509,7 +1580,7 @@ async function orphans(
  * or this build is older than the writer. Either way the log is not fully
  * replayable, which is the one property the whole system rests on.
  */
-async function readableTypes(queries: LogQueries): Promise<CheckResult> {
+export async function readableTypes(queries: LogQueries): Promise<CheckResult> {
   const name = 'log: every type is readable'
   const rows = await queries.typeCounts().catch(() => null)
   if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
@@ -1521,10 +1592,11 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
   return {
     name,
     status: 'fail',
+    title: 'the log holds events this build cannot read',
     detail:
-      `${orphaned.reduce((n, r) => n + r.rows, 0)} row(s) of ${orphaned.length} type(s) this build cannot read — ` +
-      `${orphaned.map((r) => `${r.type} ×${r.rows}`).join(', ')}. ` +
-      'Reading any stream that holds one throws, and a projection rebuild cannot run.',
+      `${orphaned.reduce((n, r) => n + r.rows, 0)} row(s) of ${orphaned.length} type(s) this build cannot read, ` +
+      'so reading any stream that holds one throws and a projection rebuild cannot run\n' +
+      orphaned.map((r) => `${r.type} ×${r.rows}`).join('\n'),
   }
 }
 
@@ -1540,7 +1612,7 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  * remedy here is the operator's own call, not something worth holding a
  * report over.
  */
-async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
+export async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
   const name = 'log: predates the Hold event'
   let found: Awaited<ReturnType<typeof logPredatesHold>>
   try {
@@ -1549,7 +1621,7 @@ async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
     return { name, status: 'ok', detail: 'no log to read yet' }
   }
   if (found === null) return { name, status: 'ok', detail: 'no wait predates it' }
-  return { name, status: 'fail', detail: found.message }
+  return { name, status: 'fail', title: 'the log holds an event this build does not know', detail: found.message }
 }
 
 /** What the board calls each issue the two rows below name — `project#issue` to its title. */
@@ -2694,7 +2766,8 @@ export function nodeRow(running: string, declared: string | undefined): CheckRes
     return {
       name,
       status: 'fail',
-      detail: `.node-version could not be read or did not name a version — running node ${running}`,
+      title: 'the Node version the repository needs is unknown',
+      detail: `.node-version could not be read or did not name a version\nrunning node ${running}`,
     }
   }
   const runningMajor = major(running)
@@ -2705,9 +2778,9 @@ export function nodeRow(running: string, declared: string | undefined): CheckRes
       // No `restartAnswers`: a daemon started on this Node is a daemon on a
       // version CI no longer tests, so this should gate `lingtai restart`
       // rather than let it through (`gatingFailures`, 0042).
-      detail:
-        `running node ${running}, below the floor .node-version names (${declared}) — ` +
-        `install node ${declared} and rerun`,
+      // No `fix`: how Node is installed on this machine is not something the check knows.
+      title: 'this Node is older than the repository needs',
+      detail: `running node ${running}, below the floor .node-version names (${declared})\ninstall node ${declared} and rerun`,
     }
   }
   return { name, status: 'ok', detail: `running node ${running}, at or above .node-version's ${declared}` }
@@ -2734,20 +2807,28 @@ export function seaRow(node: string, version: string, probe: SeaProbe): CheckRes
     return {
       name,
       status: 'warn',
+      // No `fix`: whether this Node came from Homebrew, and what to put first on PATH, is not known here.
+      title: 'this Node cannot build a single executable',
       detail:
-        `${node} (node ${version}) says: ${probe.said} — this Node build has single-executable support ` +
-        `compiled out, which is how Homebrew ships node. Run \`brew unlink node\`, or put a Node built ` +
-        `with SEA first on PATH (for example \`mise use -g node@26\`).`,
+        `${node} (node ${version}) has single-executable support compiled out, which is how Homebrew ships node\n` +
+        `it says: ${probe.said}\n` +
+        `Run \`brew unlink node\`, or put a Node built with SEA first on PATH (for example \`mise use -g node@26\`).`,
     }
   }
   if (probe.why === 'unsupported') {
     return {
       name,
       status: 'warn',
-      detail: `${node} (node ${version}) says: ${probe.said} — --build-sea needs Node 25.5 or later; see .node-version.`,
+      title: 'this Node is too old to build a single executable',
+      detail: `--build-sea needs Node 25.5 or later; see .node-version\n${node} (node ${version}) says: ${probe.said}`,
     }
   }
-  return { name, status: 'warn', detail: `${node} (node ${version}) says: ${probe.said}` }
+  return {
+    name,
+    status: 'warn',
+    title: 'this Node could not be asked about single executables',
+    detail: `${node} (node ${version}) says: ${probe.said}`,
+  }
 }
 
 /**
@@ -2889,7 +2970,7 @@ export async function runDoctor(
           'and the store row above says where the log is',
       }
     : unreadable
-      ? { name: 'environment', status: 'fail' as const, detail: unreadable }
+      ? unreadableConfigRow(unreadable)
       : environment(
           pooled,
           direct,
