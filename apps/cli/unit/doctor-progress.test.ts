@@ -4,7 +4,7 @@ import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Projection } from '@lingtai/projector'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type DoctorProgress, type DoctorReach, type DoctorReport, runDoctor, tally } from '../src/doctor.ts'
 import { doctorProgress, type Spinner } from '../src/steps.ts'
@@ -78,7 +78,15 @@ describe('runDoctor reports its steps (#716)', () => {
 })
 
 describe('doctorProgress', () => {
-  const saved = { NO_COLOR: process.env['NO_COLOR'], FORCE_COLOR: process.env['FORCE_COLOR'] }
+  const saved = {
+    NO_COLOR: process.env['NO_COLOR'],
+    FORCE_COLOR: process.env['FORCE_COLOR'],
+    TERM: process.env['TERM'],
+  }
+  // `coloured` believes TERM=dumb ahead of FORCE_COLOR, so the inherited value must not decide these.
+  beforeEach(() => {
+    process.env['TERM'] = 'xterm-256color'
+  })
   afterEach(() => {
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k]
