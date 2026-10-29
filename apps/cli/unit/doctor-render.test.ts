@@ -26,7 +26,37 @@ const report: DoctorReport = { results, ...tally(results) }
 
 describe('tally', () => {
   it('counts a skip without deferred as not checked', () => {
-    expect(tally(results)).toEqual({ ok: 3, failed: 2, skipped: 2, deferred: 1, notChecked: 1, warned: 1 })
+    expect(tally(results)).toEqual({ ok: 3, failed: 2, skipped: 2, deferred: 1, notChecked: 1, warned: 1, info: 0 })
+  })
+})
+
+describe('an info row (#718)', () => {
+  const info = { name: 'runtime: other settings in scope', status: 'info' as const, detail: 'first line\nsecond line' }
+  const only = [{ name: 'node: at or above the floor', status: 'ok' as const, detail: 'x' }, info]
+  const rep: DoctorReport = { results: only, ...tally(only) }
+
+  it('is counted as info and neither warned nor failed', () => {
+    expect(tally(only)).toMatchObject({ ok: 1, warned: 0, failed: 0, info: 1 })
+  })
+
+  it('is one note line in the short view, with no next:', () => {
+    const text = renderDoctor(rep).join('\n')
+    expect(text).toContain('note  first line')
+    expect(text).not.toContain('second line')
+    expect(text).not.toContain('next:')
+  })
+
+  it('is drawn among its area in --verbose', () => {
+    const text = renderDoctor(rep, { verbose: true }).join('\n')
+    expect(text).toContain('note  runtime: other settings in scope')
+    expect(text).toContain('second line')
+    expect(text).toContain('1 noted')
+  })
+
+  it('is in --json with the same version-free shape', () => {
+    const json = doctorJson(rep)
+    expect(json['info']).toBe(1)
+    expect((json['checks'] as { status: string }[]).map((c) => c.status)).toContain('info')
   })
 })
 
@@ -51,6 +81,7 @@ describe('doctorJson', () => {
       ok: 3,
       failed: 2,
       warned: 1,
+      info: 0,
       skipped: 2,
       deferred: 1,
       notChecked: 1,
@@ -172,10 +203,12 @@ describe('renderDoctor', () => {
   it('keeps the summary words, in the FAILED form and the green one', () => {
     process.env['NO_COLOR'] = '1'
     const verbose = (r: DoctorReport): string => renderDoctor(r, { verbose: true }).join('\n')
-    expect(verbose(report)).toContain('2 check(s) FAILED — 3 ok, 1 to note, 1 not checked here, 1 not implemented yet')
+    expect(verbose(report)).toContain(
+      '2 check(s) FAILED — 3 ok, 1 need attention, 1 not checked here, 1 not implemented yet',
+    )
     const green = results.filter((r) => r.status !== 'fail')
     expect(verbose({ results: green, ...tally(green) })).toContain(
-      '3 ok, 1 to note, 1 not checked here, 1 not implemented yet, 0 failed',
+      '3 ok, 1 need attention, 1 not checked here, 1 not implemented yet, 0 failed',
     )
     const plain = [{ name: 'node: at or above the floor', status: 'ok' as const, detail: 'x' }]
     expect(verbose({ results: plain, ...tally(plain) })).toContain(

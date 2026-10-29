@@ -135,8 +135,12 @@ import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
  * §6). Folding that into `ok` hides it in a wall of green; folding it into
  * `fail` makes doctor red for a file everybody has, and a check that is always
  * red is a check nobody reads.
+ *
+ * `info` is *true, and there is nothing to do*: where `warn` says you should
+ * know anyway and is counted as needing attention, `info` is never counted,
+ * never a non-zero exit and never a restart gate.
  */
-export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
+export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip' | 'info'
 
 /**
  * How far back `subscribers: failures` counts as *recent*.
@@ -778,9 +782,9 @@ async function settingsSources(
   }
   return {
     name,
-    status: 'warn',
+    status: 'info',
     detail:
-      `~/.claude/settings.json carries ${carries.join(', ')}, and every run sees it. ` +
+      `~/.claude/settings.json also applies to every run (${carries.join(', ')})\n` +
       "Lingtai cannot set HOME (the runtime's credentials live there), so this is " +
       'reported rather than removed — the recipe alone does not describe a run on this machine.',
   }
@@ -1010,6 +1014,8 @@ export interface DoctorReport {
   notChecked: number
   /** Reported, not wrong. See `CheckStatus`. */
   warned: number
+  /** True and needing nothing; never counted in `warned`. See `CheckStatus`. */
+  info: number
 }
 
 /**
@@ -2912,6 +2918,7 @@ export function tally(results: readonly CheckResult[]): Omit<DoctorReport, 'resu
     deferred: count((r) => r.status === 'skip' && r.deferred === true),
     notChecked: count((r) => r.status === 'skip' && r.deferred !== true),
     warned: count((r) => r.status === 'warn'),
+    info: count((r) => r.status === 'info'),
   }
 }
 
@@ -2942,7 +2949,7 @@ export function areaOf(result: CheckResult): string {
 }
 
 /** Inside a section: what is wrong first, what is merely worth knowing next. */
-const STATUS_ORDER: readonly CheckStatus[] = ['fail', 'warn', 'ok', 'skip']
+const STATUS_ORDER: readonly CheckStatus[] = ['fail', 'warn', 'info', 'ok', 'skip']
 
 function marker(status: CheckStatus): string {
   const slot = (text: string, drawn: string): string => drawn + ' '.repeat(Math.max(0, 4 - width(text)))
@@ -2955,6 +2962,8 @@ function marker(status: CheckStatus): string {
     // It is read because its section is drawn above the green ones.
     case 'warn':
       return slot('!', '!')
+    case 'info':
+      return slot('note', 'note')
     case 'skip':
       return slot('skip', paint.muted('skip'))
   }
@@ -3028,6 +3037,8 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
       ])
       lines.push(...section(`${glyph} ${area}`, checks).split('\n'))
     }
+    const notes = report.results.filter((r) => r.status === 'info')
+    if (notes.length > 0) lines.push('', ...notes.map((r) => `note  ${r.detail.split('\n')[0]}`))
     if (next && report.warned + report.failed > 0) lines.push('', 'next: lingtai doctor --verbose')
     return lines
   }
@@ -3039,7 +3050,8 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
     ])
     lines.push(...section(area, checks).split('\n'))
   }
-  const notes = report.warned > 0 ? `, ${report.warned} to note` : ''
+  const notes =
+    (report.warned > 0 ? `, ${report.warned} need attention` : '') + (report.info > 0 ? `, ${report.info} noted` : '')
   const here = `, ${report.notChecked} not checked here`
   lines.push('')
   lines.push(
@@ -3069,6 +3081,7 @@ export function doctorJson(report: DoctorReport): Record<string, unknown> {
     ok: report.ok,
     failed: report.failed,
     warned: report.warned,
+    info: report.info,
     skipped: report.skipped,
     deferred: report.deferred,
     notChecked: report.notChecked,
