@@ -1122,6 +1122,13 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
     expect(h.authWrites).toEqual([])
   })
 
+  it('--github-auth gh is checked even where github.auth is already gh', async () => {
+    const h = harness({ auth: () => 'gh', ghStatus: async () => SIGNED_OUT })
+    const result = await chooseFirstProject(h.world, { project: 'github', 'github-auth': 'gh' })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--github-auth gh, but gh is signed out') })
+    expect(h.authWrites).toEqual([])
+  })
+
   it('--github-auth gh beside a configured App is refused by name', async () => {
     const h = harness({
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-me', owner: 'me' }),

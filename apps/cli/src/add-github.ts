@@ -376,7 +376,7 @@ export async function askBeforeGithubAdd(
             token: async () =>
               (
                 await createGitHubClient({
-                  auth: githubClientAuth(),
+                  auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
                   owner,
                   repo,
                   ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),

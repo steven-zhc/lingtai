@@ -115,6 +115,12 @@ export async function askGithubAuth(
           `Leave out --github-auth, or pass --github-auth ${elected}. ${kept}`,
       }
     }
+    // An explicit `--github-auth gh` is checked even where `gh` is already saved:
+    // the login may have been signed out, or lost a scope, since it was written.
+    if (given === 'gh') {
+      const why = notReady(await world.github.ghStatus())
+      if (why !== null) return { refused: `--github-auth gh, but ${why}. ${kept}` }
+    }
     world.log(`github       ${elected} — ${set === null ? 'a GitHub App is configured here' : 'github.auth'}`)
     return { auth: elected, pending: false }
   }
