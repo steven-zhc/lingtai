@@ -39,6 +39,7 @@
  */
 import { chosenStore } from '@lingtai/env'
 
+import { closableOnce } from './closable.ts'
 import { createDb } from './db.ts'
 import { createEventStore, type EventStore } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
@@ -51,17 +52,26 @@ import type { WakeListener, Waker, WakeSession } from './wake.ts'
 interface Opened {
   log: Log
   tickets: TicketSql
+  /** Ends the one connection this process holds, so the process can exit (#725). */
+  close(): Promise<void>
 }
-
-/** What this process opened, or the open in flight. Null until something asks. */
-let opening: Promise<Opened> | null = null
 
 /**
  * Memoised on the promise and not on the value, so two callers racing the first
- * use open one of each between them.
+ * use open one of each between them; closed once, after which it refuses.
  */
+const process_ = closableOnce(open)
+
 function openOnce(): Promise<Opened> {
-  return (opening ??= open())
+  return process_.get()
+}
+
+/**
+ * Close the process log when a command has finished. Idempotent; after it,
+ * anything that asks for the log is refused with `ProcessLogClosedError`.
+ */
+export function closeProcessLog(): Promise<void> {
+  return process_.close()
 }
 
 /**
@@ -102,21 +112,23 @@ async function open(): Promise<Opened> {
     // `LINGTAI_DATABASE_URL`, which is the fallback that could name a different
     // database, and never a direct name that points at one either: a stale one
     // left exported is the same split by another route.
+    const db = createDb(choice.url)
     const log = createPostgresLog({
-      store: createEventStore(createDb(choice.url)),
+      store: createEventStore(db),
       url: choice.url,
       wakeUrl: choice.directUrl,
     })
     // The written URL, not `postgresUrl()` — the same reason `log` above reads
     // `choice.url` rather than asking again: a second read could answer a
     // stale export rather than the choice this process already made.
-    return { log, tickets: createPostgresTicketSql({ url: choice.url }) }
+    return { log, tickets: createPostgresTicketSql({ url: choice.url }), close: () => db.close() }
   }
   const sqlite = await import('./sqlite.ts')
   const db = sqlite.openSqliteLog(choice.path)
   return {
     log: sqlite.createSqliteLog({ db, path: choice.path }),
     tickets: sqlite.createSqliteTicketSql(db),
+    close: async () => db.close(),
   }
 }
 
