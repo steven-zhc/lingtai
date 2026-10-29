@@ -31,6 +31,7 @@ import {
   limitsRow,
   logReachable,
   postgresOnlyRows,
+  renderDoctor,
   runDoctor,
 } from '../src/doctor.ts'
 // The count `lingtai restart` gates on, asked of this report rather than
@@ -410,11 +411,15 @@ describe('lingtai doctor — a machine whose log is a file', () => {
       )
 
       // The row is there and it reached the log, whatever else on this machine
-      // did or did not pass — so `0 failed`, printed or not, is never printed
-      // without it.
+      // did or did not pass — so a green summary, printed or not, is never
+      // printed without it. The short view says `all N passed` and only
+      // `--verbose` still says `0 failed`; both are that summary.
       expect(reached.map((r) => r.name)).toEqual(['log: reachable'])
       expect(reached[0]?.status).toBe('ok')
-      if (report.failed === 0) expect(formatReport(report)).toContain('0 failed')
+      if (report.failed === 0) {
+        expect(formatReport(report)).toContain(`all ${report.ok} passed`)
+        expect(renderDoctor(report, { verbose: true }).join('\n')).toContain('0 failed')
+      }
       // And the summary distinguishes what was not checked here from what is
       // not implemented anywhere: one number for each.
       expect(report.notChecked).toBeGreaterThanOrEqual(postgresOnlyRows().length)
