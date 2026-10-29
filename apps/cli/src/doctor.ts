@@ -869,12 +869,23 @@ export async function ghLogin(env: NodeJS.ProcessEnv, gh?: GhRun): Promise<Check
   const name = 'github: gh login'
   const status = await ghStatus(gh)
   if (!status.ok) {
+    // Only a missing sign-in is answered by `gh auth login`; a missing or old gh
+    // cannot run it, and signing in again would not make an old gh accept --json.
+    const titles = {
+      missing: 'gh is not installed',
+      'too-old': 'gh is too old to report its login',
+      unparsed: 'gh gave no readable login status',
+      'no-account': 'gh is not signed in to github.com',
+      'signed-out': 'gh is not signed in to github.com',
+    } as const
+    const signIn = status.reason === 'no-account' || status.reason === 'signed-out'
     return {
       name,
       status: 'fail',
-      title: 'gh is not signed in to github.com',
-      detail: status.detail,
-      fix: 'gh auth login',
+      title: titles[status.reason],
+      // The command is the row's `fix`; the sentence stops before it.
+      detail: signIn ? status.detail.split(' — run ')[0]! : status.detail,
+      ...(signIn ? { fix: 'gh auth login' } : {}),
     }
   }
   const gap = ghScopeGap(status)
@@ -1329,6 +1340,12 @@ async function passRefusals(load: typeof loadProjects = loadProjects): Promise<C
       describeRefusal(p.project!, p.refused!, { daemonUp, here, behind: await isBehind(p.refused!.codeSha, here) }),
     ),
   )
+  return refusalsRow(read)
+}
+
+/** The row for the projects refused, graded apart from the reads that found them. */
+export function refusalsRow(read: ReturnType<typeof describeRefusal>[]): CheckResult {
+  const name = 'conductor: refusals on the log'
   const failing = read.filter((r) => r.status === 'fail')
   const restarts = failing.length > 0 && failing.every((r) => r.restartAnswers)
   return {
@@ -1715,9 +1732,10 @@ export function unconvergedRow(
       status: 'fail',
       title: `${blocked.length} issue(s) cannot converge until a recipe resolves`,
       detail:
-        `${blocked.length} of ${computable.length} diverged issue(s) wait on a recipe that does not resolve — ${problems.join(', ')}.` +
-        rest +
-        commentTail +
+        `${blocked.length} of ${computable.length} diverged issue(s) wait on a recipe that does not resolve` +
+        `\n${problems.join(', ')}` +
+        (rest === '' ? '' : `\n${rest.trim()}`) +
+        (commentTail === '' ? '' : `\n${commentTail.trim()}`) +
         '\n' +
         computable.slice(0, 4).map(named).join(', '),
     }

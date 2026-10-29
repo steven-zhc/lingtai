@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import type { Currency } from '@lingtai/daemon'
 import type { UnconvergedUpdate } from '@lingtai/event-store'
 import type { GhRun } from '@lingtai/github'
@@ -8,6 +12,8 @@ import {
   daemonCurrency,
   describeRefusal,
   ghLogin,
+  refusalsRow,
+  ratesCheck,
   githubCredentials,
   spendToday,
   unconvergedRow,
@@ -73,6 +79,19 @@ describe('conductor: refusals on the log', () => {
     expect(fail.title).toContain('lingtai')
     expect(fail.detail.split('\n')[0]).toBe('lingtai: env: Unrecognized key')
   })
+
+  it('offers the restart only when every failing project is refused by older code', () => {
+    const older = describeRefusal('lingtai', refusal, { daemonUp: true, here: 'd'.repeat(40), behind: true })
+    const same = describeRefusal('lingtai', refusal, { daemonUp: true, here: refusal.codeSha })
+    expect(older.restartAnswers).toBe(true)
+    expect(refusalsRow([older])).toMatchObject({ status: 'fail', fix: RESTART, restartAnswers: true })
+    expect(refusalsRow([older]).title).toBe(older.title)
+    const two = refusalsRow([older, older])
+    expect(two.title).toBe('2 projects are refused by the last pass')
+    expect(two.fix).toBe(RESTART)
+    expect(refusalsRow([older, same]).fix).toBeUndefined()
+    expect(refusalsRow([same]).fix).toBeUndefined()
+  })
 })
 
 describe('spend: today', () => {
@@ -108,6 +127,21 @@ describe('github: gh login', () => {
     const row = await ghLogin(env, out)
     PLAIN(row?.title)
     expect(row?.fix).toBe('gh auth login')
+  })
+
+  it('gives a missing or too-old gh its own title and no sign-in fix', async () => {
+    const missing = await ghLogin(env, async () => ({ missing: true }) as never)
+    expect(missing).toMatchObject({ status: 'fail', title: 'gh is not installed' })
+    expect(missing?.fix).toBeUndefined()
+    const old = await ghLogin(env, async () => ({ code: 1, stdout: '', stderr: 'unknown flag: --json' }))
+    expect(old).toMatchObject({ status: 'fail', title: 'gh is too old to report its login' })
+    expect(old?.fix).toBeUndefined()
+    const out = await ghLogin(env, async () => ({
+      code: 1,
+      stdout: hosts({ state: 'error', active: true }),
+      stderr: '',
+    }))
+    expect(out?.detail).not.toContain('gh auth login')
   })
 
   it('titles a scope gap, fix the refresh the gap names', async () => {
@@ -153,5 +187,42 @@ describe('github: what we said and did not manage', () => {
       expect(r.fix).toBeUndefined()
       expect(r.detail.split('\n').length).toBeGreaterThan(1)
     }
+  })
+})
+
+describe('rates', () => {
+  const home = (note: object) => {
+    const dir = mkdtempSync(join(tmpdir(), 'rates-'))
+    mkdirSync(join(dir, 'rates'), { recursive: true })
+    return { dir, env: { LINGTAI_HOME: dir } as NodeJS.ProcessEnv, note }
+  }
+  const write = (note: object) => {
+    const { dir, env } = home(note)
+    for (const sub of ['', 'rates']) {
+      writeFileSync(join(dir, sub, 'rates-fetch.json'), JSON.stringify(note))
+    }
+    return env
+  }
+
+  it('titles a failed fetch and gives it no fix', () => {
+    const row = ratesCheck(write({ at: '2026-10-01T00:00:00Z', ok: false, error: 'offline', rejected: ['m-1'] }))
+    expect(row).toMatchObject({ name: 'rates', status: 'warn', title: 'the last price fetch failed' })
+    expect(row.fix).toBeUndefined()
+    PLAIN(row.title)
+    expect(firstLine(row)).not.toContain('m-1')
+  })
+
+  it('titles a spend that was not rebuilt and offers the rebuild', () => {
+    const row = ratesCheck(
+      write({ at: '2026-10-01T00:00:00Z', ok: true, rejected: [], priced: ['m-2'], rebuilt: 'not rebuilt' }),
+      3n,
+    )
+    expect(row).toMatchObject({
+      status: 'warn',
+      title: 'spend was not rebuilt after new prices',
+      fix: 'lingtai projection rebuild spend',
+    })
+    PLAIN(row.title)
+    expect(firstLine(row)).not.toContain('m-2')
   })
 })
