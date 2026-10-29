@@ -73,9 +73,5 @@ App 同时也是安装 Lingtai 时最重的一步：要创建它、保管私钥�
 - 在 `app` 方式下，Lingtai 能访问哪些仓库在安装里一目了然，缺少的权限在添加仓库时就被点名；私钥是运行 conductor 的机器上一个真正长期有效的密钥，它不进入任何仓库，也不进入任何被管理项目的环境。
 - 修改 App 申请的权限，必须同时改 §3 的表和 `REQUIRED_PERMISSIONS`。两者不一致时单元测试会失败。
 
-## 尚未实现
-
-- `github.auth`、`--github-auth`、`gh` 令牌来源、内嵌登录和提问顺序（§1、§8）；目前只有 App。
-
 ---
 *取代 [decisions-archive](../../decisions-archive/) 中已归档的 0006。*

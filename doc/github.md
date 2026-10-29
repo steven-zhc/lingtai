@@ -3,7 +3,20 @@
 What the credential is, how it reaches `git`, and what the agent is not given.
 [`operating.md`](operating.md) is what you *type*; this is what happens.
 
-## One App, and it is not a person
+## `gh` for one person, an App for a team
+
+`lingtai init` asks which: `gh` uses the GitHub CLI's login
+(`gh auth login --hostname github.com --scopes repo,workflow`), so one person
+creates nothing on GitHub. Lingtai's labels, comments and pushes then appear as
+that account, and commits are authored by the machine's git identity, which
+Lingtai does not set. There is no webhook under `gh`; the daemon's sweep finds
+work. If an organisation blocks the GitHub CLI's OAuth app, `add` refuses and
+names `--github-auth app`. A team uses the App, and the rest of this page is
+about it.
+
+[0114](decisions/0114-a-github-app-not-a-token.md) §8 has the decision.
+
+### One App, and it is not a person
 
 [0006](decisions-archive/0006-github-app.md) chose a GitHub App over a personal access
 token, and the reason was a day:
@@ -32,8 +45,11 @@ Permissions, as installed:
 | Issues | read + write | reading work items, writing `agent:*` labels and comments |
 | Contents | read + write | cloning, pushing `agent/*`, merging into base |
 | Pull requests | read + write | opening and reading PRs |
+| Workflows | read + write | pushing changes to `.github/workflows` |
 | Metadata | read | required |
-| Webhooks | `issues`, `push` | event-driven discovery |
+
+The App also subscribes to the `issues` and `push` webhook events for
+event-driven discovery; that is not a permission.
 
 **Rate limit is not a reason.** An installation and a PAT both start at 5,000
 requests an hour; the App's scales with repository and user count, and 15,000 is
@@ -189,6 +205,10 @@ conductor   pushes the branch, runs the gates, merges, writes labels, opens PRs.
 The agent's prompt says *"You do not merge … pushing to the base branch or
 merging a pull request is refused"*, and that sentence is not what makes it
 true. **What makes it true is that the agent has no credential.**
+
+Under `gh` the person's `gh` login is on the machine anyway, so an agent
+without a sandbox can run `gh` as that person (0114 §8). Lingtai does not hand
+it a token; keeping the agent from that login is the runtime's own sandbox.
 
 ## "Not installed" is not "no such repository"
 

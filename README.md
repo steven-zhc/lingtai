@@ -101,6 +101,18 @@ lingtai approve chapter-garden --issue <ticket-number>
 
 Run `git pull` in your Chapter Garden checkout to see the merged change.
 
+To work from GitHub issues instead, sign in with the GitHub CLI and register
+the repository. Lingtai's labels, comments and pushes then appear as that
+account, and commits are authored by the machine's git identity
+(`user.name`, `user.email`), which Lingtai does not set. A team uses a GitHub
+App instead; see [GitHub](doc/github.md).
+
+```sh
+gh auth login --hostname github.com --scopes repo,workflow
+lingtai init --project github --github-auth gh
+lingtai add <owner>/<repo>
+```
+
 ## What an agent can reach
 
 An agent Lingtai dispatches runs on your machine, as your user. Here is what
@@ -124,6 +136,8 @@ that does and does not protect.
   and it has network access. Your own Claude Code sandbox with
   `allowUnsandboxedCommands: false` does hold under Lingtai; see
   [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
+  Under `gh` your `gh` login is on the machine too, so an agent without a
+  sandbox can run `gh` as you. Lingtai does not hand it a token.
 - The Codex runtime does run in a sandbox (`--sandbox workspace-write`), which
   refuses writes outside its working directory, `$TMPDIR` and `/tmp`, and a few
   directories Lingtai adds for committing. A recipe with `tier: sandboxed` is served only by a

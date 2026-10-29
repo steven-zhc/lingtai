@@ -75,6 +75,14 @@ lingtai approve chapter-garden --issue <ticket-number>
 
 在你的 Chapter Garden 检出里运行 `git pull`，就能看到合并后的改动。
 
+如果要从 GitHub issue 工作，先用 GitHub CLI 登录，再登记仓库。Lingtai 的标签、评论和推送会以该账号的名义出现；提交的作者是这台机器的 git 身份（`user.name`、`user.email`），Lingtai 不会设置它。团队改用 GitHub App，见 [GitHub](doc/github.md)。
+
+```sh
+gh auth login --hostname github.com --scopes repo,workflow
+lingtai init --project github --github-auth gh
+lingtai add <owner>/<repo>
+```
+
 ## What an agent can reach
 
 Lingtai 派出的 agent 在你的机器上运行，以你的用户身份。下面说明这样做保护了什么，又没有保护什么。
@@ -87,7 +95,7 @@ Lingtai 派出的 agent 在你的机器上运行，以你的用户身份。下�
 
 **未隔离**
 
-- Claude Code 运行时没有文件系统沙箱。该 agent 可以读取任何你能读的文件，包括 `~/.lingtai/config.yml`（数据库 URL 和 GitHub App 设置）和 `~/.ssh`，并且它可以访问网络。除非你自己配置了沙箱：你自己的 Claude Code 沙箱加上 `allowUnsandboxedCommands: false`，在 Lingtai 下确实有效，见 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。
+- Claude Code 运行时没有文件系统沙箱。该 agent 可以读取任何你能读的文件，包括 `~/.lingtai/config.yml`（数据库 URL 和 GitHub App 设置）和 `~/.ssh`，并且它可以访问网络。除非你自己配置了沙箱：你自己的 Claude Code 沙箱加上 `allowUnsandboxedCommands: false`，在 Lingtai 下确实有效，见 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。在 `gh` 方式下，你的 `gh` 登录也在这台机器上，所以没有沙箱的 agent 可以以你的身份运行 `gh`。Lingtai 不会把令牌交给它。
 - Codex 运行时确实在沙箱中运行（`--sandbox workspace-write`），沙箱会拒绝在其工作目录、`$TMPDIR` 和 `/tmp` 之外的写入，以及 Lingtai 为提交而添加的少数几个目录之外的写入。带有 `tier: sandboxed` 的 recipe 只由这样的运行时提供服务，Claude Code 不行。不要假定沙箱涵盖读取或网络。在 #667 落地之前，你自己的 `~/.codex/config.toml` 里的权限配置会被这个 `--sandbox` 替换；见[测量结果](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。
 
 **如何限制**

@@ -220,66 +220,40 @@ Read all three **before** you press Approve: a run's log is deleted when it land
 
 ## Part 2 — Move the project to GitHub
 
-A GitHub repository needs a GitHub App, and **the App is yours**; there is no
-shared one. [GitHub](github.md) says why.
+Sign in with the GitHub CLI; no App is needed for one person. Lingtai's actions
+(labels, comments, pushes) then appear as that account, and commits are authored
+by the machine's git identity (`user.name`, `user.email`), which Lingtai does
+not set. For a team, use a GitHub App: [GitHub](github.md) and
+[operating](operating.md#connecting-github).
 
 **Part 2 is a second start.** Local tickets stay in the database and `add`
 does not migrate them. **Stop Step 3's board first** (ctrl-c): `init` and `add`
-would otherwise find it and create the App in the old home.
+would otherwise find it.
 
-In a new terminal, use a fresh `LINGTAI_HOME` and answer `init`'s App question
-with `skip`; `add` creates it below. `init` keeps this home's board running, so
-leave it:
+In a new terminal, sign in, then use a fresh `LINGTAI_HOME`. Under `gh`, `init` starts no board:
 
 ```sh
+gh auth login --hostname github.com --scopes repo,workflow
 export LINGTAI_HOME="$HOME/.lingtai-github-tutorial"
-lingtai init --store sqlite --project github --github-app skip
+lingtai init --store sqlite --project github --github-auth gh
 ```
 
-Use your own fork, `<you>/chapter-garden`; installing an App needs admin on it.
+Already signed in without `workflow`? Run
+`gh auth refresh --hostname github.com --scopes workflow`.
 
-**The base must accept direct pushes from the App**: Lingtai pushes to it and opens no pull request. If protected, let the App bypass it, or set the recipe's `repo.base` elsewhere.
+Use your own fork, `<you>/chapter-garden`; you must be able to push to it.
+
+**The base must accept direct pushes from your account**: Lingtai pushes to it and opens no pull request. If protected, let your account bypass it, or set the recipe's `repo.base` elsewhere.
 
 Use another terminal, same `LINGTAI_HOME`, from here on.
 
-### Create the App
-
-```sh
-lingtai add <you>/chapter-garden --base main --github-app create
-```
-
-`add` asks its recipe questions (pass Step 1's flags; a fresh home needs `--base`), then opens the board's
-`/setup/github-app` page and waits ten minutes. Fill `App name` and `Organisation` (blank for a personal
-account). Leave `Webhook URL` blank: discovery runs on the daemon's sweep. Press
-`Create the App on GitHub`, then **Create GitHub App** on GitHub's own next
-screen.
-
-You never choose the permissions; the manifest carries them:
-
-| Permission      | Level | Why                                                     |
-| --------------- | ----- | ------------------------------------------------------- |
-| `issues`        | write | reading work items, writing agent:* labels and comments |
-| `contents`      | write | cloning, pushing agent/*, merging into base             |
-| `pull_requests` | write | opening and reading pull requests                       |
-| `metadata`      | read  | required by GitHub for any App                          |
-
-GitHub hands over the private key once. It is a file at
-the path the board names (default `~/.ssh/lingtai-agent.private-key.pem`);
-`$LINGTAI_HOME/config.yml` (`~/.lingtai-github-tutorial/config.yml`) holds that path, the App id and the webhook secret.
-
-When the terminal prints `app  <slug>, owned by <owner> — it answered` under *GitHub App*,
-the same `add` stops with `The App is not installed on <owner>, so it cannot see
-<slug>.` Expected: **creating is not installing**.
-
-### Install it and add the repository
-
-Open `https://github.com/apps/<slug>/installations/new` and install it on
-`<you>/chapter-garden` only. Then run `add` again **without** `--github-app`,
-which is refused once an App exists:
+### Add the repository
 
 ```sh
 lingtai add <you>/chapter-garden --base main
 ```
+
+`add` asks its recipe questions (pass Step 1's flags; a fresh home needs `--base`). It prints nothing when the check passes.
 
 ### Check it worked
 
@@ -287,13 +261,10 @@ lingtai add <you>/chapter-garden --base main
 lingtai doctor
 ```
 
-`github: app credentials` should be `ok` (`skip` means no App). The second `add`
-proves the installation by printing
-`permissions: issues, contents, pull requests write; metadata read`; a missing
-permission is listed instead.
+`github: gh login` should be `ok`, naming your account. `github: app credentials` reads `skip`: expected, as there is no App.
 
 Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
-Steps 2–4 then apply; skip Step 3's `lingtai board`, as `init` left one running.
+Steps 2–4 then apply, including Step 3's `lingtai board`: start it in this home, as `init` left none running.
 The landing now merges into `main` of your fork on GitHub, not the local bare
 repository, so Step 4's `git pull` does not apply: look on GitHub instead.
 

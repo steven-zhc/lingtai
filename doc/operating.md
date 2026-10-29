@@ -241,8 +241,16 @@ the issue that will fill them in.
 
 ## Connecting GitHub
 
-Lingtai talks to GitHub as a **GitHub App**, not as a personal access token.
-The reason is a measured failure: on 2026-08-30 a fine-grained PAT covered the
+`lingtai init` asks how Lingtai signs in: `gh` or `app`.
+
+**For one person, `gh`.** Run `gh auth login --hostname github.com --scopes
+repo,workflow`, then `lingtai init --github-auth gh` and `lingtai add
+<owner>/<repo>`. Lingtai's labels, comments and pushes appear as that account,
+and commits are authored by the machine's git identity. An agent without a
+sandbox can run `gh` as you.
+
+**For a team, a GitHub App**, not a personal access token. The rest of this
+section sets it up. The reason is a measured failure: on 2026-08-30 a fine-grained PAT covered the
 admin repository's *submodule* but not the repository itself, and every CI run
 failed with a 403 that said nothing about scope. An App's reach is explicit in
 its installation, so `lingtai add` can ask and answer that question at onboarding
@@ -287,16 +295,17 @@ Go to **Settings → Developer settings → GitHub Apps → New GitHub App**
 | **Webhook → Active** | **Uncheck it.** Webhooks arrive with [#28](https://github.com/steven-zhc/lingtai/issues/28); until then there is nothing listening and a failing delivery is noise. |
 | **Where can this App be installed** | *Only on this account.* |
 
-Then, under **Repository permissions**, set exactly these four:
+Then, under **Repository permissions**, set exactly these five:
 
 | Permission | Level | What Lingtai does with it |
 |---|---|---|
 | **Issues** | Read and write | reading work items, writing `agent:*` labels and comments |
 | **Contents** | Read and write | cloning, pushing `agent/*`, merging into the base branch |
 | **Pull requests** | Read and write | opening and reading pull requests |
+| **Workflows** | Read and write | pushing changes to `.github/workflows` |
 | **Metadata** | Read-only | mandatory; GitHub selects it for you |
 
-Leave every other permission at *No access*. `lingtai add` checks these four by name
+Leave every other permission at *No access*. `lingtai add` checks these five by name
 and refuses to onboard a repository that is missing one, so a gap becomes a
 message at onboarding rather than a 403 in the middle of a merge.
 
