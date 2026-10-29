@@ -10,6 +10,7 @@
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
+import { finish } from './ending.ts'
 import { helpCommand, unknownCommand } from './help.ts'
 import { routeOf } from './migrated.ts'
 
@@ -19,7 +20,12 @@ const route = routeOf(argv)
 
 if (route === 'effect') {
   void import('./cli.ts')
-    .then(({ runCli }) => runCli(process.argv))
+    .then(async ({ runCli }) => {
+      // Already imported by `cli.ts`, so this loads nothing new; dynamic so
+      // that help and unknown commands never touch the store.
+      const { closeProcessLog } = await import('@lingtai/event-store')
+      return finish(() => runCli(process.argv), closeProcessLog)
+    })
     .then((code) => {
       // `init` may have started the board in this process, and its listening
       // socket holds the event loop open past `process.exitCode` (#394 finding
