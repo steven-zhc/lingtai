@@ -46,6 +46,7 @@ export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type We
 export {
   ghExecOptions,
   ghScopeGap,
+  ghScopeRefresh,
   ghStatus,
   ghToken,
   liveGh,

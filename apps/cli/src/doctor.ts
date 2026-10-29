@@ -56,6 +56,7 @@ import { daySpendText, type DaySpend } from '@lingtai/conductor'
 import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
   codeCurrency,
+  type Currency,
   codeRoot,
   conductorLockHolder,
   describeCurrency,
@@ -96,7 +97,7 @@ import { log, logPredatesHold } from '@lingtai/event-store'
 // that reds on one would hold `lingtai restart`.
 import { createPostgresLogQueries, type LogQueries, type UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { GhRun, GitHubClient } from '@lingtai/github'
-import { ghScopeGap, ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
+import { ghScopeGap, ghScopeRefresh, ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
   backlogProjection,
   describeShape,
@@ -867,13 +868,41 @@ export async function ghLogin(env: NodeJS.ProcessEnv, gh?: GhRun): Promise<Check
   if (!usesGh(env)) return null
   const name = 'github: gh login'
   const status = await ghStatus(gh)
-  if (!status.ok) return { name, status: 'fail', detail: `${status.detail} — run \`gh auth login\`` }
+  if (!status.ok) {
+    // Only a missing sign-in is answered by `gh auth login`; a missing or old gh
+    // cannot run it, and signing in again would not make an old gh accept --json.
+    const titles = {
+      missing: 'gh is not installed',
+      'too-old': 'gh is too old to report its login',
+      unparsed: 'gh gave no readable login status',
+      'no-account': 'gh is not signed in to github.com',
+      'signed-out': 'gh is not signed in to github.com',
+    } as const
+    const signIn = status.reason === 'no-account' || status.reason === 'signed-out'
+    return {
+      name,
+      status: 'fail',
+      title: titles[status.reason],
+      // The command is the row's `fix`; the sentence stops before it.
+      detail: signIn ? status.detail.split(' — run ')[0]! : status.detail,
+      ...(signIn ? { fix: 'gh auth login' } : {}),
+    }
+  }
   const gap = ghScopeGap(status)
-  if (gap !== null) return { name, status: 'fail', detail: gap }
+  if (gap !== null) {
+    // The command is the row's `fix`; the sentence stops before it.
+    return {
+      name,
+      status: 'fail',
+      title: 'the gh login is missing the repo or workflow scope',
+      detail: gap.split(' — run ')[0]!,
+      fix: ghScopeRefresh(status)!,
+    }
+  }
   return { name, status: 'ok', detail: `gh is signed in to github.com as ${status.login} with repo and workflow` }
 }
 
-function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
+export function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = 'github: app credentials'
   if (usesGh(env)) {
     return {
@@ -907,7 +936,9 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
         '(verified per repository by lingtai add)',
     }
   } catch (err) {
-    return { name, status: 'fail', detail: (err as Error).message }
+    // What clears it depends on which of several causes this is (no key, an
+    // unreadable config.yml, a key that will not parse), so there is no `fix`.
+    return { name, status: 'fail', title: 'the GitHub App credentials do not load', detail: (err as Error).message }
   }
 }
 
@@ -1145,11 +1176,13 @@ export function ratesCheck(from: NodeJS.ProcessEnv = process.env, spendLag?: big
   }
   const day = note.at.slice(0, 10)
   const rejected = note.rejected.length > 0 ? `; out of range, left unknown: ${note.rejected.join(', ')}` : ''
+  const rejectedLine = note.rejected.length > 0 ? `\nout of range, left unknown: ${note.rejected.join(', ')}` : ''
   if (!note.ok) {
     return {
       name,
       status: 'warn',
-      detail: `last fetched ${day}, ${note.error ?? 'failed'} — the previous snapshot stands${rejected}`,
+      title: 'the last price fetch failed',
+      detail: `last fetched ${day}, ${note.error ?? 'failed'} — the previous snapshot stands${rejectedLine}`,
     }
   }
   // Nothing detects a ChatGPT plan, so the note is conditional in its wording.
@@ -1168,7 +1201,11 @@ export function ratesCheck(from: NodeJS.ProcessEnv = process.env, spendLag?: big
     return {
       name,
       status: 'warn',
-      detail: `last fetched ${day}, ok${priced}${rejected} — run \`lingtai projection rebuild spend\``,
+      title: 'spend was not rebuilt after new prices',
+      detail:
+        `prices changed but spend has not been rebuilt since (fetched ${day})` +
+        `\npriced ${note.priced!.join(', ')}; ${note.rebuilt ?? 'spend not rebuilt'}${rejectedLine}`,
+      fix: 'lingtai projection rebuild spend',
     }
   }
   return { name, status: 'ok', detail: `last fetched ${day}, ok${priced}${rejected}${plan}` }
@@ -1238,20 +1275,36 @@ export async function daemonCurrency(
       // The state this check was written for, seen from the other side: a
       // daemon old enough to predate the column cannot say what it is running,
       // and that it cannot say is the finding.
+      title: 'the daemon cannot say which commit it runs',
       detail:
-        'the running daemon recorded no commit — it started before the beacon carried one, so how far behind it is cannot be known from here. Restart it (pnpm lingtai daemon) and this check can answer',
+        'the running daemon recorded no commit\nit started before the beacon carried one, so how far behind it is cannot be known from here',
+      fix: RESTART_FIX,
     }
   }
 
   const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty })
-  const sentence = describeCurrency(currency)
-  if (currency.unknown || currency.behind.length === 0) {
-    return { name, status: 'ok', detail: sentence }
-  }
+  return currencyRow(currency)
+}
+
+/** The restart that answers both a daemon behind `main` and a refusal by code older than this checkout. */
+const RESTART_FIX = 'lingtai restart "picking up main"'
+
+/** The grading of a comparison, apart from the git read that made it. */
+export function currencyRow(c: Currency): CheckResult {
+  const name = 'daemon: currency'
+  if (c.unknown || c.behind.length === 0) return { name, status: 'ok', detail: describeCurrency(c) }
+  const at = c.running ? c.running.slice(0, 7) : 'an unrecorded commit'
+  const dirty = c.dirty ? ', worktree dirty when it started' : ''
+  const base = c.base.replace(/^origin\//, '')
   return {
     name,
     status: 'warn',
-    detail: `${sentence}. Unbuilt removes the build, not the restart — restart the daemon to take them`,
+    title: `the daemon is ${c.behind.length} commit(s) behind ${base}`,
+    detail: [
+      `running ${at}${dirty}; a restart takes the new commits`,
+      ...c.behind.map((b) => `${b.sha} ${b.subject}`),
+    ].join('\n'),
+    fix: RESTART_FIX,
   }
 }
 
@@ -1287,15 +1340,23 @@ async function passRefusals(load: typeof loadProjects = loadProjects): Promise<C
       describeRefusal(p.project!, p.refused!, { daemonUp, here, behind: await isBehind(p.refused!.codeSha, here) }),
     ),
   )
+  return refusalsRow(read)
+}
+
+/** The row for the projects refused, graded apart from the reads that found them. */
+export function refusalsRow(read: ReturnType<typeof describeRefusal>[]): CheckResult {
+  const name = 'conductor: refusals on the log'
   const failing = read.filter((r) => r.status === 'fail')
+  const restarts = failing.length > 0 && failing.every((r) => r.restartAnswers)
   return {
     name,
     status: failing.length > 0 ? 'fail' : 'warn',
-    detail: read.map((r) => r.detail).join('\n         '),
+    title: read.length === 1 ? read[0]!.title : `${read.length} projects are refused by the last pass`,
+    detail: read.map((r) => r.detail).join('\n'),
     // Only when every failing project is one a restart is the remedy for — one
     // refused by code older than this checkout. A refusal by the code here
     // would refuse again after the restart, and still gates it.
-    ...(failing.length > 0 && failing.every((r) => r.restartAnswers) ? { restartAnswers: true } : {}),
+    ...(restarts ? { restartAnswers: true, fix: RESTART_FIX } : {}),
   }
 }
 
@@ -1338,11 +1399,12 @@ export function describeRefusal(
      */
     behind?: boolean
   },
-): { status: 'fail' | 'warn'; detail: string; restartAnswers: boolean } {
+): { status: 'fail' | 'warn'; title: string; detail: string; restartAnswers: boolean } {
   const short = (sha: string | null) => (sha ? sha.slice(0, 7) : 'an unrecorded commit')
   const head =
-    `${project}: refused since seq ${r.seq} (${r.at.toISOString()}) by a process at ${short(r.codeSha)}, ` +
-    `reading ${r.ref ?? 'a branch it never reached'} — ${r.detail}.`
+    `${project}: ${r.detail}\n` +
+    `refused since seq ${r.seq} (${r.at.toISOString()}) by a process at ${short(r.codeSha)}, ` +
+    `reading ${r.ref ?? 'a branch it never reached'}.`
   // The sentence #148 was missing: whether the recipe rows in this report
   // read with the refusing code or with newer code.
   const differs = Boolean(r.codeSha && now.here && r.codeSha !== now.here)
@@ -1354,9 +1416,15 @@ export function describeRefusal(
       ? ' This checkout is at the same commit, so the recipe rows here read with the code that refused'
       : " Which code the recipe rows here read with, beside the refusing process's, cannot be said"
   return now.daemonUp
-    ? { status: 'fail', detail: `${head}${witness}`, restartAnswers: older }
+    ? {
+        status: 'fail',
+        title: `${project} is refused by the last pass`,
+        detail: `${head}${witness}`,
+        restartAnswers: older,
+      }
     : {
         status: 'warn',
+        title: `${project} was refused by the last pass and no daemon is up`,
         detail: `${head}${witness}. No daemon is up; the next pass records whether it still refuses`,
         restartAnswers: older,
       }
@@ -1606,12 +1674,13 @@ export async function spendToday(
       return {
         name,
         status: 'warn',
-        detail: `${day.unknown} of today's runs reported no cost — the ceiling cannot see them (${detail})`,
+        title: `${day.unknown} of today's runs reported no cost`,
+        detail: `the daily ceiling cannot see them\n${detail}`,
       }
     }
     return { name, status: 'ok', detail }
   } catch (err) {
-    return { name, status: 'fail', detail: (err as Error).message }
+    return { name, status: 'fail', title: "today's spend could not be read", detail: (err as Error).message }
   }
 }
 
@@ -1647,10 +1716,10 @@ export function unconvergedRow(
     return {
       name,
       status: 'warn',
+      title: `${comments.length} comment(s) were never posted`,
       detail:
-        `${comments.length} comment(s) the log says were never posted — ` +
-        comments.slice(0, 4).map(named).join(', ') +
-        '. A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.',
+        'a comment is not computable from state, so nothing will converge it; say it by hand if it still matters\n' +
+        comments.slice(0, 4).map(named).join(', '),
     }
   }
 
@@ -1661,23 +1730,26 @@ export function unconvergedRow(
     return {
       name,
       status: 'fail',
+      title: `${blocked.length} issue(s) cannot converge until a recipe resolves`,
       detail:
-        `${computable.length} issue(s) diverged — ` +
-        computable.slice(0, 4).map(named).join(', ') +
-        `. ${blocked.length} of them cannot converge until its recipe resolves — ${problems.join(', ')}.` +
-        rest +
-        commentTail,
+        `${blocked.length} of ${computable.length} diverged issue(s) wait on a recipe that does not resolve` +
+        `\n${problems.join(', ')}` +
+        (rest === '' ? '' : `\n${rest.trim()}`) +
+        (commentTail === '' ? '' : `\n${commentTail.trim()}`) +
+        '\n' +
+        computable.slice(0, 4).map(named).join(', '),
     }
   }
 
   return {
     name,
     status: 'warn',
+    title: `${computable.length} issue(s) on GitHub differ from the log`,
     detail:
-      `${computable.length} issue(s) diverged — ` +
-      computable.slice(0, 4).map(named).join(', ') +
-      '. The next reconcile recomputes and writes the difference (lingtai daemon)' +
-      (comments.length > 0 ? `; ${comments.length} comment(s) it cannot, which need a person.` : '.'),
+      'the next reconcile recomputes and writes the difference' +
+      (comments.length > 0 ? `; ${comments.length} comment(s) it cannot, which need a person` : '') +
+      '\n' +
+      computable.slice(0, 4).map(named).join(', '),
   }
 }
 

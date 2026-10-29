@@ -221,7 +221,7 @@ describe('unconvergedRow, a divergence whose project reconcile has dropped', () 
     const rows: UnconvergedUpdate[] = [{ project: 'lingtai', issue: '1', change: 'labels' }]
     const row = unconvergedRow(rows, new Map(), new Map())
     expect(row.status).toBe('warn')
-    expect(row.detail).toContain('The next reconcile recomputes and writes the difference')
+    expect(row.detail).toContain('the next reconcile recomputes and writes the difference')
   })
 
   it('is fail, naming the project and its recipe problem, once a row belongs to one', () => {
@@ -486,13 +486,14 @@ describe('github: gh login', () => {
     })
     const row = await ghLogin(GH_MACHINE, out)
     expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('gh auth login')
+    expect(row?.fix).toBe('gh auth login')
   })
 
   it('fails naming the refresh command when workflow is missing', async () => {
     const row = await ghLogin(GH_MACHINE, signedIn('repo'))
     expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('gh auth refresh --hostname github.com --scopes workflow')
+    expect(row?.fix).toBe('gh auth refresh --hostname github.com --scopes workflow')
+    expect(row?.detail).not.toContain('gh auth refresh')
   })
 
   it('skips the App credentials row on a gh machine instead of telling it to configure an App', async () => {
