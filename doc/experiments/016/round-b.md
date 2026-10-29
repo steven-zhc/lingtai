@@ -572,7 +572,11 @@ did not in the first attempt), and what `add` asks. Terminal 1, with
 `lingtai start` and the board still running:
 
 ```fish
+set -gx ROUND b
+set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+set -gx TRIAL_SRC $HOME/lingtai-trial/src
 set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+echo $LINGTAI_HOME
 git clone https://github.com/steven-zhc/chapter-garden.git $CHAPTER_GARDEN_B2
 git clone --bare $CHAPTER_GARDEN_B2 $CHAPTER_GARDEN_B2.git
 git -C $CHAPTER_GARDEN_B2 remote set-url origin $CHAPTER_GARDEN_B2.git
@@ -673,6 +677,10 @@ Machine
 └
 ```
 
+If the `init` above asked the store question, that terminal had no
+`LINGTAI_HOME` either: it was a new machine at `~/.lingtai`, not round B's,
+and says nothing about B1. Run the block again as it is now.
+
 This `init` is only to see where habit leads; the repository is registered
 by `add` below. **If it starts asking questions, answer none**: copy the
 first question into the paste block above, press Ctrl+C, and go on to `add`.
@@ -681,14 +689,25 @@ first question into the paste block above, press Ctrl+C, and go on to `add`.
   `lingtai add --local .` (B1), instead of asking questions.
 
 ```fish
+set -gx ROUND b
+set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+set -gx TRIAL_SRC $HOME/lingtai-trial/src
+set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+echo $LINGTAI_HOME
+cd $CHAPTER_GARDEN_B2
+pwd
 date
-lingtai add --local .
+lingtai add --local $CHAPTER_GARDEN_B2
 date
 lingtai doctor
 ```
 
+`echo` must print `…/lingtai-trial/b` and `pwd` `…/src/chapter-garden-b2`.
+The first attempt ran in a terminal with neither, so `add` was handed `~`
+and `doctor` read `~/.lingtai` (paste below); that attempt does not count.
+
 Answer as in the table under round B's `init`, rows 4–18 (store, project
-kind and directory are not asked: the machine is set up and `--local .` named
+kind and directory are not asked: the machine is set up and `--local` named
 the directory). The project's name is the directory's, `chapter-garden-b2`.
 
 ```paste
@@ -709,6 +728,12 @@ doctor
      FIX  lingtai init
 
     NEXT  lingtai doctor --verbose
+```
+
+The second attempt, with the block above as it is now:
+
+```paste
+
 ```
 
 - [ ] It asks only what a second repository needs: nothing about the store,
