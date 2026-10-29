@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ghExecOptions, ghStatus, ghToken, scrubbedEnv, type GhRun } from '../src/gh.ts'
+import { ghExecOptions, ghSpawnOptions, ghStatus, ghToken, scrubbedEnv, type GhRun } from '../src/gh.ts'
 
 const TOKENS = { GH_TOKEN: 'a', GITHUB_TOKEN: 'b', GH_ENTERPRISE_TOKEN: 'c', GITHUB_ENTERPRISE_TOKEN: 'd' }
 
@@ -13,6 +13,12 @@ describe('scrubbedEnv', () => {
   it('is what the live runner hands the child', () => {
     const options = ghExecOptions({ ...TOKENS, PATH: '/bin' })
     expect(options.env).toEqual({ PATH: '/bin' })
+  })
+
+  it('is what the inherited-terminal runner hands the child, with GH_TOKEN dropped', () => {
+    const options = ghSpawnOptions({ ...TOKENS, PATH: '/bin' })
+    expect(options.env).toEqual({ PATH: '/bin' })
+    expect(options.stdio).toBe('inherit')
   })
 })
 

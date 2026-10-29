@@ -20,7 +20,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from 'node:path'
 
 import { paint } from '@lingtai/env/colour'
-import { ghScopeGap, type GhStatus } from '@lingtai/github'
+import { ghScopeGap, type GhRun, type GhStatus } from '@lingtai/github'
 import { isMap, parseDocument } from 'yaml'
 
 import { question, type QuestionWorld } from './question.ts'
@@ -31,6 +31,11 @@ export interface GithubAuthWorld extends QuestionWorld {
     auth?: () => 'app' | 'gh' | null
     /** `gh auth status`, as a value — asked only when the question is, or `--github-auth gh` is given. */
     ghStatus: () => Promise<GhStatus>
+    /**
+     * `gh` with the terminal handed over (#712). Present only where there is one,
+     * so its presence is how the question knows it may offer to sign in.
+     */
+    gh?: GhRun
     /** Writes `github.auth`, keeping every other key and comment (0114 §6). */
     writeAuth: (kind: 'gh' | 'app') => Promise<void>
   }
@@ -143,32 +148,76 @@ export async function askGithubAuth(
     return why === null ? write() : { refused: `--github-auth gh, but ${why}. ${kept}` }
   }
 
-  if (why === null && status.ok) {
+  let current = status
+  for (;;) {
+    const why = notReady(current)
+    if (why === null && current.ok) {
+      const asked = await question(world, {
+        name: 'how this machine reaches GitHub',
+        flag: '--github-auth gh, or --github-auth app',
+        given: null,
+        prompt:
+          `gh, signed in as ${current.login} — Lingtai's labels, comments, pull requests and pushes will appear as ` +
+          'that account — or app, its own GitHub App',
+        fallback: 'gh',
+        choices: ['gh', 'app'],
+        kept,
+      })
+      if ('refused' in asked) return { refused: asked.refused }
+      return asked.answer === 'gh' ? write() : { auth: 'app', pending: true }
+    }
+    const args = signInArgs(current)
+    const canSignIn = world.github.gh !== undefined && args !== null
+    world.log(paint.signal(`github       gh cannot be used yet — ${why!.replace(/, and run this again$/, '')}`))
     const asked = await question(world, {
       name: 'how this machine reaches GitHub',
       flag: '--github-auth gh, or --github-auth app',
       given: null,
-      prompt:
-        `gh, signed in as ${status.login} — Lingtai's labels, comments, pull requests and pushes will appear as ` +
-        'that account — or app, its own GitHub App',
-      fallback: 'gh',
-      choices: ['gh', 'app'],
+      prompt: canSignIn
+        ? `sign-in, to sign gh in now (\`gh ${args.join(' ')}\`) — or app, a GitHub App of its own`
+        : 'app, a GitHub App of its own — or gh, once you have fixed the above and run this again',
+      fallback: canSignIn ? 'sign-in' : 'app',
+      choices: canSignIn ? ['sign-in', 'app'] : ['app', 'gh'],
       kept,
     })
     if ('refused' in asked) return { refused: asked.refused }
-    return asked.answer === 'gh' ? write() : { auth: 'app', pending: true }
-  }
+    if (asked.answer === 'app') return { auth: 'app', pending: true }
+    if (!canSignIn) return { refused: `gh was chosen, but ${why}. ${kept}` }
 
-  world.log(paint.signal(`github       gh cannot be used yet — ${why!.replace(/, and run this again$/, '')}`))
-  const asked = await question(world, {
-    name: 'how this machine reaches GitHub',
-    flag: '--github-auth gh, or --github-auth app',
-    given: null,
-    prompt: 'app, a GitHub App of its own — or gh, once you have fixed the above and run this again',
-    fallback: 'app',
-    choices: ['app', 'gh'],
-    kept,
-  })
-  if ('refused' in asked) return { refused: asked.refused }
-  return asked.answer === 'gh' ? { refused: `gh was chosen, but ${why}. ${kept}` } : { auth: 'app', pending: true }
+    world.log(`github       handing the terminal to gh: gh ${args.join(' ')}`)
+    // `gh` shares the foreground process group, so Ctrl+C reaches it; init
+    // ignores its own copy and comes back to the choice (0121 §10: the command owns the process).
+    const ignore = () => {}
+    process.on('SIGINT', ignore)
+    let result
+    try {
+      result = await world.github.gh!(args, { stdio: 'inherit' })
+    } finally {
+      process.off('SIGINT', ignore)
+    }
+    current = await world.github.ghStatus()
+    if (!('missing' in result) && result.code === 0 && current.ok && notReady(current) === null) {
+      world.log(`github       gh, signed in as ${current.login}`)
+      return write()
+    }
+    world.log(
+      'missing' in result
+        ? 'github       gh is not installed'
+        : result.code !== 0
+          ? `github       gh ${args[0]} ${args[1]} exited ${result.code}`
+          : 'github       gh signed in, but it is still not usable',
+    )
+  }
+}
+
+/** The `gh` command that moves this status towards ready, or null where signing in cannot change it (#712). */
+function signInArgs(status: GhStatus): string[] | null {
+  if (status.ok) {
+    return ghScopeGap(status) === null
+      ? null
+      : ['auth', 'refresh', '--hostname', 'github.com', '--scopes', 'repo,workflow']
+  }
+  return status.reason === 'signed-out' || status.reason === 'no-account'
+    ? ['auth', 'login', '--hostname', 'github.com', '--web', '--scopes', 'workflow']
+    : null
 }

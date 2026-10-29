@@ -127,7 +127,7 @@ import {
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
-import { ghStatus, type GhStatus } from '@lingtai/github'
+import { ghStatus, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
@@ -146,7 +146,7 @@ import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { heading, keyValues, section, symbol } from './output.ts'
-import { liveAsk, liveSpin } from './prompt.ts'
+import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { question, spun, type QuestionWorld } from './question.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
@@ -198,6 +198,8 @@ export interface InitWorld {
   app: () => Promise<AppCheck>
   /** `gh auth status` (#706) — asked only when the GitHub-auth question is, or `--github-auth gh` is given. */
   ghStatus: () => Promise<GhStatus>
+  /** `gh` with the terminal handed over (#712) — absent where there is no terminal, so the sign-in option is not offered. */
+  gh?: GhRun
   /**
    * Resolves once an App is configured and answers — written by the board's
    * first screen. Stops polling once `signal` aborts; the loser of a race.
@@ -536,6 +538,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
           return elected.kind
         },
         ghStatus: world.ghStatus,
+        ...(world.gh === undefined ? {} : { gh: world.gh }),
         writeAuth: async (kind) => writeGithubAuth(world.machine, path, kind),
         // Already fetched above, for the "the App" line — a second real call
         // (`GET /app`) for the same run would answer the same question twice.
@@ -1032,6 +1035,7 @@ export function liveInitWorld(): InitWorld {
     },
     app: checkApp,
     ghStatus: () => ghStatus(),
+    ...(refusal('', interactivity(false)) === null ? { gh: liveGh } : {}),
     appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal),
     boardAt,
