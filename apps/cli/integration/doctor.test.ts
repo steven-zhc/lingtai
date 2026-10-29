@@ -800,10 +800,11 @@ describe('lingtai doctor — reporting', () => {
   it('says how many failed, and every check says what it found', async () => {
     const report = await runDoctor(env({}), () => undefined, notSetUp)
     expect(report.failed).toBeGreaterThan(0)
-    // Failures that share a `fix` are drawn once (`toFix`), so the count shown is at most `failed`.
-    const shown = Number(/(\d+) to fix/.exec(formatReport(report))?.[1])
-    expect(shown).toBeGreaterThan(0)
-    expect(shown).toBeLessThanOrEqual(report.failed)
+    // Failures that share a `fix` are drawn once (`toFix`): one line per distinct fix, and one per row with none.
+    const rows = report.results.filter((r) => (r.status === 'fail' || r.status === 'warn') && r.deferred !== true)
+    const expected = new Set(rows.map((r) => r.fix ?? `\0${r.name}`)).size
+    expect(expected).toBeGreaterThan(0)
+    expect(formatReport(report)).toContain(`${expected} to fix`)
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true)
   })
 })

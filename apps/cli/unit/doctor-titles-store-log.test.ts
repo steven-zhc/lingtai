@@ -38,13 +38,17 @@ describe('doctor titles: store and log', () => {
     ['two keys', 'the machine config names the store twice'],
     ['unreadable', "the machine's config file cannot be read"],
   ] as const)('store row: %s', (because, title) => {
-    const r = storeRow({ refused: 'it said why', because })
+    const r = storeRow({
+      refused: because === 'unreadable' ? 'it said why, or lingtai init writes it again' : 'it said why',
+      because,
+    })
     expect(r.name).toBe("store: the machine's written choice")
     expect(r.title).toBe(title)
     plain(r)
     expect(r.fix).toBe(because === 'unreadable' ? undefined : 'lingtai init')
     expect(firstLine(r)).toBe('it said why')
     expect(r.detail).toContain('#179')
+    if (because === 'unreadable') expect(r.detail).not.toContain('lingtai init')
   })
 
   it('log: reachable has a title and no fix', async () => {

@@ -263,7 +263,8 @@ export function storeRow(choice: StoreChoice): CheckResult {
       title: STORE_REFUSED_TITLE[choice.because],
       // `lingtai init` refuses an unreadable file by name and changes nothing (`init.ts`), so it is no fix for that one.
       ...(choice.because === 'unreadable' ? {} : { fix: 'lingtai init' }),
-      detail: `${choice.refused}\n${shut}`,
+      // The refusal's own last clause offers `lingtai init` for this one, which refuses it by name.
+      detail: `${choice.because === 'unreadable' ? choice.refused.replace(/, or lingtai init writes it again$/, '') : choice.refused}\n${shut}`,
     }
   }
   if (choice.store === 'sqlite') {
