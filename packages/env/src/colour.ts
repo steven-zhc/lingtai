@@ -84,6 +84,7 @@ export const plain = (text: string): string => text
  * | a human is being waited on | `--signal` | yellow — **and nothing else** |
  * | held by a person | `--held` | magenta |
  * | structure, ids, chrome | `--accent` / `--muted` | cyan / dim |
+ * | the one thing to do next | — | `next` badge: green ground, 0121 §2's exception |
  *
  * `fail` is the one that is bold as well as coloured, so that two failures in
  * thirty lines are the two lines you see first. Nothing else is bold: if a
@@ -117,6 +118,12 @@ const BADGES = {
   fix: [46, 30],
   /** A label with no ground: dim, as `paint.muted`. */
   muted: [2],
+  /**
+   * The closing `NEXT`: black on `pass`'s green used as a ground. 0121 §2's stated
+   * exception — everywhere else green is an outcome, and here it marks something
+   * not yet done.
+   */
+  next: [42, 30],
 } as const
 
 /**

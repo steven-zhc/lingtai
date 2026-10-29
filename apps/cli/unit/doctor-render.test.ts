@@ -340,6 +340,9 @@ describe('renderDoctor', () => {
     expect(fixed).toContain('\u001b[46;30m FIX ')
     expect(text).not.toMatch(new RegExp(`${String.fromCharCode(27)}\\[(?:[0-9;]*;)?33m`))
     expect(strip(fixed)).toContain('     FIX  run it')
+    expect(text.split('\n').at(-1)).toContain(
+      '\u001b[42;30m NEXT \u001b[0m \u001b[36mlingtai doctor --verbose\u001b[0m',
+    )
     expect(strip(text).split('\n').at(-1)).toBe('    NEXT  lingtai doctor --verbose')
   })
 

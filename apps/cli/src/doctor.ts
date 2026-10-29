@@ -3111,7 +3111,7 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
       lines.push('', ...notes.map((r) => `${labelled(badge('muted', 'note'), 'note')} ${r.detail.split('\n')[0]}`))
     }
     if (next && report.warned + report.failed > 0) {
-      lines.push('', `${labelled(badge('muted', 'next'), 'next')} lingtai doctor --verbose`)
+      lines.push('', `${labelled(badge('next', 'next'), 'next')} ${paint.accent('lingtai doctor --verbose')}`)
     }
     return lines
   }
