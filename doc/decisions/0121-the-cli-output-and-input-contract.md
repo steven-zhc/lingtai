@@ -43,9 +43,21 @@ using them in a terminal.
    closes `doctor`'s view when something warned or failed. `--verbose` keeps
    the sections.
 
+   **Every line of that view starts in a label column**, right-aligned to the
+   widest label, so a reader scans one edge to know what each line is:
+   `PROBLEM` on a title, `FIX` on the first fix line, `NOTE` on an `info` row,
+   `NEXT` on the closing line; detail and continuation lines leave the column
+   blank. The heading and the counts line stay flush left; the column starts
+   at the first block. A failing title keeps its `✗` after the label
+   (`[problem] ✗ environment · store and log`); a warning has none, so plain
+   mode tells the two apart (§3). The title carries its area tag at the end,
+   `muted`. In this view
+   alone the closing line is the `NEXT` label and the command, in place of
+   `next:`; `init`'s own closing line after the report keeps `next:`.
+
 2. **Symbols and colour come from `packages/env/src/colour.ts`; this ADR adds
-   glyphs, not colours.** Each glyph is drawn in an existing `paint` key and
-   means one thing:
+   glyphs and labels, and no new hue.** Each glyph is drawn in an existing
+   `paint` key and means one thing:
 
    | glyph  | `paint`  | meaning                          |
    | ------ | -------- | -------------------------------- |
@@ -57,13 +69,29 @@ using them in a terminal.
    | (none) | `accent` | headings and running things      |
    | (none) | `muted`  | ids, clocks, hashes, and the area tag on a thing to fix |
 
+   **A label is a word drawn as a badge**: the word, padded by one space each
+   side, on a background. The backgrounds are the existing hues and no others,
+   kept in `colour.ts` beside `paint`:
+
+   | label     | badge                                   | meaning                         |
+   | --------- | --------------------------------------- | ------------------------------- |
+   | `PROBLEM` | `fail`'s red as the background          | a check failed                  |
+   | `PROBLEM` | reversed, no hue                        | a check warned                  |
+   | `FIX`     | `accent`'s cyan as the background       | the command that resolves it    |
+   | `NOTE`    | padded like the others, no background, `muted` | true, and nothing to do  |
+   | `NEXT`    | padded like the others, no background, `muted` | the closing `next:` command |
+
+   The fix command itself is drawn in `accent`. Amber is never a badge. In
+   plain mode (§3) a label is the same word in brackets and lower case
+   (`[problem]`, `[fix]`, `[note]`, `[next]`), so its meaning survives with no
+   escape codes.
+
    A state takes its colour from `stateInk` in `colour.ts`, not from a list
    here. Amber is `signal` and "nothing else may use this" (`colour.ts`): a
    command never draws amber for a thing that is not waiting on a person.
-   A line for a wait says what is asked, in the words of 0118. Two labels are
-   words, not glyphs: `note` labels an `info` row, and `fix` leads the line
-   that says what to run. `doctor`'s default view draws no `!` — a warning is
-   carried by its words and its place after the failures.
+   A line for a wait says what is asked, in the words of 0118. The labels
+   are in the table above; `doctor`'s default view draws no `!` — a warning is
+   carried by its badge, its words and its place after the failures.
 
 3. **Colour is never the only carrier of a meaning.** The glyph and the words
    carry it; colour repeats them. So plain output is the same text with no
