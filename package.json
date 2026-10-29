@@ -1,6 +1,6 @@
 {
   "name": "lingtai",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "Event-sourced scheduler for autonomous code agents",
