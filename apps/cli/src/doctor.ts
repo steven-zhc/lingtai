@@ -2199,7 +2199,7 @@ export function limitsRow(project: string, recipe: Recipe, capabilities: Runtime
     status: 'fail',
     title: `${project}'s ${capabilities.id} ignores a limit its recipe sets`,
     detail:
-      `${carries[0]!.toUpperCase()}${carries.slice(1)}, so the recipe declares a spend nothing will stop\n` +
+      `${carries}, so the recipe declares a spend nothing will stop\n` +
       `${detail} — ` +
       // Both are red; which one this is decides what an overspending run costs.
       (applied.length === 0

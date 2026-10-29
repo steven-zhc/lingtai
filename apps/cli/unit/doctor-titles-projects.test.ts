@@ -106,7 +106,7 @@ describe('runtime: <project> limits', () => {
     expect(row).toMatchObject({ name: 'runtime: alpha limits', status: 'fail' })
     PLAIN(row.title)
     expect(row.fix).toBeUndefined()
-    expect(firstLine(row)).toMatch(/^Codex carries turns and bounds nothing with it, so the recipe declares/)
+    expect(firstLine(row)).toMatch(/^codex carries turns and bounds nothing with it, so the recipe declares/)
     expect(row.detail).toContain('The lever is runtime.agent')
   })
 })
