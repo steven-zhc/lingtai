@@ -317,6 +317,11 @@ function renamedFrom(name: string, from: NodeJS.ProcessEnv): string | null {
   return from[old] ? old : null
 }
 
+/** Why a variable under its old name is no longer read: the rename keeps a project's own variable from being mistaken for Lingtai's. */
+export function renamedNote(was: string, now: string): string {
+  return `${was} is set — it was renamed to ${now}, so that a project's own ${was} can never be confused with Lingtai's. Rename the line.`
+}
+
 function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
   const full = `${PREFIX}TEST_${name}`
   const value = optional(full, from)
@@ -324,8 +329,8 @@ function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
     const was = renamedFrom(full, from)
     throw new Error(
       `${full} is not set, and this caller needs Postgres. ` +
-        (was ? `${was} is set — it was renamed to ${full} (#63). ` : '') +
-        'Since #275 the suite runs on a SQLite file of its own without it — only the files on ' +
+        (was ? `${renamedNote(was, full)} ` : '') +
+        'The suite runs on a SQLite file of its own without it — only the files on ' +
         "@lingtai/event-store/test/postgres's list, which assert Postgres itself, need " +
         `${full} and ${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own, exported into the shell that runs the suite.`,
     )
@@ -340,8 +345,7 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
     throw new Error(
       `${name} is not set. ` +
         (was
-          ? `${was} is set — it was renamed to ${name} (#63), so that a project's own ` +
-            `${was} can never be confused with Lingtai's. Rename the line.`
+          ? renamedNote(was, name)
           : name.includes('DATABASE_URL')
             ? 'lingtai init asks for one and writes it to ~/.lingtai/config.yml as database.url; exporting it also works.'
             : 'Write it in ~/.lingtai/config.yml or export it, and restart.'),
@@ -513,7 +517,7 @@ export const SQLITE_LOG = 'lingtai.db'
  */
 export const SQLITE_MACHINE =
   'SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one ' +
-  'can read it, and switching stores later is a new log rather than the same one somewhere else (0055 §3)'
+  'can read it, and switching stores later starts a new, empty log and moves nothing from this one'
 
 /**
  * The session-mode connection that goes with a chosen Postgres URL — see
@@ -1081,8 +1085,8 @@ export function lockDir(from: NodeJS.ProcessEnv = process.env): string {
     if (!dir) {
       throw new Error(
         'LINGTAI_TEST_LOCK_DIR is not set, and this process is a test run — the integration suite’s ' +
-          'globalSetup (test-support/teardown.ts) makes one fresh per run; a lock taken without it would land in ' +
-          'the operator’s own ~/.lingtai/locks (#273)',
+          'setup makes one fresh per run; a lock taken without it would land in ' +
+          'the operator’s own ~/.lingtai/locks',
       )
     }
     return dir
@@ -1307,7 +1311,7 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
-          ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
+          ? renamedNote('GITHUB_APP_ID', `${PREFIX}GITHUB_APP_ID`)
           : `${file} names no github.app_id, and nothing exported does — the board's setup page or ` +
             'lingtai init writes it there.') +
         (elected.unreadable === undefined ? '' : ` ${elected.unreadable}.`),
@@ -1326,14 +1330,17 @@ export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCrede
       source: elected.source,
     }
   }
-  throw new Error(
-    elected.source === 'environment'
-      ? `${PREFIX}GITHUB_APP_ID is exported but neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ` +
-          `${PREFIX}GITHUB_APP_PRIVATE_KEY is — the App in the environment answers every name, so export its key ` +
-          'beside it and restart.'
-      : `${elected.source} names github.app_id but neither github.app_private_key_path nor github.app_private_key. ` +
-          'See doc/decisions-archive/0006-github-app.md for creating the App.',
-  )
+  throw new Error(githubAppKeyMissing(elected.source))
+}
+
+/** The App has an id but no key: where the id came from decides what to say. */
+export function githubAppKeyMissing(source: string): string {
+  return source === 'environment'
+    ? `${PREFIX}GITHUB_APP_ID is exported but neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ` +
+        `${PREFIX}GITHUB_APP_PRIVATE_KEY is — the App in the environment answers every name, so export its key ` +
+        'beside it and restart.'
+    : `${source} names github.app_id but neither github.app_private_key_path nor github.app_private_key. ` +
+        "Create the App from the board's setup page or with lingtai init, which writes the key there."
 }
 
 /** Whether the App is configured at all, without throwing to find out — the same election as `githubApp`. */

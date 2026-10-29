@@ -736,11 +736,7 @@ async function chooseStore(
     // is that same run; naming another is refused, never ignored).
     if (flag !== null && flag.trim() !== preset.url) {
       const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
-      return refuse(
-        world,
-        `${given} ${redactUrl(flag)}, but ${preset.from} names ${redactUrl(preset.url)}, and ` +
-          'an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written',
-      )
+      return refuse(world, exportedUrlRefusal(given, redactUrl(flag), preset.from, redactUrl(preset.url)))
     }
     const check = await spun(world, 'connecting to the database', () => world.database(preset.url))
     if (!check.ok) {
@@ -883,18 +879,37 @@ async function chooseStore(
  * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
  * documented switch leaves, and the empty answer completes it in the same way.
  */
+/** `--database-url` (or `--store postgres --database-url`) named a URL other than the exported one. */
+export function exportedUrlRefusal(given: string, flag: string, from: string, exported: string): string {
+  return (
+    `${given} ${flag}, but ${from} names ${exported}, and ` +
+    'an exported URL wins over the file. Unset it, or leave out --database-url. Nothing was written'
+  )
+}
+
+/** Why `--store sqlite` cannot flip a Postgres machine, and the edit that can. */
+export function sqliteEditSentence(path: string): string {
+  return (
+    'another store is a new, empty log rather than this one moved, so changing it is an edit and not a ' +
+    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`
+  )
+}
+
+/** `--store sqlite` while an exported URL says Postgres. */
+export function sqliteExportedRefusal(from: string): string {
+  return (
+    `--store sqlite, but ${from}, and an exported URL wins over the file — this machine would ` +
+    'say SQLite and run Postgres. Unset it, or leave out --store sqlite. Nothing was written'
+  )
+}
+
 function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, config: Document, path: string): string | null {
   const read = storeChoice(world.env, machineFor(world, path))
   // The way through, and it works with no terminal: the edit leaves the
   // two-keys half-state, which `--store sqlite` completes.
-  const edit =
-    'another store is a new, empty log rather than this one moved (0055 §3), so changing it is an edit and not a ' +
-    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`
+  const edit = sqliteEditSentence(path)
   if (!('refused' in read) && read.where === 'environment' && read.store === 'postgres') {
-    return (
-      `--store sqlite, but ${read.from}, and an exported URL wins over the file (0056 §3) — this machine would ` +
-      'say SQLite and run Postgres. Unset it, or leave out --store sqlite. Nothing was written'
-    )
+    return sqliteExportedRefusal(read.from)
   }
   if (('refused' in read && read.because === 'no url') || (!('refused' in read) && read.store === 'postgres')) {
     return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`

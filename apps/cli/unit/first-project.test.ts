@@ -246,7 +246,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
 
     const result = await chooseFirstProject(world, { local: '/repo' })
 
-    expect(result).toEqual({ refused: expect.stringContaining('merge-action.ts:47') })
+    expect(result).toEqual({ refused: expect.stringContaining("pushing to the repository's own origin") })
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
   })

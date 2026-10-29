@@ -73,6 +73,9 @@ async function resolvedRecipe(
   }
 }
 
+/** Why a project with work items in the log cannot change its ticket source. */
+export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own tickets into those same streams'
+
 /**
  * Where this project's tickets come from — `github` or `db`.
  *
@@ -116,14 +119,13 @@ export async function askTickets(
       return {
         refused:
           `--tickets ${given}, but ${project} already has work items in the log (${history.join(', ')}), ` +
-          `numbered under source.tickets: ${current} — a different source would number its own tickets into ` +
-          `those same streams (#381). Leave out --tickets, or remove the project first. ${kept}`,
+          `numbered under source.tickets: ${current} — ${DIFFERENT_SOURCE_CLASH}. Leave out --tickets, or remove the project first. ${kept}`,
       }
     }
     world.log(
       paint.muted(
         `tickets       ${current} — kept: the log already has work items for this project (${history.join(', ')}), ` +
-          'and a different source would number its tickets into those same streams (#381)',
+          `and ${DIFFERENT_SOURCE_CLASH}`,
       ),
     )
     return { changes: [], current }

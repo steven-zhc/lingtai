@@ -285,6 +285,10 @@ export async function logReachable(where: string, queries: LogQueries): Promise<
   }
 }
 
+export const GITHUB_APP_NOT_CONFIGURED =
+  'no GitHub App is configured — ~/.lingtai/config.yml names no github.app_id and key, and nothing ' +
+  "exported does, so no repository can be onboarded yet. The board's setup page or lingtai init writes one."
+
 /**
  * The rows that are about **Postgres** and not about a log, and the sentence
  * each gives a machine that runs a file instead.
@@ -328,15 +332,15 @@ export function postgresOnlyRows(): { name: string; because: string }[] {
     {
       name: 'postgres: direct connection is session mode',
       because:
-        'session mode is about a pooler handing a LISTEN registration to someone else (0009); a reader of a file ' +
-        'is told about an append by polling it (createPollingWaker, #178), so there is no connection here to be in ' +
+        'session mode is about a pooler handing a LISTEN registration to someone else; a reader of a file ' +
+        'is told about an append by polling it, so there is no connection here to be in ' +
         'the wrong mode',
     },
     {
       name: 'schema: tables',
       because:
-        'events and checkpoints are created by the store itself on every open (packages/event-store/src/sqlite.ts, ' +
-        'packages/projector/src/sqlite.ts), so there is no bootstrap step that could have been missed',
+        'events and checkpoints are created by the store itself every time it opens the file, ' +
+        'so there is no bootstrap step that could have been missed',
     },
     {
       name: 'schema: optimistic concurrency',
@@ -351,7 +355,7 @@ export function postgresOnlyRows(): { name: string; because: string }[] {
     },
     {
       name: 'schema: notify trigger',
-      because: 'nothing announces an append from inside the file; a second reader finds out by polling (0055 §3)',
+      because: 'nothing announces an append from inside the file; a second reader finds out by polling',
     },
     {
       name: 'schema: payload column',
@@ -866,10 +870,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
     return {
       name,
       status: 'skip',
-      detail:
-        'no GitHub App is configured — ~/.lingtai/config.yml names no github.app_id and key, and nothing ' +
-        "exported does, so no repository can be onboarded yet. The board's setup page writes one; " +
-        'see doc/decisions-archive/0006-github-app.md.',
+      detail: GITHUB_APP_NOT_CONFIGURED,
     }
   }
   try {

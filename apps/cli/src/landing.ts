@@ -111,6 +111,13 @@ async function resolvedFile(
   }
 }
 
+/** The recipe's `runtime.limits.usd` is written, but only claude-code enforces it. */
+export function dollarCeilingNote(named: unknown): string {
+  return typeof named === 'string'
+    ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime`
+    : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.usd is written, and holds only where claude-code is the runtime that runs'
+}
+
 /**
  * **Land on a branch, or hold every pass for a person** — `--land <branch>|hold`.
  *
@@ -300,13 +307,7 @@ export async function askLimits(
   // may not be claude-code.
   const named = await readRecipeKey(project, ['runtime', 'agent'], options)
   if (after.limits.usd !== undefined && named !== 'claude-code') {
-    world.log(
-      paint.muted(
-        typeof named === 'string'
-          ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime (#370)`
-          : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.usd is written, and holds only where claude-code is the runtime that runs (#370)',
-      ),
-    )
+    world.log(paint.muted(dollarCeilingNote(named)))
   }
   return { ok: true }
 }
