@@ -12,6 +12,7 @@ import {
   shareFixes,
   subscriberRow,
   tally,
+  timed,
 } from '../src/doctor.ts'
 
 const results: DoctorReport['results'] = [
@@ -498,5 +499,13 @@ ${subscribers}
     const env = extensionRow('a', await resolve(recipeWith(telegram, '\n      env: [SCANNER_TOKEN]')), held({}))
     shareFixes([sub, env])
     expect(sub.fix).toBeUndefined()
+  })
+
+  it('shares the fix between rows that runDoctor has timed, which copies each one', async () => {
+    const env = extensionRow('lingtai', await resolve(recipeWith(telegram)), held({}))
+    const sub = subscriberRow([{ name: 'telegram', total: 1, recent: 1, last: new Date(), lastReason: 'r' }] as never)
+    const rs = [sub, env].map((r) => timed(r, 5))
+    shareFixes(rs)
+    expect(rs[0]!.fix).toBe(env.fix)
   })
 })

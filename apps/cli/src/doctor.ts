@@ -2246,6 +2246,16 @@ function extensionOutcome(
 const shortOf = new WeakMap<CheckResult, Record<DeclaredExtension['where'], string[]>>()
 const failingOf = new WeakMap<CheckResult, string[]>()
 
+/** A copy of the row with its time; the facts above are keyed by the row object, so they move to the copy. */
+export function timed(row: CheckResult, ms: number): CheckResult {
+  const copy = { ...row, ms }
+  const short = shortOf.get(row)
+  if (short !== undefined) shortOf.set(copy, short)
+  const failing = failingOf.get(row)
+  if (failing !== undefined) failingOf.set(copy, failing)
+  return copy
+}
+
 /**
  * The subscriber row takes the `fix` of the one project row that is short of exactly that subscriber, so the
  * two are one problem drawn once. Nothing is copied when the match is not unique: `subscriberFailures` groups
@@ -2706,7 +2716,7 @@ export async function runDoctor(
     const t0 = performance.now()
     const value = await run()
     const ms = Math.round(performance.now() - t0)
-    for (let i = from; i < results.length; i++) results[i] = { ...results[i]!, ms }
+    for (let i = from; i < results.length; i++) results[i] = timed(results[i]!, ms)
     reach.onProgress?.({ label, phase: 'end', done: results.length })
     return value
   }
