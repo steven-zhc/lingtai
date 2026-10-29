@@ -57,4 +57,35 @@ describe('finish', () => {
     ).rejects.toThrow('pre-parse')
     expect(close).toHaveBeenCalledTimes(1)
   })
+
+  it('asks for an exit with the code when close hangs, and not when it closes', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exit = vi.fn()
+    const done = finish(
+      async () => 4,
+      () => new Promise<void>(() => {}),
+      exit,
+    )
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(await done).toBe(4)
+    expect(exit).toHaveBeenCalledWith(4)
+    const clean = vi.fn()
+    await finish(
+      async () => 0,
+      async () => {},
+      clean,
+    )
+    expect(clean).not.toHaveBeenCalled()
+  })
+
+  it('keeps the code when close rejects with null', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const code = await finish(
+      async () => 7,
+      () => Promise.reject(null),
+    )
+    expect(code).toBe(7)
+    expect(err).toHaveBeenCalledTimes(1)
+  })
 })

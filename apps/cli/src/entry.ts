@@ -24,7 +24,16 @@ if (route === 'effect') {
       // Already imported by `cli.ts`, so this loads nothing new; dynamic so
       // that help and unknown commands never touch the store.
       const { closeProcessLog } = await import('@lingtai/event-store')
-      return finish(() => runCli(process.argv), closeProcessLog)
+      return finish(
+        () => runCli(process.argv),
+        closeProcessLog,
+        (code) => {
+          // The close gave up with its socket still open, which would hold the
+          // process past the budget; leave once what is already written is out.
+          process.exitCode = code
+          process.stdout.write('', () => process.stderr.write('', () => process.exit(code)))
+        },
+      )
     })
     .then((code) => {
       // `init` may have started the board in this process, and its listening
