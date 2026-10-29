@@ -773,6 +773,75 @@ doctor
 
 No ticket is run on it: the pass is the same as round B's.
 
+
+### Round B summary (2026-10-29)
+
+**Result.** A first `init` on a new machine, answered by hand with Codex,
+works: it asked 18 questions in order, wrote the recipe, the trial build left
+no worktree (`worktree list` shows only the checkout), doctor passed (`all 27
+passed`). #1 landed (machine time 3 min). The rewritten refuse-and-fix ticket
+**did refuse and did fix** (B5), and then stopped at the cold reviewer. **The
+second repository was not tested**: the clone block ran in a terminal with no
+`TRIAL_SRC`, so `git clone … $CHAPTER_GARDEN_B2` cloned into `~/chapter-garden`
+and the bare clone failed; `add` then had no directory to add ("…
+chapter-garden-b2 is not a git repository — . Nothing was written"). To run it,
+the clone block as it is now (it sets its own environment), then the `add`
+block.
+
+**What the run showed**, with the evidence above:
+
+- **B3. Codex's runs have no cost.** `status`: "no reported cost + ~$0.00 est.
+  + 2 unknown (no usage reported ×2)"; `report`: "cost mean $0.00 reported ·
+  2 unknown", "spend in the window 5 unknown". The reason is named (#692's
+  check passes), but Part 1 with Codex has no dollar figure to put in the
+  tutorial, and `/spend` cannot hold a Codex project to anything.
+- **B4. The trial build reports nothing.** `init` printed "running the trial
+  build — this can take minutes" and "cutting a throwaway worktree at main —
+  the first time this clones the repository", and went straight on to
+  "where this project's tickets live", with no line saying it passed, how long
+  it took, or what it ran. (`init` ran 12:53:45 → 14:10:13; whether the trial
+  build is in that, or the operator was away, is not on the screen.)
+- **B5. The rewritten refuse-and-fix ticket works for the build and then
+  trips the reviewer.** From the run log: the writer wrote `order: "2"` and ran
+  no checks ("I haven't received Lingtai's refusal, so I'm leaving that value in
+  place and holding off on the two npm commands"); the build refused; `fix:1`
+  in the same pass changed it to `order: 2` ("The refusal matches the chapter's
+  front matter: `order` is quoted, while the format requires an integer"). Then
+  the cold reviewer read the ticket literally and refused the fix as **major**:
+  "The chapter uses numeric `order: 2`, so it does not create the schema
+  failure required by the ticket." The pass went to a person
+  (`ProposedEscalated`), and `approve` refused without a reason: "✗ not
+  approved (reason-required) … review:review still refuses 7b5743b, so
+  approving waives it — say why." **For the tutorial**: the ticket must also
+  say what is true at the end, e.g. "Done when the chapter's front matter says
+  `order: 2`, a number, after the refusal is fixed", so the reviewer holds the
+  fix to that and not to the quoted string. #2 is still open.
+- **B6. doctor's fix for a released binary is a source command.** After `add`:
+  "PROBLEM the daemon cannot say which commit it runs … FIX lingtai restart
+  \"picking up main\"". With A13: a binary has a version, not a commit, and
+  `restart` checks a git `HEAD` (CLAUDE.md, *Running Lingtai on Lingtai*).
+- **B7. `add`'s refusal does not say where it looked.** ". is not a git
+  repository — fatal: not a git repository …" (from `~`), and "…/chapter-garden-b2
+  is not a git repository — . Nothing was written" (a directory that does not
+  exist; the detail after the dash is just "."). Better: the absolute path, and
+  "does not exist" when it does not.
+- **Again from round A**: A2 (the bare headings, interleaved with the questions
+  here), A3 ("GitHub App none yet" on a local project), A4 (`Projects` twice),
+  A7 (`next:` names `run`), A12–A18 (`status` says the hold three times and
+  calls it a failure; `approve` "continues at proposed"; `report`'s
+  `SignoffRequired`, `ProposedEscalated`, `censored`). They are not
+  runtime-specific.
+- **Not Lingtai's**: the fix round's agent ran `npm run check` with
+  `PATH=…/mise/installs/node/24.20.0/bin`, choosing Node 24 itself (the clone
+  predates chapter-garden#5 and pins 24.18.0). The writer wrote only the
+  Chinese chapter; Chapter Garden allows a translation later.
+- **Left on the machine**: `~/chapter-garden`, the stray clone from the failed
+  block. Delete it with the cleanup.
+
+**Decided / to decide**: B5 changes the tutorial's refuse-and-fix text (#611)
+a second time; B3 decides whether the tutorial can state a cost for Codex at
+all. #2: close it with a reason (`lingtai close`), or approve with one.
+
 **Round B stuck:**
 
 - **B2. Chapter Garden's checks are not detected.** `init` skipped "run these
