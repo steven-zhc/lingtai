@@ -34,7 +34,7 @@ finding: write it down with its words.
 | --- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | 1   | a Postgres URL for the log — empty for SQLite                                           | Enter                                                      | SQLite                                                                                           |
 | 2   | a GitHub project, or one on this machine only                                           | `local`                                                    | its default is `github`                                                                          |
-| 3   | the directory of the repository on this machine                                         | `/Users/steven/lingtai-trial/src/chapter-garden-b`         | the full path, not `.`: the project is named after the directory                                 |
+| 3   | the directory of the repository on this machine                                         | `/Users/steven/lingtai-trial/src/chapter-garden-b`         | the full path, so it does not depend on where the terminal is (`.` would work too: the name comes from the repository's top directory, `first-project.ts:385,398`) |
 | 4   | the branch this project's recipe governs and merges into                                | Enter if it offers `main`                                  | the checklist asks whether it is detected; if it offers nothing, write that down and type `main` |
 | 5   | use every default?                                                                      | `no`                                                       | the defaults choose Claude Code; this round is Codex                                             |
 | 6   | which agent writes the change (…)                                                       | `codex`                                                    |                                                                                                  |
@@ -692,7 +692,23 @@ kind and directory are not asked: the machine is set up and `--local .` named
 the directory). The project's name is the directory's, `chapter-garden-b2`.
 
 ```paste
+steven in 🌐 foundry in ~ took 1m48s
+❯ date
+  lingtai add --local .
+  date
+  lingtai doctor
+Thu Oct 29 14:28:06 CDT 2026
+. is not a git repository — fatal: not a git repository (or any of the parent directories): .git. Nothing was written
+Thu Oct 29 14:28:07 CDT 2026
+doctor
 
+1 to fix · 5 passed · 6 not checked here · 3 not implemented yet
+
+ PROBLEM  ✗ this machine has not chosen a store  · store and log
+          nothing on this machine says which store it runs: /Users/steven/.lingtai/config.yml names no database.store — lingtai init asks and writes the choice. An exported LINGTAI_DATABASE_URL also decides, and supplies the URL with it.
+     FIX  lingtai init
+
+    NEXT  lingtai doctor --verbose
 ```
 
 - [ ] It asks only what a second repository needs: nothing about the store,
