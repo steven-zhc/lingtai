@@ -1103,7 +1103,14 @@ export function liveInitWorld(): InitWorld {
     // that outbound request is `doctor` and `upgrade`'s alone to make.
     doctor: async () => {
       const { doctorReport, formatReport } = await import('./doctor.ts')
-      const report = await doctorReport()
+      const { doctorProgress } = await import('./steps.ts')
+      const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: false })
+      let report
+      try {
+        report = await doctorReport({ onProgress: progress.onProgress })
+      } finally {
+        progress.clear()
+      }
       return { text: formatReport(report), failed: report.failed > 0 }
     },
   }

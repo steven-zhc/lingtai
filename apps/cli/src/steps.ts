@@ -13,6 +13,7 @@
 import { coloured, paint } from '@lingtai/env/colour'
 import ora from 'ora'
 
+import type { DoctorProgress } from './doctor.ts'
 import { interactivity, refusal } from './prompt.ts'
 
 export interface Steps {
@@ -90,4 +91,37 @@ export const noSteps: Steps = {
   begin() {},
   progress() {},
   end() {},
+}
+
+/**
+ * The line `lingtai doctor` keeps on stderr while it runs: a spinner, the step in flight and how many
+ * rows are done. Drawn only where all of stderr, stdout and colour are live (`lingtai doctor | less`
+ * has a piped stdout and a TTY stderr), and never under `--json`. No signal listener (0121 §10).
+ */
+export function doctorProgress(how: {
+  stdout: { isTTY?: boolean }
+  stderr: { isTTY?: boolean }
+  json: boolean
+  spinner?: () => Spinner
+}): { onProgress: (p: DoctorProgress) => void; clear: () => void } {
+  const live = !how.json && how.stderr.isTTY === true && how.stdout.isTTY === true && coloured(how.stderr)
+  if (!live) return { onProgress: () => {}, clear: () => {} }
+  let spinner: Spinner | null = null
+  let label = ''
+  const text = (done: number): string => `checking ${label} · ${done} done`
+  return {
+    onProgress(p) {
+      if (p.phase === 'start') {
+        label = p.label
+        if (spinner === null) {
+          spinner = (how.spinner ?? (() => oraSpinner(process.stderr)))()
+          spinner.start(text(p.done))
+        } else spinner.message(text(p.done))
+      } else spinner?.message(text(p.done))
+    },
+    clear() {
+      spinner?.clear()
+      spinner = null
+    },
+  }
 }
