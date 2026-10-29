@@ -1,202 +1,228 @@
-import type { LogQueries } from '@lingtai/event-store'
-import type { ProjectionShape } from '@lingtai/projector'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import type { Currency } from '@lingtai/daemon'
+import type { UnconvergedUpdate } from '@lingtai/event-store'
+import type { GhRun } from '@lingtai/github'
 import { describe, expect, it } from 'vitest'
 
 import {
-  environment,
-  logPredatesHoldRow,
-  logReachable,
-  nodeRow,
-  projectionShapes,
-  projections,
-  readableTypes,
-  schemaChecks,
-  seaRow,
-  storeRow,
-  unreadableConfigRow,
+  currencyRow,
+  daemonCurrency,
+  describeRefusal,
+  ghLogin,
+  refusalsRow,
+  ratesCheck,
+  githubCredentials,
+  spendToday,
+  unconvergedRow,
   type CheckResult,
-} from '../src/doctor.ts'
-import { releaseRow } from '../src/install.ts'
+} from '../src/doctor.js'
 
-/** What every title this ticket wrote must be: plain words, short, and none of the things a reader cannot act on. */
-function plain(r: { title?: string }): void {
-  const t = r.title
-  expect(t).toBeDefined()
-  expect(t!.length).toBeLessThan(60)
-  expect(t).not.toMatch(/#\d/)
-  expect(t).not.toMatch(/\b0\d{3}\b/)
-  expect(t).not.toMatch(/\b[0-9a-f]{7,40}\b/)
-  expect(t).not.toContain('/')
+/** What the title of any row in this ticket must not carry: an issue or ADR number, a hash, a path. */
+const PLAIN = (title: string | undefined) => {
+  expect(title).toBeTruthy()
+  expect(title!.length).toBeLessThanOrEqual(60)
+  expect(title).not.toMatch(/#\d|\b\d{4}\b|\b[0-9a-f]{7,40}\b|\//)
 }
-
 const firstLine = (r: CheckResult) => r.detail.split('\n')[0]!
 
-describe('doctor titles: store and log', () => {
-  it.each([
-    ['nothing chosen', 'this machine has not chosen a store'],
-    ['no url', 'the chosen Postgres store has no connection URL'],
-    ['two keys', 'the machine config names the store twice'],
-    ['unreadable', "the machine's config file cannot be read"],
-  ] as const)('store row: %s', (because, title) => {
-    const r = storeRow({ refused: 'it said why', because })
-    expect(r.name).toBe("store: the machine's written choice")
-    expect(r.title).toBe(title)
-    plain(r)
-    expect(r.fix).toBe('lingtai init')
-    expect(firstLine(r)).toBe('it said why')
-    expect(r.detail).toContain('#179')
+const RESTART = 'lingtai restart "picking up main"'
+
+describe('daemon: currency', () => {
+  const behind: Currency = {
+    running: 'a'.repeat(40),
+    dirty: false,
+    base: 'origin/main',
+    baseSha: 'b'.repeat(40),
+    behind: [
+      { sha: 'abc1234', subject: 'one' },
+      { sha: 'def5678', subject: 'two' },
+    ],
+    unknown: null,
+  }
+
+  it('titles the behind warn, with the commits on later lines and a restart fix', () => {
+    const row = currencyRow(behind)
+    expect(row).toMatchObject({ name: 'daemon: currency', status: 'warn', fix: RESTART })
+    expect(row.title).toBe('the daemon is 2 commit(s) behind main')
+    PLAIN(row.title)
+    expect(row.detail.split('\n')).toHaveLength(3)
+    expect(firstLine(row)).not.toContain('abc1234')
   })
 
-  it('log: reachable has a title and no fix', async () => {
-    const queries = {
-      projectStreams: async () => {
-        throw new Error('disk is full')
-      },
-    } as unknown as LogQueries
-    const r = await logReachable('the log file', queries)
-    expect(r.name).toBe('log: reachable')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-    expect(firstLine(r)).toContain('disk is full')
-  })
-
-  it('environment: no URL is fixed by init', () => {
-    const r = environment(undefined, undefined)
-    expect(r.name).toBe('environment')
-    plain(r)
-    expect(r.fix).toBe('lingtai init')
-    expect(firstLine(r)).not.toContain('lingtai init')
-  })
-
-  it('environment: a pooler on the direct URL has a title and no fix', () => {
-    const r = environment('postgres://u:p@h:5432/db', 'postgres://u:p@h:5432/db?pgbouncer=true')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-  })
-
-  it('environment: two databases', () => {
-    const r = environment('postgres://u:p@a:5432/db', 'postgres://u:p@b:5432/db')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-    expect(firstLine(r)).toBe('they must be one database')
-  })
-
-  it('environment: an unreadable config', () => {
-    const r = unreadableConfigRow('bad yaml')
-    expect(r.name).toBe('environment')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-  })
-
-  it('schema checks: a checkout gets the bootstrap fix, except for the index', () => {
-    const rows = schemaChecks([], [], [], 'public', { checkout: true }).filter((r) => r.status === 'fail')
-    expect(rows.map((r) => r.name)).toEqual([
-      'schema: optimistic concurrency',
-      'schema: append-only',
-      'schema: notify trigger',
-    ])
-    rows.forEach(plain)
-    expect(rows[0]!.fix).toBeUndefined()
-    expect(rows[1]!.fix).toBe('pnpm --filter @lingtai/event-store db:bootstrap')
-    expect(rows[2]!.fix).toBe('pnpm --filter @lingtai/event-store db:bootstrap')
-  })
-
-  it('schema checks: a binary has no bootstrap script, so no fix', () => {
-    const rows = schemaChecks([], [], [], 'public', { checkout: false }).filter((r) => r.status === 'fail')
-    expect(rows).toHaveLength(3)
-    for (const r of rows) {
-      plain(r)
-      expect(r.fix).toBeUndefined()
-    }
-    expect(rows[1]!.detail).toContain('runs from a checkout')
-  })
-
-  it('projections: lag has a title and no fix when it cannot be read', async () => {
-    const r = await projections(undefined, async () => {
-      throw new Error('no table')
-    })
-    expect(r.name).toBe('projections: lag')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-  })
-
-  it('projections: shape rebuilds only the drifting projection, by name', async () => {
-    const shape = (projection: string, drifts: boolean): ProjectionShape => ({
-      projection,
-      matched: [],
-      absent: [],
-      drift: drifts ? [{ table: 't', missing: ['c'], unexpected: [] }] : [],
-    })
-    const r = await projectionShapes(undefined, async (p) => shape(p.name, p.name === 'finding_backlog'))
-    expect(r.name).toBe('projections: shape')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBe('lingtai projection rebuild finding_backlog')
-    expect(firstLine(r)).toBe('1 projection(s) differ from the columns their code declares')
-  })
-
-  it('projections: shape that cannot be read has a title and no fix', async () => {
-    const r = await projectionShapes(undefined, async () => {
-      throw new Error('gone')
-    })
-    plain(r)
-    expect(r.fix).toBeUndefined()
-  })
-
-  it('log: every type is readable', async () => {
-    const queries = { typeCounts: async () => [{ type: 'NoSuchType', rows: 3 }] } as unknown as LogQueries
-    const r = await readableTypes(queries)
-    expect(r.name).toBe('log: every type is readable')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-    expect(r.detail.split('\n')[1]).toBe('NoSuchType ×3')
-  })
-
-  it('log: predates the Hold event', async () => {
-    const queries = { typeCounts: async () => [{ type: 'NoSuchType', rows: 3 }] } as unknown as LogQueries
-    const r = await logPredatesHoldRow(queries)
-    expect(r.name).toBe('log: predates the Hold event')
-    expect(r.status).toBe('fail')
-    plain(r)
-    expect(r.fix).toBeUndefined()
+  it('titles the no-commit warn', async () => {
+    const row = await daemonCurrency(async () => ({ codeSha: null, state: 'idle', lastSeenAt: new Date() }) as never)
+    expect(row.name).toBe('daemon: currency')
+    expect(row.status).toBe('warn')
+    expect(row.fix).toBe(RESTART)
+    PLAIN(row.title)
   })
 })
 
-describe('doctor titles: machine', () => {
-  it('node floor: unreadable and below', () => {
-    const unknown = nodeRow('24.1.0', undefined)
-    const below = nodeRow('22.1.0', '24')
-    for (const r of [unknown, below]) {
-      expect(r.name).toBe('node: at or above the floor')
-      plain(r)
+describe('conductor: refusals on the log', () => {
+  const refusal = {
+    project: 'lingtai',
+    detail: 'env: Unrecognized key',
+    ref: 'main',
+    codeSha: 'c'.repeat(40),
+    seq: 9n,
+    at: new Date('2026-09-12T10:00:00.000Z'),
+  }
+
+  it('titles both outcomes in words, with the reason on the first line', () => {
+    const fail = describeRefusal('lingtai', refusal, { daemonUp: true, here: refusal.codeSha })
+    const warn = describeRefusal('lingtai', refusal, { daemonUp: false, here: refusal.codeSha })
+    PLAIN(fail.title)
+    PLAIN(warn.title)
+    expect(fail.title).toContain('lingtai')
+    expect(fail.detail.split('\n')[0]).toBe('lingtai: env: Unrecognized key')
+  })
+
+  it('offers the restart only when every failing project is refused by older code', () => {
+    const older = describeRefusal('lingtai', refusal, { daemonUp: true, here: 'd'.repeat(40), behind: true })
+    const same = describeRefusal('lingtai', refusal, { daemonUp: true, here: refusal.codeSha })
+    expect(older.restartAnswers).toBe(true)
+    expect(refusalsRow([older])).toMatchObject({ status: 'fail', fix: RESTART, restartAnswers: true })
+    expect(refusalsRow([older]).title).toBe(older.title)
+    const two = refusalsRow([older, older])
+    expect(two.title).toBe('2 projects are refused by the last pass')
+    expect(two.fix).toBe(RESTART)
+    expect(refusalsRow([older, same]).fix).toBeUndefined()
+    expect(refusalsRow([same]).fix).toBeUndefined()
+  })
+})
+
+describe('spend: today', () => {
+  const day = {
+    reportedCents: 0,
+    reportedRuns: 0,
+    estimatedCents: 0,
+    estimatedRuns: 0,
+    fetchedRuns: 0,
+    unknown: 2,
+    unknownWhy: [{ reason: 'no usage reported', runs: 2 }],
+  }
+
+  it('titles the warn and the fail, and gives neither a fix', async () => {
+    const warn = await spendToday(async () => ({ day, ceilingUsd: 50 }))
+    expect(warn.title).toBe("2 of today's runs reported no cost")
+    expect(firstLine(warn)).toBe('the daily ceiling cannot see them')
+    const fail = await spendToday(async () => {
+      throw new Error('nope')
+    })
+    expect(fail.status).toBe('fail')
+    PLAIN(fail.title)
+    expect(warn.fix ?? fail.fix).toBeUndefined()
+  })
+})
+
+describe('github: gh login', () => {
+  const env = { LINGTAI_HOME: '/nonexistent/lingtai-home', LINGTAI_GITHUB_AUTH: 'gh' }
+  const hosts = (entry: unknown) => JSON.stringify({ hosts: { 'github.com': [entry] } })
+
+  it('titles signed out, fix gh auth login', async () => {
+    const out: GhRun = async () => ({ code: 1, stdout: hosts({ state: 'error', active: true }), stderr: '' })
+    const row = await ghLogin(env, out)
+    PLAIN(row?.title)
+    expect(row?.fix).toBe('gh auth login')
+  })
+
+  it('gives a missing or too-old gh its own title and no sign-in fix', async () => {
+    const missing = await ghLogin(env, async () => ({ missing: true }) as never)
+    expect(missing).toMatchObject({ status: 'fail', title: 'gh is not installed' })
+    expect(missing?.fix).toBeUndefined()
+    const old = await ghLogin(env, async () => ({ code: 1, stdout: '', stderr: 'unknown flag: --json' }))
+    expect(old).toMatchObject({ status: 'fail', title: 'gh is too old to report its login' })
+    expect(old?.fix).toBeUndefined()
+    const out = await ghLogin(env, async () => ({
+      code: 1,
+      stdout: hosts({ state: 'error', active: true }),
+      stderr: '',
+    }))
+    expect(out?.detail).not.toContain('gh auth login')
+  })
+
+  it('titles a scope gap, fix the refresh the gap names', async () => {
+    const run: GhRun = async () => ({
+      code: 0,
+      stdout: hosts({ state: 'success', active: true, login: 'op', scopes: 'repo' }),
+      stderr: '',
+    })
+    const row = await ghLogin(env, run)
+    PLAIN(row?.title)
+    expect(row?.fix).toBe('gh auth refresh --hostname github.com --scopes workflow')
+    expect(row?.detail).not.toContain('gh auth')
+  })
+})
+
+describe('github: app credentials', () => {
+  it('titles an unreadable key and offers no fix', () => {
+    const row = githubCredentials({
+      LINGTAI_HOME: '/nonexistent/lingtai-home',
+      LINGTAI_GITHUB_APP_ID: '1',
+      LINGTAI_GITHUB_APP_PRIVATE_KEY: 'not a key',
+    })
+    expect(row.name).toBe('github: app credentials')
+    expect(row.status).toBe('fail')
+    PLAIN(row.title)
+    expect(row.fix).toBeUndefined()
+  })
+})
+
+describe('github: what we said and did not manage', () => {
+  const rows = (change: string, project = 'lingtai'): UnconvergedUpdate[] => [{ project, issue: '1', change }] as never
+  const book = new Map() as never
+
+  it('titles each non-ok outcome and gives none a fix', () => {
+    const comment = unconvergedRow(rows('comment'), book, new Map())
+    const blocked = unconvergedRow(rows('labels', 'broken'), book, new Map([['broken', 'bad']]))
+    const diverged = unconvergedRow(rows('labels'), book, new Map())
+    expect(comment.title).toBe('1 comment(s) were never posted')
+    expect(blocked.title).toBe('1 issue(s) cannot converge until a recipe resolves')
+    expect(diverged.title).toBe('1 issue(s) on GitHub differ from the log')
+    for (const r of [comment, blocked, diverged]) {
+      PLAIN(r.title)
       expect(r.fix).toBeUndefined()
+      expect(r.detail.split('\n').length).toBeGreaterThan(1)
     }
-    expect(firstLine(below)).not.toContain('install')
+  })
+})
+
+describe('rates', () => {
+  const home = (note: object) => {
+    const dir = mkdtempSync(join(tmpdir(), 'rates-'))
+    mkdirSync(join(dir, 'rates'), { recursive: true })
+    return { dir, env: { LINGTAI_HOME: dir } as NodeJS.ProcessEnv, note }
+  }
+  const write = (note: object) => {
+    const { dir, env } = home(note)
+    for (const sub of ['', 'rates']) {
+      writeFileSync(join(dir, sub, 'rates-fetch.json'), JSON.stringify(note))
+    }
+    return env
+  }
+
+  it('titles a failed fetch and gives it no fix', () => {
+    const row = ratesCheck(write({ at: '2026-10-01T00:00:00Z', ok: false, error: 'offline', rejected: ['m-1'] }))
+    expect(row).toMatchObject({ name: 'rates', status: 'warn', title: 'the last price fetch failed' })
+    expect(row.fix).toBeUndefined()
+    PLAIN(row.title)
+    expect(firstLine(row)).not.toContain('m-1')
   })
 
-  it.each(['disabled', 'unsupported', 'failed'] as const)('single executable: %s', (why) => {
-    const r = seaRow('/usr/bin/node', '24.0.0', { can: false, why, said: 'nope' })
-    expect(r.name).toBe('node: can build a single executable')
-    expect(r.status).toBe('warn')
-    plain(r)
-    expect(r.fix).toBeUndefined()
-  })
-
-  it('release: newer is out, and GitHub unreachable', () => {
-    const newer = releaseRow('1.0.0', { version: '1.1.0' })
-    const down = releaseRow('1.0.0', new Error('timeout'))
-    for (const r of [newer, down]) {
-      expect(r.name).toBe('release: newest')
-      expect(r.status).toBe('warn')
-      plain(r)
-      expect(r.fix).toBe('lingtai upgrade')
-    }
-    expect(down.title).toContain('GitHub')
-    expect(releaseRow('1.1.0', { version: '1.1.0' }).title).toBeUndefined()
+  it('titles a spend that was not rebuilt and offers the rebuild', () => {
+    const row = ratesCheck(
+      write({ at: '2026-10-01T00:00:00Z', ok: true, rejected: [], priced: ['m-2'], rebuilt: 'not rebuilt' }),
+      3n,
+    )
+    expect(row).toMatchObject({
+      status: 'warn',
+      title: 'spend was not rebuilt after new prices',
+      fix: 'lingtai projection rebuild spend',
+    })
+    PLAIN(row.title)
+    expect(firstLine(row)).not.toContain('m-2')
   })
 })

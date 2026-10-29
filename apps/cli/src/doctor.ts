@@ -261,7 +261,8 @@ export function storeRow(choice: StoreChoice): CheckResult {
       name,
       status: 'fail',
       title: STORE_REFUSED_TITLE[choice.because],
-      fix: 'lingtai init',
+      // `lingtai init` refuses an unreadable file by name and changes nothing (`init.ts`), so it is no fix for that one.
+      ...(choice.because === 'unreadable' ? {} : { fix: 'lingtai init' }),
       detail: `${choice.refused}\n${shut}`,
     }
   }
@@ -1619,7 +1620,7 @@ export async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResu
     return { name, status: 'ok', detail: 'no log to read yet' }
   }
   if (found === null) return { name, status: 'ok', detail: 'no wait predates it' }
-  return { name, status: 'fail', title: 'the log holds a wait from before the Hold event', detail: found.message }
+  return { name, status: 'fail', title: 'the log holds an event this build does not know', detail: found.message }
 }
 
 /** What the board calls each issue the two rows below name — `project#issue` to its title. */
