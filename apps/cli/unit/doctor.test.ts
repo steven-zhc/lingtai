@@ -109,6 +109,33 @@ const find = (results: Awaited<ReturnType<typeof runDoctor>>['results'], name: s
   return row
 }
 
+describe('lingtai doctor — the settings row (#718)', () => {
+  const settingsRow = async (raw: string) => {
+    const report = await runDoctor(
+      {},
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [],
+      {
+        ...reach,
+        settings: async () => raw,
+      },
+    )
+    return find(report.results, 'runtime: other settings in scope')
+  }
+
+  it('is info when the file carries keys, naming them', async () => {
+    const row = await settingsRow(JSON.stringify({ hooks: {}, permissions: {} }))
+    expect(row.status).toBe('info')
+    expect(row.detail.split('\n')[0]).toBe('~/.claude/settings.json also applies to every run (hooks, permissions)')
+  })
+
+  it('stays warn when the file does not parse', async () => {
+    expect((await settingsRow('{ nope')).status).toBe('warn')
+  })
+})
+
 describe('lingtai doctor — a SQLite-only machine, no GitHub App, no projects', () => {
   it('fails no row', async () => {
     const report = await runDoctor(
