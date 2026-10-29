@@ -713,8 +713,6 @@ Answer as in the table under round B's `init`, rows 4–18 (store, project
 kind and directory are not asked: the machine is set up and `--local` named
 the directory). The project's name is the directory's, `chapter-garden-b2`.
 
-
-
 *B.12 output:*
 
 ```paste
@@ -756,17 +754,7 @@ doctor
 
 ```
 
-**The first run of B.12 refused** (B8): "use every default?" was answered
-`yes`, and `add` stopped at the writer: " is not a runtime — sign in to it, or
-choose one of claude-code, codex" / "which agent writes the change needs an
-answer: pass --agent <claude-code, codex>. Nothing was written". Run B.12 again
-and answer `no` at "use every default?", as the table says; paste below.
 
-*B.12 output, second run:*
-
-```paste
-
-```
 
 - [ ] **B.12-a** It asks only what a second repository needs: nothing about the store,
   the machine or GitHub.
