@@ -624,95 +624,54 @@ lingtai init --port 17830
 *B.11 output:*
 
 ```paste
-❯ set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+❯ set -gx ROUND b
+  set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+  set -gx TRIAL_SRC $HOME/lingtai-trial/src
+  set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+  echo $LINGTAI_HOME
   git clone https://github.com/steven-zhc/chapter-garden.git $CHAPTER_GARDEN_B2
   git clone --bare $CHAPTER_GARDEN_B2 $CHAPTER_GARDEN_B2.git
   git -C $CHAPTER_GARDEN_B2 remote set-url origin $CHAPTER_GARDEN_B2.git
   cd $CHAPTER_GARDEN_B2
   echo $LINGTAI_HOME
   lingtai init --port 17830
-Cloning into 'chapter-garden'...
+/Users/steven/lingtai-trial/b
+Cloning into '/Users/steven/lingtai-trial/src/chapter-garden-b2'...
 remote: Enumerating objects: 208, done.
 remote: Counting objects: 100% (208/208), done.
 remote: Compressing objects: 100% (138/138), done.
 remote: Total 208 (delta 51), reused 190 (delta 36), pack-reused 0 (from 0)
-Receiving objects: 100% (208/208), 98.54 KiB | 1.05 MiB/s, done.
+Receiving objects: 100% (208/208), 98.54 KiB | 1.06 MiB/s, done.
 Resolving deltas: 100% (51/51), done.
-fatal: You must specify a repository to clone.
-
-usage: git clone [<options>] [--] <repo> [<dir>]
-
-    -v, --[no-]verbose    be more verbose
-    -q, --[no-]quiet      be more quiet
-    --[no-]progress       force progress reporting
-    --[no-]reject-shallow don't clone shallow repository
-    -n, --no-checkout     don't create a checkout
-    --checkout            opposite of --no-checkout
-    --[no-]bare           create a bare repository
-    --[no-]mirror         create a mirror repository (implies --bare)
-    -l, --[no-]local      to clone from a local repository
-    --no-hardlinks        don't use local hardlinks, always copy
-    --hardlinks           opposite of --no-hardlinks
-    -s, --[no-]shared     setup as shared repository
-    --[no-]recurse-submodules[=<pathspec>]
-                          initialize submodules in the clone
-    --[no-]recursive ...  alias of --recurse-submodules
-    -j, --[no-]jobs <n>   number of submodules cloned in parallel
-    --[no-]template <template-directory>
-                          directory from which templates will be used
-    --[no-]reference <repo>
-                          reference repository
-    --[no-]reference-if-able <repo>
-                          reference repository
-    --[no-]dissociate     use --reference only while cloning
-    -o, --[no-]origin <name>
-                          use <name> instead of 'origin' to track upstream
-    -b, --[no-]branch <branch>
-                          checkout <branch> instead of the remote's HEAD
-    --[no-]revision <rev> clone single revision <rev> and check out
-    -u, --[no-]upload-pack <path>
-                          path to git-upload-pack on the remote
-    --[no-]depth <depth>  create a shallow clone of that depth
-    --[no-]shallow-since <time>
-                          create a shallow clone since a specific time
-    --[no-]shallow-exclude <ref>
-                          deepen history of shallow clone, excluding ref
-    --[no-]single-branch  clone only one branch, HEAD or --branch
-    --[no-]tags           clone tags, and make later fetches not to follow them
-    --[no-]shallow-submodules
-                          any cloned submodules will be shallow
-    --[no-]separate-git-dir <gitdir>
-                          separate git dir from working tree
-    --[no-]ref-format <format>
-                          specify the reference format to use
-    -c, --[no-]config <key=value>
-                          set config inside the new repository
-    --[no-]server-option <server-specific>
-                          option to transmit
-    -4, --ipv4            use IPv4 addresses only
-    -6, --ipv6            use IPv6 addresses only
-    --[no-]filter <args>  object filtering
-    --[no-]also-filter-submodules
-                          apply partial clone filters to submodules
-    --[no-]remote-submodules
-                          any cloned submodules will use their remote-tracking branch
-    --[no-]sparse         initialize sparse-checkout file to include only files at root
-    --[no-]bundle-uri <uri>
-                          a URI for downloading bundles before fetching from origin remote
-
-fatal: cannot change to 'remote': No such file or directory
-
+Cloning into bare repository '/Users/steven/lingtai-trial/src/chapter-garden-b2.git'...
+done.
+/Users/steven/lingtai-trial/b
 init
 │
 Machine
   git          git version 2.50.1 (Apple Git-155)
   claude-code  signed in via claude.ai
   codex        Logged in using ChatGPT
-  home         /Users/steven/.lingtai — no config.yml · no projects · versions: 0.10.0
-│
-◆  a Postgres URL for the log — empty for SQLite
-│  _
-└
+  home         /Users/steven/lingtai-trial/b — config.yml · projects: chapter-garden-b
+Store
+  store  SQLite, /Users/steven/lingtai-trial/b/lingtai.db ← /Users/steven/lingtai-trial/b/config.yml
+  SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one can read it, and switching stores later starts a new, empty log and moves nothing from this one
+GitHub App
+  app  none yet — the board's first screen creates it through GitHub's manifest flow
+Projects
+  chapter-garden-b — local, /Users/steven/lingtai-trial/src/chapter-garden-b.git
+  lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up the GitHub App on a machine that has only local projects
+doctor
+
+1 to fix · 26 passed · 10 not checked here · 3 not implemented yet
+
+ PROBLEM  the daemon cannot say which commit it runs  · daemon
+          the running daemon recorded no commit
+     FIX  lingtai restart "picking up main"
+Board
+the board was already running at http://127.0.0.1:17830 — this started none
+next: lingtai ticket new · lingtai run
+
 ```
 
 If the `init` above asked the store question, that terminal had no
@@ -724,7 +683,11 @@ by `add` below. **If it starts asking questions, answer none**: copy the
 first question into the paste block above, press Ctrl+C, and go on to `add`.
 
 - [ ] **B.11-a** `init` says this directory is not a project yet and names
-  `lingtai add --local .` (B1), instead of asking questions.
+  `lingtai add --local .` (B1), instead of asking questions. **No — B1
+  confirmed, in the right home this time.** It asked nothing and did not
+  mention `chapter-garden-b2` at all: it listed `chapter-garden-b`, put "lingtai
+  add asks GitHub-or-directory for another project" in the middle, and ended
+  "next: lingtai ticket new · lingtai run".
 
 **B.12**
 
@@ -750,34 +713,12 @@ Answer as in the table under round B's `init`, rows 4–18 (store, project
 kind and directory are not asked: the machine is set up and `--local` named
 the directory). The project's name is the directory's, `chapter-garden-b2`.
 
-*B.12 output:*
 
-```paste
-steven in 🌐 foundry in ~ took 1m48s
-❯ date
-  lingtai add --local .
-  date
-  lingtai doctor
-Thu Oct 29 14:28:06 CDT 2026
-. is not a git repository — fatal: not a git repository (or any of the parent directories): .git. Nothing was written
-Thu Oct 29 14:28:07 CDT 2026
-doctor
-
-1 to fix · 5 passed · 6 not checked here · 3 not implemented yet
-
- PROBLEM  ✗ this machine has not chosen a store  · store and log
-          nothing on this machine says which store it runs: /Users/steven/.lingtai/config.yml names no database.store — lingtai init asks and writes the choice. An exported LINGTAI_DATABASE_URL also decides, and supplies the URL with it.
-     FIX  lingtai init
-
-    NEXT  lingtai doctor --verbose
-```
-
-The second attempt, with the block above as it is now:
 
 *B.12 output:*
 
 ```paste
-❯ set -gx ROUND b
+❯ ❯ set -gx ROUND b
   set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
   set -gx TRIAL_SRC $HOME/lingtai-trial/src
   set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
@@ -789,11 +730,20 @@ The second attempt, with the block above as it is now:
   date
   lingtai doctor
 /Users/steven/lingtai-trial/b
-cd: The directory '/Users/steven/lingtai-trial/src/chapter-garden-b2' does not exist
-/Users/steven
-Thu Oct 29 14:35:11 CDT 2026
-/Users/steven/lingtai-trial/src/chapter-garden-b2 is not a git repository — . Nothing was written
-Thu Oct 29 14:35:12 CDT 2026
+/Users/steven/lingtai-trial/src/chapter-garden-b2
+Thu Oct 29 15:30:29 CDT 2026
+│
+◇  the branch this project's recipe governs and merges into
+│  main
+│
+◇  use every default?
+│  yes
+which agent's pass this is
+which agent writes the change
+which agent, if any, reads it cold before it moves on
+ is not a runtime — sign in to it, or choose one of claude-code, codex
+which agent writes the change needs an answer: pass --agent <claude-code, codex>. Nothing was written
+Thu Oct 29 15:30:54 CDT 2026
 doctor
 
 1 to fix · 26 passed · 11 not checked here · 3 not implemented yet
@@ -803,6 +753,19 @@ doctor
      FIX  lingtai restart "picking up main"
 
     NEXT  lingtai doctor --verbose
+
+```
+
+**The first run of B.12 refused** (B8): "use every default?" was answered
+`yes`, and `add` stopped at the writer: " is not a runtime — sign in to it, or
+choose one of claude-code, codex" / "which agent writes the change needs an
+answer: pass --agent <claude-code, codex>. Nothing was written". Run B.12 again
+and answer `no` at "use every default?", as the table says; paste below.
+
+*B.12 output, second run:*
+
+```paste
+
 ```
 
 - [ ] **B.12-a** It asks only what a second repository needs: nothing about the store,
@@ -816,7 +779,6 @@ doctor
 - [ ] **B.12-f** `lingtai doctor` lists both projects and passes.
 
 No ticket is run on it: the pass is the same as round B's.
-
 
 ### Round B summary (2026-10-29)
 
@@ -836,9 +798,9 @@ block.
 
 - **B3. Codex's runs have no cost.** `status`: "no reported cost + ~$0.00 est.
   + 2 unknown (no usage reported ×2)"; `report`: "cost mean $0.00 reported ·
-  2 unknown", "spend in the window 5 unknown". The reason is named (#692's
-  check passes), but Part 1 with Codex has no dollar figure to put in the
-  tutorial, and `/spend` cannot hold a Codex project to anything.
+    2 unknown", "spend in the window 5 unknown". The reason is named (#692's
+    check passes), but Part 1 with Codex has no dollar figure to put in the
+    tutorial, and `/spend` cannot hold a Codex project to anything.
 - **B4. The trial build reports nothing.** `init` printed "running the trial
   build — this can take minutes" and "cutting a throwaway worktree at main —
   the first time this clones the repository", and went straight on to
@@ -887,6 +849,19 @@ a second time; B3 decides whether the tutorial can state a cost for Codex at
 all. #2: close it with a reason (`lingtai close`), or approve with one.
 
 **Round B stuck:**
+
+- **B8. "use every default? yes" cannot finish on a machine with both
+  runtimes signed in.** B.12, `lingtai add` on round B's set-up machine,
+  answered `yes`, and the writer question had no default to take: `agents.ts`
+  offers the recipe's own agent (`current`, none for a new project) or, as
+  `detected`, the one runtime signed in when there is exactly one
+  (`apps/cli/src/agents.ts:174-183`). Claude Code and Codex were both signed in,
+  so the default was empty and the answer was refused: " is not a runtime —
+  sign in to it, or choose one of claude-code, codex", then "which agent
+  writes the change needs an answer: pass --agent <claude-code, codex>.
+  Nothing was written". The message has an empty name in it, and tells a
+  person at a terminal to pass a flag. A person who says "use every default"
+  expects to be asked only what has no default, not to be refused.
 
 - **B2. Chapter Garden's checks are not detected.** `init` skipped "run these
   before review?" and went straight to "a command that must pass before
