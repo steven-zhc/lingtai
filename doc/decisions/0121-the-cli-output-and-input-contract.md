@@ -33,6 +33,16 @@ using them in a terminal.
    is one fact. A command that has nothing to say says so in one line and
    exits 0.
 
+   **`doctor`'s default view, and the report `init` shows after setup, is the
+   exception: a flat list of what to fix, with no sections.** The heading is
+   followed by a counts line (`N to fix · K passed · …`, or `all K passed · …`),
+   then one block per thing to fix — failures first, then warnings, each in
+   area order, and a check that was not run here left out. A block is a title
+   line, the first line of the detail, and its `fix` lines; blocks whose fix is
+   the same are drawn once, under one title. `next: lingtai doctor --verbose`
+   closes `doctor`'s view when something warned or failed. `--verbose` keeps
+   the sections.
+
 2. **Symbols and colour come from `packages/env/src/colour.ts`; this ADR adds
    glyphs, not colours.** Each glyph is drawn in an existing `paint` key and
    means one thing:
@@ -41,16 +51,19 @@ using them in a terminal.
    | ------ | -------- | -------------------------------- |
    | ✓      | `pass`   | passed                           |
    | ✗      | `fail`   | failed                           |
-   | !      | (none)   | needs attention, nobody is waiting on you |
+   | !      | (none)   | needs attention, nobody is waiting on you (`--verbose` only) |
    | ●      | `signal` | waiting on you, and nothing else |
    | (none) | `held`   | held by a person                 |
    | (none) | `accent` | headings and running things      |
-   | (none) | `muted`  | ids, clocks and hashes           |
+   | (none) | `muted`  | ids, clocks, hashes, and the area tag on a thing to fix |
 
    A state takes its colour from `stateInk` in `colour.ts`, not from a list
    here. Amber is `signal` and "nothing else may use this" (`colour.ts`): a
    command never draws amber for a thing that is not waiting on a person.
-   A line for a wait says what is asked, in the words of 0118.
+   A line for a wait says what is asked, in the words of 0118. Two labels are
+   words, not glyphs: `note` labels an `info` row, and `fix` leads the line
+   that says what to run. `doctor`'s default view draws no `!` — a warning is
+   carried by its words and its place after the failures.
 
 3. **Colour is never the only carrier of a meaning.** The glyph and the words
    carry it; colour repeats them. So plain output is the same text with no
