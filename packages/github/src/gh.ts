@@ -45,14 +45,15 @@ export function ghExecOptions(parent: NodeJS.ProcessEnv, signal?: AbortSignal) {
   return { env: scrubbedEnv(parent), signal, timeout: TIMEOUT_MS, encoding: 'utf8' as const }
 }
 
+/** The options `liveGh` gives `spawn` when it hands the terminal over, with the environment always scrubbed. */
+export function ghSpawnOptions(parent: NodeJS.ProcessEnv, signal?: AbortSignal) {
+  return { env: scrubbedEnv(parent), stdio: 'inherit' as const, signal }
+}
+
 export const liveGh: GhRun = (args, options = {}) => {
   if (options.stdio === 'inherit') {
     return new Promise((resolve) => {
-      const child = spawn('gh', [...args], {
-        env: scrubbedEnv(process.env),
-        stdio: 'inherit',
-        signal: options.signal,
-      })
+      const child = spawn('gh', [...args], ghSpawnOptions(process.env, options.signal))
       child.on('error', (error: NodeJS.ErrnoException) =>
         resolve(error.code === 'ENOENT' ? { missing: true } : { code: 1, stdout: '', stderr: error.message }),
       )

@@ -7,7 +7,7 @@
 import { ownerlessRefusal } from '@lingtai/conductor'
 import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
-import { GitHubError, type GhStatus } from '@lingtai/github'
+import { GitHubError, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -104,6 +104,7 @@ function harness(options: {
   auth?: () => 'app' | 'gh' | null
   ghStatus?: FirstProjectWorld['github']['ghStatus']
   writeAuth?: FirstProjectWorld['github']['writeAuth']
+  gh?: GhRun
 }): Harness {
   const answers = [...(options.answers ?? [])]
   const asked: string[] = []
@@ -134,6 +135,7 @@ function harness(options: {
     history: options.history ?? (async () => []),
     github: {
       ...(options.auth === undefined ? {} : { auth: options.auth }),
+      ...(options.gh === undefined ? {} : { gh: options.gh }),
       ghStatus: options.ghStatus ?? (async () => ({ ok: false, reason: 'missing', detail: 'gh is not installed' })),
       writeAuth:
         options.writeAuth ??
@@ -1089,6 +1091,79 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
     expect(result).toMatchObject({ refused: expect.stringContaining('gh auth login') })
     expect(result).toMatchObject({ refused: expect.stringContaining('run this again') })
     expect(h.authWrites).toEqual([])
+  })
+
+  describe('signing gh in from inside the question (#712)', () => {
+    const LOGIN_ARGS = ['auth', 'login', '--hostname', 'github.com', '--web', '--scopes', 'workflow']
+
+    /** A `gh` that records each call and a status that changes only once it has been run. */
+    function signingIn(before: GhStatus, after: GhStatus, code = 0) {
+      const calls: { args: readonly string[]; stdio: string | undefined }[] = []
+      let ran = false
+      const gh: GhRun = async (args, options) => {
+        calls.push({ args, stdio: options?.stdio })
+        ran = true
+        return { code, stdout: '', stderr: '' }
+      }
+      return { gh, calls, ghStatus: async () => (ran ? after : before) }
+    }
+
+    it('signed out: sign-in runs gh auth login inherited, re-checks, and continues as gh', async () => {
+      const s = signingIn(SIGNED_OUT, READY)
+      const h = harness({ answers: [''], ghStatus: s.ghStatus, gh: s.gh })
+      await chooseFirstProject(h.world, { project: 'github' })
+      expect(s.calls).toEqual([{ args: LOGIN_ARGS, stdio: 'inherit' }])
+      expect(h.authWrites).toEqual(['gh'])
+    })
+
+    it('missing a scope: sign-in runs gh auth refresh', async () => {
+      const s = signingIn({ ok: true, login: 'steven', scopes: ['repo'] }, READY)
+      const h = harness({ answers: [''], ghStatus: s.ghStatus, gh: s.gh })
+      await chooseFirstProject(h.world, { project: 'github' })
+      expect(s.calls.map((c) => c.args)).toEqual([
+        ['auth', 'refresh', '--hostname', 'github.com', '--scopes', 'repo,workflow'],
+      ])
+      expect(h.authWrites).toEqual(['gh'])
+    })
+
+    it('a non-zero exit returns to the choice and writes nothing', async () => {
+      const s = signingIn(SIGNED_OUT, SIGNED_OUT, 1)
+      const h = harness({ answers: ['', 'app', 'skip'], ghStatus: s.ghStatus, gh: s.gh, boardUrl: 'http://x' })
+      await chooseFirstProject(h.world, { project: 'github' })
+      expect(s.calls).toHaveLength(1)
+      expect(h.logged.join('\n')).toContain('exited 1')
+      expect(h.asked.length).toBeGreaterThanOrEqual(2)
+      expect(h.authWrites).toEqual([])
+    })
+
+    it('without a terminal port the option is absent', async () => {
+      const h = harness({ answers: ['sign-in', 'gh'], ghStatus: async () => SIGNED_OUT })
+      const result = await chooseFirstProject(h.world, { project: 'github' })
+      expect(result).toMatchObject({ refused: expect.stringContaining('run this again') })
+      expect(h.authWrites).toEqual([])
+    })
+
+    it('ignores SIGINT while gh runs and restores the listeners after', async () => {
+      const sentinel = () => {}
+      process.on('SIGINT', sentinel)
+      try {
+        const before = process.listeners('SIGINT')
+        const seen: number[] = []
+        let ran = false
+        const gh: GhRun = async () => {
+          seen.push(process.listenerCount('SIGINT'))
+          ran = true
+          return { code: 0, stdout: '', stderr: '' }
+        }
+        const h = harness({ answers: [''], ghStatus: async () => (ran ? READY : SIGNED_OUT), gh })
+        await chooseFirstProject(h.world, { project: 'github' })
+        expect(seen).toEqual([before.length + 1])
+        expect(process.listeners('SIGINT')).toEqual(before)
+        expect(process.listeners('SIGINT')).toContain(sentinel)
+      } finally {
+        process.off('SIGINT', sentinel)
+      }
+    })
   })
 
   it('no terminal and no flag refuses naming --github-auth', async () => {
