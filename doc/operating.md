@@ -295,16 +295,17 @@ Go to **Settings → Developer settings → GitHub Apps → New GitHub App**
 | **Webhook → Active** | **Uncheck it.** Webhooks arrive with [#28](https://github.com/steven-zhc/lingtai/issues/28); until then there is nothing listening and a failing delivery is noise. |
 | **Where can this App be installed** | *Only on this account.* |
 
-Then, under **Repository permissions**, set exactly these four:
+Then, under **Repository permissions**, set exactly these five:
 
 | Permission | Level | What Lingtai does with it |
 |---|---|---|
 | **Issues** | Read and write | reading work items, writing `agent:*` labels and comments |
 | **Contents** | Read and write | cloning, pushing `agent/*`, merging into the base branch |
 | **Pull requests** | Read and write | opening and reading pull requests |
+| **Workflows** | Read and write | pushing changes to `.github/workflows` |
 | **Metadata** | Read-only | mandatory; GitHub selects it for you |
 
-Leave every other permission at *No access*. `lingtai add` checks these four by name
+Leave every other permission at *No access*. `lingtai add` checks these five by name
 and refuses to onboard a repository that is missing one, so a gap becomes a
 message at onboarding rather than a 403 in the middle of a merge.
 

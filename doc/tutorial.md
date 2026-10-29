@@ -230,8 +230,7 @@ not set. For a team, use a GitHub App: [GitHub](github.md) and
 does not migrate them. **Stop Step 3's board first** (ctrl-c): `init` and `add`
 would otherwise find it.
 
-In a new terminal, sign in, then use a fresh `LINGTAI_HOME`. `init` keeps this
-home's board running, so leave it:
+In a new terminal, sign in, then use a fresh `LINGTAI_HOME`. Under `gh`, `init` starts no board:
 
 ```sh
 gh auth login --hostname github.com --scopes repo,workflow
@@ -265,7 +264,7 @@ lingtai doctor
 `github: gh login` should be `ok`, naming your account. `github: app credentials` reads `skip`: expected, as there is no App.
 
 Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
-Steps 2–4 then apply; skip Step 3's `lingtai board`, as `init` left one running.
+Steps 2–4 then apply, including Step 3's `lingtai board`: start it in this home, as `init` left none running.
 The landing now merges into `main` of your fork on GitHub, not the local bare
 repository, so Step 4's `git pull` does not apply: look on GitHub instead.
 
