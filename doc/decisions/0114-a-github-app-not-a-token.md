@@ -211,9 +211,5 @@ person pastes is still never accepted: it is the case that fails silently.
 - Changing the App's requested permissions requires editing §3's table and
   `REQUIRED_PERMISSIONS` together. The unit test fails if they differ.
 
-## Not built yet
-
-- `github.auth`, `--github-auth`, the `gh` token source, the embedded sign-in and the question order (§1, §8); today only the App exists.
-
 ---
 *Replaces archived 0006 in [decisions-archive](../decisions-archive/).*

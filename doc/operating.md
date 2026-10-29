@@ -241,8 +241,16 @@ the issue that will fill them in.
 
 ## Connecting GitHub
 
-Lingtai talks to GitHub as a **GitHub App**, not as a personal access token.
-The reason is a measured failure: on 2026-08-30 a fine-grained PAT covered the
+`lingtai init` asks how Lingtai signs in: `gh` or `app`.
+
+**For one person, `gh`.** Run `gh auth login --hostname github.com --scopes
+repo,workflow`, then `lingtai init --github-auth gh` and `lingtai add
+<owner>/<repo>`. Lingtai's labels, comments and pushes appear as that account,
+and commits are authored by the machine's git identity. An agent without a
+sandbox can run `gh` as you.
+
+**For a team, a GitHub App**, not a personal access token. The rest of this
+section sets it up. The reason is a measured failure: on 2026-08-30 a fine-grained PAT covered the
 admin repository's *submodule* but not the repository itself, and every CI run
 failed with a 403 that said nothing about scope. An App's reach is explicit in
 its installation, so `lingtai add` can ask and answer that question at onboarding
