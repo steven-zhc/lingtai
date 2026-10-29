@@ -30,27 +30,27 @@ date
 Enter means take what it offers. A question not in this list is itself a
 finding: write it down with its words.
 
-| #   | It asks                                                                                 | Answer                                                     | Why                                                                                              |
-| --- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 1   | a Postgres URL for the log — empty for SQLite                                           | Enter                                                      | SQLite                                                                                           |
-| 2   | a GitHub project, or one on this machine only                                           | `local`                                                    | its default is `github`                                                                          |
+| #   | It asks                                                                                 | Answer                                                     | Why                                                                                                                                                                |
+| --- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | a Postgres URL for the log — empty for SQLite                                           | Enter                                                      | SQLite                                                                                                                                                             |
+| 2   | a GitHub project, or one on this machine only                                           | `local`                                                    | its default is `github`                                                                                                                                            |
 | 3   | the directory of the repository on this machine                                         | `/Users/steven/lingtai-trial/src/chapter-garden-b`         | the full path, so it does not depend on where the terminal is (`.` would work too: the name comes from the repository's top directory, `first-project.ts:385,398`) |
-| 4   | the branch this project's recipe governs and merges into                                | Enter if it offers `main`                                  | the checklist asks whether it is detected; if it offers nothing, write that down and type `main` |
-| 5   | use every default?                                                                      | `no`                                                       | the defaults choose Claude Code; this round is Codex                                             |
-| 6   | which agent writes the change (…)                                                       | `codex`                                                    |                                                                                                  |
-| 7   | which model (empty for the runtime's own default)                                       | Enter                                                      |                                                                                                  |
-| 8   | does a cold reviewer read it, and which agent (…, or none)                              | `codex`                                                    |                                                                                                  |
-| 9   | on which model (empty for the runtime's own default)                                    | Enter                                                      |                                                                                                  |
-| 10  | the install command                                                                     | Enter if it offers `npm ci`                                |                                                                                                  |
-| 11  | run these before review? yes, or no to write your own                                   | `yes` if it lists `npm run check` and `npm run build`      | **Not asked for Chapter Garden**: nothing is detected (B2), so 11a comes instead                 |
-| 11a | a command that must pass before review — empty when done                                | `npm run check` ⏎, `npm run build` ⏎, then an empty line ⏎ | one command per answer; the empty one ends the list                                              |
-| 12  | run these once against the base before writing them?                                    | `yes`                                                      | the trial build, #436                                                                            |
-| 13  | which labels are work, comma-separated, first = taken first                             | Enter                                                      | `bug, feature, documentation`                                                                    |
-| 14  | land this on which branch, or "hold" to hold every pass for a person                    | `hold`                                                     | as round A                                                                                       |
-| 15  | how many times a pass sends the agent back — 0 means every refusal goes straight to you | Enter                                                      | `2`                                                                                              |
-| 16  | what one agent run may take, like 30m or 2h                                             | Enter                                                      |                                                                                                  |
-| 17  | a dollar ceiling per agent run, like $5, or "none" for no ceiling                       | Enter                                                      |                                                                                                  |
-| 18  | register with the checks and landing above?                                             | `yes`                                                      |                                                                                                  |
+| 4   | the branch this project's recipe governs and merges into                                | Enter if it offers `main`                                  | the checklist asks whether it is detected; if it offers nothing, write that down and type `main`                                                                   |
+| 5   | use every default?                                                                      | `no`                                                       | the defaults choose Claude Code; this round is Codex                                                                                                               |
+| 6   | which agent writes the change (…)                                                       | `codex`                                                    |                                                                                                                                                                    |
+| 7   | which model (empty for the runtime's own default)                                       | Enter                                                      |                                                                                                                                                                    |
+| 8   | does a cold reviewer read it, and which agent (…, or none)                              | `codex`                                                    |                                                                                                                                                                    |
+| 9   | on which model (empty for the runtime's own default)                                    | Enter                                                      |                                                                                                                                                                    |
+| 10  | the install command                                                                     | Enter if it offers `npm ci`                                |                                                                                                                                                                    |
+| 11  | run these before review? yes, or no to write your own                                   | `yes` if it lists `npm run check` and `npm run build`      | **Not asked for Chapter Garden**: nothing is detected (B2), so 11a comes instead                                                                                   |
+| 11a | a command that must pass before review — empty when done                                | `npm run check` ⏎, `npm run build` ⏎, then an empty line ⏎ | one command per answer; the empty one ends the list                                                                                                                |
+| 12  | run these once against the base before writing them?                                    | `yes`                                                      | the trial build, #436                                                                                                                                              |
+| 13  | which labels are work, comma-separated, first = taken first                             | Enter                                                      | `bug, feature, documentation`                                                                                                                                      |
+| 14  | land this on which branch, or "hold" to hold every pass for a person                    | `hold`                                                     | as round A                                                                                                                                                         |
+| 15  | how many times a pass sends the agent back — 0 means every refusal goes straight to you | Enter                                                      | `2`                                                                                                                                                                |
+| 16  | what one agent run may take, like 30m or 2h                                             | Enter                                                      |                                                                                                                                                                    |
+| 17  | a dollar ceiling per agent run, like $5, or "none" for no ceiling                       | Enter                                                      |                                                                                                                                                                    |
+| 18  | register with the checks and landing above?                                             | `yes`                                                      |                                                                                                                                                                    |
 
 Tickets are not asked: a local project keeps them in Lingtai's database. If
 the trial build fails, it asks "write them anyway, or edit the list?": write
@@ -733,7 +733,32 @@ doctor
 The second attempt, with the block above as it is now:
 
 ```paste
+❯ set -gx ROUND b
+  set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+  set -gx TRIAL_SRC $HOME/lingtai-trial/src
+  set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
+  echo $LINGTAI_HOME
+  cd $CHAPTER_GARDEN_B2
+  pwd
+  date
+  lingtai add --local $CHAPTER_GARDEN_B2
+  date
+  lingtai doctor
+/Users/steven/lingtai-trial/b
+cd: The directory '/Users/steven/lingtai-trial/src/chapter-garden-b2' does not exist
+/Users/steven
+Thu Oct 29 14:35:11 CDT 2026
+/Users/steven/lingtai-trial/src/chapter-garden-b2 is not a git repository — . Nothing was written
+Thu Oct 29 14:35:12 CDT 2026
+doctor
 
+1 to fix · 26 passed · 11 not checked here · 3 not implemented yet
+
+ PROBLEM  the daemon cannot say which commit it runs  · daemon
+          the running daemon recorded no commit
+     FIX  lingtai restart "picking up main"
+
+    NEXT  lingtai doctor --verbose
 ```
 
 - [ ] It asks only what a second repository needs: nothing about the store,
