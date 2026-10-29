@@ -127,13 +127,14 @@ describe('a badge', () => {
     expect(badge('warn', 'problem')).toBe('\u001b[7m PROBLEM \u001b[0m')
     expect(badge('fix', 'fix')).toBe('\u001b[46;30m FIX \u001b[0m')
     expect(badge('muted', 'note')).toBe('\u001b[2m NOTE \u001b[0m')
-    for (const kind of ['fail', 'warn', 'fix', 'muted'] as const) expect(badge(kind, 'x')).not.toMatch(/33/)
+    expect(badge('next', 'next')).toBe('\u001b[42;30m NEXT \u001b[0m')
+    for (const kind of ['fail', 'warn', 'fix', 'muted', 'next'] as const) expect(badge(kind, 'x')).not.toMatch(/33/)
   })
 
   it('is `[word]` when colour is off, as wide as the coloured form', () => {
     clear()
     expect(badge('fail', 'problem')).toBe('[problem]')
-    expect(badge('muted', 'next')).toBe('[next]')
+    expect(badge('next', 'next')).toBe('[next]')
     process.env['FORCE_COLOR'] = '1'
     expect(badge('fix', 'fix').replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')).toHaveLength(
       '[fix]'.length,
