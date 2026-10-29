@@ -4,6 +4,8 @@ Part of [016, the v0.10.0 first-time path](../016-the-v0.10.0-first-time-path.md
 
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter. `GH_CONFIG_DIR` is the same as round C's, now signed in without `workflow`.
 
+**D.1**
+
 ```fish
 set -gx ROUND d
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -16,24 +18,32 @@ lingtai init --store sqlite --project github --port 17830
 
 Choose the `gh` login.
 
+*D.1 output:*
+
 ```paste
 
 ```
 
-- [ ] `init` notices the missing `workflow` scope and runs
+- [ ] **D.1-a** `init` notices the missing `workflow` scope and runs
   `gh auth refresh`, then continues.
+
+**D.2**
 
 ```fish
 gh auth status
 ```
 
+*D.2 output:*
+
 ```paste
 
 ```
 
-- [ ] `workflow` is now among the scopes.
+- [ ] **D.2-a** `workflow` is now among the scopes.
 
 **The fork:**
+
+**D.3**
 
 ```fish
 gh repo fork pallets/itsdangerous --clone=false
@@ -48,20 +58,24 @@ date
 
 Answers as in round C.
 
+*D.3 output:*
+
 ```paste
 
 ```
 
-- [ ] **Install and build are detected as uv** (#695): an install such as
+- [ ] **D.3-a** **Install and build are detected as uv** (#695): an install such as
   `uv sync` and a build such as `uv run pytest`. This box is #336's
   acceptance.
-- [ ] The base branch is detected; only the questions it must ask; the trial
+- [ ] **D.3-b** The base branch is detected; only the questions it must ask; the trial
   build runs and leaves no worktree; doctor's short view and one `next:`
   line; no ADR, issue number or source path in the output.
 
 **Ticket, run, approve, measure:**
 
 Terminal 1:
+
+**D.4**
 
 ```fish
 gh issue create -R $FORK --label feature \
@@ -71,6 +85,8 @@ date
 ```
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
+
+**D.5**
 
 ```fish
 set -gx ROUND d
@@ -84,6 +100,8 @@ lingtai start
 
 **Terminal 3**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai board` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
 
+**D.6**
+
 ```fish
 set -gx ROUND d
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -96,6 +114,8 @@ lingtai board start --port 17830
 
 When the card is waiting on you, in terminal 1:
 
+**D.7**
+
 ```fish
 lingtai status --all
 lingtai approve <project> --issue <n>
@@ -103,11 +123,13 @@ date
 lingtai report --window today
 ```
 
+*D.7 output:*
+
 ```paste
 
 ```
 
-- [ ] One ticket landed; `status`, `/spend` and `/report` show it; an unknown
+- [ ] **D.7-a** One ticket landed; `status`, `/spend` and `/report` show it; an unknown
   run names its reason.
 
 **Round D stuck:**
@@ -118,6 +140,8 @@ lingtai report --window today
 
 **Clean up round D**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
+
+**D.8**
 
 ```fish
 set -gx ROUND d
@@ -132,11 +156,13 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*D.8 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **D.8-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-d.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **D.8-b** `round-d.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `d/`.

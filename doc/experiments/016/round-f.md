@@ -8,6 +8,8 @@ compile, and the minutes a new user waits in silence are what matter here.
 
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter.
 
+**F.1**
+
 ```fish
 set -gx ROUND f
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -25,12 +27,16 @@ lingtai add $FORK
 date
 ```
 
+*F.1 output:*
+
 ```paste
 
 ```
 
 - Cold trial build, start → report: `____ min`. Any stretch with no output
   longer than 30 s: `____`
+
+**F.2**
 
 ```fish
 gh issue create -R $FORK --label feature \
@@ -39,6 +45,8 @@ gh issue create -R $FORK --label feature \
 ```
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
+
+**F.3**
 
 ```fish
 set -gx ROUND f
@@ -52,11 +60,15 @@ lingtai start
 
 When the card is waiting on you, in terminal 1:
 
+**F.4**
+
 ```fish
 lingtai status --all
 lingtai approve <project> --issue <n>
 lingtai report --window today
 ```
+
+*F.4 output:*
 
 ```paste
 
@@ -71,6 +83,8 @@ lingtai report --window today
 **Clean up round F**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
 
+**F.5**
+
 ```fish
 set -gx ROUND f
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -84,11 +98,13 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*F.5 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **F.5-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-f.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **F.5-b** `round-f.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `f/`.

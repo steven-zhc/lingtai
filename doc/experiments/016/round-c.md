@@ -7,6 +7,8 @@ written, because each one sets up the state the next one needs.
 
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter.
 
+**C.1**
+
 ```fish
 set -gx ROUND c
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -17,15 +19,19 @@ echo $LINGTAI_HOME
 gh auth status
 ```
 
+*C.1 output:*
+
 ```paste
 
 ```
 
-- [ ] It says you are not logged in. That is expected, because
+- [ ] **C.1-a** It says you are not logged in. That is expected, because
   `$GH_CONFIG_DIR` is new. If it shows a login, the export did not take.
 
 **`--defaults` with no `--project` refuses at once (#700).** Use a throwaway
 home so that a refusal which writes something cannot spoil this round's:
+
+**C.2**
 
 ```fish
 env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults
@@ -35,15 +41,19 @@ ls -la $HOME/lingtai-trial/c-defaults
 
 (`$status` is fish's exit code of the command before it.)
 
+*C.2 output:*
+
 ```paste
 
 ```
 
-- [ ] It refuses immediately, by name, with a non-zero exit, and no browser
+- [ ] **C.2-a** It refuses immediately, by name, with a non-zero exit, and no browser
   opened.
 
 **Signed out: `init` offers to sign in, and Ctrl+C returns to the choice
 (#712):**
+
+**C.3**
 
 ```fish
 lingtai init --store sqlite --project github --port 17830
@@ -53,26 +63,34 @@ When it asks how to reach GitHub, choose the `gh` login. It offers to sign in:
 accept. It hands the terminal to `gh auth login --web`. **Press Ctrl+C before
 finishing in the browser.**
 
+*C.3 output:*
+
 ```paste
 
 ```
 
-- [ ] Ctrl+C returns you to the choice and does not end `init`.
+- [ ] **C.3-a** Ctrl+C returns you to the choice and does not end `init`.
 
 Now quit `init` (Ctrl+C at the choice) and check that nothing was written:
+
+**C.4**
 
 ```fish
 gh auth status
 cat $LINGTAI_HOME/config.yml
 ```
 
+*C.4 output:*
+
 ```paste
 
 ```
 
-- [ ] There is no `gh` login, and `config.yml` has no GitHub key.
+- [ ] **C.4-a** There is no `gh` login, and `config.yml` has no GitHub key.
 
 **Signed out, completing the sign-in:**
+
+**C.5**
 
 ```fish
 lingtai init --store sqlite --project github --port 17830
@@ -80,17 +98,21 @@ lingtai init --store sqlite --project github --port 17830
 
 Choose `gh`, accept the sign-in, and complete it in the browser this time:
 
+*C.5 output:*
+
 ```paste
 
 ```
 
-- [ ] `init` continues on its own after the browser step.
-- [ ] Doctor's short view is readable (#701), and init ends with a single
+- [ ] **C.5-a** `init` continues on its own after the browser step.
+- [ ] **C.5-b** Doctor's short view is readable (#701), and init ends with a single
   `next:` line (#702). No output cites an ADR, an issue number or a source
   path (#703).
 
 **The fork.** Forks have issues turned off, and Lingtai's tickets here are
 issues:
+
+**C.6**
 
 ```fish
 gh repo fork ai/nanoid --clone=false
@@ -100,11 +122,15 @@ gh repo view $FORK --json defaultBranchRef --jq .defaultBranchRef.name
 gh label create feature -R $FORK --color 0e8a16 --force
 ```
 
+*C.6 output:*
+
 ```paste
 
 ```
 
 **Add it, interactively, letting it detect:**
+
+**C.7**
 
 ```fish
 date
@@ -116,32 +142,40 @@ Answer: tickets **github**, agent and reviewer **claude-code**, landing
 **hold**, trial build **yes**. If it insists on `--base`, give it the default
 branch printed above and write that down as stuck.
 
+*C.7 output:*
+
 ```paste
 
 ```
 
-- [ ] Only the questions it must ask. The base branch is detected.
-- [ ] Install and build are detected for pnpm (`pnpm install …` and the
+- [ ] **C.7-a** Only the questions it must ask. The base branch is detected.
+- [ ] **C.7-b** Install and build are detected for pnpm (`pnpm install …` and the
   repository's test script).
-- [ ] The trial build runs and reports, and it leaves no worktree behind (the
+- [ ] **C.7-c** The trial build runs and reports, and it leaves no worktree behind (the
   board's run log, or `lingtai doctor --verbose`, shows where it ran; that
   directory is gone afterwards).
-- [ ] No output cites an ADR, an issue number or a source path.
+- [ ] **C.7-d** No output cites an ADR, an issue number or a source path.
+
+**C.8**
 
 ```fish
 lingtai doctor
 lingtai doctor --verbose | grep -i -A2 'github'
 ```
 
+*C.8 output:*
+
 ```paste
 
 ```
 
-- [ ] `github: gh login` reads `ok` and names the trial account (#707).
+- [ ] **C.8-a** `github: gh login` reads `ok` and names the trial account (#707).
 
 **The board under `gh` (#713).**
 
 **Terminal 3**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai board` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
+
+**C.9**
 
 ```fish
 set -gx ROUND c
@@ -153,12 +187,14 @@ echo $LINGTAI_HOME
 lingtai board start --port 17830
 ```
 
-- [ ] The board's first step asks for no App. Screenshot:
+- [ ] **C.9-a** The board's first step asks for no App. Screenshot:
   `doc/img/016/c-board-first.png`.
-- [ ] Its add-repository page points to `lingtai add`. Screenshot:
+- [ ] **C.9-b** Its add-repository page points to `lingtai add`. Screenshot:
   `doc/img/016/c-board-add.png`.
 
 **The ticket:**
+
+**C.10**
 
 ```fish
 date
@@ -166,6 +202,8 @@ gh issue create -R $FORK --label feature \
   --title 'Test that the default id is 21 characters long' \
   --body 'Add one test asserting that nanoid() with no argument returns a string of length 21. Change no library code. Done when the repository test script passes.'
 ```
+
+*C.10 output:*
 
 ```paste
 
@@ -176,6 +214,8 @@ gh issue create -R $FORK --label feature \
 **Run.**
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
+
+**C.11**
 
 ```fish
 set -gx ROUND c
@@ -189,6 +229,8 @@ lingtai start
 
 Then approve when the card reaches Waiting on you:
 
+**C.12**
+
 ```fish
 lingtai status --all
 lingtai approve <project> --issue <n>
@@ -196,15 +238,19 @@ date
 lingtai status --all
 ```
 
+*C.12 output:*
+
 ```paste
 
 ```
 
-- [ ] **The first push and the merge succeed with the `gh` token** (the `gho_`
+- [ ] **C.12-a** **The first push and the merge succeed with the `gh` token** (the `gho_`
   token in the `x-access-token` header, #706). There is no auth error
   anywhere in terminal 2.
 
 **Whose name is on what (0114 §8):**
+
+**C.13**
 
 ```fish
 gh issue view <n> -R $FORK --comments
@@ -214,27 +260,35 @@ git config user.name
 git config user.email
 ```
 
+*C.13 output:*
+
 ```paste
 
 ```
 
-- [ ] Labels, comments and the merge show the `gh` account.
-- [ ] The commits show this machine's git identity (`git config` above).
+- [ ] **C.13-a** Labels, comments and the merge show the `gh` account.
+- [ ] **C.13-b** The commits show this machine's git identity (`git config` above).
 
 **Measure:**
+
+**C.14**
 
 ```fish
 lingtai report --window today
 ```
 
+*C.14 output:*
+
 ```paste
 
 ```
 
-- [ ] `status`, `/spend` and `/report` show the run; an unknown run names its
+- [ ] **C.14-a** `status`, `/spend` and `/report` show the run; an unknown run names its
   reason (#692).
 
 **Signed out afterwards, doctor fails by name (#707):**
+
+**C.15**
 
 ```fish
 gh auth logout --hostname github.com
@@ -242,24 +296,30 @@ lingtai doctor
 echo "exit: $status"
 ```
 
+*C.15 output:*
+
 ```paste
 
 ```
 
-- [ ] `github: gh login` fails, by that name, with a fix.
+- [ ] **C.15-a** `github: gh login` fails, by that name, with a fix.
 
 Sign back in **without `workflow`** for round D:
+
+**C.16**
 
 ```fish
 gh auth login --hostname github.com --web
 gh auth status
 ```
 
+*C.16 output:*
+
 ```paste
 
 ```
 
-- [ ] `gh auth status`'s token scopes do not include `workflow`.
+- [ ] **C.16-a** `gh auth status`'s token scopes do not include `workflow`.
 
 **Round C stuck:**
 
@@ -269,6 +329,8 @@ gh auth status
 
 **Clean up round C**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
+
+**C.17**
 
 ```fish
 set -gx ROUND c
@@ -283,11 +345,13 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*C.17 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **C.17-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-c.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **C.17-b** `round-c.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `c/`.

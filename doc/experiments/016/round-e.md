@@ -8,6 +8,8 @@ write down which. Its default branch is `master`.
 
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter.
 
+**E.1**
+
 ```fish
 set -gx ROUND e
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -28,12 +30,16 @@ date
 When asked, type install `go mod download` and build `go vet ./...`, then
 `go test ./...`.
 
+*E.1 output:*
+
 ```paste
 
 ```
 
-- [ ] With nothing detected, the questions say so and take typed commands
+- [ ] **E.1-a** With nothing detected, the questions say so and take typed commands
   without fuss; the trial build runs them.
+
+**E.2**
 
 ```fish
 gh issue create -R $FORK --label feature \
@@ -42,6 +48,8 @@ gh issue create -R $FORK --label feature \
 ```
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
+
+**E.3**
 
 ```fish
 set -gx ROUND e
@@ -55,11 +63,15 @@ lingtai start
 
 When the card is waiting on you, in terminal 1:
 
+**E.4**
+
 ```fish
 lingtai status --all
 lingtai approve <project> --issue <n>
 lingtai report --window today
 ```
+
+*E.4 output:*
 
 ```paste
 
@@ -74,6 +86,8 @@ lingtai report --window today
 **Clean up round E**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
 
+**E.5**
+
 ```fish
 set -gx ROUND e
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -87,11 +101,13 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*E.5 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **E.5-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-e.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **E.5-b** `round-e.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `e/`.

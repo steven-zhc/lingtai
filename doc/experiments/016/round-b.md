@@ -7,6 +7,8 @@ command; this one tests what `init` asks a person who does not know the flags.
 
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter.
 
+**B.1**
+
 ```fish
 set -gx ROUND b
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -58,6 +60,8 @@ down the failure and answer `edit`.
 
 Paste the whole session, questions included:
 
+*B.1 output:*
+
 ```paste
 ❯ set -gx CHAPTER_GARDEN_DIR $TRIAL_SRC/chapter-garden-b
   git clone https://github.com/steven-zhc/chapter-garden.git $CHAPTER_GARDEN_DIR
@@ -106,6 +110,8 @@ the terminal still had `ROUND=a`, and the block did not set it. It wrote
 nothing (round A's `config.yml` is still from 10:58). The clone is fine, so
 the rerun skips it:
 
+**B.2**
+
 ```fish
 set -gx ROUND b
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -118,6 +124,8 @@ date
 lingtai init --port 17830
 date
 ```
+
+*B.2 output:*
 
 ```paste
 ❯ set -gx ROUND b
@@ -239,31 +247,37 @@ next: lingtai board · lingtai ticket new · lingtai run
 Thu Oct 29 14:10:13 CDT 2026
 ```
 
-- [ ] It asks only what it must, in this order: code location, then tickets.
+- [ ] **B.2-a** It asks only what it must, in this order: code location, then tickets.
   There is no GitHub question on a local project.
-- [ ] The base branch is detected (`main`), not asked for.
-- [ ] Install and build are detected (`npm ci`, `npm run check`,
+- [ ] **B.2-b** The base branch is detected (`main`), not asked for.
+- [ ] **B.2-c** Install and build are detected (`npm ci`, `npm run check`,
   `npm run build`).
-- [ ] The trial build (#436) runs and reports, and afterwards
+- [ ] **B.2-d** The trial build (#436) runs and reports, and afterwards
   `git -C $CHAPTER_GARDEN_DIR worktree list` shows only the checkout:
+
+**B.3**
 
 ```fish
 git -C $CHAPTER_GARDEN_DIR worktree list
 ```
 
+*B.3 output:*
+
 ```paste
 /Users/steven/lingtai-trial/src/chapter-garden-b  f20fcec [main]
 ```
 
-- [ ] Doctor's short view is readable (#701), and init ends with a single
+- [ ] **B.3-a** Doctor's short view is readable (#701), and init ends with a single
   `next:` line (#702).
-- [ ] No output cites an ADR, an issue number or a source path (#703).
+- [ ] **B.3-b** No output cites an ADR, an issue number or a source path (#703).
 
 **Ticket, run, approve, measure.** `ROUND=b` in every terminal. The project
 is `chapter-garden-b`, unless `init` named it otherwise above: use the name its
 `added …` line printed. The story is *The Sun's Ninth Minute*.
 
 Terminal 1:
+
+**B.4**
 
 ```fish
 printf '%s\n' \
@@ -282,6 +296,8 @@ lingtai ticket list --project chapter-garden-b
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home.
 
+**B.5**
+
 ```fish
 set -gx ROUND b
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -292,6 +308,8 @@ lingtai start
 ```
 
 **Terminal 3**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai board` runs against `~/.lingtai` instead of this round's home.
+
+**B.6**
 
 ```fish
 set -gx ROUND b
@@ -304,6 +322,8 @@ lingtai board start --port 17830
 
 When the card is waiting on you, in terminal 1:
 
+**B.7**
+
 ```fish
 lingtai status chapter-garden-b --all
 lingtai approve chapter-garden-b --issue <n>
@@ -311,6 +331,8 @@ date
 lingtai status chapter-garden-b --all
 lingtai report --window today --project chapter-garden-b
 ```
+
+*B.7 output:*
 
 ```paste
 Spend
@@ -402,7 +424,7 @@ most fix rounds
     wait: SignoffRequired · cause — · resolved Approve
 ```
 
-- [ ] One ticket landed; `status`, `/spend` and `/report` show the run with
+- [ ] **B.7-a** One ticket landed; `status`, `/spend` and `/report` show the run with
   Codex as its runtime; an unknown run names its reason (#692).
 
 **Optional: the refuse-and-fix step, rewritten** (A9). Round A's ticket did
@@ -414,6 +436,8 @@ to avoid the mistake. It runs on *The Thirteenth Tower Teaches No Magic*, with
 lands after one round, this text replaces the tutorial's (#611).
 
 Terminal 1:
+
+**B.8**
 
 ```fish
 printf '%s\n' \
@@ -432,6 +456,8 @@ date
 env VISUAL="cp $TRIAL_SRC/ticket-b-refuse.md" lingtai ticket new --project chapter-garden-b
 lingtai ticket list --project chapter-garden-b
 ```
+
+*B.8 output:*
 
 ```paste
 ❯ printf '%s\n' \
@@ -470,10 +496,14 @@ When it is waiting on you, read History, Attempts and the run log **before**
 Approve: a run's log is deleted when it lands. The run log is the newest file
 here:
 
+**B.9**
+
 ```fish
 ls -t $LINGTAI_HOME/runs/chapter-garden-b/
 grep -n -i -E 'order|quoted|npm run|refus' (ls -t $LINGTAI_HOME/runs/chapter-garden-b/*.log)[1]
 ```
+
+*B.9 output:*
 
 ```paste
 ❯ ls -t $LINGTAI_HOME/runs/chapter-garden-b/
@@ -496,12 +526,16 @@ pass-40180a2d-a579-45ce-a610-8a0d6243969d.log
 
 Then:
 
+**B.10**
+
 ```fish
 lingtai status chapter-garden-b --all
 lingtai approve chapter-garden-b --issue <n>
 date
 lingtai report --window today --project chapter-garden-b
 ```
+
+*B.10 output:*
 
 ```paste
 ❯ lingtai approve chapter-garden-b --issue 2
@@ -554,11 +588,11 @@ most fix rounds
 
 ```
 
-- [ ] The agent wrote `order: "2"`, and did not run the checks itself.
-- [ ] The first `build` was refused, naming the `order` field.
-- [ ] `round 1` ran inside **the same attempt**, wrote `order: 2`, and the pass
+- [ ] **B.10-a** The agent wrote `order: "2"`, and did not run the checks itself.
+- [ ] **B.10-b** The first `build` was refused, naming the `order` field.
+- [ ] **B.10-c** `round 1` ran inside **the same attempt**, wrote `order: 2`, and the pass
   landed after approval.
-- [ ] History, Attempts and the run log were all readable **before** Approve.
+- [ ] **B.10-d** History, Attempts and the run log were all readable **before** Approve.
 
 If the agent still corrected the type first, or ran the checks, quote its
 words from the run log here. That says whether a ticket's text can produce
@@ -570,6 +604,8 @@ and a person adds another repository. Two things to see: what `init` says when
 it is run there by habit (B1 expects it to name `lingtai add --local .`, and it
 did not in the first attempt), and what `add` asks. Terminal 1, with
 `lingtai start` and the board still running:
+
+**B.11**
 
 ```fish
 set -gx ROUND b
@@ -584,6 +620,8 @@ cd $CHAPTER_GARDEN_B2
 echo $LINGTAI_HOME
 lingtai init --port 17830
 ```
+
+*B.11 output:*
 
 ```paste
 ❯ set -gx CHAPTER_GARDEN_B2 $TRIAL_SRC/chapter-garden-b2
@@ -685,8 +723,10 @@ This `init` is only to see where habit leads; the repository is registered
 by `add` below. **If it starts asking questions, answer none**: copy the
 first question into the paste block above, press Ctrl+C, and go on to `add`.
 
-- [ ] `init` says this directory is not a project yet and names
+- [ ] **B.11-a** `init` says this directory is not a project yet and names
   `lingtai add --local .` (B1), instead of asking questions.
+
+**B.12**
 
 ```fish
 set -gx ROUND b
@@ -710,6 +750,8 @@ Answer as in the table under round B's `init`, rows 4–18 (store, project
 kind and directory are not asked: the machine is set up and `--local` named
 the directory). The project's name is the directory's, `chapter-garden-b2`.
 
+*B.12 output:*
+
 ```paste
 steven in 🌐 foundry in ~ took 1m48s
 ❯ date
@@ -731,6 +773,8 @@ doctor
 ```
 
 The second attempt, with the block above as it is now:
+
+*B.12 output:*
 
 ```paste
 ❯ set -gx ROUND b
@@ -761,15 +805,15 @@ doctor
     NEXT  lingtai doctor --verbose
 ```
 
-- [ ] It asks only what a second repository needs: nothing about the store,
+- [ ] **B.12-a** It asks only what a second repository needs: nothing about the store,
   the machine or GitHub.
-- [ ] The base branch (`main`), install and build are detected.
-- [ ] The trial build runs, reports, and leaves no worktree behind
+- [ ] **B.12-b** The base branch (`main`), install and build are detected.
+- [ ] **B.12-c** The trial build runs, reports, and leaves no worktree behind
   (`git -C $CHAPTER_GARDEN_B2 worktree list` shows only the checkout).
-- [ ] It ends with what to do next, and names the new project
+- [ ] **B.12-d** It ends with what to do next, and names the new project
   (`chapter-garden-b2`, or the name it printed).
-- [ ] No output cites an ADR, an issue number or a source path.
-- [ ] `lingtai doctor` lists both projects and passes.
+- [ ] **B.12-e** No output cites an ADR, an issue number or a source path.
+- [ ] **B.12-f** `lingtai doctor` lists both projects and passes.
 
 No ticket is run on it: the pass is the same as round B's.
 
@@ -869,6 +913,8 @@ all. #2: close it with a reason (`lingtai close`), or approve with one.
 **Clean up round B**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
 
+**B.13**
+
 ```fish
 set -gx ROUND b
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -882,11 +928,13 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*B.13 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **B.13-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-b.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **B.13-b** `round-b.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `b/`.

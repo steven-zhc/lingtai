@@ -9,6 +9,8 @@ carry on.
 
 **Terminal 1** (after 0.4 with `ROUND=a`):
 
+**A.1**
+
 ```fish
 set -gx CHAPTER_GARDEN_DIR $TRIAL_SRC/chapter-garden-a
 git clone https://github.com/steven-zhc/chapter-garden.git $CHAPTER_GARDEN_DIR
@@ -17,6 +19,8 @@ git -C $CHAPTER_GARDEN_DIR remote set-url origin $CHAPTER_GARDEN_DIR.git
 cat $CHAPTER_GARDEN_DIR/.nvmrc $CHAPTER_GARDEN_DIR/package.json | grep -i -E 'node|engines|^[0-9]'
 lingtai doctor
 ```
+
+*A.1 output:*
 
 ```paste
 Cloning into '/Users/steven/lingtai-trial/src/chapter-garden-a'...
@@ -44,12 +48,14 @@ doctor
     NEXT  lingtai doctor --verbose
 ```
 
-- [x] Every path `doctor` names is under `$HOME/lingtai-trial/a`
+- [x] **A.1-a** Every path `doctor` names is under `$HOME/lingtai-trial/a`
   (`/Users/steven/lingtai-trial/a/config.yml`).
 - Chapter Garden's Node requirement (for the tutorial): **none stated**. There
   is no `.nvmrc`, and `package.json` has no `engines` (stuck A6).
 
 **Init, as Step 1 writes it**, plus `--port`:
+
+**A.2**
 
 ```fish
 date
@@ -60,6 +66,8 @@ lingtai init --store sqlite --local $CHAPTER_GARDEN_DIR \
   --build 'npm run build' --defaults --land hold --port 17830
 date
 ```
+
+*A.2 output:*
 
 ```paste
 date
@@ -118,15 +126,15 @@ next: lingtai board · lingtai ticket new · lingtai run
 Thu Oct 29 10:58:32 CDT 2026
 ```
 
-- [x] It finishes with no question asked (10:58:29 → 10:58:32, 3 s), which is
+- [x] **A.2-a** It finishes with no question asked (10:58:29 → 10:58:32, 3 s), which is
   what `--defaults` with every answer given should do.
-- [x] Doctor's short view is readable (#701): `all 27 passed · 10 not checked
+- [x] **A.2-b** Doctor's short view is readable (#701): `all 27 passed · 10 not checked
   here · 3 not implemented yet`. The output ends with a single `next:` line
   (#702), and that line names three commands (stuck A7).
-- [x] No output cites an ADR, an issue number or a source path (#703). It does
+- [x] **A.2-c** No output cites an ADR, an issue number or a source path (#703). It does
   print a recipe key, `(runtime.limits.restarts: 0)`, which a new user has no
   way to read yet.
-- [x] The trial build: **the tutorial's reader never sees it.** Nothing in the
+- [x] **A.2-d** The trial build: **the tutorial's reader never sees it.** Nothing in the
   output mentions a trial build, or that `--check-build yes` would run one.
 
 **Open the ticket** (tutorial Step 2). **The project is `chapter-garden-a`**,
@@ -145,6 +153,8 @@ The form is the tutorial's text, word for word. `lingtai ticket new` opens
 `$VISUAL` on a temporary file through `sh -c` (`apps/cli/src/ticket.ts:89`),
 so `VISUAL="cp <file>"` puts the form in without an editor:
 
+**A.3**
+
 ```fish
 printf '%s\n' \
   "Add the next chapter to Fate Owes Me a Page" \
@@ -159,6 +169,8 @@ date
 env VISUAL="cp $TRIAL_SRC/ticket-a.md" lingtai ticket new --project chapter-garden-a
 lingtai ticket list --project chapter-garden-a
 ```
+
+*A.3 output:*
 
 ```paste
 Add the next chapter to Fate Owes Me a Page
@@ -179,6 +191,8 @@ ID  KIND     TITLE
 **Run** (tutorial Step 3).
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home.
+
+**A.4**
 
 ```fish
 set -gx ROUND a
@@ -222,6 +236,8 @@ pass (completion): 1 project(s), 0 run(s)
 
 **Terminal 3**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai board` runs against `~/.lingtai` instead of this round's home.
 
+**A.5**
+
 ```fish
 set -gx ROUND a
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -235,6 +251,8 @@ lingtai board start --port 17830
 
 Open `http://127.0.0.1:17830` and follow the ticket. Paste the start
 terminal's output once the card reaches **Waiting on you**:
+
+*A.5 output:*
 
 ```paste
 ❯ lingtai start
@@ -269,6 +287,8 @@ pass (completion): 1 project(s), 0 run(s)
 ```
 
 **Approve** (tutorial Step 4), in terminal 3 or on the board:
+
+**A.6**
 
 ```fish
 lingtai status chapter-garden-a --all
@@ -356,9 +376,13 @@ f20fcec Merge pull request #4 from steven-zhc/tutorial-steven-20261022141656
 
 **Measure:**
 
+**A.7**
+
 ```fish
 lingtai report --window today --project chapter-garden-a
 ```
+
+*A.7 output:*
 
 ```paste
 ❯ lingtai report --window today --project chapter-garden-a
@@ -397,10 +421,10 @@ most fix rounds
 
 ```
 
-- [x] `lingtai status` and `lingtai report` show this run: `#1 … [landed]`, and
+- [x] **A.7-a** `lingtai status` and `lingtai report` show this run: `#1 … [landed]`, and
   `$0.79 reported` with `0 unknown`, so no unknown run needed a reason (#692).
   `/spend` and `/report` on the board were not captured: no screenshot.
-- [x] One ticket went from opened to landed: #1, opened 11:43:44, landed by
+- [x] **A.7-b** One ticket went from opened to landed: #1, opened 11:43:44, landed by
   11:56:30, **13 min** (2 min of it machine time, per the report; the rest was
   waiting on a person). `git pull` brought `03-after-the-lamp_en.md` and
   `_zh.md` into the checkout.
@@ -408,6 +432,8 @@ most fix rounds
 **Optional: the refuse-and-fix step** (the tutorial's *Watch a check refuse*,
 #611). Do it in this round, exactly as written, on *Room Zero Checks Out
 Tonight*, with `lingtai start` and the board still running:
+
+**A.8**
 
 ```fish
 printf '%s\n' \
@@ -459,12 +485,16 @@ ID  KIND     TITLE
 
 When it is waiting on you, read History, Attempts and the run log, then:
 
+**A.9**
+
 ```fish
 lingtai status chapter-garden-a --all
 lingtai approve chapter-garden-a --issue <n>
 date
 lingtai report --window today --project chapter-garden-a
 ```
+
+*A.9 output:*
 
 ```paste
 ❯ lingtai status chapter-garden-a --all
@@ -542,12 +572,12 @@ most fix rounds
 
 ```
 
-- [ ] The first `build` was refused, naming the `order` field. **No: nothing
+- [ ] **A.9-a** The first `build` was refused, naming the `order` field. **No: nothing
   was refused.** Both checks passed on the first try, and the pass went straight
   to `proposed` (stuck A9).
-- [ ] `round 1` ran inside **the same attempt**, then the pass landed after
+- [ ] **A.9-b** `round 1` ran inside **the same attempt**, then the pass landed after
   approval. **No round was bought**, because nothing refused.
-- [ ] History, Attempts and the run log were all readable **before** Approve.
+- [ ] **A.9-c** History, Attempts and the run log were all readable **before** Approve.
   The run log was: `~/lingtai-trial/a/runs/chapter-garden-a/pass-cea8d8a4-….log`,
   41 lines, quoted below. History and Attempts on the board: see
   `doc/img/016/round-a-optional-issue.png` and `round-a-optional-issue2.png`.
@@ -708,6 +738,8 @@ Words in quotes are copied from the pastes above.
 **Clean up round A**, after its stuck lines are written down. Stop
 its processes first (above). In any terminal:
 
+**A.10**
+
 ```fish
 set -gx ROUND a
 set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
@@ -721,13 +753,15 @@ find $TRIAL_SRC -maxdepth 1 -name "ticket-$ROUND*.md" -delete
 ls $HOME/lingtai-trial $TRIAL_SRC $HOME/lingtai-trial-archive
 ```
 
+*A.10 output:*
+
 ```paste
 
 ```
 
-- [ ] Both `lsof` lines printed nothing: no board on 17830, and no process
+- [ ] **A.10-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] `round-a.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [ ] **A.10-b** `round-a.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `a/`.
 
 ## Round A summary (2026-10-29)
