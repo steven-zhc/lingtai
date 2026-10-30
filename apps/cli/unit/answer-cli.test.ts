@@ -1,7 +1,7 @@
 /** The wait-answering commands through `@effect/cli` (#621): what is parsed, and what is refused before a handler runs. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli } from '../src/cli.ts'
+import { INTEGER_FLAGS, runCli } from '../src/cli.ts'
 
 const seen = vi.hoisted(() => ({ calls: [] as { command: string; options: unknown }[] }))
 
@@ -199,5 +199,50 @@ describe('usage', () => {
     expect(r.code).toBe(1)
     expect(r.err).toBe('')
     expect(JSON.parse(r.out)).toMatchObject({ version: 1, command: 'approve', error: { code: 'usage' } })
+  })
+})
+
+describe('integer flags (#770)', () => {
+  const flags = Object.entries(INTEGER_FLAGS).flatMap(([c, fs]) => fs.map((f): [string, string] => [c, f]))
+
+  it.each(flags)('%s --%s refuses what is not a whole number, by name, exit 2', async (command, flag) => {
+    const cases: [string[], string][] = [
+      [[`--${flag}`, ''], `, not ''`],
+      [[`--${flag}=`], `, not ''`],
+      [[`--${flag}=abc`], `, not 'abc'`],
+      [[`--${flag}`, 'abc'], `, not 'abc'`],
+      [[`--${flag}`, '1.5'], `, not '1.5'`],
+      [[`--${flag}`, '-3'], `, not '-3'`],
+      [[`--${flag}`], ''],
+    ]
+    for (const [rest, tail] of cases) {
+      const r = await capture([command, ...rest])
+      expect(r.code).toBe(2)
+      expect(r.out).toBe('')
+      expect(r.err).toMatch(new RegExp(`^--${flag} takes (an issue number|a number|a port number)${tail}\\n$`))
+      expect(r.err).not.toContain('a integer')
+      vi.restoreAllMocks()
+      const j = await capture([command, ...rest, '--json'])
+      expect(j.code).toBe(2)
+      expect(j.out.trim().split('\n')).toHaveLength(1)
+      expect(JSON.parse(j.out)).toMatchObject({ command, error: { code: 'usage' } })
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('text after -- is not scanned', async () => {
+    await capture(['answer', 'p', '--issue', '5', '--', 'use', '--issue', 'abc'])
+    expect(seen.calls).toHaveLength(1)
+    expect(seen.calls[0]!.options).toMatchObject({ issue: 5 })
+  })
+
+  it('a second occurrence is checked too', async () => {
+    expect((await capture(['approve', 'p', '--issue', '5', '--issue', 'x'])).code).toBe(2)
+  })
+
+  it('--issue 5 and --issue=5 still parse', async () => {
+    await capture(['close', 'p', '--issue', '5', 'done'])
+    await capture(['close', 'p', '--issue=5', 'done'])
+    expect(seen.calls.map((c) => (c.options as { issue: number }).issue)).toEqual([5, 5])
   })
 })

@@ -201,7 +201,31 @@ async function printAnswer(
 }
 
 const projectArg = Args.text({ name: 'project' })
-const issueOption = Options.integer('issue')
+
+/**
+ * Every integer flag, by the first word of argv: the one list the declarations and the pre-parse refusal both
+ * read (#770). `@effect/cli` would answer a value that is not a number in its own words and name no flag.
+ */
+export const INTEGER_FLAGS = {
+  approve: ['issue'],
+  requeue: ['issue'],
+  'grant-fix-round': ['issue'],
+  ask: ['issue'],
+  answer: ['issue'],
+  close: ['issue'],
+  now: ['issue'],
+  run: ['issue', 'max'],
+  end: ['issue'],
+  board: ['port'],
+} as const satisfies Record<string, readonly string[]>
+
+const INTEGER_NOUN: Record<string, string> = { issue: 'an issue number', max: 'a number', port: 'a port number' }
+
+/** The only way to declare an integer option, so a flag missing from `INTEGER_FLAGS` does not compile. */
+function integerOption<C extends keyof typeof INTEGER_FLAGS>(command: C, flag: (typeof INTEGER_FLAGS)[C][number]) {
+  void command
+  return Options.integer(flag)
+}
 const optionalText = (name: string) => Options.text(name).pipe(Options.optional)
 const given = (o: { _tag: string; value?: string }): string | undefined => (o._tag === 'Some' ? o.value : undefined)
 /** Everything after the project is the sentence, so an unquoted one still arrives whole. */
@@ -211,7 +235,7 @@ const approve = Command.make(
   'approve',
   {
     project: projectArg,
-    issue: issueOption,
+    issue: integerOption('approve', 'issue'),
     note: optionalText('note'),
     reject: Options.boolean('reject'),
     json,
@@ -235,7 +259,7 @@ const requeue = Command.make(
   'requeue',
   {
     project: projectArg,
-    issue: issueOption,
+    issue: integerOption('requeue', 'issue'),
     note: optionalText('note'),
     intoBody: optionalText('into-body'),
     json,
@@ -259,7 +283,13 @@ const requeue = Command.make(
 
 const grantFixRound = Command.make(
   'grant-fix-round',
-  { project: projectArg, issue: issueOption, ifHead: optionalText('if-head'), json, noColor },
+  {
+    project: projectArg,
+    issue: integerOption('grant-fix-round', 'issue'),
+    ifHead: optionalText('if-head'),
+    json,
+    noColor,
+  },
   (args) =>
     answerWith('grant-fix-round', args, async (progress) => {
       const { grantFixRoundVerdict } = await import('./grant-fix-round.ts')
@@ -269,7 +299,7 @@ const grantFixRound = Command.make(
 
 const close = Command.make(
   'close',
-  { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor },
+  { project: projectArg, issue: integerOption('close', 'issue'), text: sentenceArg, json, noColor },
   (args) =>
     answerWith('close', args, async (progress) => {
       const { closeVerdict } = await import('./close.ts')
@@ -277,16 +307,19 @@ const close = Command.make(
     }),
 ).pipe(Command.withDescription(definitionOf('close').task))
 
-const ask = Command.make('ask', { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor }, (args) =>
-  answerWith('ask', args, async (progress) => {
-    const { askVerdict } = await import('./ask.ts')
-    return askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
-  }),
+const ask = Command.make(
+  'ask',
+  { project: projectArg, issue: integerOption('ask', 'issue'), text: sentenceArg, json, noColor },
+  (args) =>
+    answerWith('ask', args, async (progress) => {
+      const { askVerdict } = await import('./ask.ts')
+      return askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
+    }),
 ).pipe(Command.withDescription(definitionOf('ask').task))
 
 const answer = Command.make(
   'answer',
-  { project: projectArg, issue: issueOption, text: sentenceArg, json, noColor },
+  { project: projectArg, issue: integerOption('answer', 'issue'), text: sentenceArg, json, noColor },
   (args) =>
     answerWith('answer', args, async (progress) => {
       const { answerVerdict } = await import('./ask.ts')
@@ -299,7 +332,7 @@ const now = Command.make(
   {
     project: projectArg,
     second: Args.text({ name: 'issue' }).pipe(Args.optional),
-    issue: Options.integer('issue').pipe(Options.optional),
+    issue: integerOption('now', 'issue').pipe(Options.optional),
     json,
     noColor,
   },
@@ -349,7 +382,7 @@ async function liveBoardRunner(request: BoardRequest): Promise<number> {
 
 let boardRunner: BoardRunner = liveBoardRunner
 
-const portOption = Options.integer('port').pipe(Options.optional)
+const portOption = integerOption('board', 'port').pipe(Options.optional)
 const dirOption = Options.text('dir').pipe(Options.optional)
 const noOpen = Options.boolean('no-open')
 
@@ -589,7 +622,6 @@ async function guarded(command: string, work: () => Promise<number>, asJson = fa
   }
 }
 
-const optionalInteger = (name: string) => Options.integer(name).pipe(Options.optional)
 const givenNumber = (o: { _tag: string; value?: number }): number | undefined =>
   o._tag === 'Some' ? o.value : undefined
 
@@ -600,8 +632,8 @@ const runCommand = Command.make(
   {
     project: Args.text({ name: 'project' }).pipe(Args.optional),
     projectFlag: optionalText('project'),
-    issue: optionalInteger('issue'),
-    max: optionalInteger('max'),
+    issue: integerOption('run', 'issue').pipe(Options.optional),
+    max: integerOption('run', 'max').pipe(Options.optional),
     once: Options.boolean('once'),
     noMerge: Options.boolean('no-merge'),
     noColor,
@@ -657,7 +689,11 @@ const END_USAGE = 'lingtai end replay [<project>] [--issue <n>]'
 
 const endReplay = Command.make(
   'replay',
-  { project: Args.text({ name: 'project' }).pipe(Args.optional), issue: optionalInteger('issue'), noColor },
+  {
+    project: Args.text({ name: 'project' }).pipe(Args.optional),
+    issue: integerOption('end', 'issue').pipe(Options.optional),
+    noColor,
+  },
   (args) =>
     Effect.promise(async () => {
       if (args.noColor) applyNoColor()
@@ -1235,6 +1271,28 @@ const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }
   ],
 }
 
+/** The sentence refusing an integer flag whose value is not a whole number, in any form it arrives in, else undefined (#770). */
+function integerRefusal(args: readonly string[]): string | undefined {
+  const flags: readonly string[] = (INTEGER_FLAGS as Record<string, readonly string[]>)[args[0] ?? ''] ?? []
+  const terminator = args.indexOf('--')
+  const rest = args.slice(1, terminator === -1 ? undefined : terminator)
+  for (const flag of flags) {
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i]!
+      let value: string | null
+      if (arg.startsWith(`--${flag}=`)) value = arg.slice(flag.length + 3)
+      else if (arg === `--${flag}`) {
+        const next = rest[i + 1]
+        value = next === undefined || next.startsWith('--') ? null : next
+      } else continue
+      if (value !== null && /^\d+$/.test(value)) continue
+      const takes = `--${flag} takes ${INTEGER_NOUN[flag]}`
+      return value === null ? takes : `${takes}, not '${value}'`
+    }
+  }
+  return undefined
+}
+
 /** `--note` with nothing after it means what leaving it off means, `""` (#424), so it is dropped before parsing. */
 function withoutBareNote(args: readonly string[]): string[] {
   return args.filter((arg, i) => arg !== '--note' || !(args[i + 1] === undefined || args[i + 1]!.startsWith('--')))
@@ -1307,6 +1365,12 @@ export async function runCli(
       else console.error(sentence)
       return 2
     }
+  }
+  const refusal = integerRefusal(args)
+  if (refusal !== undefined) {
+    if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', refusal)
+    else console.error(refusal)
+    return 2
   }
   if (args[0] === 'approve' || args[0] === 'requeue') {
     argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
