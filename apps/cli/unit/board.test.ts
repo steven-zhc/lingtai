@@ -7,7 +7,14 @@ import { describe, expect, it } from 'vitest'
  * respawned in thirty seconds, so a signal sent to it here is a second board
  * racing the first for the port.
  */
-import { boardCommand, boardLock, holdingProcess, type BoardCommand, type BoardWorld } from '../src/board.ts'
+import {
+  boardCommand,
+  boardLock,
+  holdingProcess,
+  stopOnSignal,
+  type BoardCommand,
+  type BoardWorld,
+} from '../src/board.ts'
 import { BOARD_WAIT_MS, type Keeper } from '../src/service.ts'
 
 const PORT = 17820
@@ -404,5 +411,50 @@ describe("the lock holder's name", () => {
   it('carries the pid and the host, and nothing is read out of one that does not', () => {
     expect(holdingProcess('board on 17820 pid 500 on mac')).toEqual({ pid: 500, host: 'mac' })
     expect(holdingProcess('a process waiting in line for it')).toBeNull()
+  })
+})
+
+describe('stopOnSignal (#726)', () => {
+  const harness = (release: () => Promise<void>) => {
+    const calls: string[] = []
+    const exits: number[] = []
+    const handle = stopOnSignal({
+      release: async () => {
+        calls.push('release')
+        await release()
+      },
+      exit: (code) => exits.push(code),
+      say: (line) => calls.push(`say ${line.trim()}`),
+    })
+    return { handle, calls, exits }
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('releases, then exits with the signal code', async () => {
+    const h = harness(async () => {})
+    h.handle('SIGINT')
+    await settle()
+    expect(h.calls).toEqual(['say SIGINT: stopped the board', 'release'])
+    expect(h.exits).toEqual([130])
+    const t = harness(async () => {})
+    t.handle('SIGTERM')
+    await settle()
+    expect(t.exits).toEqual([143])
+  })
+
+  it('still exits when the release throws', async () => {
+    const h = harness(async () => {
+      throw new Error('lock gone')
+    })
+    h.handle('SIGTERM')
+    await settle()
+    expect(h.exits).toEqual([143])
+  })
+
+  it('a second signal exits at once, without waiting for the first', async () => {
+    const h = harness(() => new Promise<void>(() => {}))
+    h.handle('SIGINT')
+    h.handle('SIGINT')
+    expect(h.exits).toEqual([130])
   })
 })

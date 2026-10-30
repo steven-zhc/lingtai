@@ -65,7 +65,7 @@ function answers(port: number): Promise<boolean> {
 describe('serveBoard', () => {
   it('resolves only once the server is listening, not when server.js has loaded', async () => {
     const port = await freePort()
-    await serveBoard({ dir: fakeBoard(400), port, host: '127.0.0.1' })
+    await serveBoard({ dir: fakeBoard(400), port, host: '127.0.0.1', release: async () => {} })
     expect(await answers(port)).toBe(true)
   })
 
@@ -75,7 +75,7 @@ describe('serveBoard', () => {
     servers.push(holder)
     await new Promise<void>((resolve) => holder.listen(port, '127.0.0.1', resolve))
 
-    await expect(serveBoard({ dir: fakeBoard(0), port, host: '127.0.0.1' })).rejects.toThrow(
+    await expect(serveBoard({ dir: fakeBoard(0), port, host: '127.0.0.1', release: async () => {} })).rejects.toThrow(
       `127.0.0.1:${port} is already in use`,
     )
     expect((globalThis as { __boardLoaded?: boolean }).__boardLoaded).toBeUndefined()

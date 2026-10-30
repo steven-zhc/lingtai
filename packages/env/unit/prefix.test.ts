@@ -47,6 +47,8 @@ const NOT_OURS: Record<string, string> = {
   HOSTNAME: "the operating system's, read to say which machine a daemon is on",
   USER: "the operating system's, read to attribute an approval to a person",
   PORT: "Next's standalone server.js's, set by `lingtai board` for the server it imports (#183)",
+  NEXT_MANUAL_SIG_HANDLE:
+    "Next's, set by `lingtai board` around the import of server.js so Next installs no signal handler (#726)",
   VITEST: 'set by the test runner, not by Lingtai',
   CODEX_HOME: "the Codex CLI's, read to share its login directory with a triage checkout",
 }

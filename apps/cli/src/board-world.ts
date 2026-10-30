@@ -62,7 +62,7 @@ export function liveBoardWorld(): BoardWorld {
         })
       }),
     // `kill` with no signal would only ask whether it exists; SIGTERM is the
-    // stop, and a board installs no handler that could swallow it.
+    // stop, and the handler a board installs releases the lock and exits.
     signal: (pid) => {
       try {
         process.kill(pid, 'SIGTERM')

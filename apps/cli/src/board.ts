@@ -94,6 +94,8 @@ export interface BoardOptions {
   dir: string
   port: number
   host: string
+  /** Lets go of the board lock; the caller holds it, so the caller supplies this. */
+  release: () => Promise<void>
 }
 
 /**
@@ -109,6 +111,14 @@ export interface BoardOptions {
  * only surfaces afterwards, as Next's own `EADDRINUSE` and `process.exit(1)`.
  * So the port is taken and let go first — a refusal before anything is loaded —
  * and this resolves only once a connection to it is answered.
+ *
+ * **`NEXT_MANUAL_SIG_HANDLE` is set before the `import()`** because Next reads
+ * it inside `startServer` (`start-server.js:387`), which `server.js` starts and
+ * does not await: set afterwards, Next has already installed its own SIGINT and
+ * SIGTERM `cleanup`, which waits for every open connection and so never ends
+ * while a page's event stream is open (#726). It is deleted once the server is
+ * listening, since git, agents and a managed project's own `next` inherit this
+ * process's environment and would otherwise install no handler either.
  */
 export async function serveBoard(options: BoardOptions): Promise<void> {
   const entry = boardEntry(options.dir)
@@ -120,8 +130,70 @@ export async function serveBoard(options: BoardOptions): Promise<void> {
   await portIsFree(options.host, options.port)
   process.env['PORT'] = String(options.port)
   process.env['HOSTNAME'] = options.host
-  await importFile(pathToFileURL(entry).href)
-  await listening(options.host, options.port)
+  process.env['NEXT_MANUAL_SIG_HANDLE'] = '1'
+  try {
+    await importFile(pathToFileURL(entry).href)
+    await listening(options.host, options.port)
+  } finally {
+    delete process.env['NEXT_MANUAL_SIG_HANDLE']
+  }
+  // Installed only once the board is up: on a failure the caller releases the
+  // lock itself, and before that Node's default ends the process.
+  installStopOnSignal(options.release)
+}
+
+/** A release that hangs must not break the two seconds `board stop` allows. */
+const RELEASE_BUDGET_MS = 1000
+
+/**
+ * The handler for SIGINT and SIGTERM while a board is served: release the lock,
+ * say so, exit 130 or 143 (what Next's own `cleanup` exited with). A second
+ * signal exits at once. Exiting drops every open connection.
+ *
+ * **It exits the process for every SIGINT**, so a path that serves the board
+ * and then hands the terminal to a child that must survive Ctrl+C has to deal
+ * with that.
+ */
+export function stopOnSignal(deps: {
+  release: () => Promise<void>
+  exit: (code: number) => void
+  say: (line: string) => void
+}): (signal: 'SIGINT' | 'SIGTERM') => void {
+  let stopping = false
+  return (signal) => {
+    const code = signal === 'SIGINT' ? 130 : 143
+    if (stopping) {
+      deps.exit(code)
+      return
+    }
+    stopping = true
+    deps.say(`${signal}: stopped the board\n`)
+    let timer: NodeJS.Timeout | undefined
+    const capped = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, RELEASE_BUDGET_MS)
+    })
+    const released = Promise.resolve()
+      .then(() => deps.release())
+      .catch(() => {})
+    void Promise.race([released, capped]).then(() => {
+      clearTimeout(timer)
+      deps.exit(code)
+    })
+  }
+}
+
+let signalsInstalled = false
+
+function installStopOnSignal(release: () => Promise<void>): void {
+  if (signalsInstalled) return
+  signalsInstalled = true
+  const handle = stopOnSignal({
+    release,
+    exit: (code) => process.exit(code),
+    say: (line) => process.stderr.write(line),
+  })
+  process.on('SIGINT', () => handle('SIGINT'))
+  process.on('SIGTERM', () => handle('SIGTERM'))
 }
 
 /**
@@ -464,7 +536,15 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       return 1
     }
     try {
-      await world.serve({ dir: command.dir, port: command.port, host: world.host })
+      await world.serve({
+        dir: command.dir,
+        port: command.port,
+        host: world.host,
+        release: async () => {
+          await held?.release()
+          held = null
+        },
+      })
     } catch (err) {
       await held.release()
       held = null

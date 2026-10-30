@@ -1069,7 +1069,15 @@ export function liveInitWorld(): InitWorld {
       }
       kept = taken.lock
       try {
-        await serveBoard({ dir: builtBoardDir(), port, host })
+        await serveBoard({
+          dir: builtBoardDir(),
+          port,
+          host,
+          release: async () => {
+            await kept?.release()
+            kept = null
+          },
+        })
       } catch (err) {
         await kept.release()
         kept = null
