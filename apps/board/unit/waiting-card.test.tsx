@@ -40,7 +40,7 @@ const EXPECTED: Record<string, Pick<Fixture, 'expectedQuestion'>> = {
     expectedQuestion: 'the `implement` step asked: which approach?',
   },
   signoffrequired: {
-    expectedQuestion: 'the `merge` step held: merge this?',
+    expectedQuestion: 'ready to land — merge this?',
   },
   fixerdisagrees: {
     expectedQuestion: 'the `implement` step declined: the fixer thinks this is fine',

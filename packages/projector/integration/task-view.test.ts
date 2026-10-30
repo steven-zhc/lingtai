@@ -943,7 +943,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       const ten = card(await readTasks({ project: PROJECT }), 10)!
 
       expect(ten.wait !== null).toBe(true)
-      expect(ten.note).toBe('the `merge` step held: a repair is waiting on you')
+      expect(ten.note).toBe('ready to land — a repair is waiting on you')
       expect(hold(ten).needs).toBe('judgement')
       expect(hold(ten).diagnosis?.recommendation?.action).toBe('approve')
       expect(describeWaitLines(hold(ten)).map((l) => l.part)).toEqual(['needs', 'what', 'rec'])

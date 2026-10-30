@@ -72,6 +72,7 @@ const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): Stat
 const asked: StatusWait = {
   reason: 'OwnQuestion',
   line: 'which   approach\nshould I take?',
+  short: null,
   needs: 'judgement',
   words: 'waiting for your answer',
   detail: ['your judgement is needed'],
@@ -120,6 +121,7 @@ const fixture: StatusReport = {
           wait: {
             reason: 'Refused',
             line: 'the gate refused',
+            short: null,
             needs: 'acknowledgement',
             words: null,
             detail: [],
@@ -311,7 +313,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
     '#609',
     'waiting for your answer: which approach should I take?', // one line, whitespace folded
     'the gate refused',
-    'next: lingtai answer lingtai --issue 609 "<choice>"',
+    'lingtai answer lingtai --issue 609 "<choice>"   (or the board)',
   ])('prints %s', (fact) => {
     expect(plain).toContain(fact)
   })
@@ -320,13 +322,53 @@ describe('renderStatus keeps every fact the old output printed', () => {
     expect(plain).not.toMatch(/\d+ waiting on you/)
   })
 
-  it('adds the diagnosis under --all, and says the raw failure is on the log', () => {
+  it('prints no next: line after the block, the command being under its row', () => {
+    expect(plain.split('\n').some((l) => l.startsWith('next:'))).toBe(false)
+  })
+
+  it('under --all, never says "failure" or repeats the judgement line', () => {
     const all = renderStatus(fixture, { all: true }).join('\n')
-    expect(all).toContain('your judgement is needed')
-    expect(all).toContain('(the failure itself is on the log, and on the card)')
+    expect(all).not.toContain('your judgement is needed')
+    expect(all).not.toContain('failure itself')
     expect(all).toContain('#609')
     expect(all).toContain('[waiting for your answer]')
-    expect(plain).not.toContain('your judgement is needed')
+  })
+
+  describe('a pass held for approval', () => {
+    const held: StatusWait = {
+      reason: 'SignoffRequired',
+      line: 'ready to land — the recipe asks you to approve each pass',
+      short: 'ready to land',
+      needs: 'judgement',
+      words: 'waiting for your review',
+      detail: [
+        'your judgement is needed',
+        'ready to land — the recipe asks you to approve each pass',
+        'a failure needs acknowledging',
+      ],
+      recommendation: null,
+      raw: true,
+    }
+    const report: StatusReport = {
+      ...fixture,
+      projects: [
+        {
+          ...fixture.projects[0]!,
+          known: [row({ taskId: 't1', ref: '1', title: 'Add the chapter', state: 'waiting', wait: held })],
+        },
+      ],
+    }
+
+    it.each([false, true])('says the sentence once, then the command (all: %s)', (all) => {
+      const out = renderStatus(report, { all }).join('\n')
+      const lines = out.split('\n').map((l) => l.trim())
+      expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each pass')).toHaveLength(1)
+      expect(out).toContain('#1  Add the chapter')
+      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or the board)`)
+      expect(out).not.toContain('failure')
+      expect(out).not.toContain('your judgement is needed')
+      expect(out).not.toContain('waiting for your review:')
+    })
   })
 
   it('says the one-line answer when there is nothing to report', () => {

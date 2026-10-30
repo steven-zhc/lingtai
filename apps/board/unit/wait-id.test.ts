@@ -73,7 +73,7 @@ describe("a card's own question, paired with its wait id", () => {
   it("uses the reason paired with the wait id, not task_view's copied note", () => {
     const t = blocked()
     const card = toCard({ ...t, note: 'stale question' })
-    expect(card.note).toBe('the `proposed` step held: the `proposed` step held: land it?')
+    expect(card.note).toBe('ready to land — the `proposed` step held: land it?')
     expect(card.note).not.toBe('stale question')
   })
 

@@ -89,7 +89,7 @@ describe('reduceTicket', () => {
     // The answer is not dropped with the question (#147).
     expect(unblocked.answers).toEqual([
       {
-        question: 'the `proposed` step held: Which base branch should this target?',
+        question: 'ready to land — Which base branch should this target?',
         runId: 'pass-a',
         answer: 'develop',
         by: 'human:steven',

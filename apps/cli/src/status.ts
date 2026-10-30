@@ -246,6 +246,8 @@ export interface StatusWait {
   reason: string
   /** `waitWords`' sentence: the question itself for an `OwnQuestion`. */
   line: string
+  /** `waitWords`' short name for the reason, where it has one; not in `--json`. */
+  short: string | null
   needs: 'judgement' | 'acknowledgement'
   /** `describeWait`'s phrase, where the wait is one a person can tell apart at a glance. */
   words: 'waiting for your answer' | 'waiting for your review' | null
@@ -470,6 +472,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
             : {
                 reason: t.wait.reason._tag,
                 line: words.line,
+                short: words.short,
                 needs: words.needs,
                 words: describeWait({
                   waiting: true,
@@ -600,24 +603,34 @@ export function renderStatus(
       const lines2: string[] = []
       for (const t of waiting) {
         const w = t.wait!
-        lines2.push(
-          `${symbol.signal()} #${t.ref}  ${t.kind}  ${t.title} — ${w.words ? `${w.words}: ` : ''}${oneLine(w.line)}`,
-        )
+        lines2.push(`${symbol.signal()} #${t.ref}${t.title === '' ? '' : `  ${t.title}`}`)
+        // "ready to land" already says what "waiting for your review" said.
+        const prefix = w.short === null && w.words ? `${w.words}: ` : ''
+        lines2.push(`    ${prefix}${oneLine(w.line)}`)
+        lines2.push(`    ${waitCommand(p.project, t.ref, w.reason)}`)
         if (options.all) {
-          for (const d of w.detail) lines2.push(`    ${oneLine(d)}`)
-          // The raw failure is not printed and is not lost: it is on the log and the card.
-          if (w.raw) lines2.push('    (the failure itself is on the log, and on the card)')
+          const sentence = oneLine(w.line)
+          for (const d of w.detail) {
+            if (d === 'your judgement is needed' || d === 'a failure needs acknowledging') continue
+            const one = oneLine(d)
+            if (one === sentence) continue
+            const rest = one.startsWith(sentence) ? one.slice(sentence.length).trim() : one
+            if (rest !== '') lines2.push(`    ${rest}`)
+          }
         }
       }
       lines.push('', section('Waiting on you', lines2))
-      for (const t of waiting) {
-        if (t.wait!.reason === 'OwnQuestion')
-          lines.push(`next: lingtai answer ${p.project} --issue ${t.ref} "<choice>"`)
-      }
     }
     blocks.push(lines.join('\n'))
   }
   return blocks.join('\n\n').split('\n')
+}
+
+/** What a person does about a wait, and where else they can do it. */
+function waitCommand(project: string, ref: number | string, reason: string): string {
+  if (reason === 'SignoffRequired') return `lingtai approve ${project} --issue ${ref}   (or the board)`
+  if (reason === 'OwnQuestion') return `lingtai answer ${project} --issue ${ref} "<choice>"   (or the board)`
+  return 'decide on the board'
 }
 
 const rowJson = (r: StatusRow): Record<string, unknown> => ({
