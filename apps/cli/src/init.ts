@@ -494,6 +494,9 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     )
 
   let github = false
+  // The command(s) a GitHub first-project closes on; null on the re-run path
+  // with a configured App, which closes on nothing.
+  let githubNext: string[] | null = null
   if (askProject) {
     // Built from `world` directly rather than through a live default (#394's
     // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
@@ -581,6 +584,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       ])
     } else {
       github = true
+      githubNext = ['lingtai add <owner>/<repo>']
       if (chosen.auth === 'gh') {
         // No App to start a board for: the saved `gh` login is the whole of
         // the auth, and a repository is named to `lingtai add`, not picked.
@@ -603,7 +607,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         // this reads the same memo rather than starting a second one.
         const started = await startBoard()
         const url = 'url' in started ? started.url : ''
-        world.log(`next: open ${url}/setup/repository to install it and pick a repository`)
+        githubNext = [`open ${url}/setup/repository`, 'lingtai add <owner>/<repo>']
       }
       // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
       // own call to `waitForApp` (`appComeBackLine`).
@@ -611,7 +615,6 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       // `init`'s GitHub branch never has a slug, so there is no recipe file
       // to print here — it exists once a repository is picked.
       world.log('the recipe is written once a repository is picked — it asks its questions at the terminal')
-      world.log('next: lingtai add <owner>/<repo>')
     }
   } else if (app.configured && !ghMachine) {
     github = true
@@ -663,8 +666,12 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
           : paint.muted(`the board was already running at ${started.url} — this started none`),
     )
   }
-  // The GitHub paths end on their own `next:` lines above.
-  if (!github) {
+  // The GitHub paths close here too, on their own command; the configured-App
+  // re-run path (github without githubNext) closes on nothing.
+  if (githubNext !== null) {
+    const next = [...(doctorFailed ? ['lingtai doctor --verbose'] : []), ...githubNext]
+    world.log(`next: ${next.join(' · ')}`)
+  } else if (!github) {
     const next = [
       ...(doctorFailed ? ['lingtai doctor --verbose'] : []),
       ...(needBoard ? ['lingtai board'] : []),
