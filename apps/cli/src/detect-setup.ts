@@ -228,7 +228,7 @@ type PyTool = {
 /** In the order the ticket asks for; only what the project configures is suggested. */
 const PYTHON_TOOLS: readonly PyTool[] = [
   { key: 'format', run: 'ruff format --check .', table: ['ruff'], files: ['ruff.toml'] },
-  { key: 'lint', run: 'ruff check .', table: ['ruff'], files: ['ruff.toml'] },
+  { key: 'lint', run: 'ruff check --no-fix .', table: ['ruff'], files: ['ruff.toml'] },
   { key: 'typecheck', run: 'mypy .', table: ['mypy'], files: ['mypy.ini'] },
   { key: 'test', run: 'pytest', table: ['pytest', 'ini_options'], files: ['pytest.ini', 'tests'] },
 ]
@@ -248,31 +248,50 @@ function tableAt(root: unknown, path: readonly string[]): boolean {
  * indented deeper than the key before it continues that key. Any other
  * indentation is a header or a key in its own right.
  */
-function iniParses(text: string): boolean {
-  let inSection = false
-  let inKey = false
+function parseIni(text: string): Map<string, Map<string, string>> | null {
+  const sections = new Map<string, Map<string, string>>()
+  let section: Map<string, string> | null = null
+  let key: string | null = null
   let keyIndent = 0
-  return text.split(/\r?\n/).every((raw) => {
+  for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim()
-    if (line === '' || line.startsWith('#') || line.startsWith(';')) return true
+    if (line === '' || line.startsWith('#') || line.startsWith(';')) continue
     const indent = raw.length - raw.trimStart().length
-    if (inKey && indent > keyIndent) return true
-    if (/^\[[^\][]+\]$/.test(line)) {
-      inSection = true
-      inKey = false
-      return true
+    if (section !== null && key !== null && indent > keyIndent) {
+      section.set(key, `${section.get(key) ?? ''}\n${line}`)
+      continue
     }
-    inKey = inSection && /^[^=:\s][^=:]*[=:]/.test(line)
+    const header = /^\[([^\][]+)\]$/.exec(line)
+    if (header !== null) {
+      const name = header[1] ?? ''
+      section = sections.get(name) ?? new Map<string, string>()
+      sections.set(name, section)
+      key = null
+      continue
+    }
+    const entry = /^([^=:\s][^=:]*)[=:](.*)$/.exec(line)
+    if (section === null || entry === null) return null
+    key = (entry[1] ?? '').trim().toLowerCase()
     keyIndent = indent
-    return inKey
-  })
+    section.set(key, (entry[2] ?? '').trim())
+  }
+  return sections
+}
+
+function iniParses(text: string): boolean {
+  return parseIni(text) !== null
 }
 
 /**
  * A standalone configuration file counts only if it reads and parses; either
  * failure is a note ("could not tell"), once per file, and nothing from it.
  */
-async function configParses(reader: SetupReader, file: string, notes: string[], said: Set<string>): Promise<boolean> {
+async function configParses(
+  reader: SetupReader,
+  file: string,
+  notes: string[],
+  said: Set<string>,
+): Promise<string | null> {
   let text: string | null
   try {
     text = await reader.read(file)
@@ -282,7 +301,7 @@ async function configParses(reader: SetupReader, file: string, notes: string[], 
   if (text === null) {
     if (!said.has(file)) notes.push(`${file} could not be read`)
     said.add(file)
-    return false
+    return null
   }
   let ok: boolean
   if (file.endsWith('.toml')) {
@@ -297,7 +316,48 @@ async function configParses(reader: SetupReader, file: string, notes: string[], 
   }
   if (!ok && !said.has(file)) notes.push(`${file} does not parse`)
   if (!ok) said.add(file)
-  return ok
+  return ok ? text : null
+}
+
+function filesIsSet(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim() !== ''
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && v.trim() !== '')
+}
+
+/**
+ * mypy reads a root mypy.ini (with a [mypy] section) before pyproject.toml, and
+ * a path on its command line replaces `files`; so a bare `mypy` is suggested
+ * only where the config mypy reads sets `files`, otherwise `mypy .`.
+ */
+async function detectMypy(
+  reader: SetupReader,
+  tool: unknown,
+  notes: string[],
+  said: Set<string>,
+): Promise<{ run: string; because: string } | null> {
+  const found = await hasOrUnknown(reader, 'mypy.ini')
+  if (found === 'unknown') {
+    if (!said.has('mypy.ini')) notes.push('could not tell whether mypy.ini is at the root')
+    said.add('mypy.ini')
+    return null
+  }
+  if (found) {
+    const text = await configParses(reader, 'mypy.ini', notes, said)
+    if (text === null) return null
+    const section = parseIni(text)?.get('mypy')
+    if (section !== undefined) {
+      const named = (section.get('files') ?? '').split(/[,\n]/).some((f) => f.trim() !== '')
+      return named
+        ? { run: 'mypy', because: 'mypy.ini names files' }
+        : { run: 'mypy .', because: 'mypy.ini is at the root' }
+    }
+    notes.push('mypy.ini has no [mypy] section; mypy does not read it')
+  }
+  if (!tableAt(tool, ['mypy'])) return null
+  const table = (tool as { mypy: Record<string, unknown> }).mypy
+  return filesIsSet(table.files)
+    ? { run: 'mypy', because: '[tool.mypy] files is set in pyproject.toml, so mypy checks those' }
+    : { run: 'mypy .', because: '[tool.mypy] is in pyproject.toml' }
 }
 
 const pythonDetector: StackDetector = {
@@ -377,6 +437,11 @@ const pythonDetector: StackDetector = {
     const build: DetectedSetup['build'] = []
     const unreadable = new Set<string>()
     for (const { key, run, table, files } of PYTHON_TOOLS) {
+      if (key === 'typecheck') {
+        const mypy = await detectMypy(reader, tool, notes, unreadable)
+        if (mypy !== null) build.push({ name: key, run: `${chosen.manager} run ${mypy.run}`, because: mypy.because })
+        continue
+      }
       let because: string | null = null
       if (table !== null && tableAt(tool, table)) because = `[tool.${table.join('.')}] is in pyproject.toml`
       for (const file of files) {
@@ -387,7 +452,7 @@ const pythonDetector: StackDetector = {
           unreadable.add(file)
         } else if (found) {
           if (file === 'tests') because = 'tests/ is at the root'
-          else if (await configParses(reader, file, notes, unreadable)) because = `${file} is at the root`
+          else if ((await configParses(reader, file, notes, unreadable)) !== null) because = `${file} is at the root`
         }
       }
       if (because !== null) build.push({ name: key, run: `${chosen.manager} run ${run}`, because })
