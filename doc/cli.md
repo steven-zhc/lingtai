@@ -88,6 +88,7 @@ Changes state.
 lingtai run <project> [flags]
   --issue <n>   one nominated issue instead of the queue
   --max <n>     stop after n items
+                continues what you approved first, then takes the queue
   --once        the same as --max 1
   --no-merge    stop after the steps and ask before merging
 ```
