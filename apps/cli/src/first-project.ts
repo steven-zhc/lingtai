@@ -40,7 +40,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -104,6 +104,21 @@ export interface RegisterLocalPayload {
   fromSha: string
   /** Already resolved by the caller, so `register` need not read the file again. */
   resolved: ResolvedRecipe
+}
+
+/**
+ * `FirstProjectWorld.exists` over `node:fs`: only a path that is not there is
+ * `false`. A directory that cannot be reached (EACCES on a parent) exists —
+ * it is git's to say why it cannot be read, not ours to call it missing.
+ */
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return !(code === 'ENOENT' || code === 'ENOTDIR')
+  }
 }
 
 export interface FirstProjectWorld extends QuestionWorld {
@@ -862,7 +877,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     ...(options.spin === undefined ? {} : { spin: options.spin }),
     log: options.log,
     git: liveGit,
-    exists: async (path) => existsSync(path),
+    exists: pathExists,
     projects: () => loadAllProjects(),
     files: diskFiles,
     home,

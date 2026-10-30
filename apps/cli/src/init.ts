@@ -141,6 +141,7 @@ import {
   liveGit,
   liveSetupReader,
   type RegisterLocalPayload,
+  pathExists,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
@@ -1039,7 +1040,7 @@ export function liveInitWorld(): InitWorld {
     },
     runtimes: askRuntimes,
     setupReader: liveSetupReader,
-    exists: async (path) => existsSync(path),
+    exists: pathExists,
     database: async (url) => {
       const pg = (await import('pg')).default
       const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })
