@@ -284,6 +284,22 @@ async function listening(host: string, port: number): Promise<void> {
  * `start` needs no such check: a supervised board holds the lock, and a second
  * one is refused by it in words.
  */
+export const BOARD_START_NOTE =
+  'it serves in this terminal — ctrl-c stops it. Under lingtai service it is a job: lingtai board stop'
+
+export const supervisorRefusal = (what: string): string =>
+  `the supervisor refused to ${what} the board's job — lingtai service status says what it has`
+
+export const BOARD_STOPPED_NOTE =
+  "stopped the board's job. It stays stopped: lingtai service start starts it again with the conductor"
+
+export const stillAnsweringNote = (seconds: number): string =>
+  `the supervisor still has the board's job ${seconds}s after the stop — ` +
+  'it may still be answering. lingtai service status says what the supervisor has'
+
+export const noAnswerNote = (url: string, seconds: number): string =>
+  `nothing answers on ${url} ${seconds}s after the restart — lingtai service status says what the supervisor has`
+
 export type BoardVerb = 'start' | 'stop' | 'restart' | 'status'
 
 /**
@@ -553,7 +569,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
     }
     log(`${symbol.pass()} board on ${url}`)
     if (command.open && !(await world.open(url))) log(`no browser could be opened here — open ${url}`)
-    log('it serves in this terminal — ctrl-c stops it. Under lingtai service it is a job: pnpm lingtai board stop')
+    log(BOARD_START_NOTE)
     return 0
   }
 
@@ -577,16 +593,14 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
     const r = world.exec(call)
     if (r.status !== 0) {
       if (r.out.trim()) error(r.out.trim())
-      error(`the supervisor refused to ${what} the board's job — pnpm lingtai service status says what it has`)
+      error(supervisorRefusal(what))
       return 1
     }
     if (what === 'stop') {
       // The call returning is not the job being gone, and saying so would be
       // the one thing this verb is asked for.
       if (!(await gone())) return 1
-      log(
-        `${symbol.pass()} stopped the board's job. It stays stopped: pnpm lingtai service start starts it again with the conductor`,
-      )
+      log(`${symbol.pass()} ${BOARD_STOPPED_NOTE}`)
       return 0
     }
     return (await answers()) ? 0 : 1
@@ -616,10 +630,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       if (!kept.kept) return true
       await world.sleep(GONE_POLL_MS)
     }
-    error(
-      `the supervisor still has the board's job ${UNLOAD_WAIT_MS / 1000}s after the stop — ` +
-        'it may still be answering. pnpm lingtai service status says what the supervisor has',
-    )
+    error(stillAnsweringNote(UNLOAD_WAIT_MS / 1000))
     return false
   }
 
@@ -637,10 +648,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       }
       await world.sleep(ANSWER_POLL_MS)
     }
-    error(
-      `nothing answers on ${url} ${ANSWER_WAIT_MS / 1000}s after the restart — ` +
-        'pnpm lingtai service status says what the supervisor has',
-    )
+    error(noAnswerNote(url, ANSWER_WAIT_MS / 1000))
     return false
   }
 

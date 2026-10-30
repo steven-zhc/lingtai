@@ -253,10 +253,12 @@ const STORE_REFUSED_TITLE: Record<StoreUnchosen, string> = {
   unreadable: "the machine's config file cannot be read",
 }
 
+export const STORE_UNWRITTEN =
+  'every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url'
+
 export function storeRow(choice: StoreChoice): CheckResult {
   const name = "store: the machine's written choice"
-  const shut =
-    'every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url (#179, 0056 §2)'
+  const shut = STORE_UNWRITTEN
   if ('refused' in choice) {
     return {
       name,
@@ -503,6 +505,16 @@ async function pooledConnection(url: string): Promise<CheckResult> {
  * It used to take an advisory lock too, because the merge lane was one. No lock
  * is in Postgres since #193: every lock is a file (`@lingtai/env/lock`).
  */
+export function notSessionModeDetail(standIn: boolean): string {
+  return (
+    (standIn
+      ? 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and ' +
+        'LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL\n'
+      : 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode\n') +
+    'LISTEN/NOTIFY will fail silently through it.'
+  )
+}
+
 async function directIsSessionMode(url: string, standIn = false): Promise<CheckResult> {
   const name = 'postgres: direct connection is session mode'
   const listener = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
@@ -530,12 +542,7 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
         name,
         status: 'fail',
         title: 'the direct database connection is not session mode',
-        detail:
-          (standIn
-            ? 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and ' +
-              'LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL\n'
-            : 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode\n') +
-          'LISTEN/NOTIFY will fail silently through it (doc/decisions-archive/0009).',
+        detail: notSessionModeDetail(standIn),
       }
     }
 
@@ -1037,7 +1044,7 @@ export function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
  * above. Issue numbers are the same trap one step removed, because an issue
  * closes; a reason that stands on its own does not carry one.
  */
-const DEFERRED: { name: string; detail: string }[] = [
+export const DEFERRED: { name: string; detail: string }[] = [
   {
     name: 'repository, base branch, submodules',
     detail:
@@ -1049,15 +1056,15 @@ const DEFERRED: { name: string; detail: string }[] = [
     name: 'hook: fail closed',
     detail:
       'every run proves it immediately before dispatching, which is the check that matters; ' +
-      'proving it once at daemon startup as well would only surface a missing binary earlier (#48)',
+      'proving it once at daemon startup as well would only surface a missing binary earlier',
   },
   {
     name: 'github: installation and labels',
     detail:
       "per repository: lingtai add checks the App's permissions before it records anything, so the " +
       'gap a startup check would look for stops the one command that can act on it. Labels are ' +
-      "computed from the work item's state and written whole, and reconcile converges what did not " +
-      'land (#69) — so label drift has an owner rather than needing a check here',
+      "computed from the work item's state and written whole, and the next start converges what did " +
+      'not land — so label drift has an owner rather than needing a check here',
   },
 ]
 
