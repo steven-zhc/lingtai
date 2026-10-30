@@ -491,11 +491,12 @@ export function codexUsage(tokens: TokenCounts, recorded: { model?: string; mode
 /**
  * The `config.toml` the child process will read: `CODEX_HOME`, else `HOME/.codex`,
  * from the request's environment and never this process's (a triage run has a
- * private `HOME` and a real `CODEX_HOME`).
+ * private `HOME` and a real `CODEX_HOME`). A relative value is resolved against
+ * `cwd`, the directory the child runs in, never this process's own.
  */
-export function codexConfigPath(env: Record<string, string>): string | undefined {
-  if (env.CODEX_HOME) return join(env.CODEX_HOME, 'config.toml')
-  if (env.HOME) return join(env.HOME, '.codex', 'config.toml')
+export function codexConfigPath(env: Record<string, string>, cwd: string): string | undefined {
+  if (env.CODEX_HOME) return resolve(cwd, env.CODEX_HOME, 'config.toml')
+  if (env.HOME) return resolve(cwd, env.HOME, '.codex', 'config.toml')
   return undefined
 }
 
@@ -532,9 +533,10 @@ export function configuredModel(text: string): string | undefined {
  */
 function configModelFor(
   env: Record<string, string>,
+  cwd: string,
   trace: NonNullable<RunRequest['log']>,
 ): { model?: string; modelFrom?: 'config' } {
-  const path = codexConfigPath(env)
+  const path = codexConfigPath(env, cwd)
   if (path === undefined) return {}
   let text: string
   try {
@@ -1237,7 +1239,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
 
       // What the entry says the model was. Never flows into the argv: it is
       // recorded, not requested.
-      const recorded = request.model ? { model: request.model } : configModelFor(request.env, trace)
+      const recorded = request.model ? { model: request.model } : configModelFor(request.env, request.cwd, trace)
 
       const args = codexArgv(request, request.prompt, {
         settings: wiring,

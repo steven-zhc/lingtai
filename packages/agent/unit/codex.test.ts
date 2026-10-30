@@ -285,12 +285,14 @@ describe("codexUsage, the run's tokens turned into one Usage entry", () => {
 
 describe('codexConfigPath, the file the child process will read', () => {
   it('prefers CODEX_HOME', () => {
-    expect(codexConfigPath({ CODEX_HOME: '/c', HOME: '/h' })).toBe('/c/config.toml')
+    expect(codexConfigPath({ CODEX_HOME: '/c', HOME: '/h' }, '/w')).toBe('/c/config.toml')
   })
   it('falls back to HOME/.codex, and to nothing', () => {
-    expect(codexConfigPath({ HOME: '/h' })).toBe('/h/.codex/config.toml')
-    expect(codexConfigPath({ CODEX_HOME: '', HOME: '/h' })).toBe('/h/.codex/config.toml')
-    expect(codexConfigPath({})).toBeUndefined()
+    expect(codexConfigPath({ HOME: '/h' }, '/w')).toBe('/h/.codex/config.toml')
+    expect(codexConfigPath({ CODEX_HOME: '', HOME: '/h' }, '/w')).toBe('/h/.codex/config.toml')
+    expect(codexConfigPath({}, '/w')).toBeUndefined()
+    expect(codexConfigPath({ CODEX_HOME: 'codex-home' }, '/w')).toBe('/w/codex-home/config.toml')
+    expect(codexConfigPath({ HOME: 'h' }, '/w')).toBe('/w/h/.codex/config.toml')
   })
 })
 

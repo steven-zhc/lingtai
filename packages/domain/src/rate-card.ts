@@ -13,9 +13,10 @@
  * a price function must stay out of a reducer's reach. Import it as
  * `@lingtai/domain/rate-card`.
  *
- * **Codex's `model` is the recipe's request echoed back, not what served the
- * call (0110 §3)**, so an estimate for it prices what was asked for. That is
- * acceptable for an estimate, never for a bill.
+ * **Codex's `model` is the recipe's request echoed back, or, where the recipe
+ * names none, the model its config file names (`modelFrom: 'config'`) — not
+ * what served the call (0110 §3)**, so an estimate for it prices what was asked
+ * for or configured. That is acceptable for an estimate, never for a bill.
  */
 import type { TokenCounts, Usage } from './spend.ts'
 
