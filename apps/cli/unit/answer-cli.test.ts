@@ -203,24 +203,7 @@ describe('usage', () => {
 })
 
 describe('integer flags (#770)', () => {
-  const flags: [string, string][] = [
-    ['approve', 'issue'],
-    ['requeue', 'issue'],
-    ['grant-fix-round', 'issue'],
-    ['ask', 'issue'],
-    ['answer', 'issue'],
-    ['close', 'issue'],
-    ['now', 'issue'],
-    ['run', 'issue'],
-    ['run', 'max'],
-    ['end', 'issue'],
-    ['board', 'port'],
-  ]
-
-  it('covers every entry of the list', () => {
-    const listed = Object.entries(INTEGER_FLAGS).flatMap(([c, fs]) => fs.map((f) => `${c} ${f}`))
-    expect(flags.map(([c, f]) => `${c} ${f}`).sort()).toEqual(listed.sort())
-  })
+  const flags = Object.entries(INTEGER_FLAGS).flatMap(([c, fs]) => fs.map((f): [string, string] => [c, f]))
 
   it.each(flags)('%s --%s refuses what is not a whole number, by name, exit 2', async (command, flag) => {
     const cases: [string[], string][] = [
@@ -245,6 +228,12 @@ describe('integer flags (#770)', () => {
       expect(JSON.parse(j.out)).toMatchObject({ command, error: { code: 'usage' } })
       vi.restoreAllMocks()
     }
+  })
+
+  it('text after -- is not scanned', async () => {
+    await capture(['answer', 'p', '--issue', '5', '--', 'use', '--issue', 'abc'])
+    expect(seen.calls).toHaveLength(1)
+    expect(seen.calls[0]!.options).toMatchObject({ issue: 5 })
   })
 
   it('a second occurrence is checked too', async () => {

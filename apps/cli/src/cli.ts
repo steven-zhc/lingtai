@@ -1274,7 +1274,8 @@ const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }
 /** The sentence refusing an integer flag whose value is not a whole number, in any form it arrives in, else undefined (#770). */
 function integerRefusal(args: readonly string[]): string | undefined {
   const flags: readonly string[] = (INTEGER_FLAGS as Record<string, readonly string[]>)[args[0] ?? ''] ?? []
-  const rest = args.slice(1)
+  const terminator = args.indexOf('--')
+  const rest = args.slice(1, terminator === -1 ? undefined : terminator)
   for (const flag of flags) {
     for (let i = 0; i < rest.length; i++) {
       const arg = rest[i]!
