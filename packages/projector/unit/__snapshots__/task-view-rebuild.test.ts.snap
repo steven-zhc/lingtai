@@ -399,7 +399,7 @@ exports[`task_view rebuilds through cardFactOf exactly as it did through the dir
     "wait_reason": "{"_tag":"ProposedEscalated","run":{"runId":"pass-pin-findings"},"proposal":{"_tag":"ReviewFindings","findings":[{"file":"a.ts","line":1,"claim":"bug","failureScenario":"breaks on empty input","severity":"major"}]},"because":{"_tag":"NotAsked"}}",
   },
   {
-    "answer": "{"question":"the \`merge\` step held: merge this?","answer":"","by":"steven"}",
+    "answer": "{"question":"ready to land — merge this?","answer":"","by":"steven"}",
     "attempts": 0,
     "awaiting_sha": null,
     "base_sha": null,

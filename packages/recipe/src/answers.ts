@@ -7,6 +7,8 @@
  * that it resolves. `apps/cli/src/landing.ts` asks the questions and calls
  * `setRecipe`; this is the one place both of those tests import.
  */
+import { SETUP_HOLD_TEXT } from '@lingtai/domain'
+
 import { UNBOUNDED } from './duration.ts'
 import type { RecipeChange } from './emit.ts'
 import type { TicketSource } from './recipe.ts'
@@ -23,8 +25,7 @@ function isQueueEntry(entry: unknown): entry is Record<string, unknown> & { queu
   return typeof entry === 'object' && entry !== null && 'queue' in entry
 }
 
-/** The one thing the setup's own hold says, quoted into the recipe. */
-export const SETUP_HOLD_TEXT = "Land this? The setup was answered 'hold'."
+export { SETUP_HOLD_TEXT }
 
 /** `--land hold`, or `--land <branch>` (#392's seam). */
 export type LandingAnswer = { land: 'hold' } | { land: string }

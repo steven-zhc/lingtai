@@ -29,9 +29,16 @@ import type { EscalationBecause, RunRef, WaitReason } from './wait.ts'
  */
 export interface WaitWords {
   line: string
+  /** The two-or-three words a card can lead with; `null` where the reason has no short name. */
+  short: string | null
   needs: 'judgement' | 'acknowledgement'
   diagnosis: BlockDiagnosis | null
 }
+
+/** The one thing the setup's own hold says, quoted into the recipe. */
+export const SETUP_HOLD_TEXT = "Land this? The setup was answered 'hold'."
+
+const APPROVE_EVERY_PASS = 'the recipe asks you to approve each pass'
 
 const APPROVE_EVERY_STEP_PASSED: BlockRecommendation = {
   action: 'approve',
@@ -82,6 +89,7 @@ function judgement(
 ): WaitWords {
   return {
     line: question,
+    short: null,
     needs: 'judgement',
     diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation },
   }
@@ -90,6 +98,7 @@ function judgement(
 function acknowledgement(question: string, run: RunRef, raw: string | null): WaitWords {
   return {
     line: question,
+    short: null,
     needs: 'acknowledgement',
     diagnosis: { what: question + unpushedSuffix(run), done: null, raw, recommendation: null },
   }
@@ -105,6 +114,7 @@ function mergeRefusedColumns(
   const question = `${reason}: ${raw}`.slice(0, 400)
   return {
     line: question,
+    short: null,
     needs: 'acknowledgement',
     diagnosis: {
       what: reading.what + unpushedSuffix(run),
@@ -136,6 +146,7 @@ function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd
         'alarm — the ticket asks for more than one run should do.'
   return {
     line: question,
+    short: null,
     needs: 'acknowledgement',
     diagnosis: {
       what: what + unpushedSuffix(run),
@@ -190,6 +201,7 @@ function routedRefusalColumns(
   const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
   return {
     line: question,
+    short: null,
     needs: 'judgement',
     diagnosis: {
       what: question + unpushedSuffix(run),
@@ -302,15 +314,16 @@ export function waitWords(
 ): WaitWords {
   switch (reason._tag) {
     case 'OwnQuestion':
-      return { line: reason.question, needs: 'judgement', diagnosis: null }
+      return { line: reason.question, short: null, needs: 'judgement', diagnosis: null }
 
     case 'AgentQuestion':
       return judgement(stepLine(reason.step, 'asked', reason.question), reason.run, reason.question)
 
     case 'SignoffRequired': {
-      const question = stepLine(reason.step, 'held', reason.question)
+      const asked = reason.question === SETUP_HOLD_TEXT ? APPROVE_EVERY_PASS : reason.question.trim()
+      const question = asked === '' ? 'ready to land' : `ready to land — ${asked}`
       const recommendation = reason.step === 'merge' && pass.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null
-      return judgement(question, reason.run, reason.question, recommendation)
+      return { ...judgement(question, reason.run, reason.question, recommendation), short: 'ready to land' }
     }
 
     case 'FixerDisagrees':

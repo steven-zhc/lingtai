@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { waitWords } from '../src/wait-words.ts'
+import { SETUP_HOLD_TEXT, waitWords } from '../src/wait-words.ts'
 import type { WaitReason } from '../src/wait.ts'
 
 describe('waitWords', () => {
@@ -12,6 +12,7 @@ describe('waitWords', () => {
     const reason: WaitReason = { _tag: 'OwnQuestion', question: 'which design?', by: 'human:steven' }
     expect(waitWords(reason)).toEqual({
       line: 'which design?',
+      short: null,
       needs: 'judgement',
       diagnosis: null,
     })
@@ -43,7 +44,7 @@ describe('waitWords', () => {
       action: 'sign-off',
       question: 'go ahead?',
     }
-    expect(waitWords(declared).line).toBe('the `proposed` step held: go ahead?')
+    expect(waitWords(declared).line).toBe('ready to land — go ahead?')
     expect(waitWords(declared).diagnosis?.recommendation).toBeNull()
 
     const injected: WaitReason = {
@@ -57,6 +58,24 @@ describe('waitWords', () => {
       action: 'approve',
       why: 'every step passed on this diff; approving merges what this run produced',
     })
+  })
+
+  it('names a held pass in one sentence, short name included', () => {
+    const run = { runId: 'pass-1' }
+    const setup: WaitReason = {
+      _tag: 'SignoffRequired',
+      run,
+      step: 'proposed',
+      action: 'human',
+      question: SETUP_HOLD_TEXT,
+    }
+    expect(waitWords(setup)).toMatchObject({
+      line: 'ready to land — the recipe asks you to approve each pass',
+      short: 'ready to land',
+    })
+    const repair: WaitReason = { ...setup, step: 'merge', question: 'a repair is waiting on you' }
+    expect(waitWords(repair).line).toBe('ready to land — a repair is waiting on you')
+    expect(waitWords({ ...setup, question: '  ' }).line).toBe('ready to land')
   })
 
   it('vetoes the merge recommendation on a SignoffRequired carrying a live finding', () => {

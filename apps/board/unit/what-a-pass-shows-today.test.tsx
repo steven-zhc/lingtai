@@ -7415,7 +7415,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: "judgement: the `proposed` step held: Merge this? It is Lingtai's own code.",
+          summary: "judgement: ready to land — Merge this? It is Lingtai's own code.",
         },
         {
           type: 'IssueUpdated',

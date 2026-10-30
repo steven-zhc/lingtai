@@ -183,7 +183,7 @@ describe('the state, and how long it has held', () => {
     expect(standing.since).toBe('2026-09-08T04:12:15.000Z')
     expect(standing.onYou).toBe(true)
     expect(standing.who).toBe('waiting on you')
-    expect(standing.question).toBe('the `proposed` step held: approve the diff for #89?')
+    expect(standing.question).toBe('ready to land — approve the diff for #89?')
   })
 
   it('opens an escalated wait on its branch even when no event recorded the issue', () => {
