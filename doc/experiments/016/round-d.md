@@ -150,6 +150,11 @@ repository, `itsdangerous`.
 | 15 | a dollar ceiling per agent run, like $5, or "none" for no ceiling | Enter |  |
 | 16 | register with the checks and landing above? | `yes` | if asked |
 
+**Choice or typed**: a question drawn with ●/○ is a choice, answered with the
+arrow keys and Enter. One drawn with an empty line is typed: type the answer
+exactly as the table writes it, e.g. `claude-code`, and Enter. The agent and
+model questions are typed (C9).
+
 A question not in this table is a finding: write it down with its words.
 
 *D.3 output:*

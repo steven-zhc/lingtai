@@ -742,6 +742,15 @@ without `workflow`, i.e. run C.16 first.
 
 **Round C stuck:**
 
+- **C9. The agent questions look like free text, though they have a fixed
+  list.** "which agent writes the change (claude-code, codex)" and "does a cold
+  reviewer read it, and which agent (claude-code, codex, or none)" are drawn as
+  an empty line to type into, while "a GitHub project, or one on this machine
+  only" and "use every default?" are drawn as ●/○ choices. The agent questions
+  pass no `choices`, only a `validate` (`apps/cli/src/agents.ts:180`, `:233`),
+  so anything can be typed and is refused afterwards: C.7 typed `pnpm install`
+  there (C6). A question with a fixed list should be a choice.
+
 - **C2. `add` on a GitHub repository ends in a dump, and cites an ADR.**
   After "Before registering nanoid" it printed "github gh — github.auth", then
   "reading /Users/steven/lingtai-trial/c/nanoid/recipe.yml — the recipe is this
