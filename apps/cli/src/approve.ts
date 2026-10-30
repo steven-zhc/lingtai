@@ -15,7 +15,10 @@ import { userInfo } from 'node:os'
  */
 import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
+import { conductorLockHolder } from '@lingtai/daemon'
+import { reduceTicket, ticketStream, waitWords } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
+import { type EventStore, eventStore } from '@lingtai/event-store'
 
 import { withProjector } from './projector.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -27,10 +30,112 @@ export interface ApproveCommandOptions {
   by?: string
 }
 
+/** How long `approve` waits for a conductor to land what it approved. */
+export const WAIT_MS = 60_000
+const POLL_MS = 1_000
+
+export interface FollowWorld {
+  /** `conductorLockHolder`: who conducts, null for nobody, a throw where the lock could not be asked. */
+  holder: () => Promise<string | null>
+  store: Pick<EventStore, 'read'>
+  now: () => number
+  /** Resolves early when `signal` aborts. */
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>
+  signal?: AbortSignal
+}
+
+export interface Followed {
+  detail: string
+  outcome: 'landed' | 'held' | 'pending' | 'no-conductor' | 'unknown'
+  next?: string
+  extra?: Record<string, unknown>
+}
+
+const why = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/**
+ * What became of an approval (#748). **The approval has committed by the time
+ * this runs, so nothing here throws and nothing turns the exit code.** A
+ * conductor re-claims the ticket before it lands it, so `claimed` is still
+ * "continuing" — only `landed`, `blocked`, `closed` and `backlog` end the wait.
+ */
+export async function followApproval(
+  target: { project: string; issue: number },
+  world: FollowWorld,
+): Promise<Followed> {
+  let holder: string | null
+  try {
+    holder = await world.holder()
+  } catch (err) {
+    return {
+      detail: `could not tell whether a conductor is running (${why(err)}); lingtai doctor says`,
+      outcome: 'unknown',
+    }
+  }
+  if (holder === null) {
+    return { detail: 'it lands when a conductor runs: lingtai start, or lingtai run', outcome: 'no-conductor' }
+  }
+  const stream = ticketStream(target.project, target.issue)
+  const deadline = world.now() + WAIT_MS
+  const status = `lingtai status says when it lands`
+  for (;;) {
+    if (world.signal?.aborted) {
+      return {
+        detail: `stopped waiting; the approval stands, and ${status}`,
+        outcome: 'unknown',
+      }
+    }
+    try {
+      const lifecycle = reduceTicket(await world.store.read(stream)).lifecycle
+      switch (lifecycle.status) {
+        case 'landed':
+          return {
+            detail: `landed on ${lifecycle.base} in ${lifecycle.mergeCommit.slice(0, 7)}`,
+            outcome: 'landed',
+            extra: { mergeCommit: lifecycle.mergeCommit, base: lifecycle.base },
+          }
+        case 'blocked':
+          return {
+            detail: `held again: ${waitWords(lifecycle.reason, { branch: '', base: '', findings: [] }).line}`,
+            outcome: 'held',
+            next: `lingtai status ${target.project}`,
+          }
+        case 'closed':
+        case 'backlog':
+          return {
+            detail: lifecycle.status === 'closed' ? 'closed' : 'requeued',
+            outcome: 'held',
+            extra: { became: lifecycle.status === 'closed' ? 'closed' : 'requeued' },
+          }
+        default:
+          break
+      }
+    } catch (err) {
+      return { detail: `could not read the outcome (${why(err)}); ${status}`, outcome: 'unknown' }
+    }
+    if (world.now() >= deadline) {
+      return { detail: `${holder} is continuing it; ${status}`, outcome: 'pending' }
+    }
+    await world.sleep(POLL_MS, world.signal)
+  }
+}
+
+const sleepFor = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
+
 /** `progress` is where `withProjector`'s warnings go: stdout, or stderr under `--json`. */
 export async function approveVerdict(
   options: ApproveCommandOptions,
   progress: (line: string) => void,
+  world: Partial<FollowWorld> = {},
 ): Promise<Answered> {
   const project = await loadProject(options.project)
   if (!project) {
@@ -60,7 +165,7 @@ export async function approveVerdict(
   // This is the command most likely to be run with the board open, and it moves
   // a card off the lane the board exists for. So it follows the log while it
   // works, like every other host that appends — see `withProjector`.
-  return withProjector(progress, async (): Promise<Answered> => {
+  const approved = await withProjector(progress, async (): Promise<Answered> => {
     // `approveRun`'s own line carries the sha and the actor; it is held back and
     // becomes the verdict's detail, so a success prints one verdict and not two.
     const said: string[] = []
@@ -89,6 +194,8 @@ export async function approveVerdict(
       verdict: {
         outcome: 'accepted',
         ticketId: result.ticketId,
+        subject: `#${options.issue}`,
+        form: 'sentence',
         detail:
           unscheduled === undefined
             ? (said.at(-1)?.replace(/^approved /, '') ?? `continues at ${result.continuesAt}`)
@@ -98,6 +205,42 @@ export async function approveVerdict(
       },
     }
   })
+
+  const { verdict } = approved
+  if (verdict.outcome === 'refused') {
+    return { ...approved, verdict: { ...verdict, subject: `#${options.issue}` } }
+  }
+  if (verdict.extra?.['unscheduled'] !== undefined) return approved
+
+  // Ctrl+C is registered only now: before the approval commits it keeps Node's
+  // default, and a second one after this is Node's default again.
+  const abort = new AbortController()
+  const onInt = (): void => abort.abort()
+  if (world.signal === undefined) process.once('SIGINT', onInt)
+  try {
+    const followed = await followApproval(
+      { project: options.project, issue: options.issue },
+      {
+        holder: () => conductorLockHolder(),
+        store: eventStore,
+        now: Date.now,
+        sleep: sleepFor,
+        signal: abort.signal,
+        ...world,
+      },
+    )
+    return {
+      code: 0,
+      verdict: {
+        ...verdict,
+        detail: followed.detail,
+        ...(followed.next === undefined ? {} : { next: followed.next }),
+        extra: { ...verdict.extra, outcome: followed.outcome, ...followed.extra },
+      },
+    }
+  } finally {
+    process.removeListener('SIGINT', onInt)
+  }
 }
 
 export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {

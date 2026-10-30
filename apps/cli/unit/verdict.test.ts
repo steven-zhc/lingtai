@@ -16,15 +16,23 @@ afterEach(() => {
 const TICKET = 'ticket-lingtai-617'
 
 describe('renderVerdict, plain', () => {
-  it('approve accepted: the ticket and where it continues', () => {
-    const v: Verdict = { outcome: 'accepted', ticketId: TICKET, detail: 'continues at merge' }
-    expect(renderVerdict(VERBS.approve.accepted, v)).toEqual([`✓ approved ${TICKET}`, '  continues at merge'])
+  it('approve accepted: one line, #n and the outcome, no indented detail', () => {
+    const v: Verdict = {
+      outcome: 'accepted',
+      ticketId: TICKET,
+      subject: '#617',
+      form: 'sentence',
+      detail: 'landed on main in 5c60992',
+    }
+    expect(renderVerdict(VERBS.approve.accepted, v)).toEqual(['✓ approved #617 — landed on main in 5c60992'])
   })
 
   it('approve accepted but unscheduled: the reason it was not scheduled, and the command that schedules it', () => {
     const lines = renderVerdict(VERBS.approve.accepted, {
       outcome: 'accepted',
       ticketId: TICKET,
+      subject: '#617',
+      form: 'sentence',
       detail: 'continues at merge, but the continuation was not scheduled (store down); run it again to schedule it',
       next: 'lingtai approve lingtai --issue 617',
     })
