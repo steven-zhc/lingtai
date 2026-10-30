@@ -42,12 +42,18 @@ home so that a refusal which writes something cannot spoil this round's:
 **C.2**
 
 ```fish
-env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults
+env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults </dev/null
 echo "exit: $status"
 ls -la $HOME/lingtai-trial/c-defaults
+rm -rf $HOME/lingtai-trial/c-defaults
 ```
 
-(`$status` is fish's exit code of the command before it.)
+(`$status` is fish's exit code of the command before it.) **`</dev/null` is the
+point**: it is a script with no terminal. At a terminal the project question
+is *asked*, not defaulted, which is #700's design as well ("A durable choice
+is never defaulted": `github` would start an App's creation and a browser);
+the first paste below shows that, and it is right. Without a terminal there is
+nobody to ask, so it must refuse by name.
 
 *C.2 output:*
 
@@ -76,8 +82,17 @@ GitHub App
 └
 ```
 
-- [ ] **C.2-a** It refuses immediately, by name, with a non-zero exit, and no browser
-  opened.
+*C.2 output, with no terminal:*
+
+```paste
+
+```
+
+- [x] **C.2-a0** At a terminal (first paste): it stops at "a GitHub project,
+  or one on this machine only" with nothing chosen, and no browser opened.
+  Ctrl+C there.
+- [ ] **C.2-a** With no terminal (`</dev/null`): it refuses immediately, by name,
+  with a non-zero exit, and no browser opened.
 
 **Signed out: `init` offers to sign in, and Ctrl+C returns to the choice
 (#712):**
