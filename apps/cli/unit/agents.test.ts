@@ -24,14 +24,14 @@ env:
 
 function runtime(
   id: 'claude-code' | 'codex',
-  opts: { installed?: boolean; signedIn?: boolean; detail?: string } = {},
+  opts: { state?: RuntimeFound['state']; detail?: string } = {},
 ): RuntimeFound {
-  const signedIn = opts.signedIn ?? true
+  const state = opts.state ?? 'signed-in'
   return {
     id,
-    installed: opts.installed ?? true,
-    signedIn,
-    detail: opts.detail ?? (signedIn ? 'signed in via claude.ai' : 'not signed in'),
+    state,
+    signedIn: state === 'signed-in',
+    detail: opts.detail ?? (state === 'signed-in' ? 'signed in via claude.ai' : 'not signed in'),
   }
 }
 
@@ -76,13 +76,13 @@ describe('askAgents', () => {
       const { world, lines } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
       })
       expect('refused' in result).toBe(false)
-      expect(lines.some((l) => l.includes('codex is installed and not signed in (not signed in)'))).toBe(true)
+      expect(lines.some((l) => l.includes('codex is installed and signed out'))).toBe(true)
     })
 
     it('a flag naming a runtime not signed in is refused, and ask is never called', async () => {
@@ -90,13 +90,13 @@ describe('askAgents', () => {
       const { world, asked } = fakeWorld(['should not be reached'])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: { agent: 'codex' },
         home: HOME,
         files,
       })
       expect(result).toHaveProperty('refused')
-      expect((result as { refused: string }).refused).toContain('codex is installed and not signed in')
+      expect((result as { refused: string }).refused).toContain('codex is installed and signed out')
       expect(asked).toEqual([])
     })
 
@@ -105,7 +105,7 @@ describe('askAgents', () => {
       const { world, asked, lines } = fakeWorld(['codex', 'claude-code', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -113,6 +113,40 @@ describe('askAgents', () => {
       expect('refused' in result).toBe(false)
       expect(asked.length).toBeGreaterThan(1)
       expect(lines.some((l) => l.includes('sign in to it'))).toBe(true)
+    })
+
+    it('a codex that does not start is said to, with the first line it printed, and not told to sign in', async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const { world, lines } = fakeWorld(['', '', '', ''])
+      await askAgents(world, {
+        project: 'app',
+        runtimes: [
+          runtime('claude-code'),
+          runtime('codex', { state: 'did-not-start', detail: 'dyld[1]: Library not loaded\nReferenced from: node' }),
+        ],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      const line = lines.find((l) => l.includes('codex'))
+      expect(line).toContain('codex is installed but does not start: dyld[1]: Library not loaded')
+      expect(line).not.toContain('Referenced from')
+      expect(line).not.toContain('sign in')
+    })
+
+    it('a typed answer that is no runtime names the choices and does not say sign in', async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const { world, lines } = fakeWorld(['pnpm install', 'claude-code', '', '', ''])
+      await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      const line = lines.find((l) => l.includes('pnpm install is not a runtime'))
+      expect(line).toContain('choose one of claude-code, codex')
+      expect(line).not.toContain('sign in')
     })
 
     it('an empty answer is refused with a sentence that names no runtime and lists the choices (#727)', async () => {
@@ -136,8 +170,8 @@ describe('askAgents', () => {
       const result = await askAgents(world, {
         project: 'app',
         runtimes: [
-          runtime('claude-code', { signedIn: false }),
-          runtime('codex', { installed: false, signedIn: false, detail: 'spawn codex ENOENT' }),
+          runtime('claude-code', { state: 'signed-out' }),
+          runtime('codex', { state: 'not-installed', detail: 'spawn codex ENOENT' }),
         ],
         flags: {},
         home: HOME,
@@ -153,7 +187,7 @@ describe('askAgents', () => {
       const { world, asked } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -167,7 +201,7 @@ describe('askAgents', () => {
 
   describe('an empty model is an answer a flag can give (#736)', () => {
     const codexOnly = [
-      runtime('claude-code', { installed: false, signedIn: false, detail: 'spawn claude ENOENT' }),
+      runtime('claude-code', { state: 'not-installed', detail: 'spawn claude ENOENT' }),
       runtime('codex'),
     ]
     const headless = (): QuestionWorld => ({ ask: async () => null, log: () => {} })
@@ -225,7 +259,7 @@ describe('askAgents', () => {
       const { world } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -247,7 +281,7 @@ describe('askAgents', () => {
       const { world, lines } = fakeWorld(['', '', 'none'])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -289,7 +323,7 @@ describe('askAgents', () => {
       const { world } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -308,7 +342,7 @@ describe('askAgents', () => {
       const { world } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
         files,
@@ -346,10 +380,7 @@ describe('askAgents', () => {
       const { world, asked, lines } = fakeWorld(['claude-code', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [
-          runtime('claude-code'),
-          runtime('codex', { installed: false, signedIn: false, detail: 'spawn codex ENOENT' }),
-        ],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'not-installed', detail: 'spawn codex ENOENT' })],
         flags: {},
         home: HOME,
         files,
@@ -374,10 +405,7 @@ describe('askAgents', () => {
       const { world } = fakeWorld(['', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [
-          runtime('claude-code'),
-          runtime('codex', { installed: false, signedIn: false, detail: 'spawn codex ENOENT' }),
-        ],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'not-installed', detail: 'spawn codex ENOENT' })],
         flags: { model: 'X' },
         home: HOME,
         files,
@@ -497,7 +525,7 @@ describe('askAgents', () => {
       const { world, asked } = fakeWorld(['', '', '', ''])
       const result = await askAgents(world, {
         project: 'app',
-        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false, detail: 'not signed in' })],
+        runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out', detail: 'not signed in' })],
         flags: {},
         home: HOME,
         files,

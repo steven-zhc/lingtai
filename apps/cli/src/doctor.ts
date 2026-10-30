@@ -128,6 +128,7 @@ import pg from 'pg'
 import { readDaySpend } from './day-ceiling.ts'
 import { heading, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
+import { remedyFor } from './runtimes.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 import { versionFacts } from './version.ts'
 
@@ -2494,17 +2495,34 @@ async function dispatchedAuthRow(
     return { name, status: 'skip', detail: `${agent} cannot be asked cheaply` }
   }
   if (status.loggedIn) return { name, status: 'ok', detail: `${agent} — ${status.detail}` }
+  // A `state` this does not recognise (a fake without one) is worded as not
+  // starting, never as signed out (#735).
+  const signedOut = status.state === 'signed-out'
   return {
     name,
     status: 'fail',
-    title: `${project}'s ${label} agent, ${agent}, is signed out`,
+    title: `${project}'s ${label} agent, ${agent}, ${stateTitle(status.state)}`,
     detail:
       `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n` +
       `${project}'s recipe names it at ${keys.join(', ')}, so that is what its next call constructs and spawns. ` +
-      `Sign in, or name a runtime this ` +
-      `machine has at ${keys.join(', ')} in ${recipePath(project)}. If you are signed in yourself, the call's environment ` +
-      `is missing something the credential store needs — see runtime: signed in.`,
+      `${capitalise(remedyFor(status.state))}, or name a runtime this ` +
+      `machine has at ${keys.join(', ')} in ${recipePath(project)}.` +
+      (signedOut
+        ? ` If you are signed in yourself, the call's environment ` +
+          `is missing something the credential store needs — see runtime: signed in.`
+        : ''),
   }
+}
+
+/** The predicate of a doctor title for a runtime that cannot be used. */
+function stateTitle(state: AuthStatus['state'] | undefined): string {
+  if (state === 'signed-out') return 'is signed out'
+  if (state === 'not-installed') return 'is not installed'
+  return 'does not start'
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 /** Check the separately billed, tool-free route named by a recipe role. */
@@ -2666,7 +2684,9 @@ export async function declaredEnvironment(
           // Two agents in one project are two rows, so the second names itself.
           name: onRuntime ? row.name : `steps: ${project.project} ${agent} signed in`,
           ...(!onRuntime && row.title !== undefined
-            ? { title: `${project.project}'s steps need ${agent}, which is signed out` }
+            ? {
+                title: `${project.project}'s steps need ${agent}, which ${stateTitle(asked.get(agent)?.state)}`,
+              }
             : {}),
           detail:
             keys.length > 1 || !onRuntime

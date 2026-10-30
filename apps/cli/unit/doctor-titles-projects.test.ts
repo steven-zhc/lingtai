@@ -41,7 +41,7 @@ describe('runtime: signed in', () => {
         [
           {
             capabilities: { id: 'claude-code' },
-            checkAuth: async () => ({ loggedIn: false, method: null, detail: 'not logged in' }),
+            checkAuth: async () => ({ state: 'signed-out', loggedIn: false, method: null, detail: 'not logged in' }),
           },
         ] as never,
     )
@@ -152,7 +152,7 @@ steps: {}
 const signedOut = (id: string) =>
   ({
     capabilities: { id, enforces: ['wall'] },
-    checkAuth: async () => ({ loggedIn: false, method: null, detail: 'not logged in' }),
+    checkAuth: async () => ({ state: 'signed-out', loggedIn: false, method: null, detail: 'not logged in' }),
   }) as never
 
 describe('per-project rows through declaredEnvironment', () => {
@@ -180,6 +180,26 @@ describe('per-project rows through declaredEnvironment', () => {
     PLAIN(row.title)
     expect(row.fix).toBe('lingtai env set alpha TOKEN_A\nlingtai env set alpha TOKEN_B')
     expect(firstLine(row)).toBe('2 required names are not set')
+  })
+
+  it('a runtime that does not start is titled as not starting, not as signed out', async () => {
+    const broken = {
+      capabilities: { id: 'claude-code', enforces: ['wall'] },
+      checkAuth: async () => ({
+        state: 'did-not-start',
+        loggedIn: false,
+        method: null,
+        detail: 'dyld: Library not loaded',
+      }),
+    } as never
+    const rows = await declaredEnvironment({}, async () => [state], {
+      recipe: recipeOf(RECIPE),
+      agentEnv: agentEnv([]),
+      runtimes: (() => [broken]) as never,
+    })
+    const row = rows.find((r) => r.name === 'runtime: alpha signed in')!
+    expect(row.title).toBe("alpha's runtime agent, claude-code, does not start")
+    expect(row.detail).not.toContain('signed in yourself')
   })
 
   it('env: an unreadable environment is titled and has no fix', async () => {

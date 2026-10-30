@@ -50,7 +50,7 @@ const HOME = '/nonexistent/.lingtai'
 
 const signedIn = (id: RuntimeFound['id']): RuntimeFound => ({
   id,
-  installed: true,
+  state: 'signed-in',
   signedIn: true,
   detail: 'signed in',
 })

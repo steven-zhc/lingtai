@@ -259,10 +259,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
 }
 
 function signedIn(id: RuntimeFound['id']): RuntimeFound {
-  return { id, installed: true, signedIn: true, detail: 'signed in via claude.ai' }
+  return { id, state: 'signed-in', signedIn: true, detail: 'signed in via claude.ai' }
 }
 function notInstalled(id: RuntimeFound['id']): RuntimeFound {
-  return { id, installed: false, signedIn: false, detail: `spawn ${id} ENOENT` }
+  return { id, state: 'not-installed', signedIn: false, detail: `spawn ${id} ENOENT` }
 }
 
 function freshHome(): string {

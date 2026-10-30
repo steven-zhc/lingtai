@@ -57,7 +57,7 @@ const emptyLog = {
 /** One runtime, signed in — `runtime: signed in` asks every one of `everyRuntime()`'s. */
 const signedInRuntime = {
   capabilities: { id: 'claude-code' },
-  checkAuth: async () => ({ loggedIn: true, detail: 'signed in' }),
+  checkAuth: async () => ({ state: 'signed-in', loggedIn: true, detail: 'signed in' }),
 } as unknown as Runtime
 
 /**

@@ -89,7 +89,7 @@ function ttyHarness(): Harness {
     home: HOME,
     signedIn: async () => ['claude-code'] as never[],
     runtimes: async () =>
-      [{ id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' }] as RuntimeFound[],
+      [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }] as RuntimeFound[],
     setupReader: () => SETUP_READER,
     exists: async () => true,
     register: async (payload) => `added ${payload.project}`,
