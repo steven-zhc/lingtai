@@ -555,7 +555,34 @@ most fix rounds
 - [ ] **D.7-a** One ticket landed; `status`, `/spend` and `/report` show it; an unknown
   run names its reason.
 
+## Round D summary (2026-10-30)
+
+**Result.** The `gh` paths work: signed out, `init` offers the sign-in with
+`--scopes workflow` (D.0a); signed in without `workflow`, it names the missing
+scope, hands the terminal to `gh auth refresh … --scopes repo,workflow`, and
+continues (D.1-a, D.2-a). #695's detection works on a real uv repository:
+"install: uv sync --frozen — uv.lock is at the root", and format, lint,
+typecheck and test from `pyproject.toml`; but the type check it suggests fails
+on the base (D1). **#1 did not land**: `approve` was given an empty `$ISSUE`
+(D8) and the round was cleaned up with #1 waiting; `main` on the fork is still
+upstream's `672971d`. D.0a's Ctrl+C was pressed at the question, not in the
+browser step, so "returns to the choice" is still untested; it ended `init`
+with exit 130 and left only the store in `config.yml`.
+
 **Round D stuck:**
+
+- **D6. init's `next:` is not its last line.** D.1 printed "next: lingtai add
+  <owner>/<repo>" and then doctor's report and "Board / no board was started"
+  after it. #702 put the closing line last.
+- **D7. A typed check is named `check-1`.** The steps list says "build
+  check-1" for `uv run pytest`. A detected check gets a name (`test`,
+  `lint`); a typed one gets a number, and that is what the board and the
+  history show. (The typed answer also kept its leading space,
+  " uv run pytest".)
+- **D8. `approve` with an empty `--issue` says "'' is not a integer".** It
+  does not name the flag, and "a integer". The empty value was this
+  document's doing (`$ISSUE` set in another terminal), but the message is
+  Lingtai's.
 
 - 
 
