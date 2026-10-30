@@ -27,6 +27,38 @@ lingtai add $FORK
 date
 ```
 
+**`init` first** (this round's home is new; `gh` is signed in with `workflow`
+since D.1):
+
+| # | It asks | Answer |
+|---|---|---|
+| 1 | gh, signed in as steven-zhc — Lingtai's labels, comments, pull requests and pushes will appear as that account — or app, its own GitHub App | `gh` |
+
+**Then `add`.** The project is named after the repository, `itoa`. Nothing
+is detected for this stack, so the install and build are typed:
+
+| # | It asks | Answer | Why |
+|---|---|---|---|
+| 1 | the branch this project's recipe governs and merges into | Enter if it offers `master` | if it insists on `--base`, write that down and give `master` |
+| 2 | use every default? | `no` | `yes` refuses at the writer while Claude Code and Codex are both signed in (B8) |
+| 3 | which agent writes the change (claude-code, codex) | `claude-code` |  |
+| 4 | which model (empty for the runtime's own default) | Enter |  |
+| 5 | does a cold reviewer read it, and which agent (…, or none) | `claude-code` |  |
+| 6 | on which model (empty for the runtime's own default) | Enter |  |
+| 7 | the install command | type `cargo fetch` ⏎ | nothing is detected, so there is nothing to take |
+| 8 | run these before review? yes, or no to write your own | not asked | nothing is detected |
+| 8a | a command that must pass before review — empty when done | `cargo test` ⏎, then an empty line ⏎ | one command per answer; the empty one ends the list |
+| 9 | run these once against the base before writing them? | `yes` | the trial build |
+| 10 | where this project's tickets come from — github … or db … | `github` |  |
+| 11 | which labels are work, comma-separated, first = taken first | Enter | `bug, feature, documentation` |
+| 12 | land this on which branch, or "hold" to hold every pass for a person | `hold` |  |
+| 13 | how many times a pass sends the agent back … | Enter |  |
+| 14 | what one agent run may take, like 30m or 2h | Enter |  |
+| 15 | a dollar ceiling per agent run, like $5, or "none" for no ceiling | Enter |  |
+| 16 | register with the checks and landing above? | `yes` | if asked |
+
+A question not in this table is a finding: write it down with its words.
+
 *F.1 output:*
 
 ```paste
@@ -42,6 +74,8 @@ date
 gh issue create -R $FORK --label feature \
   --title 'Test that u128::MAX formats correctly' \
   --body 'Add one test asserting itoa::Buffer::new().format(u128::MAX) equals u128::MAX.to_string(). Change no library code. Done when cargo test passes.'
+set -gx ISSUE (gh issue list -R $FORK --label feature --limit 1 --json number --jq '.[0].number')
+echo \"issue: $ISSUE\"
 ```
 
 **Terminal 2**, a new terminal: set the round's environment first. A new terminal has none of it, and without it `lingtai start` runs against `~/.lingtai` instead of this round's home, and `gh` with your everyday login.
@@ -64,7 +98,7 @@ When the card is waiting on you, in terminal 1:
 
 ```fish
 lingtai status --all
-lingtai approve <project> --issue <n>
+lingtai approve itoa --issue $ISSUE
 lingtai report --window today
 ```
 

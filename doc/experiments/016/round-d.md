@@ -14,6 +14,14 @@ the state C.3 needs, so both happen here, in this order. A throwaway home,
 the terminal to `gh auth login --web`, **press Ctrl+C before finishing in the
 browser**. Then Ctrl+C once more at the choice to leave `init`.
 
+| # | It asks | Answer |
+|---|---|---|
+| 1 | sign-in, to sign gh in now (`gh auth login …`) — or app, a GitHub App of its own | `sign-in` |
+| 2 | (`gh auth login --web` takes the terminal and opens the browser) | **Ctrl+C**, do not finish in the browser |
+| 3 | the same question again, if it returns to it (D.0a-b) | **Ctrl+C**, to leave `init` |
+
+The store and the project kind are not asked: `--store sqlite --project github`.
+
 ```fish
 set -gx GH_CONFIG_DIR $HOME/lingtai-trial/gh
 env GH_CONFIG_DIR=$GH_CONFIG_DIR gh auth status
@@ -72,7 +80,14 @@ echo $LINGTAI_HOME
 lingtai init --store sqlite --project github --port 17830
 ```
 
-Choose the `gh` login.
+| # | It asks | Answer |
+|---|---|---|
+| 1 | first a line "github gh cannot be used yet — …" naming the missing `workflow` scope, then: sign-in, to sign gh in now (`gh auth refresh …`) — or app, a GitHub App of its own | `sign-in`, then finish in the browser |
+| 2 | anything after the sign-in | write it down with its words |
+
+The store and the project kind are not asked: `--store sqlite --project github`.
+If the first line does not name `workflow`, or the command in it is not
+`gh auth refresh`, that is D.1-a failing.
 
 *D.1 output:*
 
@@ -112,7 +127,30 @@ lingtai add $FORK
 date
 ```
 
-Answers as in round C.
+**The answers**, in the order `add` asks. The project is named after the
+repository, `itsdangerous`.
+
+| # | It asks | Answer | Why |
+|---|---|---|---|
+| 1 | the branch this project's recipe governs and merges into | Enter if it offers `main` | if it insists on `--base`, write that down and give `main` |
+| 2 | use every default? | `no` | `yes` refuses at the writer while Claude Code and Codex are both signed in (B8) |
+| 3 | which agent writes the change (claude-code, codex) | `claude-code` |  |
+| 4 | which model (empty for the runtime's own default) | Enter |  |
+| 5 | does a cold reviewer read it, and which agent (…, or none) | `claude-code` |  |
+| 6 | on which model (empty for the runtime's own default) | Enter |  |
+| 7 | the install command | Enter if it offers `uv sync` | #695: a uv project (`uv.lock` at the root) |
+| 8 | run these before review? yes, or no to write your own | `yes` if it lists a `uv run pytest` | #695; write down exactly what it lists |
+| 8a | a command that must pass before review — empty when done | `uv run pytest` ⏎, then an empty line ⏎ | only if 8 is not asked: nothing was detected, and D.3-a fails |
+| 9 | run these once against the base before writing them? | `yes` | the trial build |
+| 10 | where this project's tickets come from — github … or db … | `github` |  |
+| 11 | which labels are work, comma-separated, first = taken first | Enter | `bug, feature, documentation` |
+| 12 | land this on which branch, or "hold" to hold every pass for a person | `hold` |  |
+| 13 | how many times a pass sends the agent back … | Enter |  |
+| 14 | what one agent run may take, like 30m or 2h | Enter |  |
+| 15 | a dollar ceiling per agent run, like $5, or "none" for no ceiling | Enter |  |
+| 16 | register with the checks and landing above? | `yes` | if asked |
+
+A question not in this table is a finding: write it down with its words.
 
 *D.3 output:*
 
@@ -137,6 +175,8 @@ Terminal 1:
 gh issue create -R $FORK --label feature \
   --title 'Test that URLSafeSerializer round-trips a non-ASCII string' \
   --body 'Add one test: URLSafeSerializer("secret").loads(s.dumps("héllo wörld ✓")) returns the same string. Change no library code. Done when the test suite passes.'
+set -gx ISSUE (gh issue list -R $FORK --label feature --limit 1 --json number --jq '.[0].number')
+echo "issue: $ISSUE"
 date
 ```
 
@@ -174,7 +214,7 @@ When the card is waiting on you, in terminal 1:
 
 ```fish
 lingtai status --all
-lingtai approve <project> --issue <n>
+lingtai approve itsdangerous --issue $ISSUE
 date
 lingtai report --window today
 ```
