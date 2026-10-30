@@ -43,15 +43,7 @@ import {
   waitsFor,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
-import {
-  type ControlState,
-  type ProjectState,
-  passTransition,
-  projectStream,
-  reduceProject,
-  reduceTicket,
-  ticketStream,
-} from '@lingtai/domain'
+import { type ControlState, type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -59,6 +51,8 @@ import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
+
+import { stillOwed } from './continuing.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot()
@@ -385,8 +379,7 @@ export function conductWork(
         Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
       )
         continue
-      const ticket = reduceTicket(await store.read(ticketStream(name, Number(c.issue))))
-      if (ticket.lifecycle.status !== 'approved' || ticket.lifecycle.runId !== c.runId) continue
+      if (!(await stillOwed(store, name, c))) continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
       if (detached) {
         // Not a reason to stop looking: one that is declined at claim, or that has to
