@@ -2,6 +2,62 @@
 
 Part of [016, the v0.10.0 first-time path](../016-the-v0.10.0-first-time-path.md): how to fill this in, the shared environment ([0.4](../016-the-v0.10.0-first-time-path.md#04-a-clean-state-every-terminal)), the Record and After are there.
 
+## Before D: what round C left out
+
+Round C did not press Ctrl+C during the sign-in (C.3, C.4) and did not sign
+back in without `workflow` (C.16). `gh` is signed out now, which is exactly
+the state C.3 needs, so both happen here, in this order. A throwaway home,
+`c-signin`, so nothing of round D's is touched.
+
+**D.0a: Ctrl+C during the sign-in returns to the choice and writes nothing
+(C.3, C.4, #712).** Choose the `gh` login, accept the sign-in, and when it hands
+the terminal to `gh auth login --web`, **press Ctrl+C before finishing in the
+browser**. Then Ctrl+C once more at the choice to leave `init`.
+
+```fish
+set -gx GH_CONFIG_DIR $HOME/lingtai-trial/gh
+env GH_CONFIG_DIR=$GH_CONFIG_DIR gh auth status
+rm -rf $HOME/lingtai-trial/c-signin
+env LINGTAI_HOME=$HOME/lingtai-trial/c-signin lingtai init --store sqlite --project github --port 17830
+echo "exit: $status"
+gh auth status
+cat $HOME/lingtai-trial/c-signin/config.yml
+```
+
+*D.0a output:*
+
+```paste
+
+```
+
+- [ ] **D.0a-a** The first `gh auth status` says not logged in.
+- [ ] **D.0a-b** Ctrl+C in the browser step returns to "how this machine
+  reaches GitHub" and does not end `init`.
+- [ ] **D.0a-c** After leaving, `gh auth status` still says not logged in, and
+  `config.yml` has no `github` key (the store line is expected: C1).
+
+**D.0b: sign in without `workflow` (C.16).** No `--scopes`, so the token has
+`gh`'s default scopes and not `workflow`. Round D's first check needs exactly
+that.
+
+```fish
+set -gx GH_CONFIG_DIR $HOME/lingtai-trial/gh
+rm -rf $HOME/lingtai-trial/c-signin
+gh auth login --hostname github.com --web
+gh auth status
+```
+
+*D.0b output:*
+
+```paste
+
+```
+
+- [ ] **D.0b-a** `gh auth status` shows the account, and its token scopes do
+  not include `workflow`.
+
+## Round D
+
 **Terminal 1**. **A new terminal for this round, or set it again here.** A terminal left from the last round still has its `ROUND`, and `init` then runs in that round's home: in round B it printed `home /Users/steven/lingtai-trial/a` and asked nothing (B1). `echo $LINGTAI_HOME` must print this round's letter. `GH_CONFIG_DIR` is the same as round C's, now signed in without `workflow`.
 
 **D.1**
