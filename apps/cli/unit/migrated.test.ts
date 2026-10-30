@@ -1,7 +1,7 @@
 /** The router's claim (#616): `version` is `@effect/cli`'s, and every command is its. */
 import { describe, expect, it } from 'vitest'
 
-import { routeOf } from '../src/migrated.ts'
+import { routeOf, versionFlagAsCommand } from '../src/migrated.ts'
 
 describe('routeOf', () => {
   it.each([
@@ -90,5 +90,36 @@ describe('routeOf', () => {
     [['bogus'], 'unknown'],
   ])('routes %j to %s', (argv, route) => {
     expect(routeOf(argv)).toBe(route)
+  })
+})
+
+describe('versionFlagAsCommand (#740)', () => {
+  it.each([
+    [['--version'], ['version']],
+    [
+      ['--version', '--json'],
+      ['version', '--json'],
+    ],
+    [
+      ['--version', '--help'],
+      ['version', '--help'],
+    ],
+    [
+      ['--version', 'bogus'],
+      ['version', 'bogus'],
+    ],
+    [
+      ['status', '--version'],
+      ['status', '--version'],
+    ],
+    [['-v'], ['-v']],
+    [[], []],
+  ])('%j → %j', (argv, expected) => {
+    expect(versionFlagAsCommand(argv)).toEqual(expected)
+  })
+
+  it('routes the rewritten --version to @effect/cli, and -v stays unknown', () => {
+    expect(routeOf(versionFlagAsCommand(['--version']))).toBe('effect')
+    expect(routeOf(['-v'])).toBe('unknown')
   })
 })
