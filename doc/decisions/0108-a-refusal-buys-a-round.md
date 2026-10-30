@@ -167,6 +167,16 @@ fixes the bounds and the endings that router works inside.
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.
 
+
+13. **A refusal the base shares buys nothing.** Before a `build` refusal buys
+    a round, the refused command is run on the pass's base commit. If it fails
+    there too, the refusal is not about the diff: no round is bought, and the
+    pass holds for a person, saying which check is red on the base (`base is
+    red: <check>`). A fix agent does not fix what it did not break; rounds spent
+    on it are spent for nothing. The base's result is recorded on the log, keyed
+    by the base commit and the command, so passes in flight and the next ticket
+    reuse it, and a base that moves runs it again.
+
 ## Consequences
 
 - Every refusal is one flow with one ceiling. Only the evidence differs between a
@@ -182,6 +192,8 @@ fixes the bounds and the endings that router works inside.
   implementer deserves a retry of its own is unmeasured and not offered.
 
 ## Not built yet
+
+- **§13 is not built.** A build refusal buys a round whatever the base says.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
