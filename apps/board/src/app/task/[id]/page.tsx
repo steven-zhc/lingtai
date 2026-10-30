@@ -536,6 +536,22 @@ function plural(n: number, word: string): string {
 }
 
 /**
+ * The Diff tab's fact (#729). Git's count of the newest attempt that has one
+ * (`RunProducedDiff`) comes first, naming the attempt when a newer one has no
+ * diff; a count of 0 is not proof (`numstat` turns a failed `git diff` into
+ * 0), so it falls to the paths the agent's file tools reported, as before.
+ */
+export function diffFact(runs: readonly RunView[]): string {
+  const counted = [...runs].reverse().find((r) => r.diff !== null)
+  if (counted?.diff && counted.diff.files > 0) {
+    const files = plural(counted.diff.files, 'file')
+    return counted === runs[runs.length - 1] ? files : `${files} · attempt ${counted.attempt}`
+  }
+  const paths = new Set(runs.flatMap((r) => r.files.map((f) => f.path))).size
+  return paths === 0 ? 'none touched' : plural(paths, 'path')
+}
+
+/**
  * Rank 7: everything the first screen does not need, as five tabs (0118 §2,
  * #417): History, Diff, Findings, Attempts and Ticket. `RecordTabs` holds the
  * selection; this builds the five panels, server-side, the way it built four
@@ -549,7 +565,6 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
 
   const verdicts = task.runs.reduce((n, r) => n + r.steps.length, 0)
   const findings = task.runs.reduce((n, r) => n + r.steps.reduce((m, g) => m + g.findings.length, 0), 0)
-  const paths = new Set(task.runs.flatMap((r) => r.files.map((f) => f.path))).size
   const events = task.history.reduce((n, g) => n + g.lines.length, 0)
   // Did a run propose anything to diff against? `headSha` is set only by
   // `RunProposedCompletion`; a run that never reached it has nothing to show
@@ -609,7 +624,7 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
     },
     {
       name: 'diff',
-      fact: paths === 0 ? 'none touched' : plural(paths, 'path'),
+      fact: diffFact(task.runs),
       panel: (
         <>
           {newest.length === 0 ? (
@@ -618,6 +633,12 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
             newest.map((run) => (
               <div key={run.runId} className="rpart">
                 <Of run={run} many={many} />
+                {run.diff !== null && run.diff.files > 0 ? (
+                  <p>
+                    {plural(run.diff.files, 'file')}, +{run.diff.insertions} −{run.diff.deletions}
+                    {run.diff.branch !== '' ? `, on ${run.diff.branch}` : ''}
+                  </p>
+                ) : null}
                 {run.files.length > 0 ? (
                   <ul className="flist">
                     {run.files.map((f) => (
@@ -627,7 +648,7 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : run.diff !== null && run.diff.files > 0 ? null : (
                   <p className="empty">This attempt touched no files.</p>
                 )}
                 {/* Never `headSha ?? ''`: a run that never proposed anything

@@ -23,7 +23,7 @@ import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { RECORD_TABS, TaskBody, UnpushedBanner } from '../src/app/task/[id]/page.tsx'
+import { diffFact, RECORD_TABS, Record, TaskBody, UnpushedBanner } from '../src/app/task/[id]/page.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   foldRun,
@@ -880,5 +880,49 @@ describe('the waiting links in the header (#584)', () => {
     const none = withWaiting({ previous: null, next: null })
     expect(none).not.toContain('previous waiting')
     expect(none).not.toContain('next waiting')
+  })
+})
+
+describe('the Diff tab’s fact (#729)', () => {
+  const diff = (files: number) => ({ branch: 'agent/2', files, insertions: 4, deletions: 2 })
+  const run = (attempt: number, over: Partial<RunView> = {}): RunView =>
+    ({
+      runId: `run-${attempt}`,
+      attempt,
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      files: [],
+      diff: null,
+      steps: [],
+      ...over,
+    }) as unknown as RunView
+  const touched = [{ path: 'a.md', op: 'edit' }] as unknown as RunView['files']
+
+  it('counts the files git found when the agent’s tools recorded none', () => {
+    expect(diffFact([run(1, { diff: diff(2) })])).toBe('2 files')
+    expect(diffFact([run(1, { diff: diff(1) })])).toBe('1 file')
+  })
+
+  it('names the attempt when a newer one has no diff', () => {
+    expect(diffFact([run(1, { diff: diff(2) }), run(2)])).toBe('2 files · attempt 1')
+  })
+
+  it('falls back to the touched paths when no attempt has a diff', () => {
+    expect(diffFact([run(1, { files: touched })])).toBe('1 path')
+    expect(diffFact([run(1)])).toBe('none touched')
+  })
+
+  it('does not take a zero as proof: it shows the path count', () => {
+    expect(diffFact([run(1, { diff: diff(0), files: touched })])).toBe('1 path')
+  })
+
+  it('says the count, lines and branch in the attempt’s panel', () => {
+    const folded = foldRun(claim, 1, [
+      e(RUN, 'RunStarted', { baseSha: BASE }),
+      e(RUN, 'RunProducedDiff', { branch: 'agent/2', headSha: HEAD, files: 2, insertions: 4, deletions: 2 }),
+    ])
+    const html = renderToStaticMarkup(<Record task={{ ...task([], []), runs: [folded] }} />)
+    expect(html).toContain('2 files, +4 −2, on agent/2')
+    expect(html).not.toContain('This attempt touched no files.')
   })
 })
