@@ -59,6 +59,7 @@ import { StringDecoder } from 'node:string_decoder'
 
 import type { TokenCounts, Usage } from '@lingtai/domain'
 import { mergeTokenCounts } from '@lingtai/domain'
+import { parse as parseToml } from 'smol-toml'
 
 import { codexAuth } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
@@ -476,14 +477,83 @@ function codexTokenCounts(usage: NonNullable<CodexEvent['usage']>): TokenCounts 
  * nothing was ever reported, which must read as *not said* and never as a
  * zeroed-out entry.
  *
- * `model` is `request.model` where the recipe set one, and absent otherwise:
- * Codex's stream never names its own model, and an absent model is what
- * `doc/rate-card.md` reads as *unpriced* rather than a guess.
+ * `recorded.model` is `request.model` where the recipe set one; otherwise the
+ * model Codex's own config file names, marked `modelFrom: 'config'` — recorded,
+ * not reported, since the stream never names its model. Absent where neither
+ * does, which `doc/rate-card.md` reads as *unpriced* rather than a guess.
  */
-export function codexUsage(tokens: TokenCounts, model: string | undefined): Usage | undefined {
+export function codexUsage(tokens: TokenCounts, recorded: { model?: string; modelFrom?: 'config' }): Usage | undefined {
   const hasTokens = Object.values(tokens).some((value) => value !== undefined)
   if (!hasTokens) return undefined
-  return [{ ...(model === undefined ? {} : { model }), tokens }]
+  return [{ ...recorded, tokens }]
+}
+
+/**
+ * The `config.toml` the child process will read: `CODEX_HOME`, else `HOME/.codex`,
+ * from the request's environment and never this process's (a triage run has a
+ * private `HOME` and a real `CODEX_HOME`). A relative value is resolved against
+ * `cwd`, the directory the child runs in, never this process's own.
+ */
+export function codexConfigPath(env: Record<string, string>, cwd: string): string | undefined {
+  if (env.CODEX_HOME) return resolve(cwd, env.CODEX_HOME, 'config.toml')
+  if (env.HOME) return resolve(cwd, env.HOME, '.codex', 'config.toml')
+  return undefined
+}
+
+const nonEmpty = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined)
+
+/** The `model` a config file names, with `profile` resolved the way Codex does; `ok: false` for TOML that does not parse. */
+export function readCodexConfig(text: string): { ok: true; model: string | undefined } | { ok: false; detail: string } {
+  let doc: Record<string, unknown>
+  try {
+    doc = parseToml(text)
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) }
+  }
+  const profile = typeof doc.profile === 'string' ? doc.profile : undefined
+  const profiles = doc.profiles
+  const table =
+    profile !== undefined && typeof profiles === 'object' && profiles !== null
+      ? (profiles as Record<string, unknown>)[profile]
+      : undefined
+  const fromProfile =
+    typeof table === 'object' && table !== null ? nonEmpty((table as Record<string, unknown>).model) : undefined
+  return { ok: true, model: fromProfile ?? nonEmpty(doc.model) }
+}
+
+/** `readCodexConfig` where the reason a model is missing does not matter. */
+export function configuredModel(text: string): string | undefined {
+  const read = readCodexConfig(text)
+  return read.ok ? read.model : undefined
+}
+
+/**
+ * What to record as the run's model when the recipe names none. Never throws:
+ * Codex itself will say whether it can read its config.
+ */
+function configModelFor(
+  env: Record<string, string>,
+  cwd: string,
+  trace: NonNullable<RunRequest['log']>,
+): { model?: string; modelFrom?: 'config' } {
+  const path = codexConfigPath(env, cwd)
+  if (path === undefined) return {}
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+      trace.note('codex', `${path}: ${(error as Error).message}; the run is recorded with no model`)
+    }
+    return {}
+  }
+  const read = readCodexConfig(text)
+  if (!read.ok) {
+    trace.note('codex', `${path} is not valid TOML (${read.detail}); the run is recorded with no model`)
+    return {}
+  }
+  return read.model === undefined ? {} : { model: read.model, modelFrom: 'config' }
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
@@ -1167,6 +1237,10 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined
       if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema))
 
+      // What the entry says the model was. Never flows into the argv: it is
+      // recorded, not requested.
+      const recorded = request.model ? { model: request.model } : configModelFor(request.env, request.cwd, trace)
+
       const args = codexArgv(request, request.prompt, {
         settings: wiring,
         sandbox,
@@ -1305,7 +1379,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             text: null,
             failure: { kind, detail },
             sessionId: account.receipt.sessionId,
-            usage: codexUsage(account.receipt.tokens, request.model),
+            usage: codexUsage(account.receipt.tokens, recorded),
           }
           note()
           signalGroup('SIGTERM')
@@ -1423,7 +1497,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             text: receipt.text,
             failure,
             sessionId: receipt.sessionId,
-            usage: codexUsage(receipt.tokens, request.model),
+            usage: codexUsage(receipt.tokens, recorded),
             ...(structured !== undefined ? { structured } : {}),
           })
         })

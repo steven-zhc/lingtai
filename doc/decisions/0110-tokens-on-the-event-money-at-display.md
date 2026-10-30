@@ -281,10 +281,6 @@ about something else are the three whose spend is not recorded.
 
 ## Not built yet
 
-- **Codex's configured model is not read.** An entry with no `request.model`
-  has no model, and its reason reads "no usage reported" though its tokens are
-  on the event (`packages/domain/src/rate-card.ts`'s `NO_USAGE_REASON`).
-
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.
 - **The rate card names one Codex model, `gpt-5.6-sol`.** `priceRow`

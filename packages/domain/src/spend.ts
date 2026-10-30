@@ -30,8 +30,10 @@ export const TokenCounts = z.object({
 export type TokenCounts = z.infer<typeof TokenCounts>
 
 export const UsageEntry = z.object({
-  /** The runtime's own model id. Absent where the runtime never names one. */
+  /** The runtime's own model id. Absent where the runtime never names one, or, for Codex, where its config file names none. */
   model: z.string().optional(),
+  /** Where `model` came from when it was not reported: `config` is the runtime's own config file, read at the start of the run. Recorded, not reported. */
+  modelFrom: z.literal('config').optional(),
   /** A premium speed at the same model id (0073 §2). Absent where none applies. */
   mode: z.string().optional(),
   tokens: TokenCounts,

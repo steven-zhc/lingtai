@@ -127,9 +127,10 @@ event carry no per-request size, so that tier is not modelled and a run that
 reached it is under-estimated, like every total here (0110 §2).
 
 Codex's `model` is the recipe's `request.model`, and, where the recipe sets
-none, `~/.codex/config.toml`'s `model` (0110 §3; not built yet:
-`packages/agent/src/codex.ts` leaves it absent). An event with no model is
-still **unpriced**, and any other model id is unpriced until a row is appended.
+none, the `model` in the `config.toml` the run itself reads (`$CODEX_HOME`, else
+`$HOME/.codex`, of the run's own environment), marked `modelFrom: "config"` on
+the entry (0110 §3). An event with tokens and no model is still **unpriced**,
+and its reason reads `no model recorded`, never "no usage reported", and any other model id is unpriced until a row is appended.
 
 ## The fetched snapshot
 

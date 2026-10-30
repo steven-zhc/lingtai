@@ -338,6 +338,7 @@ describe('unknownWhy', () => {
     const text = daySpendText(daySpend(rows, now), undefined)
     expect(text).toContain('+ 6 unknown (gpt-x ×2, gpt-v ×1, gpt-w ×1, +2 more) —')
     expect(daySpendText(daySpend([unknownRow([])], now), undefined)).toContain('+ 1 unknown (no usage reported ×1)')
+    expect(daySpendText(daySpend([unknownRow(used())], now), undefined)).toContain('+ 1 unknown (no model recorded ×1)')
     expect(daySpendText(daySpend([], now), undefined)).toContain('+ 0 unknown —')
   })
 })

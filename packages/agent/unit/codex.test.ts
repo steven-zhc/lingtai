@@ -24,10 +24,12 @@ import {
   codexAccount,
   codexArgv,
   codexClose,
+  codexConfigPath,
   codexHookArgs,
   codexOutcome,
   codexTrace,
   codexUsage,
+  configuredModel,
 } from '../src/codex.ts'
 import { renderSettings } from '../src/hook-config.ts'
 import { meetsTier, missingForTier, RUN_LIMITS } from '../src/runtime.ts'
@@ -257,21 +259,60 @@ describe("codexUsage, the run's tokens turned into one Usage entry", () => {
    * `codexUsage` promises never happens.
    */
   it('is undefined when no tokens were ever reported, even with a model set', () => {
-    expect(codexUsage({}, 'gpt-5.6-sol')).toBeUndefined()
+    expect(codexUsage({}, { model: 'gpt-5.6-sol' })).toBeUndefined()
   })
 
   it('is undefined when neither tokens nor a model were reported', () => {
-    expect(codexUsage({}, undefined)).toBeUndefined()
+    expect(codexUsage({}, {})).toBeUndefined()
   })
 
   it('carries the model alongside real tokens', () => {
-    expect(codexUsage({ fresh: 10, output: 2 }, 'gpt-5.6-sol')).toEqual([
+    expect(codexUsage({ fresh: 10, output: 2 }, { model: 'gpt-5.6-sol' })).toEqual([
       { model: 'gpt-5.6-sol', tokens: { fresh: 10, output: 2 } },
     ])
   })
 
-  it('carries real tokens with no model when the recipe set none', () => {
-    expect(codexUsage({ fresh: 10, output: 2 }, undefined)).toEqual([{ tokens: { fresh: 10, output: 2 } }])
+  it('carries real tokens with no model when neither the recipe nor the config names one', () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, {})).toEqual([{ tokens: { fresh: 10, output: 2 } }])
+  })
+
+  it('marks a config model as from the config', () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, { model: 'gpt-x', modelFrom: 'config' })).toEqual([
+      { model: 'gpt-x', modelFrom: 'config', tokens: { fresh: 10, output: 2 } },
+    ])
+  })
+})
+
+describe('codexConfigPath, the file the child process will read', () => {
+  it('prefers CODEX_HOME', () => {
+    expect(codexConfigPath({ CODEX_HOME: '/c', HOME: '/h' }, '/w')).toBe('/c/config.toml')
+  })
+  it('falls back to HOME/.codex, and to nothing', () => {
+    expect(codexConfigPath({ HOME: '/h' }, '/w')).toBe('/h/.codex/config.toml')
+    expect(codexConfigPath({ CODEX_HOME: '', HOME: '/h' }, '/w')).toBe('/h/.codex/config.toml')
+    expect(codexConfigPath({}, '/w')).toBeUndefined()
+    expect(codexConfigPath({ CODEX_HOME: 'codex-home' }, '/w')).toBe('/w/codex-home/config.toml')
+    expect(codexConfigPath({ HOME: 'h' }, '/w')).toBe('/w/h/.codex/config.toml')
+  })
+})
+
+describe('configuredModel, the model a config.toml names', () => {
+  it('reads the top-level model', () => {
+    expect(configuredModel('model = "gpt-x"\n')).toBe('gpt-x')
+  })
+  it('prefers the selected profile, falling back to the top level', () => {
+    const base = 'model = "top"\nprofile = "p"\n'
+    expect(configuredModel(base + '[profiles.p]\nmodel = "inner"\n')).toBe('inner')
+    expect(configuredModel(base)).toBe('top')
+    expect(configuredModel(base + '[profiles.p]\nx = 1\n')).toBe('top')
+    expect(configuredModel(base + '[profiles.p]\nmodel = 3\n')).toBe('top')
+    expect(configuredModel('model = "top"\nprofile = 3\n[profiles.p]\nmodel = "inner"\n')).toBe('top')
+  })
+  it('is undefined for no model, a non-string or empty model, and malformed TOML', () => {
+    expect(configuredModel('x = 1\n')).toBeUndefined()
+    expect(configuredModel('model = 3\n')).toBeUndefined()
+    expect(configuredModel('model = ""\n')).toBeUndefined()
+    expect(configuredModel('model = = =')).toBeUndefined()
   })
 })
 
