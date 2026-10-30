@@ -830,11 +830,10 @@ describe('the headline says what stopped the pass', () => {
   })
 
   /**
-   * **The line printed directly above the headline** (`describeWaitLines`, #83).
+   * **The chip beside the headline** (`describeWait`, #83).
    * `needs` was `judgement` whatever stopped the pass, so a crashed fixer's card
-   * read *your judgement is needed* and then *this is infrastructure and not
-   * your call* — the contradiction `#197` is about, one line earlier than the
-   * page it was found on.
+   * read *waiting for your review* and then *this is infrastructure and not
+   * your call* — the contradiction `#197` is about.
    */
   it('asks for an acknowledgement where the headline says it is not your call', () => {
     expect(stopNeeds({ ended: 'crashed', failure: 'crash: it broke' })).toBe('acknowledgement')

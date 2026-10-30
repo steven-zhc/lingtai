@@ -75,7 +75,7 @@ const asked: StatusWait = {
   short: null,
   needs: 'judgement',
   words: 'waiting for your answer',
-  detail: ['your judgement is needed'],
+  detail: [],
   recommendation: null,
   raw: true,
 }
@@ -225,7 +225,7 @@ describe('statusJson', () => {
               line: asked.line,
               needs: 'judgement',
               asked: true,
-              detail: ['your judgement is needed'],
+              detail: [],
               recommendation: null,
               raw: true,
             },
@@ -329,6 +329,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
   it('under --all, never says "failure" or repeats the judgement line', () => {
     const all = renderStatus(fixture, { all: true }).join('\n')
     expect(all).not.toContain('your judgement is needed')
+    expect(all).not.toContain('a failure needs acknowledging')
     expect(all).not.toContain('failure itself')
     expect(all).toContain('#609')
     expect(all).toContain('[waiting for your answer]')
@@ -341,11 +342,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       short: 'ready to land',
       needs: 'judgement',
       words: 'waiting for your review',
-      detail: [
-        'your judgement is needed',
-        'ready to land — the recipe asks you to approve each pass',
-        'a failure needs acknowledging',
-      ],
+      detail: ['ready to land — the recipe asks you to approve each pass'],
       recommendation: null,
       raw: true,
     }
@@ -362,7 +359,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
     it('under --all keeps the unpushed suffix when the sentence is longer than a line', () => {
       const long = `ready to land — ${'x'.repeat(168)}`
       const suffix = '(and agent/1 was not pushed: remote rejected the push)'
-      const wait: StatusWait = { ...held, line: long, detail: ['your judgement is needed', `${long} ${suffix}`] }
+      const wait: StatusWait = { ...held, line: long, detail: [`${long} ${suffix}`] }
       const r: StatusReport = {
         ...report,
         projects: [{ ...report.projects[0]!, known: [row({ taskId: 't1', ref: '1', state: 'waiting', wait })] }],
@@ -378,6 +375,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or the board)`)
       expect(out).not.toContain('failure')
       expect(out).not.toContain('your judgement is needed')
+      expect(out).not.toContain('a failure needs acknowledging')
       expect(out).not.toContain('waiting for your review:')
     })
   })

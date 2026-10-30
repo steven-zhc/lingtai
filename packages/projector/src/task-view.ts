@@ -1034,7 +1034,7 @@ export function splitLine(split: readonly { number: number }[]): string {
  * so the wording is decided once, here, beside the field it is read from.
  */
 export interface WaitLine {
-  part: 'needs' | 'what' | 'did' | 'rec'
+  part: 'what' | 'did' | 'rec'
   text: string
 }
 
@@ -1050,17 +1050,8 @@ export interface WaitLine {
  * cannot collapse it should link to the log instead of pasting a hundred lines
  * into a queue listing.
  */
-export function describeWaitLines(card: {
-  needs: 'judgement' | 'acknowledgement' | null
-  diagnosis: BlockDiagnosis | null
-}): WaitLine[] {
+export function describeWaitLines(card: { diagnosis: BlockDiagnosis | null }): WaitLine[] {
   const lines: WaitLine[] = []
-  if (card.needs !== null) {
-    lines.push({
-      part: 'needs',
-      text: card.needs === 'judgement' ? 'your judgement is needed' : 'a failure needs acknowledging',
-    })
-  }
   const d = card.diagnosis
   if (d === null) return lines
   lines.push({ part: 'what', text: d.what })
@@ -1082,7 +1073,7 @@ export function describeWaitLines(card: {
  * been produced, there is no diff and no branch, and the move is to decide.
  * **A review** is a run holding a diff at a sha: the move is to approve or
  * reject what is there. A failure that needs acknowledging is neither, and
- * stays what `describeWaitLines` says it is.
+ * is worded only by its diagnosis, and by nothing when there is none.
  *
  * **`needs` is read, and that is what makes the third sentence true** (`#197`).
  * It used to hold by accident: the only blocks written `acknowledgement` — the
@@ -1112,7 +1103,7 @@ export function describeWait(card: {
   if (!card.waiting) return null
   if (card.asked) return 'waiting for your answer'
   // Before the sha, because a block can now carry both and only one of them is
-  // a question to the person: an acknowledgement is `describeWaitLines`'s to word.
+  // a question to the person: an acknowledgement is worded by its diagnosis alone.
   if (card.needs === 'acknowledgement') return null
   if (card.awaitingSha !== null) return 'waiting for your review'
   return null
