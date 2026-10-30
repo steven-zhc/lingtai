@@ -156,6 +156,7 @@ export async function askAgents(
     (extra = '') =>
     async (answer: string): Promise<string | null> => {
       if (signedInIds.includes(answer)) return null
+      if (answer === '') return `no agent is chosen yet — choose one of ${choiceList}${extra}`
       const found = at.runtimes.find((r) => r.id === answer)
       const why = found ? whyMissing(found) : `${answer} is not a runtime`
       return `${why} — sign in to it, or choose one of ${choiceList}${extra}`
@@ -179,7 +180,8 @@ export async function askAgents(
     given: at.flags.agent ?? null,
     prompt: `which agent writes the change (${choiceList})`,
     current: currentAgent,
-    detected: signedInIds.length === 1 ? signedInIds[0]! : null,
+    // The enum's own order, not the list's (#313, doc/design/398.md:43).
+    detected: RuntimeId.options.find((id) => signedInIds.includes(id)) ?? null,
     validate: refuseUnlessOffered(),
     kept: at.kept,
   })

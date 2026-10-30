@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { question, type QuestionWorld } from '../src/question.ts'
+import { acceptingDefaults, question, type QuestionWorld } from '../src/question.ts'
 
 // `paint` reads `FORCE_COLOR` on every call (colour.ts:54), and the assertions
 // below read its output as bare strings. `NO_COLOR` wins outright ahead of it
@@ -173,5 +173,22 @@ describe('question', () => {
     await expect(question(w, { name: 'the store', flag: '--store', given: null, prompt: 'store' })).rejects.toThrow(
       'ctrl-c',
     )
+  })
+})
+
+describe('acceptingDefaults (#433)', () => {
+  it('a default that fails validate refuses by name rather than looping, and the inner world is never asked', async () => {
+    const { world: inner, asked } = world(['should not be reached'])
+    const result = await question(acceptingDefaults(inner), {
+      name: 'the kinds',
+      flag: '--kinds <a,b,c>',
+      given: null,
+      prompt: 'kinds?',
+      detected: 'bad',
+      validate: async (answer) => (answer === 'bad' ? 'bad is refused' : null),
+      kept: 'Nothing was written',
+    })
+    expect(result).toEqual({ refused: 'the kinds needs an answer: pass --kinds <a,b,c>. Nothing was written' })
+    expect(asked).toEqual([])
   })
 })

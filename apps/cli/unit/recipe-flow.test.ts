@@ -253,37 +253,81 @@ describe('askRecipe — --defaults (#433)', () => {
     expect(resolved.runtime.limits.rounds).toBe(5)
   })
 
-  it('a default that fails validation refuses by name rather than looping', async () => {
-    const files = mapFiles()
-    const world: QuestionWorld = {
-      ask: async (prompt) => {
-        throw new Error(`a terminal was asked: ${prompt}`)
-      },
-      log: () => {},
-    }
-    const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
-      { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
-      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
-    ]
+  const SEEDS = [
+    { path: ['repo', 'base'], value: 'main' },
+    { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+    { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+  ]
 
+  /** Two runtimes signed in, no recipe: the writer is claude-code and the reviewer codex (#727). */
+  async function runTwo(
+    runtimes: readonly RuntimeFound[],
+    world: QuestionWorld,
+    flags: Record<string, string>,
+    files = mapFiles(),
+  ) {
+    const path = recipePath('widget', HOME)
+    const before = (await files.read(path)) ?? ''
     const result = await askRecipe(world, {
       ...BASE_AT,
-      runtimes: TWO_RUNTIMES,
+      runtimes,
       project: 'widget',
-      local: true,
-      flags: { ...BASE_AT.flags, defaults: '' },
-      seeds,
+      local: false,
+      flags: { ...BASE_AT.flags, ...flags },
+      seeds: SEEDS,
       kept: 'the seeded recipe is kept',
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
     } satisfies RecipeAt)
+    const text = files.replaced.at(-1)?.text ?? before
+    return { result, files, text, resolved: text === '' ? null : resolveSource(text, path, path).recipe }
+  }
 
-    expect(result).toEqual({
-      refused: 'which agent writes the change needs an answer: pass --agent <claude-code, codex>. Nothing was written',
-    })
-    expect(files.replaced).toHaveLength(0)
+  const NO_TERMINAL: QuestionWorld = {
+    ask: async (prompt) => {
+      throw new Error(`a terminal was asked: ${prompt}`)
+    },
+    log: () => {},
+  }
+
+  it('with two runtimes signed in, --defaults writes claude-code as the writer and codex as the reviewer (#727)', async () => {
+    const { result, text, resolved } = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' })
+    expect(result).toEqual({ ok: true })
+    expect(resolved!.runtime.agent).toBe('claude-code')
+    expect(text).toMatch(/agent: codex/)
+  })
+
+  it('the writer is the enum-first runtime however the runtimes are listed (#727)', async () => {
+    const { result, resolved } = await runTwo([...TWO_RUNTIMES].reverse(), NO_TERMINAL, { defaults: '' })
+    expect(result).toEqual({ ok: true })
+    expect(resolved!.runtime.agent).toBe('claude-code')
+  })
+
+  it('a typed yes at "use every default?" finishes the same way, asking nothing else (#727)', async () => {
+    const asked: string[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        asked.push(prompt)
+        if (asked.length === 1) return 'yes'
+        throw new Error(`a terminal was asked: ${prompt}`)
+      },
+      log: () => {},
+    }
+    const { result, resolved } = await runTwo(TWO_RUNTIMES, world, { land: 'main' })
+    expect(result).toEqual({ ok: true })
+    expect(asked).toEqual(['use every default? [yes]: '])
+    expect(resolved!.runtime.agent).toBe('claude-code')
+  })
+
+  it('a recipe whose writer is codex keeps codex under --defaults (#727)', async () => {
+    const first = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', agent: 'codex' })
+    expect(first.resolved!.runtime.agent).toBe('codex')
+    const path = recipePath('widget', HOME)
+    const files = mapFiles({ [path]: first.text })
+    const again = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' }, files)
+    expect(again.result).toEqual({ ok: true })
+    expect(again.resolved!.runtime.agent).toBe('codex')
   })
 
   // A CI job with no TTY and no --defaults is not asked "use every default?"
