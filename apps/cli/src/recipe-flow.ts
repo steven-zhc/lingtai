@@ -106,10 +106,6 @@ async function toolOnPath(tool: string): Promise<boolean> {
   return dirs.some((dir) => names.some((name) => existsSync(join(dir, name))))
 }
 
-function announce(world: QuestionWorld, keys: readonly string[]): void {
-  for (const key of keys) world.log(paint.muted(SAID[key]!))
-}
-
 export interface RecipeAt {
   project: string
   /** A local project is never asked where its tickets come from (`askTickets`'s own rule). */
@@ -297,7 +293,6 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   const askKept = absent ? at.keptBeforeWrite : at.kept
   const collected: RecipeChange[] = []
 
-  announce(askWorld, ['runtime', 'steps.implement', 'steps.review'])
   const agents = await askAgents(askWorld, {
     project: at.project,
     runtimes: at.runtimes,
@@ -321,7 +316,6 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteModelChanges) return wroteModelChanges
   }
 
-  announce(askWorld, ['steps.prepared', 'steps.build'])
   const setup = await askInstallAndBuild(askWorld, {
     project: at.project,
     reader: at.reader,
@@ -347,7 +341,6 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteSetup) return wroteSetup
   }
 
-  announce(askWorld, ['source.tickets'])
   const tickets = await askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
     home: at.home,
     files: at.files,
@@ -362,7 +355,6 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     if ('refused' in wroteTickets) return wroteTickets
   }
 
-  announce(askWorld, ['source.kinds'])
   const kinds = await askKinds(askWorld, at.project, at.flags['kinds'] ?? null, {
     home: at.home,
     files: at.files,
@@ -388,12 +380,10 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     const changes = all.some((c) => c.path.join('.') === 'source.tickets')
       ? all
       : [...all, { path: ['source', 'tickets'], value: tickets.current }]
-    announce(askWorld, ['env'])
     const wrote = await writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
     if ('refused' in wrote) return wrote
   }
 
-  announce(askWorld, ['repo', 'steps.proposed'])
   const landed = await askLanding(askWorld, at.project, at.flags['land'] ?? null, {
     home: at.home,
     files: at.files,
@@ -402,7 +392,6 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
   })
   if ('refused' in landed) return landed
 
-  announce(askWorld, ['runtime.limits'])
   const limited = await askLimits(
     askWorld,
     at.project,
