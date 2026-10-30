@@ -41,14 +41,15 @@ import {
   tallyPass,
   ticketsFor,
   type PassClient,
+  type RunOnceResult,
   type Tickets,
 } from '@lingtai/conductor'
 import { PortsLive } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { readControl } from '@lingtai/daemon'
-import type { ProjectState } from '@lingtai/domain'
+import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
-import type { EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import {
   boundsBesides,
@@ -63,7 +64,8 @@ import type { TokenSource } from '@lingtai/repo'
 import { Data, Effect, type Layer } from 'effect'
 
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
-import { dayCeilingStop } from './day-ceiling.ts'
+import { stillOwed } from './continuing.ts'
+import { dayCeilingStop, type DayCeilingPorts } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
@@ -93,6 +95,8 @@ export interface RunOptions {
   lockKey?: string
   /** The log the pause is read from. The suite passes a memory store; nothing else should set it. */
   store?: EventStore
+  /** The daily ceiling's figure and spend. The suite passes its own; nothing else should set it. */
+  dayCeiling?: DayCeilingPorts
 }
 
 /**
@@ -145,10 +149,10 @@ class Paused extends Data.TaggedError('Paused')<{
  * asks `stillPaused` before each ticket after this — the ticket in hand
  * finishes, and the next is not taken.
  */
-const heedThePause = (store: EventStore | undefined) =>
+const heedThePause = (store: EventStore | undefined, ceiling?: DayCeilingPorts) =>
   Effect.tryPromise({
     // The ceiling first: a raised figure lifts its own pause before it is read.
-    try: async () => (await dayCeilingStop(store), readControl(store)),
+    try: async () => (await dayCeilingStop(store, ceiling), readControl(store)),
     // Not "not paused": a pause that could not be read is not consent.
     catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
   }).pipe(
@@ -168,13 +172,17 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  * The same rule as above, too: a pause that could not be read is not consent,
  * so it stops the pass rather than taking the next ticket unasked.
  */
-const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
+const pausedSentence = async (store: EventStore | undefined, ceiling?: DayCeilingPorts): Promise<string | null> => {
+  // The daily ceiling first, so its own pause lifts when the figure was raised.
+  const stop = await dayCeilingStop(store, ceiling)
+  const control = await readControl(store)
+  if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
+  return stop
+}
+
+const stillPaused = (store: EventStore | undefined, ceiling?: DayCeilingPorts) => async (): Promise<string | null> => {
   try {
-    // The daily ceiling first, so its own pause lifts when the figure was raised.
-    const stop = await dayCeilingStop(store)
-    const control = await readControl(store)
-    if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
-    return stop
+    return await pausedSentence(store, ceiling)
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
@@ -496,19 +504,102 @@ export async function run(
         }
       }
 
+      // ---- continuing what a person approved ---------------------------------
+      // Read fresh each time: an approval made while the queue ran is on the
+      // stream by the second look. A failed read is a refusal, not an empty list.
+      const owedRows = Effect.tryPromise({
+        try: async () => (await readControl(options.store)).continuing,
+        catch: (err) => refuse(`could not read the approvals owed a continuation: ${(err as Error).message}`),
+      })
+      const isOwed = (row: ControlState['continuing'][number]) =>
+        Effect.tryPromise({
+          try: () => stillOwed(options.store ?? eventStore, options.project, row),
+          catch: (err) =>
+            refuse(`could not read #${row.issue} to see whether it is owed a continuation: ${(err as Error).message}`),
+        })
+      /**
+       * Every live `ContinueRequested` row for this project, in order, each
+       * continued by `runOnce` with `continuing: { runId }` (#747). The control
+       * stream is read whole and fresh on every call, as `heedThePause` reads
+       * it: an approval made before this command started is the row it exists
+       * for. The liveness rule is `stillOwed`'s alone, and a read that fails is
+       * a refusal, never an empty list.
+       *
+       * Stops at `limit` runs, or at the first sentence `stillPaused` gives —
+       * asked before each continuation, as `runQueue` asks it before each item.
+       */
+      const continueApproved = (limit: number | undefined) =>
+        Effect.gen(function* () {
+          const ran: RunOnceResult[] = []
+          if (limit !== undefined && limit <= 0) return { ran, stopped: null as string | null }
+          const rows = (yield* owedRows).filter((c) => c.project === options.project)
+          for (const row of rows) {
+            if (limit !== undefined && ran.length >= limit) break
+            // A pause that cannot be read is a refusal here, not a stop: the approval
+            // is still owed and a clean exit would say nothing was wrong.
+            const sentence = yield* Effect.tryPromise({
+              try: () => pausedSentence(options.store, options.dayCeiling),
+              catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
+            })
+            // `pausedSentence` answers a failed read as a sentence too (the ceiling's
+            // own check catches it): the approval is still owed, so that refuses.
+            if (sentence !== null && sentence.startsWith('could not ')) return yield* Effect.fail(refuse(sentence))
+            if (sentence !== null) {
+              log(sentence)
+              return { ran, stopped: sentence }
+            }
+            if (!(yield* isOwed(row))) continue
+            log(`continuing #${row.issue} — asked for by ${row.by}`)
+            const result = yield* world.runOnce({
+              ...common,
+              prompt,
+              issue: Number(row.issue),
+              continuing: { runId: row.runId },
+            })
+            if (result.ok === false && result.stage === 'claim') {
+              log(`continuation of #${row.issue} declined at claim — ${result.detail}`)
+              continue
+            }
+            // Any other refusal names itself: `runOnce` returns its explanation
+            // without logging it, and the tally only counts it.
+            if (result.ok === false) log(`${symbol.fail()} #${row.issue} stopped at ${result.stage}: ${result.detail}`)
+            ran.push(result)
+          }
+          return { ran, stopped: null as string | null }
+        })
+
       // ---- the queue ---------------------------------------------------------
       if (options.issue === undefined) {
         // The recipe is `resolved` above now, from the project's *state* and the
         // base recorded at `lingtai add` — not its name.
-        const outcome = yield* world.runQueue({
-          ...common,
-          prompt,
-          // Asked rather than stored: a project that reorders its kinds, or adds
-          // an exclusion, must not need a projection rebuild.
-          recipe: resolved.recipe,
-          ...(options.max === undefined ? {} : { max: options.max }),
-          paused: stillPaused(options.store),
-        })
+        //
+        // What a person approved comes first (#747): `approve` appends a request
+        // and whoever holds the conductor lock continues the run, and this
+        // command holds it. Each continuation is one run against `--max`.
+        const first = yield* continueApproved(options.max)
+        const left = options.max === undefined ? undefined : options.max - first.ran.length
+        const queued =
+          first.stopped !== null || left === 0
+            ? null
+            : yield* world.runQueue({
+                ...common,
+                prompt,
+                // Asked rather than stored: a project that reorders its kinds, or adds
+                // an exclusion, must not need a projection rebuild.
+                recipe: resolved.recipe,
+                ...(left === undefined ? {} : { max: left }),
+                paused: stillPaused(options.store, options.dayCeiling),
+              })
+        // An approval made while the queue ran is the next conductor's unless the
+        // queue ended on its own: a bound or a pause stops this command too.
+        const again =
+          queued !== null && queued.stopped !== 'max' && queued.stopped !== 'paused'
+            ? yield* continueApproved(left === undefined ? undefined : left - queued.ran.length)
+            : { ran: [] as RunOnceResult[], stopped: null as string | null }
+        const outcome = {
+          ran: [...first.ran, ...(queued?.ran ?? []), ...again.ran],
+          stopped: again.stopped !== null ? 'paused' : (queued?.stopped ?? (first.stopped !== null ? 'paused' : 'max')),
+        }
 
         // Read back, not counted up. An item this pass held and somebody approved
         // while the pass carried on has landed, and the log says so — see
@@ -530,15 +621,26 @@ export async function run(
       // ---- one nominated issue -----------------------------------------------
       // The daily ceiling is asked before this claim as `runQueue` asks it
       // before each one: a nomination is not a waiver of it.
-      const stop = yield* Effect.promise(() => dayCeilingStop(options.store))
+      const stop = yield* Effect.promise(() => dayCeilingStop(options.store, options.dayCeiling))
       if (stop !== null) {
         log(stop)
         log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
         return 0
       }
+      // Approved and owed a continuation: continue that run rather than start one.
+      let continuing: { runId: string } | undefined
+      for (const row of (yield* owedRows).filter(
+        (c) => c.project === options.project && c.issue === String(options.issue),
+      )) {
+        if (yield* isOwed(row)) {
+          continuing = { runId: row.runId }
+          break
+        }
+      }
       const result = yield* world.runOnce({
         ...common,
         issue: options.issue,
+        ...(continuing === undefined ? {} : { continuing }),
         // The raw template. `runOnce` fetches the ticket and fills it in — it is
         // the only place that has the title and the body.
         prompt,
@@ -567,7 +669,7 @@ export async function run(
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
   return Effect.runPromise(
-    heedThePause(options.store).pipe(
+    heedThePause(options.store, options.dayCeiling).pipe(
       Effect.zipRight(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
