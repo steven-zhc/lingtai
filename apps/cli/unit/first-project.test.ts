@@ -176,7 +176,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       projects: [],
       // The base question has no --base flag: an empty line at the terminal
@@ -326,7 +326,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       signedIn: [],
       answers: [''],
@@ -343,7 +343,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
+        '/repo::rev-parse --verify refs/heads/develop^{commit}': ok('cafefee\n'),
       },
       // --base answers the base question itself; --defaults answers every
       // one `askRecipe` asks after it (#433).
@@ -394,7 +394,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
 
   it.each([['defaults'], ['yes']])('--%s takes the detected base branch (#700)', async (flag) => {
     const { world, registered } = harness({
-      git: { ...LOCAL_GIT, '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n') },
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n') },
     })
 
     const { flags } = flagsOf({ [flag]: true })
@@ -445,9 +445,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       order.push(key)
       if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
       if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
-      if (key === 'rev-parse --verify main^{commit}') return ok('aaa111\n')
+      if (key === 'rev-parse --verify refs/heads/main^{commit}') return ok('aaa111\n')
       if (key === 'branch lingtai-base main') return ((made = true), ok(''))
-      if (key === 'rev-parse --verify lingtai-base^{commit}') return made ? ok('aaa111\n') : fail('unknown revision')
+      if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}')
+        return made ? ok('aaa111\n') : fail('unknown revision')
       throw new Error(`unplanned git call: ${key}`)
     }
     const reader = world.setupReader
@@ -462,10 +463,31 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(files.replaced[`${HOME}/repo/recipe.yml`]).toContain('remote: /repo')
   })
 
+  it('a tag named lingtai-base is not the branch: the branch is made and its sha registered (#745)', async () => {
+    const { world, registered } = harness({ answers: [...RECIPE_FLOW_DEFAULTS] })
+    let made = false
+    world.git = async (dir, args) => {
+      const key = args.join(' ')
+      if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
+      if (key === 'rev-parse --verify lingtai-base^{commit}') return ok('oldtag1\n')
+      if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
+      if (key === 'rev-parse --verify refs/heads/main^{commit}') return ok('aaa111\n')
+      if (key === 'branch lingtai-base main') return ((made = true), ok(''))
+      if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}') return made ? ok('aaa111\n') : fail('unknown')
+      throw new Error(`unplanned git call: ${key}`)
+    }
+
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(made).toBe(true)
+    expect(registered[0]).toMatchObject({ fromSha: 'aaa111' })
+  })
+
   it('an existing lingtai-base is used as is: no branch call (#745)', async () => {
     const calls: string[] = []
     const { world } = harness({
-      git: { ...LOCAL_GIT, '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n') },
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n') },
     })
     const git = world.git
     world.git = async (dir, args) => (calls.push(args.join(' ')), git(dir, args))
@@ -480,7 +502,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [''],
     })
@@ -498,7 +520,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, files, asked, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       // 'no' at the question under test's own first question, "use every
       // default?" (#433) — this test proves each later question is still
@@ -549,7 +571,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [''],
     })
@@ -573,8 +595,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
-        '/repo::rev-parse --verify develop^{commit}': ok('cafef00\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/develop^{commit}': ok('cafef00\n'),
       },
       answers,
     })
@@ -595,8 +617,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
-        '/repo::rev-parse --verify nope^{commit}': fail('fatal: Needed a single revision'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/nope^{commit}': fail('fatal: Needed a single revision'),
       },
       answers,
     })
@@ -981,7 +1003,7 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
     const { world } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [...RECIPE_FLOW_DEFAULTS],
     })

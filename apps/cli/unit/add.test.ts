@@ -55,7 +55,7 @@ const ok = (stdout: string): GitResult => ({ ok: true, stdout, stderr: '' })
 
 const GIT_PLAN: GitPlan = {
   '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-  '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
+  '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
 }
 
 interface Harness {
