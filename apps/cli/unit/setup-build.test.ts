@@ -478,7 +478,10 @@ steps:
 
   it('a red trial build under --check-build yes refuses and returns no changes', async () => {
     const files = mapFiles({ [PATH]: BASE })
-    const failing: TrialResult[] = [{ command: 'pnpm test', ok: false, evidence: 'FAIL: 1 test failed' }]
+    const failing = {
+      results: [{ command: 'pnpm test', outcome: 'failed', evidence: 'FAIL: 1 test failed' }] as TrialResult[],
+      nothingDeclared: false,
+    }
     const { world: w, lines } = world([''])
     const result = await askInstallAndBuild(
       w,
@@ -490,6 +493,63 @@ steps:
     )
     expect(result).toEqual({ refused: expect.any(String) })
     expect(lines.some((l) => l.includes('FAIL: 1 test failed'))).toBe(true)
+  })
+})
+
+describe('a red trial build prints what ran and what did not', () => {
+  const run = async (report: { results: TrialResult[]; nothingDeclared: boolean }) => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: base, lines } = world([''])
+    const asked: string[] = []
+    const w: SetupWorld = {
+      ...base,
+      ask: async (prompt) => {
+        asked.push(prompt)
+        return base.ask(prompt)
+      },
+    }
+    await askInstallAndBuild(
+      w,
+      input({
+        given: { install: 'none', build: ['a', 'b', 'c'], check: 'yes' },
+        tryBuild: async () => report,
+        files,
+      }),
+    )
+    return Object.assign(lines, { asked })
+  }
+  const red: TrialResult[] = [
+    { command: 'b', outcome: 'failed', evidence: 'boom' },
+    { command: 'c', outcome: 'not-run', because: '`b` failed first' },
+  ]
+
+  it('lists a command that never ran as not run, never under failed:', async () => {
+    const lines = await run({ results: red, nothingDeclared: false })
+    expect(lines.some((l) => l.startsWith('failed: b') && l.includes('boom'))).toBe(true)
+    expect(lines).toContain('not run: c — `b` failed first')
+    expect(lines.some((l) => l.startsWith('failed: c'))).toBe(false)
+    expect(lines.asked.some((q) => q.includes('write them anyway'))).toBe(true)
+  })
+
+  it('says once, after the list, that no env was declared', async () => {
+    const lines = await run({ results: red, nothingDeclared: true })
+    const sentence = lines.filter((l) => l.startsWith('the recipe declares no env, so these ran without any'))
+    expect(sentence).toHaveLength(1)
+    expect(sentence[0]).toContain(`declare it under env: in ${PATH}`)
+    expect(lines.indexOf(sentence[0]!)).toBeGreaterThan(lines.indexOf('not run: c — `b` failed first'))
+  })
+
+  it('does not say it when env is declared', async () => {
+    const lines = await run({ results: red, nothingDeclared: false })
+    expect(lines.some((l) => l.includes('declares no env'))).toBe(false)
+  })
+
+  it('does not say it when nothing failed', async () => {
+    const lines = await run({
+      results: [{ command: 'a', outcome: 'passed', evidence: '' }],
+      nothingDeclared: true,
+    })
+    expect(lines.some((l) => l.includes('declares no env'))).toBe(false)
   })
 })
 

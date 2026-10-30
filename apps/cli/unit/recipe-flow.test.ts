@@ -439,7 +439,7 @@ describe('askRecipe — the trial run (#436)', () => {
       files: mapFiles(),
       tryBuild: async (_install, build) => {
         calls.push(build)
-        return [{ command: 'pnpm test', ok: true, evidence: '' }]
+        return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
       },
     } satisfies RecipeAt)
     return { result, calls }

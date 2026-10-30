@@ -128,10 +128,16 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
         home: at.home,
       })
       .catch((err: Error) => ({ refusal: err.message, values: {} as Record<string, string> }))
-    if (env.refusal) return [{ command: 'env', ok: false, evidence: env.refusal }]
+    const runs = [...(install === null ? [] : [install]), ...build]
+    if (env.refusal) {
+      return {
+        results: [{ command: 'env', outcome: 'failed', evidence: env.refusal }, ...notRun(runs, 'the env refused')],
+        nothingDeclared,
+      }
+    }
 
     const timeouts = await keptTimeouts(at)
-    const commands: Run[] = [...(install === null ? [] : [install]), ...build].map((run) => ({
+    const commands: Run[] = runs.map((run) => ({
       run,
       timeout: timeouts.get(run) ?? RUN_TIMEOUT,
     }))
@@ -165,7 +171,10 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
         // Ctrl+C stops git as well, and that is not a git failure.
         path = null
         if (at.interrupt?.aborted) interrupted = true
-        else results.push({ command: 'git', ok: false, evidence: boundedEvidence((err as Error).message) })
+        else {
+          results.push({ command: 'git', outcome: 'failed', evidence: boundedEvidence((err as Error).message) })
+          results.push(...notRun(runs, 'the worktree could not be cut'))
+        }
       }
 
       for (const [i, command] of path === null ? [] : commands.entries()) {
@@ -187,17 +196,9 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
           break
         }
         const ok = outcome.ok && outcome.exitCode === 0
-        const note = ok || !nothingDeclared ? '' : '\n(no env declared)'
-        results.push({ command: command.run, ok, evidence: `${outcome.evidence}${note}` })
+        results.push({ command: command.run, outcome: ok ? 'passed' : 'failed', evidence: outcome.evidence })
         if (!ok) {
-          const skipped = commands.slice(i + 1)
-          if (skipped.length > 0) {
-            results.push({
-              command: skipped.map((s) => s.run).join('; '),
-              ok: false,
-              evidence: `not run because \`${command.run}\` failed`,
-            })
-          }
+          results.push(...notRun(runs.slice(i + 1), `\`${command.run}\` failed first`))
           break
         }
       }
@@ -216,14 +217,18 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
     if (leftBehind !== null) {
       results.push({
         command: 'cleanup',
-        ok: false,
+        outcome: 'failed',
         evidence: boundedEvidence(
           `the throwaway checkout was not removed and may still hold the planted env file: ${leftBehind}`,
         ),
       })
     }
-    return results
+    return { results, nothingDeclared }
   }
+}
+
+function notRun(runs: string[], because: string): TrialResult[] {
+  return runs.map((command) => ({ command, outcome: 'not-run', because }))
 }
 
 /**
