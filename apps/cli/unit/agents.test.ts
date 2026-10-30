@@ -201,7 +201,7 @@ describe('askAgents', () => {
 
   describe('an empty model is an answer a flag can give (#736)', () => {
     const codexOnly = [
-      runtime('claude-code', { installed: false, signedIn: false, detail: 'spawn claude ENOENT' }),
+      runtime('claude-code', { state: 'not-installed', detail: 'spawn claude ENOENT' }),
       runtime('codex'),
     ]
     const headless = (): QuestionWorld => ({ ask: async () => null, log: () => {} })
