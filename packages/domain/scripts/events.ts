@@ -271,6 +271,7 @@ export const STREAMS = {
   IntegrationAttempted: ['int-'],
   IntegrationRefused: ['int-'],
   IntegrationSucceeded: ['int-'],
+  BaseChecked: ['int-'],
   PassRouted: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
