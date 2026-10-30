@@ -179,6 +179,20 @@ in the source.
     saying what the block is for (`emitRecipe`'s `said`), so a person reading it
     can tell what to change.
 
+
+15. **A local project lands in its own checkout.** `add --local <dir>` writes
+    `repo.remote` as the checkout itself, so nothing a pass makes leaves the
+    machine, and `repo.base` as `lingtai-base`, made from the branch checked
+    out there when it does not exist. The mirror is fetched from the checkout,
+    each pass works on `agent/<n>` in its own worktree, and the land pushes
+    `lingtai-base` and `agent/<n>` back to the checkout; the person's own branch
+    and working tree are never touched, and `lingtai-base` does not follow them:
+    nothing merges into it but a pass, and a person merges it onward when they
+    choose. Git refuses a push to the branch checked out in a non-bare
+    repository, so the land first checks that `lingtai-base` is not the one
+    checked out, and holds for a person if it is. Landing on the checkout's
+    `origin` instead is a recipe edit.
+
 ## Consequences
 
 - Nothing in a managed repository shows that Lingtai is used on it. Two people
@@ -196,6 +210,13 @@ in the source.
 - The second judgement of a templated field costs one claim, one clone and the
   run up to that action when it refuses. That is the cost to weigh before
   templating another field.
+
+
+## Not built yet
+
+- **§15 is not built.** `add --local` writes the checkout's `origin` as
+  `repo.remote` and its default branch as `repo.base`, and the land does not
+  check what is checked out.
 
 ---
 *Replaces archived 0005, 0028, 0029, 0045, 0046, 0047, 0061, 0063, 0071 in [decisions-archive](../decisions-archive/).*
