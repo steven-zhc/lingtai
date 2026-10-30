@@ -24,7 +24,16 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { priceRow, priceTokens, RATE_CARD, rateFor, type RateRow } from '../src/rate-card.ts'
+import {
+  NO_MODEL_REASON,
+  NO_USAGE_REASON,
+  priceRow,
+  priceTokens,
+  RATE_CARD,
+  rateFor,
+  unpricedReason,
+  type RateRow,
+} from '../src/rate-card.ts'
 import { parseRateCard } from '../test/rate-card.ts'
 
 /** A synthetic `RateRow` with everything but the given overrides zeroed. */
@@ -218,5 +227,24 @@ describe('priceRow', () => {
     expect(priceRow({ at, usage })).toBeCloseTo(4 + 0.4 + 20)
     expect(priceRow({ at: new Date('2026-10-01T00:00:00Z'), usage })).toBeNull()
     expect(priceRow({ at, usage: [{ tokens: { fresh: 1 } }] })).toBeNull()
+  })
+})
+
+describe('a model recorded from the config', () => {
+  const at = new Date('2026-09-01T00:00:00Z')
+  const model = RATE_CARD[0]!.model
+
+  it('prices exactly as the same entry without the mark', () => {
+    const tokens = { fresh: 100, output: 10 }
+    expect(priceRow({ at, usage: [{ model, modelFrom: 'config', tokens }] })).toBe(
+      priceRow({ at, usage: [{ model, tokens }] }),
+    )
+  })
+
+  it('says no model recorded for tokens without a model, and no usage for no tokens', () => {
+    expect(unpricedReason({ at, usage: [{ tokens: { fresh: 1 } }] }, [])).toBe(NO_MODEL_REASON)
+    expect(unpricedReason({ at, usage: [{ model, tokens: {} }] }, [])).toBe(NO_USAGE_REASON)
+    expect(unpricedReason({ at, usage: [{ tokens: {} }] }, [])).toBe(NO_USAGE_REASON)
+    expect(unpricedReason({ at, usage: [] }, [])).toBe(NO_USAGE_REASON)
   })
 })

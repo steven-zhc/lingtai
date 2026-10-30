@@ -102,8 +102,6 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 
 ## 尚未实现
 
-- **还没有读取 Codex 配置的模型。** 没有 `request.model` 的项没有模型，原因显示为 "no usage reported"，尽管 token 就在事件上（`packages/domain/src/rate-card.ts` 的 `NO_USAGE_REASON`）。
-
 - **第 5 条的存储估价。** `spend` 目前只存 `cost_usd`，`apps/board/src/lib/spend.ts` 和 `packages/conductor/src/day-ceiling.ts` 仍在读取时定价；新模型定价后的重建还没有接上。
 
 - **`Action.call` 和 `CallId` 仍然存在**于 `packages/domain/src/action.ts` 和 `wait.ts` 中，未被设置。

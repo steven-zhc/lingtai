@@ -149,9 +149,9 @@ function priceEntry(
   at: Date,
   snapshot: readonly RateRow[],
   card: readonly RateRow[],
-): { ok: true; rate: RateRow; listed: boolean } | { ok: false; why: 'no-usage' | 'unpriced' } {
-  if (entry.model === undefined) return { ok: false, why: 'no-usage' }
+): { ok: true; rate: RateRow; listed: boolean } | { ok: false; why: 'no-usage' | 'no-model' | 'unpriced' } {
   if (!TOKEN_FIELDS.some((f) => entry.tokens[f] !== undefined)) return { ok: false, why: 'no-usage' }
+  if (entry.model === undefined) return { ok: false, why: 'no-model' }
   const listed = card.some((r) => r.model === entry.model)
   const mode = entry.mode ?? ''
   const rate = listed
@@ -165,8 +165,11 @@ function priceEntry(
   return { ok: true, rate, listed }
 }
 
-/** What `unpricedReason` says for a run whose usage carried no model or no tokens. */
+/** What `unpricedReason` says for a run whose usage carried no tokens. */
 export const NO_USAGE_REASON = 'no usage reported'
+
+/** What `unpricedReason` says for a run whose usage carried tokens and no model: they were reported, nothing prices them. */
+export const NO_MODEL_REASON = 'no model recorded'
 
 /** What `unpricedReason` says when every entry is priced now but the stored estimate is null: the fold's snapshot was older. */
 export const REPRICED_REASON = 'priced since, rebuild pending'
@@ -186,7 +189,8 @@ export function unpricedReason(
   for (const entry of row.usage) {
     const priced = priceEntry(entry, row.at, snapshot, card)
     if (priced.ok) continue
-    return priced.why === 'no-usage' ? NO_USAGE_REASON : (entry.model as string)
+    if (priced.why === 'no-usage') return NO_USAGE_REASON
+    return priced.why === 'no-model' ? NO_MODEL_REASON : (entry.model as string)
   }
   return row.usage.length === 0 ? NO_USAGE_REASON : REPRICED_REASON
 }
