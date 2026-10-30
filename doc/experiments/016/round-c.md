@@ -33,8 +33,9 @@ gh auth status
 You are not logged into any GitHub hosts. To log in, run: gh auth login
 ```
 
-- [ ] **C.1-a** It says you are not logged in. That is expected, because
+- [x] **C.1-a** It says you are not logged in. That is expected, because
   `$GH_CONFIG_DIR` is new. If it shows a login, the export did not take.
+  → Yes: "You are not logged into any GitHub hosts."
 
 **`--defaults` with no `--project` refuses at once (#700).** Use a throwaway
 home so that a refusal which writes something cannot spoil this round's:
@@ -104,6 +105,7 @@ drwxr-xr-x@ 5 steven  staff    160 Oct 29 22:56 ../
   held `config.yml` (26 bytes) and `lingtai.db` (C1).
 - [ ] **C.2-a** With no terminal (`</dev/null`): it refuses immediately, by name,
   with a non-zero exit, and no browser opened.
+  → **Not run** (the no-terminal paste is empty).
 
 **Signed out: `init` offers to sign in, and Ctrl+C returns to the choice
 (#712):**
@@ -125,6 +127,7 @@ finishing in the browser.**
 ```
 
 - [ ] **C.3-a** Ctrl+C returns you to the choice and does not end `init`.
+  → **Not run**: the operator completed the sign-in without pressing Ctrl+C.
 
 Now quit `init` (Ctrl+C at the choice) and check that nothing was written:
 
@@ -142,6 +145,7 @@ cat $LINGTAI_HOME/config.yml
 ```
 
 - [ ] **C.4-a** There is no `gh` login, and `config.yml` has no GitHub key.
+  → **Not run**, for the same reason.
 
 **Signed out, completing the sign-in:**
 
@@ -163,6 +167,8 @@ Choose `gh`, accept the sign-in, and complete it in the browser this time:
 - [ ] **C.5-b** Doctor's short view is readable (#701), and init ends with a single
   `next:` line (#702). No output cites an ADR, an issue number or a source
   path (#703).
+  → **Not pasted.** The sign-in did complete: C.8 shows `gh` signed in as steven-zhc with `repo` and `workflow`.
+  → **Not pasted.**
 
 **The fork.** Forks have issues turned off, and Lingtai's tickets here are
 issues:
@@ -338,13 +344,17 @@ Fri Oct 30 00:09:25 CDT 2026
 
 ```
 
-- [ ] **C.7-a** Only the questions it must ask. The base branch is detected.
-- [ ] **C.7-b** Install and build are detected for pnpm (`pnpm install …` and the
+- [x] **C.7-a** Only the questions it must ask. The base branch is detected.
+- [x] **C.7-b** Install and build are detected for pnpm (`pnpm install …` and the
   repository's test script).
 - [ ] **C.7-c** The trial build runs and reports, and it leaves no worktree behind (the
   board's run log, or `lingtai doctor --verbose`, shows where it ran; that
   directory is gone afterwards).
 - [ ] **C.7-d** No output cites an ADR, an issue number or a source path.
+  → Yes: the base was not asked (detected, "base: main — the recipe's repo.base"), and nothing about the store or machine.
+  → Yes: "install: pnpm install --frozen-lockfile — pnpm-lock.yaml is at the root", "build (test): pnpm test". (The operator typed `pnpm install` over the offered install.)
+  → **Runs, does not report** (B4 again); whether it left a worktree was not checked. `add` took 23:52:47 → 00:09:25.
+  → **No**: "reading …/nanoid/recipe.yml — the recipe is this machine's, and nothing is read from the repository (0046 §3)" (C2).
 
 **C.8**
 
@@ -379,7 +389,8 @@ Runtimes
         per repository: lingtai add checks the App's permissions before it records anything, so the gap a startup check would look for stops the one command that can act on it. Labels are computed from the work item's state and written whole, and reconcile converges what did not land (#69) — so label drift has an owner rather than needing a check here
 ```
 
-- [ ] **C.8-a** `github: gh login` reads `ok` and names the trial account (#707).
+- [x] **C.8-a** `github: gh login` reads `ok` and names the trial account (#707).
+  → Yes: "gh is signed in to github.com as steven-zhc with repo and workflow".
 
 **The board under `gh` (#713).**
 
@@ -414,6 +425,7 @@ it serves in this terminal — ctrl-c stops it. Under lingtai service it is a jo
   `doc/img/016/c-board-first.png`.
 - [ ] **C.9-b** Its add-repository page points to `lingtai add`. Screenshot:
   `doc/img/016/c-board-add.png`.
+  → **Not done**, as C.9-a.
 
 **The ticket:**
 
@@ -544,9 +556,10 @@ Queue  0 runnable — 1 landed
 
 ```
 
-- [ ] **C.12-a** **The first push and the merge succeed with the `gh` token** (the `gho_`
+- [x] **C.12-a** **The first push and the merge succeed with the `gh` token** (the `gho_`
   token in the `x-access-token` header, #706). There is no auth error
   anywhere in terminal 2.
+  → Yes: #1 went to `[landed]` after `approve` (00:16:16), and `main` on the fork has the commits (C.13).
 
 **Whose name is on what (0114 §8):**
 
@@ -598,8 +611,10 @@ Haichao Zhang
 steven.zhang031@gmail.com
 ```
 
-- [ ] **C.13-a** Labels, comments and the merge show the `gh` account.
-- [ ] **C.13-b** The commits show this machine's git identity (`git config` above).
+- [x] **C.13-a** Labels, comments and the merge show the `gh` account.
+- [x] **C.13-b** The commits show this machine's git identity (`git config` above).
+  → Yes for labels and comments: every event on #1 is by steven-zhc (`labeled feature`, `lingtai:working`, `lingtai:waiting`, …, read with `gh api …/issues/1/events` after the round), and the comment "Lingtai is waiting on you." is steven-zhc's. The merge is a `git push`, not a GitHub merge, so it has no actor to show.
+  → Yes: `102a6b5a` and `79d968be` are "author=Haichao Zhang <steven.zhang031@gmail.com>", the machine's `git config`.
 
 **Measure:**
 
@@ -651,8 +666,9 @@ most fix rounds
     wait: SignoffRequired · cause — · resolved Approve
 ```
 
-- [ ] **C.14-a** `status`, `/spend` and `/report` show the run; an unknown run names its
+- [x] **C.14-a** `status`, `/spend` and `/report` show the run; an unknown run names its
   reason (#692).
+  → Yes for `status` and `report` ($0.53 reported, 0 unknown); `/spend` and `/report` were not captured.
 
 **Signed out afterwards, doctor fails by name (#707):**
 
@@ -670,7 +686,8 @@ echo "exit: $status"
 
 ```
 
-- [ ] **C.15-a** `github: gh login` fails, by that name, with a fix.
+- [x] **C.15-a** `github: gh login` fails, by that name, with a fix.
+  → Yes (pasted under C.16 output): "PROBLEM ✗ gh is not signed in to github.com · github / FIX gh auth login".
 
 Sign back in **without `workflow`** for round D:
 
@@ -705,8 +722,59 @@ exit: 1
 ```
 
 - [ ] **C.16-a** `gh auth status`'s token scopes do not include `workflow`.
+  → **Not run**: `gh` is signed out now, so round D starts without the login it needs (D.1).
+
+
+## Round C summary (2026-10-30)
+
+**Result.** A GitHub project through the operator's own `gh` login works end
+to end: `init` signed `gh` in, `add` registered `steven-zhc/nanoid` with
+install and checks detected, #1 went from opened (00:12:58) to landed
+(00:16:16) in **4 min, 1 min of it machine time, $0.53, 0 fix rounds**, the
+push and merge went through on the `gh` token, everything on GitHub is
+steven-zhc's and the commits are the machine's git identity. Doctor fails by
+name once `gh` is signed out.
+
+**Not tested**: the Ctrl+C during sign-in (C.3, C.4), the headless refusal
+(C.2-a), the board under `gh` (C.9: it ran in round B's home), and the
+sign-in without `workflow` that round D needs (C.16). Before D.1: sign in
+without `workflow`, i.e. run C.16 first.
 
 **Round C stuck:**
+
+- **C2. `add` on a GitHub repository ends in a dump, and cites an ADR.**
+  After "Before registering nanoid" it printed "github gh — github.auth", then
+  "reading /Users/steven/lingtai-trial/c/nanoid/recipe.yml — the recipe is this
+  machine's, and nothing is read from the repository **(0046 §3)**", then every
+  resolved setting (`runtime.budget.evidence 2000 ← default`,
+  `runtime.assignee.take both ← default`, …), then the ten steps with
+  "(skipped)", and only then "added nanoid". #703 is that `add` prints no ADR.
+  The local `add` (B.12) printed none of this.
+- **C3. doctor calls the installed binary a checkout.** `doctor --verbose`:
+  "a checkout, not an installed copy — git pull is its upgrade, and GitHub was
+  not asked". This is the v0.10.0 binary in `~/.local/bin`. With A13 and B6,
+  the third place the binary is taken for a source checkout.
+- **C4. doctor's verbose view cites an issue, and one title says nothing.**
+  "skip github: installation and labels … reconcile converges what did not
+  land **(#69)**"; and a check titled "github: what we said and did not
+  manage".
+- **C5. A landed GitHub issue stays open and says nothing about landing.**
+  After `[landed]`, #1 is still open, labelled only `feature`; its last event
+  is "unlabeled lingtai:working", and its one comment is "Lingtai is waiting on
+  you." Someone reading GitHub cannot tell the work is on `main`.
+- **C6. A wrong answer to the reviewer question is told to sign in.** Typed
+  `pnpm install` at "does a cold reviewer read it, and which agent": "pnpm
+  install is not a runtime — sign in to it, or choose one of claude-code,
+  codex, or none". It is not something one can sign in to (with B8, B10: the
+  runtime messages say "sign in" for every kind of wrong).
+- **C7. The doc's own commands**: C.13's `<n>` was run as written, and fish
+  read it as a redirect ("An error occurred while redirecting file 'n'"), so
+  the events were not shown in the paste (read afterwards over ssh). The
+  How-to says to replace `<n>`; a variable (`set -gx ISSUE 1`) would be safer.
+- **C8. The board ran in the wrong home, and did not say so.** At 00:10 a
+  board on 17830 was started in a terminal still set to round B: it recreated
+  `~/lingtai-trial/b` with only `locks/` in it (removed after the round). A
+  board started in a home with no `config.yml` served anyway.
 
 - **C1. Ctrl+C at the project question leaves a half-set-up home, and says
   only what it did not write.** After "stopped at the question — its answer
@@ -753,5 +821,7 @@ round-a.tgz	round-b.tgz	round-c.tgz
 
 - [ ] **C.17-a** Both `lsof` lines printed nothing: no board on 17830, and no process
   holding a file in this round's home. If one did, stop it before `rm`.
-- [ ] **C.17-b** `round-c.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
+- [x] **C.17-b** `round-c.tgz` is in the archive, and `$HOME/lingtai-trial` holds no
   `c/`.
+  → **Not pasted.** Done: `round-c.tgz` is in the archive and `~/lingtai-trial/c` is gone.
+  → Yes (checked over ssh after the round).
