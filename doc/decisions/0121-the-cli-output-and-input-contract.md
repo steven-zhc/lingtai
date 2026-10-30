@@ -27,8 +27,10 @@ using them in a terminal.
 
 1. **Layout.** A command's output is, in order: a heading line (the thing and
    its name), then sections grouped by subject, then — when something can be
-   done next — one closing line that starts `next:` and names the command to
-   run. Inside a section, facts that are one value each are an aligned
+   done next — a closing `next:` naming the command to run. A command whose
+   next steps are a sequence (`init`, `add`) closes on a **numbered `NEXT`
+   block of at most three lines**, in the order they are run, each with what it
+   is for; every other command closes on one line. Inside a section, facts that are one value each are an aligned
    key/value block; facts that repeat are a table with a header row. Each line
    is one fact. A command that has nothing to say says so in one line and
    exits 0.
@@ -39,9 +41,10 @@ using them in a terminal.
    then one block per thing to fix — failures first, then warnings, each in
    area order, and a check that was not run here left out. A block is a title
    line, the first line of the detail, and its `fix` lines; blocks whose fix is
-   the same are drawn once, under one title. `next: lingtai doctor --verbose`
-   closes `doctor`'s view when something warned or failed. `--verbose` keeps
-   the sections.
+   the same are drawn once, under one title. When something warned or failed,
+   `doctor`'s view closes on **the first block's fix**, the one most worth doing
+   first; `lingtai doctor --verbose` closes it only when no block has a fix.
+   `--verbose` keeps the sections.
 
    **Every line of that view starts in a label column**, right-aligned to the
    widest label, so a reader scans one edge to know what each line is:
@@ -51,9 +54,18 @@ using them in a terminal.
    at the first block. A failing title keeps its `✗` after the label
    (`[problem] ✗ environment · store and log`); a warning has none, so plain
    mode tells the two apart (§3). The title carries its area tag at the end,
-   `muted`. In this view
-   alone the closing line is the `NEXT` label and the command, in place of
-   `next:`; `init`'s own closing line after the report keeps `next:`.
+   `muted`. In this view, and in `init`'s and `add`'s, the closing line is the
+   `NEXT` label and the command, in place of `next:`.
+
+   **`init` and `add` end on a summary card**, after their questions, which
+   are asked with nothing printed around them. The card is three groups —
+   *this machine*, *this project*, *each pass* — a blank line between, a
+   lowercase `muted` label and a plain value per row, one fact a row (the trial
+   build's result and time among them); then one line, `✓ ready`, with
+   doctor's count and the recipe's path; then the numbered `NEXT` block, the
+   only badge on the screen. A local project's block is `lingtai board` (the
+   board), `lingtai ticket new` (the first ticket, in another terminal),
+   `lingtai start` (takes it).
 
 2. **Symbols and colour come from `packages/env/src/colour.ts`; this ADR adds
    glyphs and labels, and no new hue.** Each glyph is drawn in an existing
@@ -213,6 +225,15 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
   breaking change, removing or retyping a JSON field is.
 - Because the palette is the board's, a state looks the same in the terminal
   and on the board, and a change to it is one edit in `colour.ts`.
+
+
+## Not built yet
+
+- **`doctor`'s `NEXT` is still `lingtai doctor --verbose`** whatever its first
+  block says.
+- **`init` and `add` still print their questions' headings and the old
+  sections**, close on one `next:` line, and `add` on a GitHub repository still
+  prints every resolved setting after the summary.
 
 ## Example
 
