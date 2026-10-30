@@ -115,6 +115,21 @@ describe('askAgents', () => {
       expect(lines.some((l) => l.includes('sign in to it'))).toBe(true)
     })
 
+    it('an empty answer is refused with a sentence that names no runtime and lists the choices (#727)', async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const { world } = fakeWorld()
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: { agent: '' },
+        home: HOME,
+        files,
+      })
+      const refused = (result as { refused: string }).refused
+      expect(refused).toMatch(/^no agent is chosen yet — choose one of claude-code, codex/)
+      expect(refused).not.toMatch(/^\s/)
+    })
+
     it('refuses before any question when nothing is signed in', async () => {
       const files = mapFiles({ [PATH]: FIXTURE })
       const { world, asked } = fakeWorld(['should not be reached'])

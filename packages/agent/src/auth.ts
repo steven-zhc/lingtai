@@ -84,10 +84,9 @@ export function claudeCodeAuth(binary: string, env: Record<string, string>): Pro
 /**
  * `codex login status`, in the environment a run would get.
  *
- * Real, though the adapter is not: which runtimes are signed in decides
- * whether `runtime.agent` may be detected at all (0046 §3), and a machine
- * signed in to both must be asked rather than handed the one that happened
- * to have a probe. The exit code is the answer — 0 `Logged in using …`,
+ * Real, though the adapter is not: which runtimes are signed in decides what
+ * setup can offer as the writer's default. With several signed in it is the
+ * first in `RuntimeId`'s own order, not whichever probe finished first. The exit code is the answer — 0 `Logged in using …`,
  * 1 `Not logged in` — and a missing binary is not signed in.
  */
 export function codexAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
