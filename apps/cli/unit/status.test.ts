@@ -359,6 +359,17 @@ describe('renderStatus keeps every fact the old output printed', () => {
       ],
     }
 
+    it('under --all keeps the unpushed suffix when the sentence is longer than a line', () => {
+      const long = `ready to land — ${'x'.repeat(168)}`
+      const suffix = '(and agent/1 was not pushed: remote rejected the push)'
+      const wait: StatusWait = { ...held, line: long, detail: ['your judgement is needed', `${long} ${suffix}`] }
+      const r: StatusReport = {
+        ...report,
+        projects: [{ ...report.projects[0]!, known: [row({ taskId: 't1', ref: '1', state: 'waiting', wait })] }],
+      }
+      expect(renderStatus(r, { all: true }).join('\n')).toContain(suffix)
+    })
+
     it.each([false, true])('says the sentence once, then the command (all: %s)', (all) => {
       const out = renderStatus(report, { all }).join('\n')
       const lines = out.split('\n').map((l) => l.trim())

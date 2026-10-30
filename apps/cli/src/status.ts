@@ -609,13 +609,11 @@ export function renderStatus(
         lines2.push(`    ${prefix}${oneLine(w.line)}`)
         lines2.push(`    ${waitCommand(p.project, t.ref, w.reason)}`)
         if (options.all) {
-          const sentence = oneLine(w.line)
+          // Compared whole, then cut: a cut sentence would swallow the suffix after it.
           for (const d of w.detail) {
             if (d === 'your judgement is needed' || d === 'a failure needs acknowledging') continue
-            const one = oneLine(d)
-            if (one === sentence) continue
-            const rest = one.startsWith(sentence) ? one.slice(sentence.length).trim() : one
-            if (rest !== '') lines2.push(`    ${rest}`)
+            const rest = d.startsWith(w.line) ? d.slice(w.line.length).trim() : d
+            if (rest !== '') lines2.push(`    ${oneLine(rest)}`)
           }
         }
       }
