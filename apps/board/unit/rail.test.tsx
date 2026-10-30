@@ -1155,100 +1155,27 @@ describe('which cards draw a rail', () => {
 
 describe('what the column can give a card', () => {
   /**
-   * `22rem` is the width the column actually gives a card, so *does it fit* is
-   * settled rather than assumed.
+   * Ten labels do not fit whole in every lane, and the thing that gives way is
+   * the label rather than a segment — dropping a segment would put the bar
+   * back in 0016 §4's failure. So this asks what guarantees a cut label is cut
+   * on a whole character:
    *
-   * **It stopped being *do the names fit* when the vocabulary went to ten.**
-   * Five labels fitted whole; ten do not, and the thing that gives way is the
-   * label rather than a segment — dropping a segment to make room would put
-   * the bar back in 0016 §4's failure, where *nothing configured* and
-   * *configured and silently did not run* are the same picture. So this asks
-   * the two questions that are left:
+   * 1. the bar is a **grid of ten**, not a flex row that wraps; and
+   * 2. `.slab` hides overflow and ends it in an ellipsis on one line, so the
+   *    browser cuts between glyphs at any width.
    *
-   * 1. the bar is a **grid of ten**, not a flex row that wraps onto a second
-   *    line on somebody's screen; and
-   * 2. every one of the ten is **still unique** at the number of characters a
-   *    column actually shows, so a clipped word is shorter and not ambiguous.
-   *
-   * The numbers come out of the stylesheet, so raising the label's size fails
-   * here rather than making two steps read the same on a card.
+   * No pixel width is asserted: nothing here lays a card out, and a window
+   * resize must not move this test.
    */
-  it('keeps the ten names apart at the width 22rem gives them', () => {
-    const fontSize = Number(/\.slab\s*\{[^}]*font-size:\s*([\d.]+)px/.exec(CSS)?.[1])
-    const gap = Number(/\.segs\s*\{[^}]*gap:\s*([\d.]+)px/.exec(CSS)?.[1])
-    const padding = Number(/^\.card\s*\{[^}]*padding:\s*[\d.]+px\s+([\d.]+)px/m.exec(CSS)?.[1])
-    expect(fontSize).toBeGreaterThan(0)
-    expect(gap).toBeGreaterThan(0)
-    expect(padding).toBeGreaterThan(0)
-
-    // 22rem at the app's 16px root, less the card's own padding and its two
-    // borders — the stripe is 2px and the right edge is 1px.
-    const inside = 22 * 16 - padding * 2 - 3
-    const column = (inside - gap * (STEPS.length - 1)) / STEPS.length
-    // A monospace advance is 0.6em in every face this app names, less the
-    // `letter-spacing` the label asks for.
-    const tracking = Number(/\.slab\s*\{[^}]*letter-spacing:\s*(-?[\d.]+)em/.exec(CSS)?.[1] ?? 0)
-    const shown = Math.floor(column / (fontSize * (0.6 + tracking)))
-
-    // **Five, and three documents say five.** The stylesheet today gives
-    // `(352 − 20 − 3 − 27) / 10 = 30.2px` a column and `9 × 0.57 = 5.13px` a
-    // character, so the bar shows `claim admit prepa desig imple build revie
-    // propo merge end`. Pinned exactly rather than loosely, because the count
-    // and the clipped words are written out in `globals.css`'s `.slab`
-    // comment, in `rail.tsx`'s `Segs` doc and in `the-card.md`, and nothing
-    // else re-derives them — a `>=` here let the prose claim six while the
-    // card rendered five, which is a maintainer hunting a font regression
-    // that never happened.
-    expect(
-      shown,
-      "the clip width moved — update globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md, which name this number and the words it clips",
-    ).toBe(5)
-    const clipped = STEPS.map((p) => p.slice(0, shown))
-
-    // **And *which* words, which the count alone never said.** The same three
-    // files name the list as well as the number, and the list was wrong while
-    // the number was right: they said `prepa`, `imple`, `propo` — three — when
-    // `design` and `review` are six letters and are cut too. A maintainer who
-    // renders a card to check the note counts five clipped labels against a
-    // document promising three and concludes the tracking or the face
-    // regressed, which is exactly the hunt the `.toBe(5)` above exists to
-    // prevent. Derived from `STEPS` and the stylesheet, so a step renamed or
-    // added fails here rather than quietly making the prose wrong again.
-    expect(
-      STEPS.filter((p) => p.length > shown),
-      "the clipped words moved — globals.css `.slab`, rail.tsx's `Segs` and doc/design/the-card.md each write this list out",
-    ).toEqual(['prepared', 'design', 'implement', 'review', 'proposed'])
-    // And the row those three documents print, as the card actually renders it.
-    expect(clipped.join(' ')).toBe('claim admit prepa desig imple build revie propo merge end')
-
-    // A bar showing fewer characters may never print the same word under two
-    // steps, which is the one thing the clip is not allowed to cost.
-    expect(new Set(clipped).size, `${clipped.join(' ')}`).toBe(STEPS.length)
-
-    // **And the margin is three characters, not one.** The ten are still
-    // distinct at four and at three; two is where they stop being, `pr`
-    // standing for both `prepared` and `proposed`. Derived rather than
-    // claimed, because `globals.css`'s `.slab` comment and `the-card.md` say
-    // it in prose — and a margin stated too small is a maintainer abandoning a
-    // narrower column or a larger face that was in fact safe, or reading the
-    // `.toBe(5)` above as sitting on a cliff it is nowhere near.
-    const collidesAt = [...Array(shown).keys()]
-      .map((n) => n + 1)
-      .filter((n) => new Set(STEPS.map((p) => p.slice(0, n))).size < STEPS.length)
-      .at(-1)
-    expect(collidesAt, 'the margin moved — globals.css `.slab` and doc/design/the-card.md name it').toBe(2)
-    expect(shown - collidesAt!).toBe(3)
-
-    // And the bar is a grid of ten, not a flex row that could wrap instead.
+  it('cuts a label on a whole character at any width', () => {
     expect(CSS).toMatch(/\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(10,/)
-    // The label clips rather than wrapping or ellipsing: an ellipsis would
-    // spend one of the characters counted above saying there are more, and the
-    // whole name is on the segment's `title` either way.
     expect(CSS).toMatch(/\.slab\s*\{[^}]*white-space:\s*nowrap/)
-    expect(CSS).toMatch(/\.slab\s*\{[^}]*text-overflow:\s*clip/)
+    expect(CSS).toMatch(/\.slab\s*\{[^}]*overflow:\s*hidden/)
+    expect(CSS).toMatch(/\.slab\s*\{[^}]*text-overflow:\s*ellipsis/)
+    expect(CSS).not.toMatch(/\.slab\s*\{[^}]*text-overflow:\s*clip/)
   })
 
-  /** The `title` the clip leans on, which is the rail's and not the card's. */
+  /** The `title` the ellipsis leans on, which is the rail's and not the card's. */
   it('carries the whole name on every segment, clipped label or not', () => {
     const html = render({}, running())
     for (const step of STEPS) {

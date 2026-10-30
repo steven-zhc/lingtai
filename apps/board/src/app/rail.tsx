@@ -104,12 +104,11 @@ function segTitle(p: StepProgress): string {
  * draws all ten.*
  *
  * **The mark is the guarantee; the word beside it is a convenience.** Ten
- * labels in the 22rem a card's column gives clip at five characters, so the
- * row reads `claim admit prepa desig imple build revie propo merge end` —
- * **five** of the ten are cut, `prepared`, `design`, `implement`, `review` and
- * `proposed`, and the segment they sit under is not, nor is the `title` on it.
- * (`rail.test.tsx` derives that list from `STEPS` and the stylesheet rather
- * than trusting this sentence, which named three of the five for a day.)
+ * labels need more than a lane may give a card, so `.slab` cuts a word with an
+ * ellipsis on a whole character — the full name where it fits, otherwise whole
+ * characters and `…` — and the segment they sit under is not cut, nor is the
+ * `title` on it, which starts with the step's name. At the narrowest lane two
+ * labels may read the same (`pr…`); position and `title` tell them apart.
  * That trade is the right way round: omitting a segment
  * loses the distinction 0016 §4 exists for, and clipping a word loses the
  * characters a reader can get back by hovering. **None** of the ten is `skipped`
