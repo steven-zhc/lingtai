@@ -55,9 +55,7 @@ const ok = (stdout: string): GitResult => ({ ok: true, stdout, stderr: '' })
 
 const GIT_PLAN: GitPlan = {
   '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-  '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-  '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-  '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+  '/repo::rev-parse --verify lingtai-base^{commit}': ok('abc123f\n'),
 }
 
 interface Harness {

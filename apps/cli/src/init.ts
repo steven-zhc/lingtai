@@ -579,7 +579,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       const path = recipePath(chosen.name, home)
       const text = await world.files.read(path)
       fact(world, 'Projects', [
-        ['project', paint.pass(`local — ${chosen.name}, registered with its own origin as repo.remote`)],
+        ['project', paint.pass(`local — ${chosen.name}, registered with the checkout itself as repo.remote`)],
         ['recipe', text === null ? paint.fail('the recipe could not be read back') : path],
       ])
     } else {

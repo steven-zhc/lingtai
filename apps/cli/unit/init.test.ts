@@ -161,8 +161,7 @@ function harness(
 describe('lingtai init ends by printing the recipe, doctor, and the board line (#434)', () => {
   const GIT_PLAN: Record<string, GitResult> = {
     '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
-    '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
-    '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
+    '/repo::rev-parse --verify lingtai-base^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
     '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
   }
 
@@ -231,7 +230,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(text).not.toContain('GitHub App')
       expect(text).not.toContain('manifest flow')
       expect(text.match(/^Projects$/gm)).toHaveLength(1)
-      expect(text).toMatch(/project\s+local — repo, registered with its own origin as repo.remote/)
+      expect(text).toMatch(/project\s+local — repo, registered with the checkout itself as repo.remote/)
       // The recipe's path and text, then the doctor text and the board row.
       expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
       expect(text).not.toContain('repo:')
@@ -433,8 +432,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 describe('init and add, driven end to end from unit/ (#400, #435)', () => {
   const GIT_PLAN: Record<string, GitResult> = {
     '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
-    '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
-    '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
+    '/repo::rev-parse --verify lingtai-base^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
     '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
   }
 

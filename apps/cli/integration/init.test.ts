@@ -303,7 +303,7 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
-    expect(seen.lines.join('\n')).toContain('project  local — repo, registered with its own origin as repo.remote')
+    expect(seen.lines.join('\n')).toContain('project  local — repo, registered with the checkout itself as repo.remote')
   })
 
   it('a local project, once registered, is listed on a re-run rather than asked about again (#394)', async () => {
