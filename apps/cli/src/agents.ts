@@ -198,7 +198,7 @@ export async function askAgents(
 
   const modelAnswer = await question(world, {
     name: 'which model the writer runs on',
-    flag: '--model <name>',
+    flag: "--model <name>, or --model ''",
     given: at.flags.model ?? null,
     prompt: "which model (empty for the runtime's own default)",
     current: currentModel,
@@ -277,7 +277,7 @@ export async function askAgents(
         : null
     const reviewerModelAnswer = await question(world, {
       name: "the reviewer's model",
-      flag: '--reviewer-model <name>',
+      flag: "--reviewer-model <name>, or --reviewer-model ''",
       given: at.flags.reviewerModel ?? null,
       prompt: "on which model (empty for the runtime's own default)",
       current: currentReviewerModel,
