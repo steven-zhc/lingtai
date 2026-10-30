@@ -193,9 +193,33 @@ lingtai add $FORK
 date
 ```
 
-Answer: tickets **github**, agent and reviewer **claude-code**, landing
-**hold**, trial build **yes**. If it insists on `--base`, give it the default
-branch printed above and write that down as stuck.
+**The answers**, in the order `add` asks (same prompts as round B's table,
+plus `source.ts:150` for tickets, since a GitHub project is asked where they
+live). Enter means take what it offers. A question not in this list is a
+finding: write it down with its words.
+
+| # | It asks | Answer | Why |
+|---|---|---|---|
+| 1 | the branch this project's recipe governs and merges into | Enter if it offers `main` | if it insists on `--base` instead, write that down as stuck and give `main` |
+| 2 | use every default? | `no` | `yes` refuses at the writer while Claude Code and Codex are both signed in (B8) |
+| 3 | which agent writes the change (claude-code, codex) | `claude-code` | |
+| 4 | which model (empty for the runtime's own default) | Enter | |
+| 5 | does a cold reviewer read it, and which agent (…, or none) | `claude-code` | |
+| 6 | on which model (empty for the runtime's own default) | Enter | |
+| 7 | the install command | Enter if it offers a `pnpm install …` | |
+| 8 | run these before review? yes, or no to write your own | `yes` if it lists `pnpm test` | nanoid's `test` runs its `test:*` scripts |
+| 8a | a command that must pass before review — empty when done | `pnpm test` ⏎, then an empty line ⏎ | only if 8 is not asked: nothing was detected |
+| 9 | run these once against the base before writing them? | `yes` | the trial build |
+| 10 | where this project's tickets come from — github (this repository's issues), or db (Lingtai's own table) | `github` | |
+| 11 | which labels are work, comma-separated, first = taken first | Enter | `bug, feature, documentation` |
+| 12 | land this on which branch, or "hold" to hold every pass for a person | `hold` | |
+| 13 | how many times a pass sends the agent back … | Enter | |
+| 14 | what one agent run may take, like 30m or 2h | Enter | |
+| 15 | a dollar ceiling per agent run, like $5, or "none" for no ceiling | Enter | |
+| 16 | register with the checks and landing above? | `yes` | if asked |
+
+If it asks how this machine reaches GitHub, answer `gh`: C.5 already chose it,
+so being asked again is itself a finding.
 
 *C.7 output:*
 
