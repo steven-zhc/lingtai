@@ -66,6 +66,28 @@ const BASE_AT = {
 }
 
 describe('askRecipe — an absent file (#432)', () => {
+  it('prints no group heading before any question (#753)', async () => {
+    const world = defaultsWorld()
+
+    await askRecipe(world, {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      seeds: [
+        { path: ['repo', 'base'], value: 'main' },
+        { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      ],
+      kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
+      keptBeforeWrite: 'Nothing was written',
+      files: mapFiles(),
+    } satisfies RecipeAt)
+
+    const headings = new Set(Object.values(SAID))
+    expect(world.logged.filter((line) => [...headings].some((h) => line.includes(h)))).toEqual([])
+  })
+
   it('creates a local project once, with every first-run answer and a SAID comment above each block', async () => {
     const files = mapFiles()
     const world = defaultsWorld()
