@@ -529,6 +529,26 @@ function runBinary(
 }
 
 /**
+ * The `pass:` line: one entry per visit, in order.
+ *
+ * A visit that passed having run no action, at a step the recipe declared
+ * nothing for, prints `skipped` — the board's own word for it — because
+ * `passed` there only means the visit happened and nothing objected. `end`
+ * always has empty `results` (its list is effects), so the recipe's own list
+ * is what tells a declared `end` from an empty one.
+ */
+export function passLine(
+  steps: readonly StepReached[],
+  declared: Readonly<Record<string, readonly unknown[] | undefined>>,
+): string {
+  const word = (v: StepReached): string =>
+    v.ending.ending === 'passed' && v.results.length === 0 && (declared[v.step] ?? []).length === 0
+      ? 'skipped'
+      : v.ending.ending
+  return `pass: ${steps.map((v) => `${v.step}=${word(v)}`).join(' ')}`
+}
+
+/**
  * What a pass left the tree at, read off the visits.
  *
  * `LeftTheTreeAt` is on an ending and the walk carries it forward, so the last
@@ -4063,7 +4083,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         return yield* Effect.die(unappended)
       }
 
-      log(`pass: ${pass.steps.map((v) => `${v.step}=${v.ending.ending}`).join(' ')}`)
+      log(passLine(pass.steps, recipe.steps))
       /**
        * **Every decision the router made, on the log** (`#271`).
        *

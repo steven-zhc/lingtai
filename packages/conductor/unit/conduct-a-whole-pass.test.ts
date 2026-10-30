@@ -149,7 +149,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(walked, `no pass line among:\n${lines.join('\n')}`).toBeDefined()
     const visits = walked!.slice('pass: '.length).split(' ')
     expect(visits.map((v) => v.split('=')[0])).toEqual(STEPS.filter((s) => s !== 'claim'))
-    expect(visits.at(-1)).toBe('end=passed')
+    expect(visits.at(-1)).toBe('end=skipped')
+    // A step whose default action ran still reads passed.
+    expect(visits).toContain('implement=passed')
     // And the one that did not pass is the merge point, which is where the
     // injected `no-merge` action asked for a person.
     expect(visits).toContain('merge=held')
