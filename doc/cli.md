@@ -49,9 +49,11 @@ lingtai add [<owner>/<repo>] [flags]
       which labels are work, first taken first.
       default: bug, feature, documentation
   --agent <claude-code|codex>  which agent writes the change
-  --model <name>               the writer's model
+  --model <name>, or --model ''
+      the writer's model; '' for the runtime's own default
   --reviewer <agent|none>      a cold reviewer, and which, or none
-  --reviewer-model <name>      the reviewer's model
+  --reviewer-model <name>, or --reviewer-model ''
+      the reviewer's model; '' for the runtime's own default
   --install <cmd>              what prepares a worktree, e.g. npm ci
   --build <cmd|none>           a check that must pass before review;
                                repeat it for more than one
@@ -598,9 +600,11 @@ lingtai init [flags]
   --tickets <github|db>     where tickets come from
   --kinds <a,b,c>          which labels are work, first taken first
   --agent <claude-code|codex>  which agent writes the change
-  --model <name>               the writer's model
+  --model <name>, or --model ''
+      the writer's model; '' for the runtime's own default
   --reviewer <agent|none>      a cold reviewer, and which, or none
-  --reviewer-model <name>      the reviewer's model
+  --reviewer-model <name>, or --reviewer-model ''
+      the reviewer's model; '' for the runtime's own default
   --install <cmd>              what prepares a worktree, e.g. npm ci
   --build <cmd|none>           a check that must pass before review;
                                repeat it for more than one
