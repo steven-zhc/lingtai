@@ -52,7 +52,7 @@ import { paint } from '@lingtai/env/colour'
 
 import workspace from '../../../package.json' with { type: 'json' }
 import { heading, symbol } from './output.ts'
-import { platformName } from './version.ts'
+import { platformName, versionFacts } from './version.ts'
 
 export const INSTALL_COMMANDS = ['upgrade', 'rollback', 'uninstall'] as const
 
@@ -442,10 +442,21 @@ function refuse(world: Pick<World, 'log'>, line: string, code = 1): number {
  * before the switch, and the start is left to the person: this command has no
  * terminal to hold a daemon in.
  */
-export async function upgrade(options: { despiteDoctor: boolean }, world: World): Promise<number> {
+export async function upgrade(
+  options: { despiteDoctor: boolean },
+  world: World,
+  /** The form of this process; a test passes `binary` because `isSea()` is false under vitest. */
+  build: Pick<ReturnType<typeof versionFacts>, 'lingtai' | 'form'> = versionFacts(),
+): Promise<number> {
   world.log(heading('upgrade'))
   const paths = installPaths(world.env)
   const current = installedVersion(world.self, paths)
+  if (current === null && build.form === 'binary') {
+    return refuse(
+      world,
+      `this lingtai runs from ${dirname(world.self)}, and LINGTAI_HOME names ${paths.versions} — upgrade moves the shim under that home, so unset LINGTAI_HOME or set it to the home this lingtai was installed under, and nothing was fetched`,
+    )
+  }
   if (current === null) {
     return refuse(
       world,
@@ -741,9 +752,11 @@ export function releaseRow(
 /** `lingtai doctor`'s row: whether a newer release exists. Asked only of an installed copy. */
 export async function releaseCheck(
   world: Pick<World, 'fetch' | 'env' | 'self'>,
+  /** A binary's version is the one compiled into it, wherever the file sits; a test passes `binary`. */
+  build: Pick<ReturnType<typeof versionFacts>, 'lingtai' | 'form'> = versionFacts(),
 ): Promise<{ name: string; status: 'ok' | 'warn' | 'skip'; detail: string; title?: string; fix?: string }> {
   const paths = installPaths(world.env)
-  const current = installedVersion(world.self, paths)
+  const current = build.form === 'binary' ? build.lingtai : installedVersion(world.self, paths)
   if (current === null) {
     return {
       name: 'release: newest',

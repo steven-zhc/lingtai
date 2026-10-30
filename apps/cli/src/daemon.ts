@@ -60,6 +60,7 @@ import {
   onWaitStarted,
 } from './triage.ts'
 import { renderVerdict } from './verdict.ts'
+import { versionFacts } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** What `lingtai service` reads off the log, shared with the restart that starts through it. */
@@ -164,6 +165,18 @@ export function boardMissing(): { why: string; remedy: readonly string[] } | nul
       }
 }
 
+/** What the start line says: a binary names its release, a checkout its commit and where to learn how far behind it is. */
+export function startLine(
+  code: { sha: string | null; dirty: boolean },
+  build: Pick<ReturnType<typeof versionFacts>, 'lingtai' | 'form'>,
+): string {
+  if (build.form === 'binary') return `running lingtai ${build.lingtai}`
+  return (
+    `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
+    `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`
+  )
+}
+
 /**
  * `lingtai daemon` — the process that holds the long-lived work.
  *
@@ -233,10 +246,7 @@ export async function daemonCommand(
   // beat failed, triage asks again rather than use this host's clock (#583).
   await beacon.say('starting')
   const daemonStartedAt = memoDaemonStartedAt(readStatus)
-  console.log(
-    `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
-      `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,
-  )
+  console.log(startLine(code, versionFacts()))
 
   // And in the log, where the beacon cannot help: a beacon is one mutable row
   // that the next start overwrites, so it says a daemon is up and never said

@@ -59,6 +59,27 @@ describe('daemon: currency', () => {
     expect(row.fix).toBe(RESTART)
     PLAIN(row.title)
   })
+
+  it('is not a warn, and offers no restart, for a binary daemon that records no commit', async () => {
+    const row = await daemonCurrency(async () => ({ codeSha: null, state: 'idle', lastSeenAt: new Date() }) as never, {
+      form: 'binary',
+      lingtai: '0.10.0',
+    })
+    expect(row.status).toBe('ok')
+    expect(row.fix).toBeUndefined()
+    expect(row.detail).toContain('0.10.0')
+    expect(row.detail).not.toContain('lingtai restart')
+  })
+
+  it('judges a binary by its own form even when the beacon carries a sha', async () => {
+    const row = await daemonCurrency(
+      async () => ({ codeSha: 'abcdef0123', codeDirty: false, state: 'idle', lastSeenAt: new Date() }) as never,
+      { form: 'binary', lingtai: '0.10.0' },
+    )
+    expect(row.status).toBe('ok')
+    expect(row.fix).toBeUndefined()
+    expect(row.detail).toContain('0.10.0')
+  })
 })
 
 describe('conductor: refusals on the log', () => {
