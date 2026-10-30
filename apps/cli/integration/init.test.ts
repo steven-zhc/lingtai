@@ -524,7 +524,7 @@ describe('lingtai init (#186)', () => {
     // The App is asked on every run, and only what the call answered is reported.
     expect(seen.apps).toBe(1)
     expect(second.seen.apps).toBe(1)
-    expect(seen.lines.join('\n')).toContain('app  none yet')
+    expect(seen.lines.join('\n')).not.toContain('none yet')
     expect(second.seen.lines.join('\n')).toContain('app  lingtai-me, owned by me — it answered')
 
     // A configured App that does not answer is not reported as answering.

@@ -214,7 +214,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(code).toBe(0)
       const text = logged.join('\n')
       expect(stripColour(text)).toBe(text)
-      for (const heading of ['init', 'Machine', 'Store', 'GitHub App', 'Projects', 'Board']) {
+      for (const heading of ['init', 'Machine', 'Store', 'Projects', 'Board']) {
         expect(text).toContain(heading)
       }
       // The git version, every runtime's state, and the home line.
@@ -223,7 +223,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(text).toMatch(/home\s+\/nonexistent\/\.lingtai — nothing yet/)
       // The store row, the app row, the project row.
       expect(text).toMatch(/store\s+SQLite/)
-      expect(text).toMatch(/app\s+none yet — the board's first screen creates it through GitHub's manifest flow/)
+      expect(text).not.toContain('GitHub App')
+      expect(text).not.toContain('manifest flow')
+      expect(text.match(/^Projects$/gm)).toHaveLength(1)
       expect(text).toMatch(/project\s+local — repo, registered with its own origin as repo.remote/)
       // The recipe's path and text, then the doctor text and the board row.
       expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
@@ -314,6 +316,40 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(calls).toEqual({ boardAt: 1, board: 0 })
     expect(logged.at(-2)).toContain('the board was already running at http://127.0.0.1:17820 — this started none')
     expect(logged.at(-1)).toBe('next: lingtai ticket new · lingtai run')
+  })
+
+  it('a local init on a machine with a configured App says nothing of it', async () => {
+    const { world, logged } = harness({
+      gitPlan: GIT_PLAN,
+      answers: [''],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
+    })
+    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults']), world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).not.toContain('GitHub App')
+    expect(text).not.toContain('it answered')
+  })
+
+  it('a GitHub init with a configured App says it answered', async () => {
+    const { world, logged } = harness({
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
+    })
+    world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).toMatch(/app\s+lingtai-me, owned by me — it answered/)
+    expect(text.match(/it answered/g)).toHaveLength(1)
+  })
+
+  it('a re-run on a machine with projects and a configured App says it answered once', async () => {
+    const { world, logged } = harness({
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
+    })
+    world.projects = async () => [{ name: 'repo' }] as never
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).toMatch(/app {2}lingtai-me, owned by me — it answered/)
+    expect(text.match(/it answered/g)).toHaveLength(1)
   })
 
   it('the GitHub branch starts the board only when boardUrl() is first asked, and only once', async () => {
@@ -437,6 +473,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     expect(calls.board).toBe(0)
     expect(opened).toBe(0)
     expect(logged.join('\n')).toContain('next: lingtai add <owner>/<repo>')
+    expect(logged.join('\n')).not.toContain('GitHub App')
   })
 
   it('--github-auth gh signed out refuses by name and writes no github.auth', async () => {
