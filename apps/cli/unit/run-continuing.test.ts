@@ -112,11 +112,17 @@ async function request(store: Store, issue: number, runId: string) {
 
 async function drive(
   store: Store,
-  extra: { max?: number; issue?: number; dayCeiling?: Parameters<typeof run>[0]['dayCeiling'] } = {},
+  extra: {
+    max?: number
+    issue?: number
+    dayCeiling?: Parameters<typeof run>[0]['dayCeiling']
+    result?: RunOnceResult
+  } = {},
 ) {
   const resolved = await resolveRecipe(async () => RECIPE_YAML, 'main')
   const onces: RunOnceOptions[] = []
   const queues: unknown[] = []
+  const order: string[] = []
   const lines: string[] = []
   const world: RunWorld = {
     hasGitHubAuth: notReached,
@@ -128,6 +134,8 @@ async function drive(
     readPrompt: async () => 'go',
     runOnce: (options) => {
       onces.push(options)
+      order.push('once')
+      if (extra.result !== undefined) return Effect.succeed(extra.result)
       // As the real one does: the continuation's reclaim and landing take the
       // ticket off `approved`, which is what spends its row.
       return Effect.promise(async () => {
@@ -142,6 +150,7 @@ async function drive(
     },
     runQueue: (options) => {
       queues.push(options)
+      order.push('queue')
       return Effect.succeed({ ran: [], stopped: 'empty', attempted: [] })
     },
     tallyPass: async () => ({ landed: 0, held: 0, stopped: 0 }),
@@ -149,8 +158,9 @@ async function drive(
     projector: FAKE_PROJECTOR,
     ports: FAKE_PORTS,
   }
-  const code = await run({ project: 'demo', store, ...extra }, (l) => lines.push(l), world)
-  return { code, onces, queues, lines }
+  const { result: _result, ...opts } = extra
+  const code = await run({ project: 'demo', store, ...opts }, (l) => lines.push(l), world)
+  return { code, onces, queues, lines, order }
 }
 
 describe('run continues what a person approved (#747)', () => {
@@ -168,9 +178,37 @@ describe('run continues what a person approved (#747)', () => {
   it('with no --max, continues first and then takes the queue', async () => {
     const store = createMemoryEventStore()
     await approve(store, 1, 'R1')
-    const { onces, queues } = await drive(store)
+    const { onces, queues, order } = await drive(store)
     expect(onces).toHaveLength(1)
     expect(queues).toHaveLength(1)
+    expect(order).toEqual(['once', 'queue'])
+  })
+
+  it('refuses, exiting 1, when the control read for a continuation fails', async () => {
+    const inner = createMemoryEventStore()
+    await approve(inner, 1, 'R1')
+    let controlReads = 0
+    // Startup and the owed rows read fine; the read inside each continuation does not.
+    const store: Store = {
+      ...inner,
+      read: async (stream: string, ...rest: unknown[]) => {
+        if (stream === CONTROL_STREAM && ++controlReads >= 3) throw new Error('boom')
+        return (inner.read as (...a: unknown[]) => Promise<never>)(stream, ...rest)
+      },
+    } as Store
+    const { code, onces, queues, lines } = await drive(store)
+    expect(code).toBe(1)
+    expect(onces).toHaveLength(0)
+    expect(queues).toHaveLength(0)
+    expect(lines.join('\n')).toContain('boom')
+  })
+
+  it('names the stage and detail of a continuation that stopped past the claim', async () => {
+    const store = createMemoryEventStore()
+    await approve(store, 1, 'R1')
+    const result = { ok: false, stage: 'env', detail: 'FOO is not set' } as unknown as RunOnceResult
+    const { lines } = await drive(store, { max: 1, result })
+    expect(lines.some((l) => l.includes('#1 stopped at env: FOO is not set'))).toBe(true)
   })
 
   it('counts each continuation against --max', async () => {
@@ -286,6 +324,15 @@ describe('stillOwed', () => {
   const base = { project: 'demo', issue: '1', runId: 'R1', by: 'x' }
 
   it('is false for an empty runId or a non-numeric issue, reading nothing', async () => {
+    const unread = {
+      read: async () => {
+        throw new Error('read')
+      },
+    } as unknown as Store
+    expect(await stillOwed(unread, 'demo', { ...base, runId: '' })).toBe(false)
+    expect(await stillOwed(unread, 'demo', { ...base, issue: '' })).toBe(false)
+    expect(await stillOwed(unread, 'demo', { ...base, issue: 'abc' })).toBe(false)
+    expect(await stillOwed(unread, 'demo', { ...base, issue: '0' })).toBe(false)
     expect(await stillOwed(store, 'demo', { ...base, runId: '' })).toBe(false)
     expect(await stillOwed(store, 'demo', { ...base, issue: '' })).toBe(false)
     expect(await stillOwed(store, 'demo', { ...base, issue: 'abc' })).toBe(false)

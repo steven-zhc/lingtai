@@ -172,13 +172,17 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  * The same rule as above, too: a pause that could not be read is not consent,
  * so it stops the pass rather than taking the next ticket unasked.
  */
+const pausedSentence = async (store: EventStore | undefined, ceiling?: DayCeilingPorts): Promise<string | null> => {
+  // The daily ceiling first, so its own pause lifts when the figure was raised.
+  const stop = await dayCeilingStop(store, ceiling)
+  const control = await readControl(store)
+  if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
+  return stop
+}
+
 const stillPaused = (store: EventStore | undefined, ceiling?: DayCeilingPorts) => async (): Promise<string | null> => {
   try {
-    // The daily ceiling first, so its own pause lifts when the figure was raised.
-    const stop = await dayCeilingStop(store, ceiling)
-    const control = await readControl(store)
-    if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
-    return stop
+    return await pausedSentence(store, ceiling)
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
@@ -531,7 +535,12 @@ export async function run(
           const rows = (yield* owedRows).filter((c) => c.project === options.project)
           for (const row of rows) {
             if (limit !== undefined && ran.length >= limit) break
-            const sentence = yield* Effect.promise(stillPaused(options.store, options.dayCeiling))
+            // A pause that cannot be read is a refusal here, not a stop: the approval
+            // is still owed and a clean exit would say nothing was wrong.
+            const sentence = yield* Effect.tryPromise({
+              try: () => pausedSentence(options.store, options.dayCeiling),
+              catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
+            })
             if (sentence !== null) {
               log(sentence)
               return { ran, stopped: sentence }
@@ -548,6 +557,9 @@ export async function run(
               log(`continuation of #${row.issue} declined at claim — ${result.detail}`)
               continue
             }
+            // Any other refusal names itself: `runOnce` returns its explanation
+            // without logging it, and the tally only counts it.
+            if (result.ok === false) log(`${symbol.fail()} #${row.issue} stopped at ${result.stage}: ${result.detail}`)
             ran.push(result)
           }
           return { ran, stopped: null as string | null }
