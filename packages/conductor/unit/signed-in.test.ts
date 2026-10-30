@@ -19,7 +19,8 @@ function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => bo
       capabilities,
       checkAuth: async () => {
         asked.n += 1
-        return { loggedIn: loggedIn(), method: null, detail: '' }
+        const ok = loggedIn()
+        return { state: ok ? ('signed-in' as const) : ('signed-out' as const), loggedIn: ok, method: null, detail: '' }
       },
     },
   }

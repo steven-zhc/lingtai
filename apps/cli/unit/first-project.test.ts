@@ -70,7 +70,7 @@ const fail = (stderr: string): GitResult => ({ ok: false, stdout: '', stderr })
 function runtimesFrom(signedIn: readonly string[]): RuntimeFound[] {
   return (['claude-code', 'codex'] as const).map((id) => ({
     id,
-    installed: true,
+    state: signedIn.includes(id) ? 'signed-in' : 'signed-out',
     signedIn: signedIn.includes(id),
     detail: signedIn.includes(id) ? 'signed in' : 'not signed in',
   }))

@@ -268,7 +268,7 @@ describe('askBeforeGithubAdd (#402)', () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
     const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
-      runtimes: async () => [{ id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' }],
+      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
     })
     // Every question takes its own default or detected answer; `install` and
     // `build` are answered directly by flag, since neither has one to take.

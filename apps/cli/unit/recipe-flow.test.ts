@@ -34,7 +34,7 @@ function mapFiles(initial: Record<string, string> = {}): RecordingFiles {
 }
 
 const ONE_RUNTIME: readonly RuntimeFound[] = [
-  { id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' },
+  { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
 ]
 
 /** A `QuestionWorld` that answers every question with its own default. */
@@ -212,8 +212,8 @@ steps:
 
 describe('askRecipe — --defaults (#433)', () => {
   const TWO_RUNTIMES: readonly RuntimeFound[] = [
-    { id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' },
-    { id: 'codex', installed: true, signedIn: true, detail: 'signed in' },
+    { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+    { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
   ]
 
   it('asks no recipe question, and a flag given beside it still wins', async () => {

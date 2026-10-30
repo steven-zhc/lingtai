@@ -15,7 +15,9 @@ import type { RuntimeFound } from '../src/runtimes.ts'
 
 const HOME = '/home/me/.lingtai'
 const CONFIRM = /register with the checks and landing above/
-const RUNTIMES: readonly RuntimeFound[] = [{ id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' }]
+const RUNTIMES: readonly RuntimeFound[] = [
+  { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+]
 
 function mapFiles(): RecipeFiles {
   const store = new Map<string, string>()

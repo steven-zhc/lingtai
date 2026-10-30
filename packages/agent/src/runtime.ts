@@ -245,7 +245,11 @@ export function neverStarted(receipt: { turns: number; costUsd: number | null; i
  * logged in, because the filtered environment a run gets had no `USER` and
  * macOS finds a keychain item by who is asking.
  */
+export type AuthState = 'signed-in' | 'signed-out' | 'not-installed' | 'did-not-start'
+
 export interface AuthStatus {
+  /** Set only by the classifiers in `auth.ts`: `loggedIn` is `state === 'signed-in'`. */
+  state: AuthState
   loggedIn: boolean
   /** `claude.ai`, `apiKey`, `none` — whatever the runtime calls it. */
   method: string | null

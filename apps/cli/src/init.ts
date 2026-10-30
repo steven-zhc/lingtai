@@ -148,7 +148,7 @@ import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { heading, keyValues, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { question, spun, type QuestionWorld } from './question.ts'
-import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import { askRuntimes, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
 import type { WizardFlags } from './wizard-options.ts'
 
@@ -326,7 +326,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   fact(world, 'Machine', [
     ['git', git ? git : paint.fail('not on PATH')],
     ...runtimes.map((r) => {
-      const state = !r.installed ? 'not installed' : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`
+      const state = r.signedIn ? r.detail : runtimeStateSentence(r.id, r.state, r.detail).slice(r.id.length + 1)
       return [r.id, state] as const
     }),
     ['home', `${home} — ${world.machine.describeHome(home, path)}`],

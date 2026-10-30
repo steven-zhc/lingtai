@@ -27,11 +27,11 @@ import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
 import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
 
 import { question, type QuestionWorld } from './question.ts'
-import type { RuntimeFound, RuntimeName } from './runtimes.ts'
+import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from './runtimes.ts'
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
 function whyMissing(r: RuntimeFound): string {
-  return r.installed ? `${r.id} is installed and not signed in (${r.detail})` : `${r.id} is not installed`
+  return runtimeStateSentence(r.id, r.state, r.detail)
 }
 
 /**
@@ -43,7 +43,8 @@ function whyMissing(r: RuntimeFound): string {
 export function noRuntimesSignedInRefusal(runtimes: readonly RuntimeFound[]): string {
   return (
     `no agent runtime is signed in on this machine — ${runtimes.map(whyMissing).join('; ')}. ` +
-    'Sign in to one and try again; whether it is paid for is between you and its provider'
+    `${[...new Set(runtimes.map((r) => remedyFor(r.state)))].join(', or ')}, and try again; ` +
+    'whether it is paid for is between you and its provider'
   )
 }
 
@@ -158,8 +159,8 @@ export async function askAgents(
       if (signedInIds.includes(answer)) return null
       if (answer === '') return `no agent is chosen yet — choose one of ${choiceList}${extra}`
       const found = at.runtimes.find((r) => r.id === answer)
-      const why = found ? whyMissing(found) : `${answer} is not a runtime`
-      return `${why} — sign in to it, or choose one of ${choiceList}${extra}`
+      if (!found) return `${answer} is not a runtime — choose one of ${choiceList}${extra}`
+      return `${whyMissing(found)} — ${remedyFor(found.state)}, or choose one of ${choiceList}${extra}`
     }
 
   const readOpts = { home: at.home, files: at.files }
