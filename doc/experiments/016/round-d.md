@@ -261,6 +261,21 @@ lingtai report --window today
   did not fail; it was not run. Listed under "failed:", it looks like a second
   broken check, and the person editing the list would take it out too. Also a
   stray "(no env declared)" line between them, saying nothing to anybody.
+- **D4. Two questions start "run these", and only one of them runs anything
+  now.** "run these before review? yes, or no to write your own" configures
+  every later pass's build; nothing runs. "run these once against the base
+  before writing them?" runs them now, once, on `main`. A reader cannot tell
+  which is which, or whether "run" means here or in a ticket (the operator,
+  round D). Proposed: "Each pass runs these checks before review — keep this
+  list? (yes / no to write your own)" and "Try them once now, on main, to see
+  that they work? Nothing is written yet." The trial that followed passed and
+  again said nothing about it (B4).
+- **D5. The landing question is two questions in one.** "land this on which
+  branch, or \"hold\" to hold every pass for a person" mixes *where* it lands
+  with *whether a person approves first*; after `hold`, which branch is not
+  said; and it is typed, not a choice. Proposed: a choice, "when a pass is
+  ready: wait for me to approve / land it without asking", and the branch is
+  the base already chosen (asked separately only if it ever differs).
 
 - 
 
