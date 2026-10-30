@@ -516,7 +516,7 @@ export const SQLITE_LOG = 'lingtai.db'
  * obvious: the log is that one file, and no second reader can reach it.
  */
 export const SQLITE_MACHINE =
-  'SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one ' +
+  'SQLite is the whole log, in one file — no server, and no second machine: nothing outside this one ' +
   'can read it, and switching stores later starts a new, empty log and moves nothing from this one'
 
 /**

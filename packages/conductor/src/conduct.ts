@@ -249,6 +249,11 @@ import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
+/** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
+export function spentWords(costUsd: number | null): string {
+  return costUsd === null ? 'cost unknown' : `$${costUsd.toFixed(2)}`
+}
+
 /** `#161 completed, #162 not planned` — a null reason is said to be unreported, never read as completed. */
 function splitChildrenWords(children: readonly SplitChildState[]): string {
   return children
@@ -3645,8 +3650,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             dispatched.capabilities.id,
           ),
         ])
-        log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
-        runLog.note('run', `finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
+        log(`run finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
+        runLog.note('run', `finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
 
         const head = await gitOrDie(['rev-parse', 'HEAD'])
         // **The commit is the receipt** (0057 §2), and it is *this* agent's commit:

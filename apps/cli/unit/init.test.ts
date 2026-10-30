@@ -106,6 +106,7 @@ function harness(
     // empty answer outright rather than taking one as "none": a test that
     // answers every question empty, with no `--install` flag, needs a
     // detected default to answer against.
+    exists: async () => true,
     setupReader: () => ({ has: async (path) => path === 'pnpm-lock.yaml', read: async () => null }),
     database: async () => ({ ok: true, schema: { created: false, repaired: [] } }),
     ghStatus: async () => options.ghStatus ?? { ok: false, reason: 'missing', detail: 'gh is not installed' },
