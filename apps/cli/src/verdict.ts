@@ -19,6 +19,8 @@ export interface Verdict {
   subject?: string
   /** A refusal's code. Left out, never `null`, where the function that refused names none. */
   reason?: string
+  /** `'sentence'`: an accepted verdict is one line, `✓ #n approved — <detail>` (#748). */
+  form?: 'sentence'
   /** The command's own sentence, word for word. */
   detail: string
   /** A command to run next, where the old text already named one. */
@@ -37,6 +39,12 @@ export function renderVerdict(verb: string, v: Verdict): string[] {
     ...(v.reason === undefined ? [] : [`(${v.reason})`]),
     ...(subject ? [paint.muted(subject)] : []),
   ]
+  if (v.form === 'sentence' && v.outcome === 'accepted') {
+    return [
+      `${[glyph, ...(subject ? [paint.muted(subject)] : []), verb].join(' ')} — ${v.detail}`,
+      ...(v.next === undefined ? [] : [`  ${paint.muted('next:')} ${v.next}`]),
+    ]
+  }
   return [
     head.join(' '),
     ...v.detail.split('\n').map((line) => (line === '' ? '' : `  ${line}`)),

@@ -235,9 +235,6 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 ## Not built yet
 
-- **`approve` still prints `✓ approved <ticket>`** and the conductor's
-  "continues at proposed", and does not wait.
-
 - **`doctor`'s `NEXT` is still `lingtai doctor --verbose`** whatever its first
   block says.
 - **`init` and `add` still print their questions' headings and the old
