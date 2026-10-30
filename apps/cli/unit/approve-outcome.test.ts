@@ -130,8 +130,7 @@ describe('followApproval', () => {
     let calls = 0
     const t = await world({
       store: pending,
-      bound: (op, ms, signal) =>
-        ++calls === 1 ? boundOf(op) : Promise.resolve({ ok: false as const, why: 'timeout' as const }),
+      bound: (op) => (++calls === 1 ? boundOf(op) : Promise.resolve({ ok: false as const, why: 'timeout' as const })),
     })
     const r = await followApproval(target, t.w)
     expect(r.outcome).toBe('pending')
