@@ -65,6 +65,10 @@ interface Harness {
   calls: { boardAt: number; board: number }
 }
 
+function nextLines(logged: string[]): string[] {
+  return logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
+}
+
 function harness(
   options: {
     gitPlan?: Record<string, GitResult>
@@ -379,8 +383,44 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     // more to print "next, install it…" — and started only once: `startBoard`
     // memoises rather than asking `boardAt`/`board` a second time.
     expect(calls).toEqual({ boardAt: 1, board: 1 })
-    expect(logged.join('\n')).toContain('next: open')
     expect(logged.join('\n')).toContain('the board keeps running in this terminal')
+    expect(nextLines(logged)).toEqual([
+      'next: open http://127.0.0.1:17820/setup/repository · lingtai add <owner>/<repo>',
+    ])
+    expect(logged.at(-1)).toBe('next: open http://127.0.0.1:17820/setup/repository · lingtai add <owner>/<repo>')
+  })
+
+  it('the App skipped closes on lingtai add, last and once', async () => {
+    const { world, logged } = harness()
+    world.pressed = async () => {}
+    world.appeared = (signal) =>
+      new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))))
+    world.ask = async (question) =>
+      /a GitHub project/.test(question)
+        ? 'github'
+        : /GitHub App of its own/.test(question)
+          ? 'app'
+          : /the GitHub App now/.test(question)
+            ? 'create'
+            : null
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
+    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+  })
+
+  it('a configured App closes on lingtai add, last and once', async () => {
+    const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
+    world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
+    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+  })
+
+  it('a re-run with a configured App and projects prints no next: line at all', async () => {
+    const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
+    world.projects = async () => [{ name: 'repo' }] as never
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(nextLines(logged)).toEqual([])
   })
 })
 
@@ -473,8 +513,26 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     expect(parseDocument(machineFiles.get('/nonexistent/.lingtai/config.yml')!).getIn(['github', 'auth'])).toBe('gh')
     expect(calls.board).toBe(0)
     expect(opened).toBe(0)
-    expect(logged.join('\n')).toContain('next: lingtai add <owner>/<repo>')
+    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
+    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
     expect(logged.join('\n')).not.toContain('GitHub App')
+  })
+
+  it('a failing doctor leads the gh closing line with lingtai doctor --verbose; a warning does not', async () => {
+    const run = async (doctor: () => Promise<{ text: string; failed: boolean }>) => {
+      const { world, logged } = harness({
+        ghStatus: { ok: true, login: 'steven', scopes: ['repo', 'workflow'] },
+        doctor,
+      })
+      world.ask = async (question) =>
+        /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
+      expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+      return logged
+    }
+    const failed = await run(async () => ({ text: '1 failed', failed: true }))
+    expect(failed.at(-1)).toBe('next: lingtai doctor --verbose · lingtai add <owner>/<repo>')
+    const warned = await run(async () => ({ text: '1 warning', failed: false }))
+    expect(warned.at(-1)).toBe('next: lingtai add <owner>/<repo>')
   })
 
   it('--github-auth gh signed out refuses by name and writes no github.auth', async () => {
