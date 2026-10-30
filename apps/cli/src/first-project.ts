@@ -40,7 +40,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -106,8 +106,25 @@ export interface RegisterLocalPayload {
   resolved: ResolvedRecipe
 }
 
+/**
+ * `FirstProjectWorld.exists` over `node:fs`: only a path that is not there is
+ * `false`. A directory that cannot be reached (EACCES on a parent) exists —
+ * it is git's to say why it cannot be read, not ours to call it missing.
+ */
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return !(code === 'ENOENT' || code === 'ENOTDIR')
+  }
+}
+
 export interface FirstProjectWorld extends QuestionWorld {
   git: (dir: string, args: readonly string[]) => Promise<GitResult>
+  /** Whether a path exists — a seam so the unit tests never touch the disk (0060 §1). */
+  exists: (path: string) => Promise<boolean>
   /** `loadAllProjects` — registered and pending alike, keyed by name. */
   projects: () => Promise<readonly ProjectState[]>
   files: RecipeFiles
@@ -380,11 +397,13 @@ async function runLocalBranch(
     validate: async (answer) => (answer.trim() === '' ? 'a directory is needed' : null),
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
-  const dir = dirAnswer.answer
+  const dir = resolvePath(dirAnswer.answer)
+  if (!(await world.exists(dir))) return { refused: `${dir} does not exist. ${world.kept}` }
 
   const top = await world.git(dir, ['rev-parse', '--show-toplevel'])
   if (!top.ok) {
-    return { refused: `${dir} is not a git repository — ${(top.stderr || top.stdout).trim()}. ${world.kept}` }
+    const detail = (top.stderr || top.stdout).trim()
+    return { refused: `${dir} is not a git repository${detail === '' ? '' : ` — ${detail}`}. ${world.kept}` }
   }
   const toplevel = top.stdout.trim()
 
@@ -858,6 +877,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     ...(options.spin === undefined ? {} : { spin: options.spin }),
     log: options.log,
     git: liveGit,
+    exists: pathExists,
     projects: () => loadAllProjects(),
     files: diskFiles,
     home,

@@ -7,7 +7,7 @@ import { SQLITE_MACHINE, describeStore, storeChoice } from '@lingtai/env'
 import { recipePath, type RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import type { GitResult } from '../src/first-project.ts'
+import { type GitResult, pathExists } from '../src/first-project.ts'
 import {
   type AppCheck,
   type InitWorld,
@@ -189,6 +189,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       // `askRecipe`'s own questions (#431) are answered by flag instead —
       // `RECIPE_FLOW_FLAGS` — rather than scripted here: this suite's `ask`
       // only recognises the project, App, database and kinds questions.
+      exists: pathExists,
       setupReader: () => ({ has: async () => false, read: async () => null }),
       database: async (url) => {
         seen.connected.push(url)
