@@ -192,6 +192,8 @@ export interface InitWorld {
   runtimes: () => Promise<RuntimeFound[]>
   /** `FirstProjectWorld.setupReader` (#431) — a real directory, over `node:fs`. */
   setupReader: (dir: string) => SetupReader
+  /** `FirstProjectWorld.exists` — over `node:fs`. */
+  exists: (path: string) => Promise<boolean>
   /** Connect, and create the tables where there are none. */
   database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
@@ -520,6 +522,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       // same run would ask every runtime whether it is signed in twice.
       runtimes: async () => runtimes,
       setupReader: world.setupReader,
+      exists: world.exists,
       register: world.registerLocal,
       history: world.history,
       // The store above is already written by the time this runs — the same
@@ -1036,6 +1039,7 @@ export function liveInitWorld(): InitWorld {
     },
     runtimes: askRuntimes,
     setupReader: liveSetupReader,
+    exists: async (path) => existsSync(path),
     database: async (url) => {
       const pg = (await import('pg')).default
       const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })

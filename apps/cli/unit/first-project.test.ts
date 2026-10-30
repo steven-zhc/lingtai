@@ -4,6 +4,8 @@
  * `choose`/`listRepositories` fed a fake reader — no filesystem, no network,
  * so this is `unit/` by 0060 §1.
  */
+import { resolve } from 'node:path'
+
 import { ownerlessRefusal } from '@lingtai/conductor'
 import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
@@ -94,6 +96,7 @@ function harness(options: {
   files?: Record<string, string>
   signedIn?: string[]
   setupReader?: FirstProjectWorld['setupReader']
+  exists?: FirstProjectWorld['exists']
   app?: FirstProjectWorld['github']['app']
   boardUrl?: string | null
   waitForApp?: FirstProjectWorld['github']['waitForApp']
@@ -121,6 +124,7 @@ function harness(options: {
     },
     log: (line) => logged.push(line),
     git: fakeGit(options.git ?? {}),
+    exists: options.exists ?? (async () => true),
     projects: async () => options.projects ?? [],
     files,
     home: HOME,
@@ -234,6 +238,40 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(result).toEqual({ refused: expect.stringContaining('/nope is not a git repository') })
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
+  })
+
+  it('a relative directory is refused with its absolute path', async () => {
+    const abs = resolve('rel')
+    const { world } = harness({
+      git: { [`${abs}::rev-parse --show-toplevel`]: fail('fatal: not a git repository') },
+    })
+
+    const result = await chooseFirstProject(world, { local: 'rel' })
+
+    expect(result).toEqual({ refused: expect.stringContaining(`${abs} is not a git repository`) })
+  })
+
+  it('a directory that does not exist is refused as missing, without asking git', async () => {
+    const abs = resolve('gone')
+    const asked: string[] = []
+    const { world } = harness({
+      exists: async (path) => {
+        asked.push(path)
+        return false
+      },
+      git: {},
+    })
+    const git = world.git
+    world.git = async (dir, args) => {
+      asked.push(`git ${dir}`)
+      return git(dir, args)
+    }
+
+    const result = await chooseFirstProject(world, { local: 'gone' })
+
+    expect(result).toEqual({ refused: `${abs} does not exist. Nothing was written` })
+    expect((result as { refused: string }).refused).not.toContain(' — .')
+    expect(asked).toEqual([abs])
   })
 
   it('a repository with no origin is refused by name, naming the merge lane, and nothing is written', async () => {

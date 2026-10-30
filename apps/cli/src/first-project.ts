@@ -108,6 +108,8 @@ export interface RegisterLocalPayload {
 
 export interface FirstProjectWorld extends QuestionWorld {
   git: (dir: string, args: readonly string[]) => Promise<GitResult>
+  /** Whether a path exists — a seam so the unit tests never touch the disk (0060 §1). */
+  exists: (path: string) => Promise<boolean>
   /** `loadAllProjects` — registered and pending alike, keyed by name. */
   projects: () => Promise<readonly ProjectState[]>
   files: RecipeFiles
@@ -380,11 +382,13 @@ async function runLocalBranch(
     validate: async (answer) => (answer.trim() === '' ? 'a directory is needed' : null),
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
-  const dir = dirAnswer.answer
+  const dir = resolvePath(dirAnswer.answer)
+  if (!(await world.exists(dir))) return { refused: `${dir} does not exist. ${world.kept}` }
 
   const top = await world.git(dir, ['rev-parse', '--show-toplevel'])
   if (!top.ok) {
-    return { refused: `${dir} is not a git repository — ${(top.stderr || top.stdout).trim()}. ${world.kept}` }
+    const detail = (top.stderr || top.stdout).trim()
+    return { refused: `${dir} is not a git repository${detail === '' ? '' : ` — ${detail}`}. ${world.kept}` }
   }
   const toplevel = top.stdout.trim()
 
@@ -858,6 +862,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     ...(options.spin === undefined ? {} : { spin: options.spin }),
     log: options.log,
     git: liveGit,
+    exists: async (path) => existsSync(path),
     projects: () => loadAllProjects(),
     files: diskFiles,
     home,

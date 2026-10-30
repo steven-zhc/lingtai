@@ -225,7 +225,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(did.indexOf(`remove ${result.runId}`)).toBeLessThan(did.indexOf('runLog keep'))
     expect(did).not.toContain('runLog delete')
     // And the hook socket's live view reached it.
-    expect(did).toContain('note run finished: 3 turns, 0.42 usd')
+    expect(did).toContain('note run finished: 3 turns, $0.42')
   })
 
   /**
