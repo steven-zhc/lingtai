@@ -188,11 +188,12 @@ describe('run continues what a person approved (#747)', () => {
     const inner = createMemoryEventStore()
     await approve(inner, 1, 'R1')
     let controlReads = 0
-    // Startup and the owed rows read fine; the read inside each continuation does not.
+    // Startup (two reads) and the owed rows (the third) read fine; the pause check
+    // before the continuation does not.
     const store: Store = {
       ...inner,
       read: async (stream: string, ...rest: unknown[]) => {
-        if (stream === CONTROL_STREAM && ++controlReads >= 3) throw new Error('boom')
+        if (stream === CONTROL_STREAM && ++controlReads >= 4) throw new Error('boom')
         return (inner.read as (...a: unknown[]) => Promise<never>)(stream, ...rest)
       },
     } as Store

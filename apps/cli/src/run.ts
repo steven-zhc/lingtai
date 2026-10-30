@@ -541,6 +541,9 @@ export async function run(
               try: () => pausedSentence(options.store, options.dayCeiling),
               catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
             })
+            // `pausedSentence` answers a failed read as a sentence too (the ceiling's
+            // own check catches it): the approval is still owed, so that refuses.
+            if (sentence !== null && sentence.startsWith('could not ')) return yield* Effect.fail(refuse(sentence))
             if (sentence !== null) {
               log(sentence)
               return { ran, stopped: sentence }
