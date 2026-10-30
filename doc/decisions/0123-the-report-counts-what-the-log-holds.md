@@ -144,13 +144,18 @@ The operator's decisions in epic #648 are the inputs here.
 
 4. **The tickets that went round most are explained mechanically.** The eight
    tickets in the window with the most fix rounds, any outcome, cost breaking a
-   tie; the reader can sort the same list by cost instead. Each with:
+   tie; the reader can sort the same list by cost instead. The terminal lists
+   only those with at least one fix round, and leaves the section out when none
+   had one; the board's list, which sorts by cost as well, keeps every ticket.
+   Each with:
    - its cost and the share of each purpose;
    - its passes, fix rounds and waits;
-   - each wait's reason and triage cause, and how it was resolved;
+   - each wait's reason and triage cause, and how it was resolved, in words
+     (`--json` keeps the tags);
    - one sentence assembled from those facts, leading with the largest share:
      *72% answering refusals over 6 fix rounds · 3 passes · waited 3 times
-     (FixableLines ×2, ConflictingHunks).*
+     (for a call between the fixer and the reviewer ×2, for a decision on a
+     refused merge).*
 
    The sentence is a template filled from the table above. No model writes it,
    and nothing in it is a claim the facts beside it cannot check.

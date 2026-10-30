@@ -243,18 +243,36 @@ describe('lingtai report’s text', () => {
     const wait = {
       waitId: 'w1',
       at: day(26).toISOString(),
-      reason: 'FixableLines',
+      reason: 'CheckRefused',
       triage: { attempt: 1, result: 'advice', cause: 'ConflictingHunks' },
-      resolution: 'answered',
+      resolution: 'AnswerQuestion',
     }
     const cost = {
       Work: { reportedCents: 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
       Answering: { reportedCents: 300, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
     }
-    const r = await run({}, { tickets: async () => [row({ waits: [wait], cost })] })
+    const r = await run({}, { tickets: async () => [row({ waits: [wait], cost, fixRounds: 2 })] })
     expect(r.out).toContain('ticket-lingtai-1  bug  landed  $4.00 reported')
-    expect(r.out).toContain('spent on: Answering 75% · Work 25%')
-    expect(r.out).toContain('wait: FixableLines · cause ConflictingHunks · resolved answered')
+    expect(r.out).toContain('spent on: answering refusals 75% · work 25%')
+    expect(r.out).toContain('waited for a decision on a refused check · triage: merge by hand · answered')
+    expect(r.out).not.toMatch(/CheckRefused|ConflictingHunks|AnswerQuestion|censored|cause —/)
+  })
+
+  it('lists "most fix rounds" only for tickets with a fix round, and not at all when none had one', async () => {
+    const none = await run({}, { tickets: async () => [row({ fixRounds: 0 })] })
+    expect(none.out).not.toContain('most fix rounds')
+    const some = await run(
+      {},
+      {
+        tickets: async () => [
+          row({ ticket: 'ticket-lingtai-1', fixRounds: 2 }),
+          row({ ticket: 'ticket-lingtai-2', fixRounds: 0 }),
+        ],
+      },
+    )
+    const top = some.out.slice(some.out.indexOf('most fix rounds'))
+    expect(top).toContain('ticket-lingtai-1')
+    expect(top).not.toContain('ticket-lingtai-2')
   })
 
   it('prints survival when the window has no placed ticket and no spend', async () => {

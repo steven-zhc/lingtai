@@ -1,3 +1,4 @@
+import type { Resolution, RootCause, WaitReason } from '@lingtai/domain/wait'
 /**
  * The report's one computation (0123 §6, #688): `ticket_report` rows and
  * `spend` rows in, every figure of §3 and §4 out. The page and `lingtai report`
@@ -340,13 +341,57 @@ export function survivalCurve(tickets: readonly ReportTicketRow[]): SurvivalStep
   return [...steps.slice(0, SURVIVAL_CAP - 1), folded]
 }
 
-const PURPOSE_WORDS: Record<string, string> = {
+export const PURPOSE_WORDS: Record<string, string> = {
   Work: 'work',
   Answering: 'answering refusals',
   Judge: 'judging',
   Triage: 'triage',
   Discussion: 'discussion',
 }
+
+/** What a wait was for, after "waited for". A tag not here prints as itself. */
+export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
+  SignoffRequired: 'your approval',
+  OwnQuestion: 'an answer to your question',
+  AgentQuestion: "an answer to the agent's question",
+  FixerDisagrees: 'a call between the fixer and the reviewer',
+  NothingProduced: 'a decision after the agent produced nothing',
+  ProposedEscalated: 'a decision after its fix rounds ran out',
+  CheckRefused: 'a decision on a refused check',
+  MergeRefused: 'a decision on a refused merge',
+  BudgetExhausted: 'a decision after it ran out of budget',
+  AgentCrashed: 'a decision after the agent stopped',
+  SetupRefused: 'a fix to the setup',
+  AnswerUnreadable: 'a decision on an unreadable answer',
+}
+
+/** How a wait ended. */
+export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
+  Approve: 'approved',
+  GrantFixRound: 'a fix round granted',
+  AnswerQuestion: 'answered',
+  Requeue: 'started over',
+  EditBodyAndRequeue: 'ticket edited, started over',
+  Split: 'split',
+  Close: 'closed',
+}
+
+/** The triage cause, the board's labels lower-cased (`triage-cause.ts`; a test holds the two to agree). */
+export const CAUSE_WORDS: Record<RootCause['_tag'], string> = {
+  UndecidedQuestion: 'a decision for you',
+  FixableLines: 'lines to fix',
+  WrongApproach: 'the approach is wrong',
+  ConflictingHunks: 'merge by hand',
+  TicketTooBig: 'ticket too big',
+  SetupBroken: 'fix the setup',
+}
+
+const wordsFrom = (table: Record<string, string>, tag: string): string => table[tag] ?? tag
+export const reasonWords = (tag: string): string => wordsFrom(REASON_WORDS, tag)
+export const resolutionWords = (tag: string | null): string =>
+  tag === null ? 'still waiting' : wordsFrom(RESOLUTION_WORDS, tag)
+export const causeWords = (tag: string): string => wordsFrom(CAUSE_WORDS, tag)
+export const purposeWords = (tag: string): string => PURPOSE_WORDS[tag] ?? tag
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
@@ -368,7 +413,9 @@ function sentenceOf(t: {
   if (t.waits.length > 0) {
     const counts = new Map<string, number>()
     for (const w of t.waits) counts.set(w.reason, (counts.get(w.reason) ?? 0) + 1)
-    const reasons = [...counts].sort((a, b) => b[1] - a[1]).map(([r, n]) => (n > 1 ? `${r} ×${n}` : r))
+    const reasons = [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([r, n]) => (n > 1 ? `for ${reasonWords(r)} ×${n}` : `for ${reasonWords(r)}`))
     const times = t.waits.length === 1 ? 'once' : t.waits.length === 2 ? 'twice' : `${t.waits.length} times`
     parts.push(`waited ${times} (${reasons.join(', ')})`)
   }
