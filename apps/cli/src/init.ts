@@ -373,17 +373,6 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         'fix its credentials, or remove them, and run lingtai init again',
     )
   }
-  fact(world, 'GitHub App', [
-    [
-      'app',
-      ghMachine
-        ? 'not used — github.auth is gh'
-        : app.configured
-          ? paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)
-          : "none yet — the board's first screen creates it through GitHub's manifest flow",
-    ],
-  ])
-
   // ---- which project ---------------------------------------------------------
   // Registering a project *is* the record of the answer (#394) — nothing
   // machine-wide holds "local" or "github". A machine that already has
@@ -584,12 +573,12 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     }
 
     if (chosen.project === 'local') {
-      fact(world, 'Projects', [
-        ['project', paint.pass(`local — ${chosen.name}, registered with its own origin as repo.remote`)],
-      ])
       const path = recipePath(chosen.name, home)
       const text = await world.files.read(path)
-      fact(world, 'Projects', [['recipe', text === null ? paint.fail('the recipe could not be read back') : path]])
+      fact(world, 'Projects', [
+        ['project', paint.pass(`local — ${chosen.name}, registered with its own origin as repo.remote`)],
+        ['recipe', text === null ? paint.fail('the recipe could not be read back') : path],
+      ])
     } else {
       github = true
       if (chosen.auth === 'gh') {
@@ -598,6 +587,9 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       } else if (chosen.app === 'already') {
         // Nothing upstream asked for a URL on this path — `app.configured` was
         // already true, so `boardUrl()` above was never called.
+        if (app.configured && app.ok) {
+          fact(world, 'GitHub App', [['app', paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)]])
+        }
         const started = await startBoard()
         if ('refused' in started) return boardRefused(started.refused)
         const wizard = `${started.url}/setup/repository`
@@ -621,8 +613,9 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       world.log('the recipe is written once a repository is picked — it asks its questions at the terminal')
       world.log('next: lingtai add <owner>/<repo>')
     }
-  } else if (app.configured) {
+  } else if (app.configured && !ghMachine) {
     github = true
+    fact(world, 'GitHub App', [['app', paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)]])
     // Nothing new was asked — the machine already has projects, told above —
     // but a configured App still has its one remaining screen: the wizard
     // that picks a repository for it. Nothing upstream asked for a board yet.
