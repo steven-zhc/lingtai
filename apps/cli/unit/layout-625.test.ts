@@ -300,15 +300,16 @@ describe('the install commands, laid out', () => {
 
   it('asks GitHub for a binary outside LINGTAI_HOME/versions, using its own version', async () => {
     let asked = 0
-    const w = world(NOWHERE, [], '/elsewhere/versions/0.10.0/lingtai')
+    const w = world(NOWHERE, [], '/elsewhere/versions/0.9.0/lingtai')
     w.fetch = (async () => {
       asked++
-      return new Response(JSON.stringify({ tag_name: 'v0.10.0', assets: [] }), { status: 200 })
+      return new Response(JSON.stringify({ tag_name: 'v0.11.0', assets: [] }), { status: 200 })
     }) as unknown as typeof fetch
     const row = await releaseCheck(w, { form: 'binary', lingtai: '0.10.0' })
     expect(asked).toBeGreaterThan(0)
     expect(row.name).toBe('release: newest')
-    expect(row.detail).not.toContain('checkout')
+    expect(row.status).toBe('warn')
+    expect(row.detail).toBe('running 0.10.0, and 0.11.0 is out')
   })
 
   it('put ✓ on "nothing is installed", and print no escape code in plain mode', async () => {

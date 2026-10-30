@@ -1350,11 +1350,14 @@ export async function daemonCurrency(
     }
   }
 
-  if (!status.codeSha && build.form === 'binary') {
+  // By this process's own form, never by whether the beacon carries a sha: a
+  // checkout's daemon may have written one, and a commit comparison read from a
+  // binary's directory says nothing about a release.
+  if (build.form === 'binary') {
     return {
       name,
       status: 'ok',
-      detail: `this lingtai is ${build.lingtai}, an installed binary; the daemon records no commit, as a binary's never does — release: newest says whether a newer one is out`,
+      detail: `this lingtai is ${build.lingtai}, an installed binary with a release version rather than a commit to compare — release: newest says whether a newer one is out`,
     }
   }
 
