@@ -454,7 +454,7 @@ export async function upgrade(
   if (current === null && build.form === 'binary') {
     return refuse(
       world,
-      `this lingtai runs from ${dirname(world.self)}, and LINGTAI_HOME points at ${paths.versions} — upgrade moves the shim under that home, so unset LINGTAI_HOME or point it at the home this lingtai was installed under, and nothing was fetched`,
+      `this lingtai runs from ${dirname(world.self)}, and LINGTAI_HOME names ${paths.versions} — upgrade moves the shim under that home, so unset LINGTAI_HOME or set it to the home this lingtai was installed under, and nothing was fetched`,
     )
   }
   if (current === null) {
