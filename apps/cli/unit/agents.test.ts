@@ -199,6 +199,54 @@ describe('askAgents', () => {
     })
   })
 
+  describe('an empty model is an answer a flag can give (#736)', () => {
+    const codexOnly = [
+      runtime('claude-code', { installed: false, signedIn: false, detail: 'spawn claude ENOENT' }),
+      runtime('codex'),
+    ]
+    const headless = (): QuestionWorld => ({ ask: async () => null, log: () => {} })
+
+    it("--model '' with no terminal is not refused, and writes no model:", async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const result = await askAgents(headless(), {
+        project: 'app',
+        runtimes: codexOnly,
+        flags: { agent: 'codex', model: '', reviewer: 'none' },
+        home: HOME,
+        files,
+      })
+      if ('refused' in result) throw new Error(result.refused)
+      expect(JSON.stringify(result.changes)).not.toContain('"model"')
+      for (const c of result.modelChanges) {
+        if (c.path.includes('implement')) expect(c.value).toBeUndefined()
+      }
+    })
+
+    it("no --model with no terminal is refused naming --model ''", async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const result = await askAgents(headless(), {
+        project: 'app',
+        runtimes: codexOnly,
+        flags: { agent: 'codex', reviewer: 'none' },
+        home: HOME,
+        files,
+      })
+      expect((result as { refused: string }).refused).toContain("--model ''")
+    })
+
+    it("no --reviewer-model with no terminal is refused naming --reviewer-model ''", async () => {
+      const files = mapFiles({ [PATH]: FIXTURE })
+      const result = await askAgents(headless(), {
+        project: 'app',
+        runtimes: codexOnly,
+        flags: { agent: 'codex', model: '', reviewer: 'codex' },
+        home: HOME,
+        files,
+      })
+      expect((result as { refused: string }).refused).toContain("--reviewer-model ''")
+    })
+  })
+
   describe('a second agent: entry at steps.review is left as written', () => {
     it('refuses rather than write a recipe that fails the next pass, when the leftover entry is not signed in', async () => {
       // Only the first `agent:` entry is ever asked about (`findAgentAction`)

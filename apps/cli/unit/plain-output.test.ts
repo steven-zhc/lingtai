@@ -1,7 +1,21 @@
+import { recipeLine } from '@lingtai/conductor/onboard'
 import { SQLITE_MACHINE, postgresUrl, githubApp, githubAppKeyMissing, lockDir, renamedNote } from '@lingtai/env'
 import { describe, expect, it } from 'vitest'
 
-import { GITHUB_APP_NOT_CONFIGURED, postgresOnlyRows } from '../src/doctor.js'
+import {
+  BOARD_START_NOTE,
+  BOARD_STOPPED_NOTE,
+  noAnswerNote,
+  stillAnsweringNote,
+  supervisorRefusal,
+} from '../src/board.js'
+import {
+  DEFERRED,
+  GITHUB_APP_NOT_CONFIGURED,
+  STORE_UNWRITTEN,
+  notSessionModeDetail,
+  postgresOnlyRows,
+} from '../src/doctor.js'
 import { noOriginRefusal } from '../src/first-project.js'
 import { exportedUrlRefusal, sqliteEditSentence, sqliteExportedRefusal } from '../src/init.js'
 import { dollarCeilingNote } from '../src/landing.js'
@@ -11,7 +25,8 @@ import { DIFFERENT_SOURCE_CLASH } from '../src/source.js'
  * What `init`, `add` and `doctor` print to a user must not cite an ADR, an
  * issue or a source path — those describe Lingtai's internals, not the user's
  * situation (#703). This holds the listed strings only; code comments keep
- * their references, and the guard reads output strings alone.
+ * their references, and the guard reads output strings alone. A `pnpm`-prefixed
+ * command is refused too: a binary install has no `pnpm`.
  */
 
 function thrown(fn: () => unknown): string {
@@ -28,6 +43,7 @@ export function references(text: string): string[] {
     /\b0\d{3}( §\d+)?\b/g,
     /(?<![\w/])#\d{2,}\b/g,
     /(?<![\w./:])(packages|apps|doc)\/[\w./-]+\.(ts|md)\b/g,
+    /\bpnpm lingtai\b/g,
   ]
   return patterns.flatMap((p) => [...text.matchAll(p)].map((m) => m[0]))
 }
@@ -48,6 +64,16 @@ const SET: [string, string][] = [
   ['dollarCeilingNote (unnamed)', dollarCeilingNote(null)],
   ['DIFFERENT_SOURCE_CLASH', DIFFERENT_SOURCE_CLASH],
   ['GITHUB_APP_NOT_CONFIGURED', GITHUB_APP_NOT_CONFIGURED],
+  ['recipeLine', recipeLine('/h/.lingtai/x/recipe.yml')],
+  ['STORE_UNWRITTEN', STORE_UNWRITTEN],
+  ['notSessionModeDetail (stand-in)', notSessionModeDetail(true)],
+  ['notSessionModeDetail (direct)', notSessionModeDetail(false)],
+  ['BOARD_START_NOTE', BOARD_START_NOTE],
+  ['supervisorRefusal', supervisorRefusal('stop')],
+  ['BOARD_STOPPED_NOTE', BOARD_STOPPED_NOTE],
+  ['stillAnsweringNote', stillAnsweringNote(10)],
+  ['noAnswerNote', noAnswerNote('http://localhost:1', 10)],
+  ...DEFERRED.map((d): [string, string] => [`doctor deferred: ${d.name}`, d.detail]),
   ...postgresOnlyRows().map((r): [string, string] => [`doctor skip: ${r.name}`, r.because]),
 ]
 
@@ -69,6 +95,8 @@ describe('the strings init, add and doctor print', () => {
     expect(references('same streams (#381)')).not.toEqual([])
     expect(references('see packages/x.ts')).not.toEqual([])
     expect(references('db ticket #12')).not.toEqual([])
+    expect(references('under lingtai service it is a job: pnpm lingtai board stop')).toEqual(['pnpm lingtai'])
+    expect(references('run lingtai board stop')).toEqual([])
     expect(references('https://github.com/apps/lingtai/installations/new')).toEqual([])
     expect(references('https://github.com/settings/apps/lingtai')).toEqual([])
   })

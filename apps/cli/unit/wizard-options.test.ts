@@ -54,6 +54,12 @@ describe('flagsOf', () => {
     })
   })
 
+  it("keeps --model '' as an answer, and does not call it valueless (#736)", async () => {
+    const parsed = await parsedBy('init', ['--model', ''])
+    expect(parsed?.flags.model).toBe('')
+    expect(valuelessFlag(['--model', ''])).toBeNull()
+  })
+
   it('reads a bare init as no flags at all', async () => {
     expect(await parsedBy('init', [])).toEqual({ flags: {}, repeated: {} })
   })
