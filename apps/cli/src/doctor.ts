@@ -129,6 +129,7 @@ import { readDaySpend } from './day-ceiling.ts'
 import { heading, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
+import { versionFacts } from './version.ts'
 
 /**
  * `warn` is not a weak `fail`. It means **nothing is wrong and you should know
@@ -1329,6 +1330,8 @@ export async function daemonCurrency(
    * and a test can show that without a database.
    */
   read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+  /** This process's form: a binary has a release version and no commit, so a null `codeSha` is expected there. */
+  build: Pick<ReturnType<typeof versionFacts>, 'lingtai' | 'form'> = versionFacts(),
 ): Promise<CheckResult> {
   const name = 'daemon: currency'
   const status = await read()
@@ -1344,6 +1347,14 @@ export async function daemonCurrency(
       name,
       status: 'ok',
       detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code`,
+    }
+  }
+
+  if (!status.codeSha && build.form === 'binary') {
+    return {
+      name,
+      status: 'ok',
+      detail: `this lingtai is ${build.lingtai}, an installed binary; the daemon records no commit, as a binary's never does — release: newest says whether a newer one is out`,
     }
   }
 

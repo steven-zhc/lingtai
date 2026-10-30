@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli, type Runners } from '../src/cli.ts'
 import { envListJson, formatEnvList, renderEnvList } from '../src/env.ts'
-import { rollback, uninstall, upgrade, type World } from '../src/install.ts'
+import { releaseCheck, rollback, uninstall, upgrade, type World } from '../src/install.ts'
 import { projectionLagJson, renderProjectionLag } from '../src/projection.ts'
 
 const ESC = String.fromCharCode(27)
@@ -283,6 +283,32 @@ describe('the install commands, laid out', () => {
     ).toBe(1)
     expect(un[0]).toBe('uninstall')
     expect(un[1]).toMatch(/^✗ not uninstalling: LINGTAI_HOME is \/nonexistent-625\/home, and removing/)
+  })
+
+  it('refuse a binary outside LINGTAI_HOME/versions by naming both paths, never as a checkout', async () => {
+    const lines: string[] = []
+    const self = '/elsewhere/versions/0.10.0/lingtai'
+    expect(
+      await upgrade({ despiteDoctor: false }, world(NOWHERE, lines, self), { form: 'binary', lingtai: '0.10.0' }),
+    ).toBe(1)
+    const refusal = lines[1]!
+    expect(refusal).toContain('/elsewhere/versions/0.10.0')
+    expect(refusal).toContain('/nonexistent-625/home/.lingtai/versions')
+    expect(refusal).toContain('unset LINGTAI_HOME')
+    expect(refusal).not.toMatch(/git pull|checkout/)
+  })
+
+  it('asks GitHub for a binary outside LINGTAI_HOME/versions, using its own version', async () => {
+    let asked = 0
+    const w = world(NOWHERE, [], '/elsewhere/versions/0.10.0/lingtai')
+    w.fetch = (async () => {
+      asked++
+      return new Response(JSON.stringify({ tag_name: 'v0.10.0', assets: [] }), { status: 200 })
+    }) as unknown as typeof fetch
+    const row = await releaseCheck(w, { form: 'binary', lingtai: '0.10.0' })
+    expect(asked).toBeGreaterThan(0)
+    expect(row.name).toBe('release: newest')
+    expect(row.detail).not.toContain('checkout')
   })
 
   it('put ✓ on "nothing is installed", and print no escape code in plain mode', async () => {
