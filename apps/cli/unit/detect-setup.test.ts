@@ -70,6 +70,36 @@ describe('detectSetup', () => {
     expect(npm.build[0]!.run).toBe('npm run lint')
   })
 
+  it('takes check as the typecheck when there is none, and build last', async () => {
+    const result = await detectSetup(
+      reader({
+        'package-lock.json': '',
+        'package.json': pkg({ check: 'astro check', build: 'astro build', test: 'vitest run' }),
+      }),
+    )
+    expect(result.build).toEqual([
+      { name: 'typecheck', run: 'npm run check', because: '`check` runs `astro check`' },
+      { name: 'test', run: 'npm run test', because: '`test` runs `vitest run`' },
+      { name: 'build', run: 'npm run build', because: '`build` runs `astro build`' },
+    ])
+  })
+
+  it('proposes typecheck once, from typecheck, when check exists too', async () => {
+    const result = await detectSetup(
+      reader({ 'package.json': pkg({ typecheck: 'tsc --noEmit', check: 'astro check' }) }),
+    )
+    expect(result.build).toEqual([
+      { name: 'typecheck', run: 'npm run typecheck', because: '`typecheck` runs `tsc --noEmit`' },
+    ])
+  })
+
+  it('spells check as yarn run check, since yarn check is a built-in', async () => {
+    const result = await detectSetup(
+      reader({ 'yarn.lock': '', 'package.json': pkg({ check: 'astro check', build: 'astro build' }) }),
+    )
+    expect(result.build.map((b) => b.run)).toEqual(['yarn run check', 'yarn build'])
+  })
+
   it('falls back to format:check when there is no fmt:check, and only names it "format"', async () => {
     const result = await detectSetup(reader({ 'package.json': pkg({ 'format:check': 'prettier --check .' }) }))
     expect(result.build).toEqual([
