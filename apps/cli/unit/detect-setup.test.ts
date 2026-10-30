@@ -173,7 +173,7 @@ describe('the Python detector', () => {
     expect(result.install).toEqual({ run: 'uv sync --frozen', because: 'uv.lock is at the root' })
     expect(result.build.map((b) => [b.name, b.run])).toEqual([
       ['format', 'uv run ruff format --check .'],
-      ['lint', 'uv run ruff check .'],
+      ['lint', 'uv run ruff check --no-fix .'],
       ['typecheck', 'uv run mypy .'],
       ['test', 'uv run pytest'],
     ])
@@ -184,7 +184,7 @@ describe('the Python detector', () => {
     expect(result.install).toEqual({ run: 'poetry install --no-interaction', because: 'poetry.lock is at the root' })
     expect(result.build.map((b) => b.run)).toEqual([
       'poetry run ruff format --check .',
-      'poetry run ruff check .',
+      'poetry run ruff check --no-fix .',
       'poetry run mypy .',
       'poetry run pytest',
     ])
@@ -209,7 +209,7 @@ describe('the Python detector', () => {
   })
 
   it('standalone files and a tests/ directory count; nothing else does', async () => {
-    const result = await detectSetup(reader({ 'poetry.lock': '', 'ruff.toml': '', 'mypy.ini': '', tests: '' }))
+    const result = await detectSetup(reader({ 'poetry.lock': '', 'ruff.toml': '', 'mypy.ini': '[mypy]\n', tests: '' }))
     expect(result.build.map((b) => [b.name, b.because])).toEqual([
       ['format', 'ruff.toml is at the root'],
       ['lint', 'ruff.toml is at the root'],
@@ -255,6 +255,39 @@ describe('the Python detector', () => {
     })
     expect(result.notes).toContain('could not tell whether mypy.ini is at the root')
     expect(result.build.map((b) => b.name)).toEqual(['format', 'lint'])
+  })
+
+  it('mypy takes no path where the config mypy reads names files', async () => {
+    const typecheck = async (files: Record<string, string>) =>
+      (await detectSetup(reader({ 'uv.lock': '', ...files }))).build.find((b) => b.name === 'typecheck')
+    const set = await typecheck({ 'pyproject.toml': '[tool.mypy]\nfiles = ["src"]\n' })
+    expect(set?.run).toBe('uv run mypy')
+    expect(set?.because).toContain('files')
+    for (const body of ['strict = true', 'files = []', 'files = ""']) {
+      expect((await typecheck({ 'pyproject.toml': `[tool.mypy]\n${body}\n` }))?.run).toBe('uv run mypy .')
+    }
+    expect((await typecheck({ 'mypy.ini': '[mypy]\nfiles = src\n' }))?.run).toBe('uv run mypy')
+    expect((await typecheck({ 'mypy.ini': '[mypy]\nfiles =\n  src\n  tests\n' }))?.run).toBe('uv run mypy')
+    const both = { 'pyproject.toml': '[tool.mypy]\nfiles = ["src"]\n' }
+    expect((await typecheck({ ...both, 'mypy.ini': '[mypy]\nstrict = true\n' }))?.run).toBe('uv run mypy .')
+    expect((await typecheck({ ...both, 'mypy.ini': '[other]\na = b\n' }))?.run).toBe('uv run mypy')
+  })
+
+  it('a mypy.ini that cannot be read or parsed is never taken as "no files"', async () => {
+    const files = { 'uv.lock': '', 'pyproject.toml': '[tool.mypy]\nfiles = ["src"]\n' }
+    const broken = await detectSetup(reader({ ...files, 'mypy.ini': 'strict = true\n' }))
+    expect(broken.build.find((b) => b.name === 'typecheck')).toBeUndefined()
+    expect(broken.notes).toContain('mypy.ini does not parse')
+    const base = reader(files)
+    const unknown = await detectSetup({
+      ...base,
+      has: async (path) => {
+        if (path === 'mypy.ini') throw new Error('network')
+        return base.has(path)
+      },
+    })
+    expect(unknown.build.find((b) => b.name === 'typecheck')).toBeUndefined()
+    expect(unknown.notes).toContain('could not tell whether mypy.ini is at the root')
   })
 
   it('a lockfile `has` that rejects is "could not tell", not "no lockfile"', async () => {
