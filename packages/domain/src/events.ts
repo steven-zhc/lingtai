@@ -1234,6 +1234,21 @@ export const IntegrationSucceeded = z.object({
   base: z.string(),
   mergeCommit: z.string(),
 })
+export const BaseChecked = z.object({
+  /** The branch, e.g. `main`. */
+  base: z.string(),
+  /** The commit the command ran on — half of the key. */
+  baseSha: z.string(),
+  /** The `run:` text exactly — the other half. */
+  command: z.string(),
+  ok: z.boolean(),
+  exitCode: z.number().int(),
+  durationMs: z.number().int().nonnegative(),
+  /** `boundedEvidence` of the output; `''` when `ok`. */
+  evidence: z.string(),
+  /** The pass that ran it, for "who ran this". */
+  runId: z.string(),
+})
 
 // --------------------------------------------------------------- route ----
 
@@ -2105,6 +2120,7 @@ export const EVENTS = {
   IntegrationAttempted,
   IntegrationRefused,
   IntegrationSucceeded,
+  BaseChecked,
   PassRouted,
   ConductorPaused,
   ConductorResumed,
@@ -2197,6 +2213,7 @@ export const EVENT_AT = {
   IntegrationAttempted: ['merge'],
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],
+  BaseChecked: ['proposed', 'end'],
   PassRouted: ['review', 'proposed', 'end'],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
