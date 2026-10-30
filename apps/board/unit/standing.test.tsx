@@ -748,11 +748,10 @@ describe('the block, rendered', () => {
       />,
     )
 
-    // Rank 3, as the one sentence it now is (#152): who is needed and what the
-    // diagnosis recommends. What was done is the record's, not the block's.
-    expect(html).toContain(
-      'a failure needs acknowledging — recommends requeue, because develop has moved; a fresh branch should merge',
-    )
+    // Rank 3, as the one sentence it now is (#152): what the diagnosis
+    // recommends. What was done is the record's, not the block's.
+    expect(html).toContain('recommends requeue, because develop has moved; a fresh branch should merge')
+    expect(html).not.toContain('needs acknowledging')
     expect(html).not.toContain('a repair for conflict produced this diff')
     expect(html).toContain('the branch does not merge into develop')
     // The holder's concise diagnosis remains here; its verbatim evidence is
@@ -1915,14 +1914,18 @@ describe('what the refusal means for the decision', () => {
     ]
     for (const standing of cases) {
       const said = soWhat(standing)
+      if (standing.state === 'blocked' && (standing.diagnosis?.recommendation ?? null) === null) {
+        expect(said).toBeNull()
+        continue
+      }
       expect(said).not.toBe('')
       expect(said).not.toContain('\n')
       // One sentence: no full stop followed by another sentence inside it.
       expect(said).not.toMatch(/[.!?]\s+\S/)
-      expect(said.length).toBeLessThanOrEqual(240)
+      expect(said!.length).toBeLessThanOrEqual(240)
     }
     expect(soWhat(diagnosed({ action: 'requeue', why: LONG_WHY }))).toBe(
-      'your judgement is needed — recommends requeue, because `review` is a check that stayed red rather than a judgement, and for one of those the work is still there',
+      'recommends requeue, because `review` is a check that stayed red rather than a judgement, and for one of those the work is still there',
     )
   })
 

@@ -423,10 +423,10 @@ describe('a blocked task', () => {
     expect(arrangement(page(blocked()))).toMatchSnapshot()
   })
 
-  it('puts Discussion between so what and the moves on a blocked page', () => {
+  it('puts Discussion between the reason and the moves on a blocked page', () => {
     const html = page(blocked())
     const at = (rank: string) => html.indexOf(`data-rank="${rank}"`)
-    const order = ['coords', 'state', 'why', 'so-what', 'discussion', 'moves', 'pair', 'record'].map(at)
+    const order = ['coords', 'state', 'why', 'discussion', 'moves', 'pair', 'record'].map(at)
     expect(order.every((i) => i > -1)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
@@ -483,7 +483,9 @@ describe('a blocked task', () => {
 
   it('keeps the raw refusal in Attempts, after the decision', () => {
     const html = page(blocked())
-    const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
+    // No recommendation on this fixture, so there is no so-what element to end the slice on.
+    expect(html).not.toContain('data-rank="so-what"')
+    const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="discussion"'))
     const attempts = html.slice(html.indexOf('id="record-attempts"'))
     expect(why).not.toContain('<pre class="sraw"')
     expect(attempts).toContain('<details class="sreason" open=""')

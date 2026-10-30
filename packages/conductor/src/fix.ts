@@ -211,14 +211,13 @@ export function fixStopOf(failure: { kind: RunFailureKind; detail: string }): Fi
  * What the block this ending produces asks of a person —
  * `waitWords`'s `needs`, off a `WaitReason`.
  *
- * **Beside the headlines, because it is the line printed directly above one**
- * (`#197`). `describeWaitLines` emits the `needs` line first and the diagnosis's
- * `what` second, and both the board card and `lingtai status` render them in
- * that order (#83, #100). A crashed fixer's block written `judgement`
- * unconditionally therefore reads *your judgement is needed* one line above *this
- * is infrastructure and not your call* — the two readings #83 is about,
- * contradicting each other inside one card, and the one a person reads first
- * winning.
+ * **Beside the headlines, because it picks the chip beside one** (`#197`).
+ * `describeWait` reads `needs` to choose between *waiting for your review* and
+ * nothing at all (#83, #100). A crashed fixer's block written `judgement`
+ * unconditionally therefore reads *waiting for your review* beside *this is
+ * infrastructure and not your call* — the two readings #83 is about,
+ * contradicting each other inside one card. (`describeWaitLines` no longer
+ * prints a line for `needs`.)
  *
  * The split is the same one every sentence above makes: an agent that was
  * stopped and an agent that spent the recipe's turns decided nothing, so what is

@@ -611,7 +611,6 @@ export function renderStatus(
         if (options.all) {
           // Compared whole, then cut: a cut sentence would swallow the suffix after it.
           for (const d of w.detail) {
-            if (d === 'your judgement is needed' || d === 'a failure needs acknowledging') continue
             const rest = d.startsWith(w.line) ? d.slice(w.line.length).trim() : d
             if (rest !== '') lines2.push(`    ${oneLine(rest)}`)
           }

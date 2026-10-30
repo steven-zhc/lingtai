@@ -931,7 +931,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(eleven.note).toContain('is waiting on you')
       expect(eleven.note).toContain('CONFLICT (content)')
       // The same four facts, as the sentences the card and `status` share.
-      expect(describeWaitLines(hold(eleven)).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
+      expect(describeWaitLines(hold(eleven)).map((l) => l.part)).toEqual(['what', 'did', 'rec'])
     })
 
     /**
@@ -946,7 +946,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(ten.note).toBe('ready to land — a repair is waiting on you')
       expect(hold(ten).needs).toBe('judgement')
       expect(hold(ten).diagnosis?.recommendation?.action).toBe('approve')
-      expect(describeWaitLines(hold(ten)).map((l) => l.part)).toEqual(['needs', 'what', 'rec'])
+      expect(describeWaitLines(hold(ten)).map((l) => l.part)).toEqual(['what', 'rec'])
     })
 
     /** And the diagnosis goes when the hold is answered, not one lap later. */
@@ -987,7 +987,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       // And a review is not an answer: 10 is a run holding a sha.
       expect(waitDescription(card(tasks, 10)!)).toBe('waiting for your review')
-      // A failure needing acknowledgement is neither, and stays `describeWaitLines`'s.
+      // A failure needing acknowledgement is neither, and is worded by its diagnosis alone.
       expect(waitDescription(card(tasks, 11)!)).toBeNull()
     })
 

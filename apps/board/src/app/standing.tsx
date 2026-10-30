@@ -674,6 +674,7 @@ export function Standing({
   // sentence and the so-what step back, and anything else this section holds
   // — a conflict's paths, an unknown ticket, a log — still draws.
   const quiet = waiting && advisedSurface
+  const soWhatText = soWhat(standing)
 
   return (
     <TriagePicks
@@ -858,13 +859,13 @@ export function Standing({
 
             {/* ---- rank 3: so what ---------------------------------------------- */}
 
-            {/* One sentence in one element. `soWhat` returns a string, so there is
+            {/* One sentence in one element. `soWhat` returns a string or null, so there is
             no path by which a second paragraph lands here; a sentence a later
             ticket wants on this page goes to rank 2 or to the record, and the
             snapshots in `task-page.test.tsx` make it say which (#152). */}
-            {quiet ? null : (
+            {quiet || soWhatText === null ? null : (
               <p className="sowhat" data-rank="so-what">
-                {soWhat(standing)}
+                {soWhatText}
               </p>
             )}
           </div>
@@ -1103,19 +1104,17 @@ export function Standing({
  * recommends with the first clause of its reason, and it stops. What was done,
  * and the rest of the why, are in the record's attempts row.
  *
- * The needs wording is `describeWaitLines`'s, so this page, the card and `lingtai
- * status` still say the same thing about the same hold. A state with nothing
- * needed of anybody says who is being waited on instead, which is the fact a
- * running or a queued item's reader came for.
+ * A blocked item says the recommendation alone, or nothing (null) when it has
+ * none: who is waited on is the state word's to say. Every other state says who
+ * is being waited on, which is the fact a running or a queued item's reader
+ * came for.
  */
-export function soWhat(standing: StandingView): string {
-  const needed =
-    standing.needs === null ? null : (describeWaitLines({ needs: standing.needs, diagnosis: null })[0]?.text ?? null)
-  const head = needed ?? standing.who
+export function soWhat(standing: StandingView): string | null {
+  if (standing.state !== 'blocked') return standing.who
   const rec = standing.diagnosis?.recommendation ?? null
-  if (rec === null) return head
+  if (rec === null) return null
   const why = firstClause(rec.why)
-  return why === '' ? `${head} — recommends ${rec.action}` : `${head} — recommends ${rec.action}, because ${why}`
+  return why === '' ? `recommends ${rec.action}` : `recommends ${rec.action}, because ${why}`
 }
 
 /** How long rank 3's reason may run before it is clipped. The whole is in the record. */
@@ -1186,7 +1185,6 @@ export function Coords({
 
 /** The card's weights, said once there and read here. See `page.tsx`'s `HELD_CLASS`. */
 const HELD_CLASS: Record<WaitLine['part'], string> = {
-  needs: 'needs',
   what: 'diag',
   did: 'did',
   rec: 'rec',

@@ -1361,9 +1361,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(blocked.diagnosis?.raw).toBe(asked)
     expect(blocked.line).toContain(asked)
     // **And what it needs is a judgement, not an acknowledgement** (the fix
-    // round). `describeWaitLines` renders this field as the hold's first line, and
-    // *a failure needs acknowledging* is the wrong sentence over a step that did
-    // not fail and is waiting for an answer.
+    // round). `describeWait` reads this field to choose the chip, and
+    // an acknowledgement is the wrong reading of a step that did not fail and is
+    // waiting for an answer.
     expect(blocked.needs).toBe('judgement')
 
     // Nothing was written and nothing landed: a question costs the pass and no

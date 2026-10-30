@@ -666,7 +666,6 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    The raw failure below them uses `.gevidence`, the same collapsed block gate
    evidence uses — it is the same kind of thing. */
 .held { display: grid; gap: 4px; }
-.needs { margin: 0; font-size: 11px; color: var(--muted); }
 .diag { margin: 0; font-size: 12px; color: var(--ink); line-height: 1.5; }
 .did { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
 /* The recommendation is the sentence the primary button is the end of, so it
@@ -1107,7 +1106,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    rank 3's one sentence, is a step down from it. The coordinates are not in
    the block at all: they are `.coords`, in the bar, at the bar's size (#152).
 
-   These override the card's own `.diag`/`.needs`/`.did`/`.rec`, which are sized
+   These override the card's own `.diag`/`.did`/`.rec`, which are sized
    in `px` for a 22rem column. The words are shared (`describeWaitLines`); the sizes
    are not, and never were. */
 .sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
