@@ -255,6 +255,12 @@ lingtai report --window today
   before it is lost, and the way back is flags. The word promises an editor
   and gives a refusal; it should go back to "run these before review? yes,
   or no to write your own".
+- **D3. A check that never ran is reported as failed.** After mypy's 58
+  errors ("Found 58 errors in 6 files (checked 15 source files)") came
+  "failed: uv run pytest / not run because `uv run mypy .` failed". `pytest`
+  did not fail; it was not run. Listed under "failed:", it looks like a second
+  broken check, and the person editing the list would take it out too. Also a
+  stray "(no env declared)" line between them, saying nothing to anybody.
 
 - 
 
