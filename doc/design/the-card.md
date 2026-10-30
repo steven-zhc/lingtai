@@ -186,44 +186,20 @@ failure 0016 §4 exists to prevent: a step omitted for width is indistinguishabl
 from one that was configured and silently did not run. `rail.test.tsx` asserts
 ten segments in all three lanes for that reason, and says so where it does.
 
-**A label's tail, yes.** Ten columns in the 22rem a card's column gives leave
-**five** characters at 9px, so a card reads
+**A label's tail, yes.** Ten columns give each label less room than most of
+the ten names need, and how much depends on the width the lane gives a card.
+`.slab` ends a label that does not fit in an ellipsis, so the browser cuts on a
+whole character at every width: the full name where it fits, otherwise whole
+characters and `…`. `clip` cut through the last glyph instead, and `prepared`
+read `preparec`. That trade is the right way round — characters a hover gives
+back, against a distinction nothing gives back. The whole name is on each
+segment's `title`, which starts with the step's name.
 
-```
-claim admit prepa desig imple build revie propo merge end
-```
-
-— **five** of the ten are cut, not three: `prepared`, `design`, `implement`,
-`review` and `proposed`. That trade is the right way round — characters a
-hover gives back, against a distinction nothing gives back — and it is checked
-rather than asserted: `rail.test.tsx` reads the font size, the gap and the
-tracking out of `globals.css`, computes how many characters a column shows, and
-fails if that number moves off five, if the words it cuts stop being those five,
-or if the ten stop being unique at it. The whole name is on each segment's
-`title`.
-
-**And the margin is three characters, not one.** The ten are still distinct at
-four and at three; two is where they stop being, `pr` standing for both
-`prepared` and `proposed`. That test derives it rather than taking it from
-here, because a margin stated too small is a maintainer abandoning a narrower
-column or a larger face that was in fact safe.
-
-**Both the count and the words are computed and then pinned, because three
-files say them in prose.** This paragraph, `globals.css`'s `.slab` comment and
-`Segs`'s doc in `rail.tsx` each name the count **and the five words**, and each
-has been wrong once: for a day all three said the clip was six characters — a
-number nobody derived from the values the stylesheet actually carries, which
-give five — and then all three named three clipped words where the same values
-give five, because `design` and `review` are six letters and nobody counted
-them. A card rendering `prepa` against a stylesheet promising `prepar`, or
-rendering five clipped labels against a note promising three, sends a maintainer
-looking for a `letter-spacing` or font regression that never happened. So the
-test asserts the exact number rather than a floor, asserts the exact list rather
-than the number alone, and names those three files in both failure messages.
-
-The test that used to ask *do the five names fit whole* is that test. It was the
-right question at five and the wrong one at ten, and replacing it with *are they
-still distinguishable* is the honest version of the same care.
+At the narrowest lane two labels may read the same (`pr…` for `prepared` and
+`proposed`); their position in the fixed ten and the `title` tell them apart.
+`rail.test.tsx` pins the declarations that guarantee whole characters
+(`overflow: hidden`, `text-overflow: ellipsis`, `white-space: nowrap`) and not a
+pixel width, since nothing in the unit half lays a card out.
 
 ## The labels, and what they let go
 
