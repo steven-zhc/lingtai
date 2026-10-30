@@ -22,7 +22,15 @@ gh auth status
 *C.1 output:*
 
 ```paste
-
+❯ set -gx ROUND c
+  set -gx LINGTAI_HOME $HOME/lingtai-trial/$ROUND
+  set -gx GH_CONFIG_DIR $HOME/lingtai-trial/gh
+  set -gx TRIAL_SRC $HOME/lingtai-trial/src
+  mkdir -p $LINGTAI_HOME $TRIAL_SRC
+  echo $LINGTAI_HOME
+  gh auth status
+/Users/steven/lingtai-trial/c
+You are not logged into any GitHub hosts. To log in, run: gh auth login
 ```
 
 - [ ] **C.1-a** It says you are not logged in. That is expected, because
@@ -44,7 +52,28 @@ ls -la $HOME/lingtai-trial/c-defaults
 *C.2 output:*
 
 ```paste
-
+steven in 🌐 foundry in ~
+❯ env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults
+  echo "exit: $status"
+  ls -la $HOME/lingtai-trial/c-defaults
+init
+│
+Machine
+  git          git version 2.50.1 (Apple Git-155)
+  claude-code  signed in via claude.ai
+  codex        Logged in using ChatGPT
+  home         /Users/steven/lingtai-trial/c-defaults — nothing yet
+Store
+  store  SQLite, /Users/steven/lingtai-trial/c-defaults/lingtai.db ← /Users/steven/lingtai-trial/c-defaults/config.yml
+  SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one can read it, and switching stores later starts a new, empty log and moves nothing from this one
+GitHub App
+  app  none yet — the board's first screen creates it through GitHub's manifest flow
+│
+◆  a GitHub project, or one on this machine only
+│  ● github
+│  ○ local
+│  ↑/↓ to navigate • Enter: confirm
+└
 ```
 
 - [ ] **C.2-a** It refuses immediately, by name, with a non-zero exit, and no browser
