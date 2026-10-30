@@ -145,8 +145,14 @@ using them in a terminal.
    usage error, or a handler that threw. Whatever such a command writes along
    the way (the projector's warnings, the line `approve` prints as it
    resolves) goes to stderr under `--json`. The text form is one verdict line,
-   `✓ approved <ticket>` or `✗ not approved (<reason>)`, the old sentence
-   beneath it, and `next:` only where that sentence already named a command.
+   `✗ not approved (<reason>)` on a refusal, and `next:` only where the
+   refusal names a command. **An approval says its outcome**, naming the
+   ticket `#n`: `✓ #n approved — landed on <base> in <sha7>` when a conductor
+   holding the lock lands it within 60 seconds, `— <holder> is continuing it;
+   lingtai status says when it lands` when it has not by then, and `— it
+   lands when a conductor runs: lingtai start, or lingtai run` when no
+   conductor holds the lock. The approval is on the log before the wait, so
+   Ctrl+C during it undoes nothing.
 
    **A read-only verb of a `changes` command takes `--json` too** (#623):
    `board status`, `ticket list`, the listing `backlog [<project>]`, `env list`
@@ -228,6 +234,9 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 
 ## Not built yet
+
+- **`approve` still prints `✓ approved <ticket>`** and the conductor's
+  "continues at proposed", and does not wait.
 
 - **`doctor`'s `NEXT` is still `lingtai doctor --verbose`** whatever its first
   block says.
