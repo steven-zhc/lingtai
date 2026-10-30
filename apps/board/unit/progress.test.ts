@@ -321,8 +321,16 @@ describe('describeHeld', () => {
 
   /** A ceiling nothing bought and a ceiling nothing configured are one fact, and `0 of 0` reads as a typo of it. */
   it('reads a zero ceiling as none, never as 0 of 0', () => {
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe(
-      'no rounds · no restarts left',
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe('no rounds')
+  })
+
+  it('leaves out a restarts ceiling of 0 with none taken, and keeps the others', () => {
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 0, restartsOf: 0 })).toBe('0 of 2 rounds')
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 0, restartsOf: 2 })).toBe(
+      '0 of 2 rounds · 2 restarts left',
+    )
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 3, restartsOf: 0 })).toBe(
+      '0 of 2 rounds · no restarts left',
     )
   })
 

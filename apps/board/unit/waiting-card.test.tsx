@@ -88,7 +88,8 @@ const FIXTURES: Fixture[] = WAIT_FIXTURES.map((f) => ({ ...f, ...EXPECTED[f.name
 
 /** The unadvised wait's own first line, where there is one. */
 function questionOf(html: string): string | null {
-  return /<p class="question waiting-fallback">([^<]*)<\/p>/.exec(html)?.[1] ?? null
+  const inner = /<p class="question waiting-fallback">(.*?)<\/p>/.exec(html)?.[1]
+  return inner === undefined ? null : inner.replace(/<\/?code>/g, '`')
 }
 
 /** Every `<button>`'s own text, in document order. */
@@ -131,7 +132,8 @@ describe('the waiting card is pinned for every WaitReason (#482)', () => {
   for (const fx of FIXTURES) {
     it(`${fx.tag} — ${fx.name}`, async () => {
       const html = await foldOne(fx)
-      expect(questionOf(html)).toBe(fx.expectedQuestion)
+      // A hold for approval says one line of its own and no sentence (#764).
+      expect(questionOf(html)).toBe(fx.name === 'signoffrequired' ? null : fx.expectedQuestion)
       expect(html).toContain('class="id"')
       expect(html).toContain('class="ti"')
       expect(html).not.toContain('class="proj"')
@@ -142,6 +144,28 @@ describe('the waiting card is pinned for every WaitReason (#482)', () => {
       expect(buttonsOf(html)).toEqual([])
     })
   }
+})
+
+describe('a card held for approval (#764)', () => {
+  const fx = FIXTURES.find((f) => f.name === 'signoffrequired')!
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.parse('2026-09-08T04:30:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reads WAITING FOR YOU, the short name and the age, and nothing else', async () => {
+    const html = await foldOne(fx, { row: { updatedAt: new Date('2026-09-08T04:24:00.000Z') } })
+    expect(html).toContain('<span class="waiting-held-badge">WAITING FOR YOU</span>')
+    expect(html).toContain('ready to land · 6m')
+    expect(html).not.toContain('class="snow')
+    expect(html).not.toContain('restarts left')
+    expect(html).not.toContain('class="question')
+  })
 })
 
 describe('the cause line', () => {

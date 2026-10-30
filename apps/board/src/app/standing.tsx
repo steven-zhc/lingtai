@@ -21,9 +21,10 @@ import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
-import type { DiscussionView, StandingView } from '@/lib/task'
+import { stateWord, type DiscussionView, type StandingView } from '@/lib/task'
 import { presentCause } from '@/lib/triage-cause'
 
+import { codeSpans } from './code-spans.tsx'
 import {
   Close,
   ContinueFixing,
@@ -644,7 +645,7 @@ export function Standing({
     )
   const stateReadout = (
     <p className="sread" data-rank="state">
-      <span className="sstate">{standing.state}</span>
+      <span className="sstate">{stateWord(standing.state)}</span>
       {standing.since !== null ? (
         <span className="sage" title={standing.since}>
           {inWords(now - Date.parse(standing.since))}
@@ -834,11 +835,11 @@ export function Standing({
                 {/* Verbatim, and only where nothing better was written down — see
               `question` above. It is what the conductor wrote, and a page that
               paraphrases it is a second version of the question. */}
-                {question !== null && !quiet ? <p className="squestion">{question}</p> : null}
+                {question !== null && !quiet ? <p className="squestion">{codeSpans(question)}</p> : null}
 
                 {/* What happened, in the diagnosis' own sentence. Absent until #83
               writes one, which is every block written before it. */}
-                {what !== null && !quiet ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
+                {what !== null && !quiet ? <p className={HELD_CLASS[what.part]}>{codeSpans(what.text)}</p> : null}
 
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 

@@ -359,7 +359,9 @@ which kind a wait was got inferred again in each place that needed it, from
      conflict's paths, still shows.
    - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
    - **The card** on the board carries the number, the title, the rail and its
-     line, triage's cause with one sentence, and, once triage has advised, one
+     line (a card held for a person's approval carries the rail with no line
+     under it, and one line of its own: a `WAITING FOR YOU` badge, `waitWords`'
+     `short` and its age), triage's cause with one sentence, and, once triage has advised, one
      button: the resolution `recommendedResolution` names. `GrantFixRound`,
      `Requeue` and `Approve` resolve the wait in one click, through the same
      actions the page uses and refused the same way when the card is stale. An
@@ -479,7 +481,10 @@ which kind a wait was got inferred again in each place that needed it, from
        and other tickets are refused the same way. A condition that lifts by
        itself, such as an account's usage limit, never waits: it is a requeue
        (0120 §4).
-   - Rounds and restarts left are facts on the log, shown on the rail line. A
+   - Rounds and restarts left are facts on the log, shown on the rail line,
+     anywhere the budget is drawn. A restart ceiling of 0 with none taken is
+     not shown: a ceiling nothing configured and nothing spent is no fact to a
+     reader. A
      spent budget changes which resolutions are offered, never the cause.
    - Advice that will not parse into a cause and its parts is recorded as a
      failed triage, never shown as advice.

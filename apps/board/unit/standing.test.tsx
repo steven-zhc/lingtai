@@ -676,7 +676,9 @@ describe('the block, rendered', () => {
       />,
     )
 
-    expect(html).toContain('blocked')
+    expect(html).toContain('waiting for you')
+    expect(html).not.toMatch(/>blocked</)
+    expect(html).toContain('onyou')
     // The coordinate is the bar's now (#152), and still says which attempt.
     expect(renderToStaticMarkup(<Coords standing={HELD} taskId="ticket-lingtai-112" queued={null} />)).toContain(
       'from attempt 2 of 2',
@@ -1161,7 +1163,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('blocked')
+    expect(html).toContain('waiting for you')
     expect(html).not.toContain('Start over from base')
   })
 

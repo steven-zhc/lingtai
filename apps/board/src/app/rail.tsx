@@ -230,6 +230,7 @@ export function Rail({
   progress,
   live,
   held = null,
+  line = true,
 }: {
   progress: RunProgress
   /**
@@ -254,6 +255,12 @@ export function Rail({
    * sentence it is handed.
    */
   held?: string | null
+  /**
+   * False draws the segments and nothing under them — none of the `snow`,
+   * `refused` or `nothing running` readings. A card held for approval says one
+   * line of its own instead (0118 §2).
+   */
+  line?: boolean
 }) {
   const now = progress.now
   // The point half of `proposed:build`, which is what the label highlights.
@@ -270,7 +277,7 @@ export function Rail({
   return (
     <div className="seq">
       <Segs steps={progress.steps} at={at} labels />
-      {now ? (
+      {!line ? null : now ? (
         <p
           className="snow"
           title={

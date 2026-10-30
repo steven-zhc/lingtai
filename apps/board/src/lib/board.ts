@@ -152,6 +152,8 @@ export interface BoardCard {
   costUsd: Bill
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
   note: string | null
+  /** `waitWords`' short name for the wait — `ready to land` for a hold for approval; null for every other wait. */
+  short: string | null
   /** `split into #12, #13` on a parent a split wrote children for (#600); its own line, never folded into `note`. */
   split: string | null
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
@@ -680,6 +682,7 @@ export function toCard(
     turns: t.turns,
     costUsd,
     note: words?.line ?? t.note,
+    short: words?.short ?? null,
     split: t.split === null ? null : splitLine(t.split),
     cause:
       status !== 'Unknown' && status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
@@ -921,6 +924,7 @@ export async function queuedCards(
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
         note: null,
+        short: null,
         split: null,
         cause: null,
         move: null,
