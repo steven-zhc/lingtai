@@ -663,7 +663,8 @@ export function foldProgress(
  * one, the recipe only where it does not** (`roundsOf`, `restartsOf`): the
  * event records what the pass actually ran under, and a recipe read now may
  * have moved since. A zero ceiling reads `no rounds` or `no restarts left`
- * rather than `0 of 0`, because a ceiling nothing bought and a ceiling
+ * rather than `0 of 0` — except a restarts ceiling of 0 with none taken, which
+ * is left out, since nothing configured and nothing spent says nothing — because a ceiling nothing bought and a ceiling
  * nothing configured are one fact — *nothing is bought here* — and `0 of 0`
  * reads as a typo of it instead.
  *
@@ -704,7 +705,9 @@ export function describeHeld({
         ? `${Math.max(0, restartsOf - restarts)} restart${Math.max(0, restartsOf - restarts) === 1 ? '' : 's'} left`
         : 'no restarts left'
   const grants = granted.map((g) => `round ${g.round} granted, ${grantedBill(g.costUsd)}`)
-  return [rounds, ...grants, restartsLine].join(' · ')
+  // A ceiling of 0 with none taken is no fact to a reader: nothing was configured and nothing spent.
+  const unconfigured = restartsOf === 0 && restarts === 0
+  return [rounds, ...grants, ...(unconfigured ? [] : [restartsLine])].join(' · ')
 }
 
 /**

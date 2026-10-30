@@ -18,14 +18,15 @@ import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
 
+// Both halves of the sequence, in the file the task page reads them from too
+// (#189): one rail, two surfaces, and never a copy.
+import { codeSpans } from './code-spans.tsx'
 import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { Health } from './health.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
 import { Projects } from './projects.tsx'
-// Both halves of the sequence, in the file the task page reads them from too
-// (#189): one rail, two surfaces, and never a copy.
 import { Rail, Segs } from './rail.tsx'
 
 /**
@@ -179,8 +180,15 @@ export function Card({
         <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
           {card.title}
         </Link>
-        {card.progress ? <Rail progress={card.progress} live={false} held={card.held} /> : null}
-        {card.cause ? (
+        {card.progress ? (
+          <Rail progress={card.progress} live={false} held={card.held} line={card.short === null} />
+        ) : null}
+        {card.short !== null ? (
+          <p className="waiting-held">
+            <span className="waiting-held-badge">WAITING FOR YOU</span> {card.short}
+            {card.updatedAt ? ` · ${inWords(Date.now() - Date.parse(card.updatedAt))}` : ''}
+          </p>
+        ) : card.cause ? (
           <p className="waiting-cause">
             <span className={`waiting-cause-label cause-chip cause-chip--${card.cause.chip}`}>{card.cause.label}</span>
             <span className="waiting-cause-summary">{card.cause.summary}</span>
@@ -188,7 +196,7 @@ export function Card({
         ) : card.triage ? (
           <p className="question waiting-fallback">{TRIAGE_WORDS[card.triage]}</p>
         ) : fallback ? (
-          <p className="question waiting-fallback">{fallback}</p>
+          <p className="question waiting-fallback">{codeSpans(fallback)}</p>
         ) : null}
         {card.move?.advised ? (
           <p className="question waiting-advised">
@@ -377,7 +385,7 @@ export function Card({
           not one the fold can reach. */}
       {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} held={card.held} /> : null}
 
-      {card.note ? <p className="question">{card.note}</p> : null}
+      {card.note ? <p className="question">{codeSpans(card.note)}</p> : null}
       {card.split ? <p className="question">{card.split}</p> : null}
 
       {/* And on a queued card, where it is the only move there is. The state

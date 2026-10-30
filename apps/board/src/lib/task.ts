@@ -385,6 +385,26 @@ export interface Deciding {
 export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed' | 'approved'
 
 /**
+ * The word the page draws for a state. `blocked` is the fold's value for an item
+ * a person must answer, and drawn big it read as a fault on a pass that was held
+ * for approval exactly as the recipe asked — the page's own prose already says
+ * `waiting on you` (`whoWaits`). A `Record`, so a seventh state cannot fall back
+ * to printing the raw enum.
+ */
+const STATE_WORD: Record<StandingState, string> = {
+  queued: 'queued',
+  running: 'running',
+  blocked: 'waiting for you',
+  landed: 'landed',
+  closed: 'closed',
+  approved: 'approved',
+}
+
+export function stateWord(state: StandingState): string {
+  return STATE_WORD[state]
+}
+
+/**
  * Why this task is not moving — the answer the page never gave.
  *
  * The most frequent reason anybody opens this page is that a card has stopped,

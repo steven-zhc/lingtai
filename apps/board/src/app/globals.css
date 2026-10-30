@@ -390,6 +390,8 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .cause-chip--oversized { background: #7a3e6e; color: #fff; border-color: #7a3e6e; }
 .cause-chip--setup { background: #3a4a50; color: #fff; border-color: #3a4a50; }
 .waiting-cause-summary,
+.waiting-card .waiting-held { margin: 0; color: var(--ink-2); font-size: 12.5px; }
+.waiting-held-badge { color: var(--signal); font-weight: 600; letter-spacing: 0.04em; }
 .waiting-fallback {
   min-width: 0;
   color: var(--ink-2);
@@ -970,7 +972,7 @@ details[open] > summary::before { content: "▾"; }
   font-variant-numeric: tabular-nums;
 }
 /* **Bigger than a section name, and that is the point.** This word is the whole
-   page's answer — BLOCKED, RUNNING, LANDED — and a section name is only the
+   page's answer — WAITING FOR YOU, RUNNING, LANDED — and a section name is only the
    name of a section. At 1.15rem it lost that argument to every heading below
    it, and the commonest reason anybody opens this page is to read exactly this
    word (#80, #87, #89, #94 were four wrong readings in one day). */
