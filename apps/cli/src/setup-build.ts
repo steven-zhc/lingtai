@@ -24,11 +24,18 @@ import { type QuestionWorld, question } from './question.ts'
 
 export type SetupWorld = QuestionWorld
 
-/** One command the trial run tried, and how it went. */
-export interface TrialResult {
-  command: string
-  ok: boolean
-  evidence: string
+/**
+ * One command the trial run tried, and how it went. A command the trial never
+ * reached is `not-run` and carries why, not evidence: nothing ran to produce any.
+ */
+export type TrialResult =
+  | { command: string; outcome: 'passed' | 'failed'; evidence: string }
+  | { command: string; outcome: 'not-run'; because: string }
+
+/** What a trial hands back: its results, and whether the recipe declares any env. */
+export interface TrialReport {
+  results: TrialResult[]
+  nothingDeclared: boolean
 }
 
 interface NamedRun {
@@ -41,7 +48,7 @@ export interface AskInstallAndBuildInput {
   reader: SetupReader
   given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
   /** Null where there is nowhere to run it — logged, never run silently. */
-  tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
+  tryBuild: ((install: string | null, build: string[]) => Promise<TrialReport>) | null
   home?: string
   files?: RecipeFiles
   /** `question.ts`'s `kept` — what a refusal below says is already written. */
@@ -257,9 +264,9 @@ async function tryTheBuild(
   if (check.answer === 'no') return { ok: true }
 
   world.log('running the trial build — this can take minutes')
-  let results: TrialResult[]
+  let report: TrialReport
   try {
-    results = await input.tryBuild(
+    report = await input.tryBuild(
       install,
       build.map((b) => b.run),
     )
@@ -271,10 +278,19 @@ async function tryTheBuild(
     }
     throw err
   }
-  const failed = results.filter((r) => !r.ok)
-  if (failed.length === 0) return { ok: true }
+  const { results, nothingDeclared } = report
+  // Colour is decided by what failed, never by what was not run.
+  if (!results.some((r) => r.outcome === 'failed')) return { ok: true }
 
-  for (const r of failed) world.log(`failed: ${r.command}\n${r.evidence}`)
+  for (const r of results) {
+    if (r.outcome === 'failed') world.log(`failed: ${r.command}\n${r.evidence}`)
+    else if (r.outcome === 'not-run') world.log(`not run: ${r.command} — ${r.because}`)
+  }
+  if (nothingDeclared) {
+    world.log(
+      `the recipe declares no env, so these ran without any of your variables — if a check needs one, declare it under env: in ${recipePath(input.project, input.home)}`,
+    )
+  }
 
   const decide = await question(world, {
     name: 'whether to write the failed build list',

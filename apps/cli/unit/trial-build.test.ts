@@ -45,29 +45,49 @@ const AT: TrialAt = { project: 'widget', owner: '', repo: 'widget', base: 'main'
 describe('trialBuild', () => {
   it('runs install then each build command in order, in the provisioned worktree, and removes it', async () => {
     const { deps, ran, removed } = fakes({})
-    const results = await trialBuild(AT, deps)('pnpm i', ['pnpm build', 'pnpm test'])
+    const { results } = await trialBuild(AT, deps)('pnpm i', ['pnpm build', 'pnpm test'])
     expect(ran.map((r) => r.run)).toEqual(['pnpm i', 'pnpm build', 'pnpm test'])
     expect(ran.every((r) => r.cwd === '/wt' && r.timeoutLabel === '15m')).toBe(true)
-    expect(results.map((r) => r.ok)).toEqual([true, true, true])
+    expect(results.map((r) => r.outcome)).toEqual(['passed', 'passed', 'passed'])
     expect(removed).toEqual(['setup-1'])
   })
 
   it('stops at a failing install and says the rest were not run', async () => {
     const { deps, ran, removed } = fakes({ 'pnpm i': outcome(false) })
-    const results = await trialBuild(AT, deps)('pnpm i', ['pnpm build'])
+    const { results } = await trialBuild(AT, deps)('pnpm i', ['pnpm build', 'pnpm test'])
     expect(ran.map((r) => r.run)).toEqual(['pnpm i'])
-    expect(results.map((r) => r.ok)).toEqual([false, false])
-    expect(results[1]!.evidence).toContain('not run because `pnpm i` failed')
+    expect(results.map((r) => r.outcome)).toEqual(['failed', 'not-run', 'not-run'])
+    expect(results.slice(1)).toEqual([
+      { command: 'pnpm build', outcome: 'not-run', because: '`pnpm i` failed first' },
+      { command: 'pnpm test', outcome: 'not-run', because: '`pnpm i` failed first' },
+    ])
     expect(removed).toEqual(['setup-1'])
+  })
+
+  it('a failing middle command leaves the one after it not run, naming the cause', async () => {
+    const { deps } = fakes({ b: outcome(false) })
+    const { results } = await trialBuild(AT, deps)(null, ['a', 'b', 'c'])
+    expect(results).toMatchObject([
+      { command: 'a', outcome: 'passed' },
+      { command: 'b', outcome: 'failed' },
+      { command: 'c', outcome: 'not-run', because: '`b` failed first' },
+    ])
+  })
+
+  it('a failed result’s evidence never carries the env note, and nothingDeclared travels beside it', async () => {
+    const { deps } = fakes({ b: outcome(false) })
+    const report = await trialBuild(AT, deps)(null, ['b'])
+    expect(report.nothingDeclared).toBe(true)
+    expect((report.results[0] as { evidence: string }).evidence).not.toContain('no env declared')
   })
 
   it('carries a timeout’s label as evidence', async () => {
     const { deps } = fakes({
       slow: outcome(false, { timedOut: true, exitCode: null, evidence: 'timed out after 15m\n\n' }),
     })
-    const results = await trialBuild(AT, deps)(null, ['slow'])
-    expect(results[0]).toMatchObject({ ok: false })
-    expect(results[0]!.evidence).toContain('timed out after 15m')
+    const { results } = await trialBuild(AT, deps)(null, ['slow'])
+    expect(results[0]).toMatchObject({ outcome: 'failed' })
+    expect((results[0] as { evidence: string }).evidence).toContain('timed out after 15m')
   })
 
   it('turns a provision throw into a failed result and still removes', async () => {
@@ -79,8 +99,12 @@ describe('trialBuild', () => {
         },
       },
     )
-    const results = await trialBuild(AT, deps)(null, ['pnpm build'])
-    expect(results).toEqual([{ command: 'git', ok: false, evidence: 'fatal: could not clone' }])
+    const { results } = await trialBuild(AT, deps)('pnpm i', ['pnpm build'])
+    expect(results).toEqual([
+      { command: 'git', outcome: 'failed', evidence: 'fatal: could not clone' },
+      { command: 'pnpm i', outcome: 'not-run', because: 'the worktree could not be cut' },
+      { command: 'pnpm build', outcome: 'not-run', because: 'the worktree could not be cut' },
+    ])
     expect(ran).toEqual([])
     expect(removed).toEqual(['setup-1'])
   })
@@ -127,8 +151,13 @@ describe('trialBuild', () => {
         },
       },
     )
-    const results = await trialBuild(AT, deps)(null, ['x'])
-    expect(results).toEqual([{ command: 'env', ok: false, evidence: 'FOO is required' }])
+    const { results } = await trialBuild(AT, deps)('i', ['x', 'y'])
+    expect(results).toEqual([
+      { command: 'env', outcome: 'failed', evidence: 'FOO is required' },
+      { command: 'i', outcome: 'not-run', because: 'the env refused' },
+      { command: 'x', outcome: 'not-run', because: 'the env refused' },
+      { command: 'y', outcome: 'not-run', because: 'the env refused' },
+    ])
     expect(provisioned).toBe(false)
     expect(removed).toEqual([])
   })
@@ -166,9 +195,9 @@ describe('trialBuild', () => {
         log: (l) => void lines.push(l),
       },
     )
-    const results = await trialBuild(AT, deps)(null, ['x'])
-    expect(results.at(-1)).toMatchObject({ command: 'cleanup', ok: false })
-    expect(results.at(-1)!.evidence).toContain('EACCES')
+    const { results } = await trialBuild(AT, deps)(null, ['x'])
+    expect(results.at(-1)).toMatchObject({ command: 'cleanup', outcome: 'failed' })
+    expect((results.at(-1) as { evidence: string }).evidence).toContain('EACCES')
     expect(lines.join('\n')).toContain('remove it by hand')
   })
 
