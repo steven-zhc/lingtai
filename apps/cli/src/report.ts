@@ -18,6 +18,10 @@ import {
   type ReportSpendRow,
   type Spread,
   type WindowSpec,
+  causeWords,
+  purposeWords,
+  reasonWords,
+  resolutionWords,
 } from '@lingtai/conductor/report'
 import {
   projectionLag,
@@ -200,7 +204,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
       section(
         'getting past review',
         table(
-          ['review', 'at risk', 'passed', 'censored', 'not yet past'],
+          ['reviews', 'still counted', 'passed', 'ended without passing', 'not yet past'],
           r.survival.map((s) => [
             s.plus ? `${s.k}+` : String(s.k),
             String(s.atRisk),
@@ -238,20 +242,23 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
     )
   }
 
-  if (r.top.length > 0) {
+  const top = r.top.filter((t) => t.fixRounds > 0)
+  if (top.length > 0) {
     out.push(
       '',
       section(
         'most fix rounds',
-        r.top.flatMap((t) => [
+        top.flatMap((t) => [
           `${t.ticket}  ${kindName(t.kind)}  ${t.outcome}  ${moneyText(t.cost)}`,
           `  ${t.sentence}`,
           ...(t.purposeShares.length > 0
-            ? [`  spent on: ${t.purposeShares.map((p) => `${p.purpose} ${percent(p.share)}`).join(' · ')}`]
+            ? [
+                `  spent on: ${t.purposeShares.map((p) => `${purposeWords(p.purpose)} ${percent(p.share)}`).join(' · ')}`,
+              ]
             : []),
           ...t.waits.map(
             (w) =>
-              `  wait: ${w.reason} · cause ${w.cause ?? DASH} · ${w.resolution === null ? 'unresolved' : `resolved ${w.resolution}`}`,
+              `  waited for ${reasonWords(w.reason)}${w.cause === null ? '' : ` · triage: ${causeWords(w.cause)}`} · ${resolutionWords(w.resolution)}`,
           ),
         ]),
       ),

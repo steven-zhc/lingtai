@@ -4,7 +4,16 @@
  * draws and writes no figure of its own: the top eight's sentence is
  * `TopTicket.sentence`, unchanged (0123 §4).
  */
-import type { KindRow, Report, TopTicket, WaitCauseCell } from '@lingtai/conductor/report'
+import {
+  causeWords,
+  purposeWords,
+  reasonWords,
+  resolutionWords,
+  type KindRow,
+  type Report,
+  type TopTicket,
+  type WaitCauseCell,
+} from '@lingtai/conductor/report'
 import Link from 'next/link'
 
 import {
@@ -220,12 +229,15 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
                     <div className="why">{t.sentence}</div>
                     {t.purposeShares.length === 0 ? null : (
                       <div className="why">
-                        {t.purposeShares.map((p) => `${p.purpose} ${Math.round(p.share * 100)}%`).join(' · ')}
+                        {t.purposeShares
+                          .map((p) => `${purposeWords(p.purpose)} ${Math.round(p.share * 100)}%`)
+                          .join(' · ')}
                       </div>
                     )}
                     {t.waits.map((w, i) => (
                       <div className="why" key={i}>
-                        waited for {w.reason} · triage: {w.cause ?? 'no cause'} · {w.resolution ?? 'unresolved'}
+                        waited for {reasonWords(w.reason)} · triage:{' '}
+                        {w.cause === null ? 'no cause' : causeWords(w.cause)} · {resolutionWords(w.resolution)}
                       </div>
                     ))}
                   </td>
