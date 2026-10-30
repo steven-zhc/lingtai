@@ -42,6 +42,7 @@ home so that a refusal which writes something cannot spoil this round's:
 **C.2**
 
 ```fish
+rm -rf $HOME/lingtai-trial/c-defaults
 env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults </dev/null
 echo "exit: $status"
 ls -la $HOME/lingtai-trial/c-defaults
@@ -98,7 +99,9 @@ drwxr-xr-x@ 5 steven  staff    160 Oct 29 22:56 ../
 
 - [x] **C.2-a0** At a terminal (first paste): it stops at "a GitHub project,
   or one on this machine only" with nothing chosen, and no browser opened.
-  Ctrl+C there.
+  Ctrl+C there. It then said "stopped at the question — its answer was not
+  written, and running the command again asks it here", exit 130, and the home
+  held `config.yml` (26 bytes) and `lingtai.db` (C1).
 - [ ] **C.2-a** With no terminal (`</dev/null`): it refuses immediately, by name,
   with a non-zero exit, and no browser opened.
 
@@ -374,6 +377,15 @@ gh auth status
 - [ ] **C.16-a** `gh auth status`'s token scopes do not include `workflow`.
 
 **Round C stuck:**
+
+- **C1. Ctrl+C at the project question leaves a half-set-up home, and says
+  only what it did not write.** After "stopped at the question — its answer
+  was not written, and running the command again asks it here", the home held
+  `config.yml` (the store, chosen by `--store sqlite`) and a `lingtai.db`
+  with its WAL. That is `init` being resumable ("Run it again to continue",
+  `doc/cli.md`), and the sentence is true; but a person who pressed Ctrl+C to
+  back out is not told that the store was kept, or how to start clean. Not a
+  bug; a sentence: "kept: the store (SQLite at …). Delete … to start over."
 
 - 
 
