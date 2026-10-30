@@ -16,6 +16,7 @@
     "./discuss": "./src/discuss.ts",
     "./triage": "./src/triage.ts",
     "./filter": "./src/filter.ts",
+    "./read-ticket": "./src/read-ticket.ts",
     "./ceiling": "./src/ceiling.ts",
     "./report": "./src/report.ts",
     "./branches": "./src/branches.ts",
