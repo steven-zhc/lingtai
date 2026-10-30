@@ -178,6 +178,27 @@ describe('baseCheck', () => {
       expect(await recorded(store)).toHaveLength(0)
       expect(deps.remove).toHaveBeenCalledTimes(1)
     })
+
+    it('an abort while the cut is pending starts nothing', async () => {
+      const controller = new AbortController()
+      const { port, store, deps, runner } = setup()
+      deps.cut.mockImplementationOnce(async () => controller.abort())
+      expect((await port.ask(question({ signal: controller.signal }))).verdict).toBe('unknown')
+      expect(runner).not.toHaveBeenCalled()
+      expect(await recorded(store)).toHaveLength(0)
+      expect(deps.remove).toHaveBeenCalledTimes(1)
+    })
+
+    it('an abort while the plant is pending starts nothing, with no prepared commands', async () => {
+      const controller = new AbortController()
+      const { port, store, deps, runner } = setup()
+      deps.plant.mockImplementationOnce(async () => controller.abort())
+      const answer = await port.ask(question({ signal: controller.signal, prepared: [] }))
+      expect(answer.verdict).toBe('unknown')
+      expect(runner).not.toHaveBeenCalled()
+      expect(await recorded(store)).toHaveLength(0)
+      expect(deps.remove).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('answers unknown and runs nothing when the log cannot be read', async () => {

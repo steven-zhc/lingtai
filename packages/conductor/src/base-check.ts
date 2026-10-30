@@ -104,6 +104,9 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
       } catch (err) {
         return { verdict: 'unknown', why: `the env file could not be planted: ${(err as Error).message}` }
       }
+      // An abort that landed while the cut or the plant was pending: `runCommand` only hears
+      // aborts that come after it starts, so nothing may be started with the signal already down.
+      if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
       const runIn = (run: string): Promise<CommandOutcome> =>
         deps.run({
           run,
