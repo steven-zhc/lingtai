@@ -489,6 +489,9 @@ const liveAddDeps: AddDeps = {
   check: checkInstallation,
 }
 
+export const recipeLine = (path: string): string =>
+  `reading ${path} — the recipe is this machine's, and nothing is read from the repository`
+
 export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<number> {
   const { owner, repo } = parseSlug(options.slug)
 
@@ -510,7 +513,7 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
     repo,
     ...(installation === undefined ? {} : { installation }),
   })
-  log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`)
+  log(recipeLine(recipePath(repo)))
 
   // 3. The recipe, and with it the base — which is the recipe's, not this
   //    command's. A `--base` a person typed and the file contradicts is refused

@@ -47,7 +47,7 @@ describe('doctor titles: store and log', () => {
     plain(r)
     expect(r.fix).toBe(because === 'unreadable' ? undefined : 'lingtai init')
     expect(firstLine(r)).toBe('it said why')
-    expect(r.detail).toContain('#179')
+    expect(r.detail).toContain('nothing falls back')
     if (because === 'unreadable') expect(r.detail).not.toContain('lingtai init')
   })
 

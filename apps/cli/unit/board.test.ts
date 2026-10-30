@@ -165,7 +165,7 @@ describe('lingtai board stop', () => {
     expect(await w.go('stop')).toBe(0)
     expect(w.signalled).toEqual([])
     expect(w.calls).toEqual(['launchctl bootout gui/501/ai.nextloom.lingtai.board'])
-    expect(w.out.join('\n')).toContain('pnpm lingtai service start')
+    expect(w.out.join('\n')).toContain('lingtai service start')
   })
 
   /**
