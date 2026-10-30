@@ -916,6 +916,10 @@ describe('the Diff tab’s fact (#729)', () => {
     expect(diffFact([run(1, { diff: diff(0), files: touched })])).toBe('1 path')
   })
 
+  it('does not let an earlier attempt’s paths override a newer zero diff', () => {
+    expect(diffFact([run(1, { files: touched }), run(2, { diff: diff(0) })])).toBe('none touched')
+  })
+
   it('says the count, lines and branch in the attempt’s panel', () => {
     const folded = foldRun(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),

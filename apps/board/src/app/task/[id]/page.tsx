@@ -539,15 +539,19 @@ function plural(n: number, word: string): string {
  * The Diff tab's fact (#729). Git's count of the newest attempt that has one
  * (`RunProducedDiff`) comes first, naming the attempt when a newer one has no
  * diff; a count of 0 is not proof (`numstat` turns a failed `git diff` into
- * 0), so it falls to the paths the agent's file tools reported, as before.
+ * 0), so it falls to the paths the agent's file tools reported from that
+ * attempt on (all attempts when none has a diff), as before.
  */
 export function diffFact(runs: readonly RunView[]): string {
-  const counted = [...runs].reverse().find((r) => r.diff !== null)
+  const at = runs.findLastIndex((r) => r.diff !== null)
+  const counted = at < 0 ? undefined : runs[at]
   if (counted?.diff && counted.diff.files > 0) {
     const files = plural(counted.diff.files, 'file')
     return counted === runs[runs.length - 1] ? files : `${files} · attempt ${counted.attempt}`
   }
-  const paths = new Set(runs.flatMap((r) => r.files.map((f) => f.path))).size
+  // Paths from attempts before the counted one are history: its diff is
+  // against the base as it stands, so a zero there is not overridden by them.
+  const paths = new Set(runs.slice(Math.max(at, 0)).flatMap((r) => r.files.map((f) => f.path))).size
   return paths === 0 ? 'none touched' : plural(paths, 'path')
 }
 
