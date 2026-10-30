@@ -58,7 +58,6 @@ nobody to ask, so it must refuse by name.
 *C.2 output:*
 
 ```paste
-steven in 🌐 foundry in ~
 ❯ env LINGTAI_HOME=$HOME/lingtai-trial/c-defaults lingtai init --store sqlite --defaults
   echo "exit: $status"
   ls -la $HOME/lingtai-trial/c-defaults
@@ -75,10 +74,19 @@ Store
 GitHub App
   app  none yet — the board's first screen creates it through GitHub's manifest flow
 │
-◆  a GitHub project, or one on this machine only
-│  ● github
-│  ○ local
-│  ↑/↓ to navigate • Enter: confirm
+■  a GitHub project, or one on this machine only
+│  github
+│
+
+stopped at the question — its answer was not written, and running the command again asks it here
+exit: 130
+total 120
+drwxr-xr-x@ 6 steven  staff    192 Oct 29 22:56 ./
+drwxr-xr-x@ 5 steven  staff    160 Oct 29 22:56 ../
+-rw-------@ 1 steven  staff     26 Oct 29 22:56 config.yml
+-rw-r--r--@ 1 steven  staff   4096 Oct 29 22:56 lingtai.db
+-rw-r--r--@ 1 steven  staff  32768 Oct 29 22:56 lingtai.db-shm
+-rw-r--r--@ 1 steven  staff  16512 Oct 29 22:56 lingtai.db-wal
 └
 ```
 
