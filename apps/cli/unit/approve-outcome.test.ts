@@ -4,6 +4,9 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
+const boundOf = async <T>(op: Promise<T>) => ({ ok: true as const, value: await op })
+const store_append = (h: Awaited<ReturnType<typeof world>>, events: ReturnType<typeof aLanding>) => h.append(events)
+
 import { followApproval, WAIT_MS, type FollowWorld } from '../src/approve.ts'
 
 /**
@@ -114,5 +117,61 @@ describe('followApproval', () => {
     })
     const r = await followApproval(target, h.w)
     expect(r.detail).toBe('could not tell whether a conductor is running (EACCES); lingtai doctor says')
+  })
+
+  it('a stream read that never answers: Ctrl+C ends the wait, and so does the 60 seconds', async () => {
+    const pending = { read: () => new Promise<never>(() => {}) }
+    const ac = new AbortController()
+    const h = await world({ store: pending, signal: ac.signal })
+    setTimeout(() => ac.abort(), 5)
+    const stopped = await followApproval(target, h.w)
+    expect(stopped.detail).toBe('stopped waiting; the approval stands, and lingtai status says when it lands')
+
+    let calls = 0
+    const t = await world({
+      store: pending,
+      bound: (op, ms, signal) =>
+        ++calls === 1 ? boundOf(op) : Promise.resolve({ ok: false as const, why: 'timeout' as const }),
+    })
+    const r = await followApproval(target, t.w)
+    expect(r.outcome).toBe('pending')
+    expect(r.detail).toBe('lingtai-daemon is continuing it; lingtai status says when it lands')
+  })
+
+  it('a holder read that never answers is bounded the same way', async () => {
+    const h = await world({
+      holder: () => new Promise<never>(() => {}),
+      bound: async () => ({ ok: false, why: 'timeout' }),
+    })
+    const r = await followApproval(target, h.w)
+    expect(r.detail).toMatch(/^could not tell whether a conductor is running \(no answer in 60 seconds\)/)
+    const ac = new AbortController()
+    ac.abort()
+    const a = await world({ holder: () => new Promise<never>(() => {}), signal: ac.signal })
+    expect((await followApproval(target, a.w)).detail).toMatch(/^stopped waiting/)
+  })
+
+  it('held again names the branch from the ticket fold, not an empty one', async () => {
+    const h = await world()
+    await store_append(h, [
+      item('TicketDiscovered', {
+        project,
+        source: 'github-issue',
+        externalRef: '1',
+        title: 't',
+        kind: 'bug',
+        labels: [],
+      }),
+    ])
+    await h.append(
+      aWait(item, {
+        _tag: 'ProposedEscalated',
+        run: { runId: 'run-1' },
+        proposal: { _tag: 'VerifyRed', output: 'red' },
+        because: { _tag: 'NotAsked' },
+      }),
+    )
+    const r = await followApproval(target, h.w)
+    expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
   })
 })

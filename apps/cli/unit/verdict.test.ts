@@ -24,7 +24,7 @@ describe('renderVerdict, plain', () => {
       form: 'sentence',
       detail: 'landed on main in 5c60992',
     }
-    expect(renderVerdict(VERBS.approve.accepted, v)).toEqual(['✓ approved #617 — landed on main in 5c60992'])
+    expect(renderVerdict(VERBS.approve.accepted, v)).toEqual(['✓ #617 approved — landed on main in 5c60992'])
   })
 
   it('approve accepted but unscheduled: the reason it was not scheduled, and the command that schedules it', () => {

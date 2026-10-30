@@ -16,7 +16,7 @@ import { userInfo } from 'node:os'
 import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { reduceTicket, ticketStream, waitWords } from '@lingtai/domain'
+import { agentBranchOf, reduceTicket, ticketStream, waitWords } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -42,7 +42,38 @@ export interface FollowWorld {
   /** Resolves early when `signal` aborts. */
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>
   signal?: AbortSignal
+  /** Settles `op` against `ms` and `signal`; injected so a test needs no real timer. */
+  bound?: Bound
 }
+
+export type Bound = <T>(
+  op: Promise<T>,
+  ms: number,
+  signal?: AbortSignal,
+) => Promise<{ ok: true; value: T } | { ok: false; why: 'timeout' | 'abort' }>
+
+/** A read that never answers must not outlast the 60 seconds or Ctrl+C. */
+const boundReal: Bound = (op, ms, signal) =>
+  new Promise((resolve) => {
+    const end = (r: Parameters<typeof resolve>[0]): void => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      resolve(r)
+    }
+    const onAbort = (): void => end({ ok: false, why: 'abort' })
+    const timer = setTimeout(() => end({ ok: false, why: 'timeout' }), Math.max(0, ms))
+    if (signal?.aborted) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    // A rejection is the caller's to see: it comes back through `op`'s own throw.
+    op.then(
+      (value) => end({ ok: true, value }),
+      (err) => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        resolve(Promise.reject(err))
+      },
+    )
+  })
 
 export interface Followed {
   detail: string
@@ -63,9 +94,22 @@ export async function followApproval(
   target: { project: string; issue: number },
   world: FollowWorld,
 ): Promise<Followed> {
+  const bound = world.bound ?? boundReal
+  const deadline = world.now() + WAIT_MS
+  const status = `lingtai status says when it lands`
+  const stopped: Followed = { detail: `stopped waiting; the approval stands, and ${status}`, outcome: 'unknown' }
   let holder: string | null
   try {
-    holder = await world.holder()
+    const asked = await bound(world.holder(), WAIT_MS, world.signal)
+    if (!asked.ok) {
+      return asked.why === 'abort'
+        ? stopped
+        : {
+            detail: `could not tell whether a conductor is running (no answer in ${WAIT_MS / 1000} seconds); lingtai doctor says`,
+            outcome: 'unknown',
+          }
+    }
+    holder = asked.value
   } catch (err) {
     return {
       detail: `could not tell whether a conductor is running (${why(err)}); lingtai doctor says`,
@@ -76,17 +120,15 @@ export async function followApproval(
     return { detail: 'it lands when a conductor runs: lingtai start, or lingtai run', outcome: 'no-conductor' }
   }
   const stream = ticketStream(target.project, target.issue)
-  const deadline = world.now() + WAIT_MS
-  const status = `lingtai status says when it lands`
   for (;;) {
-    if (world.signal?.aborted) {
-      return {
-        detail: `stopped waiting; the approval stands, and ${status}`,
-        outcome: 'unknown',
-      }
-    }
+    if (world.signal?.aborted) return stopped
     try {
-      const lifecycle = reduceTicket(await world.store.read(stream)).lifecycle
+      const read = await bound(world.store.read(stream), deadline - world.now(), world.signal)
+      if (!read.ok) {
+        return read.why === 'abort' ? stopped : { detail: `${holder} is continuing it; ${status}`, outcome: 'pending' }
+      }
+      const ticket = reduceTicket(read.value)
+      const lifecycle = ticket.lifecycle
       switch (lifecycle.status) {
         case 'landed':
           return {
@@ -96,7 +138,13 @@ export async function followApproval(
           }
         case 'blocked':
           return {
-            detail: `held again: ${waitWords(lifecycle.reason, { branch: '', base: '', findings: [] }).line}`,
+            detail: `held again: ${
+              waitWords(lifecycle.reason, {
+                branch: ticket.externalRef === null ? '' : agentBranchOf(ticket.externalRef),
+                base: '',
+                findings: [],
+              }).line
+            }`,
             outcome: 'held',
             next: `lingtai status ${target.project}`,
           }
@@ -208,7 +256,16 @@ export async function approveVerdict(
 
   const { verdict } = approved
   if (verdict.outcome === 'refused') {
-    return { ...approved, verdict: { ...verdict, subject: `#${options.issue}` } }
+    // The conductor's sentence names the stream id; the person knows it as `#n`.
+    const subject = `#${options.issue}`
+    return {
+      ...approved,
+      verdict: {
+        ...verdict,
+        subject,
+        detail: verdict.ticketId === undefined ? verdict.detail : verdict.detail.replaceAll(verdict.ticketId, subject),
+      },
+    }
   }
   if (verdict.extra?.['unscheduled'] !== undefined) return approved
 

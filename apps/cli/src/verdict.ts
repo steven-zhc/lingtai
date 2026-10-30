@@ -40,7 +40,10 @@ export function renderVerdict(verb: string, v: Verdict): string[] {
     ...(subject ? [paint.muted(subject)] : []),
   ]
   if (v.form === 'sentence' && v.outcome === 'accepted') {
-    return [`${head.join(' ')} — ${v.detail}`, ...(v.next === undefined ? [] : [`  ${paint.muted('next:')} ${v.next}`])]
+    return [
+      `${[glyph, ...(subject ? [paint.muted(subject)] : []), verb].join(' ')} — ${v.detail}`,
+      ...(v.next === undefined ? [] : [`  ${paint.muted('next:')} ${v.next}`]),
+    ]
   }
   return [
     head.join(' '),
