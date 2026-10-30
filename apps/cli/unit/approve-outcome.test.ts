@@ -173,4 +173,24 @@ describe('followApproval', () => {
     const r = await followApproval(target, h.w)
     expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
   })
+
+  it('a read that rejects after Ctrl+C is not an unhandled rejection', async () => {
+    const unhandled: unknown[] = []
+    const on = (e: unknown): void => void unhandled.push(e)
+    process.on('unhandledRejection', on)
+    try {
+      let fail: (e: Error) => void = () => {}
+      const late = { read: () => new Promise<never>((_, rej) => (fail = rej)) }
+      const ac = new AbortController()
+      const h = await world({ store: late, signal: ac.signal })
+      setTimeout(() => ac.abort(), 5)
+      const r = await followApproval(target, h.w)
+      expect(r.detail).toMatch(/^stopped waiting/)
+      fail(new Error('ECONNRESET'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', on)
+    }
+  })
 })

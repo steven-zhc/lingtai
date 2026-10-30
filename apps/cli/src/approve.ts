@@ -54,25 +54,31 @@ export type Bound = <T>(
 
 /** A read that never answers must not outlast the 60 seconds or Ctrl+C. */
 const boundReal: Bound = (op, ms, signal) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
+    let settled = false
     const end = (r: Parameters<typeof resolve>[0]): void => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       resolve(r)
     }
     const onAbort = (): void => end({ ok: false, why: 'abort' })
     const timer = setTimeout(() => end({ ok: false, why: 'timeout' }), Math.max(0, ms))
-    if (signal?.aborted) return onAbort()
-    signal?.addEventListener('abort', onAbort, { once: true })
-    // A rejection is the caller's to see: it comes back through `op`'s own throw.
+    // `op` is handled before anything can settle first: a rejection that arrives
+    // after a timeout or Ctrl+C is dropped here and never becomes unhandled.
     op.then(
       (value) => end({ ok: true, value }),
       (err) => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
         signal?.removeEventListener('abort', onAbort)
-        resolve(Promise.reject(err))
+        reject(err)
       },
     )
+    if (signal?.aborted) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 
 export interface Followed {
