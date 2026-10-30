@@ -139,8 +139,9 @@ repository, `itsdangerous`.
 | 5 | does a cold reviewer read it, and which agent (…, or none) | `claude-code` |  |
 | 6 | on which model (empty for the runtime's own default) | Enter |  |
 | 7 | the install command | Enter if it offers `uv sync` | #695: a uv project (`uv.lock` at the root) |
-| 8 | run these before review? yes, or no to write your own | `yes` if it lists a `uv run pytest` | #695; write down exactly what it lists |
-| 8a | a command that must pass before review — empty when done | `uv run pytest` ⏎, then an empty line ⏎ | only if 8 is not asked: nothing was detected, and D.3-a fails |
+| 8 | run these before review? yes, or no to write your own | `yes` if it lists a `uv run pytest`; **on the second `add`, `no`** | #695; write down exactly what it lists. It also lists `uv run mypy .`, which fails on the base (D1) |
+| 8a | a command that must pass before review — empty when done | `uv run pytest` ⏎, then an empty line ⏎ | after `no` at 8 on the second `add`, or if 8 is not asked |
+| 9a | write them anyway, or edit the list? (after a failed trial build) | `edit` | it ends `add` (D2); run `lingtai add $FORK` again and answer `no` at 8 |
 | 9 | run these once against the base before writing them? | `yes` | the trial build |
 | 10 | where this project's tickets come from — github … or db … | `github` |  |
 | 11 | which labels are work, comma-separated, first = taken first | Enter | `bug, feature, documentation` |
@@ -234,6 +235,26 @@ lingtai report --window today
   run names its reason.
 
 **Round D stuck:**
+
+- **D1. The detected type check fails on a clean base, because it overrides
+  the project's own config.** The trial build in D.3: "failed: uv run mypy . /
+  uv run mypy . exited 1 after 35.1s", with errors in `docs/conf.py`
+  ("Cannot find implementation or library stub for module named
+  \"pallets_sphinx_themes\"") and `tests/test_itsdangerous/test_signer.py`
+  ("Function is missing a type annotation"). Detection writes mypy as `mypy .`
+  (`apps/cli/src/detect-setup.ts:232`), and itsdangerous's `pyproject.toml`
+  says `[tool.mypy] files = ["src"]`: a path on the command line replaces
+  `files`, so `docs/` and `tests/` are checked too. Where the config names
+  `files`, the command is `mypy` with no path. So #695's detection works (it
+  is a uv project, and says `uv run …`), and one of its suggestions refuses
+  every pass on this repository before an agent has written a line.
+- **D2. "edit the list" does not edit the list.** After the failed trial,
+  "write them anyway, or edit the list?" answered `edit` ends `add`: "the
+  trial build failed and the list was not written — rerun with --build to give
+  a different list" (`apps/cli/src/setup-build.ts:288-292`). Every answer
+  before it is lost, and the way back is flags. The word promises an editor
+  and gives a refusal; it should go back to "run these before review? yes,
+  or no to write your own".
 
 - 
 
