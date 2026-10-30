@@ -126,9 +126,10 @@ tokens bills the whole request at 2× input and 1.5× output** — the tokens on
 event carry no per-request size, so that tier is not modelled and a run that
 reached it is under-estimated, like every total here (0110 §2).
 
-Codex's `model` is the recipe's `request.model`, and is absent when the recipe
-sets none (`packages/agent/src/codex.ts`): an event with no model is still
-**unpriced**, and any other model id is unpriced until a row is appended.
+Codex's `model` is the recipe's `request.model`, and, where the recipe sets
+none, `~/.codex/config.toml`'s `model` (0110 §3; not built yet:
+`packages/agent/src/codex.ts` leaves it absent). An event with no model is
+still **unpriced**, and any other model id is unpriced until a row is appended.
 
 ## The fetched snapshot
 

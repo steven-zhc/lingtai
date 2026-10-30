@@ -109,7 +109,12 @@ about something else are the three whose spend is not recorded.
    entry is `request.model`, the recipe's ask — which says nothing about what
    actually served it, whether through a provider substitution or because
    `request.model` was absent and the run fell through to `~/.codex/config.toml`'s
-   default.** A reader pricing or asserting on `usage[].model` as a runtime-reported
+   default.** **Where `request.model` is absent, the entry's `model` is that
+   file's `model`**, read when the run starts and marked as coming from the
+   configuration, because it is the model Codex falls through to; with neither,
+   the entry has no model and is unpriced. A run whose entries carry tokens and
+   no model is unpriced *for want of a model*, and is never said to have
+   reported no usage. A reader pricing or asserting on `usage[].model` as a runtime-reported
    fact is only safe doing so for claude-code; for Codex it is the request
    echoed back. Entries merge by `(model, mode)` when tokens from two turns are
    added together (`addUsage`); a differently-keyed entry is a second line in
@@ -275,6 +280,10 @@ about something else are the three whose spend is not recorded.
   fetched.
 
 ## Not built yet
+
+- **Codex's configured model is not read.** An entry with no `request.model`
+  has no model, and its reason reads "no usage reported" though its tokens are
+  on the event (`packages/domain/src/rate-card.ts`'s `NO_USAGE_REASON`).
 
 - **`Action.call` and `CallId` still exist** in `packages/domain/src/action.ts`
   and `wait.ts`, unset.

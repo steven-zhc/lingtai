@@ -37,7 +37,7 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 
    **只有 cached/reasoning 这一对是测过的；`cache_write_input_tokens` 没有测过。** 本项目见过的 rollout 和 fixture 里，没有一个带这个字段。所以它是否也像 `cached_input_tokens` 那样（已经证实）包含在 `input_tokens` 里，还是未知的。适配器把它整个存下，不从新输入里减掉。如果它是一个独立的量，这样做是对的；如果不是，它就被重复计算了。第一个见到真实 `cache_write_input_tokens` 的人，要像这里确定 cached/reasoning 那一对一样，从那次 rollout 把这件事定下来，并修改这一段，而不是在旁边再加第三条计数规则。
 
-   **每个模型一项，以 `(model, mode)` 为键。** claude-code 的 `modelUsage` 本身就以模型 id 为键，一次调用可能计费不止一个模型。对 claude-code，每项的 `model` 就是那个键，原样照抄，绝不是 recipe 要求的模型。**Codex 正好相反，而且是有意的：它的输出流从不说明实际服务这次调用的是哪个模型，所以它那唯一一项的 `model` 是 `request.model`，也就是 recipe 的要求。这对实际由哪个模型服务什么也说明不了，不论是因为提供方做了替换，还是因为 `request.model` 缺失，运行落到了 `~/.codex/config.toml` 的默认值。** 读者只有对 claude-code 才能安全地把 `usage[].model` 当作 runtime 上报的事实来定价或断言；对 Codex，它只是请求原样回显。两轮的 token 相加时（`addUsage`），各项按 `(model, mode)` 合并；键不同的项是账单上的另一行，不是同一行的第二次计数。`mode` 表示同一模型 id 下的高价速度档，前提是 runtime 有这一档。事件用一个数组，而不是零散的字段，因为没有人手写事件。
+   **每个模型一项，以 `(model, mode)` 为键。** claude-code 的 `modelUsage` 本身就以模型 id 为键，一次调用可能计费不止一个模型。对 claude-code，每项的 `model` 就是那个键，原样照抄，绝不是 recipe 要求的模型。**Codex 正好相反，而且是有意的：它的输出流从不说明实际服务这次调用的是哪个模型，所以它那唯一一项的 `model` 是 `request.model`，也就是 recipe 的要求。这对实际由哪个模型服务什么也说明不了，不论是因为提供方做了替换，还是因为 `request.model` 缺失，运行落到了 `~/.codex/config.toml` 的默认值。** **`request.model` 缺失时，该项的 `model` 取那个文件里的 `model`**：在运行开始时读取，并标明来自配置文件，因为 Codex 落到的正是这个模型；两者都没有时，该项没有模型，无法定价。各项有 token 却没有模型的运行，原因是*缺少模型*而无法定价，绝不能说成没有上报用量。 读者只有对 claude-code 才能安全地把 `usage[].model` 当作 runtime 上报的事实来定价或断言；对 Codex，它只是请求原样回显。两轮的 token 相加时（`addUsage`），各项按 `(model, mode)` 合并；键不同的项是账单上的另一行，不是同一行的第二次计数。`mode` 表示同一模型 id 下的高价速度档，前提是 runtime 有这一档。事件用一个数组，而不是零散的字段，因为没有人手写事件。
 
 4. **每个 token 字段都是可选的，没有一个默认为零；`costUsd` 一定写，没说时为 `null`。** 这些字段里只要有一个 `.default(0)`，就会把未知的花费报成免费。这也是没有 `Reading<T>` 包装的原因：`null` 和缺失的计数本身就表示「没说」，而上报的 `0` 就是 `0`。
 
@@ -101,6 +101,8 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 - 一次为新模型定价的刷新，代价是重建每个存估价的 projection。这种情况很少：每个模型一次，在它第一次被抓取的那天。
 
 ## 尚未实现
+
+- **还没有读取 Codex 配置的模型。** 没有 `request.model` 的项没有模型，原因显示为 "no usage reported"，尽管 token 就在事件上（`packages/domain/src/rate-card.ts` 的 `NO_USAGE_REASON`）。
 
 - **第 5 条的存储估价。** `spend` 目前只存 `cost_usd`，`apps/board/src/lib/spend.ts` 和 `packages/conductor/src/day-ceiling.ts` 仍在读取时定价；新模型定价后的重建还没有接上。
 
