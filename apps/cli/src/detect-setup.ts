@@ -64,12 +64,13 @@ const LOCKFILES: { path: string; manager: Manager; install: string }[] = [
   { path: 'package-lock.json', manager: 'npm', install: 'npm ci' },
 ]
 
-/** In the order the ticket's table asks for: format, lint, typecheck, test. */
+/** In the order the ticket's table asks for: format, lint, typecheck, test, build. `check` is a second name for typecheck, after `typecheck` itself. */
 const BUILD_ORDER: { key: string; names: readonly string[] }[] = [
   { key: 'format', names: ['fmt:check', 'format:check'] },
   { key: 'lint', names: ['lint'] },
-  { key: 'typecheck', names: ['typecheck'] },
+  { key: 'typecheck', names: ['typecheck', 'check'] },
   { key: 'test', names: ['test'] },
+  { key: 'build', names: ['build'] },
 ]
 
 /** A script name that says, by itself, "this does not fit inside a pass" (CLAUDE.md, 803s). */
@@ -78,9 +79,12 @@ const INTEGRATION_NAME = /integration|e2e/i
 /** A command that needs a browser or a running app — found, never picked (`propose.ts`'s `NEEDS_A_WORLD`). */
 const NEEDS_A_WORLD = /(e2e|playwright|cypress|puppeteer|selenium|webdriver)/i
 
+/** Script names Yarn 1 answers with its own built-in, so `yarn <name>` never reaches the script. */
+const YARN_BUILT_INS: ReadonlySet<string> = new Set(['check'])
+
 function runFor(manager: Manager | null, name: string): string {
   if (manager === 'pnpm') return `pnpm ${name}`
-  if (manager === 'yarn') return `yarn ${name}`
+  if (manager === 'yarn') return YARN_BUILT_INS.has(name) ? `yarn run ${name}` : `yarn ${name}`
   return `npm run ${name}`
 }
 
