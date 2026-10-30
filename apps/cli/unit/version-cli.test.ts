@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli } from '../src/cli.ts'
+import { versionFlagAsCommand } from '../src/migrated.ts'
 import { versionFacts, versionLine } from '../src/version.ts'
 
 async function capture(args: string[]): Promise<{ code: number; out: string; err: string }> {
@@ -55,6 +56,23 @@ describe('lingtai version', () => {
     } finally {
       if (saved === undefined) delete process.env['NO_COLOR']
       else process.env['NO_COLOR'] = saved
+    }
+  })
+})
+
+describe('lingtai --version (#740)', () => {
+  it('prints what `version` prints, and nothing else', async () => {
+    const r = await capture(versionFlagAsCommand(['--version']))
+    expect(r).toEqual({ code: 0, out: `${versionLine()}\n`, err: '' })
+  })
+
+  it('is `version` for every argument after it', async () => {
+    for (const rest of [['--json'], ['bogus'], ['--help']]) {
+      const viaFlag = await capture(versionFlagAsCommand(['--version', ...rest]))
+      vi.restoreAllMocks()
+      const viaCommand = await capture(['version', ...rest])
+      vi.restoreAllMocks()
+      expect(viaFlag).toEqual(viaCommand)
     }
   })
 })

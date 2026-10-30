@@ -12,9 +12,9 @@
  */
 import { finish } from './ending.ts'
 import { helpCommand, unknownCommand } from './help.ts'
-import { routeOf } from './migrated.ts'
+import { routeOf, versionFlagAsCommand } from './migrated.ts'
 
-const argv = process.argv.slice(2)
+const argv = versionFlagAsCommand(process.argv.slice(2))
 
 const route = routeOf(argv)
 
@@ -25,7 +25,7 @@ if (route === 'effect') {
       // that help and unknown commands never touch the store.
       const { closeProcessLog } = await import('@lingtai/event-store')
       return finish(
-        () => runCli(process.argv),
+        () => runCli([...process.argv.slice(0, 2), ...argv]),
         closeProcessLog,
         (code) => {
           // The close gave up with its socket still open, which would hold the

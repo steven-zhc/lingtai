@@ -10,6 +10,14 @@ import { isCommand } from './commands.ts'
 
 export type Route = 'effect' | 'help' | 'unknown'
 
+/**
+ * `lingtai --version <more>` is `lingtai version <more>` (#740): the first word only, so the line is
+ * `version`'s own and `@effect/cli` never owns the root. `-v` is not answered.
+ */
+export function versionFlagAsCommand(argv: readonly string[]): string[] {
+  return argv[0] === '--version' ? ['version', ...argv.slice(1)] : [...argv]
+}
+
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
   const helped = argv.some((a) => a === '--help' || a === '-h')
