@@ -60,7 +60,7 @@ const runtimesStub: DoctorReach['runtimes'] = () =>
   [
     {
       capabilities: { id: 'claude-code', enforces: ['turns', 'wall', 'usd'] },
-      checkAuth: async () => ({ loggedIn: true, detail: 'signed in' }),
+      checkAuth: async () => ({ state: 'signed-in', loggedIn: true, detail: 'signed in' }),
     },
   ] as unknown as ReturnType<DoctorReach['runtimes']>
 
@@ -91,8 +91,8 @@ function twoRuntimes(codexSignedIn = true) {
       checkAuth: async () => {
         asks[id]++
         return id === 'codex' && !codexSignedIn
-          ? { loggedIn: false, method: null, detail: 'not logged in' }
-          : { loggedIn: true, method: null, detail: 'signed in' }
+          ? { state: 'signed-out', loggedIn: false, method: null, detail: 'not logged in' }
+          : { state: 'signed-in', loggedIn: true, method: null, detail: 'signed in' }
       },
     })) as unknown as ReturnType<DoctorReach['runtimes']>) as DoctorReach['runtimes']
   return { asks, runtimes }
@@ -153,7 +153,7 @@ describe('declaredEnvironment, a project with no owner', () => {
             capabilities: { id: 'codex', enforces: ['wall'] },
             checkAuth: async (env: Record<string, string>) => {
               seen.push(env['CODEX_HOME'])
-              return { loggedIn: true, method: null, detail: 'ok' }
+              return { state: 'signed-in', loggedIn: true, method: null, detail: 'ok' }
             },
           },
         ]) as unknown as DoctorReach['runtimes'],
@@ -178,7 +178,7 @@ describe('declaredEnvironment, a project with no owner', () => {
           capabilities: { id: 'codex', enforces: ['wall'] },
           checkAuth: async () => {
             probes += 1
-            return { loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
+            return { state: 'signed-in', loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
           },
         },
       ]) as unknown as DoctorReach['runtimes'],

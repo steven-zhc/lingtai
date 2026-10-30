@@ -44,7 +44,7 @@ function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
       return reader
     },
     ask: async () => '',
-    runtimes: async () => [{ id: 'claude-code', installed: true, signedIn: true, detail: 'signed in' }],
+    runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
     history: async () => [],
     ...over,
   }

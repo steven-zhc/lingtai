@@ -29,7 +29,7 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
       enforces: ['turns', 'wall', 'usd'],
     },
     async checkAuth() {
-      return { loggedIn: true, method: 'apiKey', detail: 'explicit codex_text API key configured' }
+      return { state: 'signed-in', loggedIn: true, method: 'apiKey', detail: 'explicit codex_text API key configured' }
     },
     async run(request: RunRequest): Promise<RunOutcome> {
       const started = Date.now()

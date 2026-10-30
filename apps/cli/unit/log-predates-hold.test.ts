@@ -37,7 +37,7 @@ const wroteSqlite = (): StoreChoice => ({
 
 const signedInRuntime = {
   capabilities: { id: 'claude-code' },
-  checkAuth: async () => ({ loggedIn: true, detail: 'signed in' }),
+  checkAuth: async () => ({ state: 'signed-in', loggedIn: true, detail: 'signed in' }),
 } as unknown as Runtime
 
 /** Every seam the fileBacked branch would otherwise reach outside the process for — `doctor.test.ts`'s own fixture. */
