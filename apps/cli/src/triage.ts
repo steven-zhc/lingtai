@@ -15,8 +15,8 @@
 import { createRuntime, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -287,6 +287,26 @@ export function memoDaemonStartedAt(
   }
 }
 
+/**
+ * The triage `issue` port: one ticket through the one reader, so a `db`
+ * project's brief carries its title and body (#731). A failure is thrown
+ * unchanged, and the brief says *"The ticket could not be read"* with it.
+ */
+export function triageIssue(
+  read: ReadProjectTicket = readProjectTicket,
+  load: typeof loadProject = loadProject,
+): (ticketId: string, signal?: AbortSignal) => Promise<{ ref: string; title: string; body: string }> {
+  return async (ticketId, signal) => {
+    const parsed = parseTicketStream(ticketId)
+    if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
+    const state = await load(parsed.project)
+    if (state === null) throw new Error(`${parsed.project} is not registered`)
+    const answer = await read(state, Number(parsed.issue), { signal })
+    if (!answer.ok) throw answer.error
+    return { ref: String(answer.ticket.number), title: answer.ticket.title, body: answer.ticket.body }
+  }
+}
+
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
   daemonStartedAt: () => Promise<Date>,
@@ -312,17 +332,7 @@ export function daemonTriagePorts(
           store: eventStore,
           runtime: createRuntime,
           mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
-          issue: async (ticketId, signal) => {
-            const parsed = parseTicketStream(ticketId)
-            if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
-            const state = await loadProject(parsed.project)
-            if (state === null) throw new Error(`${parsed.project} is not registered`)
-            const { client } = await projectClient(state, {
-              clientFor: (project) => githubClientFor(project, signal),
-            })
-            const live = await client.getIssue(Number(parsed.issue), signal)
-            return { ref: String(live.number), title: live.title, body: live.body }
-          },
+          issue: triageIssue(),
           base: async (ticketId) => {
             const project = parseTicketStream(ticketId)?.project ?? ''
             return (await loadProject(project))?.base ?? 'main'

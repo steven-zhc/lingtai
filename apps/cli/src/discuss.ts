@@ -51,8 +51,8 @@ import {
   type DiscussionPorts,
   type ReadableRef,
 } from '@lingtai/conductor/discuss'
-import { projectClient } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
 import { runLogPath } from '@lingtai/conductor/run-log'
 import {
   chatStream,
@@ -63,6 +63,7 @@ import {
   CONTROL_STREAM,
   type DiscussionRequest,
   type Envelope,
+  type ProjectState,
 } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
@@ -161,6 +162,24 @@ export function headOf(run: readonly Envelope[]): string | null {
 }
 
 /**
+ * The ticket the brief carries, or the reason it could not be read — a
+ * sentence in the brief rather than an absence (#76). Read through the one
+ * reader, so a `db` project's ticket comes from its table (#731).
+ */
+export async function ticketEvidence(
+  state: ProjectState | null,
+  project: string,
+  issue: number,
+  read: ReadProjectTicket = readProjectTicket,
+): Promise<{ ticket: DiscussionEvidence['ticket']; ticketProblem: string | null }> {
+  if (state === null) return { ticket: null, ticketProblem: `${project} is not a registered project` }
+  const answer = await read(state, issue)
+  if (!answer.ok) return { ticket: null, ticketProblem: (answer.error as Error).message }
+  const live = answer.ticket
+  return { ticket: { ref: String(live.number), title: live.title, body: live.body }, ticketProblem: null }
+}
+
+/**
  * Everything the assistant is given, gathered from the log, GitHub and the
  * mirror.
  *
@@ -187,19 +206,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   const state = await loadProject(project).catch(() => null)
   const base = state?.base ?? 'main'
 
-  let ticket: DiscussionEvidence['ticket'] = null
-  let ticketProblem: string | null = null
-  if (state === null) {
-    ticketProblem = `${project} is not a registered project`
-  } else {
-    try {
-      const { client } = await projectClient(state)
-      const live = await client.getIssue(Number(parsed?.issue))
-      ticket = { ref: String(live.number), title: live.title, body: live.body }
-    } catch (err) {
-      ticketProblem = (err as Error).message
-    }
-  }
+  const { ticket, ticketProblem } = await ticketEvidence(state, project, Number(parsed?.issue))
 
   const baseSha = await refSha({ project, ref: base })
   const refs: ReadableRef[] = []

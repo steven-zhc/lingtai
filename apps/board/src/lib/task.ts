@@ -1,6 +1,7 @@
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { readProjectTicket } from '@lingtai/conductor/read-ticket'
 import { readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
@@ -181,7 +182,7 @@ export interface TicketView {
    * item. `null` is either GitHub not answering — a rate limit, a revoked
    * installation, an App that cannot reach the repository — or GitHub never
    * being asked at all, because the project's tickets are not on GitHub to
-   * begin with (`tickets === 'db'`, #384). It must never become a 404,
+   * begin with (`tickets === 'db'` and the read failed, #731). It must never become a 404,
    * because a page that says *this does not exist* when it means *I cannot
    * tell* is exactly the flattening this field exists to end. Which of the two
    * `null` is, `askedGitHub` says.
@@ -190,7 +191,8 @@ export interface TicketView {
   /**
    * Whether `problem` is GitHub refusing to answer, as opposed to a reason
    * nothing was asked in the first place — an unregistered project, or
-   * tickets that live in the database rather than on GitHub (#384).
+   * tickets that live in the database rather than on GitHub (#384), which are
+   * read from the table (#731) and so are `false` here whether they were found or not.
    *
    * The renderers wrap `problem` in a sentence that names GitHub; this is what
    * tells them whether that sentence is true. `found === null` alone cannot,
@@ -1626,52 +1628,43 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     .catch(() => null)
   const url = issueUrl(state.owner, project, issue, tickets)
   base.compareUrl = compareUrl(state.owner, project, state.base, agentBranchOf(issue), tickets)
-  // A `db` ticket's number is not a GitHub issue number — it can collide with
-  // an unrelated issue on the same repository (`recipe.ts`, `TicketSource`'s
-  // doc comment), so asking GitHub about it answers a different ticket's
-  // title, labels and body rather than 404ing the way the catch below expects.
-  if (tickets === 'db') {
-    return {
-      ...base,
-      found: null,
-      askedGitHub: false,
-      url,
-      body: null,
-      problem: `${project}'s tickets are read from the database`,
-    }
-  }
-  try {
-    const client = await githubClientFor(state)
-    const live = await client.getIssue(Number(issue))
+  // One reader for the three places a ticket is read (#731). A `db` ticket's
+  // number is not a GitHub issue number — it can collide with an unrelated
+  // issue on the same repository (`recipe.ts`, `TicketSource`'s doc comment),
+  // so the reader never asks GitHub about it (#384).
+  const read = await readProjectTicket(state, Number(issue))
+  if (read.ok) {
+    const live = read.ticket
     return {
       ...base,
       found: true,
-      askedGitHub: true,
+      askedGitHub: read.from === 'github',
       title: live.title,
       // Names only. The colours GitHub sends with them are the board's, for the
       // dot on a card (#85); this page lists every label a ticket carries, and
       // a row of coloured pills here would be the filled pill that ticket
       // refused — a taxonomy wearing the palette's verdict colours.
       labels: live.labels.map((l) => l.name),
-      url: live.url,
+      // The ticket table has no page of its own, so the link built above stays.
+      url: read.from === 'github' ? (live.url ?? url) : url,
       body: live.body,
       problem: null,
     }
-  } catch (err) {
-    // **The one question this catch has to answer twice.** A 404 from GitHub is
-    // an answer — there is no such issue — and everything else is the absence of
-    // one. Collapsing the two is what made `ticket-lingtai-99999` and a repository
-    // behind a rate limit render identically, and only the first of them is a
-    // page that should not exist (#113).
-    const missing = err instanceof GitHubError && err.status === 404
-    return {
-      ...base,
-      found: missing ? false : null,
-      askedGitHub: true,
-      url,
-      body: null,
-      problem: (err as Error).message,
-    }
+  }
+  // **The one question this has to answer twice.** A 404 from GitHub is
+  // an answer — there is no such issue — and everything else is the absence of
+  // one. Collapsing the two is what made `ticket-lingtai-99999` and a repository
+  // behind a rate limit render identically, and only the first of them is a
+  // page that should not exist (#113). The ticket table has no typed "missing"
+  // error, so a `db` miss stays `null` and says why.
+  const missing = read.error instanceof GitHubError && read.error.status === 404
+  return {
+    ...base,
+    found: missing ? false : null,
+    askedGitHub: read.from === 'github',
+    url,
+    body: null,
+    problem: (read.error as Error).message,
   }
 }
 
