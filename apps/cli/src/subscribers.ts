@@ -131,6 +131,8 @@ export interface BuildSubscribersOptions {
   /** Reads `~/.lingtai/env/<project>.env` over the machine's file. Replaced only by a test. */
   resolveEnv?: typeof resolveAgentEnv
   log?: (line: string) => void
+  /** A failure to ask again, which a person needs; absent, `log` (#766). */
+  tell?: (line: string) => void
 }
 
 /** One built subscriber and the declaration it came from, for the line the daemon prints. */
@@ -321,6 +323,7 @@ export interface SubscriberSet {
  */
 export async function createSubscriberSet(options: SubscriberSetOptions): Promise<SubscriberSet> {
   const log = options.log ?? (() => {})
+  const tell = options.tell ?? log
   let current = await buildSubscribers(options)
 
   return {
@@ -347,7 +350,7 @@ export async function createSubscriberSet(options: SubscriberSetOptions): Promis
           unread: next.unread,
         }
       } catch (err) {
-        log(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`)
+        tell(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`)
       }
     },
   }

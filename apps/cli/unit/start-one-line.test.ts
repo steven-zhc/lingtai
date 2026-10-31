@@ -81,6 +81,14 @@ describe('endingLine', () => {
     ).toBeNull()
   })
 
+  it('tells a person about a refused environment instead of dropping it', () => {
+    const line = endingLine(
+      { ok: false, ticketId: 'ticket-p-1', runId: null, stage: 'env', detail: 'FOO is not set' },
+      { project: 'p' },
+    )
+    expect(line).toMatch(/stopped at env: FOO is not set$/)
+  })
+
   it('prefixes the project only when asked', () => {
     expect(endingLine(held('SignoffRequired'), { project: 'p', prefixed: true })).toMatch(/^p {2}#1/)
     expect(takingLine('1', 'T', 'p')).toBe('p  taking #1  T')

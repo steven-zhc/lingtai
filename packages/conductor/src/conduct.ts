@@ -605,7 +605,10 @@ function ranVisits(
   steps: readonly StepReached[],
   declared: Readonly<Record<string, readonly unknown[] | undefined>>,
 ): PassSummary['ran'] {
-  return steps.filter((v) => !wasSkipped(v, declared)).map((v) => ({ step: v.step, ending: v.ending.ending }))
+  // A routing decision is the router's, not an action that ran or refused.
+  return steps
+    .filter((v) => v.ending.ending !== 'routed' && !wasSkipped(v, declared))
+    .map((v) => ({ step: v.step, ending: v.ending.ending }))
 }
 
 /**
@@ -3497,6 +3500,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * recorded is the failure this design exists to remove.*
        */
       const emit = async (event: PassEvent): Promise<void> => {
+        // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
+        if (event.type === 'RunSpent') {
+          const costUsd = (event.data as { costUsd?: number | null }).costUsd
+          if (costUsd === null || costUsd === undefined) spent.unknown += 1
+          else spent.usd += costUsd
+        }
         await appendNow(runId, [
           {
             type: event.type,

@@ -53,6 +53,8 @@ export interface DaemonOptions {
   locker?: Locker
   lockKey?: string
   log?: (line: string) => void
+  /** The projections' failures, which a person needs; absent, `log` (#766). */
+  tell?: (line: string) => void
   /** `acquireDaemonLock`. Replaceable so the order below can be asserted without a database. */
   acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>
   /** `controlWatermark`. Replaceable for the same reason. */
@@ -110,6 +112,7 @@ const NO_LOCKER: Locker = {
 
 export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
   const log = options.log ?? (() => {})
+  const tell = options.tell ?? log
 
   // **Before the watermark and before the lock** (#451). A refusal here takes
   // no lock and reads no control stream — the two are read by the pattern this
@@ -179,7 +182,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
           // an absent one because nobody distrusts it.
           if (phase !== 'handler') return
           state.failure ??= { projection: projection.name, error }
-          log(paint.fail(`${projection.name} stopped: ${String(error)}`))
+          tell(paint.fail(`${projection.name} stopped: ${String(error)}`))
           shutdown('projection-failed')
         },
       })
@@ -193,7 +196,8 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         // failure a daemon can see *before* it costs anything: #84's column
         // landed, the daemon came up green, and it stopped eight events later
         // with a run in flight and nothing on the board saying why (#90).
-        if (err instanceof ProjectionShapeError) log(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
+        if (err instanceof ProjectionShapeError)
+          tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
         throw err
       }
       const lag = await runner.lag()

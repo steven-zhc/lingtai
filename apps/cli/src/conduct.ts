@@ -563,7 +563,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
     // visible on the board.
     const detail = `no lingtai-hook binary at ${hookBinary}`
     outcome.refused.push({ project: '*', detail })
-    log(detail)
+    ;(options.tell ?? log)(detail)
     return outcome
   }
 
@@ -619,14 +619,15 @@ export function costWords(cost: { usd: number; unknown: number }): string {
 }
 
 /**
- * The one line a person gets when a pass ends (#766), or null where it ended
- * before it did any work — that is the trace's: `stopped at claim: …`.
+ * The one line a person gets when a pass ends (#766), or null where it lost the
+ * claim — that is the trace's: `stopped at claim: …`. A refused environment or
+ * recipe is not that: nothing ran, and the person is told why.
  *
  * Built from the summary `runOnce` attached, and from nothing else: it reads no
  * log and asks nobody, so a pass the daemon did not finish prints nothing.
  */
 export function endingLine(result: RunOnceResult, options: { project: string; prefixed?: boolean }): string | null {
-  if (declinedBeforeWork(result)) return null
+  if (result.ok === false && result.stage === 'claim') return null
   const summary = result.summary
   const ref = summary?.ref ?? result.ticketId?.match(/(\d+)$/)?.[1] ?? '?'
   const title = summary?.title ?? ''
@@ -640,7 +641,10 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
         ? `waiting for you: ${waitCommand(options.project, ref, summary?.wait ?? '')}`
         : `stopped at ${result.stage}: ${result.detail.replace(/\s+/g, ' ').trim()}`
   const parts = [...(steps.length > 0 ? [steps.join(' ')] : []), ...(summary ? [costWords(summary.cost)] : []), where]
-  const head = `${options.prefixed === true ? `${options.project}  ` : ''}#${ref}${title === '' ? '' : `  ${title}`}`
+  const head =
+    ref === '?'
+      ? options.project
+      : `${options.prefixed === true ? `${options.project}  ` : ''}#${ref}${title === '' ? '' : `  ${title}`}`
   return `${head} — ${parts.join(' · ')}`
 }
 
@@ -738,7 +742,7 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       ref: null,
       looked: () => {
         looked = true
-        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log })
+        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log: say })
       },
     }
 
@@ -763,7 +767,7 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       await record(
         project,
         { refused: true, detail: (err as Error).message, ref: where.ref, codeSha: options.codeSha },
-        { store, log },
+        { store, log: say },
       )
     }
   }

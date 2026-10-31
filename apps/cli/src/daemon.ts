@@ -216,7 +216,13 @@ export async function daemonCommand(
   // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
   // `integration/restart.test.ts` runs and not a copy of it (#167).
   const opened = await openDaemon(restart, {
-    start: () => startDaemon({ projections: PROJECTIONS, log: trace, onRunner: trackLiveSpend }),
+    start: () =>
+      startDaemon({
+        projections: PROJECTIONS,
+        log: trace,
+        tell: (line) => console.log(line),
+        onRunner: trackLiveSpend,
+      }),
     code: async () => {
       // The beacon. One timer in the whole system, and it decides nothing — it
       // says "still here", which is the difference between a board that is behind
@@ -516,6 +522,7 @@ export async function daemonCommand(
       // not about a diff — and a subscriber that wants one has to make it.
       cwd: process.cwd(),
       log: trace,
+      tell: (line) => console.log(line),
     })
     for (const line of declared.describe()) trace(line)
 
@@ -524,6 +531,7 @@ export async function daemonCommand(
     const slots = createSlots()
     loop = createWorkLoop({
       log: trace,
+      tell: (line) => console.log(line),
       subscribers: () => declared.subscribers(),
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
