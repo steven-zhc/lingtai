@@ -49,6 +49,7 @@ const NOT_OURS: Record<string, string> = {
   PORT: "Next's standalone server.js's, set by `lingtai board` for the server it imports (#183)",
   NEXT_MANUAL_SIG_HANDLE:
     "Next's, set by `lingtai board` around the import of server.js so Next installs no signal handler (#726)",
+  NEXT_RUNTIME: "Next's, read by the board's `register()` to run only in the node runtime (#775)",
   VITEST: 'set by the test runner, not by Lingtai',
   CODEX_HOME: "the Codex CLI's, read to share its login directory with a triage checkout",
 }

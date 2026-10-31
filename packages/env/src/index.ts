@@ -849,6 +849,44 @@ export function machineBoardPort(
 }
 
 /**
+ * `telemetry.otlp_endpoint`, the full OTLP/HTTP traces URL, or undefined where
+ * nothing names one (#775). `LINGTAI_TELEMETRY_OTLP_ENDPOINT` exported, over the
+ * key in `~/.lingtai/config.yml`.
+ *
+ * **A refusal never carries the value, nor the parser's text**: an endpoint can
+ * hold a token in its query or its userinfo, and `machineBoardPort`'s refusals,
+ * which interpolate the configuration error, are the shape not to copy.
+ */
+export function machineOtlpEndpoint(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): string | undefined {
+  const endpoint = Config.option(Config.nested(Config.string('otlp_endpoint'), 'telemetry'))
+  const web = (value: string): boolean => {
+    if (!URL.canParse(value)) return false
+    const protocol = new URL(value).protocol
+    return protocol === 'http:' || protocol === 'https:'
+  }
+  const exported = readConfig(endpoint, environmentProvider(from))
+  if (Either.isLeft(exported) || (Option.isSome(exported.right) && !web(exported.right.value))) {
+    throw new Error(
+      `${PREFIX}TELEMETRY_OTLP_ENDPOINT is not an http or https URL, so no endpoint was read — unset it or correct it`,
+    )
+  }
+  if (Option.isSome(exported.right)) return exported.right.value
+  if (file.unreadable !== undefined) {
+    throw new Error(`${file.path} could not be read, so telemetry.otlp_endpoint could not be read`)
+  }
+  const written = readConfig(endpoint, file.provider)
+  if (Either.isLeft(written) || (Option.isSome(written.right) && !web(written.right.value))) {
+    throw new Error(
+      `${file.path} sets telemetry.otlp_endpoint to something that is not an http or https URL, so no endpoint was read`,
+    )
+  }
+  return Option.getOrUndefined(written.right)
+}
+
+/**
  * `limits.day_usd`, the most one local calendar day may spend, in dollars — or
  * undefined where nothing names one (0122 §5). `LINGTAI_LIMITS_DAY_USD` exported,
  * over `limits.day_usd` in `~/.lingtai/config.yml`.

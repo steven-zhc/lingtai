@@ -5,7 +5,7 @@ import { isSea } from 'node:sea'
 import { pathToFileURL } from 'node:url'
 import { constants, Script } from 'node:vm'
 
-import { boardPort, repoRoot } from '@lingtai/env'
+import { boardPort, machineOtlpEndpoint, repoRoot } from '@lingtai/env'
 import type { FileLocker, HeldLock } from '@lingtai/env/lock'
 
 import { symbol, keyValues, heading } from './output.ts'
@@ -127,6 +127,8 @@ export async function serveBoard(options: BoardOptions): Promise<void> {
       `no built board at ${entry}. pnpm build writes one into dist/; from the source, pnpm --filter @lingtai/board dev`,
     )
   }
+  // A bad telemetry endpoint is refused by name before anything is loaded (#775).
+  machineOtlpEndpoint()
   await portIsFree(options.host, options.port)
   process.env['PORT'] = String(options.port)
   process.env['HOSTNAME'] = options.host

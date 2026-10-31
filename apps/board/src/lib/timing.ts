@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { performance } from 'node:perf_hooks'
 
+import { SpanStatusCode, trace } from '@opentelemetry/api'
+
 /**
  * Names and times every read a page makes (#774). **Server only**: this
  * imports `node:async_hooks`, so it must never reach a `"use client"` graph —
@@ -71,26 +73,48 @@ export type TimedOptions<T> = {
   readonly failed?: (value: T) => boolean
 }
 
-/** Runs `fn`; inside a `measure`, records its name and duration. Outside one it is `fn()`. */
+/**
+ * Runs `fn`; inside a `measure`, records its name and duration. Outside one it
+ * is `fn()`. Either way it is an OpenTelemetry span of the same name (#775),
+ * which is a no-op until `instrumentation.ts` installs a provider.
+ */
 export async function timed<T>(name: string, fn: () => Promise<T>, options: TimedOptions<T> = {}): Promise<T> {
-  const current = scope.getStore()
-  if (current === undefined) return fn()
-  const start = current.now()
-  const seq = current.calls++
-  const record = (desc: string | undefined) => {
-    const dur = Math.round(current.now() - start)
-    current.entries.push(desc === undefined ? { name, start, dur, seq } : { name, start, dur, desc, seq })
-  }
-  try {
-    const value = await fn()
-    record(options.failed?.(value) ? 'failed' : options.desc)
-    return value
-  } catch (err) {
-    // The error is rethrown untouched and never read: its message may carry a
-    // URL or a token.
-    record('failed')
-    throw err
-  }
+  return trace.getTracer('lingtai-board').startActiveSpan(name, async (span) => {
+    try {
+      const current = scope.getStore()
+      if (current === undefined) {
+        const value = await fn()
+        if (options.failed?.(value)) span.setStatus({ code: SpanStatusCode.ERROR })
+        return value
+      }
+      const start = current.now()
+      const seq = current.calls++
+      const record = (desc: string | undefined) => {
+        const dur = Math.round(current.now() - start)
+        current.entries.push(desc === undefined ? { name, start, dur, seq } : { name, start, dur, desc, seq })
+      }
+      try {
+        const value = await fn()
+        const failed = options.failed?.(value) ?? false
+        record(failed ? 'failed' : options.desc)
+        if (failed) span.setStatus({ code: SpanStatusCode.ERROR })
+        else if (options.desc !== undefined && /^\d+$/.test(options.desc)) {
+          span.setAttribute('lingtai.count', Number(options.desc))
+        }
+        return value
+      } catch (err) {
+        // The error is rethrown untouched and never read: its message may carry
+        // a URL or a token.
+        record('failed')
+        throw err
+      }
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR })
+      throw err
+    } finally {
+      span.end()
+    }
+  })
 }
 
 /** The list in Server-Timing syntax: `events.task;dur=8, github.issue;dur=723`. */
