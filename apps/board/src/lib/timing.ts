@@ -43,7 +43,16 @@ const ordered = (entries: readonly Entry[]): Timing[] =>
     .toSorted((a, b) => a.start - b.start || a.seq - b.seq)
     .map(({ name, start, dur, desc }) => (desc === undefined ? { name, start, dur } : { name, start, dur, desc }))
 
-/** Runs `fn` in a scope that collects every `timed` read it makes, in start order. */
+/**
+ * Runs `fn` in a scope that collects every `timed` read it makes, in start
+ * order, inside a root span `page <label>` (#787) that those reads become the
+ * children of. `root: true` is what makes it a root: otherwise its parent is
+ * Next's request span, which the exporter drops. The span carries no attribute
+ * — the label is a route pattern, never an id.
+ *
+ * A page that loads outside `measure` has no root span, and its reads export
+ * as orphans.
+ */
 export async function measure<T>(fn: () => Promise<T>, options: MeasureOptions = {}): Promise<[T, readonly Timing[]]> {
   const now = options.now ?? (() => performance.now())
   const slowMs = options.slowMs ?? 1000
@@ -51,19 +60,26 @@ export async function measure<T>(fn: () => Promise<T>, options: MeasureOptions =
   const label = options.label ?? '/'
   const entries: Entry[] = []
   const began = now()
-  try {
-    const value = await scope.run({ now, entries, calls: 0 }, fn)
-    return [value, ordered(entries)]
-  } finally {
-    const total = Math.round(now() - began)
-    if (total > slowMs) {
-      const slowest = ordered(entries)
-        .toSorted((a, b) => b.dur - a.dur)
-        .slice(0, 3)
-        .map((t) => `${t.name} ${t.dur}ms`)
-      say(`board: ${label} took ${total}ms${slowest.length === 0 ? '' : ` — ${slowest.join(', ')}`}`)
+  return trace.getTracer('lingtai-board').startActiveSpan(`page ${label}`, { root: true }, async (span) => {
+    try {
+      const value = await scope.run({ now, entries, calls: 0 }, fn)
+      return [value, ordered(entries)] as [T, readonly Timing[]]
+    } catch (err) {
+      // Rethrown untouched and never read: its message may carry a URL or a token.
+      span.setStatus({ code: SpanStatusCode.ERROR })
+      throw err
+    } finally {
+      span.end()
+      const total = Math.round(now() - began)
+      if (total > slowMs) {
+        const slowest = ordered(entries)
+          .toSorted((a, b) => b.dur - a.dur)
+          .slice(0, 3)
+          .map((t) => `${t.name} ${t.dur}ms`)
+        say(`board: ${label} took ${total}ms${slowest.length === 0 ? '' : ` — ${slowest.join(', ')}`}`)
+      }
     }
-  }
+  })
 }
 
 export type TimedOptions<T> = {

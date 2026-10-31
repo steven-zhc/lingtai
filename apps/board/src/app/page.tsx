@@ -599,17 +599,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [[{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control], timings] =
-    await measure(
-      () =>
-        Promise.all([
-          loadBoard(only),
-          timed('projects.read', () => loadProjects()).catch(() => []),
-          timed('events.control', () => readControl()),
-        ]),
-      { label: '/' },
-    )
-  const today = await readDayReading()
+  const [
+    [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control, today],
+    timings,
+  ] = await measure(
+    () =>
+      Promise.all([
+        loadBoard(only),
+        timed('projects.read', () => loadProjects()).catch(() => []),
+        timed('events.control', () => readControl()),
+        timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' }),
+      ]),
+    { label: '/' },
+  )
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // folded cleanly — a chip is not free, and this is the ordinary case — and

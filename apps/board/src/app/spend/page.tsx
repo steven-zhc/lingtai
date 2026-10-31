@@ -33,6 +33,8 @@ import { ledger, loadBoard } from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
 import { theHome } from '@/lib/home'
 import { spendChip } from '@/lib/spend'
+import { measure, timed } from '@/lib/timing'
+import { TimingMeta } from '@/lib/timing-meta'
 
 import { SpendTable } from '../spend-table.tsx'
 
@@ -40,14 +42,23 @@ export const dynamic = 'force-dynamic'
 
 export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
-  const board = await loadBoard(only)
-  const today = await readDayReading({ fetchedNote: true })
+  const [[board, today], timings] = await measure(
+    () =>
+      Promise.all([
+        timed('board.load', () => loadBoard(only)),
+        timed('spend.day', () => readDayReading({ fetchedNote: true }), {
+          failed: (r) => r.short === 'today unreadable',
+        }),
+      ]),
+    { label: '/spend' },
+  )
   const { limits } = board
   const chip = spendChip(board.spend.currency)
   const { rows: byProject, total } = ledger(board.columns, board.spend.rows)
 
   return (
     <main className="detail">
+      <TimingMeta timings={timings} />
       <div className="bar">
         <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
           ← Lingtai

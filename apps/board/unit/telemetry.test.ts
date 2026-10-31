@@ -81,6 +81,48 @@ it("#774's names come out as span names, with the count", async () => {
   })
   await provider!.forceFlush()
   const spans = exporter.getFinishedSpans()
-  expect(spans.map((s) => s.name)).toEqual(['events.task', 'events.run'])
+  expect(spans.map((s) => s.name)).toEqual(['events.task', 'events.run', 'page /'])
   expect(spans[1]!.attributes).toEqual({ 'lingtai.count': 7 })
+})
+
+it('a page is one trace: a root span with its reads as children, under a foreign request span', async () => {
+  const exporter = new InMemorySpanExporter()
+  const provider = await installTracing(on, none, exporter)
+  // Stands in for Next's request span, which the exporter drops.
+  await trace.getTracer('next.js').startActiveSpan('GET /task', async (request) => {
+    await measure(
+      async () => {
+        await timed('events.task', async () => 1)
+        await timed('events.run', async () => 2, { desc: '7' })
+      },
+      { label: '/task' },
+    )
+    request.end()
+  })
+  await provider!.forceFlush()
+  const spans = exporter.getFinishedSpans()
+  const page = spans.find((s) => s.name === 'page /task')!
+  expect(page.parentSpanContext).toBeUndefined()
+  const children = spans.filter((s) => s !== page)
+  expect(children.map((s) => s.name).toSorted()).toEqual(['events.run', 'events.task'])
+  for (const c of children) {
+    expect(c.parentSpanContext?.spanId).toBe(page.spanContext().spanId)
+    expect(c.spanContext().traceId).toBe(page.spanContext().traceId)
+  }
+  for (const s of spans) {
+    expect(Object.keys(s.attributes).filter((k) => k !== 'lingtai.count')).toEqual([])
+    expect(s.name).not.toMatch(/\/\d+(\/|$)/)
+  }
+})
+
+it('a page whose load throws exports ERROR with no message and rethrows the same error', async () => {
+  const exporter = new InMemorySpanExporter()
+  const provider = await installTracing(on, none, exporter)
+  const boom = new Error('https://x?token=y')
+  await expect(measure(() => Promise.reject(boom), { label: '/task' })).rejects.toBe(boom)
+  await provider!.forceFlush()
+  const [span] = exporter.getFinishedSpans()
+  expect(span!.name).toBe('page /task')
+  expect(span!.status).toEqual({ code: 2 })
+  expect(span!.events).toEqual([])
 })

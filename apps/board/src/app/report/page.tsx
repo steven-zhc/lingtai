@@ -26,6 +26,8 @@ import {
   type ReportCurrency,
   type ReportParams,
 } from '@/lib/report.ts'
+import { measure, timed, type Timing } from '@/lib/timing'
+import { TimingMeta } from '@/lib/timing-meta'
 
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
 import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel } from './panels.tsx'
@@ -60,8 +62,13 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   let kinds = query.kinds ?? []
   let chip: ReportChip
   let failure: string | null = null
+  let timings: readonly Timing[] = []
   try {
-    const data = await currentReport(query.project, query.window.from)
+    const [data, measured] = await measure(
+      () => timed('report.read', () => currentReport(query.project, query.window.from)),
+      { label: '/report' },
+    )
+    timings = measured
     chip = reportChip(data.currency)
     kinds = sortKinds([...kindsOf(data.tickets, query.project), ...(query.kinds ?? [])])
     kinds = kinds.filter((k, i) => kinds.indexOf(k) === i)
@@ -81,6 +88,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
   return (
     <main className="detail">
+      <TimingMeta timings={timings} />
       <div className="bar">
         <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
           ← Lingtai
