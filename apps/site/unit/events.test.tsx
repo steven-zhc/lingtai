@@ -8,7 +8,7 @@ import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
 import { Bar } from '../src/app/chrome'
 import { EventsBody } from '../src/app/docs/events/events-body'
 import EventsPage from '../src/app/docs/events/page'
-import { byGroup, counts, matches, parseStep } from '../src/lib/event-filter'
+import { byGroup, counts, matches, parseStep, shownGroups } from '../src/lib/event-filter'
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 const doc = JSON.parse(read('../../../doc/events.json')) as EventsDoc
@@ -51,8 +51,12 @@ describe('/docs/events/', () => {
     expect(shown('?step=none').every((e) => e.at.length === 0)).toBe(true)
     expect(shown('?step=none').length).toBe(doc.events.filter((e) => e.at.length === 0).length)
     expect(shown('?step=bogus')).toHaveLength(doc.events.length)
-    const groups = byGroup(doc.events).filter(([, list]) => list.some((e) => matches(e.at, 'review')))
-    expect(groups.length).toBeLessThanOrEqual(byGroup(doc.events).length)
+    const expected = byGroup(doc.events)
+      .filter(([, list]) => list.some((e) => e.at.includes('review')))
+      .map(([group]) => group)
+    expect(shownGroups(doc.events, 'review')).toEqual(expected)
+    expect(expected.length).toBeLessThan(byGroup(doc.events).length)
+    expect(shownGroups(doc.events, null)).toHaveLength(byGroup(doc.events).length)
   })
 
   it('renders a summary as inline markdown with links resolved to the sha', () => {

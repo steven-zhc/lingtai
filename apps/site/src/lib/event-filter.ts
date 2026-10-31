@@ -42,6 +42,13 @@ export function byGroup<T extends Indexed>(events: readonly T[]): [string, T[]][
   return [...groups]
 }
 
+/** The groups with at least one event shown under `filter`, in order. */
+export function shownGroups(events: readonly Indexed[], filter: string | null): string[] {
+  return byGroup(events)
+    .filter(([, list]) => list.some((e) => matches(e.at, filter)))
+    .map(([group]) => group)
+}
+
 export function groupId(group: string): string {
   return `group-${group.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
 }

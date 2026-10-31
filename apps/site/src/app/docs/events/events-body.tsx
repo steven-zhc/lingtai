@@ -55,9 +55,9 @@ function Event({ event, doc }: { event: EventEntry; doc: EventsDoc }) {
         <code>{event.name}</code>
         {event.retired && <span className="ev-tag">retired</span>}
         {event.at.map((step) => (
-          <span key={step} className="ev-chip">
+          <button key={step} type="button" className="ev-chip" data-step={step}>
             {step}
-          </span>
+          </button>
         ))}
       </p>
       <p className="ev-summary">

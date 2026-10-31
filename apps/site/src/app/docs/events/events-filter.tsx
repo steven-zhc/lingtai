@@ -2,7 +2,17 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 
-import { byGroup, counts, groupId, matches, NONE, OUTSIDE, parseStep, type Indexed } from '@/lib/event-filter'
+import {
+  byGroup,
+  counts,
+  groupId,
+  matches,
+  shownGroups,
+  NONE,
+  OUTSIDE,
+  parseStep,
+  type Indexed,
+} from '@/lib/event-filter'
 
 /**
  * The spine, the group headings and the contents rail (#789).
@@ -48,9 +58,10 @@ export function EventsFilter({
 
   const total = counts(index, steps)
   const groups = byGroup(index)
+  const visible = new Set(shownGroups(index, filter))
   const shown = groups
     .map(([group, list]) => [group, list, list.filter((e) => matches(e.at, filter))] as const)
-    .filter(([, , hit]) => hit.length > 0)
+    .filter(([group]) => visible.has(group))
 
   const node = (key: string, label: string, extra = '') => (
     <li key={key}>
@@ -69,7 +80,13 @@ export function EventsFilter({
 
   return (
     <>
-      <article className="events">
+      <article
+        className="events"
+        onClick={(ev) => {
+          const chip = (ev.target as HTMLElement).closest<HTMLElement>('.ev-chip[data-step]')
+          if (chip?.dataset.step) toggle(chip.dataset.step)
+        }}
+      >
         {children}
         <div className="ev-drawing" role="navigation" aria-label="The ten steps">
           <ol className="ev-spine">{steps.map((step, i) => node(step, `${i + 1} ${step}`))}</ol>
@@ -84,7 +101,7 @@ export function EventsFilter({
         {groups.map(([group, list]) => {
           const hit = list.filter((e) => matches(e.at, filter))
           return (
-            <section key={group} id={groupId(group)} className="ev-group" hidden={hit.length === 0}>
+            <section key={group} id={groupId(group)} className="ev-group" hidden={!visible.has(group)}>
               <h2>
                 {group}{' '}
                 <span className="ev-count">{filter === null ? list.length : `${hit.length} of ${list.length}`}</span>
