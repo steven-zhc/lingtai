@@ -1486,20 +1486,31 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       type: 'StepStarted',
       data: { runId: options.context.runId, step: at, round: visitContext.round ?? 0 },
     })
-    const reached = record(
-      await runStep(spec, options, bodies, [...steps], {
+    const reached = await runStep(
+      spec,
+      options,
+      bodies,
+      [...steps],
+      {
         context: visitContext,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
-      }),
+      },
+      // Inside the step's span, so its interval covers the `StepEnded` write
+      // and a refused append marks it (#791). **Exactly where the step's
+      // plugins ran a verdicts pipeline** (`events.ts`'s own rule for
+      // `StepEnded`) — `outcome` is `undefined` for a step with nothing
+      // declared to judge, which never opened one.
+      (visit) => {
+        const recorded = record(visit)
+        return Promise.resolve(
+          recorded.outcome === undefined
+            ? undefined
+            : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
+        ).then(() => recorded)
+      },
     )
-    // **Exactly where the step's plugins ran a verdicts pipeline** (`events.ts`'s
-    // own rule for `StepEnded`) — `outcome` is `undefined` for a step with
-    // nothing declared to judge, which never opened one.
-    if (reached.outcome !== undefined) {
-      await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: reached.outcome } })
-    }
     // Only a review that was actually read: an unreadable answer, a reviewer
     // that never ran or did not finish, or an action skipped before the agent
     // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -1818,12 +1829,14 @@ function runStep(
   bodies: StepBodies,
   reached: readonly StepReached[],
   reaching: Reaching,
+  /** Runs inside the span, after the body: the write that ends the visit. */
+  finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
 ): Promise<StepReached> {
-  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching)
+  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
   return inSpan(
     `step ${spec.step}`,
     { 'lingtai.round': reaching.context.round ?? 0 },
-    () => runStepBody(spec, options, bodies, reached, reaching),
+    () => runStepBody(spec, options, bodies, reached, reaching).then(finish),
     // `held`, `asked` and `routed` wait on a person: nothing refused.
     (visit) => ['refused', 'did-not-finish', 'never-ran'].includes(visit.ending.ending),
   )

@@ -56,7 +56,7 @@ describe('with an endpoint', () => {
     context.disable()
   })
 
-  const pass = async (recipe: string, withRuntime = runtime, refuseAppend = false) => {
+  const pass = async (recipe: string, withRuntime = runtime, refuseAppend: boolean | string = false) => {
     exporter.reset()
     const inner = memoryStore()
     const store: typeof inner = refuseAppend
@@ -64,7 +64,10 @@ describe('with an endpoint', () => {
           ...inner,
           append: (streamId: string, expected: number, events: readonly ToAppend[]) =>
             events.some(
-              (e) => e.type === 'StepEnded' && (e.data as { outcome: { step: string } }).outcome.step === 'proposed',
+              (e) =>
+                e.type === 'StepEnded' &&
+                (e.data as { outcome: { step: string } }).outcome.step ===
+                  (refuseAppend === true ? 'proposed' : refuseAppend),
             )
               ? Promise.reject(new Error('terminating connection /secret/path'))
               : (inner.append(streamId, expected, events) as Promise<Envelope[]>),
@@ -248,6 +251,21 @@ describe('with an endpoint', () => {
     expect(run.status.code).toBe(2)
     expect(run.status.message).toBeUndefined()
     expect(run.attributes).toEqual({ 'lingtai.ticket': 7 })
+    const agent = spans.filter((s) => s.name === 'action agent' && s.status.code === 2)
+    expect(agent.length).toBeGreaterThan(0)
+    for (const s of agent) {
+      expect(s.status.message).toBeUndefined()
+      expect(s.events).toEqual([])
+    }
+  })
+
+  it('a rejected StepEnded append leaves its step span ERROR, with no message', async () => {
+    const { result, spans } = await pass(REVIEWED, runtime, 'implement')
+    expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
+    const step = spans.find((s) => s.name === 'step implement')!
+    expect(step.status.code).toBe(2)
+    expect(step.status.message).toBeUndefined()
+    expect(step.events).toEqual([])
   })
   describe('a design question handed to a needs-input judge', () => {
     const JUDGED_QUESTION = `
