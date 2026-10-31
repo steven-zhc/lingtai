@@ -302,6 +302,8 @@ describe('the evidence', () => {
       attempt: 1,
       source: 'proposed / build',
       line: 'packages/actions typecheck: test/agent-step.test.ts(36,5): error TS2741:',
+      evidence: TAIL,
+      fromStep: true,
     })
     // A pointer, and not a copy. Printing the failing gate twice — at the top
     // and inside its attempt — is how two copies of one fact come to disagree.
@@ -439,7 +441,13 @@ describe('the evidence', () => {
     ])
     const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
 
-    expect(standing.deciding).toEqual({ attempt: 1, source: 'failed', line: 'error_max_turns' })
+    expect(standing.deciding).toEqual({
+      attempt: 1,
+      source: 'failed',
+      line: 'error_max_turns',
+      evidence: 'error_max_turns',
+      fromStep: false,
+    })
   })
 
   it('steps at nothing when there is nothing that went wrong to step at', () => {
@@ -639,7 +647,7 @@ const HELD: StandingView = {
   headSha: SHA,
   failed: [],
   saidBy: null,
-  deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …' },
+  deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …', evidence: null, fromStep: true },
   restarts: 0,
   restartsOf: 0,
   waitId: aWaitId(),
@@ -1035,7 +1043,7 @@ describe('the block, rendered', () => {
           ...HELD,
           failed: [],
           // Attempt 1's, while the block is attempt 2's. See `HELD`.
-          deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …' },
+          deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …', evidence: null, fromStep: true },
           diagnosis: {
             what: 'agent/112 is at 293fe3a and every step passed. The merge step holds for no-merge.',
             done: null,

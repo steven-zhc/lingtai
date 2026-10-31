@@ -380,6 +380,13 @@ export interface Deciding {
   source: string
   /** One line. Clipped, because the whole of it is one click away. */
   line: string
+  /**
+   * The refusal's whole evidence, verbatim and never clipped; null when none was
+   * recorded. An added field: `line` is also the blocked page's `Reason` fallback.
+   */
+  evidence: string | null
+  /** True when `source` is a step (`proposed / build`), false when it is an attempt's outcome. */
+  fromStep: boolean
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
@@ -673,6 +680,8 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: never.step.replace(':', ' / '),
       line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? 'no detail was recorded'}`,
+      evidence: never.evidence,
+      fromStep: true,
     }
   }
 
@@ -695,6 +704,8 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: unfinished.step.replace(':', ' / '),
       line: 'did not finish — nothing judged this diff: ' + (oneLine(unfinished.evidence) ?? 'no detail was recorded'),
+      evidence: unfinished.evidence,
+      fromStep: true,
     }
   }
 
@@ -717,6 +728,8 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: question.step.replace(':', ' / '),
       line: 'asked — ' + (oneLine(question.evidence) ?? 'no question was recorded'),
+      evidence: question.evidence,
+      fromStep: true,
     }
   }
 
@@ -726,12 +739,20 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: refused.step.replace(':', ' / '),
       line: oneLine(refused.evidence) ?? run.outcome.detail ?? 'refused, and said nothing',
+      evidence: refused.evidence ?? run.outcome.detail,
+      fromStep: true,
     }
   }
 
   const detail = oneLine(run.outcome.detail)
   if (detail === null) return null
-  return { attempt: run.attempt, source: run.outcome.state, line: detail }
+  return {
+    attempt: run.attempt,
+    source: run.outcome.state,
+    line: detail,
+    evidence: run.outcome.detail,
+    fromStep: false,
+  }
 }
 
 /**
