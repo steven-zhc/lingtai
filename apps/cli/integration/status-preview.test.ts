@@ -113,6 +113,7 @@ const github: GitHubClient = {
   listBlockedBy: async () => {
     throw new Error('not used')
   },
+  editComment: async () => {},
   closeIssue: async () => {
     throw new Error('no writes in this test')
   },

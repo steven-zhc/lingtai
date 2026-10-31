@@ -238,6 +238,7 @@ describe("the order the end point's effects are carried out in", () => {
       setLabels: async (_n, labels) => {
         calls.push(`setLabels ${[...labels].join(',')}`)
       },
+      editComment: async () => {},
       closeIssue: async () => {
         calls.push('close')
       },

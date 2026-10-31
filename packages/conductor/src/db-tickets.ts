@@ -326,6 +326,15 @@ export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOpt
       return { id: Number(rows[0]!.id) }
     },
 
+    async editComment(number, commentId, body) {
+      await ensureReady()
+      const rows = await sql.query<{ id: number | string }>(
+        `UPDATE ticket_comments SET body = $4 WHERE project = $1 AND number = $2 AND id = $3 RETURNING id`,
+        [project, number, commentId, body],
+      )
+      if (rows.length === 0) throw new Error(`no comment ${commentId} on ticket #${number}`)
+    },
+
     async commentBodies(number) {
       await ensureReady()
       const rows = await sql.query<{ body: string }>(

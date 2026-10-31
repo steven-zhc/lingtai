@@ -168,6 +168,7 @@ describe('a discussion, on the log', () => {
       getIssue: async () => ({ labels: [], body }),
       comment: async () => ({ id: 1 }),
       setLabels: async () => {},
+      editComment: async () => {},
       closeIssue: async () => {},
       updateBody: async (_issue, newBody) => {
         body = newBody

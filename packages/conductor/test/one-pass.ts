@@ -464,6 +464,7 @@ export function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
       said.push(`comment #${n}`)
       return { id: 1 }
     },
+    editComment: async () => {},
     setLabels: async (n: number, labels: readonly string[]) => {
       said.push(`labels #${n} ${[...labels].sort().join(',')}`)
     },

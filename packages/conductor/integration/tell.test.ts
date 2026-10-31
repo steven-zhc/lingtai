@@ -51,6 +51,7 @@ function fakeGitHub(opts: { labels?: string[]; fail?: boolean } = {}) {
       if (opts.fail) boom()
       set = labels
     },
+    async editComment() {},
     async closeIssue() {
       calls.push('closeIssue')
       if (opts.fail) boom()

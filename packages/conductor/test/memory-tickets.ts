@@ -25,6 +25,8 @@ interface StoredTicket {
   reason?: 'completed' | 'not_planned'
   createdAt: Date
   comments: string[]
+  /** Comment id → index into `comments`, so an edit finds its text. */
+  commentIndex: Map<number, number>
 }
 
 /**
@@ -98,14 +100,25 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets
         state: 'open',
         createdAt: now(),
         comments: [],
+        commentIndex: new Map(),
       }
       byNumber.set(t.number, t)
       return toTicket(t)
     },
 
     async comment(number, body) {
-      require(number).comments.push(body)
-      return { id: nextCommentId++ }
+      const t = require(number)
+      t.comments.push(body)
+      const id = nextCommentId++
+      t.commentIndex.set(id, t.comments.length - 1)
+      return { id }
+    },
+
+    async editComment(number, commentId, body) {
+      const t = require(number)
+      const at = t.commentIndex.get(commentId)
+      if (at === undefined) throw new Error(`no comment ${commentId} on #${number}`)
+      t.comments[at] = body
     },
 
     commentBodies(number) {

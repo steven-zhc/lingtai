@@ -1566,9 +1566,16 @@ export const OutboxFailed = z.object({
 export const IssueUpdated = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs']),
+  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs', 'comment-edited']),
   /** Whatever identifies what happened: a comment id, the labels that were set, the refs deleted. */
   detail: z.string(),
+  /**
+   * The wait a `comment` announces, or whose comment a `comment-edited` rewrote (#750).
+   * Absent on every comment posted before it existed, which is why those are never edited.
+   */
+  waitId: z.string().optional(),
+  /** The first line of the question a waiting `comment` asked — what the edit quotes. */
+  question: z.string().optional(),
 })
 
 /**
@@ -1584,8 +1591,10 @@ export const IssueUpdated = z.object({
 export const IssueUpdateFailed = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs']),
+  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs', 'comment-edited']),
   error: z.string(),
+  /** Set on a failed `comment-edited` (#750): the wait whose comment was not rewritten. */
+  waitId: z.string().optional(),
 })
 
 export const QueueChanged = z.object({

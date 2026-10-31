@@ -248,7 +248,7 @@ import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
 import { restartReason } from './restart.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, tellGitHub, tellGitHubAbout } from './tell.ts'
+import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
@@ -1369,6 +1369,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               github: options.client,
               ticketId,
               labels: labelsFor('queued'),
+              editEnded: true,
               appended: endResolved,
             })
           },
@@ -2338,6 +2339,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ticketId,
           )
           if (closed.ok) {
+            // The split's wait is over (`WaitResolved{Split}` is on the stream).
+            // This path calls `tellGitHub` directly, so it edits here (#750).
+            await editEndedWaits({ store, github: options.client, ticketId })
             // Said before the close, not after it: the comment has no record of
             // its own to retry from, and a close that fails here is finished later
             // by reconciliation — which would close the issue without ever
@@ -2379,6 +2383,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           labels: labelsFor('running'),
+          editEnded: true,
         })
         return { taken: { ticketId, kind: runnable.kind } }
       }
@@ -4391,6 +4396,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             github: options.client,
             ticketId,
             labels: labelsFor('landed'),
+            editEnded: true,
             appended: endResolved,
           }),
         )
@@ -4619,12 +4625,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ]),
           )
         }
+        const waitId = crypto.randomUUID()
         yield* Effect.promise(() =>
           appendNow(ticketId, [
             {
               type: 'WaitStarted',
               actor: 'conductor',
-              data: parsePayload('WaitStarted', { waitId: crypto.randomUUID(), reason }),
+              data: parsePayload('WaitStarted', { waitId, reason }),
             },
             // In the same append as the block, for the landing's reason: a
             // `when: blocked` action recorded as carried out for a block the log
@@ -4640,6 +4647,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             github: options.client,
             ticketId,
             question,
+            waitId,
+            editEnded: true,
             labels: labelsFor('waiting'),
             appended: endResolved,
           }),
