@@ -72,6 +72,7 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
+import { timed } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
 
 /**
@@ -1096,7 +1097,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // a filter the bar can offer, and only the ones the filter admits are asked
   // for their queue.
   const [tasks, all, onBoard] = await Promise.all([
-    readTasks(project === undefined ? {} : { project }).catch(emptyIfUnbuilt),
+    timed('tasks.read', () => readTasks(project === undefined ? {} : { project })).catch(emptyIfUnbuilt),
     // Null is not `[]`: the queue goes quiet on a failed read as it always
     // did, but triage's status must not be derived from projects it was never
     // told about (#583).
@@ -1117,7 +1118,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // because the board holds no projector of its own and a bare `lingtai run`
   // is the only thing that does on the terminal path (`#498`'s review).
   const [queued, spend, daemon, triageDeclared] = await Promise.all([
-    queuedCards(registered.filter((p) => project === undefined || p.project === project)),
+    timed('board.queue', () => queuedCards(registered.filter((p) => project === undefined || p.project === project))),
     // Not measured, so not claimed: a skipped fold has no lag to report, and
     // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
     // this is a board with nothing to bill rather than a fold that ran and
@@ -1125,7 +1126,7 @@ export async function loadBoard(project?: string): Promise<Board> {
     // (`#498`'s review).
     tasks.length === 0
       ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
-      : currentSpend({ ticket: tasks.map((t) => t.taskId) }),
+      : timed('spend.read', () => currentSpend({ ticket: tasks.map((t) => t.taskId) })),
     // The beacon's row, once for the board: the page reads the same one, and
     // a failed read reaches the board as an error there as it does on the page,
     // rather than leaving the cards to say less than the page will.
