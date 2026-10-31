@@ -13,9 +13,9 @@ import { EventsFilter } from './events-filter'
  */
 
 /** A link's label: the file and line a URL into the repository names. */
-function label(url: string): string {
+export function label(url: string): string {
   const [file = url, line] = url.split('#')
-  const tail = file.split('/blob/')[1]?.split('/').slice(1).join('/') ?? file
+  const tail = file.split('/').pop() || file
   return line === undefined ? tail : `${tail}:${line.replace(/^L/, '')}`
 }
 
@@ -52,13 +52,15 @@ function Event({ event, doc }: { event: EventEntry; doc: EventsDoc }) {
   return (
     <div className="ev" id={event.name}>
       <p className="ev-head">
-        <code>{event.name}</code>
+        <span className="ev-name">{event.name}</span>
         {event.retired && <span className="ev-tag">retired</span>}
-        {event.at.map((step) => (
-          <button key={step} type="button" className="ev-chip" data-step={step}>
-            {step}
-          </button>
-        ))}
+        <span className="ev-chips">
+          {event.at.map((step) => (
+            <button key={step} type="button" className="ev-chip" data-step={step}>
+              {step}
+            </button>
+          ))}
+        </span>
       </p>
       <p className="ev-summary">
         {event.summary === null ? <em>no description in the source</em> : <Summary text={event.summary} doc={doc} />}
@@ -78,11 +80,9 @@ function Event({ event, doc }: { event: EventEntry; doc: EventsDoc }) {
               </span>
             ))}
           </>
-        )}
+        )}{' '}
+        · <code>{event.subscribers}</code>
       </p>
-      <pre>
-        <code>{event.subscribers}</code>
-      </pre>
     </div>
   )
 }
@@ -91,14 +91,20 @@ export function EventsBody({ doc }: { doc: EventsDoc }) {
   const entries = Object.fromEntries(doc.events.map((e) => [e.name, <Event key={e.name} event={e} doc={doc} />]))
   const index = doc.events.map(({ name, group, at }) => ({ name, group, at }))
   return (
-    <EventsFilter steps={[...STEPS]} index={index} entries={entries}>
+    <EventsFilter
+      steps={[...STEPS]}
+      index={index}
+      entries={entries}
+      after={
+        <p className="source">
+          Rendered from <code>doc/events.json</code>; every link goes to commit <code>{doc.sha}</code>.
+        </p>
+      }
+    >
       <h1>Events</h1>
       <p>
         A pass writes events as it goes. Pick a step to see the events it writes; every event is listed once, under its
         group.
-      </p>
-      <p className="source">
-        Rendered from <code>doc/events.json</code>; every link goes to commit <code>{doc.sha}</code>.
       </p>
     </EventsFilter>
   )

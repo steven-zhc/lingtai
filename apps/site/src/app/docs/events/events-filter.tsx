@@ -27,12 +27,15 @@ export function EventsFilter({
   index,
   entries,
   children,
+  after,
   initialFilter = null,
 }: {
   steps: string[]
   index: Indexed[]
   entries: Record<string, ReactNode>
   children?: ReactNode
+  /** Rendered after the groups, still inside the article: the commit note. */
+  after?: ReactNode
   /** Only for rendering a filtered state without a browser; the page never passes it. */
   initialFilter?: string | null
 }) {
@@ -90,8 +93,8 @@ export function EventsFilter({
         disabled={total[key] === 0}
         onClick={() => toggle(key)}
       >
+        <span className="ev-dot">{total[key]}</span>
         <span className="ev-step">{label}</span>
-        <span className="ev-count">{total[key]}</span>
       </button>
     </li>
   )
@@ -107,8 +110,13 @@ export function EventsFilter({
         }}
       >
         {children}
-        <div ref={drawing} className="ev-drawing" role="navigation" aria-label="The ten steps">
-          <ol className="ev-spine">{steps.map((step, i) => node(step, `${i + 1} ${step}`))}</ol>
+        <div
+          ref={drawing}
+          className={`ev-drawing${filter === null ? '' : ' filtering'}`}
+          role="navigation"
+          aria-label="The ten steps"
+        >
+          <ol className="ev-spine">{steps.map((step) => node(step, step))}</ol>
           <ul className="ev-lane">
             {node(OUTSIDE, OUTSIDE, ' apart')}
             {node(NONE, 'no step', ' apart')}
@@ -133,6 +141,7 @@ export function EventsFilter({
             </section>
           )
         })}
+        {after}
       </article>
       <nav className="contents" aria-label="Contents">
         <p className="kicker">Groups</p>
