@@ -210,8 +210,21 @@ jobs:
           fi
           node apps/release/src/tickets-changed.ts "${{ github.repository }}" "${{ github.ref_name }}" ${PREV:+landings.txt "$PREV"} > tickets-changed.md
           cat tickets-changed.md
+      - name: Decisions changed
+        # ADR commits (`NNNN: …`) land directly on the first-parent line; the
+        # ones inside an agent branch are already in the tickets section (#777).
+        # `git` runs here so a failure fails the step; the script reads files.
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          if [ -n "$PREV" ]; then
+            git log --first-parent --no-merges --format=%s "$PREV..${{ github.ref_name }}" > decision-commits.txt
+            git ls-tree --name-only "${{ github.ref_name }}" doc/decisions/ > decision-files.txt
+          fi
+          node apps/release/src/decisions-changed.ts "${{ github.repository }}" "${{ github.ref_name }}" ${PREV:+decision-commits.txt decision-files.txt "$PREV"} > decisions-changed.md
+          cat decisions-changed.md
       - name: release notes
-        run: cat tickets-changed.md cli-changed.md events-changed.md > release-notes.md
+        run: cat tickets-changed.md decisions-changed.md cli-changed.md events-changed.md > release-notes.md
       - name: checksums
         working-directory: artifacts
         # `shasum -a 256 -c SHA256SUMS` on a Mac, `sha256sum -c` on Linux.
