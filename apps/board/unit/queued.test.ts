@@ -12,6 +12,7 @@ import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
 import { groupQueue, queuedStanding, toCard } from '../src/lib/board.ts'
+import { runNowCaption, type QueuedView } from '../src/lib/queued.ts'
 
 function queued(over: Partial<TaskCard> & { issue: string; kind: string }): TaskCard {
   return {
@@ -166,5 +167,22 @@ describe('what a Queued card says about whether it will come back', () => {
   it('says nothing about a card that is not queued', () => {
     const running = toCard(queued({ issue: '74', kind: 'bug', state: 'running' }))
     expect(queuedStanding(running, true, now)).toBeNull()
+  })
+})
+
+describe('runNowCaption', () => {
+  const none = { notOffered: null, paused: false, runnableAt: null, problem: null } as unknown as QueuedView
+  it('says what the click does under each hold, in holding’s order, and nothing when none holds', () => {
+    expect(runNowCaption({ ...none, notOffered: 'closed', paused: true, runnableAt: '2026-10-31T00:00:00Z' })).toBe(
+      'GitHub is not offering it, so a request now would match nothing',
+    )
+    expect(runNowCaption({ ...none, paused: true, runnableAt: '2026-10-31T00:00:00Z' })).toBe(
+      'the request waits until the conductor is resumed',
+    )
+    expect(runNowCaption({ ...none, runnableAt: '2026-10-31T00:00:00Z' })).toBe('skips the backoff')
+    expect(runNowCaption(none)).toBeNull()
+    expect(
+      runNowCaption({ ...none, problem: 'GitHub failed', runnableAt: '2026-10-31T00:00:00Z', paused: true }),
+    ).toBeNull()
   })
 })

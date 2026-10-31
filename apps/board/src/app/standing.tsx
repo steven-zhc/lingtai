@@ -18,7 +18,7 @@ import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 
 import type { RunProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
-import { holding, place, type QueuedView } from '@/lib/queued'
+import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { stateWord, type DiscussionView, type StandingView } from '@/lib/task'
@@ -679,7 +679,7 @@ export function Standing({
   // sentence and the so-what step back, and anything else this section holds
   // — a conflict's paths, an unknown ticket, a log — still draws.
   const quiet = waiting && advisedSurface
-  const soWhatText = soWhat(standing)
+  const soWhatText = standing.state === 'queued' && stopped !== null ? null : soWhat(standing)
 
   return (
     <TriagePicks
@@ -849,7 +849,9 @@ export function Standing({
 
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
-                {standing.state !== 'blocked' || !raw?.trim() ? (
+                {standing.state === 'queued' ? (
+                  <LastPass deciding={standing.deciding} attempts={standing.attempts} />
+                ) : standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason
                     raw={raw}
                     said={said}
@@ -1036,7 +1038,11 @@ export function Standing({
           jump (0028 §3). */}
           {acting && standing.state === 'queued' && queued !== null ? (
             <div className="btnrow smoves" data-rank="moves">
-              <RunNow project={project} issue={String(issue)} holding={stopped} />
+              <RunNow
+                project={project}
+                issue={String(issue)}
+                holding={queued === null ? null : runNowCaption(queued)}
+              />
               {/* Beside it, the opposite move. A queued item has exactly two
               things a person can say about it — *sooner* and *never* — and
               until `#151` the page offered only the first. */}
@@ -1181,7 +1187,7 @@ export function Coords({
           story on an item that has had three (#102). */}
       {standing.attempt !== null ? (
         <a className="sfrom sptr" href={`#attempt-${standing.attempt}`} title={standing.runId ?? undefined}>
-          from attempt {standing.attempt} of {standing.attempts} ↓
+          {standing.state === 'queued' ? 'after' : 'from'} attempt {standing.attempt} of {standing.attempts} ↓
         </a>
       ) : null}
     </span>
@@ -1302,6 +1308,35 @@ function Reason({
   }
 
   return <RawEvidence raw={raw} said={said} />
+}
+
+/**
+ * The queued page's refusal: the last pass's, whole, and named as such. The
+ * label drops "the last pass" when the refusal is an earlier attempt's.
+ */
+function LastPass({ deciding, attempts }: { deciding: StandingView['deciding']; attempts: number }) {
+  if (deciding === null) return null
+  const lead =
+    deciding.attempt === attempts ? `the last pass, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
+  const label = `${lead} · ${deciding.fromStep ? 'stopped at ' : ''}${deciding.source}`
+  if (deciding.evidence?.trim())
+    return (
+      <>
+        <RawEvidence raw={deciding.evidence} said={label} />
+        <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+          ↓
+        </a>
+      </>
+    )
+  return (
+    <p className="sevidence">
+      <span className="sstep">{label}</span>
+      <span className="sline">{deciding.line}</span>
+      <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+        ↓
+      </a>
+    </p>
+  )
 }
 
 /** Verbatim stopping evidence, as the record's Attempts tab shows it. */
