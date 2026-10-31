@@ -1,3 +1,4 @@
+import { inSpan } from '@lingtai/actions/spans'
 /**
  * Telling GitHub what the log now says about one issue.
  *
@@ -584,10 +585,26 @@ export async function tellGitHubAbout(options: {
     // closed and then labelled can come back open.
     const writes = d.actions.filter((a) => !('refs' in a))
     const sweeps = d.actions.filter((a) => 'refs' in a)
-    for (const action of [...writes, ...sweeps]) {
-      if ('close' in action) await tell({ kind: 'closed' })
-      else if ('labels' in action) await tell({ kind: 'labels', labels: action.labels })
-      else await sweepRefs({ store, github, ticketId, andTheBranch: action.branch })
-    }
+    // The `end` step's work as it runs (#791): `runStep` only resolves these, so
+    // the span that measures them is here, named by kind and never by content.
+    const ordered = [...writes, ...sweeps]
+    await inSpan('step end', {}, () =>
+      ordered.reduce<Promise<void>>(
+        (before, action, index) =>
+          before.then(() =>
+            inSpan(
+              `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
+              { 'lingtai.index': index },
+              () =>
+                'close' in action
+                  ? tell({ kind: 'closed' }).then(() => undefined)
+                  : 'labels' in action
+                    ? tell({ kind: 'labels', labels: action.labels }).then(() => undefined)
+                    : sweepRefs({ store, github, ticketId, andTheBranch: action.branch }),
+            ),
+          ),
+        Promise.resolve(),
+      ),
+    )
   }
 }

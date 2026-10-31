@@ -16,6 +16,9 @@ import { SpanStatusCode, context, trace } from '@opentelemetry/api'
  */
 export const SCOPE = 'lingtai-conductor'
 
+/** Annotate the current Effect span with this as `true` to mark it `ERROR`, with no message and no attribute. */
+export const FAILED = 'lingtai.failed'
+
 /**
  * Runs `body` as a span that is the active one inside it, so a span started in
  * it is its child. `failed` says whether a value the body *returned* is a

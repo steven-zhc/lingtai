@@ -6,12 +6,14 @@
  * `installTracing`, so the provider, the batch processor, the context manager and
  * the Effect tracer are the production ones.
  */
+import type { Envelope, ToAppend } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { installTracing, type Tracing } from '../src/telemetry.ts'
+import { tellGitHubAbout } from '../src/tell.ts'
 import {
   REVIEWED,
   fakeGitHub,
@@ -52,8 +54,20 @@ describe('with an endpoint', () => {
     context.disable()
   })
 
-  const pass = async (recipe: string, withRuntime = runtime) => {
+  const pass = async (recipe: string, withRuntime = runtime, refuseAppend = false) => {
     exporter.reset()
+    const inner = memoryStore()
+    const store: typeof inner = refuseAppend
+      ? {
+          ...inner,
+          append: (streamId: string, expected: number, events: readonly ToAppend[]) =>
+            events.some(
+              (e) => e.type === 'StepEnded' && (e.data as { outcome: { step: string } }).outcome.step === 'proposed',
+            )
+              ? Promise.reject(new Error('terminating connection /secret/path'))
+              : (inner.append(streamId, expected, events) as Promise<Envelope[]>),
+        }
+      : inner
     const result = await once(
       {
         project,
@@ -64,9 +78,9 @@ describe('with an endpoint', () => {
         prompt: 'fix {{issue}}',
         merge: false,
         home: '/tmp/fake-home',
-        store: memoryStore(),
+        store,
       },
-      fakePorts([], memoryStore()),
+      fakePorts([], store),
       tracing.layer,
     )
     await tracing.flush()
@@ -87,7 +101,6 @@ describe('with an endpoint', () => {
 
     const steps = spans.filter((s) => s.name.startsWith('step '))
     expect(steps.map((s) => s.name)).toContain('step claim')
-    expect(steps.map((s) => s.name)).toContain('step end')
     expect(steps.length).toBeGreaterThan(2)
     for (const s of steps) {
       expect(parentOf(s), s.name).toBe(idOf(run!))
@@ -120,6 +133,48 @@ describe('with an endpoint', () => {
     }
   })
 
+  it('a refused pass exports its run as ERROR, with no message', async () => {
+    const { result, spans } = await pass(REVIEWED, runtime, true)
+    expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
+    const run = spans.find((s) => s.name === 'conductor.run')!
+    expect(run.status.code).toBe(2)
+    expect(run.status.message).toBeUndefined()
+    expect(run.events).toEqual([])
+    expect(run.attributes).toEqual({ 'lingtai.ticket': 7 })
+  })
+
+  it('the end step is spanned where its actions run, one action span each, by kind', async () => {
+    exporter.reset()
+    const store = memoryStore()
+    const github = {
+      comment: async () => ({}),
+      editComment: async () => undefined,
+      setLabels: async () => undefined,
+      closeIssue: async () => undefined,
+      updateBody: async () => undefined,
+      deleteRef: async () => undefined,
+      listRefs: async () => [],
+    } as unknown as Parameters<typeof tellGitHubAbout>[0]['github']
+    await tellGitHubAbout({
+      store,
+      github,
+      ticketId: 'p#7',
+      appended: [
+        {
+          type: 'EndActionsResolved',
+          data: { actions: [{ labels: ['x'] }, { close: true }] },
+        } as unknown as ToAppend,
+      ],
+    })
+    await tracing.flush()
+    const spans = exporter.getFinishedSpans()
+    const end = spans.find((s) => s.name === 'step end')!
+    expect(end).toBeDefined()
+    const actions = spans.filter((s) => s.name.startsWith('action '))
+    expect(actions.map((s) => s.name)).toEqual(['action labels', 'action close'])
+    for (const a of actions) expect(parentOf(a)).toBe(idOf(end))
+  })
+
   it('a failing action exports ERROR with no message and no events', async () => {
     const { spans } = await pass(REVIEWED, refusingRuntime)
     const failed = spans.filter((s) => s.name === 'action agent' && s.status.code === 2)
@@ -131,7 +186,8 @@ describe('with an endpoint', () => {
   })
 
   it('a passing pass has no ERROR on its run', async () => {
-    const { spans } = await pass(REVIEWED, runtime)
+    const { result, spans } = await pass(REVIEWED, runtime)
+    expect(result.ok).not.toBe(false)
     expect(spans.find((s) => s.name === 'conductor.run')!.status.code).not.toBe(2)
   })
 })

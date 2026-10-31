@@ -1805,7 +1805,9 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
 
 /**
  * One step visit as a span (#791) — `step claim`, `step <name>` and `step end`
- * all come through here, so this is the one site. Its status is `ERROR` when the
+ * come through here, except that `end`'s span is made where its actions run
+ * (`tellGitHubAbout`, `tell.ts`) — here it would measure resolving them and
+ * not doing them. Its status is `ERROR` when the
  * step ended on anything but a pass, with no message; the round is the only
  * attribute. A routing arrival at `proposed` is built by `runPass` and never
  * reaches here, and no action runs there.
@@ -1817,6 +1819,7 @@ function runStep(
   reached: readonly StepReached[],
   reaching: Reaching,
 ): Promise<StepReached> {
+  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching)
   return inSpan(
     `step ${spec.step}`,
     { 'lingtai.round': reaching.context.round ?? 0 },

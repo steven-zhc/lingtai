@@ -39,5 +39,5 @@ export const tracedPorts: typeof PortsLive = Layer.suspend(() =>
 
 /** Bounded; a flush that times out is dropped and never holds an exit. */
 export function flushTracing(): Promise<void> {
-  return installed === undefined ? Promise.resolve() : installed.flush()
+  return installed === undefined ? Promise.resolve() : installed.flush().then(() => installed!.shutdown())
 }

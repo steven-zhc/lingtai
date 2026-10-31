@@ -1,4 +1,4 @@
-import { SCOPE } from '@lingtai/actions/spans'
+import { FAILED, SCOPE } from '@lingtai/actions/spans'
 import { machineOtlpEndpoint, type MachineFile } from '@lingtai/env'
 import { ROOT_CONTEXT, SpanStatusCode, context, trace, type Span as OtelSpan } from '@opentelemetry/api'
 import type { SpanExporter } from '@opentelemetry/sdk-trace-base'
@@ -79,6 +79,12 @@ class BridgedSpan implements Tracer.Span {
 
   attribute(key: string, value: unknown): void {
     this.attributes.set(key, value)
+    // Not an attribute: a pass that came back refused or failed is an Effect
+    // *success*, and the span would otherwise export as unset (#791).
+    if (key === FAILED) {
+      if (value === true) this.otel.setStatus({ code: SpanStatusCode.ERROR })
+      return
+    }
     if (ATTRIBUTES.has(key) && (typeof value === 'number' || typeof value === 'string')) {
       this.otel.setAttribute(key, value)
     }
@@ -105,6 +111,8 @@ export type Tracing = {
   readonly layer: Layer.Layer<never>
   /** Bounded, and a timeout is dropped: a pass never waits on export. */
   readonly flush: (ms?: number) => Promise<void>
+  /** Ends the processor's timers and the exporter's in-flight request; bounded, a refusal dropped. Once, at exit. */
+  readonly shutdown: (ms?: number) => Promise<void>
 }
 
 /** The SDK, loaded by these specifiers alone — production and the tests share them. */
@@ -115,6 +123,8 @@ export const loadSdk = () =>
     import('@opentelemetry/context-async-hooks'),
     import('@opentelemetry/resources'),
   ]).then(([base, http, hooks, resources]) => ({ base, http, hooks, resources }))
+
+const EXPORT_MS = 3000
 
 /** Bounded, and a timeout or a refusal is dropped. */
 const bounded = (flushing: () => Promise<void>, ms: number): Promise<void> =>
@@ -158,10 +168,21 @@ export function installTracing(
       // Given a resource, the provider does not fall back to the default one,
       // whose service.name is `unknown_service:<argv0>` — a path off this machine.
       resource: sdk.resources.resourceFromAttributes({ 'service.name': SCOPE }),
-      spanProcessors: [new sdk.base.BatchSpanProcessor(exporter ?? new sdk.http.OTLPTraceExporter({ url: endpoint }))],
+      // Both bounded to the flush's own budget, so a slow collector leaves no
+      // request or export timer holding the process past it.
+      spanProcessors: [
+        new sdk.base.BatchSpanProcessor(
+          exporter ?? new sdk.http.OTLPTraceExporter({ url: endpoint, timeoutMillis: EXPORT_MS }),
+          { exportTimeoutMillis: EXPORT_MS },
+        ),
+      ],
     })
     trace.setGlobalTracerProvider(provider)
     context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
-    return { layer: tracingLayer, flush: (ms = 3000) => bounded(() => provider.forceFlush(), ms) }
+    return {
+      layer: tracingLayer,
+      flush: (ms = EXPORT_MS) => bounded(() => provider.forceFlush(), ms),
+      shutdown: (ms = EXPORT_MS) => bounded(() => provider.shutdown(), ms),
+    }
   })
 }
