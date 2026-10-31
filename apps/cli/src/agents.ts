@@ -26,7 +26,7 @@ import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
 import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
 
-import { question, type QuestionWorld } from './question.ts'
+import { question, type Answered, type QuestionWorld } from './question.ts'
 import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from './runtimes.ts'
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
@@ -139,6 +139,44 @@ export interface AskAgentsAt {
  * naming it anyway — by flag or by hand at a terminal — is refused with the
  * same reason. Nothing signed in at all is refused before any question.
  */
+export const RUNTIME_DEFAULT = "the runtime's own default"
+export const ANOTHER = 'another — type its name'
+
+/**
+ * A model is a choice: the runtime's own default (written as no `model:`), the
+ * one the recipe already names, or another, which asks for its name. A flag
+ * answers as it is, `''` included, and never reaches the choice.
+ */
+async function askModel(
+  world: QuestionWorld,
+  q: {
+    name: string
+    flag: string
+    given: string | null
+    prompt: string
+    current: string | null
+    kept?: string | undefined
+  },
+): Promise<Answered> {
+  if (q.given !== null) return question(world, q)
+  const picked = await question(world, {
+    ...q,
+    offer: [RUNTIME_DEFAULT, ...(q.current === null ? [] : [q.current]), ANOTHER],
+    fallback: RUNTIME_DEFAULT,
+  })
+  if ('refused' in picked) return picked
+  if (picked.answer === RUNTIME_DEFAULT) return { answer: '' }
+  if (picked.answer !== ANOTHER) return picked
+  return question(world, {
+    name: q.name,
+    flag: q.flag,
+    given: null,
+    prompt: 'which model — its name',
+    validate: async (a) => (a === '' ? "a model needs a name — or choose the runtime's own default" : null),
+    kept: q.kept,
+  })
+}
+
 export async function askAgents(
   world: QuestionWorld,
   at: AskAgentsAt,
@@ -153,6 +191,7 @@ export async function askAgents(
   }
 
   const choiceList = signedInIds.join(', ')
+  const offeredRuntimes = RuntimeId.options.filter((id) => signedInIds.includes(id))
   const refuseUnlessOffered =
     (extra = '') =>
     async (answer: string): Promise<string | null> => {
@@ -180,6 +219,7 @@ export async function askAgents(
     flag: `--agent <${choiceList}>`,
     given: at.flags.agent ?? null,
     prompt: `which agent writes the change (${choiceList})`,
+    offer: offeredRuntimes,
     current: currentAgent,
     // The enum's own order, not the list's (#313, doc/design/398.md:43).
     detected: RuntimeId.options.find((id) => signedInIds.includes(id)) ?? null,
@@ -197,13 +237,12 @@ export async function askAgents(
       ? (implementAction.action['model'] as string)
       : null
 
-  const modelAnswer = await question(world, {
+  const modelAnswer = await askModel(world, {
     name: 'which model the writer runs on',
     flag: "--model <name>, or --model ''",
     given: at.flags.model ?? null,
-    prompt: "which model (empty for the runtime's own default)",
+    prompt: 'which model',
     current: currentModel,
-    fallback: '',
     kept: at.kept,
   })
   if ('refused' in modelAnswer) return modelAnswer
@@ -234,6 +273,7 @@ export async function askAgents(
     flag: `--reviewer <${choiceList}|none>`,
     given: at.flags.reviewer ?? null,
     prompt: `does a cold reviewer read it, and which agent (${choiceList}, or none)`,
+    offer: [...offeredRuntimes, 'none'],
     current: currentReviewer,
     detected: defaultReviewer,
     validate: async (answer) => (answer === 'none' ? null : refuseUnlessOffered(', or none')(answer)),
@@ -276,13 +316,12 @@ export async function askAgents(
       reviewAction && reviewer === currentReviewer && typeof reviewAction.action['model'] === 'string'
         ? (reviewAction.action['model'] as string)
         : null
-    const reviewerModelAnswer = await question(world, {
+    const reviewerModelAnswer = await askModel(world, {
       name: "the reviewer's model",
       flag: "--reviewer-model <name>, or --reviewer-model ''",
       given: at.flags.reviewerModel ?? null,
-      prompt: "on which model (empty for the runtime's own default)",
+      prompt: 'on which model',
       current: currentReviewerModel,
-      fallback: '',
       kept: at.kept,
     })
     if ('refused' in reviewerModelAnswer) return reviewerModelAnswer

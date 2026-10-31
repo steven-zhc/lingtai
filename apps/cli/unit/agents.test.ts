@@ -6,7 +6,7 @@
 import { type RecipeFiles, recipePath, resolveLocalRecipe, setRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { askAgents } from '../src/agents.ts'
+import { ANOTHER, askAgents, RUNTIME_DEFAULT } from '../src/agents.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'
 
@@ -68,6 +68,62 @@ function mapFiles(initial: Record<string, string> = {}): RecordingFiles {
     },
   }
 }
+
+describe('askAgents at a terminal that draws selects', () => {
+  const WITH_MODEL = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: ''\n`
+  const both = [runtime('claude-code'), runtime('codex')]
+
+  it('offers a list at the writer, reviewer and both model questions', async () => {
+    const shapes: (readonly string[] | undefined)[] = []
+    const { world } = fakeWorld(['', '', '', ''])
+    const ask = world.ask
+    world.ask = async (prompt, shape) => {
+      shapes.push(shape?.choices)
+      return ask(prompt, shape)
+    }
+    const result = await askAgents(world, {
+      project: 'app',
+      runtimes: both,
+      flags: {},
+      home: HOME,
+      files: mapFiles({ [PATH]: FIXTURE }),
+    })
+    expect('refused' in result).toBe(false)
+    expect(shapes).toEqual([
+      ['claude-code', 'codex'],
+      [RUNTIME_DEFAULT, ANOTHER],
+      ['claude-code', 'codex', 'none'],
+      [RUNTIME_DEFAULT, ANOTHER],
+    ])
+  })
+
+  it("the runtime's own default writes no model, though the recipe names one", async () => {
+    const { world } = fakeWorld(['', RUNTIME_DEFAULT, '', ''])
+    const result = await askAgents(world, {
+      project: 'app',
+      runtimes: both,
+      flags: {},
+      home: HOME,
+      files: mapFiles({ [PATH]: WITH_MODEL }),
+    })
+    if ('refused' in result) throw new Error(result.refused)
+    expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
+  })
+
+  it('another asks for a name and writes it', async () => {
+    const { world, asked } = fakeWorld(['', ANOTHER, 'haiku', '', ''])
+    const result = await askAgents(world, {
+      project: 'app',
+      runtimes: both,
+      flags: {},
+      home: HOME,
+      files: mapFiles({ [PATH]: WITH_MODEL }),
+    })
+    if ('refused' in result) throw new Error(result.refused)
+    expect(asked.some((p) => p.includes('which model — its name'))).toBe(true)
+    expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: 'haiku' })
+  })
+})
 
 describe('askAgents', () => {
   describe('only signed-in runtimes are offered', () => {

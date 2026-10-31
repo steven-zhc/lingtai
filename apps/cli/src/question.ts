@@ -51,6 +51,8 @@ export interface Question {
   show?: (value: string) => string
   /** When given, an answer outside this list is refused and asked again. */
   choices?: readonly string[]
+  /** Drawn as a select at a terminal, and never checked: a flag or a typed answer outside it still reaches `validate`. */
+  offer?: readonly string[]
   /** Null accepts the answer; a string is why not, logged, and asked again at a terminal. */
   validate?: (answer: string) => Promise<string | null>
   /**
@@ -115,7 +117,7 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
   const prompt = paint.signal(`${q.prompt}${bracket}: `)
 
   for (;;) {
-    const typed = await world.ask(prompt, { message: q.prompt, defaultValue, choices: q.choices })
+    const typed = await world.ask(prompt, { message: q.prompt, defaultValue, choices: q.choices ?? q.offer })
     if (typed === null)
       return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
     const answer = typed.trim() === '' ? defaultValue : typed.trim()
