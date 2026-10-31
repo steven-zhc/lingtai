@@ -291,6 +291,10 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(resolved.env.plantAt).toBe('.env.local')
     expect(resolved.source.tickets).toBe('github')
     expect(resolved.runtime.agent).toBe('claude-code')
+    expect(resolved.steps.end).toMatchObject([
+      { name: 'close the ticket', when: 'landed', close: true },
+      { name: 'close the ticket a person ended', when: 'closed', close: true },
+    ])
 
     // `steps.proposed` and `runtime.limits` are not yet decided at the point
     // this write happens — `askLanding`/`askLimits` have not asked — so they
@@ -321,6 +325,30 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(doc.getIn(['repo', 'submodules'])).toBeUndefined()
     expect(doc.getIn(['env', 'deny'])).toBeUndefined()
     expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
+  })
+
+  it('leaves an existing recipe byte for byte as it was, with its own empty end:, and seeds no steps.end (#749)', async () => {
+    delete process.env['LINGTAI_GITHUB_APP_ID']
+    delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
+    const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
+      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+    })
+    counted.deps.ask = async () => ''
+    const path = recipePath('nextloom-ai-admin')
+    // First run creates it; replace its end: with an empty one and re-run.
+    await askBeforeGithubAdd('steven-zhc/nextloom-ai-admin', { base: 'main', install: 'none' }, counted.deps, ['none'])
+    const created = counted.written[path]!
+    expect(created).toContain('close the ticket')
+    const emptied = created.replace(/end:[\s\S]*?(?=\n\S|$)/, 'end: []')
+    expect(emptied).not.toBe(created)
+    counted.written[path] = emptied
+
+    await askBeforeGithubAdd('steven-zhc/nextloom-ai-admin', { base: 'main', install: 'none' }, counted.deps, ['none'])
+
+    // The re-run may still write its own answers; the person's `end: []` is not touched.
+    const rerun = counted.written[path]!
+    expect(rerun).toContain('end: []')
+    expect(rerun).not.toContain('close the ticket')
   })
 
   it('refuses by name, before asking a runtime whether it is signed in, when there is no --base and no default branch to seed an absent file (#432)', async () => {

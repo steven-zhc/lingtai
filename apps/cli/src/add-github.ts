@@ -335,6 +335,13 @@ export async function askBeforeGithubAdd(
     seeds = [
       { path: ['repo', 'base'], value: seedBase },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      {
+        path: ['steps', 'end'],
+        value: [
+          { name: 'close the ticket', when: 'landed', close: true },
+          { name: 'close the ticket a person ended', when: 'closed', close: true },
+        ],
+      },
     ]
   } else {
     // A file that `extends:` a preset and writes no `steps:` of its own
