@@ -235,8 +235,6 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 ## Not built yet
 
-- **`doctor`'s `NEXT` is still `lingtai doctor --verbose`** whatever its first
-  block says.
 - **`init` and `add` still print their questions' headings and the old
   sections**, close on one `next:` line, and `add` on a GitHub repository still
   prints every resolved setting after the summary.

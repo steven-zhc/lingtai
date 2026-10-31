@@ -3373,8 +3373,9 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
     if (notes.length > 0) {
       lines.push('', ...notes.map((r) => `${labelled(badge('muted', 'note'), 'note')} ${r.detail.split('\n')[0]}`))
     }
-    if (next && report.warned + report.failed > 0) {
-      lines.push('', `${labelled(badge('next', 'next'), 'next')} ${paint.accent('lingtai doctor --verbose')}`)
+    const nextLine = nextOf(report.results)
+    if (next && nextLine !== undefined) {
+      lines.push('', `${labelled(badge('next', 'next'), 'next')} ${paint.accent(nextLine)}`)
     }
     return lines
   }
@@ -3434,6 +3435,20 @@ interface ToFix {
 export function toFixSummary(report: DoctorReport): { count: number; failed: boolean } {
   const todo = toFix(report.results)
   return { count: todo.length, failed: todo.some((t) => t.status === 'fail') }
+}
+
+/**
+ * What the short view closes on: the first line of the first drawn block that has a fix, else
+ * `lingtai doctor --verbose`; `undefined` when there is nothing to fix and so no closing line.
+ */
+export function nextOf(results: readonly CheckResult[]): string | undefined {
+  const todo = toFix(results)
+  if (todo.length === 0) return undefined
+  for (const t of todo) {
+    const first = t.fix?.trim().split('\n')[0]?.trim()
+    if (first) return first
+  }
+  return 'lingtai doctor --verbose'
 }
 
 /** What the short view draws: `fail`s then `warn`s, each in area order, rows with an identical `fix` drawn once. */
