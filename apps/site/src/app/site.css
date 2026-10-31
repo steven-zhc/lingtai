@@ -49,7 +49,21 @@
   }
 }
 
-body { font-size: 15px; line-height: 1.6; }
+/* The footer sits at the bottom of the window on a page shorter than it.
+   Every page is `<Bar />`, `<main>`, `<Foot />` as the direct children of
+   `body`; a new page that wraps them in a `div` loses this without an error.
+   `svh` and not `vh`: on mobile Safari `100vh` is the height with the toolbar
+   hidden, so a short page would scroll by the toolbar's height. Do not set
+   `overflow` on `body` or `main` — the sticky spines would stop sticking. */
+body {
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+main { flex: 1 0 auto; }
 
 .wrap { max-width: 76rem; margin: 0 auto; padding: 0 24px; }
 .narrow { max-width: var(--measure); }
