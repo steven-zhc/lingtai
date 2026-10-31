@@ -104,6 +104,7 @@ import {
   type SpendCurrency,
 } from './spend.ts'
 import { isSplitRunning, splitInstance } from './split-instance.ts'
+import { timed } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
 
 export interface Finding {
@@ -1652,7 +1653,9 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   // number is not a GitHub issue number — it can collide with an unrelated
   // issue on the same repository (`recipe.ts`, `TicketSource`'s doc comment),
   // so the reader never asks GitHub about it (#384).
-  const read = await readProjectTicket(state, Number(issue))
+  const read = await timed('github.issue', () => readProjectTicket(state, Number(issue)), {
+    failed: (r) => !r.ok,
+  })
   if (read.ok) {
     const live = read.ticket
     return {
@@ -1756,7 +1759,7 @@ async function recipesFor(project: string, runs: readonly RunView[]): Promise<Ma
     const client = await githubClientFor(state)
     let head: ReturnType<typeof currentRecipe> | null = null
     const atHead = () => (head ??= currentRecipe(state))
-    recipes = await Promise.all(runs.map((r) => recipeOfRun(r, client, atHead)))
+    recipes = await timed('recipe.run', () => Promise.all(runs.map((r) => recipeOfRun(r, client, atHead))))
   } catch (err) {
     const why = `no recipe could be read for ${project}: ${(err as Error).message}`
     recipes = runs.map(() => ({ of: 'none', why }))
@@ -1824,7 +1827,7 @@ export async function loadCurrentTriageStatus(
 }
 
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
-  const own = await eventStore.read(taskId)
+  const own = await timed('events.task', () => eventStore.read(taskId))
 
   // Every claim, and not the last one. A task can be claimed several times —
   // `ticket-lingtai-87` three, `ticket-lingtai-89` twice — and each claim opens a stream
@@ -1845,11 +1848,15 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // task page and the board reading two different currencies of the same
   // money (`#498`'s review).
   const [streams, ticket, control, spendFold, lane] = await Promise.all([
-    Promise.all(claims.map((c) => eventStore.read(c.runId))),
+    claims.length > 0
+      ? timed('events.run', () => Promise.all(claims.map((c) => eventStore.read(c.runId))), {
+          desc: String(claims.length),
+        })
+      : Promise.resolve([] as Envelope[][]),
     loadTicket(taskId, own),
-    eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
-    currentSpend({ ticket: taskId }),
-    readTasks({}).catch(emptyIfUnbuilt),
+    timed('events.control', () => eventStore.read(CONTROL_STREAM)).catch(() => [] as Envelope[]),
+    timed('spend.read', () => currentSpend({ ticket: taskId })),
+    timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])
   const spend = spendFold.rows
 
@@ -1862,14 +1869,22 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   const conductor = reduceControl(control)
   const chats = chatIdsFor(conductor.discussions, own, taskId)
-  const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))))
+  const chatStreams =
+    chats.length > 0
+      ? await timed('events.chat', () => Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId)))), {
+          desc: String(chats.length),
+        })
+      : []
   const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
   const foldedStanding = standingOf(own, folded)
   const keptAt = foldedStanding.unpushed?.keptAt
   const unpushedMirror =
     keptAt?._tag === 'Mirror' && ticket !== null
-      ? { path: mirrorPathFor(ticket.project), sha: await refSha({ project: ticket.project, ref: keptAt.ref }) }
+      ? {
+          path: mirrorPathFor(ticket.project),
+          sha: await timed('mirror.ref', () => refSha({ project: ticket.project, ref: keptAt.ref })),
+        }
       : null
   let triage: Awaited<ReturnType<typeof loadCurrentTriageStatus>> = null
   if (
@@ -1878,7 +1893,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     foldedStanding.reason !== null &&
     ticket !== null
   ) {
-    triage = await loadCurrentTriageStatus(taskId, ticket.project, foldedStanding)
+    triage = await timed('triage.read', () => loadCurrentTriageStatus(taskId, ticket.project, foldedStanding))
 
     // A crash that stands in for a wait is advised by the triage the person saw
     // for that wait, which the projected card does not carry (#654).
@@ -1898,7 +1913,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     status?._tag === 'Done' && triage?.headSha !== null && triage?.headSha !== undefined && ticket !== null
       ? triageHeadLine(
           triage.headSha,
-          await mirrorBranchSha({ project: ticket.project, ref: `refs/heads/${agentBranchOf(ticket.ref)}` }),
+          await timed('mirror.ref', () =>
+            mirrorBranchSha({ project: ticket.project, ref: `refs/heads/${agentBranchOf(ticket.ref)}` }),
+          ),
         )
       : null
   const standing: StandingView = { ...foldedStanding, triageStatus: status, triageHeadLine: triageHeadLineText }
@@ -1923,7 +1940,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
               ? (await projectClient(state)).client
               : null
         if (client === null) throw new Error('no GitHub App configured')
-        const remote = await client.refSha(`heads/${saved.ref}`)
+        const remote = await timed('github.ref', () => client.refSha(`heads/${saved.ref}`))
         standing.fixWork =
           remote === saved.head
             ? saved
@@ -1972,12 +1989,16 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   //
   // `recipes` wherever there is an attempt to hang an action's command off.
   const [outgoing, queued, planAndLimits, recipes] = await Promise.all([
-    standing.state === 'blocked' || standing.state === 'queued' ? outgoingFor({ own, streams, ticket }) : null,
+    standing.state === 'blocked' || standing.state === 'queued'
+      ? timed('next.outgoing', () => outgoingFor({ own, streams, ticket }))
+      : null,
     standing.state === 'queued' && ticket !== null
-      ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
+      ? timed('next.queued', () =>
+          queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused }),
+        )
       : null,
     (standing.state === 'running' || standing.state === 'blocked') && ticket !== null
-      ? planFor(ticket.project)
+      ? timed('next.plan', () => planFor(ticket.project))
       : undefined,
     ticket !== null ? recipesFor(ticket.project, folded) : new Map<string, RunRecipe>(),
   ])

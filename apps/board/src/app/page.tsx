@@ -18,6 +18,8 @@ import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
+import { measure, timed } from '@/lib/timing'
+import { TimingMeta } from '@/lib/timing-meta'
 
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
@@ -597,8 +599,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control] =
-    await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()])
+  const [[{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control], timings] =
+    await measure(
+      () =>
+        Promise.all([
+          loadBoard(only),
+          timed('projects.read', () => loadProjects()).catch(() => []),
+          timed('events.control', () => readControl()),
+        ]),
+      { label: '/' },
+    )
   const today = await readDayReading()
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
@@ -631,6 +641,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
   return (
     <main>
+      <TimingMeta timings={timings} />
       <div className="bar">
         {/* An empty span carrying a background, not an `<img>`: which file the
             mark is comes from `--mark`, so it follows the palette instead of

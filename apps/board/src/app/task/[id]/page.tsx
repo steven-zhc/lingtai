@@ -10,6 +10,8 @@ import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { billText, spendChip } from '@/lib/spend'
 import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
+import { measure } from '@/lib/timing'
+import { TimingMeta } from '@/lib/timing-meta'
 
 import { Evidence, RunDiff } from '../../evidence.tsx'
 import { HistoryRow } from '../../history-row.tsx'
@@ -897,10 +899,11 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
 
 export default async function TaskPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const task = await loadTask(decodeURIComponent(id))
+  const [task, timings] = await measure(() => loadTask(decodeURIComponent(id)), { label: '/task' })
   if (!task) notFound()
   return (
     <>
+      <TimingMeta timings={timings} />
       {/* Subscribed to the log, so an append re-renders this page and not only
           the board. Without it a question, the trace's sentence and the answer
           each waited for a reload, and every comment that said *every append
