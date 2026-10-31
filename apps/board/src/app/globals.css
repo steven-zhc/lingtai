@@ -1821,8 +1821,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   overflow-wrap: anywhere;
 }
 /* Raw, and bounded. What is here is what will be sent, byte for byte — no
-   markdown, no collapsed whitespace — and it scrolls rather than hides, because
-   a document behind a disclosure is one somebody approves without opening. */
+   markdown, no collapsed whitespace — and it scrolls when open. Blocked pages
+   leave it open (Send approves this document); queued and approved fold it. */
 .outtext {
   margin: 0;
   max-height: 17rem;

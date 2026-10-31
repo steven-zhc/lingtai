@@ -423,6 +423,14 @@ describe('a blocked task', () => {
     expect(arrangement(page(blocked()))).toMatchSnapshot()
   })
 
+  it('leaves the outgoing prompt open on a blocked page', () => {
+    const html = page(blocked())
+    expect(html).toContain('class="outtext"')
+    // Another disclosure on the page is not the prompt's; the prompt's would
+    // be the `<summary>` that carries its size.
+    expect(html).not.toMatch(/<summary[^>]*>prompt · /)
+  })
+
   it('puts Discussion between the reason and the moves on a blocked page', () => {
     const html = page(blocked())
     const at = (rank: string) => html.indexOf(`data-rank="${rank}"`)

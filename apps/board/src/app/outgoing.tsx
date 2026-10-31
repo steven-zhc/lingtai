@@ -54,6 +54,7 @@ export function Outgoing({
   taskId,
   outgoing,
   sendable = false,
+  folded = false,
 }: {
   taskId: string
   outgoing: OutgoingView
@@ -66,7 +67,15 @@ export function Outgoing({
    * end `#111` is about one step further in.
    */
   sendable?: boolean
+  /**
+   * Whether the prompt text sits behind a closed disclosure, with its size in
+   * the summary. A queued or approved page folds it: the opening above and the
+   * ticket record already say what it says (0118 §2). A blocked page does not —
+   * Send is the move there, and the person is approving this document.
+   */
+  folded?: boolean
 }) {
+  const [open, setOpen] = useState(!folded)
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -129,9 +138,11 @@ export function Outgoing({
         {/* How long the edit lasts, on the box that makes it. The next claim
             consumes it, whoever starts it. */}
         <span className="outonly">attempt {outgoing.attempt} only</span>
-        <span className="outfact" title={outgoing.version}>
-          {outgoing.text.length} bytes
-        </span>
+        {folded ? null : (
+          <span className="outfact" title={outgoing.version}>
+            {outgoing.text.length} bytes
+          </span>
+        )}
       </p>
 
       {/* The version names the edit, and the page shows the name. Two runs that
@@ -140,11 +151,19 @@ export function Outgoing({
           rather than only in the payload of a history row. */}
       <p className="outver">{outgoing.version}</p>
 
-      {/* Bounded and scrollable rather than collapsed. A prompt is six thousand
-          bytes and a page that opens three screens tall is its own kind of
-          unreadable — but a document behind a disclosure is one somebody
-          approves without opening, which is what this box exists to stop. */}
-      <pre className="outtext">{outgoing.text}</pre>
+      {/* Bounded and scrollable. Open where Send is the move (blocked): a
+          document behind a disclosure is one somebody approves without opening.
+          Folded where the opening above and the ticket record already say it
+          (queued, approved — 0118 §2), with its size in the summary. Edit is
+          outside the fold and opens it. */}
+      {folded ? (
+        <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+          <summary title={outgoing.version}>prompt · {outgoing.text.length} bytes</summary>
+          <pre className="outtext">{outgoing.text}</pre>
+        </details>
+      ) : (
+        <pre className="outtext">{outgoing.text}</pre>
+      )}
 
       {outgoing.edit !== null ? (
         <p className="outedit">
@@ -155,7 +174,14 @@ export function Outgoing({
 
       {draft === null ? (
         <div className="btnrow">
-          <button className="btn" disabled={busy} onClick={() => setDraft(outgoing.edit?.text ?? '')}>
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              setOpen(true)
+              setDraft(outgoing.edit?.text ?? '')
+            }}
+          >
             {outgoing.edit === null ? 'Edit' : 'Change the edit'}
           </button>
           {outgoing.edit !== null ? (

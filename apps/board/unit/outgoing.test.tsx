@@ -52,7 +52,7 @@ describe('what an edit did to the prompt', () => {
 
 describe('the box, rendered', () => {
   /**
-   * The document itself, not a summary of it and not behind a disclosure. The
+   * The document itself, not a summary of it, and open when not `folded`. The
    * whole complaint is that the prompt was composed by the system, never shown,
    * and could not be changed.
    */
@@ -119,5 +119,41 @@ describe('the box, rendered', () => {
     expect(html).toContain('the recipe could not be read: bad kinds')
     expect(html).not.toContain('attempt 3 only')
     expect(html).not.toContain('<pre')
+  })
+})
+
+describe('folded', () => {
+  /**
+   * Queued and approved pages fold the prompt (0118 §2). That Edit opens the
+   * fold is client state, which `renderToStaticMarkup` cannot click: unchecked
+   * at unit level.
+   */
+  it('closes the text behind a summary carrying its size, with Edit outside', () => {
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} folded />)
+
+    expect(html).toContain('<details')
+    expect(html).not.toContain('<details open')
+    const summary = html.slice(html.indexOf('<summary'), html.indexOf('</summary>'))
+    expect(summary).toContain(`${VIEW.text.length} bytes`)
+    expect(html.indexOf('Edit')).toBeGreaterThan(html.indexOf('</details>'))
+    // Once, not in the head as well.
+    expect(html.split(`${VIEW.text.length} bytes`)).toHaveLength(2)
+  })
+
+  it('keeps the attempt chip and the version outside the fold', () => {
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} folded />)
+    const before = html.slice(0, html.indexOf('<details'))
+
+    expect(before).toContain('attempt 3 only')
+    expect(before).toContain(`<p class="outver">${VIEW.version}</p>`)
+  })
+
+  it('is unchanged when the prompt cannot be composed', () => {
+    const html = renderToStaticMarkup(
+      <Outgoing taskId="t" outgoing={{ ...VIEW, text: '', problem: 'bad kinds' }} folded />,
+    )
+
+    expect(html).toContain('bad kinds')
+    expect(html).not.toContain('<details')
   })
 })
