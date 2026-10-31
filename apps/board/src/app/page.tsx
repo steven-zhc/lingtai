@@ -599,17 +599,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [[{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control], timings] =
-    await measure(
-      () =>
-        Promise.all([
-          loadBoard(only),
-          timed('projects.read', () => loadProjects()).catch(() => []),
-          timed('events.control', () => readControl()),
-        ]),
-      { label: '/' },
-    )
-  const today = await readDayReading()
+  // `today` follows `loadBoard` and is not in the `Promise.all`: `loadBoard`'s
+  // `currentSpend` folds the spend projection to the head, and `readDayReading`
+  // reads that projection without refreshing it, so run beside it the day's
+  // total could be read before today's `RunSpent` events were projected.
+  const [
+    [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control, today],
+    timings,
+  ] = await measure(
+    async () => {
+      const [board, projects, control] = await Promise.all([
+        loadBoard(only),
+        timed('projects.read', () => loadProjects()).catch(() => []),
+        timed('events.control', () => readControl()),
+      ])
+      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' })
+      return [board, projects, control, day] as const
+    },
+    { label: '/' },
+  )
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // folded cleanly — a chip is not free, and this is the ordinary case — and
