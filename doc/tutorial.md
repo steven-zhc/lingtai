@@ -10,8 +10,10 @@ another Git project with its own install and build commands.
 | For            | Have ready                                                                                                                                                                             | Why                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | Lingtai        | Git; Claude Code installed and signed in                                                                                                                                              | Lingtai creates worktrees and uses Claude Code in this tutorial.  |
-| Chapter Garden | Node.js and npm | You will build the site and let Lingtai merge into a repository on this machine. |
+| Chapter Garden | Node.js 26.13.0 and npm | You will build the site and let Lingtai merge into a repository on this machine. |
 | Part 2 (GitHub) | A fork of Chapter Garden that you own, and permission to create and install a GitHub App on your account or organisation | Each Lingtai installation uses an App of its own; see [GitHub](github.md). |
+
+On 2026-10-29, with v0.10.0 and Claude Code, Part 1 took 13 minutes, 2 of them machine time, and cost $0.79; Codex reports no cost.
 
 Everything else Lingtai needs, and when, is on [requirements](requirements.md).
 
@@ -96,6 +98,7 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | `--reviewer claude-code`        | Uses the same account for the cold review.                         |
 | `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
 | `--build ...`                   | Runs the site's checks and build before review.                    |
+| `--check-build yes`             | Tries the install and build once during setup; Step 1 leaves it off. |
 | `--land hold`                   | Stops for your approval before merging.                            |
 | `--defaults`                    | Accepts the remaining setup defaults.                              |
 
@@ -203,11 +206,15 @@ This ticket asks for a mistake on purpose, so you can watch a check catch it. Wi
 Add the next chapter to <a different story title>
 labels: feature
 
-Write one new chapter that continues the story. In its front matter write
-order as a quoted string, for example order: "2".
-Do not run npm run check or npm run build yourself; Lingtai runs them.
-If Lingtai reports that a check refused this change, fix what the check
-names. The check wins over this ticket.
+This ticket demonstrates Lingtai's checks. Write one new chapter that
+continues the story, and in its front matter write order, the new
+chapter's number, as a quoted string (order: "2" for a second chapter),
+even though the schema wants a number: the point is to watch Lingtai's
+build refuse it. Do not run npm run check or npm run build, and do not
+correct the type before Lingtai's check has refused it. When the refusal
+comes back, fix what it names.
+Done when the new chapter's order is a number, not a string, after the
+refusal is fixed.
 ```
 
 Chapter Garden requires `order` to be a number, so the first build is refused. Lingtai buys one fix round inside the same attempt and sends the refusal back to the agent. On the ticket's task page:
@@ -216,7 +223,7 @@ Chapter Garden requires `order` to be a number, so the first build is refused. L
 - **Attempts**: turns, duration and cost.
 - **Run log**: inside the attempt row, or `lingtai attach <runId>` with the run id printed under it.
 
-Read all three **before** you press Approve: a run's log is deleted when it lands. Then approve as in Step 4.
+Read all three **before** you press Approve: a run's log is deleted when it lands. Then approve as in Step 4. If the review still refuses, approving asks for a reason: `lingtai approve chapter-garden --issue <ticket-number> --note "<why>"`.
 
 ## Part 2 — Move the project to GitHub
 
