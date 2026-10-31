@@ -18,11 +18,13 @@
  */
 import { spawnSync } from 'node:child_process'
 
-import { boardPort } from '@lingtai/env'
+import { boardPort, machineOtlpEndpoint } from '@lingtai/env'
 
 let port: number
 try {
   port = boardPort()
+  // Refused here, naming the key, rather than at the first render (#775).
+  machineOtlpEndpoint()
 } catch (err) {
   console.error((err as Error).message)
   process.exit(1)

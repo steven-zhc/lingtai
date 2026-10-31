@@ -74,6 +74,14 @@ board:
   # ephemeral ports.
   port: 17820
 
+# --- telemetry --------------------------------------------------------------
+# Absent by default, and nothing leaves the machine without it.
+# telemetry:
+#   # The full OTLP/HTTP traces URL, `/v1/traces` included — nothing is appended.
+#   # The board exports its own timed reads (scope `lingtai-board`) there and
+#   # nothing else. Read once at start: a change is a board restart.
+#   otlp_endpoint: http://localhost:4318/v1/traces
+
 # --- spend ------------------------------------------------------------------
 limits:
   # Dollars per local calendar day, for the whole installation (0122 §5). When
