@@ -72,6 +72,7 @@ import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-st
 import { Effect, Either } from 'effect'
 
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
+import { landingSubject } from './landing-subject.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -574,7 +575,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // `--no-ff` is why `git log --first-parent <base>` reads one line per
       // landing, whether or not the base moved.
       const mergedIn = yield* Effect.either(
-        at(['merge', '--no-ff', '-m', `Merge branch '${options.branch}' into HEAD`, laneBranch], cwd),
+        at(['merge', '--no-ff', '-m', landingSubject(options.branch), laneBranch], cwd),
       )
       if (Either.isLeft(mergedIn)) {
         // `-z`: git's own quoting of a path with a non-ASCII, backslash,
