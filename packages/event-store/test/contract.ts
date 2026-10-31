@@ -149,6 +149,40 @@ export function describeEventStoreContract(
       expect(back.every((e) => e.streamId === mine)).toBe(true)
     })
 
+    describe('readTypes', () => {
+      const resumed = (by: string) => ({ type: 'ConductorResumed' as const, actor: 'conductor', data: { by } })
+      const types = ['ConductorResumed'] as const
+
+      it('is the same events read() gives, filtered: only the asked types, in version order, versions kept', async () => {
+        const s = await store()
+        const mine = freshStream()
+        const other = freshStream()
+        await s.append(mine, 0, [claimed('pass-1'), resumed('a'), claimed('pass-2'), claimed('pass-3'), resumed('b')])
+        await s.append(other, 0, [resumed('c'), claimed('pass-4')])
+
+        const typed = await s.readTypes(mine, types)
+
+        expect(typed.map((e) => e.version)).toEqual([2, 5])
+        expect(typed).toEqual((await s.read(mine)).filter((e) => e.type === 'ConductorResumed'))
+      })
+
+      it('reads from a version, inclusive', async () => {
+        const s = await store()
+        const id = freshStream()
+        await s.append(id, 0, [resumed('a'), claimed('pass-1'), resumed('b'), resumed('c')])
+
+        expect((await s.readTypes(id, types, 3)).map((e) => e.version)).toEqual([3, 4])
+      })
+
+      it('returns nothing for an empty type list', async () => {
+        const s = await store()
+        const id = freshStream()
+        await s.append(id, 0, [resumed('a')])
+
+        expect(await s.readTypes(id, [])).toEqual([])
+      })
+    })
+
     it('reads from a version, inclusive', async () => {
       const s = await store()
       const id = freshStream()

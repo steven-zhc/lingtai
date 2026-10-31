@@ -12,6 +12,7 @@ import {
   emptyTicket,
   reduceControl,
   splitProgressOf,
+  CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
   isTicketStream,
   parseTicketStream,
@@ -1859,8 +1860,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // database reads and the other is two calls to GitHub, and the page waits for
   // the slower of the two instead of for both.
   //
-  // The control stream is read whole, which is cheap for the reason
-  // `readControl` gives: it is a handful of events, not a history. It is here
+  // The control stream is read for the seven types the fold handles only: it
+  // also holds a `Reconciled` per daemon start, 22 KB each and never read here
+  // (#796). It is here
   // because a discussion that has not been concluded exists only as a request
   // on it — the work item learns about the conversation when it ends (0033 §6).
   // `spend` beside the rest, for the same reason: this ticket's whole bill,
@@ -1875,7 +1877,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
         })
       : Promise.resolve([] as Envelope[][]),
     loadTicket(taskId, own),
-    timed('events.control', () => eventStore.read(CONTROL_STREAM)).catch(() => [] as Envelope[]),
+    timed('events.control', () => eventStore.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)).catch(
+      () => [] as Envelope[],
+    ),
     timed('spend.read', () => currentSpend({ ticket: taskId })),
     timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])

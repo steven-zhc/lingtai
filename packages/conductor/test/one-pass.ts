@@ -116,6 +116,9 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
     async read(streamId: string, fromVersion = 1) {
       return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion)
     },
+    async readTypes(streamId: string, types: readonly string[], fromVersion = 1) {
+      return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion && types.includes(e.type))
+    },
     async readAll() {
       return []
     },

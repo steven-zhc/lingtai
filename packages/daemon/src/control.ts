@@ -1,5 +1,12 @@
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { CONTROL_STREAM, type ControlState, type ShutdownRequest, parsePayload, reduceControl } from '@lingtai/domain'
+import {
+  CONTROL_FOLD_TYPES,
+  CONTROL_STREAM,
+  type ControlState,
+  type ShutdownRequest,
+  parsePayload,
+  reduceControl,
+} from '@lingtai/domain'
 /**
  * Telling the conductor what to do, and knowing whether it is listening.
  *
@@ -114,7 +121,7 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * always done.
  */
 export async function readControl(store: EventStore = eventStore, since = 0): Promise<ControlState> {
-  const events = await store.read(CONTROL_STREAM)
+  const events = await store.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)
   const scoped = reduceControl(since <= 0 ? events : events.filter((e) => e.version > since))
   if (scoped.paused) return scoped
   const whole = reduceControl(events)
