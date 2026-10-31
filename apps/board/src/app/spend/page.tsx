@@ -42,14 +42,17 @@ export const dynamic = 'force-dynamic'
 
 export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
+  // Sequential: `loadBoard`'s `currentSpend` brings the spend projection to the
+  // head and `readDayReading` reads it without doing so, so the day's total
+  // must be read after that refresh and not beside it.
   const [[board, today], timings] = await measure(
-    () =>
-      Promise.all([
-        timed('board.load', () => loadBoard(only)),
-        timed('spend.day', () => readDayReading({ fetchedNote: true }), {
-          failed: (r) => r.short === 'today unreadable',
-        }),
-      ]),
+    async () => {
+      const board = await timed('board.load', () => loadBoard(only))
+      const today = await timed('spend.day', () => readDayReading({ fetchedNote: true }), {
+        failed: (r) => r.short === 'today unreadable',
+      })
+      return [board, today] as const
+    },
     { label: '/spend' },
   )
   const { limits } = board

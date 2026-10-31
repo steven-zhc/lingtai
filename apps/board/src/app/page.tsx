@@ -599,17 +599,23 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
+  // `today` follows `loadBoard` and is not in the `Promise.all`: `loadBoard`'s
+  // `currentSpend` folds the spend projection to the head, and `readDayReading`
+  // reads that projection without refreshing it, so run beside it the day's
+  // total could be read before today's `RunSpent` events were projected.
   const [
     [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control, today],
     timings,
   ] = await measure(
-    () =>
-      Promise.all([
+    async () => {
+      const [board, projects, control] = await Promise.all([
         loadBoard(only),
         timed('projects.read', () => loadProjects()).catch(() => []),
         timed('events.control', () => readControl()),
-        timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' }),
-      ]),
+      ])
+      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' })
+      return [board, projects, control, day] as const
+    },
     { label: '/' },
   )
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
