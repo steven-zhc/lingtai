@@ -22,14 +22,17 @@ export function waitCommand(
     if (tag === 'Requeue' || tag === 'EditBodyAndRequeue') {
       if (requeued) continue
       requeued = true
-      const editsBody = ordered.includes('EditBodyAndRequeue') || reason._tag === 'OwnQuestion'
+      // Only what the wait allows is spelled: the body edit when `EditBodyAndRequeue` is offered,
+      // and the bare restart (brackets) when `Requeue` is offered beside it.
+      const editsBody = ordered.includes('EditBodyAndRequeue')
+      const bare = ordered.includes('Requeue')
       const body = !editsBody
         ? ''
         : asksForAnswer
           ? ' --into-body "<answer>"'
-          : moves.first === 'EditBodyAndRequeue'
-            ? ' --into-body "<text>"'
-            : ' [--into-body "<text>"]'
+          : bare
+            ? ' [--into-body "<text>"]'
+            : ' --into-body "<text>"'
       entries.push(`${base('requeue')}${body}`)
     } else if (tag === 'Approve') {
       entries.push(reason._tag === 'SignoffRequired' ? base('approve') : `${base('approve')} --note "<why>"`)

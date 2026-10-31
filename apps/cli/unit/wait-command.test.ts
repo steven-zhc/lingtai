@@ -29,9 +29,21 @@ describe('waitCommand', () => {
     expect(line).not.toContain('[')
   })
 
-  it('names the answer command first for an own question', () => {
+  it('names the answer command first for an own question, with a bare requeue', () => {
     const line = waitCommand({ first: 'AnswerQuestion', rest: ['Requeue'] }, at({ _tag: 'OwnQuestion' }))
     expect(line.startsWith('lingtai answer p --issue 3 "<choice>"')).toBe(true)
+    expect(line).toContain('lingtai requeue p --issue 3,')
+    expect(line).not.toContain('--into-body')
+  })
+
+  it('keeps the bare requeue visible when a body edit is recommended', () => {
+    const line = waitCommand({ first: 'EditBodyAndRequeue', rest: ['Requeue'] }, at({ _tag: 'BudgetExhausted' }))
+    expect(line).toBe('lingtai requeue p --issue 3 [--into-body "<text>"]   (or the board)')
+  })
+
+  it('makes the body mandatory only when no bare requeue is allowed', () => {
+    const line = waitCommand({ first: 'EditBodyAndRequeue', rest: [] }, at({ _tag: 'BudgetExhausted' }))
+    expect(line).toBe('lingtai requeue p --issue 3 --into-body "<text>"   (or the board)')
   })
 
   it('falls back to the board when nothing is left', () => {
