@@ -489,9 +489,21 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    characters a `title` gives back. */
 .seq { display: grid; gap: 3px; margin: 1px 0 0; }
 .segs {
-  display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px;
+  /* `--steps` is set on `.seq` by a queued page's plan row (#781), which reads
+     the same variable: change one and the other stops lining up. */
+  display: grid; grid-template-columns: repeat(var(--steps, 10), minmax(0, 1fr)); gap: 3px;
   margin: 0; padding: 0; list-style: none;
 }
+.splanrow {
+  display: grid; grid-template-columns: repeat(var(--steps, 10), minmax(0, 1fr)); gap: 3px;
+  margin: 0.3rem 0 0; padding: 0; list-style: none;
+}
+.srailplan { font-size: 0.72rem; }
+.srailplan > summary { cursor: pointer; color: var(--muted, inherit); }
+.splancell { display: grid; align-content: start; gap: 0.1rem; min-width: 0; overflow-wrap: anywhere; }
+.splancell .name { font-weight: 600; }
+.splancell .skipped { opacity: 0.55; font-style: italic; }
+.splanlimits { margin: 0.3rem 0 0; opacity: 0.8; }
 .seg { display: grid; gap: 2px; min-width: 0; }
 /* One cell per planned action, so a step holding `build` and `review` is half
    a bar when half of it has run — the granularity the `N passed` counter had
@@ -1694,8 +1706,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   --pair-top: 100vh;
 }
 .spair > .outgoing,
-.spair > .chat,
-.spair > .plan {
+.spair > .chat {
   max-height: max(24rem, calc((100vh - var(--pair-top) - 1.5rem) / 2));
   max-height: max(24rem, calc((100dvh - var(--pair-top) - 1.5rem) / 2));
 }
@@ -1708,8 +1719,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   .spair > .outgoing,
-  .spair > .chat,
-  .spair > .plan {
+  .spair > .chat {
     max-height: max(24rem, calc(100vh - var(--pair-top) - 1rem));
     max-height: max(24rem, calc(100dvh - var(--pair-top) - 1rem));
   }
@@ -1723,18 +1733,12 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    children to fit it, so the `pre` and `.chatscroll` — each `min-height: 0` —
    scroll rather than push the box past the room. */
 .spair > .outgoing,
-.spair > .chat,
-.spair > .plan {
+.spair > .chat {
   align-self: start;
   min-height: 24rem;
   margin-top: 0;
   overflow: hidden;
 }
-/* The plan has no inner part to hand the scroll to — it is a head and its
-   points — so the frame itself scrolls. `hidden` alone clipped whatever fell
-   past the row height, which is a bound that loses content rather than one
-   that holds it. */
-.spair > .plan { overflow-y: auto; }
 .spair > .chat.compact,
 .spair > .chat.entry { min-height: 0; }
 
@@ -1867,29 +1871,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    It is the only box in this column you do not act in, and it is here anyway —
    the question a queued page has is *what happens if I press the button*, and
    the answer belongs beside the button rather than in a recipe on GitHub. */
-.plan {
-  display: grid;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  background: var(--surface-2);
-  align-content: start;
-}
-.planhead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.6rem;
-  margin: 0;
-  font-size: 0.7rem;
-}
-/* Tighter than an attempt's, which sit on a wider column: this is half a
-   row and the same ten steps have to fit beside a prompt. */
-.plan .steps { gap: 0.25rem; }
-.plan .step { padding: 0.3rem 0.55rem; grid-template-columns: 5.5rem 1fr; font-size: 0.72rem; }
-.plan > .empty { margin: 0; }
 
 /* What pressing the button costs when something is holding the item. Muted and
    under the button: what the click does is one fact and what is stopping the

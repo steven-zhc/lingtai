@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { diffFact, RECORD_TABS, Record, TaskBody, UnpushedBanner } from '../src/app/task/[id]/page.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
+import { planOf, type PlanView } from '../src/lib/queued.ts'
 import {
   foldRun,
   standingOf,
@@ -940,5 +941,37 @@ describe('the Diff tab’s fact (#729)', () => {
     const html = renderToStaticMarkup(<Record task={{ ...task([], []), runs: [folded] }} />)
     expect(html).toContain('2 files, +4 −2, on agent/2')
     expect(html).not.toContain('This attempt touched no files.')
+  })
+})
+
+describe('a queued page folds the plan into the rail (#781)', () => {
+  const queuedOf = (plan: PlanView | null): TaskDetail =>
+    task([], [], {
+      queued: {
+        position: 1,
+        inLine: 1,
+        notOffered: null,
+        runnableAt: null,
+        paused: false,
+        dependenciesUnread: null,
+        plan,
+        problem: null,
+      },
+    })
+  const view = planOf(new Map(), {
+    limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
+    tier: 'guarded',
+  })
+
+  it('draws one rail and no plan box, with the plan in a closed disclosure', () => {
+    const html = page(queuedOf(view))
+    expect(html.match(/class="seq"/g)).toHaveLength(1)
+    expect(html).not.toContain('class="plan"')
+    expect(html).toContain('<details class="srailplan">')
+    expect(html.match(/<li class="splancell"/g)).toHaveLength(view.steps.length)
+  })
+
+  it('says the recipe could not be read when there is no plan', () => {
+    expect(page(queuedOf(null))).toContain('The recipe could not be read')
   })
 })

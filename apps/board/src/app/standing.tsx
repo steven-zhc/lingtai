@@ -42,7 +42,6 @@ import {
 import { Discussion } from './discussion.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
-import { Plan } from './plan.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
@@ -705,7 +704,9 @@ export function Standing({
                 <TicketContext opening={opening} body={body} />
               </div>
             ) : null}
-            {progress !== null ? <Rail progress={progress} live={standing.state === 'running'} held={budget} /> : null}
+            {progress !== null || queued !== null ? (
+              <Rail progress={progress} live={standing.state === 'running'} held={budget} plan={queued?.plan} />
+            ) : null}
           </header>
         ) : subject !== null ? (
           <div className="sticket">
@@ -1073,7 +1074,7 @@ export function Standing({
 
           {/* On blocked pages Discussion follows triage, before these moves. The
           prompt stays below the moves it belongs to. Other states retain the
-          pair: prompt or plan first, then Discussion in reading and tab order. */}
+          pair: prompt first, then Discussion in reading and tab order. */}
           <div className="spair" data-rank="pair">
             {/* The document that will actually run, beside the discussion and under
             the buttons that send it. Only where there is a next attempt to be
@@ -1092,11 +1093,6 @@ export function Standing({
                 folded={standing.state === 'queued' || standing.state === 'approved'}
               />
             ) : null}
-
-            {/* What the button does, beside the document it sends. Only on a queued
-            item: every other state is describing a run that has already been
-            given its plan, and its verdicts are in its own attempt. */}
-            {queued !== null ? <Plan plan={queued.plan} /> : null}
 
             {/* Discussion is offered in every state; only its placement changes. */}
             {standing.state === 'blocked' ? null : discussion}

@@ -1,6 +1,9 @@
 import { inWords } from '@lingtai/conductor/queue'
+import { formatTurns } from '@lingtai/recipe/duration'
+import type { CSSProperties } from 'react'
 
 import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } from '@/lib/progress'
+import type { PlanView } from '@/lib/queued'
 
 /**
  * The ten steps as a sequence, on every surface that draws one.
@@ -231,8 +234,10 @@ export function Rail({
   live,
   held = null,
   line = true,
+  plan,
 }: {
-  progress: RunProgress
+  /** Null on a ticket that has never run: the segments are then the plan's. */
+  progress: RunProgress | null
   /**
    * Whether the run is in flight — the lane's word, as it is for the elapsed
    * pill above, and never the rail's. A fold cannot answer it: a pass stopped
@@ -261,7 +266,31 @@ export function Rail({
    * line of its own instead (0118 §2).
    */
   line?: boolean
+  /**
+   * What the next pass would do at each step, folded into the rail (#781).
+   *
+   * **`undefined` and `null` are different answers.** Undefined is the card and
+   * every page that is not queued: nothing is drawn that was not drawn before.
+   * Null is a queued page whose recipe could not be read, and the sentence says
+   * so rather than leaving the rail looking complete (#76).
+   */
+  plan?: PlanView | null
 }) {
+  if (progress === null && plan === undefined) return null
+  const drawn = progress !== null ? progress.steps : plannedSegments(plan ?? null)
+  const columns = plan ? columnsOf(drawn, plan) : null
+  const style = columns === null ? undefined : ({ '--steps': columns.length } as CSSProperties)
+  const unreadable = plan === null ? <p className="empty">{UNREADABLE}</p> : null
+  const planned = plan ? <PlanRow plan={plan} columns={columns ?? []} /> : null
+  if (progress === null) {
+    return (
+      <div className="seq" style={style}>
+        <Segs steps={drawn} at={null} labels />
+        {unreadable}
+        {planned}
+      </div>
+    )
+  }
   const now = progress.now
   // The point half of `proposed:build`, which is what the label highlights.
   // Null where the phase names no point — the agent, and a bought round.
@@ -275,7 +304,7 @@ export function Rail({
   const refused = now === null && !live ? refusedAt(progress.steps) : null
 
   return (
-    <div className="seq">
+    <div className="seq" style={style}>
       <Segs steps={progress.steps} at={at} labels />
       {!line ? null : now ? (
         <p
@@ -343,6 +372,95 @@ export function Rail({
           {held !== null ? <span className="shold"> — {held}</span> : null}
         </p>
       )}
+      {unreadable}
+      {planned}
     </div>
+  )
+}
+
+const UNREADABLE = 'The recipe could not be read, so what a run would do here is not known.'
+
+/**
+ * The plan's steps drawn as a rail nothing has run on: every one `pending`, or
+ * `skipped` where nothing is configured. Not `foldProgress` over an empty
+ * stream — that takes a `StepPlan`, and saying "nothing has happened" is not a
+ * fold. A name that is not one of the ten has no segment (it still gets its
+ * column and its cell), narrowed the way `stepOf` does it rather than cast.
+ */
+function plannedSegments(plan: PlanView | null): StepProgress[] {
+  if (plan === null) return []
+  const out: StepProgress[] = []
+  for (const p of plan.steps) {
+    const step = stepOf(p.step)
+    if (step === null) continue
+    const state: StepState = p.skipped ? 'skipped' : 'pending'
+    out.push({ step, planned: p.actions, state, actions: p.actions.map((name) => ({ name, state })) })
+  }
+  return out
+}
+
+/** The rail's steps in order, then any plan step the rail lacks. Nothing is dropped. */
+function columnsOf(drawn: readonly StepProgress[], plan: PlanView): string[] {
+  const names: string[] = drawn.map((p) => p.step)
+  for (const p of plan.steps) if (!names.includes(p.step)) names.push(p.step)
+  return names
+}
+
+/**
+ * The bounds, on the plan's own footer.
+ *
+ * `runtime.limits` in the recipe's own words rather than in milliseconds, so
+ * the line reads back against the file it came from. `rounds` is stated whether
+ * it buys anything or not (0025 §2): a default that spends money and only
+ * appears when it is doing something is a default nobody can audit.
+ *
+ * **Two cells for the two ceilings, and `straight to you` is the second one's**
+ * (0040 §5). It used to be what `rounds: 0` rendered, which was true while
+ * depth was the whole policy and is false beside a non-zero `restarts`: the
+ * configuration 0040 calls *never patch, start over twice* buys no round and
+ * three agent runs, and this footer would have promised the operator standing
+ * over the button that the first refusal was theirs. Depth says how many
+ * rounds a pass buys; breadth says whether a spent pass is yours.
+ */
+export function limits(plan: PlanView): string {
+  return [
+    formatTurns(plan.turns),
+    plan.wall,
+    plan.tier,
+    plan.rounds === 0 ? 'no rounds' : `${plan.rounds} round(s) back`,
+    plan.restarts === 0 ? 'then straight to you' : `${plan.restarts} restart(s)`,
+  ].join(' · ')
+}
+
+/**
+ * A closed disclosure under the rail: one cell per column, on the segments'
+ * grid (`--steps`), each the step's actions or a muted `skipped` — stated, not
+ * omitted, for 0016 §4's reason. A rail step the plan lacks keeps an empty cell.
+ */
+function PlanRow({ plan, columns }: { plan: PlanView; columns: readonly string[] }) {
+  return (
+    <details className="srailplan">
+      <summary>What the next pass does at each step</summary>
+      <ol className="splanrow">
+        {columns.map((name) => {
+          const p = plan.steps.find((q) => q.step === name)
+          return (
+            <li key={name} className="splancell">
+              {p === undefined ? null : (
+                <>
+                  <span className="mono name">{p.step}</span>
+                  {p.skipped ? (
+                    <span className="skipped">skipped</span>
+                  ) : (
+                    <span className="actions">{p.actions.join(', ')}</span>
+                  )}
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+      <p className="splanlimits">{limits(plan)}</p>
+    </details>
   )
 }

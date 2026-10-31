@@ -45,8 +45,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Card, LandedRow } from '../src/app/page.tsx'
+import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
 import { foldProgress } from '../src/lib/progress.ts'
+import { planOf, type PlanView } from '../src/lib/queued.ts'
 import { emptyBill, type Bill } from '../src/lib/spend.ts'
 
 /** A bill with one reported row, for a card fixture that wants a single dollar figure. */
@@ -1263,5 +1265,58 @@ describe('the palette', () => {
   it('leaves amber to the lane that is asking for somebody', () => {
     expect(used.has('--signal')).toBe(false)
     expect(used.has('--signal-soft')).toBe(false)
+  })
+})
+
+describe('the plan folded into the rail (#781)', () => {
+  const view = planOf(PLAN, {
+    limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
+    tier: 'guarded',
+  })
+  const none = () => {
+    const p = foldProgress([resolved(PLAN)], PLAN, false)
+    if (p === null) throw new Error('a resolved plan folds to progress')
+    return p
+  }
+
+  it('draws a closed disclosure with one cell per step and the limits under it', () => {
+    const html = renderToStaticMarkup(<Rail progress={none()} live={false} plan={view} />)
+    expect(html).toContain('<details class="srailplan">')
+    expect(html).toContain('What the next pass does at each step')
+    expect(html.match(/<li class="splancell"/g)).toHaveLength(STEPS.length)
+    expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
+    expect(html).toContain('<span class="skipped">skipped</span>')
+  })
+
+  it('draws nothing extra without a plan', () => {
+    const html = renderToStaticMarkup(<Rail progress={none()} live={false} />)
+    expect(html).not.toContain('srailplan')
+    expect(html).not.toContain('style=')
+  })
+
+  it('keeps a rail step the plan lacks as an empty cell, and appends a plan step the rail lacks', () => {
+    const shorter: PlanView = { ...view, steps: view.steps.filter((p) => p.step !== 'prepared') }
+    const lacking = renderToStaticMarkup(<Rail progress={none()} live={false} plan={shorter} />)
+    expect(lacking.match(/<li class="splancell"/g)).toHaveLength(none().steps.length)
+    expect(lacking).toContain('<li class="splancell"></li>')
+
+    const extra: PlanView = { ...view, steps: [...view.steps, { step: 'later', actions: ['x'], skipped: false }] }
+    const appended = renderToStaticMarkup(<Rail progress={none()} live={false} plan={extra} />)
+    expect(appended.match(/<li class="splancell"/g)).toHaveLength(none().steps.length + 1)
+    expect(appended).toContain(`--steps:${none().steps.length + 1}`)
+    expect(segments(appended)).toHaveLength(none().steps.length)
+  })
+
+  it('draws the plan as segments, with no sentence, when nothing has run', () => {
+    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={view} />)
+    expect(html.match(/<li class="seg /g)).toHaveLength(STEPS.length)
+    expect(html).not.toContain('snow')
+  })
+
+  it('says the recipe could not be read, and draws nothing without a plan or progress', () => {
+    expect(renderToStaticMarkup(<Rail progress={null} live={false} plan={null} />)).toContain(
+      'The recipe could not be read',
+    )
+    expect(renderToStaticMarkup(<Rail progress={null} live={false} />)).toBe('')
   })
 })

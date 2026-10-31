@@ -516,17 +516,17 @@ describe("the pair's height", () => {
   it('is bounded by where the pair starts, side by side and stacked', () => {
     const wide = css.slice(css.indexOf('@media (min-width: 64rem)'))
     expect(wide).toMatch(
-      /\.spair > \.chat,\s*\.spair > \.plan\s*\{[^}]*max-height:\s*max\(24rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/,
+      /\.spair > \.outgoing,\s*\.spair > \.chat\s*\{[^}]*max-height:\s*max\(24rem, calc\(100dvh - var\(--pair-top\) - 1rem\)\)/,
     )
     expect(css).toMatch(
-      /\.spair > \.chat,\s*\.spair > \.plan\s*\{[^}]*max-height:\s*max\(24rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/,
+      /\.spair > \.outgoing,\s*\.spair > \.chat\s*\{[^}]*max-height:\s*max\(24rem, calc\(\(100dvh - var\(--pair-top\) - 1\.5rem\) \/ 2\)\)/,
     )
     expect(css).not.toMatch(/100d?vh - 6rem/)
   })
 
   it('takes the room as a ceiling and not a target, so a tall window holds the content and not the viewport', () => {
     // The row is the taller pane's content; each active pane has its own floor.
-    expect(css).toMatch(/\.spair > \.plan\s*\{[^}]*min-height:\s*24rem;/)
+    expect(css).toMatch(/\.spair > \.chat\s*\{[^}]*min-height:\s*24rem;/)
     expect(css).not.toMatch(/grid-auto-rows:\s*minmax\(24rem, auto\)/)
     expect(css).not.toMatch(/grid-auto-rows:\s*max\(/)
     // 1440×2387, the pair at 528px: 328px of prompt was an 1843px box.
@@ -547,7 +547,7 @@ describe("the pair's height", () => {
     // the arithmetic above cannot see. So every declaration that reaches a pane
     // is read: a height from its content, floored at 24rem, and the room only
     // ever as a `max-height`.
-    const pane = /\.spair\s*>\s*(?:\.outgoing|\.chat|\.plan|:only-child)\b/
+    const pane = /\.spair\s*>\s*(?:\.outgoing|\.chat|:only-child)\b/
     const decls = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(([, selector = '']) => selector.split(',').some((s) => pane.test(s)))
       .flatMap(([, , body = '']) =>
