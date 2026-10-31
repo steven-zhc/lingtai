@@ -23,9 +23,9 @@ Install Lingtai. This downloads the CLI; setup is the next step.
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 ```
 
-Clone Chapter Garden over HTTPS, then make a bare repository beside it the
-checkout's `origin`. Lingtai pushes and merges there, so Part 1 needs no GitHub
-account, and the original repository is never touched.
+Clone Chapter Garden over HTTPS. Lingtai lands on a `lingtai-base` branch in
+this checkout, so Part 1 needs no GitHub account, and the original repository is
+never touched.
 
 **POSIX shell (bash, zsh)**
 
@@ -34,8 +34,6 @@ account, and the original repository is never touched.
 export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
 mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
 git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
-git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
 **Fish**
@@ -45,8 +43,6 @@ git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
 mkdir -p (dirname "$CHAPTER_GARDEN_DIR")
 git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
-git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
 ## Step 1 — Set up this machine
@@ -61,7 +57,7 @@ merging.
 # Reuse the checkout path above, or change this default in a new terminal.
 export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base main \
+  --base lingtai-base \
   --agent claude-code --reviewer claude-code \
   --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
@@ -73,7 +69,7 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
 # Reuse the checkout path above, or change this default in a new terminal.
 set -q CHAPTER_GARDEN_DIR; or set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base main \
+  --base lingtai-base \
   --agent claude-code --reviewer claude-code \
   --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
@@ -93,7 +89,7 @@ choices in a local recipe; steps you did not configure keep their defaults.
 | ------------------------------- | ------------------------------------------------------------------ |
 | `--store sqlite`                | Keeps Lingtai's log on this machine; no database server is needed. |
 | `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
-| `--base main`                  | Merges into `main` of the bare repository beside your checkout.    |
+| `--base lingtai-base`          | Lands on a `lingtai-base` branch in your checkout; `main` and your working tree are never touched. |
 | `--agent claude-code`           | Uses the Claude Code account you signed in to for the change.      |
 | `--reviewer claude-code`        | Uses the same account for the cold review.                         |
 | `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
@@ -180,10 +176,12 @@ rail advance through the steps above.
 
 When the card is under **Waiting on you** and `proposed` is lit on the rail,
 read the change and the check results on that page, then press **Approve**. The
-card moves to **Landed**: the checked change reached `main` of the bare
-repository. Run `git pull` in your Chapter Garden checkout
-(`~/workspace/chapter-garden` unless you changed it) to see the new chapter. If
-it stopped for another reason, the [operating guide](operating.md) explains the
+card moves to **Landed**: the checked change is on `lingtai-base` in your
+Chapter Garden checkout (`~/workspace/chapter-garden` unless you changed it).
+`lingtai-base` does not follow `main`: to see the new chapter, run
+`git merge lingtai-base` while on `main`. If `lingtai-base` is checked out, the
+land holds with `lingtai-base is checked out in <dir> — switch to another
+branch, then lingtai approve chapter-garden --issue <n>`. If it stopped for another reason, the [operating guide](operating.md) explains the
 next action. To watch a check refuse once, continue with the optional step below; to put work on GitHub, go to Part 2.
 
 From a terminal instead:
@@ -272,8 +270,8 @@ lingtai doctor
 
 Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
 Steps 2–4 then apply, including Step 3's `lingtai board`: start it in this home, as `init` left none running.
-The landing now merges into `main` of your fork on GitHub, not the local bare
-repository, so Step 4's `git pull` does not apply: look on GitHub instead.
+The landing now merges into `main` of your fork on GitHub, not `lingtai-base` in
+your checkout, so Step 4's `git merge lingtai-base` does not apply: look on GitHub instead.
 
 ## Next
 
