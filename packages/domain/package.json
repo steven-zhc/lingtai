@@ -9,6 +9,7 @@
     "./rate-card": "./src/rate-card.ts",
     "./test/litellm-fixture": "./test/litellm-fixture.ts",
     "./test/events": "./test/events.ts",
+    "./test/histories": "./test/histories.ts",
     "./test/support": "./test/support.ts"
   },
   "scripts": {
