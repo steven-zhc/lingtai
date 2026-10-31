@@ -150,9 +150,12 @@ const PASSTHROUGH_SUBCOMMAND = /^(?:exec|dlx|x)$/
  * subcommand like `exec`, since either would otherwise be captured in place
  * of the check it actually names — a numbered name where nothing is left.
  */
-function nameForCommand(command: string, index: number, used: Set<string>): string {
+function nameForCommand(command: string, used: Set<string>): string {
   const m = /^(pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(.*)$/.exec(command.trim())
-  let base = `check-${index + 1}`
+  // A typed command that is no `<manager> <script>` is named by itself: whitespace
+  // collapsed, cut to 40 characters with `…`.
+  const whole = command.trim().replace(/\s+/g, ' ')
+  let base = whole.length > 40 ? `${whole.slice(0, 39)}…` : whole
   if (m) {
     const manager = m[1]
     const tokens = m[2]!.split(/\s+/).filter((t) => t !== '')
@@ -165,6 +168,8 @@ function nameForCommand(command: string, index: number, used: Set<string>): stri
     const candidate = tokens[i]
     if (candidate !== undefined && /^[\w:.-]+$/.test(candidate)) base = candidate
   }
+  // `:` is reserved for the conductor's own actions; the recipe refuses it in a name.
+  base = base.replaceAll(':', '-')
   let name = base
   let n = 2
   while (used.has(name)) name = `${base}-${n++}`
@@ -172,9 +177,33 @@ function nameForCommand(command: string, index: number, used: Set<string>): stri
   return name
 }
 
-function namedFromTyped(commands: readonly string[]): NamedRun[] {
-  const used = new Set<string>()
-  return commands.map((run, i) => ({ name: nameForCommand(run, i, used), run }))
+/**
+ * The names `mergeRunActions` keeps from `original` when `wantedRuns` are
+ * written: every non-`run:` action's name, and the name of each `run:` entry
+ * whose text matches a wanted one. Beside the merge so the two cannot drift.
+ */
+function keptNames(
+  original: unknown[],
+  wantedRuns: readonly string[],
+): { byRun: Map<string, string>; all: Set<string> } {
+  const byRun = new Map<string, string>()
+  const all = new Set<string>()
+  for (const item of original) {
+    const name = (item as { name?: unknown } | null)?.name
+    if (typeof name !== 'string') continue
+    if (!isRunAction(item)) all.add(name)
+    else if (wantedRuns.includes(item.run)) {
+      all.add(name)
+      if (!byRun.has(item.run)) byRun.set(item.run, name)
+    }
+  }
+  return { byRun, all }
+}
+
+function namedFromTyped(commands: readonly string[], original: unknown[]): NamedRun[] {
+  const kept = keptNames(original, commands)
+  const used = new Set(kept.all)
+  return commands.map((run) => ({ name: kept.byRun.get(run) ?? nameForCommand(run, used), run }))
 }
 
 /**
@@ -194,7 +223,7 @@ function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
       const i = remaining.findIndex((w) => w.run === item.run)
       if (i === -1) continue
       const [next] = remaining.splice(i, 1)
-      merged.push({ ...item, name: next!.name, run: next!.run })
+      merged.push({ ...item, run: next!.run })
     } else {
       merged.push(item)
     }
@@ -379,6 +408,10 @@ async function askBuild(
   /** The list just tried, when this is a second time round. */
   previous?: NamedRun[],
 ): Promise<{ build: NamedRun[] } | { refused: string }> {
+  const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], {
+    home: input.home,
+    files: input.files,
+  })) as unknown[] | null
   const current =
     previous ?? (await currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
 
@@ -396,7 +429,7 @@ async function askBuild(
     if (input.given.build.includes('')) {
       return { refused: '--build takes a command, or none — not empty' }
     }
-    const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build)
+    const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build, originalBuild ?? [])
     if (build.length === 0) world.log('nothing will check a diff before review')
     return { build }
   }
@@ -443,7 +476,7 @@ async function askBuild(
     typed.push(answer.answer)
   }
   if (typed.length === 0) world.log('nothing will check a diff before review')
-  return { build: namedFromTyped(typed) }
+  return { build: namedFromTyped(typed, originalBuild ?? []) }
 }
 
 export async function askInstallAndBuild(

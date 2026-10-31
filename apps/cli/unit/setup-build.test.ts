@@ -485,6 +485,68 @@ steps:
     ])
   })
 
+  const typedBuild = async (build: string[], text = BASE) => {
+    const files = mapFiles({ [PATH]: text })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(w, input({ given: { install: 'none', build, check: null }, files }))
+    if ('refused' in result) throw new Error(result.refused)
+    return result.changes.find((c) => c.path.join('.') === 'steps.build')?.value as { name: string; run: string }[]
+  }
+
+  it('a typed non-manager command is named by itself', async () => {
+    expect(await typedBuild(['uv run pytest'])).toEqual([{ name: 'uv run pytest', run: 'uv run pytest' }])
+    expect(await typedBuild(['  uv   run  pytest '])).toEqual([{ name: 'uv run pytest', run: '  uv   run  pytest ' }])
+  })
+
+  it('manager scripts keep their script names', async () => {
+    expect(await typedBuild(['pnpm test', 'npm run lint'])).toEqual([
+      { name: 'test', run: 'pnpm test' },
+      { name: 'lint', run: 'npm run lint' },
+    ])
+  })
+
+  it('a long typed command is cut to 40 characters ending in …, and two that cut alike stay distinct', async () => {
+    const a = `python -m pytest --maxfail=1 tests/unit/${'a'.repeat(10)}`
+    const b = `python -m pytest --maxfail=1 tests/unit/${'b'.repeat(10)}`
+    const got = await typedBuild([a, b])
+    expect(got[0]!.name).toHaveLength(40)
+    expect(got[0]!.name.endsWith('…')).toBe(true)
+    expect(got[1]!.name).toBe(`${got[0]!.name}-2`)
+  })
+
+  it('a typed pnpm script with a colon is named without one, and the recipe resolves', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm fmt:check', 'uv run pytest'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    const build = result.changes.find((c) => c.path.join('.') === 'steps.build')?.value as { name: string }[]
+    expect(build.map((b) => b.name)).toEqual(['fmt-check', 'uv run pytest'])
+    for (const change of result.changes) await setRecipe('app', [change], { home: HOME, files })
+    expect(() => resolveSource(files.replaced.at(-1)!.text, PATH, PATH)).not.toThrow()
+  })
+
+  it('a re-run keeps the name the file already gave a matched run, and a new name never collides with a kept one', async () => {
+    const kept = `${BASE}steps:
+  build:
+    - name: check-1
+      run: uv run pytest
+    - name: test
+      run: make test
+`
+    expect(await typedBuild(['uv run pytest', 'make test', 'ruff check .'], kept)).toEqual([
+      { name: 'check-1', run: 'uv run pytest' },
+      { name: 'test', run: 'make test' },
+      { name: 'ruff check .', run: 'ruff check .' },
+    ])
+    expect(await typedBuild(['make test', 'pnpm test'], kept)).toEqual([
+      { name: 'test', run: 'make test' },
+      { name: 'test-2', run: 'pnpm test' },
+    ])
+  })
+
   it('a red trial build under --check-build yes refuses and returns no changes', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const failing = {
