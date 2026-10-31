@@ -31,6 +31,7 @@ export function Bar({ note }: { note?: string }) {
       <Link href="/docs/tutorial/">Tutorial</Link>
       <Link href="/docs/concepts/">Concepts</Link>
       <Link href="/docs/plugins/">Plugins</Link>
+      <Link href="/docs/events/">Events</Link>
       <a href={REPO}>GitHub</a>
     </header>
   )

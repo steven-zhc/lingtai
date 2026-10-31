@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
+import { Bar } from '../src/app/chrome'
 import { EventsBody } from '../src/app/docs/events/events-body'
+import EventsPage from '../src/app/docs/events/page'
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 const doc = JSON.parse(read('../../../doc/events.json')) as EventsDoc
@@ -40,5 +42,19 @@ describe('/docs/events/', () => {
       const source = read(file)
       for (const e of doc.events) expect(source, `${file} names ${e.name}`).not.toContain(e.name)
     }
+  })
+
+  it('draws the docs sidebar with Events current', async () => {
+    const page = renderToStaticMarkup(await EventsPage())
+    expect(page).toContain('aria-label="Documentation"')
+    const links = [...page.matchAll(/<a [^>]*href="\/docs\/events"[^>]*>/g)].map((m) => m[0])
+    expect(links.some((a) => a.includes('aria-current="page"'))).toBe(true)
+  })
+
+  it('links Events in the bar between Plugins and GitHub', () => {
+    const bar = renderToStaticMarkup(<Bar />)
+    const at = (href: string) => bar.indexOf(`href="${href}"`)
+    expect(at('/docs/events')).toBeGreaterThan(at('/docs/plugins'))
+    expect(at('/docs/events')).toBeLessThan(bar.indexOf('>GitHub<'))
   })
 })

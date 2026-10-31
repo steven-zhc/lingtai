@@ -354,6 +354,7 @@ p { max-width: var(--measure); }
 @media (max-width: 1080px) {
   .doc-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .tutorial-page .doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .events-page .doc-layout { grid-template-columns: minmax(0, 1fr); }
   .doctree {
     position: static; max-height: 9.5rem; order: -2;
     border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; background: var(--surface);
@@ -589,6 +590,11 @@ footer.foot a { color: var(--ink-2); }
 .prose .hljs-punctuation, .prose .hljs-operator { color: var(--ink-2); }
 
 /* --- /docs/events/ (#630) ------------------------------------------------- */
+/* The drawing is wider than the reading column, and there is no contents list: two columns.
+   Only above the breakpoint: this rule comes later than the 1080px one and would otherwise defeat it. */
+@media (min-width: 1081px) {
+  .events-page .doc-layout { grid-template-columns: 14rem minmax(0, 1fr); }
+}
 /* The drawing scrolls inside its own box, never the page. */
 .ev-drawing { overflow-x: auto; margin: 18px 0; padding: 14px; border: 1px solid var(--rule); border-radius: 3px; }
 .ev-spine, .ev-lane { list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; min-width: 760px; }

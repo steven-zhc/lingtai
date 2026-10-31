@@ -23,6 +23,7 @@ import {
   statuses,
   statusParts,
   titleOf,
+  treeOf,
   unpublished,
 } from '@/lib/docs'
 
@@ -369,5 +370,18 @@ describe("what a decision's page says about it", () => {
     const status = await statuses()
     expect(status.get('decisions/0100-one-append-only-log')).toBe('accepted')
     expect(status.get('decisions/0103-a-pass-is-ten-fixed-steps')).toBe('accepted; part not yet built')
+  })
+})
+
+describe('treeOf', () => {
+  it('lists Events in the guides group straight after CLI, and once', async () => {
+    const tree = await treeOf()
+    const guides = tree.find((group) => group.id === 'guides')
+    expect(guides).toBeDefined()
+    const slugs = guides!.entries.map((entry) => entry.slug)
+    const at = slugs.indexOf('cli')
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(guides!.entries[at + 1]).toEqual({ slug: 'events', title: 'Events' })
+    expect(tree.flatMap((group) => group.entries).filter((entry) => entry.slug === 'events')).toHaveLength(1)
   })
 })
