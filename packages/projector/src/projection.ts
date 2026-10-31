@@ -281,3 +281,13 @@ export async function projectionLag(url?: string): Promise<ProjectionLag[]> {
   // the store (#214, 0056).
   return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => store.lags())
 }
+
+/**
+ * How far one projection is behind the head, without starting a runner: one
+ * `select` of its checkpoint against the head. A projection nobody registered
+ * has no checkpoint row and reads as `lag = head`, not as missing — which is
+ * what a board reading its table straight needs to say *behind N* truthfully.
+ */
+export async function readLag(name: string, url?: string): Promise<ProjectionLag> {
+  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => store.lag(name))
+}

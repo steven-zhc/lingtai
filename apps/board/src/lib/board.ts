@@ -1114,14 +1114,14 @@ export async function loadBoard(project?: string): Promise<Board> {
   // `spend` beside it rather than after, for `#112`'s own reason: it is one
   // more read that is nobody's argument. Read once, by exactly the tickets on
   // this board — never a read per card, and never the whole table — and
-  // `currentSpend` folds it to the head first, the way `currentBacklog` does,
-  // because the board holds no projector of its own and a bare `lingtai run`
-  // is the only thing that does on the terminal path (`#498`'s review).
+  // `currentSpend` reads the table and reports its lag, the way `task_view` is
+  // read: the board holds no projector, and `withProjector` follows `spend`
+  // in every process that appends (#786, reversing #498's fold).
   const [queued, spend, daemon, triageDeclared] = await Promise.all([
     timed('board.queue', () => queuedCards(registered.filter((p) => project === undefined || p.project === project))),
-    // Not measured, so not claimed: a skipped fold has no lag to report, and
+    // Not measured, so not claimed: a skipped read has no lag to report, and
     // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
-    // this is a board with nothing to bill rather than a fold that ran and
+    // this is a board with nothing to bill rather than a lag read that
     // failed — the two used to read identically as a bare `lag: null`
     // (`#498`'s review).
     tasks.length === 0

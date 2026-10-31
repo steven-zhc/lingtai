@@ -1041,8 +1041,8 @@ export interface TaskDetail {
   totals: Totals
   /**
    * Whether `totals` and every attempt's `costUsd` are off a `spend` that
-   * was actually brought to the head — `currentSpend`'s own currency, kept
-   * rather than discarded (`#498`'s review): a fold that failed must not
+   * is how far behind the head — `currentSpend`'s own currency, kept
+   * rather than discarded (`#498`'s review): a lag that could not be read must not
    * read the same as a ticket with nothing spent, which is exactly what
    * every attempt reading `unknown (1 run)` would otherwise look like.
    */
