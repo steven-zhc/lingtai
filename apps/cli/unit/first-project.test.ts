@@ -157,7 +157,7 @@ function harness(options: {
       boardUrl: async () => options.boardUrl ?? null,
       waitForApp: options.waitForApp ?? (async () => ({ skipped: true })),
       picker: options.picker ?? (async () => ({ installations: [], installUrl: null })),
-      add: options.add ?? (async () => 1),
+      add: options.add ?? (async () => ({ ok: false as const })),
     },
   }
   return { world, asked, logged, registered, files, authWrites, removed }
@@ -420,7 +420,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       kept: 'the store chosen above is kept',
       waitForApp: async () => (calls.push('waitForApp'), { skipped: true }),
       picker: async () => (calls.push('picker'), { installations: [], installUrl: null }),
-      add: async () => (calls.push('add'), 1),
+      add: async () => (calls.push('add'), { ok: false as const }),
     })
 
     const result = await chooseFirstProject(world, { defaults: '' })
@@ -691,7 +691,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (options, log) => {
         added.push(options)
         log('installation 7 on acme (selected)')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -720,7 +720,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -769,7 +769,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -809,7 +809,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (_options, log) => {
         log('installation 7 on acme (selected)')
         log('the installation is missing permissions:')
-        return 1
+        return { ok: false as const }
       },
     })
 
@@ -832,7 +832,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async (_options, log) => {
         log('added acme/widget')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -848,7 +848,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -866,7 +866,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     const ticketsResult = await chooseFirstProject(worldWithTickets, {
@@ -894,7 +894,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     const result = await chooseFirstProject(world, {
@@ -920,7 +920,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (options, log) => {
         addCalled = true
         log('updated')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -1057,7 +1057,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       },
       add: async (options) => {
         calls.added.push(options)
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'
@@ -1077,7 +1077,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       projects: [project('widgets', 'acme')],
       add: async () => {
         added++
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'
@@ -1092,7 +1092,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       projects: [project('widgets', 'Acme')],
       add: async () => {
         added++
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'

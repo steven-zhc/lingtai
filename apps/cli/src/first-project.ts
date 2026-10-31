@@ -45,7 +45,7 @@ import { readFile, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
-import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
+import { add, addLocal, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import {
   alreadyOnboarded,
   choose,
@@ -193,7 +193,7 @@ export interface FirstProjectWorld extends QuestionWorld {
     boardUrl: () => Promise<string | null>
     waitForApp: (boardUrl: string) => Promise<AppWaitResult>
     picker: () => Promise<Picker>
-    add: (options: AddOptions, log: (line: string) => void) => Promise<number>
+    add: (options: AddOptions, log: (line: string) => void) => Promise<Added>
   }
 }
 
@@ -214,7 +214,19 @@ export type FirstProjectOutcome =
       /** Lines the card's closing prints, muted, after the groups. */
       hints: string[]
     }
-  | { ok: true; project: 'github'; app: 'already' | AppWaitResult; slug?: string; auth?: 'gh' }
+  | {
+      ok: true
+      project: 'github'
+      app: 'already' | AppWaitResult
+      slug?: string
+      auth?: 'gh'
+      /** Set with `slug`: the project was already registered. */
+      updated?: boolean
+      /** Set with `slug`: what `add` warned about, printed before the card. */
+      warnings?: readonly string[]
+      /** Set with `slug`: how this machine reached GitHub, for the card's `github` row. */
+      reach?: GithubReach
+    }
   | { refused: string }
 
 /** Why a combination of flags cannot both be obeyed, or null when they can. */
@@ -829,7 +841,7 @@ async function runGithubBranch(
     }
     const said: string[] = []
     const baseFlag = flags['base']
-    const code = await spun(world, `registering ${givenSlug}`, () =>
+    const added = await spun(world, `registering ${givenSlug}`, () =>
       world.github.add(
         {
           slug: givenSlug,
@@ -839,11 +851,19 @@ async function runGithubBranch(
         (line) => said.push(line),
       ),
     )
-    if (code !== 0) {
+    if (!added.ok) {
       return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
     }
-    for (const line of said) world.log(line)
-    return { ok: true, project: 'github', app: 'already', slug: givenSlug, auth: 'gh' }
+    return {
+      ok: true,
+      project: 'github',
+      app: 'already',
+      slug: givenSlug,
+      auth: 'gh',
+      updated: added.updated,
+      warnings: added.warnings,
+      reach: added.reach,
+    }
   }
 
   app ??= await world.github.app()
@@ -926,13 +946,13 @@ async function runGithubBranch(
     installation = picked.installation
   }
 
-  // Collected rather than logged as they arrive: on a refusal, the caller
+  // Collected rather than logged as they arrive (the success path prints `warnings` only, #755): on a refusal, the caller
   // prints `refused` itself (`initCommand`'s `refuse()`, `addCommand`'s
   // `console.error`), and logging each line here too printed the whole
-  // failure twice (#394 finding 7). On success they are printed once, below.
+  // failure twice (#394 finding 7). On success only the warnings are printed, ahead of the card.
   const said: string[] = []
   const baseFlag = flags['base']
-  const code = await spun(world, `registering ${givenSlug}`, () =>
+  const added = await spun(world, `registering ${givenSlug}`, () =>
     world.github.add(
       {
         slug: givenSlug,
@@ -942,11 +962,18 @@ async function runGithubBranch(
       (line) => said.push(line),
     ),
   )
-  if (code !== 0) {
+  if (!added.ok) {
     return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
   }
-  for (const line of said) world.log(line)
-  return { ok: true, project: 'github', app: appOutcome, slug: givenSlug }
+  return {
+    ok: true,
+    project: 'github',
+    app: appOutcome,
+    slug: givenSlug,
+    updated: added.updated,
+    warnings: added.warnings,
+    reach: added.reach,
+  }
 }
 
 // ------------------------------------------------------------- live world --

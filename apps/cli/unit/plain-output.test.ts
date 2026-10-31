@@ -1,4 +1,3 @@
-import { recipeLine } from '@lingtai/conductor/onboard'
 import { SQLITE_MACHINE, postgresUrl, githubApp, githubAppKeyMissing, lockDir, renamedNote } from '@lingtai/env'
 import { describe, expect, it } from 'vitest'
 
@@ -62,7 +61,6 @@ const SET: [string, string][] = [
   ['dollarCeilingNote (unnamed)', dollarCeilingNote(null)],
   ['DIFFERENT_SOURCE_CLASH', DIFFERENT_SOURCE_CLASH],
   ['GITHUB_APP_NOT_CONFIGURED', GITHUB_APP_NOT_CONFIGURED],
-  ['recipeLine', recipeLine('/h/.lingtai/x/recipe.yml')],
   ['STORE_UNWRITTEN', STORE_UNWRITTEN],
   ['notSessionModeDetail (stand-in)', notSessionModeDetail(true)],
   ['notSessionModeDetail (direct)', notSessionModeDetail(false)],

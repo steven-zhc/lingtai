@@ -103,7 +103,7 @@ function ttyHarness(): Harness {
       boardUrl: async () => null,
       waitForApp: async () => ({ skipped: true }),
       picker: async () => ({ installations: [], installUrl: null }),
-      add: async () => 1,
+      add: async () => ({ ok: false }),
     },
   }
   const logged: string[] = []

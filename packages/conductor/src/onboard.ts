@@ -124,7 +124,7 @@ export interface RecheckDeps {
   /** `installationForRepo` against the App this machine has. */
   installation: (owner: string, repo: string) => Promise<Installation>
   /** `add`. */
-  register: (options: AddOptions, log: (line: string) => void) => Promise<number>
+  register: (options: AddOptions, log: (line: string) => void) => Promise<Added>
 }
 
 /**
@@ -170,8 +170,8 @@ export async function recheck(
   }
 
   const said: string[] = []
-  const code = await deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line))
-  if (code === 0) return { ok: true, detail: `${recorded.project} is live` }
+  const outcome = await deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line))
+  if (outcome.ok) return { ok: true, detail: `${recorded.project} is live` }
   // **Everything it said, not the last line.** A permission gap is one line per
   // scope with what each is for; a rule here about which line is the refusal
   // would have to know which failure it was, and would be wrong the first time
@@ -489,22 +489,37 @@ const liveAddDeps: AddDeps = {
   check: checkInstallation,
 }
 
-export const recipeLine = (path: string): string =>
-  `reading ${path} — the recipe is this machine's, and nothing is read from the repository`
+/** How this machine reached GitHub for an add: the saved `gh` login (unknown when it said none), or the App. */
+export type GithubReach = { kind: 'gh'; login: string | null } | { kind: 'app'; slug: string | null }
 
-export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<number> {
+/**
+ * What `add` came to. `log` is the whole transcript — every line it and its
+ * checks said — and a refusal and Recheck's detail are built from it. A success
+ * prints none of it: it prints `warnings`, which are reported here separately so
+ * nothing downstream tells a warning from the rest by its words (#755).
+ */
+export type Added =
+  | { ok: true; updated: boolean; warnings: readonly string[]; reach: GithubReach }
+  | { ok: false }
+
+export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<Added> {
   const { owner, repo } = parseSlug(options.slug)
+  const warnings: string[] = []
 
   // On a `gh` machine there is no installation to ask for: the saved login's
   // scopes and its push right on this repository are the check.
   const onGh = deps.auth() === 'gh'
   let installation: Installation | undefined
+  let reach: GithubReach
   if (onGh) {
-    if ((await deps.checkGh(options.slug, log)) === null) return 1
+    const access = await deps.checkGh(options.slug, log)
+    if (access === null) return { ok: false }
+    reach = { kind: 'gh', login: access.login === '' ? null : access.login }
   } else {
     const found = await deps.check(options.slug, log, options.installation)
-    if (found === null) return 1
+    if (found === null) return { ok: false }
     installation = found
+    reach = { kind: 'app', slug: found.appSlug }
   }
 
   const client = await createGitHubClient({
@@ -513,7 +528,6 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
     repo,
     ...(installation === undefined ? {} : { installation }),
   })
-  log(recipeLine(recipePath(repo)))
 
   // 3. The recipe, and with it the base — which is the recipe's, not this
   //    command's. A `--base` a person typed and the file contradicts is refused
@@ -524,7 +538,7 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
     resolved = await resolveLocalRecipe(repo, { signedIn: signedInHere })
   } catch (err) {
     log((err as Error).message)
-    return 1
+    return { ok: false }
   }
   if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
     const wrote = baseWrittenAt(resolved.recipe)
@@ -533,56 +547,21 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
         "This command will not overrule either — re-run without --base to take the recipe's, " +
         `or fix ${wrote} in the file.`,
     )
-    return 1
+    return { ok: false }
   }
   // Past this point these are one branch, and this one is the file's.
   const base = baseOf(resolved.recipe)
-  log(`base: ${base} — the recipe's ${baseWrittenAt(resolved.recipe)}`)
-  // The run's own settings, and each dispatching step's runtime (`#372`) — the
-  // recipe's answer to *what will run*, read off it alone.
-  for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
-    if (key.startsWith('runtime.') || /^steps\.[a-z]+\.agent$/.test(key)) log(`  ${key.padEnd(24)} ${from}`)
-  }
-
   const fromSha = await client.refSha(base)
-  await warnIfProtected((m, path) => client.request(m, path), owner, repo, base, log)
-  log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`)
-  // All ten steps, including the empty ones. Onboarding is the first place a
-  // person sees the shape of their workflow, and a step that is not mentioned
-  // is exactly the thing that must not be invisible (ADR 0016 §4, 0061 §5).
-  //
-  // From `STEPS` rather than a list written here, which is what that tuple is
-  // exported for: this line had its own copy of the five names, and renaming
-  // one of them (0018) would have left onboarding printing a step that no
-  // longer exists. Widening the set to ten (0058 §3) collected on that: this
-  // line prints all ten without being touched.
-  for (const step of STEPS) {
-    const actions = resolved.recipe.steps[step]
-    log(`  ${step.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(', ') : '(skipped)'}`)
-  }
-  // Printed here for the reason the empty points above are: a policy that is
-  // only visible when it fires is one nobody can audit, and this one spends an
-  // agent's worth of money on a failure without being asked again
-  // ([0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md) §2).
-  //
-  // **The product, not the numbers that make it**
-  // ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
-  // There were two ceilings here and they were printed side by side, which told
-  // a reader everything except the thing being decided: what one pass of this
-  // project can cost. One sentence, from `passCeiling`, so this line and the
-  // drain's cannot say different things about the same recipe.
-  log(
-    `  ${'a pass'.padEnd(9)} ${passCeiling({
-      ...limitsFor(resolved.recipe, 'implement'),
-      wallMs: parseDuration(limitsFor(resolved.recipe, 'implement').wall),
-      // The steps bounded differently from `implement`, so `lingtai add` answers
-      // *what do `proposed:` and `merge:` say today* about money too (`#314`).
-      steps: boundsBesides(resolved.recipe, 'implement'),
-    })}`,
+  await warnIfProtected(
+    (m, path) => client.request(m, path),
+    owner,
+    repo,
+    base,
+    (line) => {
+      warnings.push(line)
+      log(line)
+    },
   )
-  log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${kindsOf(resolved.recipe).join(' > ')}`)
-
-  log(`  tier ${resolved.recipe.runtime.tier}`)
 
   const stream = projectStream(repo)
   const existing = await eventStore.read(stream)
@@ -594,7 +573,7 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
   const holder = otherOwner(existing, owner)
   if (holder !== null) {
     log(taken({ slug: options.slug, repo, takenBy: holder }))
-    return 1
+    return { ok: false }
   }
   await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
     {
@@ -614,8 +593,7 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
     },
   ])
 
-  log(registrationLine(existing, repo, resolved))
-  return 0
+  return { ok: true, updated: isRegistered(reduceProject(existing)), warnings, reach }
 }
 
 /** Who already holds this project's stream, when it is not `owner` (compared in any case); else null. */
