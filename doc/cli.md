@@ -309,6 +309,8 @@ lingtai end replay lingtai --issue <n>
 | end a wait with a new run | [lingtai requeue](#lingtai-requeue) |
 | end a ticket nobody is going to do | [lingtai close](#lingtai-close) |
 
+These commands only append to the log. When a wait ends, the conductor's next action on that ticket (the landing, the next hold, the release or the claim) edits the ticket's "Lingtai is waiting on you" comment into its outcome and posts no second comment; the CLI and the board never edit it.
+
 ### lingtai approve
 
 Merge what a held run produced.
