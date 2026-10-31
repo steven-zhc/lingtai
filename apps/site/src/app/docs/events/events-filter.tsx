@@ -90,6 +90,7 @@ export function EventsFilter({
         type="button"
         className={`ev-node${extra}${filter === key ? ' on' : ''}`}
         aria-pressed={filter === key}
+        aria-label={`${label}, ${total[key]} events`}
         disabled={total[key] === 0}
         onClick={() => toggle(key)}
       >
