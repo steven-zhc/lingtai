@@ -1,0 +1,12 @@
+{
+  "apps/cli": { "async": 434, "run": 6 },
+  "packages/event-store": { "async": 55, "run": 0 },
+  "packages/projector": { "async": 78, "run": 0 },
+  "packages/github": { "async": 37, "run": 2 },
+  "packages/repo": { "async": 15, "run": 1 },
+  "packages/agent": { "async": 23, "run": 0 },
+  "packages/actions": { "async": 16, "run": 0 },
+  "packages/conductor": { "async": 202, "run": 17 },
+  "packages/daemon": { "async": 58, "run": 0 },
+  "packages/telegram": { "async": 2, "run": 0 }
+}
