@@ -93,8 +93,8 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);padding:8px 10p
 <header>
 <div class="meta">
 <a href="#" style="text-decoration:none">#773 ↗</a>
-<span>feature</span><span>$10.13</span><span>2 attempts · next is attempt 3</span><span>2 restarts left</span>
-<span class="state"><span class="dot" style="background:var(--accent)"></span>queued · backing off 9m</span>
+<span>feature</span><span>$10.13</span><span>2 restarts left</span>
+<span class="state"><span class="dot" style="background:var(--accent)"></span>queued · 10m</span>
 </div>
 <h1>feat(setup): init and add print the summary card, and the old sections and echoes are gone</h1>
 <div class="opening">
@@ -185,13 +185,13 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);padding:8px 10p
 <div class="diffnote">
 <span class="label">What changed from today's page</span>
 <ol>
-<li><code>QUEUED 10M</code> in large type is gone; the state is the header's chip, as on every other state.</li>
+<li><code>QUEUED 10M</code> in large type is gone; the state, its age and its place in line are the header's chip, as on a waiting page. The hold is never in the header — the panel says it.</li>
 <li>The ten-step rail is drawn for a queued item too, showing the last pass; "What will happen" is folded into it, one cell under each step, instead of a second drawing of the same ten steps.</li>
 <li>"backing off — runnable in 9m" is said once. "waiting for a conductor to take it" is gone — it contradicted the backoff.</li>
-<li>"attempt 2 of 2" (bar) and "attempt 3 only" (prompt) become one sentence in the header: <em>2 attempts · next is attempt 3</em>.</li>
+<li>The bar's "from attempt 2 of 2" reads "after attempt 2 of 2" on a queued ticket, so it no longer reads against the prompt's "attempt 3 only".</li>
 <li>The last refusal is whole and labelled as the last pass, not a line cut at its colon.</li>
 <li>Problem / Want / Watch out use the blocked page's three-column opening instead of headings and grey boxes.</li>
-<li>The 18 KB prompt is folded by default; Edit stays. Discussion is beside it at the same width.</li>
+<li>The 18 KB prompt is folded by default; Edit stays. With "What will happen" gone from the pair, Discussion is beside it at the same width.</li>
 <li>Run it now says what it does next to itself; Close moves to the far end, where a destructive move is on the blocked page.</li>
 </ol>
 </div>
