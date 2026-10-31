@@ -786,7 +786,7 @@ async function whereAmI(world: InitWorld, registered: readonly ProjectState[], h
     return { kind: 'outside' }
   }
   const name = basename(toplevel).toLowerCase()
-  const match = registered.find((p) => p.project !== null && p.project.toLowerCase() === name)
+  const match = registered.find((p) => typeof p.project === 'string' && p.project.toLowerCase() === name)
   if (match === undefined || match.project === null) return { kind: 'unregistered', toplevel }
   const read = (key: string): Promise<unknown> =>
     readRecipeKey(match.project!, ['source', key], { home, files: world.files }).catch(() => null)

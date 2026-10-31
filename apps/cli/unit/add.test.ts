@@ -4,12 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type AddWorld, addFlow } from '../src/add.ts'
 import type { SetupReader } from '../src/detect-setup.ts'
 import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 /**
  * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
+import { stripColour } from '../src/output.ts'
+import type { RuntimeFound } from '../src/runtimes.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const before = process.env['NO_COLOR']
@@ -156,6 +157,9 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     expect(rows.find((l) => l.startsWith('trial '))).toBeDefined()
     expect(rows.find((l) => l.includes('ready — doctor: all 27 passed'))).toBeDefined()
     expect(rows.find((l) => /^(added|Before registering)/.test(l))).toBeUndefined()
+    // The last thing printed is the block's last line.
+    expect(rows.at(-1)).toBe('3 lingtai start — takes it, if nothing is taking work already')
+    expect(rows.find((l) => l.startsWith('[next] 1 lingtai board'))).toBeDefined()
   })
 })
 
@@ -226,5 +230,9 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/✗ not ready · recipe: /)
     expect(text).toContain('a failing block')
     expect(text).not.toContain('✓ ready')
+    // One NEXT line, no number, last.
+    const last = stripColour(logged.join('\n').split('\n').at(-1)!)
+    expect(last).toMatch(/^\s*\[next\] \S/)
+    expect(last).not.toMatch(/ 1 /)
   })
 })

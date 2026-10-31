@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { jsonDocument, keyValues, printJson, printJsonError, section, symbol, table, width } from '../src/output.ts'
+import {
+  jsonDocument,
+  keyValues,
+  printJson,
+  printJsonError,
+  renderNextBlock,
+  section,
+  symbol,
+  table,
+  width,
+} from '../src/output.ts'
 import { refusal } from '../src/prompt.ts'
 
 const ESC = String.fromCharCode(27)
@@ -127,5 +137,23 @@ describe('prompt refusals', () => {
     expect(refusal('--name', { stdinIsTTY: false, stdoutIsTTY: true, json: false })).toContain('--name')
     expect(refusal('--name', { stdinIsTTY: true, stdoutIsTTY: true, json: true })).toContain('--name')
     expect(refusal('--name', { stdinIsTTY: true, stdoutIsTTY: true, json: false })).toBeNull()
+  })
+})
+
+describe('the NEXT block (0121 §1, #756)', () => {
+  it('draws the badge in the label column, numbered steps, and a blank column after the first', () => {
+    const before = process.env['NO_COLOR']
+    process.env['NO_COLOR'] = '1'
+    try {
+      expect(
+        renderNextBlock([
+          { command: 'lingtai board', for: 'the board, leave it running' },
+          { command: 'lingtai start', for: 'takes it' },
+        ]),
+      ).toEqual(['   [next] 1 lingtai board — the board, leave it running', '          2 lingtai start — takes it'])
+    } finally {
+      if (before === undefined) delete process.env['NO_COLOR']
+      else process.env['NO_COLOR'] = before
+    }
   })
 })

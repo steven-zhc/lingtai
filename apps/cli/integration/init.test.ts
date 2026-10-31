@@ -251,6 +251,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         return { line, updated: false }
       },
       history: async () => [],
+      cwd: '/elsewhere',
       doctor: async () => ({
         report: { ok: 0, notChecked: 0, deferred: 0 },
         toFix: { count: 0, failed: false },
