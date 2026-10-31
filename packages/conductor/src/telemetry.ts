@@ -127,9 +127,15 @@ export const loadSdk = () =>
 const EXPORT_MS = 3000
 
 /** Bounded, and a timeout or a refusal is dropped. */
-const bounded = (flushing: () => Promise<void>, ms: number): Promise<void> =>
+const bounded = (flushing: () => Promise<void>, ms: number, cancel: () => void = () => {}): Promise<void> =>
   new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, ms)
+    // The budget ran out: cancel what is still in flight, and not only stop
+    // waiting for it — `timeoutMillis` is the socket's inactivity, so a collector
+    // that trickles bytes would otherwise hold the process past the budget.
+    const timer = setTimeout(() => {
+      cancel()
+      resolve()
+    }, ms)
     flushing().then(
       () => {
         clearTimeout(timer)
@@ -163,6 +169,13 @@ export function installTracing(
   }
   if (url === undefined) return Promise.resolve(undefined)
   const endpoint = url
+  // Every agent the exporter makes, so a flush that ran out of time can destroy
+  // their sockets — destroying a socket errors the request it carries and ends
+  // its timers, which `forceFlush`/`shutdown` do not.
+  const agents: Array<{ destroy(): void }> = []
+  const cancel = () => {
+    for (const agent of agents) agent.destroy()
+  }
   return loadSdk().then((sdk): Tracing => {
     const provider = new sdk.base.BasicTracerProvider({
       // Given a resource, the provider does not fall back to the default one,
@@ -172,7 +185,17 @@ export function installTracing(
       // request or export timer holding the process past it.
       spanProcessors: [
         new sdk.base.BatchSpanProcessor(
-          exporter ?? new sdk.http.OTLPTraceExporter({ url: endpoint, timeoutMillis: EXPORT_MS }),
+          exporter ??
+            new sdk.http.OTLPTraceExporter({
+              url: endpoint,
+              timeoutMillis: EXPORT_MS,
+              httpAgentOptions: (protocol: string) =>
+                import(protocol === 'http:' ? 'node:http' : 'node:https').then(({ Agent }) => {
+                  const agent = new Agent({ keepAlive: true })
+                  agents.push(agent)
+                  return agent
+                }),
+            }),
           { exportTimeoutMillis: EXPORT_MS },
         ),
       ],
@@ -181,8 +204,8 @@ export function installTracing(
     context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
     return {
       layer: tracingLayer,
-      flush: (ms = EXPORT_MS) => bounded(() => provider.forceFlush(), ms),
-      shutdown: (ms = EXPORT_MS) => bounded(() => provider.shutdown(), ms),
+      flush: (ms = EXPORT_MS) => bounded(() => provider.forceFlush(), ms, cancel),
+      shutdown: (ms = EXPORT_MS) => bounded(() => provider.shutdown(), ms, cancel),
     }
   })
 }

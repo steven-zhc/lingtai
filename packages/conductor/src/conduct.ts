@@ -4814,7 +4814,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
   return run.pipe(
     // A refused or failed pass is a *returned* result, an Effect success, so the
     // span is told (#791). `stage: 'unexpected'` — a caught defect — is one too.
-    Effect.tap((result) => (result.ok === false ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void)),
+    Effect.tap((result) => (result.ok !== true ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void)),
     // A root: `runQueue` calls this once per ticket, and a pass is one trace
     // rather than a branch of the queue's (#791). No stack trace — it is a path.
     Effect.withSpan('conductor.run', {

@@ -146,11 +146,18 @@ describe('with an endpoint', () => {
   it('the end step is spanned where its actions run, one action span each, by kind', async () => {
     exporter.reset()
     const store = memoryStore()
+    const calls: string[] = []
     const github = {
+      getIssue: async () => ({ labels: [] }),
+      matchingRefs: async () => [],
       comment: async () => ({}),
       editComment: async () => undefined,
-      setLabels: async () => undefined,
-      closeIssue: async () => undefined,
+      setLabels: async () => {
+        calls.push('labels')
+      },
+      closeIssue: async () => {
+        calls.push('close')
+      },
       updateBody: async () => undefined,
       deleteRef: async () => undefined,
       listRefs: async () => [],
@@ -158,7 +165,7 @@ describe('with an endpoint', () => {
     await tellGitHubAbout({
       store,
       github,
-      ticketId: 'p#7',
+      ticketId: 'ticket-p-7',
       appended: [
         {
           type: 'EndActionsResolved',
@@ -167,12 +174,45 @@ describe('with an endpoint', () => {
       ],
     })
     await tracing.flush()
+    expect(calls).toEqual(['labels', 'close'])
     const spans = exporter.getFinishedSpans()
     const end = spans.find((s) => s.name === 'step end')!
     expect(end).toBeDefined()
     const actions = spans.filter((s) => s.name.startsWith('action '))
     expect(actions.map((s) => s.name)).toEqual(['action labels', 'action close'])
     for (const a of actions) expect(parentOf(a)).toBe(idOf(end))
+  })
+
+  it('an end action GitHub refused exports ERROR on its action and on the end step', async () => {
+    exporter.reset()
+    const refuse = async () => {
+      throw new Error('nope /secret')
+    }
+    const github = {
+      getIssue: async () => ({ labels: [] }),
+      matchingRefs: refuse,
+      setLabels: refuse,
+      closeIssue: refuse,
+    } as unknown as Parameters<typeof tellGitHubAbout>[0]['github']
+    await tellGitHubAbout({
+      store: memoryStore(),
+      github,
+      ticketId: 'ticket-p-7',
+      appended: [
+        {
+          type: 'EndActionsResolved',
+          data: { actions: [{ labels: ['x'] }, { close: true }, { refs: true, branch: true }] },
+        } as unknown as ToAppend,
+      ],
+    })
+    await tracing.flush()
+    const spans = exporter.getFinishedSpans()
+    const actions = spans.filter((s) => s.name.startsWith('action '))
+    expect(actions).toHaveLength(3)
+    for (const s of [...actions, spans.find((x) => x.name === 'step end')!]) {
+      expect(s.status.code, s.name).toBe(2)
+      expect(s.status.message).toBeUndefined()
+    }
   })
 
   it('a failing action exports ERROR with no message and no events', async () => {
@@ -185,9 +225,17 @@ describe('with an endpoint', () => {
     }
   })
 
-  it('a passing pass has no ERROR on its run', async () => {
+  it('a pass held at a person exports its run as ERROR, with no message', async () => {
     const { result, spans } = await pass(REVIEWED, runtime)
-    expect(result.ok).not.toBe(false)
-    expect(spans.find((s) => s.name === 'conductor.run')!.status.code).not.toBe(2)
+    expect(result.ok).toBe('held')
+    const run = spans.find((s) => s.name === 'conductor.run')!
+    expect(run.status.code).toBe(2)
+    expect(run.status.message).toBeUndefined()
+  })
+
+  it('a reviewer refusal routed to a person exports its run as ERROR', async () => {
+    const { result, spans } = await pass(REVIEWED, refusingRuntime)
+    expect(result.ok).not.toBe(true)
+    expect(spans.find((s) => s.name === 'conductor.run')!.status.code).toBe(2)
   })
 })

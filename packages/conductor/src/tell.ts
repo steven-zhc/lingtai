@@ -278,17 +278,23 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
  * rather than a permanent warning — the resolution is deduped per outcome
  * (`end-step.ts`) and nothing ever runs this function again for the same item.
  */
-export async function sweepRefs(options: {
+export function sweepRefs(options: Parameters<typeof sweepRefsHeld>[0]): Promise<void> {
+  // A chain and not `async`: 0101 §6's ratchet (#792) counts the keyword.
+  return sweepRefsHeld(options).then(() => undefined)
+}
+
+/** `sweepRefs`, saying whether the sweep finished — for the span that measures it (#791). */
+async function sweepRefsHeld(options: {
   store: EventStore
   github: RefChannel
   /** `ticket-<project>-<issue>`. */
   ticketId: string
   /** `agent/<n>` itself, on top of its arms. */
   andTheBranch: boolean
-}): Promise<void> {
+}): Promise<boolean> {
   const { store, github, ticketId } = options
   const target = split(ticketId)
-  if (target === null) return
+  if (target === null) return true
   const { project, issue } = target
 
   const branch = agentBranch(issue)
@@ -313,7 +319,7 @@ export async function sweepRefs(options: {
       change: 'refs',
       error: sweepFailure(err, gone),
     })
-    return
+    return false
   }
   await record(store, ticketId, 'IssueUpdated', {
     project,
@@ -323,6 +329,7 @@ export async function sweepRefs(options: {
     // a reader coming back to this row can no longer get from the remote.
     detail: gone.length === 0 ? 'none' : gone.join(','),
   })
+  return true
 }
 
 /**
@@ -588,23 +595,31 @@ export async function tellGitHubAbout(options: {
     // The `end` step's work as it runs (#791): `runStep` only resolves these, so
     // the span that measures them is here, named by kind and never by content.
     const ordered = [...writes, ...sweeps]
-    await inSpan('step end', {}, () =>
-      ordered.reduce<Promise<void>>(
-        (before, action, index) =>
-          before.then(() =>
-            inSpan(
-              `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
-              { 'lingtai.index': index },
-              () =>
-                'close' in action
-                  ? tell({ kind: 'closed' }).then(() => undefined)
-                  : 'labels' in action
-                    ? tell({ kind: 'labels', labels: action.labels }).then(() => undefined)
-                    : sweepRefs({ store, github, ticketId, andTheBranch: action.branch }),
+    // A write GitHub refused is a *returned* `IssueUpdateFailed`, not a throw, so
+    // each body says whether it held and the spans are told.
+    const held = (told: Told) => told.recorded !== 'IssueUpdateFailed'
+    await inSpan(
+      'step end',
+      {},
+      () =>
+        ordered.reduce<Promise<boolean>>(
+          (before, action, index) =>
+            before.then((all) =>
+              inSpan(
+                `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
+                { 'lingtai.index': index },
+                () =>
+                  'close' in action
+                    ? tell({ kind: 'closed' }).then(held)
+                    : 'labels' in action
+                      ? tell({ kind: 'labels', labels: action.labels }).then(held)
+                      : sweepRefsHeld({ store, github, ticketId, andTheBranch: action.branch }),
+                (ok) => !ok,
+              ).then((ok) => all && ok),
             ),
-          ),
-        Promise.resolve(),
-      ),
+          Promise.resolve(true),
+        ),
+      (all) => !all,
     )
   }
 }
