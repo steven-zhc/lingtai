@@ -181,5 +181,8 @@ describe('runNowCaption', () => {
     )
     expect(runNowCaption({ ...none, runnableAt: '2026-10-31T00:00:00Z' })).toBe('skips the backoff')
     expect(runNowCaption(none)).toBeNull()
+    expect(
+      runNowCaption({ ...none, problem: 'GitHub failed', runnableAt: '2026-10-31T00:00:00Z', paused: true }),
+    ).toBeNull()
   })
 })

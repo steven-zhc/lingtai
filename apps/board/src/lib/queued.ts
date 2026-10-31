@@ -354,6 +354,7 @@ export function holding(view: QueuedView, now: number = Date.now()): string | nu
  * nothing holds it. `holding` states the hold once; this says the click's effect.
  */
 export function runNowCaption(view: QueuedView): string | null {
+  if (view.problem !== null) return null
   if (view.notOffered !== null) return 'GitHub is not offering it, so a request now would match nothing'
   if (view.paused) return 'the request waits until the conductor is resumed'
   if (view.runnableAt !== null) return 'skips the backoff'

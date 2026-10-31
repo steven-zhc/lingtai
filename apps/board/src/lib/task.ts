@@ -739,7 +739,7 @@ function refusalOn(run: RunView): Deciding | null {
       attempt: run.attempt,
       source: refused.step.replace(':', ' / '),
       line: oneLine(refused.evidence) ?? run.outcome.detail ?? 'refused, and said nothing',
-      evidence: refused.evidence ?? run.outcome.detail,
+      evidence: refused.evidence?.trim() ? refused.evidence : run.outcome.detail,
       fromStep: true,
     }
   }

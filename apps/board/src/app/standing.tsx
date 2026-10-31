@@ -1319,7 +1319,15 @@ function LastPass({ deciding, attempts }: { deciding: StandingView['deciding']; 
   const lead =
     deciding.attempt === attempts ? `the last pass, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
   const label = `${lead} · ${deciding.fromStep ? 'stopped at ' : ''}${deciding.source}`
-  if (deciding.evidence?.trim()) return <RawEvidence raw={deciding.evidence} said={label} />
+  if (deciding.evidence?.trim())
+    return (
+      <>
+        <RawEvidence raw={deciding.evidence} said={label} />
+        <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+          ↓
+        </a>
+      </>
+    )
   return (
     <p className="sevidence">
       <span className="sstep">{label}</span>
