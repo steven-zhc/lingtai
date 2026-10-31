@@ -107,6 +107,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      issues: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -195,8 +196,22 @@ jobs:
           fi
           node packages/domain/scripts/events-diff.ts $old artifacts/events.json $prev > events-changed.md
           cat events-changed.md
+      - name: Tickets landed
+        # The merge lane lands without a pull request, so GitHub's generated
+        # notes miss it (#776). `git log` runs here so a failure fails the step
+        # under -e before the script runs; with no previous release the range
+        # would be `..<tag>`, a different range, so it is skipped.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          if [ -n "$PREV" ]; then
+            git log --first-parent --merges --format=%s "$PREV..${{ github.ref_name }}" > landings.txt
+          fi
+          node apps/release/src/tickets-changed.ts "${{ github.repository }}" "${{ github.ref_name }}" ${PREV:+landings.txt "$PREV"} > tickets-changed.md
+          cat tickets-changed.md
       - name: release notes
-        run: cat cli-changed.md events-changed.md > release-notes.md
+        run: cat tickets-changed.md cli-changed.md events-changed.md > release-notes.md
       - name: checksums
         working-directory: artifacts
         # `shasum -a 256 -c SHA256SUMS` on a Mac, `sha256sum -c` on Linux.
@@ -204,4 +219,4 @@ jobs:
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" artifacts/* --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes-file release-notes.md --generate-notes
+        run: gh release create "${{ github.ref_name }}" artifacts/* --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes-file release-notes.md

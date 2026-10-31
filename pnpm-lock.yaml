@@ -187,6 +187,9 @@ importers:
 
   apps/release:
     devDependencies:
+      '@lingtai/repo':
+        specifier: workspace:*
+        version: link:../../packages/repo
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
