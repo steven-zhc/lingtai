@@ -68,4 +68,15 @@ describe('the steps each path closes on (0121 §1, #756)', () => {
   it('here: outside a repository', () => {
     expect(hereSteps({ kind: 'outside' }).steps.map((s) => s.command)).toEqual(['lingtai add'])
   })
+  it('quotes a path or label with spaces so the copied command means what it says', () => {
+    expect(hereSteps({ kind: 'unregistered', toplevel: '/work/My Projects/widgets' }).steps[0]!.command).toBe(
+      "lingtai add --local '/work/My Projects/widgets'",
+    )
+    expect(addSteps({ project: 'w', tickets: 'github', kinds: ['tech debt'], slug: 'acme/w' })[0]!.command).toBe(
+      "gh issue create -R acme/w --label 'tech debt'",
+    )
+    expect(addSteps({ project: 'my p', tickets: 'db', kinds: [], slug: null })[1]!.command).toBe(
+      "lingtai ticket new --project 'my p'",
+    )
+  })
 })

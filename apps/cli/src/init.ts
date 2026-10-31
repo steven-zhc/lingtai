@@ -129,7 +129,16 @@ import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { ghStatus, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
-import { diskFiles, readRecipeKey, recipePath, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
+import {
+  diskFiles,
+  kindsOf,
+  readRecipeKey,
+  recipePath,
+  resolveSource,
+  ticketSourceOf,
+  type RecipeFiles,
+  type SignedIn,
+} from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -788,15 +797,25 @@ async function whereAmI(world: InitWorld, registered: readonly ProjectState[], h
   const name = basename(toplevel).toLowerCase()
   const match = registered.find((p) => typeof p.project === 'string' && p.project.toLowerCase() === name)
   if (match === undefined || match.project === null) return { kind: 'unregistered', toplevel }
-  const read = (key: string): Promise<unknown> =>
-    readRecipeKey(match.project!, ['source', key], { home, files: world.files }).catch(() => null)
-  const tickets = await read('tickets')
-  const kinds = await read('kinds')
+  // The effective settings, as the conductor resolves them: an omitted `tickets` is github, and kinds may sit under a `queue:`.
+  let tickets: 'db' | 'github' | null = null
+  let kinds: string[] = []
+  try {
+    const path = recipePath(match.project, home)
+    const text = await world.files.read(path)
+    if (text !== null) {
+      const recipe = resolveSource(text, path, path).recipe
+      tickets = ticketSourceOf(recipe)
+      kinds = [...kindsOf(recipe)]
+    }
+  } catch {
+    tickets = null
+  }
   return {
     kind: 'registered',
     project: match.project,
-    tickets: tickets === 'db' || tickets === 'github' ? tickets : null,
-    kinds: Array.isArray(kinds) ? kinds.filter((k): k is string => typeof k === 'string') : [],
+    tickets,
+    kinds,
     slug: match.owner === null ? null : `${match.owner}/${match.project}`,
   }
 }

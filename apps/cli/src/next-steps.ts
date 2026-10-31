@@ -17,12 +17,18 @@ export interface TicketSource {
   slug: string | null
 }
 
+/** One shell word: left bare when it is plainly safe, else single-quoted, so a copied command means what it says. */
+export function shellWord(word: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`
+}
+
 function ticketStep(source: TicketSource, forWords: string): NextStep | null {
   if (source.tickets === null) return null
-  if (source.tickets === 'db') return { command: `lingtai ticket new --project ${source.project}`, for: forWords }
+  if (source.tickets === 'db')
+    return { command: `lingtai ticket new --project ${shellWord(source.project)}`, for: forWords }
   if (source.slug === null) return null
-  const label = source.kinds[0] === undefined ? '' : ` --label ${source.kinds[0]}`
-  return { command: `gh issue create -R ${source.slug}${label}`, for: `${forWords}, with a kind label` }
+  const label = source.kinds[0] === undefined ? '' : ` --label ${shellWord(source.kinds[0])}`
+  return { command: `gh issue create -R ${shellWord(source.slug)}${label}`, for: `${forWords}, with a kind label` }
 }
 
 /** A local `init`. */
@@ -50,7 +56,10 @@ export function addSteps(source: TicketSource & { tickets: 'db' | 'github' }): N
   if (source.tickets === 'db') {
     return [
       { command: 'lingtai board', for: 'the board, leave it running' },
-      { command: `lingtai ticket new --project ${source.project}`, for: 'its first ticket, in another terminal' },
+      {
+        command: `lingtai ticket new --project ${shellWord(source.project)}`,
+        for: 'its first ticket, in another terminal',
+      },
       { command: 'lingtai start', for: START_MAYBE },
     ]
   }
@@ -71,7 +80,7 @@ export function hereSteps(here: Here): { preface?: string; steps: NextStep[] } {
     case 'unregistered':
       return {
         preface: `${here.toplevel} is not a project here`,
-        steps: [{ command: `lingtai add --local ${here.toplevel}`, for: 'registers it' }],
+        steps: [{ command: `lingtai add --local ${shellWord(here.toplevel)}`, for: 'registers it' }],
       }
     case 'registered': {
       const ticket = ticketStep(here, 'a ticket for it')

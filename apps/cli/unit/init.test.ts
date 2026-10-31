@@ -632,12 +632,27 @@ describe('init on a machine that already has projects names the directory it was
     const logged = await run(
       '/work/Widgets',
       { '/work/Widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/Widgets\n', stderr: '' } },
-      { [`${HOME}/widgets/recipe.yml`]: 'source:\n  tickets: github\n  kinds: [bug, feature]\n' },
+      {
+        [`${HOME}/widgets/recipe.yml`]:
+          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  tickets: github\n  kinds: [bug, feature]\n',
+      },
     )
     expectClosesOn(logged, [
       { command: 'gh issue create -R acme/widgets --label bug', for: 'a ticket for it, with a kind label' },
       { command: 'lingtai start', for: 'takes it, if nothing is taking work already' },
     ])
+  })
+
+  it('an omitted source.tickets is github, and kinds under steps.claim queue are the ones named', async () => {
+    const logged = await run(
+      '/work/widgets',
+      { '/work/widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/widgets\n', stderr: '' } },
+      {
+        [`${HOME}/widgets/recipe.yml`]:
+          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [obsolete]\nsteps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [tech debt, bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n',
+      },
+    )
+    expect(lines(logged).join('\n')).toContain("gh issue create -R acme/widgets --label 'tech debt'")
   })
 
   it('a git failure is not inside a repository, never a project', async () => {
