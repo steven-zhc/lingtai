@@ -14,7 +14,6 @@
  * `answers.ts`, so the conductor's own test can apply the same change set and
  * prove it holds or lands a pass, not only that it resolves.
  */
-import { passCeiling } from '@lingtai/conductor/ceiling'
 import { paint } from '@lingtai/env/colour'
 import {
   type Recipe,
@@ -23,12 +22,10 @@ import {
   type SetRecipeResult,
   type TurnLimit,
   baseOf,
-  boundsBesides,
   budgetChange,
   ceilingOf,
   diskFiles,
   landingChanges,
-  limitsFor,
   parseDuration,
   readRecipeKey,
   recipePath,
@@ -186,11 +183,6 @@ export async function askLanding(
       ),
     )
   }
-  world.log(
-    result.answer === 'hold'
-      ? paint.pass('landing       hold — every pass stops at proposed for a person')
-      : paint.pass(`landing       ${result.answer}`),
-  )
   return { ok: true }
 }
 
@@ -285,23 +277,8 @@ export async function askLimits(
     if ('refused' in written) return written
   }
 
-  // `add()`'s own sentence (`onboard.ts:335-341`) is `limitsFor`/`boundsBesides`
-  // against `implement`, not the bare ceiling: a per-step bound narrower than
-  // the ceiling makes the two disagree about what a pass costs, which is the
-  // one thing 0070 §9 put `steps` into `passCeiling` to prevent (#399). So this
-  // re-resolves what was just written and calls it the same way.
   const after = await resolvedFile(project, options)
   if ('refused' in after) return after
-  const implementLimits = limitsFor(after.recipe, 'implement')
-  world.log(
-    paint.muted(
-      `  ${'a pass'.padEnd(9)} ${passCeiling({
-        ...implementLimits,
-        wallMs: parseDuration(implementLimits.wall),
-        steps: boundsBesides(after.recipe, 'implement'),
-      })}`,
-    ),
-  )
   // The runtime the file names, not `resolveSource`'s schema default: a recipe
   // naming none runs whichever runtime this machine detects (local.ts), which
   // may not be claude-code.

@@ -197,10 +197,6 @@ async function printFound(
   detected: DetectedSetup,
   onPath: AskInstallAndBuildInput['onPath'],
 ): Promise<void> {
-  if (detected.install) world.log(`install: ${detected.install.run} — ${detected.install.because}`)
-  for (const b of detected.build) world.log(`build (${b.name}): ${b.run} — ${b.because}`)
-  for (const s of detected.skipped) world.log(`skipped \`${s.script}\`: ${s.why}`)
-  for (const n of detected.notes) world.log(n)
   if (onPath === undefined) return
   // The first word is the manager (`uv`, `poetry`, `pnpm`…). ruff, mypy and
   // pytest come from the project's environment after install, so they are not
@@ -236,6 +232,9 @@ async function askInstall(
     prompt: 'the install command',
     current: currentRun,
     detected: detected.install?.run ?? null,
+    ...(currentRun === null && detected.install
+      ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
+      : {}),
     fallback: '',
     validate: async (a) => (a === '' ? 'type a command, or none' : null),
     kept: input.kept,
@@ -348,6 +347,15 @@ async function askBuild(
   }
 
   const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
+  // What detection found explains a default only when the default came from it, not from the file's own list.
+  const why =
+    current.length > 0
+      ? []
+      : [
+          ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
+          ...detected.skipped.map((s) => `skipped \`${s.script}\`: ${s.why}`),
+          ...detected.notes,
+        ]
 
   if (defaultList !== null) {
     const answer = await question(world, {
@@ -357,6 +365,7 @@ async function askBuild(
       prompt: 'run these before review? yes, or no to write your own',
       choices: ['yes', 'no'],
       fallback: 'yes',
+      why,
       kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }
@@ -371,6 +380,7 @@ async function askBuild(
       given: null,
       prompt: 'a command that must pass before review — empty when done',
       fallback: '',
+      ...(defaultList === null && typed.length === 0 && why.length > 0 ? { why } : {}),
       kept: input.kept,
     })
     if ('refused' in answer) return { refused: answer.refused }

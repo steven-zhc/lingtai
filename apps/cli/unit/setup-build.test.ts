@@ -8,6 +8,7 @@ import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { SetupReader } from '../src/detect-setup.ts'
+import { acceptingDefaults } from '../src/question.ts'
 import {
   askInstallAndBuild,
   type AskInstallAndBuildInput,
@@ -565,7 +566,7 @@ describe('the PATH note', () => {
         onPath: async () => false,
       }),
     )
-    expect(lines).toContain('install: uv sync --frozen — uv.lock is at the root')
+    expect(lines).not.toContain('install: uv sync --frozen — uv.lock is at the root')
     expect(lines).toContain("uv is not on this machine's PATH; the conductor runs these commands here")
     expect(lines.filter((l) => l.includes('not on this machine'))).toHaveLength(1)
   })
@@ -648,5 +649,57 @@ describe('the trial outcome the card reads', () => {
       }),
     )
     expect(result).toMatchObject({ trial: { trial: 'failed-kept', command: 'pnpm test' } })
+  })
+})
+
+describe('why a default is what it is (#773)', () => {
+  const UV = { 'uv.lock': '', 'pyproject.toml': '[tool.pytest.ini_options]\nx = 1\n' }
+  const ROOT = 'install: uv sync --frozen — uv.lock is at the root'
+
+  /** Like `liveAsk`: prints `shape.why` where the question is drawn, then answers with the default. */
+  const terminal = (): { world: SetupWorld; lines: string[] } => {
+    const lines: string[] = []
+    return {
+      lines,
+      world: {
+        ask: async (_prompt, shape) => {
+          for (const line of shape?.why ?? []) lines.push(line)
+          return ''
+        },
+        log: (line) => lines.push(line),
+      },
+    }
+  }
+
+  it('is printed when the question is asked at a terminal', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = terminal()
+    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    expect(lines).toContain(ROOT)
+  })
+
+  it('is not printed when --install answers the question', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = terminal()
+    await askInstallAndBuild(
+      w,
+      input({ reader: reader(UV), files, given: { install: 'make deps', build: ['none'], check: null } }),
+    )
+    expect(lines.join('\n')).not.toContain('is at the root')
+  })
+
+  it('is not printed under --defaults', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const lines: string[] = []
+    const w = acceptingDefaults({ ask: async () => null, log: (line) => lines.push(line) })
+    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    expect(lines.join('\n')).not.toContain('is at the root')
+  })
+
+  it('is not printed when there is no terminal to ask at', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = world([])
+    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    expect(lines.join('\n')).not.toContain('is at the root')
   })
 })

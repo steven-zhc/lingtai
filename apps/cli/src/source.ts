@@ -139,7 +139,6 @@ export async function askTickets(
           `from. Pass --tickets db, or leave it out. ${kept}`,
       }
     }
-    world.log(paint.pass('tickets       db — a local project has no GitHub issues to read'))
     return current === 'db' ? { changes: [], current: 'db' } : { changes: [ticketsChange('db')], current: 'db' }
   }
 
@@ -153,7 +152,6 @@ export async function askTickets(
     kept,
   })
   if ('refused' in result) return result
-  world.log(paint.pass(`tickets       ${result.answer}`))
   const decided = result.answer as TicketSource
   return decided === current
     ? { changes: [], current: decided }
@@ -216,7 +214,6 @@ export async function askKinds(
 
   const parsed = parseKinds(result.answer)
   if (typeof parsed === 'string') return { refused: parsed }
-  world.log(paint.pass(`kinds         ${parsed.join(', ')}`))
 
   const unchanged =
     currentKinds !== null && currentKinds.length === parsed.length && currentKinds.every((k, i) => k === parsed[i])

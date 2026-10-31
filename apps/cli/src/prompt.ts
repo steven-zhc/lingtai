@@ -75,6 +75,7 @@ export async function liveAsk(
 ): Promise<string | null> {
   if (refusal('', how) !== null) return null
   if (shape === undefined) return null
+  for (const line of shape.why ?? []) console.log(line)
   const typed =
     shape.choices !== undefined
       ? await select(shape.message, shape.choices, shape.defaultValue, io, shape.labels)

@@ -27,6 +27,8 @@ export interface AskShape {
   startOver?: string | undefined
   /** The command that was run, so the line can say it continues from here. */
   command?: string | undefined
+  /** Why the default is what it is — printed by a front end only when it actually draws the question. */
+  why?: readonly string[] | undefined
 }
 
 export interface QuestionWorld {
@@ -77,6 +79,8 @@ export interface Question {
   startOver?: string
   /** The command that was run (`lingtai init`), for the Ctrl+C line. */
   command?: string
+  /** Lines that say why the default is what it is; shown where the question is drawn, never when a flag or `--defaults` answers it. */
+  why?: readonly string[]
 }
 
 export type Answered = { answer: string } | { refused: string }
@@ -139,6 +143,7 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
       kept: q.kept ?? 'Nothing was written',
       startOver: q.startOver,
       command: q.command,
+      why: q.why,
     })
     if (typed === null)
       return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }

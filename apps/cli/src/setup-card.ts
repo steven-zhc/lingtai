@@ -1,7 +1,7 @@
 /**
  * The summary card `init` and `add` end on (0121 §1), as a pure function of
  * facts. It reads no file and runs no doctor: everything arrives on `facts`.
- * Nothing prints it yet (#773 wires it in).
+ * `setup-end.ts` prints it.
  */
 import { basename } from 'node:path'
 
@@ -9,7 +9,7 @@ import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type Recipe, baseOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
-import { type DoctorReport, toFixSummary } from './doctor.ts'
+import type { DoctorReport } from './doctor.ts'
 import { heading, symbol, width } from './output.ts'
 import type { RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
@@ -50,7 +50,13 @@ export interface SetupCardFacts {
   recipePath: string
 }
 
-export type ReadyInput = { report: DoctorReport } | { threw: string }
+/**
+ * Types only from `doctor.ts`: `init.ts` must never reach it statically (an eager log read breaks a fresh machine).
+ * `toFix` is `toFixSummary(report)`, taken by whoever has the real report.
+ */
+export type ReadyInput =
+  | { report: Pick<DoctorReport, 'ok' | 'notChecked' | 'deferred'>; toFix: { count: number; failed: boolean } }
+  | { threw: string }
 
 function agentOf(actions: readonly Record<string, unknown>[] | undefined): CardAgent | null {
   const action = (actions ?? []).find((a) => typeof a['agent'] === 'string')
@@ -189,7 +195,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
 export function renderReadyLine(input: ReadyInput, recipePath: string): string {
   const tail = `recipe: ${recipePath}`
   if ('threw' in input) return `${symbol.fail()} not ready — doctor did not finish (${input.threw}) · ${tail}`
-  const { count, failed } = toFixSummary(input.report)
+  const { count, failed } = input.toFix
   if (failed) return `${symbol.fail()} not ready · ${tail}`
   if (count > 0) return `${symbol.pass()} ready · ${count} to fix · ${tail}`
   const { notChecked, deferred } = input.report
