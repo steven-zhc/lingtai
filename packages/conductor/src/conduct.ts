@@ -2383,7 +2383,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           labels: labelsFor('running'),
-          editEnded: true,
+          // A continuation is the same work going on: the landing, the next
+          // hold or the release edits that wait's comment with the real
+          // outcome. Editing it here would spend the one edit on *Approved*.
+          editEnded: !(options.continuing !== undefined && continuation !== null),
         })
         return { taken: { ticketId, kind: runnable.kind } }
       }

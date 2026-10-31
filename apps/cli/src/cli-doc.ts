@@ -129,7 +129,7 @@ function effectLine(c: ManifestCommand): string {
 /** A sentence under a group's table, for what the group's commands have in common. */
 const GROUP_NOTES: Partial<Record<Group, string>> = {
   'waiting on you':
-    'These commands only append to the log. When a wait ends, the conductor\'s next action on that ticket (the landing, the next hold, the release or the claim) edits the ticket\'s "Lingtai is waiting on you" comment into its outcome and posts no second comment; the CLI and the board never edit it.',
+    "Except `close`, which also carries out the recipe's end actions on the ticket at once, these commands only append to the log. When a wait ends, the conductor's next action on that ticket (the landing, the next hold, the release or the claim) edits the ticket's \"Lingtai is waiting on you\" comment into its outcome and posts no second comment; the CLI and the board never edit it.",
 }
 
 /** The page: a function of the manifest alone. Headings carry no backticks, so the anchor is `lingtai-<name>`. */

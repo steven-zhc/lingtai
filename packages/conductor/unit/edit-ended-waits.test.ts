@@ -35,7 +35,7 @@ async function world() {
   })
   const resolve = (waitId: string, resolution: unknown, by = 'human:steven'): ToAppend => ({
     type: 'WaitResolved',
-    actor: by,
+    actor: by === '' ? 'conductor' : by,
     data: { waitId, by, resolution, note: '' } as never,
   })
   const hold = (waitId: string, question = QUESTION) =>
@@ -88,13 +88,22 @@ describe('the waiting comment becomes its outcome', () => {
     expect(w.tickets.commentBodies(1)).toEqual([`${line}\n\n> ${QUESTION}`])
   })
 
-  it('an empty sha and an empty actor leave no undefined behind', async () => {
+  it('an empty sha leaves no undefined behind', async () => {
     const w = await world()
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([{ type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: '', base: 'main' } }])
     await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
     expect(w.tickets.commentBodies(1)[0]).toMatch(/^\*\*Landed on `main`\.\*\*/)
+  })
+
+  it('an empty actor reads Approved. with no name', async () => {
+    const w = await world()
+    await w.add([w.wait('w1')])
+    await w.hold('w1')
+    await w.add([w.resolve('w1', { _tag: 'Approve', onSha: 'x' }, '')])
+    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    expect(w.tickets.commentBodies(1)[0]).toMatch(/^\*\*Approved\.\*\*/)
   })
 
   it('without editEnded (close.ts, end.ts) nothing is edited or recorded', async () => {
@@ -109,17 +118,31 @@ describe('the waiting comment becomes its outcome', () => {
     ).toBe(false)
   })
 
-  it('a held-again continuation edits the old comment before posting the new one', async () => {
+  it('a held-again continuation edits the old comment before posting the new one, once each', async () => {
     const w = await world()
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([w.resolve('w1', { _tag: 'Approve', onSha: 'x' }), w.wait('w2')])
-    await w.hold('w2', 'second?')
+    const calls: string[] = []
+    const github = {
+      ...w.github,
+      comment: async (n: number, b: string) => {
+        calls.push('comment')
+        return w.github.comment(n, b)
+      },
+      editComment: async (n: number, id: number, b: string) => {
+        calls.push('edit')
+        return w.github.editComment(n, id, b)
+      },
+    }
+    await tellGitHubAbout({ store: w.store, github, ticketId, question: 'second?', waitId: 'w2', editEnded: true })
+    expect(calls).toEqual(['edit', 'comment'])
     const bodies = w.tickets.commentBodies(1)
     expect(bodies).toHaveLength(2)
     expect(bodies[0]).toBe(`**Approved by steven.**\n\n> ${QUESTION}`)
     expect(bodies[1]).toMatch(/waiting on you/)
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await tellGitHubAbout({ store: w.store, github, ticketId, editEnded: true })
+    expect(calls).toEqual(['edit', 'comment'])
     expect(w.tickets.commentBodies(1)[1]).toMatch(/waiting on you/)
   })
 
