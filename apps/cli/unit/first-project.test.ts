@@ -538,7 +538,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const order = [
       "the branch this project's recipe governs and merges into",
       'which agent writes the change',
-      "which model (empty for the runtime's own default)",
+      'which model',
       'does a cold reviewer read it',
       'on which model',
       'the install command',
