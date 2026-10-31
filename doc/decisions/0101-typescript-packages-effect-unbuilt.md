@@ -1,19 +1,21 @@
-# 0101 — Architecture: TypeScript in one workspace, run unbuilt, with Effect where something is acquired and where configuration is read
+# 0101 — Architecture: TypeScript in one workspace, run unbuilt, with every effectful backend path in Effect
 
-**Status** accepted · 2026-10-01
+**Status** accepted · 2026-10-31
 
 Lingtai is TypeScript throughout, in one pnpm workspace of `packages/*` and
 `apps/*`. Node runs the source directly, with no build step, so every file obeys
 Node's strip-only rules. The packages are layered: `domain` at the bottom, the
 packages that touch the world in the middle, `conductor` above them, and the hosts
 (`daemon`, the CLI, the board) on top. The conductor reaches git and the agent
-through two ports that a host provides. Effect is used for those ports, for the
-adapters behind them and for the conductor's run, because a run acquires resources
-and has to release every one on every path. The one other place is reading
-configuration, which goes through Effect's `Config` in `env` and is run there
-synchronously, so its callers stay plain. Everything else that acquires nothing
-stays plain functions. The only file that is not ordinary TypeScript on Node is the
-hook, a compiled single-file binary.
+through two ports that a host provides. **Every backend function that does IO is
+an Effect**: the store, the projector, GitHub, git, the agent, the actions, the
+pass, the daemon's loop and the CLI's commands. That is one model for acquiring
+and releasing resources, one for typed failure, and one for tracing — an Effect
+span is an OpenTelemetry span, so a pass is a trace without a second set of
+instrumentation. Pure logic — the event catalogue and its folds, the recipe's
+parsing and validation — stays plain functions that Effect code calls. The board
+stays `async` and runs Effect at its edge. The only file that is not ordinary
+TypeScript on Node is the hook, a compiled single-file binary.
 
 ## Context
 
@@ -62,8 +64,8 @@ turn limit, so every idiom it adopts is paid for again on every run.
 4. **The packages, by layer.** A package depends only on packages below it.
    - **Vocabulary:** `domain` (the event catalogue, reducers, upcasting, the
      control fold). It imports only `zod`.
-   - **Plain logic:** `recipe` (load, validate, resolve), `actions` (running a
-     declared action and proving it ran), `agent-env` (what an agent may see),
+   - **Plain logic and its loaders:** `recipe` (load, validate, resolve), `actions` (running a
+     declared action and proving it ran — IO, so Effect under rule 6), `agent-env` (what an agent may see),
      `env` (Lingtai's own settings, colour, and the file lock in
      `@lingtai/env/lock`), and `extension`. `extension` depends on nothing at all,
      and `packages/extension/unit/imports.test.ts` enforces that, so a third
@@ -89,10 +91,26 @@ turn limit, so every idiom it adopts is paid for again on every run.
    and no socket. `packages/conductor/unit/conduct-a-whole-pass.test.ts` is the
    test that says the seam holds.
 
-6. **Effect at the ports and past them, and nowhere else.** `Context.Tag` names a
-   port, `Layer` provides one, and `Scope` ties each acquired resource to a
+6. **Effect wherever there is IO.** `Context.Tag` names a
+   port or a service, `Layer` provides one, and `Scope` ties each acquired resource to a
    lifetime, so a resource is released because of how the code is structured
    rather than because someone remembered to release it.
+   - **What is an Effect**: every function in `event-store`, `projector`,
+     `github`, `repo`, `agent`, `actions`, `conductor`, `daemon`, `telegram` and
+     `apps/cli` that reads or writes outside the process — the store, a table, the
+     network, git, a child process, the filesystem, the clock it waits on. Each
+     returns an `Effect` with a tagged error per package, never a promise and never
+     a thrown error for a failure the caller is meant to decide on.
+   - **`Effect.runPromise` only at a host's edge**: the daemon's entry, each CLI
+     command's entry, a board read or server action, and a test. Never inside
+     backend code — a `runPromise` nested in an Effect starts a fiber with no
+     parent, which loses the caller's scope, its interruption and its span.
+   - **Tracing is Effect's**: a named operation is `Effect.withSpan` (or
+     `Effect.fn`), and a host that has `telemetry.otlp_endpoint` provides
+     `@effect/opentelemetry`'s layer, exporting over OTLP/HTTP. A span carries
+     no URL, no token, no title and no body; the one identifying attribute it may
+     carry is `lingtai.ticket`, the issue number. The board's own read spans
+     (`apps/board/src/lib/telemetry.ts`) follow the same rules.
    - `runOnce` (`conduct.ts`) and `runQueue` (`schedule.ts`) are `Effect`s that
      need `Repo | AgentHost`. The hosts provide the layer and call
      `Effect.runPromise` once, at their edge (`apps/cli/src/conduct.ts`,
@@ -108,27 +126,27 @@ turn limit, so every idiom it adopts is paid for again on every run.
      integration, and the run log closes last.
    - Refusals come before acquisitions. The recipe, the environment, the tier and
      the claim all refuse before the first resource is acquired.
-   - Effect is a dependency of `conductor`, `repo`, `agent`, `github`,
-     `apps/cli`, and `env` for configuration only (rule 7).
+   - The event store's failures stay **defects** rather than tagged errors: a run
+     cannot decide anything on behalf of a store that will not append.
 
-7. **What stays plain, deliberately.** `domain`, `recipe`, `actions`, `agent-env`,
-   `env` and `extension` are plain functions that Effect code calls. They have no
-   resources to manage. **`env` reads configuration through Effect's `Config`**
+7. **What stays plain, deliberately.** `domain`, `recipe`'s parsing and
+   validation, `agent-env` and `extension` are pure functions that Effect code
+   calls; they do no IO and have no resources to manage. `extension` depends on
+   nothing at all, so a third party's subscriber can import it.
+   **`env` reads configuration through Effect's `Config`**
    ([0117](0117-configuration-is-config-yml-and-the-environment.md)): one
    `ConfigProvider` per source, so the file's keys and the environment's names
    map onto each other mechanically and one `Config` describes both. It is run
-   with `Effect.runSync` inside `env`'s own functions and never escapes them, so
-   every caller still gets a plain value or a plain error. Some interfaces keep promise faces:
-   - the event store, whose failures are defects rather than refusals, because a
-     run cannot decide anything on behalf of a store that will not append;
-   - the `GitHubClient` methods and the runtime interface `actions` consumes;
-   - `git`, `provisionWorktree`, `removeWorktree` and `integrate`, which also keep
-     a promise face beside their Effect one for ordinary `async` callers such as
-     the board's server actions. Each has one implementation, and its promise face
-     is just a `runPromise` over the Effect.
+   with `Effect.runSync` inside `env`'s own functions, so a caller gets a plain
+   value or a plain error.
+   **The board** (`apps/board`) stays `async`: its Server Components and server
+   actions call backend Effects with `Effect.runPromise` at their edge, and its
+   own read spans are `@opentelemetry/api` (#775). A package that the board calls
+   may keep a promise face beside its Effect one, and that face is only a
+   `runPromise` over the Effect — one implementation, never two.
 
-   The pass loop itself (`pass.ts`) is a plain promise. The run's Effect scope
-   around it in `conduct.ts` holds what the pass cannot hold.
+   Where a package has not been moved yet, epic #790 lists it; the rule above is
+   what each move is held to.
 
 8. **The hook is the one exception to "TypeScript on Node".** `lingtai-hook` is a
    dependency-free thin client, compiled with
@@ -143,15 +161,12 @@ turn limit, so every idiom it adopts is paid for again on every run.
 - `enum` and parameter properties are unavailable. That costs little, because zod
   enums are both values and types.
 - A green `tsc` is not proof that a package loads under Node. Import it.
-- Readers have to know `Effect.gen` as well as `async`/`await`. Keeping Effect to
-  the ports, the adapters and the conductor's run keeps that cost where resources
-  actually are.
-- The cost that is specific to Lingtai is that agents write this code. Effect is
-  kept on one condition. If an agent fails twice on otherwise in-scope work
-  because it could not write correct Effect, which shows in the log as a run
-  failing on a type error inside Effect code, the ports go back to plain
-  interfaces and the lifetimes go back to `try`/`finally`. The leak this rule
-  prevents then comes back with them.
+- Readers have to know `Effect.gen`; backend code has one style rather than two,
+  and the line between them is IO, not which package a function happens to be in.
+- Agents write this code, so every ticket on the backend is an Effect ticket. That
+  is a cost paid on every run, and it is accepted.
+- A pass is a trace: every Effect operation with a span is a child of the step
+  that ran it, and nothing is instrumented twice.
 - If a build step ever becomes necessary, rule 2 is the decision to revisit, and the
   `.ts` specifiers are what has to change.
 
