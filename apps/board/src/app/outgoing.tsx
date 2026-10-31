@@ -75,7 +75,11 @@ export function Outgoing({
    */
   folded?: boolean
 }) {
-  const [open, setOpen] = useState(!folded)
+  // Only what the person did to the fold. Whether there is a fold is the prop's,
+  // read on every render: a page that goes blocked -> queued through Follow
+  // re-renders this component rather than mounting it, so seeding from `folded`
+  // once would carry the blocked page's open prompt onto the queued one.
+  const [opened, setOpened] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -157,7 +161,7 @@ export function Outgoing({
           (queued, approved — 0118 §2), with its size in the summary. Edit is
           outside the fold and opens it. */}
       {folded ? (
-        <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <details open={opened} onToggle={(e) => setOpened(e.currentTarget.open)}>
           <summary title={outgoing.version}>prompt · {outgoing.text.length} bytes</summary>
           <pre className="outtext">{outgoing.text}</pre>
         </details>
@@ -178,7 +182,7 @@ export function Outgoing({
             className="btn"
             disabled={busy}
             onClick={() => {
-              setOpen(true)
+              if (folded) setOpened(true)
               setDraft(outgoing.edit?.text ?? '')
             }}
           >
