@@ -158,3 +158,73 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     expect(rows.find((l) => /^(added|Before registering)/.test(l))).toBeUndefined()
   })
 })
+
+describe('a GitHub add ends on the card, not on a dump of every setting (#755)', () => {
+  function githubHarness(over: { doctorFails?: boolean; warnings?: string[] } = {}) {
+    const h = ttyHarness()
+    const files = mapFiles()
+    h.world.project.files = files
+    h.world.project.github.auth = () => 'gh'
+    h.world.project.github.ghStatus = async () => ({ ok: true, login: 'sam', scopes: ['repo', 'workflow'] })
+    h.world.project.github.add = async (_options, log) => {
+      log('reading /h/.lingtai/widgets/recipe.yml — a dump line that must not reach the screen')
+      log('  tier guarded')
+      return { ok: true, updated: false, warnings: over.warnings ?? [], reach: { kind: 'gh', login: 'sam' } }
+    }
+    h.world.githubDeps = {
+      check: async () => null,
+      auth: () => 'gh',
+      interactive: () => true,
+      ghAccess: async () => ({ login: 'sam', defaultBranch: 'main' }),
+      picker: async () => ({ installations: [], installUrl: null }),
+      files,
+      reader: async () => SETUP_READER,
+      ask: async () => '',
+      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+      history: async () => [],
+    }
+    if (over.doctorFails === true) {
+      h.world.doctor = async () => ({
+        report: { ok: 20, notChecked: 0, deferred: 0 },
+        toFix: { count: 1, failed: true },
+        blocks: 'a failing block',
+      })
+    }
+    const argv = ['acme/widgets', '--base', 'main', '--install', 'none', '--build', 'none']
+    return { ...h, argv }
+  }
+
+  it('prints the three groups, the github row and the ready line, and none of what add logged', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    // The positional is `acme/widgets`; flagsFromArgv reads the rest.
+    const parsed = flagsFromArgv(argv)
+    expect(await addFlow({ ...parsed, positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    const text = logged.join('\n')
+    expect(text).toMatch(/^add {2}widgets$/m)
+    expect(text).toMatch(/github\s+gh, signed in as sam/)
+    expect(text).toMatch(/code\s+acme\/widgets {2}github/)
+    expect(text).toMatch(/lands on\s+main, on GitHub/)
+    expect(text).toContain('each pass')
+    expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
+    expect(text).not.toContain('a dump line')
+    expect(text).not.toContain('tier guarded')
+  })
+
+  it('prints a warning add reported before the card', async () => {
+    const { world, logged, argv } = githubHarness({ warnings: ['warning: main is protected (a ruleset). Ask.'] })
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text.indexOf('warning: main is protected')).toBeGreaterThan(-1)
+    expect(text.indexOf('warning: main is protected')).toBeLessThan(text.indexOf('this machine'))
+  })
+
+  it('a doctor failure ends on not ready with its recipe and the blocks, never ready', async () => {
+    const { world, logged, argv } = githubHarness({ doctorFails: true })
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).toMatch(/✗ not ready · recipe: /)
+    expect(text).toContain('a failing block')
+    expect(text).not.toContain('✓ ready')
+  })
+})

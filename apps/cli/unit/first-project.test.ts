@@ -826,7 +826,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     expect(logged).toEqual(['github       app — a GitHub App is configured here'])
   })
 
-  it('a successful registration prints none of what add logged: that is the card\'s, not a dump (#755)', async () => {
+  it("a successful registration prints none of what add logged: that is the card's, not a dump (#755)", async () => {
     const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
     const picker = await listRepositories({ reader, projects: [], installUrl: null })
 

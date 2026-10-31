@@ -37,7 +37,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
-import { STEPS, baseProtectedRemedies, parsePayload } from '@lingtai/domain'
+import { baseProtectedRemedies, parsePayload } from '@lingtai/domain'
 import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import {
@@ -59,10 +59,6 @@ import {
   baseDivergence,
   baseOf,
   baseWrittenAt,
-  boundsBesides,
-  kindsOf,
-  limitsFor,
-  parseDuration,
   recipePath,
   resolveLocalRecipe,
   resolveRecipe,
@@ -70,7 +66,6 @@ import {
   type ResolvedRecipe,
 } from '@lingtai/recipe'
 
-import { passCeiling } from './filter.ts'
 import { taken } from './pick-repository.ts'
 import { signedInHere } from './projects.ts'
 
