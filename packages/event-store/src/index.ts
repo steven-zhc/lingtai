@@ -16,7 +16,7 @@ import { deferredEventStore, deferredLog, processEventStore, processLog } from '
 import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
 export { closeProcessLog, processEventStore, processLog, processTicketSql } from './choose.ts'
-export { ProcessLogClosedError } from './closable.ts'
+export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
 export type { TicketSql } from './ticket-sql.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {

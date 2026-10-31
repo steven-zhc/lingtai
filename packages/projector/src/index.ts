@@ -40,7 +40,14 @@ export {
   type TaskQuery,
   type TicketReportQuery,
 } from './store.ts'
-export { projectionStore, withProjectionStore, type ProjectionStoreOptions } from './choose.ts'
+export {
+  closeProcessProjections,
+  ProcessProjectionsClosedError,
+  projectionStore,
+  withProjectionStore,
+  withStoreFrom,
+  type ProjectionStoreOptions,
+} from './choose.ts'
 export {
   ProjectionShapeError,
   declaredColumns,

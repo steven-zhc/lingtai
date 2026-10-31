@@ -21,7 +21,7 @@ async function closeBounded(close: () => Promise<void>): Promise<boolean> {
     return true
   } catch (err) {
     console.error(
-      `lingtai: the log's connection did not close (${err instanceof Error && err.message ? err.message : String(err)}); exiting anyway`,
+      `lingtai: the store's connections did not close (${err instanceof Error && err.message ? err.message : String(err)}); exiting anyway`,
     )
     return false
   } finally {
