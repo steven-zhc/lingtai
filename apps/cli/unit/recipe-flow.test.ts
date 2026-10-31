@@ -548,7 +548,9 @@ describe('askRecipe — the trial run (#436)', () => {
     it('says it after the write', async () => {
       const { result, logged } = await go(false)
       expect(result).toMatchObject({ ok: true, trial: { trial: 'failed-kept' } })
-      expect(logged.some((l) => l.includes('kept the list as tried') && l.includes(recipePath('widget')))).toBe(true)
+      expect(logged.some((l) => l.includes('kept the list as tried') && l.includes(recipePath('widget', HOME)))).toBe(
+        true,
+      )
     })
   })
 })
