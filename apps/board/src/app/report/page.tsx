@@ -7,8 +7,8 @@
  * does, so the two cannot disagree.
  *
  * **Nothing is cached and nothing is client state.** The filters are the
- * address (`lib/report.ts`), both projections are folded to the head on render,
- * and the bar says how far short either stopped. A read that fails is a
+ * address (`lib/report.ts`), both projections are read as they stand on render
+ * (nothing folds them), and the bar says how far behind either is. A read that fails is a
  * sentence in place of the panels, never a 500.
  */
 import { report as buildReport, type Report } from '@lingtai/conductor/report'

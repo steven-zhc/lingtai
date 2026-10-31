@@ -9,18 +9,9 @@
  * and the back button all work, and the server reads what the address says.
  */
 import { resolveWindow, type Money, type ReportWindow, type WindowSpec } from '@lingtai/conductor/report'
-import {
-  createProjectionRunner,
-  readSpend,
-  readTicketReport,
-  spendProjection,
-  ticketReportProjection,
-  type Projection,
-  type SpendRow,
-  type TicketReportRow,
-} from '@lingtai/projector'
+import { readSpend, readTicketReport, type SpendRow, type TicketReportRow } from '@lingtai/projector'
 
-import type { SpendCurrency } from './spend.ts'
+import { lagOf, type SpendCurrency } from './spend.ts'
 
 export type ReportParams = Record<string, string | string[] | undefined>
 
@@ -141,37 +132,17 @@ export interface ReportCurrency {
   spend: SpendCurrency
 }
 
-/** `currentSpend`'s fold, for one projection: to the head, and how far short it stopped. */
-async function foldToHead(projection: Projection): Promise<SpendCurrency> {
-  const runner = createProjectionRunner({ projection })
-  let error: string | undefined
-  let lag: number | null = null
-  try {
-    await runner.start()
-  } catch (err) {
-    error = (err as Error).message
-  }
-  try {
-    lag = Number((await runner.lag()).lag)
-  } catch (err) {
-    error ??= (err as Error).message
-  } finally {
-    await runner.close().catch(() => {})
-  }
-  return error ? { lag, error } : { lag }
-}
-
 /**
- * Both tables brought to the head, then read. The board holds no projector of
- * its own, and a table nobody follows is frozen money (`currentSpend`'s reason);
- * two projectors on one log converge (0022), so folding beside the daemon is safe.
- * Nothing is cached: a reload is a new read.
+ * Both tables read straight, with the lag of each. The board holds no
+ * projector; every process that appends follows both (`withProjector`), and a
+ * page that is behind says so (`currentSpend`). Nothing is cached.
  */
 export async function currentReport(
   project: string | null,
   since: Date,
 ): Promise<{ tickets: TicketReportRow[]; spend: SpendRow[]; currency: ReportCurrency }> {
-  const [ticketReport, spend] = await Promise.all([foldToHead(ticketReportProjection), foldToHead(spendProjection)])
+  // Lags before the rows (see `currentSpend`): rows newer than their lag is safe, the reverse is not.
+  const [ticketReport, spend] = await Promise.all([lagOf('ticket_report'), lagOf('spend')])
   const [tickets, rows] = await Promise.all([
     readTicketReport(project === null ? {} : { project }),
     readSpend(project === null ? { since } : { project, since }),
@@ -198,7 +169,7 @@ export function reportChip(c: ReportCurrency): ReportChip {
       parts.push({
         label: p.lag === null ? `${name} not current` : `${name} behind ${p.lag}`,
         tone: 'warn',
-        title: `${name} could not be brought to the head: ${p.error} — ${repair}`,
+        title: `${name}'s lag could not be read: ${p.error} — ${repair}`,
       })
     } else if (p.lag === null) {
       parts.push({ label: `${name} unknown`, tone: 'warn', title: `could not read ${name}'s lag — ${repair}` })
@@ -206,7 +177,7 @@ export function reportChip(c: ReportCurrency): ReportChip {
       parts.push({
         label: `${name} behind ${p.lag}`,
         tone: 'idle',
-        title: `${p.lag} event(s) arrived after this page folded ${name} — reload to fold them`,
+        title: `${p.lag} event(s) are not in ${name} yet — it catches up when something next appends with a projector, or ${repair}`,
       })
     }
   }

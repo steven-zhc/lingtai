@@ -25,7 +25,9 @@
  * an unknown run in it.** A total is a floor (0110 §2) and every reader says so.
  */
 import { fetchedNote } from '@lingtai/conductor'
-import { createProjectionRunner, readSpend, spendProjection, type SpendRow } from '@lingtai/projector'
+import { readLag, readSpend, type SpendRow } from '@lingtai/projector'
+
+import { timed } from './timing.ts'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
 export type Purpose = 'Work' | 'Answering' | 'Judge' | 'Triage' | 'Discussion'
@@ -190,15 +192,15 @@ export function billHasAny(bill: Bill): boolean {
 }
 
 export interface SpendCurrency {
-  /** Events between `spend` and the head, after the fold. Null when unknown. */
+  /** Events between the projection's checkpoint and the head, as read. Null when unknown. */
   lag: number | null
-  /** Why the fold, or the read of its lag, did not succeed. */
+  /** Why the lag could not be read. */
   error?: string
   /**
-   * The fold was never attempted because there was nothing on the board to
+   * The lag was never read because there was nothing on the board to
    * bill — `loadBoard`'s empty-tasks path. Distinct from a bare `lag: null`
-   * with no `error`, which only a fold that actually ran and still could not
-   * read its lag produces: a not-measured board is not a failed one, and
+   * with no `error`, which only a read that ran and still could not
+   * produce a lag yields: a not-measured board is not a failed one, and
    * `spendChip` must not send an operator to rebuild a projection nothing
    * asked anything of (`#498`'s review).
    */
@@ -206,32 +208,35 @@ export interface SpendCurrency {
 }
 
 /**
- * Fold `spend` to the head, then read it — `currentBacklog`'s shape
- * (`backlog.ts`), for the reason given there: a table nobody built is no
- * spend and a table nobody follows is frozen money, and a bare `lingtai run`
- * on the terminal path holds no projector of its own for this table outside
- * `withProjector` (`apps/cli/src/projector.ts`).
+ * How far behind one projection is, as a `SpendCurrency` — one `select`
+ * (`readLag`), never a runner. Shared by `currentSpend`, `currentBacklog` and
+ * `currentReport` so one failure is worded one way on every page.
+ */
+export async function lagOf(name: string): Promise<SpendCurrency> {
+  try {
+    return { lag: Number((await readLag(name)).lag) }
+  } catch (err) {
+    return { lag: null, error: (err as Error).message }
+  }
+}
+
+/**
+ * Read `spend` from its table and say how far behind it is. The board holds
+ * no projector: every process that appends follows `spend` while it runs
+ * (`withProjector`, `apps/cli/src/projector.ts`), the same guarantee
+ * `task_view` has, so a page reports the lag rather than folding it away.
+ * A table nobody built reads as no rows with `lag = head` — *behind N*.
  */
 export async function currentSpend(
   query: Parameters<typeof readSpend>[0] = {},
 ): Promise<{ rows: SpendRow[]; currency: SpendCurrency }> {
-  const runner = createProjectionRunner({ projection: spendProjection })
-  let error: string | undefined
-  let lag: number | null = null
-  try {
-    await runner.start()
-  } catch (err) {
-    error = (err as Error).message
-  }
-  try {
-    lag = Number((await runner.lag()).lag)
-  } catch (err) {
-    error ??= (err as Error).message
-  } finally {
-    await runner.close().catch(() => {})
-  }
-  const rows = await readSpend(query)
-  return { rows, currency: error ? { lag, error } : { lag } }
+  // Lag first, rows second, never in parallel: a follower that commits between
+  // the two makes the rows newer than the lag that certifies them (a
+  // conservative *behind N*), where the other order would certify stale rows
+  // as current.
+  const currency = await timed('spend.lag', () => lagOf('spend'))
+  const rows = await timed('spend.rows', () => readSpend(query))
+  return { rows, currency }
 }
 
 /** What the bar says about `spend`'s currency — `backlogChip`'s own shape, for the same reason: a fold nobody reports on is a figure nobody can trust. */
@@ -247,7 +252,7 @@ export function spendChip(c: SpendCurrency): {
       current: false,
       label: c.lag === null ? 'not current' : `behind ${c.lag}`,
       tone: 'warn',
-      title: `spend could not be brought to the head: ${c.error} — ${repair}`,
+      title: `spend's lag could not be read: ${c.error} — ${repair}`,
     }
   }
   if (c.skipped) {
@@ -261,6 +266,6 @@ export function spendChip(c: SpendCurrency): {
     current: false,
     label: `behind ${c.lag}`,
     tone: 'idle',
-    title: `${c.lag} event(s) arrived after this page folded spend — reload to fold them`,
+    title: `${c.lag} event(s) are not in spend yet — it catches up when something next appends with a projector, or ${repair}`,
   }
 }

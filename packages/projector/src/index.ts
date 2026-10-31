@@ -25,6 +25,7 @@
 export {
   createProjectionRunner,
   projectionLag,
+  readLag,
   type ProjectionRunner,
   type ProjectionRunnerOptions,
 } from './projection.ts'
