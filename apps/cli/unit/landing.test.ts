@@ -330,7 +330,7 @@ describe('askLanding', () => {
     expect(resolved.repo.base).toBe('main')
   })
 
-  it('land on a base inherited from a preset leaves the file byte for byte', async () => {
+  it('land with no hold to remove leaves the file byte for byte', async () => {
     const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
@@ -339,6 +339,32 @@ describe('askLanding', () => {
     })
     expect(result).toEqual({ ok: true })
     expect(files.replaced).toEqual([])
+  })
+
+  it('land on a blank base whose default branch is named hold writes it as the base, not as a hold', async () => {
+    const files = mapFiles({ [PATH]: EMPTY_BASE })
+    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'hold',
+    })
+    expect(result).toEqual({ ok: true })
+    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    expect(resolved.repo.base).toBe('hold')
+    expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
+  })
+
+  it('land on a base named hold removes the hold and keeps the base', async () => {
+    const files = mapFiles({ [PATH]: HOLDING.replace('base: main', 'base: hold') })
+    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'main',
+    })
+    expect(result).toEqual({ ok: true })
+    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    expect(resolved.repo.base).toBe('hold')
+    expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
 
   it('land on a blank base with no readable default branch is refused and writes nothing', async () => {

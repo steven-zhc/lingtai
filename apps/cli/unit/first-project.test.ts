@@ -600,7 +600,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   it('a landing answer that moves repo.base registers with the moved base (#431 Watch out)', async () => {
     // 'no' at index 1 answers "use every default?" (#433); the landing
     // question is the eighth of `askRecipe`'s own after it, at index 9.
-    const answers = ['', 'no', ...RECIPE_FLOW_DEFAULTS]
+    // The base question is typed as `lingtai-base`, so `--land develop` really moves the base afterwards.
+    const answers = ['lingtai-base', 'no', ...RECIPE_FLOW_DEFAULTS]
     answers.splice(9, 1) // the landing question is answered by --land
     const { world, registered, files } = harness({
       git: {
@@ -622,9 +623,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   })
 
   it('a landing answer naming a branch git does not have is refused by name, and nothing is registered (#431 Watch out)', async () => {
-    // `--land nope` with no `--base` is the base question's detected answer, so the missing branch is
-    // refused there, before the landing is reached; the person gives up at the re-ask.
-    const answers = ['', null]
+    // The base is typed as `lingtai-base`, so `--land nope` moves it afterwards, to a branch git lacks.
+    const answers = ['lingtai-base', 'no', ...RECIPE_FLOW_DEFAULTS]
+    answers.splice(9, 1) // the landing question is answered by --land
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -636,7 +637,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
 
     const result = await chooseFirstProject(world, { local: '/repo', land: 'nope' })
 
-    expect(result).toMatchObject({ refused: expect.any(String) })
+    expect(result).toEqual({ refused: expect.stringContaining('nope is not a branch in /repo') })
     expect(registered).toEqual([])
   })
 })

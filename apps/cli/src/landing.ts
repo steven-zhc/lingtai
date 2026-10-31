@@ -25,6 +25,8 @@ import {
   budgetChange,
   ceilingOf,
   diskFiles,
+  holdRemovalChanges,
+  landOnBranchChanges,
   landingChanges,
   parseDuration,
   readRecipeKey,
@@ -194,9 +196,7 @@ export async function askLanding(
     } else if (file.base !== '') {
       // Landing on the base the recipe resolves must not pin it: keep only the
       // hold's removal, never a `repo.base` the file did not say.
-      changes = landingChanges({ land: file.base }, rawP, rawA).filter(
-        (c) => c.path[0] === 'steps' && c.path[1] === 'proposed',
-      )
+      changes = holdRemovalChanges(rawP)
     } else {
       const base = await deps.defaultBranch()
       if (base === null) {
@@ -204,7 +204,7 @@ export async function askLanding(
           refused: `no base branch to land on — pass --land <branch>. ${deps.kept ?? 'Nothing was written'}`,
         }
       }
-      changes = landingChanges({ land: base }, rawP, rawA)
+      changes = landOnBranchChanges(base, rawP, rawA)
     }
   }
   const hadSteps = (await readRecipeKey(project, ['steps'], options)) !== null
