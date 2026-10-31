@@ -9,7 +9,7 @@ import { coloured, paint } from '@lingtai/env/colour'
 import { Console, Effect } from 'effect'
 
 import type { BoardVerb } from './board.ts'
-import { definitionOf, PROJECTION_NAMES } from './commands.ts'
+import { definitionOf, PROJECTION_NAMES, startIsVerbose } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
 import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
@@ -1025,7 +1025,12 @@ function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>, j
   })
 }
 
-const startFlags = { noConduct: Options.boolean('no-conduct'), noMerge: Options.boolean('no-merge'), noColor }
+const startFlags = {
+  noConduct: Options.boolean('no-conduct'),
+  noMerge: Options.boolean('no-merge'),
+  verbose: Options.boolean('verbose'),
+  noColor,
+}
 
 function startCommand(name: 'start' | 'daemon') {
   return Command.make(name, startFlags, (args) =>
@@ -1037,7 +1042,12 @@ function startCommand(name: 'start' | 'daemon') {
       }
       // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
       // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
-      return daemonCommand(flags, null, name === 'start' ? () => console.log(`${symbol.pass()} started`) : null)
+      return daemonCommand(
+        flags,
+        null,
+        name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
+        startIsVerbose(name, args.verbose),
+      )
     }),
   ).pipe(Command.withDescription(definitionOf(name).task))
 }

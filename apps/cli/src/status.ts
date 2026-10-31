@@ -624,7 +624,7 @@ export function renderStatus(
 }
 
 /** What a person does about a wait, and where else they can do it. */
-function waitCommand(project: string, ref: number | string, reason: string): string {
+export function waitCommand(project: string, ref: number | string, reason: string): string {
   if (reason === 'SignoffRequired') return `lingtai approve ${project} --issue ${ref}   (or the board)`
   if (reason === 'OwnQuestion') return `lingtai answer ${project} --issue ${ref} "<choice>"   (or the board)`
   return 'decide on the board'

@@ -53,6 +53,8 @@ import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 import { stillOwed } from './continuing.ts'
+import { symbol } from './output.ts'
+import { waitCommand } from './status.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot()
@@ -85,6 +87,14 @@ export interface ConductOptions {
    */
   paused?: () => Promise<string | null>
   log?: (line: string) => void
+  /**
+   * The sink for a person (#766): the `taking` line, one line per ending, and the
+   * failures and refusals. `log` is the trace. Absent, nothing new is said and
+   * those failures stay on `log`, as they were.
+   */
+  tell?: (line: string) => void
+  /** More than one project is registered, so a person's line names its project. */
+  many?: boolean
   /** The resolved recipe each project's pass actually used. */
   onRecipe?: (project: string, recipe: Recipe) => void
 }
@@ -157,6 +167,9 @@ export interface ConductWorkOptions {
   /** Absent, every pass is awaited, as it always was. */
   slots?: PassSlots
   log: (line: string) => void
+  /** See `ConductOptions.tell`. */
+  tell?: (line: string) => void
+  many?: boolean
   onRecipe?: (project: string, recipe: Recipe) => void
   /**
    * Read fresh to settle whether a `control.continuing` row is still live
@@ -199,6 +212,14 @@ export function conductWork(
   const store = options.store ?? eventStore
   return async (project, where) => {
     const name = project.project!
+    // Failures and sentences a person needs go to `tell`; absent, where they always went.
+    const say = options.tell ?? options.log
+    const tellEnding = (result: RunOnceResult): void => {
+      const line = options.tell ? endingLine(result, { project: name, prefixed: options.many === true }) : null
+      if (line !== null) options.tell!(line)
+    }
+    const tellTaking = (ref: string, title: string): void =>
+      options.tell?.(takingLine(ref, title, options.many === true ? name : undefined))
 
     // `max: 0` means "look at the project and take nothing". Returned here
     // rather than through `runQueue({ max: 0 })` because a nominated issue
@@ -306,9 +327,7 @@ export function conductWork(
     // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
     const limit = slots && !slots.ceilingSet ? 1 : wanted
     if (slots && wanted > 1 && !slots.ceilingSet) {
-      options.log(
-        `${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one pass runs in all`,
-      )
+      say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one pass runs in all`)
     }
     // Passes already in flight, in any project, keep the look detached even when the
     // limit has since fallen to one or the ceiling has been removed: awaiting would
@@ -325,6 +344,7 @@ export function conductWork(
       if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
       else if (result.ok === 'held') options.log(`held at ${result.step}`)
       else options.log(`stopped at ${result.stage}: ${result.detail}`)
+      tellEnding(result)
       return !declinedBeforeWork(result)
     }
     /**
@@ -337,7 +357,7 @@ export function conductWork(
       // recorded while an earlier pass of this look was starting must stop this one.
       const paused = options.paused ? await options.paused() : null
       if (paused !== null) {
-        options.log(`${name}: #${issue} not started — ${paused}`)
+        say(`${name}: #${issue} not started — ${paused}`)
         return false
       }
       const files = await readFixFiles(common.client, issue)
@@ -363,7 +383,7 @@ export function conductWork(
           return worked
         },
         (err: unknown) => {
-          options.log(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
+          say(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
           return false
         },
       )
@@ -404,6 +424,7 @@ export function conductWork(
       if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
       else if (result.ok === 'held') options.log(`held at ${result.step}`)
       else options.log(`stopped at ${result.stage}: ${result.detail}`)
+      tellEnding(result)
       return 'looked'
     }
 
@@ -457,6 +478,7 @@ export function conductWork(
       // `lingtai status`'s — `#123  bug  the title`.
       const task = queued.get(asked.issue)!
       options.log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
+      tellTaking(asked.issue, task.title)
       if (detached) await launch(Number(asked.issue))
       else {
         const result: RunOnceResult = await Effect.runPromise(
@@ -466,6 +488,7 @@ export function conductWork(
         if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
         else if (result.ok === 'held') options.log(`held at ${result.step}`)
         else options.log(`stopped at ${result.stage}: ${result.detail}`)
+        tellEnding(result)
       }
     }
     // Detached, a request and a continuation take a slot and the queue fills the rest.
@@ -474,6 +497,13 @@ export function conductWork(
         world
           .runQueue({
             ...common,
+            ...(options.tell
+              ? {
+                  took: (entry: { issue: string; title: string }) => tellTaking(entry.issue, entry.title),
+                  ended: tellEnding,
+                  failed: options.tell,
+                }
+              : {}),
             recipe: resolved.recipe,
             ...(detached ? { slots: { set: slots.set, limit, started: slots.started } } : { max: options.max ?? 1 }),
             // One ticket today, so the loop's own check comes first; handed in
@@ -557,6 +587,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
     codeSha: options.codeSha ?? null,
     outcome,
     log,
+    ...(options.tell ? { tell: options.tell } : {}),
     ...(options.paused ? { paused: options.paused } : {}),
     work: conductWork({
       hookBinary,
@@ -568,9 +599,49 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       ...(options.paused ? { paused: options.paused } : {}),
       ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
       log,
+      ...(options.tell ? { tell: options.tell } : {}),
+      ...(options.many ? { many: true } : {}),
       ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
     }),
   })
+}
+
+/** `taking #1  <title>` — what a person sees when a pass takes a ticket (#766). */
+export function takingLine(ref: string, title: string, project?: string): string {
+  return `${project === undefined ? '' : `${project}  `}taking #${ref}${title === '' ? '' : `  ${title}`}`
+}
+
+/** `$0.40`; `cost unknown` when nothing reported one; never `$0.00` for an unknown (0110 §7). */
+export function costWords(cost: { usd: number; unknown: number }): string {
+  if (cost.unknown === 0) return `$${cost.usd.toFixed(2)}`
+  if (cost.usd === 0) return 'cost unknown'
+  return `$${cost.usd.toFixed(2)} + ${cost.unknown} unknown`
+}
+
+/**
+ * The one line a person gets when a pass ends (#766), or null where it ended
+ * before it did any work — that is the trace's: `stopped at claim: …`.
+ *
+ * Built from the summary `runOnce` attached, and from nothing else: it reads no
+ * log and asks nobody, so a pass the daemon did not finish prints nothing.
+ */
+export function endingLine(result: RunOnceResult, options: { project: string; prefixed?: boolean }): string | null {
+  if (declinedBeforeWork(result)) return null
+  const summary = result.summary
+  const ref = summary?.ref ?? result.ticketId?.match(/(\d+)$/)?.[1] ?? '?'
+  const title = summary?.title ?? ''
+  const steps = (summary?.ran ?? [])
+    .filter((v) => v.ending !== 'held')
+    .map((v) => `${v.step} ${v.ending === 'passed' ? symbol.pass() : symbol.fail()}`)
+  const where =
+    result.ok === true
+      ? `landed in ${result.mergeCommit.slice(0, 7)}`
+      : result.ok === 'held'
+        ? `waiting for you: ${waitCommand(options.project, ref, summary?.wait ?? '')}`
+        : `stopped at ${result.stage}: ${result.detail.replace(/\s+/g, ' ').trim()}`
+  const parts = [...(steps.length > 0 ? [steps.join(' ')] : []), ...(summary ? [costWords(summary.cost)] : []), where]
+  const head = `${options.prefixed === true ? `${options.project}  ` : ''}#${ref}${title === '' ? '' : `  ${title}`}`
+  return `${head} — ${parts.join(' · ')}`
 }
 
 /** Whether any project's recipe asks for more than one slot. A recipe that cannot be read asks for one. */
@@ -633,6 +704,8 @@ export interface ProjectsOptions {
    */
   paused?: () => Promise<string | null>
   store?: EventStore
+  /** Where a refusal is said to a person; absent, `log`. */
+  tell?: (line: string) => void
 }
 
 /**
@@ -645,6 +718,7 @@ export interface ProjectsOptions {
  */
 export async function conductProjects(options: ProjectsOptions): Promise<PassOutcome> {
   const { outcome, log, store = eventStore } = options
+  const say = options.tell ?? log
 
   for (const project of options.projects) {
     const name = project.project
@@ -654,7 +728,7 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
     if (options.paused) {
       const why = await options.paused()
       if (why !== null) {
-        log(`${name}: not looked at — ${why}`)
+        say(`${name}: not looked at — ${why}`)
         break
       }
     }
@@ -674,7 +748,7 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       // One project's problem is not the pass's. A misconfigured repository
       // must not stop the others from being worked.
       outcome.refused.push({ project: name, detail: (err as Error).message })
-      log(`${name}: ${(err as Error).message}`)
+      say(`${name}: ${(err as Error).message}`)
       // **And on the log** (#148): this line was the whole record for hours
       // while a daemon too old for its recipe refused every sweep. Appended on
       // the transition only — `passTransition` compares with what the stream

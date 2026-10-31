@@ -347,13 +347,14 @@ export const COMMANDS = [
     task: 'hold the projections current and take work',
     effect: 'changes',
     usage: [
-      'lingtai start [--no-conduct] [--no-merge] [--no-color]',
+      'lingtai start [--no-conduct] [--no-merge] [--verbose] [--no-color]',
       '  Reads no standing signal: a pause or a shutdown aimed at an',
       '  earlier daemon was not aimed at this one. If another daemon holds',
       '  the lock this starts nothing and says so. Unchecked — lingtai',
       '  restart is the checked start.',
       '  --no-conduct   projections only, take nothing',
       '  --no-merge     as for lingtai run',
+      '  --verbose      every line the conductor writes, as well',
     ],
     examples: ['lingtai start', 'lingtai start --no-conduct'],
   }),
@@ -603,4 +604,9 @@ export function isCommand(name: string | undefined): name is CommandName {
 
 export function definitionOf(name: CommandName): CommandDefinition {
   return COMMANDS.find((c) => c.name === name) as CommandDefinition
+}
+
+/** `lingtai daemon` is what a supervisor logs, so only a plain `lingtai start` goes quiet (#766). */
+export function startIsVerbose(name: 'start' | 'daemon', flag: boolean): boolean {
+  return name === 'daemon' || flag
 }

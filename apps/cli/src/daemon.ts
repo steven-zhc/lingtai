@@ -203,13 +203,20 @@ export async function daemonCommand(
   restart: { by: string; reason: string; examined: CodeVersion } | null = null,
   /** Said once the lock is won and the checks passed, before the daemon's own lines (#622). */
   announce: (() => void) | null = null,
+  /**
+   * Whether the conductor's own trace reaches the terminal (#766). `lingtai daemon`
+   * and `restart` keep it — it is what `lingtai service` logs — and only a plain
+   * `lingtai start` goes quiet. Errors and what a person must act on are not trace.
+   */
+  verbose = true,
 ): Promise<number> {
+  const trace = verbose ? (line: string) => console.log(line) : () => {}
   // The lock, the status table, the code this process loaded, and — for a
   // restart — the refusals only a started daemon can be asked. One function for
   // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
   // `integration/restart.test.ts` runs and not a copy of it (#167).
   const opened = await openDaemon(restart, {
-    start: () => startDaemon({ projections: PROJECTIONS, log: (line) => console.log(line), onRunner: trackLiveSpend }),
+    start: () => startDaemon({ projections: PROJECTIONS, log: trace, onRunner: trackLiveSpend }),
     code: async () => {
       // The beacon. One timer in the whole system, and it decides nothing — it
       // says "still here", which is the difference between a board that is behind
@@ -508,15 +515,15 @@ export async function daemonCommand(
       // The daemon's own directory. There is no worktree for an event — it is
       // not about a diff — and a subscriber that wants one has to make it.
       cwd: process.cwd(),
-      log: (line) => console.log(line),
+      log: trace,
     })
-    for (const line of declared.describe()) console.log(line)
+    for (const line of declared.describe()) trace(line)
 
     // The passes in flight, held across looks (0122 §1): a look that starts
     // several returns, and the next look must still know they are running.
     const slots = createSlots()
     loop = createWorkLoop({
-      log: (line) => console.log(line),
+      log: trace,
       subscribers: () => declared.subscribers(),
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
@@ -574,7 +581,9 @@ export async function daemonCommand(
           // conductor down must stop the next claim in this pass, not the next
           // pass (#210).
           paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
-          log: (line) => console.log(line),
+          log: trace,
+          tell: (line) => console.log(line),
+          many: registered.length > 1,
           ...(started ? { slots: { set: slots, started } } : {}),
           onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
         })
@@ -584,12 +593,18 @@ export async function daemonCommand(
         // A routine pass, in the accent — structure, not a verdict. What the
         // pass *decided* is coloured line by line above this; this one only
         // says the loop went round.
-        console.log(
+        const passLine = (refused: boolean): string =>
           paint.accent(
             `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-              (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
-          ),
-        )
+              (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
+          )
+        if (verbose) console.log(passLine(true))
+        // A refusal is not trace: a quiet start must still say why nothing was taken.
+        else if (outcome.refused.length > 0) {
+          console.log(
+            `${outcome.refused.length} project(s) refused this pass — lingtai start --verbose, or lingtai status`,
+          )
+        }
       },
     })
     // **Scoped, like the loop's** (`#159`). It used to fold the whole stream,
@@ -856,5 +871,5 @@ async function restartSteps(args: RestartArgs, steps: Steps, restarted: (sha: st
     ...(args.noMerge ? { 'no-merge': '' } : {}),
   }
   steps.begin('starting')
-  return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null))
+  return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true)
 }
