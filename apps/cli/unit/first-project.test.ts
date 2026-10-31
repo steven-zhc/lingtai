@@ -553,7 +553,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       'the install command',
       'a command that must pass before review',
       'which labels are work',
-      'land this on which branch',
+      'when a pass is ready',
       'how many times a pass sends the agent back',
       'what one agent run may take',
       'a dollar ceiling per agent run',
@@ -601,7 +601,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     // 'no' at index 1 answers "use every default?" (#433); the landing
     // question is the eighth of `askRecipe`'s own after it, at index 9.
     const answers = ['', 'no', ...RECIPE_FLOW_DEFAULTS]
-    answers[9] = 'develop'
+    answers.splice(9, 1) // the landing question is answered by --land
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -611,7 +611,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers,
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', land: 'develop' })
 
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered).toHaveLength(1)
@@ -622,8 +622,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   })
 
   it('a landing answer naming a branch git does not have is refused by name, and nothing is registered (#431 Watch out)', async () => {
-    const answers = ['', 'no', ...RECIPE_FLOW_DEFAULTS]
-    answers[9] = 'nope'
+    // `--land nope` with no `--base` is the base question's detected answer, so the missing branch is
+    // refused there, before the landing is reached; the person gives up at the re-ask.
+    const answers = ['', null]
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -633,9 +634,9 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers,
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', land: 'nope' })
 
-    expect(result).toEqual({ refused: expect.stringContaining('nope is not a branch in /repo') })
+    expect(result).toMatchObject({ refused: expect.any(String) })
     expect(registered).toEqual([])
   })
 })

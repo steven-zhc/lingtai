@@ -175,7 +175,7 @@ describe('askLanding', () => {
 
   it('an empty repo.base already on disk answers nothing, so the default branch is fetched and offered', async () => {
     const files = mapFiles({ [PATH]: EMPTY_BASE })
-    const { world: w, asked } = world([])
+    const { world: w } = world(['land it without asking'])
     let calls = 0
     const result = await askLanding(w, PROJECT, null, {
       home: HOME,
@@ -185,9 +185,9 @@ describe('askLanding', () => {
         return 'trunk'
       },
     })
-    expect(result).toMatchObject({ refused: expect.any(String) })
+    expect(result).toEqual({ ok: true })
     expect(calls).toBe(1)
-    expect(asked[0]).toContain('[trunk]')
+    expect(resolveSource((await files.read(PATH))!, PATH, PATH).recipe.repo.base).toBe('trunk')
   })
 
   it('--land hold on a file with its own terse steps.proposed entry leaves that entry exactly as written', async () => {
@@ -282,15 +282,75 @@ describe('askLanding', () => {
     ])
   })
 
-  it("on a recipe cutting from steps.admit's worktree.base, the default offered is that base, not repo.base", async () => {
-    const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
-    const { world: w, asked } = world([])
-    // No flag and no queued answer: the question is asked and refused, but
-    // its own default — shown in the bracket — must be the branch the
-    // conductor actually cuts from, read before the refusal happens.
-    const result = await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => 'main' })
-    expect(result).toMatchObject({ refused: expect.any(String) })
-    expect(asked[0]).toContain('[release]')
+  it('offers the two choices, defaulting to land on a file with no hold and to wait on one with a hold', async () => {
+    for (const [text, expected] of [
+      [FIXTURE, '[land it without asking]'],
+      [HOLDING, '[wait for me to approve]'],
+    ] as const) {
+      const files = mapFiles({ [PATH]: text })
+      const seen: unknown[] = []
+      const asked: string[] = []
+      const w: QuestionWorld = {
+        ask: async (prompt, shape) => {
+          asked.push(prompt)
+          seen.push(shape?.choices)
+          return null
+        },
+        log: () => {},
+      }
+      await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => 'main' })
+      expect(asked[0]).toContain('when a pass is ready')
+      expect(asked[0]).toContain(expected)
+      expect(seen[0]).toEqual(['wait for me to approve', 'land it without asking'])
+    }
+  })
+
+  it('wait writes one human: at steps.proposed', async () => {
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const result = await askLanding(world(['wait for me to approve']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'main',
+    })
+    expect(result).toEqual({ ok: true })
+    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    expect(resolved.steps.proposed.filter((a) => 'human' in a)).toHaveLength(1)
+  })
+
+  it('land removes the hold and leaves repo.base alone', async () => {
+    const files = mapFiles({ [PATH]: HOLDING })
+    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'other',
+    })
+    expect(result).toEqual({ ok: true })
+    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
+    expect(resolved.repo.base).toBe('main')
+  })
+
+  it('land on a base inherited from a preset leaves the file byte for byte', async () => {
+    const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
+    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'main',
+    })
+    expect(result).toEqual({ ok: true })
+    expect(files.replaced).toEqual([])
+  })
+
+  it('land on a blank base with no readable default branch is refused and writes nothing', async () => {
+    const blank = FIXTURE.replace('base: main', 'base: ""')
+    const files = mapFiles({ [PATH]: blank })
+    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => null,
+    })
+    expect(result).toMatchObject({ refused: expect.stringContaining('no base branch to land on') })
+    expect(files.replaced).toEqual([])
   })
 
   it("--land develop on a recipe cutting from steps.admit's worktree.base writes it there, and leaves repo.base untouched", async () => {
