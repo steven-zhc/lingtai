@@ -148,7 +148,7 @@ export function baseMovedOn(ours: readonly string[], theirs: readonly string[]):
 }
 
 /** A remote git reaches over a network: a URL (`file://` included) or `user@host:path`. Nothing to read locally. */
-const SCP_REMOTE = /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/
+const SCP_REMOTE = /^[^:/\\\s]{2,}:(?!\/\/)/
 export function isLocalRemote(remote: string): boolean {
   return !remote.includes('://') && !SCP_REMOTE.test(remote)
 }

@@ -70,7 +70,7 @@ describe('checkedOutAt', () => {
 
 describe('isLocalRemote', () => {
   it('is false for URLs and scp-like addresses', () => {
-    for (const r of ['https://github.com/a/b', 'file:///tmp/x', 'git@host:a/b.git'])
+    for (const r of ['https://github.com/a/b', 'file:///tmp/x', 'git@host:a/b.git', 'buildhost:repos/app.git'])
       expect(isLocalRemote(r)).toBe(false)
     expect(isLocalRemote('/tmp/x')).toBe(true)
   })
