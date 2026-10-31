@@ -472,6 +472,15 @@ async function runLocalBranch(
         `name — pick another directory, or remove that project first. ${world.kept}`,
     }
   }
+  // Read for an unregistered recipe too: one the old `add` wrote and never registered still has a mirror to rebuild.
+  const existingRemote = await readRecipeKey(name, ['repo', 'remote'], { home: world.home, files: world.files })
+  if (typeof existingRemote === 'string' && existingRemote !== remote) {
+    // A checkout with no `origin` has only the top level to match.
+    const got = await world.git(toplevel, ['remote', 'get-url', 'origin'])
+    const origin = got.ok && got.stdout.trim() !== '' ? resolveRemote(got.stdout.trim(), toplevel) : null
+    moving = ports !== null && origin !== null && existingRemote === origin
+    oldRemote = existingRemote
+  }
   if (found !== undefined && found.owner === null) {
     // `repo.remote` is optional in the schema (`recipe.ts`), so a project
     // registered before owners were recorded — #352's `unrecorded` state —
@@ -479,14 +488,6 @@ async function runLocalBranch(
     // nothing here to confirm this directory is the same project, and
     // proceeding would silently re-point an existing GitHub project's stream
     // at this local directory.
-    const existingRemote = await readRecipeKey(name, ['repo', 'remote'], { home: world.home, files: world.files })
-    if (typeof existingRemote === 'string' && existingRemote !== remote) {
-      // A checkout with no `origin` has only the top level to match.
-      const got = await world.git(toplevel, ['remote', 'get-url', 'origin'])
-      const origin = got.ok && got.stdout.trim() !== '' ? resolveRemote(got.stdout.trim(), toplevel) : null
-      moving = ports !== null && origin !== null && existingRemote === origin
-      oldRemote = existingRemote
-    }
     if (existingRemote !== remote && !moving) {
       return {
         refused:
@@ -564,7 +565,8 @@ async function runLocalBranch(
 
   // A move is the remote leaving the old one, or the base differing from the one recorded.
   const migrating =
-    ports !== null && found !== undefined && (moving || (typeof currentBase === 'string' && currentBase !== base))
+    ports !== null &&
+    (moving || (typeof existingRemote === 'string' && typeof currentBase === 'string' && currentBase !== base))
   // Every refusal of a move comes before the first write — the branch below is one.
   if (migrating && ports !== null) {
     world.log(
@@ -600,6 +602,19 @@ async function runLocalBranch(
     }
   }
 
+  if (migrating && ports !== null) {
+    // The mirror keeps the `origin` it was cloned with, so it is cloned again from the checkout.
+    try {
+      await ports.removeMirror(name)
+    } catch (error) {
+      return {
+        refused:
+          `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed, ` +
+          `and no branch was made. ${world.kept}`,
+      }
+    }
+  }
+
   // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
   // cuts from a mirror of this checkout at `base`.
   let madeKept: string | null = null
@@ -620,20 +635,6 @@ async function runLocalBranch(
     }
     fromSha = tip.stdout.trim()
     madeKept = `the branch ${base} made from ${source} in ${toplevel}`
-  }
-
-  if (moving && ports !== null) {
-    // The mirror keeps the `origin` it was cloned with, so it is cloned again from the checkout.
-    try {
-      await ports.removeMirror(name)
-    } catch (error) {
-      return {
-        refused:
-          `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed` +
-          (madeKept === null ? '' : `; ${madeKept} is kept`) +
-          '.',
-      }
-    }
   }
 
   const path = recipePath(name, world.home)

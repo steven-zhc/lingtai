@@ -1412,6 +1412,25 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced).toEqual({})
   })
 
+  it('an unregistered old recipe still has its mirror removed', async () => {
+    const { h, result } = run({ answers: ['yes'], projects: [] })
+    expect(await result).toMatchObject({ ok: true })
+    expect(h.removed).toEqual(['repo'])
+  })
+
+  it('a base-only change removes the mirror too', async () => {
+    const { h, result } = run({
+      answers: ['yes'],
+      git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
+      files: {
+        [path]:
+          'version: 2\nrepo:\n  base: main\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      },
+    })
+    expect(await result).toMatchObject({ ok: true })
+    expect(h.removed).toEqual(['repo'])
+  })
+
   it('without the ports (lingtai init) an old origin remote is still refused by the name guard', async () => {
     const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD } })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
