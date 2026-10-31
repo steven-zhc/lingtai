@@ -26,7 +26,7 @@ export type IssueRead = { found: false } | { found: true; title: string; labels:
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Pick<Response, 'status' | 'ok' | 'json'>>
 
-/** 404 and 410 (GitHub's answer for a deleted issue) are "not found"; any other failure throws. */
+/** Only 404 is "not found"; every other failure (410 included) throws, so the status decides and the step fails. */
 export async function readIssue(fetch: Fetch, repo: string, token: string, n: number): Promise<IssueRead> {
   const res = await fetch(`https://api.github.com/repos/${repo}/issues/${n}`, {
     headers: {
@@ -35,7 +35,7 @@ export async function readIssue(fetch: Fetch, repo: string, token: string, n: nu
       'X-GitHub-Api-Version': '2022-11-28',
     },
   })
-  if (res.status === 404 || res.status === 410) return { found: false }
+  if (res.status === 404) return { found: false }
   if (!res.ok) throw new Error(`reading issue #${n} of ${repo} answered ${res.status}`)
   const body = (await res.json()) as { title: string; labels?: Array<string | { name?: string }> }
   const labels = (body.labels ?? []).map((l) => (typeof l === 'string' ? l : (l.name ?? '')))

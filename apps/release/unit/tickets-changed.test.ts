@@ -105,11 +105,11 @@ describe('readIssue', () => {
     expect(seen?.url).toBe('https://api.github.com/repos/o/r/issues/7')
     expect(((seen?.init?.headers ?? {}) as Record<string, string>).Authorization).toBe('Bearer tok')
   })
-  it('reads 404 and 410 as not found', async () => {
+  it('reads 404 as not found', async () => {
     expect(await readIssue(stub(404), 'o/r', 't', 1)).toEqual({ found: false })
-    expect(await readIssue(stub(410), 'o/r', 't', 1)).toEqual({ found: false })
   })
-  it('throws on 403 and 500, naming the status and the issue', async () => {
+  it('throws on 403, 410 and 500, naming the status and the issue', async () => {
+    await expect(readIssue(stub(410), 'o/r', 't', 9)).rejects.toThrow('410')
     await expect(readIssue(stub(403), 'o/r', 't', 8)).rejects.toThrow('#8')
     await expect(readIssue(stub(500), 'o/r', 't', 8)).rejects.toThrow('500')
   })
