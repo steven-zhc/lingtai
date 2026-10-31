@@ -61,7 +61,16 @@ export interface AskInstallAndBuildInput {
   onPath?: (tool: string) => Promise<boolean>
 }
 
-export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
+/**
+ * How the trial build went, for the summary card: one fact above the per-command
+ * results. `ms` is wall time around the `tryBuild` call.
+ */
+export type TrialOutcome =
+  | { trial: 'passed'; ms: number }
+  | { trial: 'failed-kept'; command: string; ms: number }
+  | { trial: 'not-run'; because: 'declined' | 'no checkout' | 'no checks' }
+
+export type AskInstallAndBuildResult = { changes: RecipeChange[]; trial: TrialOutcome } | { refused: string }
 
 function isRunAction(value: unknown): value is NamedRun & Record<string, unknown> {
   return typeof value === 'object' && value !== null && typeof (value as { run?: unknown }).run === 'string'
@@ -241,14 +250,13 @@ async function tryTheBuild(
   input: AskInstallAndBuildInput,
   install: string | null,
   build: NamedRun[],
-): Promise<{ ok: true } | { refused: string }> {
-  if (build.length === 0 || input.tryBuild === null) {
-    if (build.length > 0) {
-      world.log(
-        'the trial run was not run — no checkout on this machine; the first pass’s `build` is where these first run',
-      )
-    }
-    return { ok: true }
+): Promise<{ ok: true; trial: TrialOutcome } | { refused: string }> {
+  if (build.length === 0) return { ok: true, trial: { trial: 'not-run', because: 'no checks' } }
+  if (input.tryBuild === null) {
+    world.log(
+      'the trial run was not run — no checkout on this machine; the first pass’s `build` is where these first run',
+    )
+    return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
   }
 
   const check = await question(world, {
@@ -261,10 +269,11 @@ async function tryTheBuild(
     kept: input.kept,
   })
   if ('refused' in check) return { refused: check.refused }
-  if (check.answer === 'no') return { ok: true }
+  if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
 
   world.log('running the trial build — this can take minutes')
   let report: TrialReport
+  const startedAt = Date.now()
   try {
     report = await input.tryBuild(
       install,
@@ -278,9 +287,11 @@ async function tryTheBuild(
     }
     throw err
   }
+  const ms = Date.now() - startedAt
   const { results, nothingDeclared } = report
   // Colour is decided by what failed, never by what was not run.
-  if (!results.some((r) => r.outcome === 'failed')) return { ok: true }
+  const firstFailed = results.find((r) => r.outcome === 'failed')
+  if (firstFailed === undefined) return { ok: true, trial: { trial: 'passed', ms } }
 
   for (const r of results) {
     if (r.outcome === 'failed') world.log(`failed: ${r.command}\n${r.evidence}`)
@@ -307,7 +318,7 @@ async function tryTheBuild(
       refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
     }
   }
-  return { ok: true }
+  return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
 }
 
 async function askBuild(
@@ -409,5 +420,5 @@ export async function askInstallAndBuild(
     changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
   }
 
-  return { changes }
+  return { changes, trial: tried.trial }
 }

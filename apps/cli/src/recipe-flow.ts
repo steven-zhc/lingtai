@@ -45,7 +45,7 @@ import { askLanding, askLimits } from './landing.ts'
 import { heading, keyValues } from './output.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
-import { type AskInstallAndBuildInput, askInstallAndBuild } from './setup-build.ts'
+import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
 /**
@@ -254,7 +254,10 @@ async function writeOrRefuse(
   }
 }
 
-export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ ok: true } | { refused: string }> {
+export async function askRecipe(
+  world: QuestionWorld,
+  at: RecipeAt,
+): Promise<{ ok: true; trial: TrialOutcome } | { refused: string }> {
   const fileOptions = { home: at.home, files: at.files }
   const files = at.files ?? diskFiles
   const path = recipePath(at.project, at.home)
@@ -335,6 +338,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     kept: askKept,
   })
   if ('refused' in setup) return setup
+  const trial = setup.trial
   if (absent) {
     collected.push(...setup.changes)
   } else {
@@ -430,5 +434,5 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     }
   }
 
-  return { ok: true }
+  return { ok: true, trial }
 }

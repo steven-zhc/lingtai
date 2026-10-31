@@ -69,7 +69,7 @@ describe('the summary before registering (#542)', () => {
     const world = terminal()
     const result = await askRecipe(world, at({ flags: { install: 'none' } }))
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     const shown = index(world.events, /Before registering widget/)
     const asked = index(world.events, CONFIRM)
     expect(shown).toBeGreaterThan(-1)
@@ -89,7 +89,7 @@ describe('the summary before registering (#542)', () => {
   it('--build none and --land main are a person choosing, so the confirm is never asked', async () => {
     const world = terminal()
     const result = await askRecipe(world, at({ flags: { install: 'none', land: 'main' }, buildFlags: ['none'] }))
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(index(world.events, /Before registering widget/)).toBeGreaterThan(-1)
     expect(index(world.events, CONFIRM)).toBe(-1)
   })
@@ -108,7 +108,7 @@ describe('the summary before registering (#542)', () => {
       throw new Error('a headless run was asked something')
     })
     const result = await askRecipe(world, at({ flags: { defaults: '', install: 'none' } }))
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(world.events.filter((e) => e.startsWith('ask:'))).toEqual([])
     expect(index(world.events, /Before registering widget/)).toBeGreaterThan(-1)
   })

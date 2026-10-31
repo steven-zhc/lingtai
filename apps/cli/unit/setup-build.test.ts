@@ -5,7 +5,7 @@
  * hands a `RecipeChange[]` to `setRecipe` directly.
  */
 import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { SetupReader } from '../src/detect-setup.ts'
 import {
@@ -584,5 +584,69 @@ describe('the PATH note', () => {
       }),
     )
     expect(lines.some((l) => l.includes('PATH'))).toBe(false)
+  })
+})
+
+describe('the trial outcome the card reads', () => {
+  const passing = {
+    results: [{ command: 'a', outcome: 'passed', evidence: '' }] as TrialResult[],
+    nothingDeclared: false,
+  }
+
+  it('returns the wall time around tryBuild, under fake timers', async () => {
+    vi.useFakeTimers()
+    try {
+      const { world: w } = world()
+      const pending = askInstallAndBuild(
+        w,
+        input({
+          given: { install: 'none', build: ['a'], check: 'yes' },
+          tryBuild: async () => {
+            await vi.advanceTimersByTimeAsync(125_000)
+            return passing
+          },
+          files: mapFiles({ [PATH]: BASE }),
+        }),
+      )
+      const result = await vi.runAllTimersAsync().then(() => pending)
+      expect(result).toMatchObject({ trial: { trial: 'passed', ms: 125_000 } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('is not-run for a declined, an unoffered and an empty list', async () => {
+    const files = () => mapFiles({ [PATH]: BASE })
+    const declined = await askInstallAndBuild(
+      world().world,
+      input({ given: { install: 'none', build: ['a'], check: 'no' }, tryBuild: async () => passing, files: files() }),
+    )
+    expect(declined).toMatchObject({ trial: { trial: 'not-run', because: 'declined' } })
+    const unoffered = await askInstallAndBuild(
+      world().world,
+      input({ given: { install: 'none', build: ['a'], check: null }, files: files() }),
+    )
+    expect(unoffered).toMatchObject({ trial: { trial: 'not-run', because: 'no checkout' } })
+    const empty = await askInstallAndBuild(
+      world().world,
+      input({ given: { install: 'none', build: [], check: null }, files: files() }),
+    )
+    expect(empty).toMatchObject({ trial: { trial: 'not-run', because: 'no checks' } })
+  })
+
+  it('names the first failed command when the person keeps a red list', async () => {
+    const failing = {
+      results: [{ command: 'pnpm test', outcome: 'failed', evidence: 'x' }] as TrialResult[],
+      nothingDeclared: false,
+    }
+    const result = await askInstallAndBuild(
+      world(['write']).world,
+      input({
+        given: { install: 'none', build: ['pnpm test'], check: 'yes' },
+        tryBuild: async () => failing,
+        files: mapFiles({ [PATH]: BASE }),
+      }),
+    )
+    expect(result).toMatchObject({ trial: { trial: 'failed-kept', command: 'pnpm test' } })
   })
 })

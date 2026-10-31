@@ -194,6 +194,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       name: 'repo',
       remote: '/repo',
       base: 'lingtai-base',
+      trial: expect.objectContaining({ trial: 'not-run' }),
     })
     expect(registered).toHaveLength(1)
     expect(registered[0]).toMatchObject({
