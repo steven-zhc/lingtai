@@ -1087,6 +1087,9 @@ export function Standing({
                 // sentence typed and not staged is otherwise lost to the click that
                 // was meant to send it.
                 sendable={acting && standing.state === 'blocked' && sendable !== null}
+                // Folded where the opening above already says it; open on blocked,
+                // where Send is the move.
+                folded={standing.state === 'queued' || standing.state === 'approved'}
               />
             ) : null}
 
