@@ -8,6 +8,7 @@ import {
   type DoctorReport,
   extensionRow,
   formatReport,
+  nextOf,
   renderDoctor,
   shareFixes,
   subscriberRow,
@@ -298,7 +299,7 @@ describe('renderDoctor', () => {
         '',
         '   [note] ~/.claude/settings.json also applies',
         '',
-        '   [next] lingtai doctor --verbose',
+        '   [next] lingtai env set lingtai TELEGRAM_BOT_TOKEN',
       ].join('\n'),
     )
   })
@@ -344,6 +345,21 @@ describe('renderDoctor', () => {
       '\u001b[42;30m NEXT \u001b[0m \u001b[36mlingtai doctor --verbose\u001b[0m',
     )
     expect(strip(text).split('\n').at(-1)).toBe('    NEXT  lingtai doctor --verbose')
+  })
+
+  it('closes on the first line of the first block that has a fix', () => {
+    process.env['NO_COLOR'] = '1'
+    const rs: DoctorReport['results'] = [
+      { name: 'schema: tables', status: 'fail', detail: 'missing events' },
+      { name: 'x: blank', status: 'warn', detail: 'd', fix: '  ' },
+      { name: 'spend: rebuild', status: 'warn', detail: 'd', fix: 'lingtai projection rebuild spend\nthen restart' },
+    ]
+    expect(nextOf(rs)).toBe('lingtai projection rebuild spend')
+    expect(renderDoctor({ results: rs, ...tally(rs) }).at(-1)).toBe('   [next] lingtai projection rebuild spend')
+    const first: DoctorReport['results'] = [{ name: 'store', status: 'fail', detail: 'd', fix: 'lingtai init' }, ...rs]
+    expect(renderDoctor({ results: first, ...tally(first) }).at(-1)).toBe('   [next] lingtai init')
+    expect(nextOf(rs.slice(0, 2))).toBe('lingtai doctor --verbose')
+    expect(nextOf([{ name: 'a', status: 'ok', detail: 'x' }])).toBeUndefined()
   })
 
   it('says all passed, and draws nothing else, when nothing is to fix', () => {
