@@ -13,7 +13,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
-import { ELSEWHERE, anchorLines, findAppendSites, generate, type EventsDoc } from '../scripts/events.ts'
+import { ELSEWHERE, anchorLines, findAppendSites, firstSentence, generate, type EventsDoc } from '../scripts/events.ts'
 import { EVENTS, RETIRED, type EventType } from '../src/index.ts'
 
 const root = join(fileURLToPath(import.meta.url), '..', '..', '..', '..')
@@ -84,6 +84,54 @@ describe('events.json completeness', () => {
     const text = "x\nawait append('RunRequested', {})\n"
     expect(anchorLines(text, "append('RunRequested'")).toEqual([2])
     expect(anchorLines('\n' + text, "append('RunRequested'")).toEqual([3])
+  })
+})
+
+describe('firstSentence', () => {
+  const doc = (...lines: string[]) => `/**\n${lines.map((l) => ` * ${l}`.trimEnd()).join('\n')}\n */`
+
+  it('joins a first sentence that wraps over two lines, and never reaches the second paragraph', () => {
+    expect(firstSentence(doc('One begins here', 'and ends there. More.', '', 'Second paragraph.'))).toBe(
+      'One begins here and ends there.',
+    )
+  })
+
+  it('handles a one-line comment', () => {
+    expect(firstSentence('/** A thing. Then more. */')).toBe('A thing.')
+  })
+
+  it('does not cut at a section number, a file name, e.g., or a dotted code span', () => {
+    expect(firstSentence('/** See 0110 §9.2 and events.ts, e.g. `main`, `x.y` here. Next. */')).toBe(
+      'See 0110 §9.2 and events.ts, e.g. `main`, `x.y` here.',
+    )
+  })
+
+  it('cuts at a § number that ends a sentence', () => {
+    expect(firstSentence('/** See 0110 §9. Then more. */')).toBe('See 0110 §9.')
+  })
+
+  it('does not cut inside a link whose URL contains .md', () => {
+    expect(firstSentence('/** **Retired** ([0022](../../doc/0022-the-seams.md)). Readable for a while. */')).toBe(
+      '**Retired** ([0022](../../doc/0022-the-seams.md)).',
+    )
+  })
+
+  it('ends after a closing ** and after a parenthesised number', () => {
+    expect(firstSentence('/** **Bold.** Then more. */')).toBe('**Bold.**')
+    expect(firstSentence('/** A split began (#608). The plan. */')).toBe('A split began (#608).')
+  })
+
+  it('closes a bold span left open at the cut', () => {
+    expect(firstSentence('/** **Opens. Still bold** and more. Next. */')).toBe('**Opens. Still bold**')
+  })
+
+  it('returns the whole paragraph when it has no end', () => {
+    expect(firstSentence(doc('no end here', 'at all'))).toBe('no end here at all')
+  })
+
+  it('is null with no comment or no text', () => {
+    expect(firstSentence(undefined)).toBeNull()
+    expect(firstSentence('/** */')).toBeNull()
   })
 })
 
