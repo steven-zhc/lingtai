@@ -8,7 +8,7 @@ import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from '@opentelem
  *
  * Next's own spans reach the same global provider once `@opentelemetry/api` is
  * installed, and its fetch spans carry the full GitHub URL: `OnlyScope` is what
- * keeps them on the machine.
+ * keeps them on the machine. It is also the exported `service.name`.
  */
 export const SCOPE = 'lingtai-board'
 
@@ -17,6 +17,7 @@ export const loadSdk = async () => ({
   base: await import('@opentelemetry/sdk-trace-base'),
   http: await import('@opentelemetry/exporter-trace-otlp-http'),
   hooks: await import('@opentelemetry/context-async-hooks'),
+  resources: await import('@opentelemetry/resources'),
 })
 
 /** Forwards a span to `inner` only when it came from `scope`. */
@@ -60,6 +61,9 @@ export async function installTracing(
   if (url === undefined) return undefined
   const sdk = await loadSdk()
   const provider = new sdk.base.BasicTracerProvider({
+    // Given a resource, the provider does not fall back to the default one,
+    // whose service.name is `unknown_service:<argv0>` — a path off this machine.
+    resource: sdk.resources.resourceFromAttributes({ 'service.name': SCOPE }),
     spanProcessors: [
       new OnlyScope(SCOPE, new sdk.base.BatchSpanProcessor(exporter ?? new sdk.http.OTLPTraceExporter({ url }))),
     ],

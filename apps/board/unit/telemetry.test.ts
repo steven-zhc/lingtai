@@ -15,8 +15,9 @@ afterEach(() => {
   context.disable()
 })
 
-it('loads all three SDK modules through the specifiers register uses', async () => {
+it('loads all four SDK modules through the specifiers register uses', async () => {
   const sdk = await loadSdk()
+  expect(typeof sdk.resources.resourceFromAttributes).toBe('function')
   expect(typeof sdk.base.BasicTracerProvider).toBe('function')
   expect(typeof sdk.http.OTLPTraceExporter).toBe('function')
   expect(typeof sdk.hooks.AsyncLocalStorageContextManager).toBe('function')
@@ -46,6 +47,16 @@ it('exports lingtai-board spans and drops every other scope', async () => {
     .end()
   await provider!.forceFlush()
   expect(exporter.getFinishedSpans().map((s) => s.name)).toEqual(['mine'])
+})
+
+it('exports service.name lingtai-board and no path in the resource', async () => {
+  const exporter = new InMemorySpanExporter()
+  const provider = await installTracing(on, none, exporter)
+  trace.getTracer('lingtai-board').startSpan('mine').end()
+  await provider!.forceFlush()
+  const [span] = exporter.getFinishedSpans()
+  expect(span!.resource.attributes['service.name']).toBe('lingtai-board')
+  for (const v of Object.values(span!.resource.attributes)) expect(String(v)).not.toContain('/')
 })
 
 it('a failing read exports ERROR with no message, events or leaking attribute', async () => {
