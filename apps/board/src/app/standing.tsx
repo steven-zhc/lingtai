@@ -22,6 +22,10 @@ import { holding, place, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { stateWord, type DiscussionView, type StandingView } from '@/lib/task'
+
+/** Blocked, queued, running and approved pages share one frame: the `swaiting-head` header. The page class and the header both read this. */
+export const framed = (state: StandingView['state']): boolean =>
+  state === 'blocked' || state === 'queued' || state === 'running' || state === 'approved'
 import { presentCause } from '@/lib/triage-cause'
 
 import { codeSpans } from './code-spans.tsx'
@@ -622,6 +626,7 @@ export function Standing({
         ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
         : []
   const waiting = standing.state === 'blocked'
+  const isFramed = framed(standing.state)
   const conflict =
     standing.reason?._tag === 'ProposedEscalated' && standing.reason.proposal._tag === 'MergeConflict'
       ? standing.reason.proposal
@@ -683,7 +688,7 @@ export function Standing({
       recommended={triageRecommended}
     >
       <section className={`standing${mark}`}>
-        {waiting ? (
+        {isFramed ? (
           <header className="swaiting-head">
             <div className="swaiting-meta">
               {subjectRef}
@@ -700,7 +705,7 @@ export function Standing({
                 <TicketContext opening={opening} body={body} />
               </div>
             ) : null}
-            {progress !== null ? <Rail progress={progress} live={false} held={budget} /> : null}
+            {progress !== null ? <Rail progress={progress} live={standing.state === 'running'} held={budget} /> : null}
           </header>
         ) : subject !== null ? (
           <div className="sticket">
@@ -759,9 +764,9 @@ export function Standing({
           question, so `4h 12m` means there as it does here. */}
         <section className={`swhere${quiet ? ' swhere--quiet' : ''}`} aria-label="Where it is" data-rank="where">
           {quiet ? null : <h2 className="ssectiontitle">Where it is</h2>}
-          {waiting ? null : stateReadout}
+          {isFramed ? null : stateReadout}
 
-          {!waiting &&
+          {!isFramed &&
           (standing.state === 'running' || standing.state === 'blocked' || standing.afterMove) &&
           progress !== null ? (
             <Rail progress={progress} live={standing.state === 'running'} held={budget} />
