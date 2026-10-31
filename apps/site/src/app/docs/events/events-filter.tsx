@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
   byGroup,
@@ -27,13 +27,31 @@ export function EventsFilter({
   index,
   entries,
   children,
+  initialFilter = null,
 }: {
   steps: string[]
   index: Indexed[]
   entries: Record<string, ReactNode>
   children?: ReactNode
+  /** Only for rendering a filtered state without a browser; the page never passes it. */
+  initialFilter?: string | null
 }) {
-  const [filter, setFilter] = useState<string | null>(null)
+  const [filter, setFilter] = useState<string | null>(initialFilter)
+  const article = useRef<HTMLElement>(null)
+  const drawing = useRef<HTMLDivElement>(null)
+
+  // The sticky spine's height changes with width and with the show-all control, so the
+  // anchor clearance is measured rather than guessed: `--ev-spine` feeds `scroll-margin-top`.
+  useEffect(() => {
+    const box = drawing.current
+    const root = article.current
+    if (!box || !root) return
+    const set = () => root.style.setProperty('--ev-spine', `${box.offsetHeight}px`)
+    set()
+    const observer = new ResizeObserver(set)
+    observer.observe(box)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const apply = () => {
@@ -81,6 +99,7 @@ export function EventsFilter({
   return (
     <>
       <article
+        ref={article}
         className="events"
         onClick={(ev) => {
           const chip = (ev.target as HTMLElement).closest<HTMLElement>('.ev-chip[data-step]')
@@ -88,7 +107,7 @@ export function EventsFilter({
         }}
       >
         {children}
-        <div className="ev-drawing" role="navigation" aria-label="The ten steps">
+        <div ref={drawing} className="ev-drawing" role="navigation" aria-label="The ten steps">
           <ol className="ev-spine">{steps.map((step, i) => node(step, `${i + 1} ${step}`))}</ol>
           <ul className="ev-lane">
             {node(OUTSIDE, OUTSIDE, ' apart')}

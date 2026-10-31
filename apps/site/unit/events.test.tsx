@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest'
 import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
 import { Bar } from '../src/app/chrome'
 import { EventsBody } from '../src/app/docs/events/events-body'
+import { EventsFilter } from '../src/app/docs/events/events-filter'
 import EventsPage from '../src/app/docs/events/page'
-import { byGroup, counts, matches, parseStep, shownGroups } from '../src/lib/event-filter'
+import { byGroup, counts, groupId, matches, parseStep, shownGroups } from '../src/lib/event-filter'
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 const doc = JSON.parse(read('../../../doc/events.json')) as EventsDoc
@@ -57,6 +58,24 @@ describe('/docs/events/', () => {
     expect(shownGroups(doc.events, 'review')).toEqual(expected)
     expect(expected.length).toBeLessThan(byGroup(doc.events).length)
     expect(shownGroups(doc.events, null)).toHaveLength(byGroup(doc.events).length)
+  })
+
+  it('renders unmatched groups and entries hidden under a filter', () => {
+    const index = doc.events.map(({ name, group, at }) => ({ name, group, at }))
+    const entries = Object.fromEntries(doc.events.map((e) => [e.name, <i key={e.name}>{e.name}</i>]))
+    const out = renderToStaticMarkup(
+      <EventsFilter steps={[...STEPS]} index={index} entries={entries} initialFilter="review" />,
+    )
+    const shown = new Set(shownGroups(index, 'review'))
+    for (const [group, list] of byGroup(index)) {
+      const tag = out.match(new RegExp(`<section[^>]*id="${groupId(group)}"[^>]*>`))?.[0] ?? ''
+      expect(/\shidden=""/.test(tag), group).toBe(!shown.has(group))
+      for (const e of list) {
+        const wrap = out.match(new RegExp(`<div( hidden="")?><i>${e.name}</i>`))
+        expect(Boolean(wrap?.[1]), e.name).toBe(!e.at.includes('review'))
+      }
+    }
+    expect(shown.size).toBeLessThan(byGroup(index).length)
   })
 
   it('renders a summary as inline markdown with links resolved to the sha', () => {
