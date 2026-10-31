@@ -59,6 +59,20 @@ describe('currentSpend', () => {
     await expect(currentSpend({})).rejects.toThrow('rows')
   })
 
+  it('reads the lag before the rows, so rows are never older than the lag that certifies them', async () => {
+    const order: string[] = []
+    projector.readLag.mockImplementation(async () => {
+      order.push('lag')
+      return { lag: 0n }
+    })
+    projector.readSpend.mockImplementation(async () => {
+      order.push('rows')
+      return []
+    })
+    await currentSpend({})
+    expect(order).toEqual(['lag', 'rows'])
+  })
+
   it('records spend.lag and spend.rows spans', async () => {
     projector.readLag.mockResolvedValue({ lag: 0n })
     const [, timings] = await measure(() => currentSpend({}))

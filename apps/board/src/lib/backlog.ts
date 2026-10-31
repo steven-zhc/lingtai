@@ -21,7 +21,10 @@ export interface BacklogCurrency {
 
 /** Read `finding_backlog` from its table, and how far behind it is. */
 export async function currentBacklog(): Promise<{ entries: BacklogEntry[]; currency: BacklogCurrency }> {
-  const [currency, entries] = await Promise.all([lagOf('finding_backlog'), readBacklog()])
+  // Lag before the rows, so a commit between the two can only make the rows
+  // newer than the lag that certifies them, never *nothing open* over a stale table.
+  const currency = await lagOf('finding_backlog')
+  const entries = await readBacklog()
   return { entries, currency }
 }
 

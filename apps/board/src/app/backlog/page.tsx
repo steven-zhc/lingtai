@@ -8,10 +8,11 @@ import type { BacklogEntry } from '@lingtai/projector'
  * this page writes to it but the fold. The two buttons append, through the same
  * functions `lingtai backlog` calls, and the next fold closes the entry.
  *
- * **Folded on render, and said so.** Nothing else is guaranteed to fold this
- * projection — a daemon older than it follows `task_view` alone — so each render
- * brings it to the head first (`@/lib/backlog`), and the chip says whether that
- * worked. *Nothing open* is printed only when it did.
+ * **Read as it stands, and said so.** The page folds nothing: a daemon older
+ * than this projection follows `task_view` alone, so each render reads the table
+ * and its lag (`@/lib/backlog`), and the chip says how far behind it is. It
+ * catches up when something next appends with a projector, or on `lingtai
+ * projection rebuild finding_backlog`. *Nothing open* is printed only at lag 0.
  */
 import Link from 'next/link'
 

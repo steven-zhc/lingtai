@@ -141,6 +141,7 @@ export async function currentReport(
   project: string | null,
   since: Date,
 ): Promise<{ tickets: TicketReportRow[]; spend: SpendRow[]; currency: ReportCurrency }> {
+  // Lags before the rows (see `currentSpend`): rows newer than their lag is safe, the reverse is not.
   const [ticketReport, spend] = await Promise.all([lagOf('ticket_report'), lagOf('spend')])
   const [tickets, rows] = await Promise.all([
     readTicketReport(project === null ? {} : { project }),

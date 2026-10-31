@@ -230,10 +230,12 @@ export async function lagOf(name: string): Promise<SpendCurrency> {
 export async function currentSpend(
   query: Parameters<typeof readSpend>[0] = {},
 ): Promise<{ rows: SpendRow[]; currency: SpendCurrency }> {
-  const [currency, rows] = await Promise.all([
-    timed('spend.lag', () => lagOf('spend')),
-    timed('spend.rows', () => readSpend(query)),
-  ])
+  // Lag first, rows second, never in parallel: a follower that commits between
+  // the two makes the rows newer than the lag that certifies them (a
+  // conservative *behind N*), where the other order would certify stale rows
+  // as current.
+  const currency = await timed('spend.lag', () => lagOf('spend'))
+  const rows = await timed('spend.rows', () => readSpend(query))
   return { rows, currency }
 }
 
