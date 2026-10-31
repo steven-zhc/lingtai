@@ -139,8 +139,17 @@ export interface AskAgentsAt {
  * naming it anyway — by flag or by hand at a terminal — is refused with the
  * same reason. Nothing signed in at all is refused before any question.
  */
-export const RUNTIME_DEFAULT = "the runtime's own default"
-export const ANOTHER = 'another — type its name'
+/**
+ * The two control rows of a model select. Their values start with a NUL, which
+ * no model name carries, so a model that is spelled like the words shown for
+ * them is still a model; the words are the labels.
+ */
+export const RUNTIME_DEFAULT = '\u0000runtime-default'
+export const ANOTHER = '\u0000another'
+const MODEL_LABELS: Readonly<Record<string, string>> = {
+  [RUNTIME_DEFAULT]: "the runtime's own default",
+  [ANOTHER]: 'another — type its name',
+}
 
 /**
  * A model is a choice: the runtime's own default (written as no `model:`), the
@@ -162,6 +171,8 @@ async function askModel(
   const picked = await question(world, {
     ...q,
     offer: [RUNTIME_DEFAULT, ...(q.current === null ? [] : [q.current]), ANOTHER],
+    offerLabels: MODEL_LABELS,
+    show: (value) => MODEL_LABELS[value] ?? value,
     fallback: RUNTIME_DEFAULT,
   })
   if ('refused' in picked) return picked

@@ -19,6 +19,8 @@ export interface AskShape {
   message: string
   defaultValue: string
   choices?: readonly string[] | undefined
+  /** What to draw for a choice whose value is not fit to read; a choice without an entry is drawn as itself. */
+  labels?: Readonly<Record<string, string>> | undefined
 }
 
 export interface QuestionWorld {
@@ -53,6 +55,8 @@ export interface Question {
   choices?: readonly string[]
   /** Drawn as a select at a terminal, and never checked: a flag or a typed answer outside it still reaches `validate`. */
   offer?: readonly string[]
+  /** The words drawn for an `offer` value, where the value is not the words. */
+  offerLabels?: Readonly<Record<string, string>>
   /** Null accepts the answer; a string is why not, logged, and asked again at a terminal. */
   validate?: (answer: string) => Promise<string | null>
   /**
@@ -117,7 +121,12 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
   const prompt = paint.signal(`${q.prompt}${bracket}: `)
 
   for (;;) {
-    const typed = await world.ask(prompt, { message: q.prompt, defaultValue, choices: q.choices ?? q.offer })
+    const typed = await world.ask(prompt, {
+      message: q.prompt,
+      defaultValue,
+      choices: q.choices ?? q.offer,
+      labels: q.offerLabels,
+    })
     if (typed === null)
       return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
     const answer = typed.trim() === '' ? defaultValue : typed.trim()

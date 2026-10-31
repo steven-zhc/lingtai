@@ -74,7 +74,7 @@ export async function liveAsk(
   if (shape === undefined) return null
   const typed =
     shape.choices !== undefined
-      ? await select(shape.message, shape.choices, shape.defaultValue, io)
+      ? await select(shape.message, shape.choices, shape.defaultValue, io, shape.labels)
       : await clack.text({
           message: shape.message,
           placeholder: shape.defaultValue,
@@ -101,6 +101,7 @@ async function select(
   choices: readonly string[],
   initialValue: string,
   io: { input?: Readable; output?: Writable },
+  labels: Readonly<Record<string, string>> = {},
 ): Promise<string | symbol> {
   const input = io.input ?? process.stdin
   const footer = [...clack.SELECT_INSTRUCTIONS]
@@ -111,7 +112,7 @@ async function select(
   try {
     const picked = clack.select({
       message,
-      options: choices.map((value) => ({ value, label: value })),
+      options: choices.map((value) => ({ value, label: labels[value] ?? value })),
       initialValue,
       ...(io.input === undefined ? {} : { input: io.input }),
       ...(io.output === undefined ? {} : { output: io.output }),

@@ -110,6 +110,20 @@ describe('askAgents at a terminal that draws selects', () => {
     expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
   })
 
+  it('a model named like the runtime-default row is kept as a model', async () => {
+    const named = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: the runtime's own default\n      prompt: ''\n`
+    const { world } = fakeWorld(['', '', '', ''])
+    const result = await askAgents(world, {
+      project: 'app',
+      runtimes: both,
+      flags: {},
+      home: HOME,
+      files: mapFiles({ [PATH]: named }),
+    })
+    if ('refused' in result) throw new Error(result.refused)
+    expect(result.modelChanges).not.toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
+  })
+
   it('another asks for a name and writes it', async () => {
     const { world, asked } = fakeWorld(['', ANOTHER, 'haiku', '', ''])
     const result = await askAgents(world, {
