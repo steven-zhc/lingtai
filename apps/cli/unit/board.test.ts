@@ -46,6 +46,8 @@ function world(
   const w: BoardWorld = {
     host: '127.0.0.1',
     hostname: 'mac',
+    home: { path: '/Users/x/lingtai-trial/a', shown: '~/lingtai-trial/a' },
+    notSetUp: () => false,
     answering: async () => null,
     bound: async () => false,
     locker: {
@@ -105,6 +107,20 @@ describe('lingtai board start', () => {
     expect(w.out.join('\n')).toContain(`board on ${URL}`)
     expect(w.out.join('\n')).toContain('ctrl-c stops it')
     expect(w.held()).toBe(`board on ${PORT} pid 500 on mac`)
+  })
+
+  it('names the home it serves on the line with its URL', async () => {
+    const w = world()
+    expect(await w.go('start')).toBe(0)
+    expect(w.out.join('\n')).toContain(`board on ${URL} · home ~/lingtai-trial/a`)
+    expect(w.out.join('\n')).not.toContain('nothing is set up')
+  })
+
+  it('says the board opens on setup where nothing is set up, and still starts', async () => {
+    const w = world({ notSetUp: () => true })
+    expect(await w.go('start')).toBe(0)
+    expect(w.out.join('\n')).toContain('nothing is set up in ~/lingtai-trial/a')
+    expect(w.out.join('\n')).toContain('lingtai init sets it up')
   })
 
   it('opens a browser, and says where to look when it could not', async () => {

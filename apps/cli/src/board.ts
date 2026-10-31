@@ -369,6 +369,10 @@ export interface BoardCommand {
 
 export interface BoardWorld {
   host: string
+  /** The Lingtai home this board serves (#767): the path, and as a person reads it (`~` for `$HOME`). */
+  home: { path: string; shown: string }
+  /** Whether that home has nothing set up — `nothingSetUp` over its store choice and its `config.yml`. */
+  notSetUp: () => boolean
   /** This machine's name, as the lock records it — so a holder elsewhere is not signalled here. */
   hostname: string
   /** Whether a Lingtai board answers on this port — its URL, or null. Never "is the port bound". */
@@ -567,7 +571,10 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       error((err as Error).message)
       return 1
     }
-    log(`${symbol.pass()} board on ${url}`)
+    log(`${symbol.pass()} board on ${url} · home ${world.home.shown}`)
+    if (world.notSetUp()) {
+      log(`nothing is set up in ${world.home.shown} — the board opens on setup; lingtai init sets it up`)
+    }
     if (command.open && !(await world.open(url))) log(`no browser could be opened here — open ${url}`)
     log(BOARD_START_NOTE)
     return 0

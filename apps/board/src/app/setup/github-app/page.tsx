@@ -28,6 +28,9 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
  */
 import Link from 'next/link'
 
+import { Home } from '@/app/home.tsx'
+import { theHome } from '@/lib/home'
+
 export const dynamic = 'force-dynamic'
 
 export default async function GitHubApp() {
@@ -50,6 +53,7 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         <span className="mono">github app</span>

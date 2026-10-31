@@ -4,6 +4,8 @@ import { describeWaitLines } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { Home } from '@/app/home.tsx'
+import { theHome } from '@/lib/home'
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { billText, spendChip } from '@/lib/spend'
@@ -813,6 +815,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         {/* Rank 8: one muted line, each identifier once. */}

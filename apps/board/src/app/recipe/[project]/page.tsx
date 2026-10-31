@@ -2,6 +2,8 @@ import { loadProjects } from '@lingtai/conductor/projects'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { Home } from '@/app/home.tsx'
+import { theHome } from '@/lib/home'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 
 /**
@@ -53,6 +55,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
       <div className="bar">
         <Link className="brand" href={back}>
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         <span className="mono">recipe · {view.project}</span>

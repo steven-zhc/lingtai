@@ -94,6 +94,18 @@ on something else — and that one still has to be argued for here.
 of the rail*, and *leaves the four what they were* — because the way this
 ticket could have gone wrong was to make the `+` fit by redefining the set.
 
+**The home is part of the brand, and the row still carries four** (#767). Two
+boards on two homes were told apart by remembering which terminal was which, and
+`lingtai board start` in a terminal still set to the wrong home served it and
+said nothing. The home now sits inside `.brand`, after the name — a muted mono
+`~/lingtai-trial/a`, the full path as its `title` — on every page that draws the
+bar, `~/.lingtai` included, so the default is read rather than assumed. It is
+the same act as the `+`: the brand is the first object and *which Lingtai this
+is* is a fact about it, where a chip would have been a fifth object for a fact
+that never changes while the page is open. It is one small server component
+(`apps/board/src/app/home.tsx`) handed the home as a string by each page, so the
+eight bars cannot drift and no client file reads the environment.
+
 ## What #141 and #142 changed under this
 
 Two of the chips were renamed when
