@@ -32,6 +32,7 @@ export async function askFirstProject(
   world: QuestionWorld,
   flags: Record<string, string>,
   kept = 'the store chosen above is kept',
+  cancel: { startOver?: string; command?: string } = {},
 ): Promise<FirstProject> {
   const kind = await question(world, {
     name: 'the project',
@@ -41,6 +42,7 @@ export async function askFirstProject(
     fallback: 'github',
     choices: ['github', 'local'],
     kept,
+    ...cancel,
   })
   if ('refused' in kind) return { refused: kind.refused }
   if (kind.answer === 'local') {
@@ -65,6 +67,7 @@ export async function askFirstProject(
     fallback: 'create',
     choices: ['create', 'skip'],
     kept,
+    ...cancel,
   })
   if ('refused' in how) return { refused: how.refused }
   return { project: 'github', app: how.answer as 'create' | 'skip' }

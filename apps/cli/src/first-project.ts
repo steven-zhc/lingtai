@@ -154,6 +154,10 @@ export interface FirstProjectWorld extends QuestionWorld {
    * this, so its `kept` is `'Nothing was written'`, same as the default.
    */
   kept: string
+  /** Said with `kept` when Ctrl+C stops the project, directory or base question; `init` only. */
+  startOver?: string
+  /** The command that was run, for the same line. */
+  command?: string
   /**
    * `init`'s only (#393): a configured App already answers *is the project*,
    * so the question is refused past rather than asked, and `--project`/
@@ -253,6 +257,14 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
  * contract is pinned by `github-app.test.ts`, which asks both questions every
  * time and must keep doing so.
  */
+/** What Ctrl+C at a question prints beside `kept` — only what the world carries. */
+function cancelFor(world: FirstProjectWorld): { startOver?: string; command?: string } {
+  return {
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
+  }
+}
+
 async function askProjectKind(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -266,6 +278,8 @@ async function askProjectKind(
     fallback: 'github',
     choices: ['github', 'local'],
     kept,
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
   })
   if ('refused' in kind) return { refused: kind.refused }
   if (kind.answer === 'local') {
@@ -380,6 +394,8 @@ async function runLocalBranch(
     given: givenDir,
     prompt: 'the directory of the repository on this machine',
     kept: world.kept,
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
     validate: async (answer) => (answer.trim() === '' ? 'a directory is needed' : null),
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
@@ -454,6 +470,8 @@ async function runLocalBranch(
       current: typeof currentBase === 'string' ? currentBase : null,
       detected,
       kept: world.kept,
+      ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+      ...(world.command === undefined ? {} : { command: world.command }),
       validate: async (answer) => {
         source = null
         const check = await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
@@ -658,7 +676,7 @@ async function runGithubBranch(
   // `gh` machine never has the App asked about, so `GET /app` is not made for it.
   let app: AppCheck | null = knownApp
   if (app === null && world.github.auth?.() !== 'gh') app = await world.github.app()
-  const decided = await askGithubAuth(world, flags, app?.configured === true, world.kept)
+  const decided = await askGithubAuth(world, flags, app?.configured === true, world.kept, cancelFor(world))
   if ('refused' in decided) return { refused: decided.refused }
 
   if (decided.auth === 'gh') {
@@ -726,7 +744,7 @@ async function runGithubBranch(
   let appOutcome: 'already' | AppWaitResult = 'already'
 
   if (!app.configured) {
-    const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept)
+    const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept, cancelFor(world))
     if ('refused' in asked) return { refused: asked.refused }
     const appAnswer = asked.project === 'github' ? asked.app : 'create'
 

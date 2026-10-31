@@ -21,6 +21,12 @@ export interface AskShape {
   choices?: readonly string[] | undefined
   /** What to draw for a choice whose value is not fit to read; a choice without an entry is drawn as itself. */
   labels?: Readonly<Record<string, string>> | undefined
+  /** What is still true if this question goes unanswered — the clause Ctrl+C prints, and the refusal's. */
+  kept?: string | undefined
+  /** How to start over, said only on Ctrl+C and never in a refusal. */
+  startOver?: string | undefined
+  /** The command that was run, so the line can say it continues from here. */
+  command?: string | undefined
 }
 
 export interface QuestionWorld {
@@ -67,6 +73,10 @@ export interface Question {
    * must say what that write left behind instead.
    */
   kept?: string
+  /** Said after `kept` when Ctrl+C stops the question — never in the no-terminal refusal, where nothing was typed to undo. */
+  startOver?: string
+  /** The command that was run (`lingtai init`), for the Ctrl+C line. */
+  command?: string
 }
 
 export type Answered = { answer: string } | { refused: string }
@@ -126,6 +136,9 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
       defaultValue,
       choices: q.choices ?? q.offer,
       labels: q.offerLabels,
+      kept: q.kept ?? 'Nothing was written',
+      startOver: q.startOver,
+      command: q.command,
     })
     if (typed === null)
       return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }

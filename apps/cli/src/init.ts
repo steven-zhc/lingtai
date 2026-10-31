@@ -115,6 +115,7 @@ import { type ProjectState } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type MachineFile,
+  type StoreChoice,
   type StoreChosen,
   boardPort,
   describeStore,
@@ -341,12 +342,23 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     )
   }
 
-  const config = readConfig(path, world.machine.read)
+  let hadConfig = false
+  const config = readConfig(path, (p) => {
+    const text = world.machine.read(p)
+    hadConfig = text !== null
+    return text
+  })
   if ('refused' in config) return refuse(world, config.refused)
 
   // ---- the store ------------------------------------------------------------
   const store = await chooseStore(world, config, path, flags['database-url'] ?? null, named)
   if (store !== null) return store
+  const storeKept = initKept({
+    choice: storeChoice(world.env, machineFor(world, path)),
+    configPath: path,
+    startedWithConfig: hadConfig,
+    wrote: !hadConfig && world.machine.read(path) !== null,
+  })
 
   // ---- the agent --------------------------------------------------------
   // Which runtime runs is each project's question now (`#372`, `#398`),
@@ -520,7 +532,9 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       history: world.history,
       // The store above is already written by the time this runs — the same
       // reason `askFirstProject` carries this sentence (#394 finding 2).
-      kept: 'the store chosen above is kept',
+      kept: storeKept.kept,
+      ...(storeKept.startOver === undefined ? {} : { startOver: storeKept.startOver }),
+      command: 'lingtai init',
       // `init`'s only (first-project.ts): a configured App already answers
       // *is the project*, and `--project`/`--github-app` naming anything else
       // is refused rather than asked past.
@@ -826,6 +840,7 @@ async function chooseStore(
   let schema: SchemaOutcome | null = null
   const result = await question(world, {
     name: 'the store',
+    command: 'lingtai init',
     flag: '--store sqlite, or --store postgres --database-url <url>',
     given: named === 'sqlite' ? '' : flag,
     prompt: 'a Postgres URL for the log — empty for SQLite',
@@ -964,6 +979,33 @@ function confirm(world: InitWorld, path: string, expected: 'postgres' | 'sqlite'
  * The claim itself is `SQLITE_MACHINE`, said in one place. Muted rather than
  * amber: nothing here needs doing.
  */
+/**
+ * What Ctrl+C at a question after the store is written says is kept (#762).
+ * `startOver` is set only on a home that had no `config.yml` and where this run
+ * wrote one — the files it names are then all this run made. It never names the
+ * URL: a Postgres `database.url` carries a password.
+ */
+export function initKept(o: { choice: StoreChoice; configPath: string; startedWithConfig: boolean; wrote: boolean }): {
+  kept: string
+  startOver?: string
+} {
+  if (o.startedWithConfig) return { kept: "this machine's store and projects are unchanged" }
+  if ('refused' in o.choice) return { kept: 'the store chosen above is kept' }
+  if (o.choice.store === 'postgres') {
+    if (!o.wrote) return { kept: `the store is kept, Postgres, chosen by ${o.choice.from}` }
+    return {
+      kept: `the store is kept, Postgres, chosen in ${o.configPath}`,
+      startOver: 'to start over, delete that file',
+    }
+  }
+  const db = o.choice.path
+  if (!o.wrote) return { kept: `the store is kept, SQLite at ${db}, chosen by ${o.choice.from}` }
+  return {
+    kept: `the store is kept, SQLite at ${db}, chosen in ${o.configPath}`,
+    startOver: `to start over, delete those two files, and the -wal and -shm files beside the database if they exist`,
+  }
+}
+
 function sqliteChosen(world: Pick<InitWorld, 'log'>, choice: StoreChosen): null {
   fact(world, 'Store', [['store', paint.pass(describeStore(choice))]], paint.muted(SQLITE_MACHINE))
   return null
