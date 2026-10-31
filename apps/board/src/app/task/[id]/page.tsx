@@ -21,7 +21,7 @@ import { DocumentBody } from '../../markdown.tsx'
 import { Segs } from '../../rail.tsx'
 import { RecordTabs, type RecordTab } from '../../record-tabs.tsx'
 import { RunLog } from '../../run-log.tsx'
-import { Coords, RawEvidence, Standing } from '../../standing.tsx'
+import { Coords, RawEvidence, Standing, framed } from '../../standing.tsx'
 
 /**
  * One task, in full.
@@ -812,7 +812,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
 
   return (
     <main
-      className={`detail${task.standing.state === 'blocked' ? ' detail--waiting' : task.standing.afterMove ? ' detail--resolved' : ''}`}
+      className={`detail${task.standing.state === 'blocked' ? ' detail--waiting' : framed(task.standing.state) ? ' detail--framed' : ''}${task.standing.state !== 'blocked' && task.standing.afterMove ? ' detail--resolved' : ''}`}
     >
       <div className="bar">
         <Link className="brand" href="/">

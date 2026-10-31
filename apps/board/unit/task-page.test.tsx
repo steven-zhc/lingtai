@@ -633,20 +633,22 @@ describe('the rail on the task page', () => {
    */
   it('says which point and the elapsed at rank 2, with no per-action name or bound', () => {
     const html = page(building(PLAN))
-    const rank = why(html)
+    // Since #778 the rail is drawn once, in the header, on a running page.
+    expect(html.match(/class="seq"/g)).toHaveLength(1)
+    expect(why(html)).not.toContain('class="sread"')
+    const rank = opening(html)
     // The rail is the card's own: the same classes, drawn by the same `Rail`.
     expect(rank).toContain('class="seq"')
     expect(rank).toMatch(/class="slab l-at">proposed</)
     expect(rank).toMatch(/class="snow"[^>]*>\s*2m34s</)
     expect(rank).not.toContain(' / ')
-    // The rail itself is not inside a disclosure. The ticket opening above
-    // this rank is deliberately collapsed.
-    const before = rank.slice(0, rank.indexOf('class="seq"'))
-    expect(before).not.toMatch(/<details(?![^>]*open)/)
+    // The rail itself is not inside a disclosure.
+    const before = rank.slice(rank.lastIndexOf('<header'), rank.indexOf('class="seq"'))
+    expect(before).not.toMatch(/<details(?![^>]*open)(?:(?!<\/details>).)*$/s)
   })
 
   it('draws no denominator where nothing bounds the phase, and never a zero', () => {
-    const rank = why(page(building()))
+    const rank = opening(page(building()))
     expect(rank).toMatch(/class="snow"[^>]*>\s*2m34s</)
     expect(rank).not.toContain(' / ')
   })
@@ -660,7 +662,7 @@ describe('the rail on the task page', () => {
    * `foldProgress` draws that as an "extra" action the plan did not name.
    */
   it("draws proposed's build and review as two pending cells, plus the running placeholder", () => {
-    const rank = why(page(building(PLAN)))
+    const rank = opening(page(building(PLAN)))
     const proposed = rank.match(
       /<li class="seg s-running"[^>]*><span class="sbar">((?:<span class="scell[^"]*"><\/span>)+)<\/span>/,
     )
