@@ -6,7 +6,7 @@
  * with no process. It chooses no colour of its own — `paint` and `coloured()`
  * from `@lingtai/env/colour` do, and plain mode is decided there (0121 §3).
  */
-import { paint } from '@lingtai/env/colour'
+import { badge, paint } from '@lingtai/env/colour'
 
 const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
@@ -104,6 +104,33 @@ export function table(
       .join('  ')
       .trimEnd()
   return [line(header.map((h) => paint.muted(h))), ...rows.map(line)]
+}
+
+/** The width of the label column in the short view: `[problem]` and ` PROBLEM `. */
+export const LABEL_COLUMN = 9
+
+/** A label right-aligned in the column. Padded from the plain word's width, since the rendered badge carries escapes. */
+export function labelled(rendered: string, word: string): string {
+  return `${' '.repeat(LABEL_COLUMN - (word.length + 2))}${rendered}`
+}
+
+/** One step of a `NEXT` block: the command, and what it is for. */
+export interface NextStep {
+  command: string
+  for: string
+}
+
+/** The single closing `NEXT` line: the badge in the label column, then the command. */
+export function renderNextLine(command: string): string {
+  return `${labelled(badge('next', 'next'), 'next')} ${paint.accent(command)}`
+}
+
+/** 0121 §1's numbered block: the badge on the first line, the column blank on the others, `<command> — <for>`. */
+export function renderNextBlock(steps: readonly NextStep[]): string[] {
+  return steps.map((step, i) => {
+    const lead = i === 0 ? labelled(badge('next', 'next'), 'next') : ' '.repeat(LABEL_COLUMN)
+    return `${lead} ${i + 1} ${paint.accent(step.command)} — ${step.for}`
+  })
 }
 
 /** The schema `version` every `--json` document carries; `doc/cli.json` reads it from here (#545). */

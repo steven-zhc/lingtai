@@ -107,7 +107,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { addLocal } from '@lingtai/conductor/onboard'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
@@ -129,7 +129,16 @@ import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { ghStatus, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
-import { diskFiles, readRecipeKey, recipePath, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
+import {
+  diskFiles,
+  kindsOf,
+  readRecipeKey,
+  recipePath,
+  resolveSource,
+  ticketSourceOf,
+  type RecipeFiles,
+  type SignedIn,
+} from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -147,11 +156,12 @@ import {
 import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
-import { heading, keyValues, section, symbol } from './output.ts'
+import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
+import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { question, spun, type QuestionWorld } from './question.ts'
 import { askRuntimes, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
-import { liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
+import { DOCTOR_VERBOSE, liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
 import { liveHistory } from './source.ts'
 import type { WizardFlags } from './wizard-options.ts'
 
@@ -242,6 +252,8 @@ export interface InitWorld {
    * break a fresh machine.
    */
   doctor: () => Promise<SetupDoctor>
+  /** The directory `init` was run in (live: `process.cwd()`) — asked about when this machine already has projects (#756). */
+  cwd: string
 }
 
 const USAGE =
@@ -412,6 +424,8 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   // here (#394's finding 3: this must not itself end the run — the board
   // still has to start, and the port flag still has to be obeyed).
   let askProject = true
+  // Where `init` was run, when the machine already has projects: what the closing block is built from (#756).
+  let here: Here | null = null
   if (!explicitChoice) {
     const registered = await world.projects()
     if (registered.length > 0) {
@@ -432,6 +446,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
             : `${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
         )
       }
+      here = await whereAmI(world, registered, home)
       flush()
       world.log(
         section('Projects', [
@@ -517,7 +532,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
 
   // *this machine* alone, for a GitHub run that has no repository yet: no project group, and a ready
   // line without a recipe. `how` is the one row about GitHub.
-  const machineCard = async (how: string): Promise<boolean> => {
+  const machineCard = async (how: string): Promise<string | undefined> => {
     held.length = 0
     const end = await printSetupEnd(
       world,
@@ -533,7 +548,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       },
       [],
     )
-    return end.failed
+    return end.fix
   }
   const reachRow = async (viaGh: boolean): Promise<string> => {
     if (viaGh) {
@@ -548,12 +563,12 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   }
 
   let github = false
-  let doctorFailed = false
+  // What a failed doctor closes on; undefined when it did not fail.
+  let fix: string | undefined
   // A local run's doctor report is part of the card; every other path prints it whole, below.
   let cardDrawn = false
-  // The command(s) a GitHub first-project closes on; null on the re-run path
-  // with a configured App, which closes on nothing.
-  let githubNext: string[] | null = null
+  // The board's `/setup/repository` page, when the App was just made here.
+  let githubSetupUrl: string | undefined
   if (askProject) {
     // Built from `world` directly rather than through a live default (#394's
     // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
@@ -658,11 +673,10 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         },
         chosen.hints,
       )
-      doctorFailed = end.failed
+      fix = end.fix
       cardDrawn = true
     } else {
       github = true
-      githubNext = ['lingtai add <owner>/<repo>']
       let how = await reachRow(chosen.auth === 'gh')
       if (chosen.auth === 'gh') {
         // No App to start a board for: the saved `gh` login is the whole of
@@ -683,7 +697,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         // this reads the same memo rather than starting a second one.
         const started = await startBoard()
         const url = 'url' in started ? started.url : ''
-        githubNext = [`open ${url}/setup/repository`, 'lingtai add <owner>/<repo>']
+        githubSetupUrl = `${url}/setup/repository`
         how = `the App ${chosen.app.made.slug}`
       }
       // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
@@ -691,7 +705,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       //
       // `init`'s GitHub branch never has a slug, so there is no recipe file
       // to name here — it exists once a repository is picked.
-      doctorFailed = await machineCard(how)
+      fix = await machineCard(how)
       cardDrawn = true
     }
   } else if (app.configured && !ghMachine) {
@@ -705,7 +719,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     world.log(
       (await world.open(wizard)) ? paint.pass(`opened ${wizard}`) : `no browser could be opened here — open ${wizard}`,
     )
-    doctorFailed = await machineCard(await reachRow(ghMachine))
+    fix = await machineCard(await reachRow(ghMachine))
     cardDrawn = true
   }
 
@@ -716,10 +730,10 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       // nearly always warns, and `--verbose` on every first init would be noise.
       const done = await world.doctor()
       world.log(done.blocks)
-      doctorFailed = done.toFix.failed
+      if (done.toFix.failed) fix = done.next ?? DOCTOR_VERBOSE
     } catch (err) {
       world.log(`doctor did not finish — ${(err as Error).message || String(err)}`)
-      doctorFailed = true
+      fix = DOCTOR_VERBOSE
     }
   }
   let needBoard = false
@@ -754,21 +768,56 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       world.log(paint.muted(`the board was already running at ${started.url} — this started none`))
     }
   }
-  // The GitHub paths close here too, on their own command; the configured-App
-  // re-run path (github without githubNext) closes on nothing.
-  if (githubNext !== null) {
-    const next = [...(doctorFailed ? ['lingtai doctor --verbose'] : []), ...githubNext]
-    world.log(`next: ${next.join(' · ')}`)
-  } else if (!github) {
-    const next = [
-      ...(doctorFailed ? ['lingtai doctor --verbose'] : []),
-      ...(needBoard ? ['lingtai board'] : []),
-      'lingtai ticket new',
-      'lingtai run',
-    ]
-    world.log(`next: ${next.join(' · ')}`)
+  // The last thing printed (0121 §1): a failure closes on one line, anything else on the path's numbered block.
+  if (fix !== undefined) {
+    world.log(renderNextLine(fix))
+  } else {
+    const closing =
+      here !== null ? hereSteps(here) : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
+    if (closing.preface !== undefined) world.log(closing.preface)
+    for (const line of renderNextBlock(closing.steps)) world.log(line)
   }
   return 0
+}
+
+/**
+ * Whether `cwd` is a registered project's checkout, an unregistered repository, or neither (#756). The rule is
+ * the one `add --local` keys a project by: `basename` of `git rev-parse --show-toplevel`, case-insensitive.
+ * A git failure is "not inside a repository"; a recipe that cannot be read leaves the ticket line out.
+ */
+async function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: string): Promise<Here> {
+  let toplevel: string
+  try {
+    const top = await world.runGit(world.cwd, ['rev-parse', '--show-toplevel'])
+    if (!top.ok || top.stdout.trim() === '') return { kind: 'outside' }
+    toplevel = top.stdout.trim()
+  } catch {
+    return { kind: 'outside' }
+  }
+  const name = basename(toplevel).toLowerCase()
+  const match = registered.find((p) => typeof p.project === 'string' && p.project.toLowerCase() === name)
+  if (match === undefined || match.project === null) return { kind: 'unregistered', toplevel }
+  // The effective settings, as the conductor resolves them: an omitted `tickets` is github, and kinds may sit under a `queue:`.
+  let tickets: 'db' | 'github' | null = null
+  let kinds: string[] = []
+  try {
+    const path = recipePath(match.project, home)
+    const text = await world.files.read(path)
+    if (text !== null) {
+      const recipe = resolveSource(text, path, path).recipe
+      tickets = ticketSourceOf(recipe)
+      kinds = [...kindsOf(recipe)]
+    }
+  } catch {
+    tickets = null
+  }
+  return {
+    kind: 'registered',
+    project: match.project,
+    tickets,
+    kinds,
+    slug: match.owner === null ? null : `${match.owner}/${match.project}`,
+  }
 }
 
 function describeSchema(schema: SchemaOutcome): string {
@@ -1233,5 +1282,6 @@ export function liveInitWorld(): InitWorld {
     // Dynamic, never a static import of `./doctor.ts` — this file's header
     // warns that an eager log read breaks a fresh machine (`setup-end.ts` keeps that).
     doctor: liveSetupDoctor,
+    cwd: process.cwd(),
   }
 }

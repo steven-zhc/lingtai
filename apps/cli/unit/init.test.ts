@@ -19,7 +19,8 @@ import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineR
  * `LINGTAI_TEST_SQLITE_PATH` the environment used to answer from before this
  * seam existed.
  */
-import { stripColour } from '../src/output.ts'
+import { githubInitSteps, hereSteps, localInitSteps } from '../src/next-steps.ts'
+import { type NextStep, renderNextBlock, renderNextLine, stripColour } from '../src/output.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const PATH = '/home/me/.lingtai/config.yml'
@@ -65,8 +66,21 @@ interface Harness {
   calls: { boardAt: number; board: number }
 }
 
-function nextLines(logged: string[]): string[] {
-  return logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
+/** Every printed line, split, colour removed. */
+function lines(logged: string[]): string[] {
+  return logged.flatMap((l) => l.split('\n')).map(stripColour)
+}
+
+/** The block `init` should close on, drawn: the last lines printed are exactly these. */
+function expectClosesOn(logged: string[], steps: readonly NextStep[]): void {
+  const drawn = renderNextBlock(steps).map(stripColour)
+  expect(lines(logged).slice(-drawn.length)).toEqual(drawn)
+}
+
+/** A failure closes on one `NEXT` line, with no number. */
+function expectClosesOnLine(logged: string[], command: string): void {
+  expect(lines(logged).at(-1)).toBe(stripColour(renderNextLine(command)))
+  expect(lines(logged).at(-1)).not.toMatch(/ 1 /)
 }
 
 function harness(
@@ -79,6 +93,8 @@ function harness(
     board?: { url: string } | { refused: string }
     appeared?: { slug: string; owner: string }
     ghStatus?: GhStatus
+    cwd?: string
+    doctorNext?: string
   } = {},
 ): Harness {
   const logged: string[] = []
@@ -132,6 +148,7 @@ function harness(
       return found
     },
     projects: async () => [],
+    cwd: options.cwd ?? '/elsewhere',
     files: {
       read: async (p) => files.get(p) ?? null,
       replace: async (p, text) => {
@@ -150,6 +167,7 @@ function harness(
         report: { ok: 3, notChecked: 0, deferred: 0 },
         toFix: { count: said.count ?? (said.failed ? 1 : 0), failed: said.failed },
         blocks: said.text,
+        ...(options.doctorNext === undefined ? {} : { next: options.doctorNext }),
       }
     },
   }
@@ -210,7 +228,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
     // Doctor's warning is printed, and it never sets the exit code.
     expect(code).toBe(0)
-    expect(logged.at(-1)).toBe('next: lingtai board · lingtai ticket new · lingtai run')
+    expectClosesOn(logged, localInitSteps(true))
   })
 
   it('under NO_COLOR, a local init with --defaults ends on the card and nothing between the questions and it (#773)', async () => {
@@ -246,7 +264,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       expect(row('trial')).toBeDefined()
       expect(text).toMatch(/ready/)
       expect(text).toContain('/nonexistent/.lingtai/repo/recipe.yml')
-      expect(text).toContain('next: lingtai board · lingtai ticket new · lingtai run')
+      expect(text).toContain('[next] 1 lingtai board — the board, leave it running')
     } finally {
       if (before === undefined) delete process.env['NO_COLOR']
       else process.env['NO_COLOR'] = before
@@ -265,7 +283,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(ready).toBeGreaterThan(-1)
     expect(text.indexOf('first block')).toBeGreaterThan(ready)
     expect(text.indexOf('second block')).toBeGreaterThan(text.indexOf('first block'))
-    expect(text.indexOf('next:')).toBeGreaterThan(text.indexOf('second block'))
+    expect(text.indexOf('[next]')).toBeGreaterThan(text.indexOf('second block'))
   })
 
   it('init --project github ends on this machine alone, then a ready line with no recipe (#755)', async () => {
@@ -304,7 +322,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(stripColour(logged.join('\n'))).toContain(
       'not ready — doctor did not finish (the beacon file does not parse)',
     )
-    expect(logged.at(-1)).toBe('next: lingtai doctor --verbose · lingtai board · lingtai ticket new · lingtai run')
+    expectClosesOnLine(logged, 'lingtai doctor --verbose')
   })
 
   const LOCAL = LOCAL_ARGS
@@ -312,35 +330,36 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('with a board serving and doctor green, the one closing line is ticket new and run', async () => {
     const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''], boardAt: 'http://127.0.0.1:17820' })
     expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
-    expect(logged.at(-1)).toBe('next: lingtai ticket new · lingtai run')
+    expectClosesOn(logged, localInitSteps(false))
   })
 
-  it('a failing doctor puts lingtai doctor --verbose first', async () => {
+  it('a failing doctor closes on its first fix, alone', async () => {
     const { world, logged } = harness({
       gitPlan: GIT_PLAN,
       answers: [''],
       boardAt: 'http://127.0.0.1:17820',
       doctor: async () => ({ text: '1 failed', failed: true }),
+      doctorNext: 'lingtai init',
     })
     expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
-    expect(logged.at(-1)).toBe('next: lingtai doctor --verbose · lingtai ticket new · lingtai run')
+    expectClosesOnLine(logged, 'lingtai init')
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
   })
 
-  it('exactly one next: line appears on the local path, and it is the last', async () => {
+  it('exactly one NEXT block appears on the local path, and it is the last', async () => {
     const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
     expect(await initCommand(flagsFromArgv(LOCAL), world)).toBe(0)
-    const nexts = logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
-    expect(nexts).toHaveLength(1)
-    expect(logged.at(-1)).toBe(nexts[0])
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    expectClosesOn(logged, localInitSteps(true))
   })
 
   it('re-running init on a machine with a project ends the same way, once', async () => {
     const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
     world.projects = async () => [{ name: 'repo' }] as never
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
-    const nexts = logged.flatMap((l) => l.split('\n')).filter((l) => l.startsWith('next:'))
-    expect(nexts).toEqual(['next: lingtai board · lingtai ticket new · lingtai run'])
-    expect(logged.at(-1)).toBe(nexts[0])
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    // The directory is not a git repository here (no git plan for it): `lingtai add` asks which.
+    expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
   })
 
   it('a local init never binds a board, though it probes the port once to say whether one is already running', async () => {
@@ -363,9 +382,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     )
     expect(code).toBe(0)
     expect(calls).toEqual({ boardAt: 1, board: 0 })
-    // The card has no row for the board; `next:` simply does not name `lingtai board`.
+    // The card has no row for the board; the block simply does not name `lingtai board`.
     expect(logged.join('\n')).not.toContain('the board was already running')
-    expect(logged.at(-1)).toBe('next: lingtai ticket new · lingtai run')
+    expectClosesOn(logged, localInitSteps(false))
   })
 
   it('a local init on a machine with a configured App says nothing of it', async () => {
@@ -429,10 +448,8 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     // memoises rather than asking `boardAt`/`board` a second time.
     expect(calls).toEqual({ boardAt: 1, board: 1 })
     expect(logged.join('\n')).toContain('the board keeps running in this terminal')
-    expect(nextLines(logged)).toEqual([
-      'next: open http://127.0.0.1:17820/setup/repository · lingtai add <owner>/<repo>',
-    ])
-    expect(logged.at(-1)).toBe('next: open http://127.0.0.1:17820/setup/repository · lingtai add <owner>/<repo>')
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    expectClosesOn(logged, githubInitSteps('http://127.0.0.1:17820/setup/repository'))
   })
 
   it('the App skipped closes on lingtai add, last and once', async () => {
@@ -449,23 +466,23 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
             ? 'create'
             : null
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
-    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
-    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    expectClosesOn(logged, githubInitSteps())
   })
 
   it('a configured App closes on lingtai add, last and once', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
-    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
-    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    expectClosesOn(logged, githubInitSteps())
   })
 
-  it('a re-run with a configured App and projects prints no next: line at all', async () => {
+  it('a re-run with a configured App and projects closes on the directory block', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
     world.projects = async () => [{ name: 'repo' }] as never
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
-    expect(nextLines(logged)).toEqual([])
+    expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
   })
 })
 
@@ -557,12 +574,12 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     expect(parseDocument(machineFiles.get('/nonexistent/.lingtai/config.yml')!).getIn(['github', 'auth'])).toBe('gh')
     expect(calls.board).toBe(0)
     expect(opened).toBe(0)
-    expect(nextLines(logged)).toEqual(['next: lingtai add <owner>/<repo>'])
-    expect(logged.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+    expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
+    expectClosesOn(logged, githubInitSteps())
     expect(logged.join('\n')).not.toContain('GitHub App')
   })
 
-  it('a failing doctor leads the gh closing line with lingtai doctor --verbose; a warning does not', async () => {
+  it('a failing doctor closes the gh path on one NEXT line; a warning closes on the block', async () => {
     const run = async (doctor: () => Promise<{ text: string; failed: boolean; count?: number }>) => {
       const { world, logged } = harness({
         ghStatus: { ok: true, login: 'steven', scopes: ['repo', 'workflow'] },
@@ -574,9 +591,9 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       return logged
     }
     const failed = await run(async () => ({ text: '1 failed', failed: true }))
-    expect(failed.at(-1)).toBe('next: lingtai doctor --verbose · lingtai add <owner>/<repo>')
+    expectClosesOnLine(failed, 'lingtai doctor --verbose')
     const warned = await run(async () => ({ text: '1 warning', failed: false }))
-    expect(warned.at(-1)).toBe('next: lingtai add <owner>/<repo>')
+    expectClosesOn(warned, githubInitSteps())
   })
 
   it('--github-auth gh signed out refuses by name and writes no github.auth', async () => {
@@ -589,5 +606,71 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     expect(stripColour(logged.join('\n'))).toContain('--github-auth gh, but gh is not installed')
     const file = machineFiles.get('/nonexistent/.lingtai/config.yml') ?? ''
     expect(file).not.toContain('auth: gh')
+  })
+})
+
+describe('init on a machine that already has projects names the directory it was run in (#756)', () => {
+  const run = async (cwd: string, plan: Record<string, GitResult>, files: Record<string, string> = {}) => {
+    const { world, logged, files: store } = harness({ gitPlan: plan, cwd })
+    for (const [k, v] of Object.entries(files)) store.set(k, v)
+    world.projects = async () => [{ project: 'widgets', owner: 'acme' }] as never
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    return logged
+  }
+
+  it('an unregistered repository gets `is not a project here` and add --local with its absolute top level', async () => {
+    const logged = await run('/work/clone', {
+      '/work/clone::rev-parse --show-toplevel': { ok: true, stdout: '/work/clone\n', stderr: '' },
+    })
+    const { preface, steps } = hereSteps({ kind: 'unregistered', toplevel: '/work/clone' })
+    expect(lines(logged)).toContain(preface)
+    expectClosesOn(logged, steps)
+    expect(steps[0]!.command).toBe('lingtai add --local /work/clone')
+  })
+
+  it('a registered project (name compared case-insensitively) is offered a ticket and start', async () => {
+    const logged = await run(
+      '/work/Widgets',
+      { '/work/Widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/Widgets\n', stderr: '' } },
+      {
+        [`${HOME}/widgets/recipe.yml`]:
+          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  tickets: github\n  kinds: [bug, feature]\n',
+      },
+    )
+    expectClosesOn(logged, [
+      { command: 'gh issue create -R acme/widgets --label bug', for: 'a ticket for it, with a kind label' },
+      { command: 'lingtai start', for: 'takes it, if nothing is taking work already' },
+    ])
+  })
+
+  it('an omitted source.tickets is github, and kinds under steps.claim queue are the ones named', async () => {
+    const logged = await run(
+      '/work/widgets',
+      { '/work/widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/widgets\n', stderr: '' } },
+      {
+        [`${HOME}/widgets/recipe.yml`]:
+          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [obsolete]\nsteps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [tech debt, bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n',
+      },
+    )
+    expect(lines(logged).join('\n')).toContain("gh issue create -R acme/widgets --label 'tech debt'")
+  })
+
+  it('a git failure is not inside a repository, never a project', async () => {
+    const logged = await run('/tmp/x', { '/tmp/x::rev-parse --show-toplevel': { ok: false, stdout: '', stderr: 'no' } })
+    expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
+    expect(lines(logged).join('\n')).not.toContain('is not a project here')
+  })
+
+  it('a failed doctor drops the preface and closes on its one line', async () => {
+    const { world, logged } = harness({
+      gitPlan: { '/work/clone::rev-parse --show-toplevel': { ok: true, stdout: '/work/clone\n', stderr: '' } },
+      cwd: '/work/clone',
+      doctor: async () => ({ text: '1 failed', failed: true }),
+      doctorNext: 'lingtai init',
+    })
+    world.projects = async () => [{ project: 'widgets', owner: 'acme' }] as never
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expectClosesOnLine(logged, 'lingtai init')
+    expect(lines(logged).join('\n')).not.toContain('is not a project here')
   })
 })
