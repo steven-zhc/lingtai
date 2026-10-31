@@ -247,7 +247,28 @@ format, and a kept-run after a committing agent may have nothing to commit.
 
 **`onSha` belongs to the action.** `implement` commits mid-step, so the sha
 can move inside one step, and a force-push makes every earlier verdict stale
-by arithmetic.
+by arithmetic. **A stale verdict is shown as stale**: the board reads it from the
+same comparison the gates make, never a lookup of its own.
+
+**An action's result has one reading, and it is in `@lingtai/domain`.** What an
+action's result means for its step — passed, failed, did-not-finish, asked,
+never-ran — is one function, used by the gates, the approval's list of unpassed
+steps, the board and `task_view` alike
+([0101](0101-typescript-packages-effect-unbuilt.md) §4). Where two readings
+existed, the cautious one is the reading:
+
+| Action and result | Reads as |
+| --- | --- |
+| `commit` `Completed`, no `question`, `head: null` | `did-not-finish` — a commit that produced nothing is not passed, so an approval over it has to name it |
+| `worktree` `NotDone` | `did-not-finish` |
+| `design` `AnswerUnreadable` | `failed`, as `verdict`'s `AnswerUnreadable` is |
+| `signoff` `Completed` with `requested` | `asked`, one of the step's six endings; never a separate *pending* |
+| `NotReached` | not read: the step's reading stops at the deciding action |
+
+**A run's failure is not undone.** A `RunFailed` stands when a `RunFinished`
+follows it: the run failed, and finishing afterwards is how it stopped. A
+requested signoff is different: it is a state the run is in until a later
+lifecycle event of the run moves it on.
 
 **A crash writes nothing to make up for it.** A conductor that dies inside a
 step leaves no `StepEnded`; the next one resumes from the last `StepEnded`
