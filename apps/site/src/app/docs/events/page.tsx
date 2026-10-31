@@ -19,7 +19,7 @@ export default async function EventsPage() {
   return (
     <>
       <Bar />
-      <main className="events-page">
+      <main>
         <div className="wrap doc-wrap">
           <section style={{ paddingTop: 32 }}>
             {/* /docs/ is a 404 while DOCS_PUBLIC is false, so the way back is a link only when it exists. */}
