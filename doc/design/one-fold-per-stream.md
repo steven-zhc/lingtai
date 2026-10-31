@@ -21,6 +21,91 @@ that only folds asks the store for just those types. Any control-fold change her
 (R7, R8) keeps that list in step with what `applyControl` reads.
 `unit/control.test.ts` fails on a type that is folded but not listed.
 
+## Where this ends: the architecture
+
+What the system looks like when the epic (#797) and 0124's snapshots have landed. The
+decisions are [0100](../decisions/0100-one-append-only-log.md) §1–§4,
+[0101](../decisions/0101-typescript-packages-effect-unbuilt.md) §4 and §6, and
+[0124](../decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md).
+
+```mermaid
+flowchart TB
+  W["Writers<br/>daemon · CLI · board actions"] -->|append| LOG
+  LOG[("events — the only truth<br/>append-only; an event never changes:<br/>a payload only gains optional fields,<br/>anything else is a new type")]
+
+  subgraph DOMAIN["@lingtai/domain — one fold per stream"]
+    F["control · ticket · run · project ·<br/>integration · chat · finding<br/>{ name, version, initial, apply, encode, decode }"]
+  end
+
+  SNAP[("snapshots — a cache, safe to delete<br/>key: stream, fold name, fold version<br/>holds: stream version, last seq, log epoch")]
+  PROJ[("projections — across streams<br/>task_view · spend · ticket_report · backlog")]
+
+  LOG -->|"one stream, from a version"| F
+  F -.->|"behind, at a commit point (every 5 events);<br/>daemon and board only; a failure costs nothing"| SNAP
+  SNAP -->|"latest usable snapshot"| F
+  LOG -->|"global log, by seq"| PROJ
+  PROJ -->|"a row's one-stream part calls apply"| F
+
+  F -->|"state = snapshot + ≤4 events, folded"| R["Readers<br/>conductor · daemon · CLI · board"]
+  PROJ -->|"queries across tickets<br/>(the queue: every queued ticket)"| R
+  R --> B["board: present(state, what is not on the stream)<br/>— never a second fold"]
+```
+
+### Reading a stream's state
+
+```mermaid
+flowchart TB
+  A["reader wants a stream's state"] --> S{"latest snapshot for<br/>(stream, fold, version)?"}
+  S -->|none| FULL["read the stream from version 1"]
+  S -->|found| V{"fold version current<br/>and log epoch the same?"}
+  V -->|no: void| FULL
+  V -->|yes| TAIL["read the stream from the snapshot's version"]
+  TAIL --> FOLD["decode the snapshot, fold the tail with apply"]
+  FULL --> FOLD0["fold every event with apply"]
+  FOLD --> NOW["evaluate what depends on now<br/>(a pause that lifts at until)"]
+  FOLD0 --> NOW
+  NOW --> OUT["the state — the same answer either way"]
+  FOLD0 -.->|"daemon or board, past a commit point"| WRITE["write a snapshot, unawaited"]
+```
+
+### Writing, and a snapshot behind it
+
+```mermaid
+sequenceDiagram
+  participant P as daemon or board
+  participant L as events
+  participant D as domain fold
+  participant S as snapshots
+  P->>L: append(stream, expectedVersion, events)
+  L-->>P: committed (version n)
+  Note over P: crossed a commit point?<br/>floor(old/5) ≠ floor(n/5)
+  P--)D: fold (not awaited)
+  D->>L: read the tail since the latest snapshot
+  D->>S: upsert only if this version is higher
+  Note over P,S: a failed write is logged once and forgotten:<br/>the next reader folds a few more events
+```
+
+### When a fold changes
+
+```mermaid
+flowchart TB
+  C["a change to a fold"] --> Q{"does any history<br/>fold to a different state?"}
+  Q -->|"no: a refactor"| K["version unchanged;<br/>the hash table proves the result is the same;<br/>snapshots stay valid"]
+  Q -->|"yes: a new state field, a bug fix, a rule"| U["raise the fold's version;<br/>add a version → hash row;<br/>a named assertion per changed cell"]
+  U --> X["old snapshots are void:<br/>the next read folds from version 1"]
+  U --> RB["a projection that stores the state:<br/>lingtai projection rebuild on deploy"]
+```
+
+The state is always what the current fold makes of the whole stream. It never
+depends on when a snapshot happened to be written.
+
+### Where the code runs
+
+Backend code that does IO is an Effect (0101 §6); `Effect.runPromise` runs only at a
+host's edge. An Effect span is an OpenTelemetry span, so a pass is one trace (#791).
+The fold itself is pure and stays in `domain`, outside Effect. Order: #797 (this
+plan, with 0124's snapshots last), then #790's projector, `pass.ts` and daemon rows.
+
 ## 0. The count
 
 Pattern: `case '<T>'`, `.type === '<T>'`, `type === '<T>'`, with `<T>` one of the 66
