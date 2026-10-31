@@ -353,12 +353,11 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   // ---- the store ------------------------------------------------------------
   const store = await chooseStore(world, config, path, flags['database-url'] ?? null, named)
   if (store !== null) return store
-  const storeKept = await initKept({
+  const storeKept = initKept({
     choice: storeChoice(world.env, machineFor(world, path)),
     configPath: path,
     startedWithConfig: hadConfig,
     wrote: !hadConfig && world.machine.read(path) !== null,
-    sidecars: async (db) => [`${db}-wal`, `${db}-shm`].filter((f) => existsSync(f)),
   })
 
   // ---- the agent --------------------------------------------------------
@@ -986,13 +985,10 @@ function confirm(world: InitWorld, path: string, expected: 'postgres' | 'sqlite'
  * wrote one — the files it names are then all this run made. It never names the
  * URL: a Postgres `database.url` carries a password.
  */
-export async function initKept(o: {
-  choice: StoreChoice
-  configPath: string
-  startedWithConfig: boolean
-  wrote: boolean
-  sidecars: (db: string) => Promise<readonly string[]>
-}): Promise<{ kept: string; startOver?: string }> {
+export function initKept(o: { choice: StoreChoice; configPath: string; startedWithConfig: boolean; wrote: boolean }): {
+  kept: string
+  startOver?: string
+} {
   if (o.startedWithConfig) return { kept: "this machine's store and projects are unchanged" }
   if ('refused' in o.choice) return { kept: 'the store chosen above is kept' }
   if (o.choice.store === 'postgres') {
@@ -1004,10 +1000,9 @@ export async function initKept(o: {
   }
   const db = o.choice.path
   if (!o.wrote) return { kept: `the store is kept, SQLite at ${db}, chosen by ${o.choice.from}` }
-  const extra = await o.sidecars(db)
   return {
     kept: `the store is kept, SQLite at ${db}, chosen in ${o.configPath}`,
-    startOver: `to start over, delete those two files${extra.length > 0 ? ' and the -wal and -shm files beside the database' : ''}`,
+    startOver: `to start over, delete those two files, and the -wal and -shm files beside the database if they exist`,
   }
 }
 

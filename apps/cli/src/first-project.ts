@@ -257,6 +257,14 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
  * contract is pinned by `github-app.test.ts`, which asks both questions every
  * time and must keep doing so.
  */
+/** What Ctrl+C at a question prints beside `kept` — only what the world carries. */
+function cancelFor(world: FirstProjectWorld): { startOver?: string; command?: string } {
+  return {
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
+  }
+}
+
 async function askProjectKind(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -668,7 +676,7 @@ async function runGithubBranch(
   // `gh` machine never has the App asked about, so `GET /app` is not made for it.
   let app: AppCheck | null = knownApp
   if (app === null && world.github.auth?.() !== 'gh') app = await world.github.app()
-  const decided = await askGithubAuth(world, flags, app?.configured === true, world.kept)
+  const decided = await askGithubAuth(world, flags, app?.configured === true, world.kept, cancelFor(world))
   if ('refused' in decided) return { refused: decided.refused }
 
   if (decided.auth === 'gh') {
@@ -736,7 +744,7 @@ async function runGithubBranch(
   let appOutcome: 'already' | AppWaitResult = 'already'
 
   if (!app.configured) {
-    const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept)
+    const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept, cancelFor(world))
     if ('refused' in asked) return { refused: asked.refused }
     const appAnswer = asked.project === 'github' ? asked.app : 'create'
 

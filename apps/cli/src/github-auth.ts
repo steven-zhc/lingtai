@@ -104,6 +104,7 @@ export async function askGithubAuth(
   flags: Record<string, string>,
   appConfigured: boolean,
   kept: string,
+  cancel: { startOver?: string; command?: string } = {},
 ): Promise<GithubAuthAnswer> {
   const given = flags['github-auth'] ?? null
   if (given !== null && given !== 'gh' && given !== 'app') {
@@ -162,6 +163,7 @@ export async function askGithubAuth(
         fallback: 'gh',
         choices: ['gh', 'app'],
         kept,
+        ...cancel,
       })
       if ('refused' in asked) return { refused: asked.refused }
       return asked.answer === 'gh' ? write() : { auth: 'app', pending: true }
@@ -179,6 +181,7 @@ export async function askGithubAuth(
       fallback: canSignIn ? 'sign-in' : 'app',
       choices: canSignIn ? ['sign-in', 'app'] : ['app', 'gh'],
       kept,
+      ...cancel,
     })
     if ('refused' in asked) return { refused: asked.refused }
     if (asked.answer === 'app') return { auth: 'app', pending: true }
