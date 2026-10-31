@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import {
   NO_DESIGN,
@@ -18,6 +18,7 @@ import {
   createQueueAction,
   createWorkAction,
   createWorktreeAction,
+  runCommand,
 } from '@lingtai/actions'
 import {
   NO_RUN_LOG,
@@ -28,7 +29,7 @@ import {
   missingForTier,
   taggedTrace,
 } from '@lingtai/agent'
-import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
+import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
 import {
   type PayloadOf,
   type SpentFor,
@@ -204,6 +205,7 @@ import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
 import { armFor, diffBaseShaOf, landedOnBaseOf, priorAttempts } from './attempts.ts'
+import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
 import { closeHolding } from './close.ts'
@@ -250,6 +252,26 @@ import { type RefChannel, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
+/**
+ * **One base check per store** (#744, 0122) — its in-flight map is what makes two passes asking
+ * about one commit and command one run, so it cannot be a local of a pass. Keyed by the store
+ * because a store is one log; `log` is the first caller's, which is the conductor's own.
+ */
+const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
+function baseCheckFor(store: EventStore, log: (line: string) => void, home: string) {
+  let check = baseChecks.get(store)
+  if (check === undefined) {
+    check = createBaseCheck({
+      store,
+      run: runCommand,
+      worktreePath: (project, sha7, runId) => worktreePath(home, project, `base-${sha7}-${runId}`),
+      note: log,
+    })
+    baseChecks.set(store, check)
+  }
+  return check
+}
+
 export function spentWords(costUsd: number | null): string {
   return costUsd === null ? 'cost unknown' : `$${costUsd.toFixed(2)}`
 }
@@ -2870,6 +2892,54 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * **Whether the command `build` refused fails on the base too** (#744, 0108 §13) — the port
+       * `runPass` asks before a `BuildRed` buys a round. `unknown` is `notRed` with the reason
+       * noted: a base that could not be checked never holds a pass.
+       *
+       * Aborted when this pass's scope closes, so a drain waits for the check the way it waits
+       * for `build`. The instance is `baseCheckFor(store)`'s, shared with every other pass in
+       * this conductor, which is what makes two asks about one commit one run (0122).
+       */
+      const baseAbort = new AbortController()
+      yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
+      const baseIsRed = async (asked: { action: string; mergedOnto: string | null }) => {
+        const action = recipe.steps.build.find((a) => a.name === asked.action)
+        if (action === undefined || !('run' in action)) {
+          runLog.note('base', `base not checked: \`${asked.action}\` is not a run: action in the recipe's build list`)
+          return { notRed: 'not a run: action in the recipe' }
+        }
+        const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
+        if (baseSha === null) return { notRed: 'no base commit was cut' }
+        const answer = await baseCheckFor(store, log, home).ask({
+          project,
+          base,
+          baseSha,
+          command: action.run,
+          prepared: recipe.steps.prepared.flatMap((a) => ('run' in a ? [a.run] : [])),
+          env: envForExtension(action.env),
+          runId,
+          signal: baseAbort.signal,
+          timeoutMs: parseDuration(action.timeout),
+          tree: {
+            cut: async (path, sha) => {
+              const cut = await gitAsked(['worktree', 'add', '--force', '--detach', path, sha])
+              if (Either.isLeft(cut)) throw new Error(cut.left.detail)
+            },
+            remove: async (path) => {
+              const gone = await gitAsked(['worktree', 'remove', '--force', path])
+              if (Either.isLeft(gone)) throw new Error(gone.left.detail)
+            },
+            plant: (path) => writeFile(resolve(path, recipe.env.plantAt), renderEnvFile(env.values), { mode: 0o600 }),
+          },
+        })
+        if (answer.verdict === 'red') {
+          return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
+        }
+        if (answer.verdict === 'unknown') runLog.note('base', `base not checked: ${answer.why}`)
+        return { notRed: answer.verdict }
+      }
+
+      /**
        * The base commit an earlier lap of a **held** run merged in, for a
        * continuation's review (#594). The pass that merged it is over and its
        * in-memory record with it, but the merge commit is in the branch: ours,
@@ -4035,6 +4105,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ceilings,
           judge,
           mergeBase,
+          baseIsRed,
           // **Where this walk jumps to, once `admit` and `prepared` have
           // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
           // every ordinary pass, which starts at `admit` and walks the

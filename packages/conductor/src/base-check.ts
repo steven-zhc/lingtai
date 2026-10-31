@@ -44,6 +44,20 @@ export interface BaseCheckQuestion {
   runId: string
   signal: AbortSignal
   timeoutMs: number
+  /**
+   * The git and filesystem work of one cut. Per ask and not per instance: the instance is shared
+   * by every pass in a conductor (#744), and the clone to cut from and the env file to plant are
+   * the asking pass's own.
+   */
+  tree: BaseCheckTree
+}
+
+export interface BaseCheckTree {
+  /** `git worktree add --force --detach <path> <sha>`. */
+  cut: (path: string, sha: string) => Promise<void>
+  remove: (path: string) => Promise<void>
+  /** Plants the env file in the cut. */
+  plant: (path: string) => Promise<void>
 }
 
 export type BaseCheckAnswer =
@@ -53,11 +67,6 @@ export type BaseCheckAnswer =
 
 export interface BaseCheckDeps {
   store: Pick<EventStore, 'read' | 'append'>
-  /** `git worktree add --force --detach <path> <sha>`. */
-  cut: (path: string, sha: string) => Promise<void>
-  remove: (path: string) => Promise<void>
-  /** Plants the env file in the cut. */
-  plant: (path: string) => Promise<void>
   run: (options: RunCommandOptions) => Promise<CommandOutcome>
   worktreePath: (project: string, sha7: string, runId: string) => string
   /** The run-log line for a failed append or removal. */
@@ -95,12 +104,12 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
     let outcome!: CommandOutcome
     try {
       try {
-        await deps.cut(path, q.baseSha)
+        await q.tree.cut(path, q.baseSha)
       } catch (err) {
         return { verdict: 'unknown', why: `the worktree could not be cut at ${q.baseSha}: ${(err as Error).message}` }
       }
       try {
-        await deps.plant(path)
+        await q.tree.plant(path)
       } catch (err) {
         return { verdict: 'unknown', why: `the env file could not be planted: ${(err as Error).message}` }
       }
@@ -125,7 +134,7 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
       }
       outcome = await runIn(q.command)
     } finally {
-      await deps.remove(path).catch((err: Error) => {
+      await q.tree.remove(path).catch((err: Error) => {
         deps.note(`base check: could not remove ${path}: ${err.message} — it may hold the planted env file`)
       })
     }

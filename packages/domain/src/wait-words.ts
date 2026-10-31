@@ -164,6 +164,15 @@ function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd
   }
 }
 
+/** **One sentence for a base that is red** (#744), shared by the card and the run's `PassRouted.why`. */
+export function baseRedText(because: { command: string; base: string; baseSha: string }): string {
+  return (
+    `base is red: \`${because.command}\` fails on ${because.base} at ${because.baseSha.slice(0, 7)} before any ` +
+    `change, so a fix round would not be about this diff — make ${because.base} pass it, or drop it from ` +
+    `build, then lingtai requeue`
+  )
+}
+
 /**
  * A line for `because` (0120 §3's `EscalationBecause`) to fold into an
  * escalated wait's `why` — `''` where the router has nothing to add beyond
@@ -175,6 +184,8 @@ function reasonTextOf(because: EscalationBecause): string {
       return ''
     case 'JudgeHandedOver':
       return because.why
+    case 'BaseRed':
+      return baseRedText(because)
     case 'UnreadableReply':
       return `the judge's answer could not be read: ${because.raw}`
     case 'UnknownCandidate':
@@ -231,7 +242,7 @@ function escalatedColumns(
   switch (proposal._tag) {
     case 'BuildRed': {
       const question = why(reasonText !== '' ? reasonText : proposal.output)
-      return judgement(question, run, proposal.output)
+      return judgement(question, run, because._tag === 'BaseRed' ? because.evidence : proposal.output)
     }
     // `conflict` and `verify-failed` are also `RefusalReason`s, and the same
     // function `MergeRefused` reads below must answer them the same way here
