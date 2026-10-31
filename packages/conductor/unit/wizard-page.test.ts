@@ -290,6 +290,14 @@ describe('limits', () => {
 })
 
 describe('the fast lane', () => {
+  it('draws a check once when its name is its command', () => {
+    const state = updateState({
+      slug: 'acme/shop',
+      recipe: scanned([{ name: 'uv run pytest', run: 'uv run pytest', timeout: '20m', env: [] }]),
+    })
+    expect(state.draft.checks.map((c) => c.label)).toContain('uv run pytest')
+  })
+
   it('lists every script found, ticks the guesses in the order the gate runs them, and builds that gate', () => {
     const state = fresh()
     expect(state.draft.checks.map((c) => [c.label, c.ticked])).toEqual([

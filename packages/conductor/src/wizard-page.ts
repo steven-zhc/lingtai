@@ -358,7 +358,7 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
   const checks: Check[] = CHECKING_STEPS.flatMap((step) =>
     recipe.steps[step].filter(isCheck).map((action, i) => ({
       id: `${step}.${i}:${action.name}`,
-      label: 'run' in action ? `${action.name} — ${action.run}` : action.name,
+      label: 'run' in action && action.run !== action.name ? `${action.name} — ${action.run}` : action.name,
       ticked: true,
       action,
       step,
