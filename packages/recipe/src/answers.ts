@@ -72,24 +72,46 @@ export function landingChanges(
     if (proposed.some(isHumanEntry)) return []
     return [{ path: ['steps', 'proposed'], value: [...proposed, { name: 'hold every pass', human: SETUP_HOLD_TEXT }] }]
   }
-  const withoutHold = proposed.filter((entry) => !isHumanEntry(entry))
+  return landOnBranchChanges(answer.land, proposed, currentAdmit)
+}
+
+/**
+ * `landingChanges` for a branch **named as a branch**: a branch literally called
+ * `hold` is written as the base here, never read as the approval command that
+ * `landingChanges({ land: 'hold' })` takes it for. The setup's choice goes
+ * through this, because there the branch comes from a recipe or the repository
+ * rather than from a person typing `--land`.
+ */
+export function landOnBranchChanges(
+  branch: string,
+  currentProposed: readonly unknown[] | null,
+  currentAdmit?: readonly unknown[] | null,
+): RecipeChange[] {
+  const proposed = currentProposed ?? []
+  const removal = holdRemovalChanges(proposed)
   const admit = currentAdmit ?? []
   const worktreeIndex = admit.findIndex(isWorktreeEntry)
   const changes: RecipeChange[] =
     worktreeIndex === -1
-      ? [{ path: ['repo', 'base'], value: answer.land }]
+      ? [{ path: ['repo', 'base'], value: branch }]
       : [
           {
             path: ['steps', 'admit'],
             value: admit.map((entry, i) =>
               i === worktreeIndex && isWorktreeEntry(entry)
-                ? { ...entry, worktree: { ...entry.worktree, base: answer.land } }
+                ? { ...entry, worktree: { ...entry.worktree, base: branch } }
                 : entry,
             ),
           },
         ]
-  if (withoutHold.length !== proposed.length) changes.push({ path: ['steps', 'proposed'], value: withoutHold })
-  return changes
+  return [...changes, ...removal]
+}
+
+/** Removes every `human:` at `steps.proposed` and writes nothing else; empty where there is none. */
+export function holdRemovalChanges(currentProposed: readonly unknown[] | null): RecipeChange[] {
+  const proposed = currentProposed ?? []
+  const withoutHold = proposed.filter((entry) => !isHumanEntry(entry))
+  return withoutHold.length !== proposed.length ? [{ path: ['steps', 'proposed'], value: withoutHold }] : []
 }
 
 /** `runtime.limits.rounds` — how many times a pass sends the agent back. */
