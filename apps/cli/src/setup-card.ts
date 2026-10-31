@@ -105,14 +105,19 @@ function agentsRow(runtimes: readonly RuntimeFound[]): string {
   return runtimes.map((r) => `${r.id} ${mark(r)}`).join('  ')
 }
 
+/** `git@host:o/r` — user without a password, then `host:path`; the only non-URL remote printed as written. */
+const SCP_REMOTE = /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/
+
 function landsOnRow(recipe: CardRecipe, userHome: string): string {
   if (recipe.remote === null) return recipe.base
-  const where = recipe.remote.startsWith('/')
-    ? tilde(recipe.remote, userHome)
-    : redactUrl(recipe.remote).startsWith('(')
-      ? // scp-style (`git@host:o/r`) does not parse as a URL and has no password form to leak.
-        recipe.remote
-      : redactUrl(recipe.remote)
+  const remote = recipe.remote
+  // A remote that does not parse as a URL is printed only when it is plainly a path or scp-style;
+  // anything else could carry `user:password@`, and redaction cannot vouch for it.
+  const where = remote.startsWith('/')
+    ? tilde(remote, userHome)
+    : SCP_REMOTE.test(remote) || (!remote.includes('@') && !remote.includes('://'))
+      ? remote
+      : redactUrl(remote)
   return `${recipe.base}, in ${where}`
 }
 

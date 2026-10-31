@@ -108,7 +108,7 @@ describe('askRecipe — an absent file (#432)', () => {
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(files.replaced).toHaveLength(1)
 
     const path = recipePath('widget', HOME)
@@ -167,7 +167,7 @@ describe('askRecipe — an absent file (#432)', () => {
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(files.replaced).toHaveLength(1)
 
     const path = recipePath('widget', HOME)
@@ -215,7 +215,7 @@ steps:
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     // Only `source.kinds` differs from the fixture — every other question
     // took the file's own current answer, and `setRecipe` writes nothing
     // when a change sets the value already there (`write.ts`'s own rule).
@@ -267,7 +267,7 @@ describe('askRecipe — --defaults (#433)', () => {
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(asked).toEqual([])
 
     const path = recipePath('widget', HOME)
@@ -316,14 +316,14 @@ describe('askRecipe — --defaults (#433)', () => {
 
   it('with two runtimes signed in, --defaults writes claude-code as the writer and codex as the reviewer (#727)', async () => {
     const { result, text, resolved } = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' })
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(resolved!.runtime.agent).toBe('claude-code')
     expect(text).toMatch(/agent: codex/)
   })
 
   it('the writer is the enum-first runtime however the runtimes are listed (#727)', async () => {
     const { result, resolved } = await runTwo([...TWO_RUNTIMES].reverse(), NO_TERMINAL, { defaults: '' })
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(resolved!.runtime.agent).toBe('claude-code')
   })
 
@@ -338,7 +338,7 @@ describe('askRecipe — --defaults (#433)', () => {
       log: () => {},
     }
     const { result, resolved } = await runTwo(TWO_RUNTIMES, world, { land: 'main' })
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(asked).toEqual(['use every default? [yes]: '])
     expect(resolved!.runtime.agent).toBe('claude-code')
   })
@@ -349,7 +349,7 @@ describe('askRecipe — --defaults (#433)', () => {
     const path = recipePath('widget', HOME)
     const files = mapFiles({ [path]: first.text })
     const again = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' }, files)
-    expect(again.result).toEqual({ ok: true })
+    expect(again.result).toMatchObject({ ok: true })
     expect(again.resolved!.runtime.agent).toBe('codex')
   })
 
@@ -407,7 +407,7 @@ describe('askRecipe — --defaults (#433)', () => {
       files,
     } satisfies RecipeAt)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(asked).toEqual(['use every default? [yes]: '])
 
     const path = recipePath('widget', HOME)
@@ -446,12 +446,10 @@ describe('askRecipe — --defaults (#433)', () => {
 describe('askRecipe — the trial run (#436)', () => {
   const run = async (flags: Record<string, string>) => {
     const calls: string[][] = []
-    const trials: unknown[] = []
     const result = await askRecipe(defaultsWorld(), {
       ...BASE_AT,
       project: 'widget',
       local: true,
-      onTrial: (t) => trials.push(t),
       flags: { install: 'none', ...flags },
       buildFlags: ['pnpm test'],
       seeds: [
@@ -467,24 +465,24 @@ describe('askRecipe — the trial run (#436)', () => {
         return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
       },
     } satisfies RecipeAt)
-    return { result, calls, trials }
+    return { result, calls }
   }
 
   it('does not run under --defaults', async () => {
     const { result, calls } = await run({ defaults: '' })
-    expect(result).toEqual({ ok: true })
+    expect(result).toMatchObject({ ok: true })
     expect(calls).toEqual([])
   })
 
   it('runs under --defaults --check-build yes, and tells the caller how it went', async () => {
-    const { calls, trials } = await run({ defaults: '', 'check-build': 'yes' })
+    const { calls, result } = await run({ defaults: '', 'check-build': 'yes' })
     expect(calls).toEqual([['pnpm test']])
-    expect(trials).toEqual([expect.objectContaining({ trial: 'passed' })])
+    expect(result).toMatchObject({ ok: true, trial: { trial: 'passed' } })
   })
 
   it('tells the caller a declined trial was not run', async () => {
-    const { trials } = await run({ 'check-build': 'no' })
-    expect(trials).toEqual([{ trial: 'not-run', because: 'declined' }])
+    const { result } = await run({ 'check-build': 'no' })
+    expect(result).toMatchObject({ trial: { trial: 'not-run', because: 'declined' } })
   })
 
   it('skips --check-build no without asking', async () => {

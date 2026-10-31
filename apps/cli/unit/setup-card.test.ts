@@ -136,6 +136,8 @@ describe('renderSetupCard', () => {
     expect(renderSetupCard(url)).not.toContain('pw@')
     const scp = { ...FACTS, recipe: { ...RECIPE, remote: 'git@github.com:o/r' } }
     expect(row(scp, 'lands on')).toContain('lingtai-base, in git@github.com:o/r')
+    const bad = { ...FACTS, recipe: { ...RECIPE, remote: 'https://u:s3cret@github.com:bad/o/r' } }
+    expect(renderSetupCard(bad)).not.toContain('s3cret')
   })
 
   it('names the tickets source and kinds in order', () => {

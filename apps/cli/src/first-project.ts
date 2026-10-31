@@ -535,12 +535,8 @@ async function runLocalBranch(
     `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered` +
     (madeKept === null ? '' : `; ${madeKept} is kept too`)
 
-  const tried: { trial: TrialOutcome | null } = { trial: null }
   const recipeResult = await askRecipe(world, {
     project: name,
-    onTrial: (t) => {
-      tried.trial = t
-    },
     local: true,
     runtimes,
     reader: world.setupReader(toplevel),
@@ -608,7 +604,7 @@ async function runLocalBranch(
     name,
     remote,
     base: final,
-    trial: tried.trial ?? { trial: 'not-run', because: 'no checks' },
+    trial: recipeResult.trial,
   }
 }
 

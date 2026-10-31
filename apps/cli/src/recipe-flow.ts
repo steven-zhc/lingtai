@@ -109,11 +109,6 @@ async function toolOnPath(tool: string): Promise<boolean> {
 
 export interface RecipeAt {
   project: string
-  /**
-   * Told how the trial build went, once, when it is known. A callback rather
-   * than a key on `askRecipe`'s return, which its callers compare whole.
-   */
-  onTrial?: (trial: TrialOutcome) => void
   /** A local project is never asked where its tickets come from (`askTickets`'s own rule). */
   local: boolean
   /** Already probed — this function never probes on its own. */
@@ -259,7 +254,10 @@ async function writeOrRefuse(
   }
 }
 
-export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ ok: true } | { refused: string }> {
+export async function askRecipe(
+  world: QuestionWorld,
+  at: RecipeAt,
+): Promise<{ ok: true; trial: TrialOutcome } | { refused: string }> {
   const fileOptions = { home: at.home, files: at.files }
   const files = at.files ?? diskFiles
   const path = recipePath(at.project, at.home)
@@ -340,7 +338,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     kept: askKept,
   })
   if ('refused' in setup) return setup
-  at.onTrial?.(setup.trial)
+  const trial = setup.trial
   if (absent) {
     collected.push(...setup.changes)
   } else {
@@ -436,5 +434,5 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     }
   }
 
-  return { ok: true }
+  return { ok: true, trial }
 }
