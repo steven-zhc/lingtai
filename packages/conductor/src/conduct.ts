@@ -518,15 +518,38 @@ export interface RunOnceOptions {
   continuing?: { runId: string }
 }
 
+/**
+ * What a person is shown about a pass once it ends (#766): the ticket, the
+ * visits that ran an action and how each ended, and what the pass spent.
+ * Built from facts the pass already holds; nothing here is written to the log.
+ */
+export type PassSummary = {
+  ref: string
+  title: string
+  /** Visits that ran at least one action, or were declared — the ones `passLine` does not print as `skipped`. */
+  ran: readonly { step: string; ending: string }[]
+  /** Dollars of every `RunSpent` the pass appended; `unknown` counts the runs that reported none. */
+  cost: { usd: number; unknown: number }
+  /** Why a held pass waits. Absent on any other ending. */
+  wait?: string
+}
+
 export type RunOnceResult =
-  | { ok: true; ticketId: string; runId: string; mergeCommit: string }
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string; summary?: PassSummary }
   /**
    * Reached the merge and stopped, because a person asked it to. Deliberately
    * not `ok: false` with a stage — nothing refused, and calling it a failure
    * would be the kind of convenient fiction the log exists to prevent.
    */
-  | { ok: 'held'; ticketId: string; runId: string; headSha: string; step: string }
-  | { ok: false; ticketId: string | null; runId: string | null; stage: string; detail: string }
+  | { ok: 'held'; ticketId: string; runId: string; headSha: string; step: string; summary?: PassSummary }
+  | {
+      ok: false
+      ticketId: string | null
+      runId: string | null
+      stage: string
+      detail: string
+      summary?: PassSummary
+    }
 
 /** A defect's own words. Wanted by the publish and by the release above it. */
 function whyOf(defect: unknown): string {
@@ -568,11 +591,24 @@ export function passLine(
   steps: readonly StepReached[],
   declared: Readonly<Record<string, readonly unknown[] | undefined>>,
 ): string {
-  const word = (v: StepReached): string =>
-    v.ending.ending === 'passed' && v.results.length === 0 && (declared[v.step] ?? []).length === 0
-      ? 'skipped'
-      : v.ending.ending
+  const word = (v: StepReached): string => (wasSkipped(v, declared) ? 'skipped' : v.ending.ending)
   return `pass: ${steps.map((v) => `${v.step}=${word(v)}`).join(' ')}`
+}
+
+/** A visit that passed having run no action, at a step the recipe declared nothing for. */
+function wasSkipped(v: StepReached, declared: Readonly<Record<string, readonly unknown[] | undefined>>): boolean {
+  return v.ending.ending === 'passed' && v.results.length === 0 && (declared[v.step] ?? []).length === 0
+}
+
+/** The visits a person is shown: `passLine`'s own test, so the two cannot disagree. */
+function ranVisits(
+  steps: readonly StepReached[],
+  declared: Readonly<Record<string, readonly unknown[] | undefined>>,
+): PassSummary['ran'] {
+  // A routing decision is the router's, not an action that ran or refused.
+  return steps
+    .filter((v) => v.ending.ending !== 'routed' && !wasSkipped(v, declared))
+    .map((v) => ({ step: v.step, ending: v.ending.ending }))
 }
 
 /**
@@ -1471,6 +1507,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
       /** The item, once `claim`'s `queue:` action has taken it. */
       let took: Claimed | null = null
+      /** What this pass has spent, for the summary a person is shown (#766). */
+      const spent = { usd: 0, unknown: 0 }
       /**
        * The settings file every declared `agent:` runs under, once `admit`'s port
        * has written it.
@@ -2497,7 +2535,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `RunFinished.usage`; `costUsd` is copied through as the runtime reported
        * it, `null` included, and is never defaulted to zero.
        */
-      const runSpentFrom = (outcome: RunOutcome, forSpent: SpentFor, runtime: RuntimeId): ToAppend => ({
+      const runSpentFrom = (outcome: RunOutcome, forSpent: SpentFor, runtime: RuntimeId): ToAppend => {
+        if (outcome.costUsd === null || outcome.costUsd === undefined) spent.unknown += 1
+        else spent.usd += outcome.costUsd
+        return runSpentRow(outcome, forSpent, runtime)
+      }
+      const runSpentRow = (outcome: RunOutcome, forSpent: SpentFor, runtime: RuntimeId): ToAppend => ({
         type: 'RunSpent',
         actor: 'conductor',
         data: parsePayload('RunSpent', {
@@ -3457,6 +3500,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * recorded is the failure this design exists to remove.*
        */
       const emit = async (event: PassEvent): Promise<void> => {
+        // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
+        if (event.type === 'RunSpent') {
+          const costUsd = (event.data as { costUsd?: number | null }).costUsd
+          if (costUsd === null || costUsd === undefined) spent.unknown += 1
+          else spent.usd += costUsd
+        }
         await appendNow(runId, [
           {
             type: event.type,
@@ -4184,6 +4233,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       log(passLine(pass.steps, recipe.steps))
+      const tookNow = (): Claimed | null => took
+      const summaryOf = (wait?: string): PassSummary => ({
+        ref: tookNow()?.ticket.ref ?? String(options.issue),
+        title: tookNow()?.ticket.title ?? '',
+        ran: ranVisits(pass.steps, recipe.steps),
+        cost: { ...spent },
+        ...(wait === undefined ? {} : { wait }),
+      })
       /**
        * **Every decision the router made, on the log** (`#271`).
        *
@@ -4427,7 +4484,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
         })
         didLand = true
-        return { ok: true, ticketId, runId, mergeCommit: merged } satisfies RunOnceResult
+        return { ok: true, ticketId, runId, mergeCommit: merged, summary: summaryOf() } satisfies RunOnceResult
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
@@ -4500,7 +4557,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`starting over — restart ${restart} of ${ceiling.restarts}`)
         runLog.note('restart', reason)
         yield* release(reason, { _tag: 'Restart', restart })
-        return { ok: false, ticketId, runId, stage: 'restart', detail: reason } satisfies RunOnceResult
+        return {
+          ok: false,
+          ticketId,
+          runId,
+          stage: 'restart',
+          detail: reason,
+          summary: summaryOf(),
+        } satisfies RunOnceResult
       }
 
       // ---- blocked: a person now holds it -------------------------------------
@@ -4668,6 +4732,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runId,
           headSha,
           step: stopped?.step ?? 'proposed',
+          summary: summaryOf(reason._tag),
         } satisfies RunOnceResult
       }
 
@@ -4721,6 +4786,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         runId,
         stage: stopped?.step ?? 'pass',
         detail: stopped === null ? reason : detailOf(stopped),
+        summary: summaryOf(),
       } satisfies RunOnceResult
     })
 

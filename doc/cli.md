@@ -432,13 +432,14 @@ Hold the projections current and take work.
 Changes state.
 
 ```text
-lingtai start [--no-conduct] [--no-merge] [--no-color]
+lingtai start [--no-conduct] [--no-merge] [--verbose] [--no-color]
   Reads no standing signal: a pause or a shutdown aimed at an
   earlier daemon was not aimed at this one. If another daemon holds
   the lock this starts nothing and says so. Unchecked — lingtai
   restart is the checked start.
   --no-conduct   projections only, take nothing
   --no-merge     as for lingtai run
+  --verbose      every line the conductor writes, as well
 ```
 
 ```sh

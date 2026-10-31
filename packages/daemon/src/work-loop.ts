@@ -305,6 +305,8 @@ export interface WorkLoopOptions {
    */
   store?: EventStore
   log?: (line: string) => void
+  /** Failures and the pause and shutdown sentences, which a person needs; absent, `log` (#766). */
+  tell?: (line: string) => void
 }
 
 export interface WorkLoop {
@@ -329,6 +331,7 @@ export interface WorkLoop {
 
 export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
   const log = options.log ?? (() => {})
+  const tell = options.tell ?? log
   const triggers = new Set<string>(options.triggers ?? COMPLETION_EVENTS)
 
   let subscription: Subscription | null = null
@@ -420,7 +423,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
             // again; on the third refusal say so and stop, because a boundary
             // that could throw is the boundary this file exists to remove.
             failuresAt = null
-            if (attempt === 2) log(`could not record ${name}'s failure: ${(err as Error).message}`)
+            if (attempt === 2) tell(`could not record ${name}'s failure: ${(err as Error).message}`)
           }
         }
         // Nothing above can reject, and the chain is caught anyway. A rejected
@@ -450,7 +453,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     const failed = (reason: string): void => {
       if (settled) return
       settled = true
-      log(`${name} failed on ${event.type}: ${reason}`)
+      tell(`${name} failed on ${event.type}: ${reason}`)
       record(name, event, reason, project)
     }
 
@@ -514,7 +517,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // arrived during the pass lapses on the `if (stopped) break` above,
           // which is the whole reason that line was already worth having.
           stopped = true
-          log(`shutting down — ${why}`)
+          tell(`shutting down — ${why}`)
           options.onShutdown?.(why)
           break
         }
@@ -523,7 +526,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
           // used to sit here was a drain for the outbox's queue.
-          log(typeof paused === 'string' ? paused : 'paused — taking no work')
+          tell(typeof paused === 'string' ? paused : 'paused — taking no work')
           break
         }
         passes += 1
@@ -532,7 +535,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         } catch (err) {
           // A pass that throws must not take the loop with it: the next
           // completion event is exactly when you want it to try again.
-          log(`pass failed: ${(err as Error).message}`)
+          tell(`pass failed: ${(err as Error).message}`)
         }
         reason = 'completion'
       } while (again)
@@ -540,7 +543,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // Reaching here means the loop's own bookkeeping threw, not the pass —
       // the pass has its own catch. It must still not escape into a caller
       // that is only draining.
-      log(`loop failed: ${(err as Error).message}`)
+      tell(`loop failed: ${(err as Error).message}`)
     }
   }
 
@@ -590,7 +593,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           if (!triggers.has(event.type)) return
           void pump('completion')
         },
-        onError: (error, phase) => log(`subscription ${phase}: ${String(error)}`),
+        onError: (error, phase) => tell(`subscription ${phase}: ${String(error)}`),
       })
 
       // The cold start. Nothing is in flight, so nothing will tell us to begin.

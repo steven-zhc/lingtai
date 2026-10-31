@@ -100,6 +100,15 @@ export interface ScheduleOptions {
     started: (pass: Promise<boolean | void>) => void
   }
   log?: (line: string) => void
+  /**
+   * For a person rather than the trace (#766): told when a ticket is taken, when
+   * its pass ends, and when its pass throws. `log` keeps every line it had; these
+   * are beside it. A throw from `took` or `ended` is swallowed — a sink that
+   * fails must not end the pass.
+   */
+  took?: (entry: { issue: string; taskId: string; title: string }) => void
+  ended?: (result: RunOnceResult) => void
+  failed?: (line: string) => void
 }
 
 export type StoppedBecause =
@@ -182,6 +191,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         const why = yield* Effect.promise(() => asked())
         if (why !== null) {
           log(why)
+          told(() => options.failed?.(why))
           return finish('paused')
         }
       }
@@ -248,6 +258,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           }
           attempted.add(entry.taskId)
           log(`taking ${entry.taskId} — ${entry.title}`)
+          told(() => options.took?.(entry))
           const leave = set.enter({ project: name, issue: entry.issue, files })
           started += 1
           const pass = Effect.runPromise(
@@ -272,11 +283,14 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
             (result) => {
               ran.push(result)
               reportEnding(log, result)
+              told(() => options.ended?.(result))
               if (result.ok === false && result.stage === 'env') envRefused = true
               return !declinedBeforeWork(result)
             },
             (err: unknown) => {
-              log(`${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`)
+              const line = `${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`
+              log(line)
+              told(() => options.failed?.(line))
               return false
             },
           )
@@ -307,6 +321,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
 
       attempted.add(next.taskId)
       log(`taking ${next.taskId} — ${next.title}`)
+      told(() => options.took?.(next))
 
       const result = yield* runOnce({
         project: options.project,
@@ -332,6 +347,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       // Every ending is reported, including the ones that are nobody's fault.
       // A scheduler that only logs successes is the old loop.
       reportEnding(log, result)
+      told(() => options.ended?.(result))
 
       // The environment is the project's, not the item's. `runOnce` refused
       // before claiming anything, and the next ticket would be refused for the
@@ -348,6 +364,14 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
  */
 export function declinedBeforeWork(result: RunOnceResult): boolean {
   return result.ok === false && (result.stage === 'claim' || result.stage === 'env' || result.stage === 'recipe')
+}
+
+function told(sink: () => void): void {
+  try {
+    sink()
+  } catch {
+    // a sink that throws must not end the pass
+  }
 }
 
 function reportEnding(log: (line: string) => void, result: RunOnceResult): void {
