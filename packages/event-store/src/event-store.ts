@@ -15,6 +15,7 @@
 import {
   Actor,
   type Envelope,
+  type EventType,
   MissingUpcasterError,
   SCHEMA_VER,
   StreamId,
@@ -349,6 +350,15 @@ export interface EventStore {
   read(streamId: string, fromVersion?: number): Promise<Envelope[]>
 
   /**
+   * One stream's events of `types` only, in version order, from `fromVersion`
+   * (inclusive, default 1). Versions are the events' own, so the list has gaps
+   * where the other types were — **never take a stream's version from its
+   * length**; an append's `expectedVersion` comes from the full `read` (#796).
+   * An empty `types` returns nothing without asking the database.
+   */
+  readTypes(streamId: string, types: readonly EventType[], fromVersion?: number): Promise<Envelope[]>
+
+  /**
    * The global log after `fromSeq` (exclusive), in `seq` order. This is the
    * projection catch-up read; `fromSeq` is a checkpoint's `lastSeq`, and 0n
    * starts from the beginning.
@@ -391,6 +401,16 @@ export function createEventStore(client: Db): EventStore {
     async read(streamId, fromVersion = 1) {
       const rows = await client.orm.public.Event.where({ streamId })
         .where((e) => e.version.gte(fromVersion))
+        .orderBy((e) => e.version.asc())
+        .all()
+      return rows.map((r) => toEnvelope(r as EventRow))
+    },
+
+    async readTypes(streamId, types, fromVersion = 1) {
+      if (types.length === 0) return []
+      const rows = await client.orm.public.Event.where({ streamId })
+        .where((e) => e.version.gte(fromVersion))
+        .where((e) => e.type.in([...types]))
         .orderBy((e) => e.version.asc())
         .all()
       return rows.map((r) => toEnvelope(r as EventRow))

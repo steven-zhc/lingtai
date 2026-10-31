@@ -41,6 +41,7 @@ function storeOf(events: { type: string; data: unknown }[]): EventStore {
   )
   return {
     read: async () => envelopes,
+    readTypes: async (_stream, types) => envelopes.filter((e) => types.includes(e.type as never)),
     append: async () => [],
     readAll: async () => [],
   }
@@ -196,6 +197,7 @@ describe('withdrawing a drain', () => {
     const before: { next: (() => void) | null } = { next: null }
     const store: EventStore = {
       read: async () => storeOf(held).read('ctl-conductor'),
+      readTypes: async (_stream, types) => storeOf(held).readTypes('ctl-conductor', types),
       append: async (stream, at, events) => {
         const race = before.next
         before.next = null

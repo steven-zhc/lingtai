@@ -197,6 +197,11 @@ describe('run continues what a person approved (#747)', () => {
         if (stream === CONTROL_STREAM && ++controlReads >= 4) throw new Error('boom')
         return (inner.read as (...a: unknown[]) => Promise<never>)(stream, ...rest)
       },
+      // `readControl` reads the typed way since #796; both count as one control read.
+      readTypes: async (stream: string, ...rest: unknown[]) => {
+        if (stream === CONTROL_STREAM && ++controlReads >= 4) throw new Error('boom')
+        return (inner.readTypes as (...a: unknown[]) => Promise<never>)(stream, ...rest)
+      },
     } as Store
     const { code, onces, queues, lines } = await drive(store)
     expect(code).toBe(1)

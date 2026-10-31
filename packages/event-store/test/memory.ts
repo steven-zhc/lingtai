@@ -54,6 +54,7 @@
 import {
   Actor,
   type Envelope,
+  type EventType,
   SCHEMA_VER,
   StreamId,
   type ToAppend,
@@ -203,6 +204,13 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
     async read(streamId, fromVersion = 1) {
       return log
         .filter((e) => e.streamId === streamId && e.version >= fromVersion)
+        .sort((a, b) => a.version - b.version)
+        .map((r) => decodeRow(r, r.at))
+    },
+
+    async readTypes(streamId, types, fromVersion = 1) {
+      return log
+        .filter((e) => e.streamId === streamId && e.version >= fromVersion && types.includes(e.type as EventType))
         .sort((a, b) => a.version - b.version)
         .map((r) => decodeRow(r, r.at))
     },

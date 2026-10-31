@@ -14,9 +14,10 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { reduceControl } from '../src/control.ts'
+import { CONTROL_FOLD_TYPES, reduceControl } from '../src/control.ts'
 import type { Envelope } from '../src/envelope.ts'
 import { Actor } from '../src/envelope.ts'
+import { type EventType, SCHEMA_VER } from '../src/events.ts'
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -385,5 +386,31 @@ describe('who may append', () => {
     for (const who of ['', 'launchd', 'human:', 'agent:', 'Daemon']) {
       expect(Actor.safeParse(who).success, who).toBe(false)
     }
+  })
+})
+
+describe('CONTROL_FOLD_TYPES (#796)', () => {
+  // One payload that satisfies every case in the fold, so that each handled
+  // type changes the state — a type missing from the set would otherwise fold
+  // to the same state either way and the test would pass anyway.
+  const universal = {
+    by: 'someone',
+    reason: 'why',
+    project: 'p',
+    issue: 1,
+    runId: 'pass-1',
+    chatId: 'chat-1',
+    ticketId: 'p#1',
+    question: 'q',
+    attempt: 1,
+    version: 1,
+  }
+  const base = { type: 'ConductorShutdownRequested', data: { by: 'a', reason: 'drain' } }
+  const catalogue = Object.keys(SCHEMA_VER) as EventType[]
+
+  it.each(catalogue)('%s: folding only the set gives the state folding everything does', (type) => {
+    const all = log([base, { type, data: universal }])
+    const only = all.filter((e) => (CONTROL_FOLD_TYPES as readonly string[]).includes(e.type))
+    expect(reduceControl(only, NOW)).toEqual(reduceControl(all, NOW))
   })
 })

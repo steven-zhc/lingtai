@@ -14,9 +14,29 @@
  * that appends to the stream still goes through the commands there.
  */
 import type { Envelope } from './envelope.ts'
+import type { EventType } from './events.ts'
 
 /** One stream for the whole installation. Control is not per-project. */
 export const CONTROL_STREAM = 'ctl-conductor'
+
+/**
+ * The event types `reduceControl` reads — every other type on the control
+ * stream falls through it, `Reconciled` among them, which is most of the
+ * stream's bytes (#796). A reader that only folds asks the store for these
+ * (`EventStore.readTypes`). A type added to the fold and not here would be
+ * silently dropped, and `unit/control.test.ts` fails on it.
+ *
+ * **Never a basis for a stream's version**: the list is shorter than the stream.
+ */
+export const CONTROL_FOLD_TYPES = [
+  'ConductorPaused',
+  'ConductorResumed',
+  'ConductorShutdownRequested',
+  'ConductorShutdownWithdrawn',
+  'ContinueRequested',
+  'DiscussionRequested',
+  'RunRequested',
+] as const satisfies readonly EventType[]
 
 /** A standing request to drain and exit. Null when nobody has asked. */
 export interface ShutdownRequest {
@@ -125,7 +145,7 @@ export const emptyControl: ControlState = {
 /**
  * The control stream, as the state it describes.
  *
- * Cheap: it is a handful of events, not a history.
+ * Reads only `CONTROL_FOLD_TYPES`; a caller that has a choice reads just those.
  *
  * `now` is a parameter because one of the answers depends on the clock — a
  * pause that carries an expiry is over when the expiry is past, and the fold is

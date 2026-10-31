@@ -153,6 +153,7 @@ export function deferredEventStore(resolve: () => Promise<EventStore>): EventSto
   return {
     append: async (streamId, expectedVersion, events) => (await resolve()).append(streamId, expectedVersion, events),
     read: async (streamId, fromVersion) => (await resolve()).read(streamId, fromVersion),
+    readTypes: async (streamId, types, fromVersion) => (await resolve()).readTypes(streamId, types, fromVersion),
     readAll: async (fromSeq, limit) => (await resolve()).readAll(fromSeq, limit),
   }
 }

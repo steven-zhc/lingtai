@@ -202,6 +202,11 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
     ),
   )
   const readStream = bigints(db.prepare('SELECT * FROM events WHERE stream_id = ? AND version >= ? ORDER BY version'))
+  const readStreamTypes = bigints(
+    db.prepare(
+      'SELECT * FROM events WHERE stream_id = ? AND version >= ? AND type IN (SELECT value FROM json_each(?)) ORDER BY version',
+    ),
+  )
   const readLog = bigints(db.prepare('SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?'))
 
   return {
@@ -254,6 +259,13 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
 
     async read(streamId, fromVersion = 1) {
       return readStream.all(streamId, fromVersion).map((r) => toEnvelope(r as unknown as SqliteRow))
+    },
+
+    async readTypes(streamId, types, fromVersion = 1) {
+      if (types.length === 0) return []
+      return readStreamTypes
+        .all(streamId, fromVersion, JSON.stringify(types))
+        .map((r) => toEnvelope(r as unknown as SqliteRow))
     },
 
     async readAll(fromSeq, limit) {
