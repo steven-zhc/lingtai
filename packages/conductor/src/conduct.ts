@@ -2868,6 +2868,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ticketId,
             headSha: on.onSha,
             stepsPassed: true,
+            remote: options.remote,
+            issue: String(options.issue),
             token: options.token,
             home,
             gitEnv: options.gitEnv,

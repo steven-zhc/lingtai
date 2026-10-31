@@ -69,6 +69,9 @@ export const RefusalReason = z.enum([
   // The base branch refused the lane's direct push because it is protected —
   // a setting on the repository, which only a person can change (#662).
   'base-protected',
+  // The base is checked out in the local, non-bare remote the lane would push to,
+  // which git refuses; held for a person before anything is fetched or pushed (0104 §15).
+  'base-checked-out',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 

@@ -86,6 +86,14 @@ export interface IntegrateOptions {
   /** False when a gate refused. The integrator records it and does not merge. */
   stepsPassed: boolean
   stepDetail?: string
+  /**
+   * The project's own remote, set only where there is no GitHub owner (0104
+   * §15). When it is a local path, the base must not be checked out in it, or
+   * git refuses the push; absent, a URL and an scp-like address are not checked.
+   */
+  remote?: string
+  /** The issue number, for the sentence a held land hands a person (`lingtai approve --issue`). */
+  issue?: string
   token?: TokenSource
   home?: string
   gitEnv?: NodeJS.ProcessEnv
@@ -137,6 +145,37 @@ export interface BaseMoved {
 export function baseMovedOn(ours: readonly string[], theirs: readonly string[]): string[] {
   const base = new Set(theirs)
   return [...new Set(ours)].filter((path) => base.has(path)).sort()
+}
+
+/** A remote git reaches over a network: a URL (`file://` included) or `user@host:path`. Nothing to read locally. */
+const SCP_REMOTE = /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/
+export function isLocalRemote(remote: string): boolean {
+  return !remote.includes('://') && !SCP_REMOTE.test(remote)
+}
+
+/**
+ * Where `base` is checked out, read from `git worktree list --porcelain`.
+ *
+ * A branch checked out in any worktree of a non-bare repository blocks a push
+ * to it, so `HEAD` alone would miss a linked worktree. The hit is the exact
+ * line `branch refs/heads/<base>` in a block; a bare repository's block has no
+ * `branch` line. Output with no `worktree ` line at all is `unreadable`, and
+ * the caller errs toward not pushing.
+ */
+export function checkedOutAt(porcelain: string, base: string): { dir: string; block: string } | null | 'unreadable' {
+  const blocks = porcelain
+    .split(/\r?\n\r?\n/)
+    .map((b) => b.trim())
+    .filter((b) => b !== '')
+  let sawWorktree = false
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/)
+    const first = lines.find((l) => l.startsWith('worktree '))
+    if (first === undefined) continue
+    sawWorktree = true
+    if (lines.includes(`branch refs/heads/${base}`)) return { dir: first.slice('worktree '.length), block }
+  }
+  return sawWorktree ? null : 'unreadable'
 }
 
 /**
@@ -434,6 +473,23 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           { discard: true },
         ),
       )
+      // Git refuses a push to the branch a non-bare repository has checked out,
+      // in a form `PUSH_REJECTED` does not read — so a local remote is asked
+      // first, before anything is fetched or pushed (0104 §15). A failed read
+      // is a `RepoFailed` and lands as `unexpected`: never "nothing checked out".
+      if (options.remote !== undefined && isLocalRemote(options.remote)) {
+        const listed = yield* at(['worktree', 'list', '--porcelain'], options.remote)
+        const found = checkedOutAt(listed, options.base)
+        if (found === 'unreadable') {
+          return yield* refuse('unexpected', `could not read the worktrees of ${options.remote}:\n${listed}`)
+        }
+        if (found !== null) {
+          return yield* refuse(
+            'base-checked-out',
+            `${options.base} is checked out in ${found.dir} — switch to another branch, then lingtai approve ${options.project} --issue ${options.issue ?? '<n>'}\n${found.block}`,
+          )
+        }
+      }
       yield* at(
         ['fetch', 'origin', `+refs/heads/${options.base}:${laneBase}`, `+refs/heads/${options.branch}:${laneBranch}`],
         mirror,
