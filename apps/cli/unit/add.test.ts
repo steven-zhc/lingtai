@@ -93,6 +93,8 @@ function ttyHarness(): Harness {
     register: async (payload) => `added ${payload.project}`,
     kept: 'Nothing was written',
     history: async () => [],
+    inFlight: async () => [],
+    removeMirror: async () => {},
     github: {
       ghStatus: async () => ({ ok: false, reason: 'missing', detail: 'gh is not installed' }),
       writeAuth: async () => {},
