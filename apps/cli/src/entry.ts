@@ -24,9 +24,17 @@ if (route === 'effect') {
       // Already imported by `cli.ts`, so this loads nothing new; dynamic so
       // that help and unknown commands never touch the store.
       const { closeProcessLog } = await import('@lingtai/event-store')
+      const { closeProcessProjections } = await import('@lingtai/projector')
+      // Both at once, neither skipped because the other rejected; the first
+      // rejection is re-thrown so `finish` reports it.
+      const closeStores = (): Promise<void> =>
+        Promise.allSettled([closeProcessLog(), closeProcessProjections()]).then((settled) => {
+          const failed = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+          if (failed) throw failed.reason
+        })
       return finish(
         () => runCli([...process.argv.slice(0, 2), ...argv]),
-        closeProcessLog,
+        closeStores,
         (code) => {
           // The close gave up with its socket still open, which would hold the
           // process past the budget; leave once what is already written is out.

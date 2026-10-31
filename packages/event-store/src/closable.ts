@@ -26,13 +26,17 @@ export interface ClosableOnce<T extends Closable> {
   close(): Promise<void>
 }
 
-export function closableOnce<T extends Closable>(open: () => Promise<T>): ClosableOnce<T> {
+export function closableOnce<T extends Closable>(
+  open: () => Promise<T>,
+  /** The refusal a `get` after `close` gets; the process log's own by default. */
+  refuse: () => Error = () => new ProcessLogClosedError(),
+): ClosableOnce<T> {
   let opening: Promise<T> | null = null
   let closing: Promise<void> | null = null
   let closed = false
   return {
     get() {
-      if (closed) return Promise.reject(new ProcessLogClosedError())
+      if (closed) return Promise.reject(refuse())
       return (opening ??= open())
     },
     close() {

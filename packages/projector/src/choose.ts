@@ -19,6 +19,7 @@
  * `process.moduleLoadList` back.
  */
 import { chosenStore } from '@lingtai/env'
+import { closableOnce, type ClosableOnce } from '@lingtai/event-store'
 
 import { createPostgresProjectionStore } from './postgres.ts'
 import type { ProjectionStore } from './store.ts'
@@ -37,15 +38,16 @@ export interface ProjectionStoreOptions {
   url?: string
   /** Connections, for the Postgres pool. Two is enough for a runner: one transaction and one read. */
   max?: number
+  /** Let an idle Postgres pool stop holding the event loop. */
+  allowExitOnIdle?: boolean
 }
 
 /**
  * A store to use and then `close()`.
  *
- * Not memoised, because every caller here opens one around a single read and
- * closes it — the shape `createPostgresProjectionStore({ max: 1 })` already
- * had, and the shape a SQLite connection needs, since `openSqliteProjections`
- * hands out a handle somebody has to close.
+ * Not memoised: each call opens its own, and the caller closes it. That is the
+ * path a read with a `url` takes, and what the runners use. A read without one
+ * goes through `withProjectionStore`'s shared store instead (#793).
  */
 export async function projectionStore(options: ProjectionStoreOptions = {}): Promise<ProjectionStore> {
   const choice = chosenStore()
@@ -53,21 +55,60 @@ export async function projectionStore(options: ProjectionStoreOptions = {}): Pro
     return createPostgresProjectionStore({
       url: options.url ?? choice.url,
       ...(options.max === undefined ? {} : { max: options.max }),
+      ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
     })
   }
   const sqlite = await import('./sqlite.ts')
   return sqlite.createSqliteProjectionStore(sqlite.openSqliteProjections(choice.path))
 }
 
-/** Opens one, runs `fn`, and closes it whatever `fn` does. Five readers wanted exactly this. */
-export async function withProjectionStore<T>(
+/** Raised by a read that asks for the shared projection store after it was closed. */
+export class ProcessProjectionsClosedError extends Error {
+  constructor() {
+    super('the process projection store was closed when the command finished; nothing may read it after')
+    this.name = 'ProcessProjectionsClosedError'
+  }
+}
+
+/**
+ * One store per process for every read that names no `url` (#793): a board
+ * render made five to eight reads and paid a fresh connection for each. Four
+ * connections, since a render runs its reads in parallel. `allowExitOnIdle`
+ * as well as the explicit close, for a script that never closes anything.
+ */
+const process_ = closableOnce(
+  () => projectionStore({ max: 4, allowExitOnIdle: true }),
+  () => new ProcessProjectionsClosedError(),
+)
+
+/** Close the shared store when a command has finished. Idempotent; reads after it are refused. */
+export function closeProcessProjections(): Promise<void> {
+  return process_.close()
+}
+
+/**
+ * Runs `fn` on a store. With a `url`, one of its own, opened and closed around
+ * `fn`; without, the process's shared one, which `fn` must not close.
+ * Split from `withProjectionStore` so a test can hand it a fake opener.
+ */
+export async function withStoreFrom<T>(
+  shared: ClosableOnce<ProjectionStore>,
+  open: (options: ProjectionStoreOptions) => Promise<ProjectionStore>,
   options: ProjectionStoreOptions,
   fn: (store: ProjectionStore) => Promise<T>,
 ): Promise<T> {
-  const store = await projectionStore(options)
+  if (options.url === undefined) return fn(await shared.get())
+  const store = await open(options)
   try {
     return await fn(store)
   } finally {
     await store.close()
   }
+}
+
+export function withProjectionStore<T>(
+  options: ProjectionStoreOptions,
+  fn: (store: ProjectionStore) => Promise<T>,
+): Promise<T> {
+  return withStoreFrom(process_, projectionStore, options, fn)
 }

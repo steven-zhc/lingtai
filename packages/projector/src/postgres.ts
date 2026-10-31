@@ -217,10 +217,29 @@ export interface PostgresProjectionStoreOptions {
   url?: string
   /** Connections. Two is enough for a runner: one transaction and one read. */
   max?: number
+  /** Let an idle pool stop holding the event loop: for a pool that is shared and so never ended per read. */
+  allowExitOnIdle?: boolean
+}
+
+/**
+ * An idle client the server drops emits `error` on the pool; with no listener
+ * Node throws and the board or the daemon dies (#793). One line, and the next
+ * checkout gets a new client.
+ */
+export function listenForIdleErrors(
+  emitter: { on(event: 'error', listener: (err: Error) => void): unknown },
+  write: (line: string) => void = (line) => console.error(line),
+): void {
+  emitter.on('error', (err) => write(`lingtai: a projection connection dropped while idle (${err.message})`))
 }
 
 export function createPostgresProjectionStore(options: PostgresProjectionStoreOptions = {}): ProjectionStore {
-  const pool = new pg.Pool({ connectionString: options.url ?? postgresUrl(), max: options.max ?? 2 })
+  const pool = new pg.Pool({
+    connectionString: options.url ?? postgresUrl(),
+    max: options.max ?? 2,
+    ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
+  })
+  listenForIdleErrors(pool)
 
   return {
     async transact(fn) {
