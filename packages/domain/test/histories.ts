@@ -517,7 +517,7 @@ function integratedWithoutLanding(): Scenario {
   )
 }
 
-/** D5: a wait whose answer is recorded after the run stream's `RunAwaitingInput` set the row's note. */
+/** D5: a wait whose answer is recorded after the run stream's `RunAwaitingInput` overwrote the open wait's note. */
 function answerAfterRunNote(): Scenario {
   const ticketId = ticketStream(PROJECT, 9302)
   const t = makeStream(ticketId)
@@ -526,12 +526,13 @@ function answerAfterRunNote(): Scenario {
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
     runStarted(run, ticketId),
-    run.event('RunAwaitingInput', { prompt: 'which of the two?' }),
     ...aWait(
       t,
       { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', question: 'which of the two?' },
       ask,
     ),
+    // After the wait opened: the run stream's note overwrites the wait's own before the answer lands.
+    run.event('RunAwaitingInput', { prompt: 'which of the two, really?' }),
     ...aResolution(t, ask, { _tag: 'EditBodyAndRequeue' }, 'steven', 'the first'),
   ])
 }
