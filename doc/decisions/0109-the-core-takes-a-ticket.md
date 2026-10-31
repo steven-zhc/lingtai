@@ -195,6 +195,21 @@ run.
     refuses and closes nothing. It works from any non-terminal state; a run in
     flight finishes on its own and the item does not go back to the queue.
     Nothing reopens a closed item, so wanting the work again means a new ticket.
+    **That holds in every fold of the ticket**, because there is one
+    ([0101](0101-typescript-packages-effect-unbuilt.md) §4): a claim, an unblock or
+    a requeue after `TicketClosed` changes nothing about its lifecycle (#151), in
+    the conductor, on the board, in `task_view` and in `ticket_report` alike. A
+    claim cannot even be made — `claimTicket` takes only a `backlog` item — so a
+    later claim on the log is history from before that rule, read the same way.
+    **An item is landed when `TicketLanded` is appended**, not when an
+    integration succeeded: the integration is one fact of the landing, and `end`
+    is another.
+
+    **What names a ticket comes from the events that still carry it.** Its title
+    and kind are read from `TicketClaimed`, the latest one that carries them, and
+    its project and external reference from its stream's id, so a ticket whose
+    `TicketDiscovered` was written by a source that no longer writes it still has
+    a name and a branch.
 
 12. **`end` is audited per outcome.** `lingtai doctor` and `lingtai end replay`
     read every terminal ending and ask whether `end` resolved for that outcome.
