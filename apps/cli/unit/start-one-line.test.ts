@@ -1,4 +1,5 @@
 import type { RunOnceResult } from '@lingtai/conductor'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { startIsVerbose } from '../src/commands.ts'
@@ -19,7 +20,11 @@ const summary = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-const held = (wait: string): RunOnceResult => ({
+const run = { runId: 'r', branch: 'agent/1', headSha: 'abc' } as never
+const signoff = { _tag: 'SignoffRequired', run } as unknown as WaitReason
+const question = { _tag: 'OwnQuestion', question: 'which?' } as unknown as WaitReason
+
+const held = (wait: WaitReason): RunOnceResult => ({
   ok: 'held',
   ticketId: 'ticket-p-1',
   runId: 'r',
@@ -38,7 +43,7 @@ describe('startIsVerbose', () => {
 
 describe('endingLine', () => {
   it('says what a held signoff is waiting for, with the command', () => {
-    const line = strip(endingLine(held('SignoffRequired'), { project: 'chapter-garden-a' })!)
+    const line = strip(endingLine(held(signoff), { project: 'chapter-garden-a' })!)
     expect(line).toContain('#1  Add the next chapter — implement ✓ build ✓ review ✓')
     expect(line).toContain('$0.40')
     expect(line).toContain('waiting for you: lingtai approve chapter-garden-a --issue 1')
@@ -46,7 +51,20 @@ describe('endingLine', () => {
   })
 
   it('ends a held question with the answer command', () => {
-    expect(endingLine(held('OwnQuestion'), { project: 'p' })).toContain('lingtai answer p --issue 1')
+    expect(endingLine(held(question), { project: 'p' })).toContain('lingtai answer p --issue 1')
+  })
+
+  it('names requeue and grant-fix-round for a wait that is not a signoff', () => {
+    const reason = {
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'BuildRed', output: 'boom' },
+      because: { _tag: 'NotAsked' },
+    } as unknown as WaitReason
+    const line = endingLine(held(reason), { project: 'p' })!
+    expect(line).toContain('lingtai requeue p --issue 1')
+    expect(line).toContain('lingtai grant-fix-round p --issue 1')
+    expect(line).not.toContain('decide on the board')
   })
 
   it('ends a landed pass with the short sha', () => {
@@ -90,7 +108,7 @@ describe('endingLine', () => {
   })
 
   it('prefixes the project only when asked', () => {
-    expect(endingLine(held('SignoffRequired'), { project: 'p', prefixed: true })).toMatch(/^p {2}#1/)
+    expect(endingLine(held(signoff), { project: 'p', prefixed: true })).toMatch(/^p {2}#1/)
     expect(takingLine('1', 'T', 'p')).toBe('p  taking #1  T')
     expect(takingLine('1', '')).toBe('taking #1')
   })

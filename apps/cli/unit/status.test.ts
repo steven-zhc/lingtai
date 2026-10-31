@@ -77,6 +77,7 @@ const asked: StatusWait = {
   words: 'waiting for your answer',
   detail: [],
   recommendation: null,
+  command: 'lingtai answer lingtai --issue 609 "<choice>"   (or the board)',
   raw: true,
 }
 
@@ -126,6 +127,7 @@ const fixture: StatusReport = {
             words: null,
             detail: [],
             recommendation: null,
+            command: 'one of: lingtai requeue lingtai --issue 610   (or the board)',
             raw: false,
           },
         }),
@@ -344,6 +346,8 @@ describe('renderStatus keeps every fact the old output printed', () => {
       words: 'waiting for your review',
       detail: ['ready to land — the recipe asks you to approve each pass'],
       recommendation: null,
+      command:
+        'lingtai approve lingtai --issue 1   (or lingtai requeue lingtai --issue 1 [--into-body "<text>"], or the board)',
       raw: true,
     }
     const report: StatusReport = {
@@ -372,7 +376,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       const lines = out.split('\n').map((l) => l.trim())
       expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each pass')).toHaveLength(1)
       expect(out).toContain('#1  Add the chapter')
-      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or the board)`)
+      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai requeue`)
       expect(out).not.toContain('failure')
       expect(out).not.toContain('your judgement is needed')
       expect(out).not.toContain('a failure needs acknowledging')

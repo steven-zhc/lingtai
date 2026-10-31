@@ -23,7 +23,7 @@ import {
 } from '@lingtai/conductor'
 import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { recommendedResolution } from '@lingtai/domain/wait'
+import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
@@ -31,6 +31,7 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
+import { waitCommand } from './wait-command.ts'
 
 /** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
 export function conflictRecommendation(
@@ -255,6 +256,8 @@ export interface StatusWait {
   detail: string[]
   /** The resolution recommended for a conflict triage advised, as `recommendedResolution` names it; null when none. */
   recommendation: string | null
+  /** The command line for the wait (#769): the system's move first, the others after it; not in `--json`. */
+  command: string
   /** There is raw failure output, kept on the log and the card rather than printed. */
   raw: boolean
 }
@@ -482,6 +485,13 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
                 }),
                 detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
                 recommendation: conflictRecommendation(t.wait.reason, t.triage, t.savedHead),
+                command: waitCommand(
+                  waitMoves(t.wait.reason, {
+                    triage: t.triage?.result ?? null,
+                    savedHead: typeof t.savedHead === 'object' ? false : t.savedHead,
+                  }),
+                  { project: name, issue: t.issue, reason: t.wait.reason },
+                ),
                 raw: Boolean(words.diagnosis?.raw),
               },
       }
@@ -504,7 +514,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
             t.wait != null &&
             t.runId &&
             t.triage?.result?._tag === 'TriageAdvised' &&
-            t.triage.result.cause._tag === 'ConflictingHunks'
+            (t.triage.result.cause._tag === 'ConflictingHunks' || t.triage.result.resolution === 'GrantFixRound')
           const savedHead = conflict
             ? await (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(
                 t.runId as string,
@@ -607,7 +617,7 @@ export function renderStatus(
         // "ready to land" already says what "waiting for your review" said.
         const prefix = w.short === null && w.words ? `${w.words}: ` : ''
         lines2.push(`    ${prefix}${oneLine(w.line)}`)
-        lines2.push(`    ${waitCommand(p.project, t.ref, w.reason)}`)
+        lines2.push(`    ${w.command}`)
         if (options.all) {
           // Compared whole, then cut: a cut sentence would swallow the suffix after it.
           for (const d of w.detail) {
@@ -621,13 +631,6 @@ export function renderStatus(
     blocks.push(lines.join('\n'))
   }
   return blocks.join('\n\n').split('\n')
-}
-
-/** What a person does about a wait, and where else they can do it. */
-export function waitCommand(project: string, ref: number | string, reason: string): string {
-  if (reason === 'SignoffRequired') return `lingtai approve ${project} --issue ${ref}   (or the board)`
-  if (reason === 'OwnQuestion') return `lingtai answer ${project} --issue ${ref} "<choice>"   (or the board)`
-  return 'decide on the board'
 }
 
 const rowJson = (r: StatusRow): Record<string, unknown> => ({

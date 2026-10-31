@@ -706,6 +706,32 @@ export function recommendedResolution(
 }
 
 /**
+ * The moves a command line can name for a wait (#769): `first` is the one
+ * {@link recommendedResolution} picks (or `AnswerQuestion` for an
+ * `OwnQuestion`), `rest` is every other move in {@link allowedResolutions}'s
+ * order. `Split` and `Close` stay on the board. Nothing else ranks a move, so
+ * the CLI's first move is always the board's.
+ */
+export function waitMoves(
+  reason: WaitReason,
+  input: { triage: TriageResult | null; savedHead?: boolean },
+): { first: Resolution['_tag'] | null; rest: Resolution['_tag'][] } {
+  const allowed: Resolution['_tag'][] = allowedResolutions(reason).filter((tag) => tag !== 'Split' && tag !== 'Close')
+  const recommended = recommendedResolution(
+    reason,
+    input.triage === null ? { _tag: 'NotDeclared' } : { _tag: 'Done', result: input.triage },
+    { savedHead: input.savedHead },
+  )
+  const first: Resolution['_tag'] | null =
+    recommended !== null && allowed.includes(recommended)
+      ? recommended
+      : reason._tag === 'OwnQuestion'
+        ? 'AnswerQuestion'
+        : null
+  return { first, rest: allowed.filter((tag) => tag !== first) }
+}
+
+/**
  * The reason an `EditBodyAndRequeue` is recorded with when the person gave
  * none (0118 §6): composed from the text the resolution writes, so it is
  * never stale against an edited answer and never asks them for one.
