@@ -21,7 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Plan } from '../src/app/plan.tsx'
+import { Rail } from '../src/app/rail.tsx'
 import { Coords, Standing } from '../src/app/standing.tsx'
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
 import { exists, type StandingView, type TicketView } from '../src/lib/task.ts'
@@ -303,9 +303,10 @@ describe('what will happen', () => {
   })
 
   it('renders the plan and the bounds together', () => {
-    const html = renderToStaticMarkup(<Plan plan={PLAN} />)
+    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={PLAN} />)
 
-    expect(html).toContain('what will happen')
+    expect(html).toContain('What the next pass does at each step')
+    expect(html).not.toContain('<details open')
     expect(html).toContain('prepared')
     expect(html).toContain('install')
     expect(html).toContain('close the ticket')
@@ -313,7 +314,7 @@ describe('what will happen', () => {
     // `merge`, which this recipe leaves empty. Each stated rather than omitted
     // — which is the whole of 0016 §4, and is why the number here goes up with
     // the vocabulary rather than the bar losing rows to keep it at two.
-    expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(7)
+    expect(html.match(/<span class="skipped">skipped<\/span>/g)).toHaveLength(7)
     expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
   })
 
@@ -330,7 +331,7 @@ describe('what will happen', () => {
       limits: { turns: 300, wall: '2h', rounds: 0, restarts: 0 },
       tier: 'guarded',
     })
-    expect(renderToStaticMarkup(<Plan plan={none} />)).toContain('straight to you')
+    expect(renderToStaticMarkup(<Rail progress={null} live={false} plan={none} />)).toContain('straight to you')
   })
 
   /**
@@ -349,7 +350,7 @@ describe('what will happen', () => {
       limits: { turns: 150, wall: '1h', rounds: 0, restarts: 2 },
       tier: 'guarded',
     })
-    const html = renderToStaticMarkup(<Plan plan={over} />)
+    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={over} />)
 
     expect(html).toContain('no rounds · 2 restart(s)')
     expect(html).not.toContain('straight to you')
@@ -361,7 +362,7 @@ describe('what will happen', () => {
    * else (#76).
    */
   it('says the recipe could not be read rather than showing a plan', () => {
-    const html = renderToStaticMarkup(<Plan plan={null} />)
+    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={null} />)
     expect(html).toContain('The recipe could not be read')
     expect(html).not.toContain('prepared')
   })
