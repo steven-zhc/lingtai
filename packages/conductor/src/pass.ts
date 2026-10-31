@@ -104,6 +104,7 @@ import {
   routeNext,
   STEPS,
   type JudgeReply,
+  baseRedText,
   type PassNext,
   type PayloadOf,
   type Proposal,
@@ -897,6 +898,24 @@ export interface PassOptions {
    */
   readonly mergeBase?: (toSha: string) => Promise<{ readonly head: string } | { readonly failed: string }>
   /**
+   * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
+   * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
+   * the base this pass merged in, or null where the cut stands. `red` ends the pass at a person
+   * with no round bought and no judge asked; `notRed` is today's route, whether the base was
+   * green or could not be checked. Absent where a caller says nothing.
+   */
+  readonly baseIsRed?: (asked: { readonly action: string; readonly mergedOnto: string | null }) => Promise<
+    | {
+        readonly red: {
+          readonly command: string
+          readonly base: string
+          readonly baseSha: string
+          readonly evidence: string
+        }
+      }
+    | { readonly notRed: string }
+  >
+  /**
    * **Where an approved wait continues the run** (#465, 0120 §6) — absent for
    * an ordinary pass, which starts at `admit` as it always has.
    *
@@ -1294,6 +1313,45 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
         conflictRounds: conflictRoundsSpent,
       },
     )
+    // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
+    // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
+    if (
+      options.baseIsRed !== undefined &&
+      proposal._tag === 'BuildRed' &&
+      reported?.ending.ending === 'refused' &&
+      reported.ending.at !== null &&
+      offer.available.some((c) => c.id === 'fix-lines')
+    ) {
+      const asked = await options.baseIsRed({ action: reported.ending.at, mergedOnto })
+      if ('red' in asked) {
+        const because = { _tag: 'BaseRed' as const, ...asked.red }
+        const reply: JudgeReply = { _tag: 'NotAsked' }
+        const decision = decideRoute(offer, reply)
+        const routed = { ...routedVisit(offer, reply, decision), why: baseRedText(because) }
+        record({ step: 'proposed', ending: routed, results: [] })
+        routes.push({
+          from: reported.step,
+          chose: routed.chose ?? routed.to,
+          to: routed.to,
+          why: routed.why,
+          ceiling: ceilingOf(routed.chose ?? routed.to, offer),
+          offer,
+          reply,
+          decision,
+        })
+        stopped = reported
+        end = {
+          _tag: 'WaitOnPerson',
+          reason: {
+            _tag: 'ProposedEscalated',
+            run: { runId: options.context.runId },
+            proposal: offer.proposal,
+            because,
+          },
+        }
+        return false
+      }
+    }
     const reply = await replyFor(offer, arrived, options.judge)
     if ('neverStarted' in reply) {
       // 0031 §3, at the third depth the same wall is met at: the judge

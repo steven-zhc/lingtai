@@ -193,8 +193,6 @@ fixes the bounds and the endings that router works inside.
 
 ## Not built yet
 
-- **§13 is not built.** A build refusal buys a round whatever the base says.
-
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
   `verdictFor` and in the backlog fold. Wiring it means handing one value to both.

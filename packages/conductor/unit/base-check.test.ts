@@ -6,7 +6,7 @@
 import type { CommandOutcome, RunCommandOptions } from '@lingtai/actions'
 import { integrationStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type BaseCheckQuestion, createBaseCheck } from '../src/base-check.ts'
 
@@ -22,17 +22,26 @@ const outcome = (over: Partial<CommandOutcome> = {}): CommandOutcome => ({
   ...over,
 })
 
+let tree = freshTree()
+beforeEach(() => {
+  tree = freshTree()
+})
+function freshTree() {
+  return { cut: vi.fn(async () => {}), plant: vi.fn(async () => {}), remove: vi.fn(async () => {}) }
+}
+
 function question(over: Partial<BaseCheckQuestion> = {}): BaseCheckQuestion {
   return {
     project: 'proj',
     base: 'main',
     baseSha: SHA,
     command: 'pnpm typecheck',
-    prepared: ['pnpm install'],
+    prepared: [{ run: 'pnpm install', env: { REGISTRY_TOKEN: 't' }, timeoutMs: 9000 }],
     env: {},
     runId: 'pass-1',
     signal: new AbortController().signal,
     timeoutMs: 1000,
+    tree,
     ...over,
   }
 }
@@ -43,9 +52,6 @@ function setup(run?: (o: RunCommandOptions) => Promise<CommandOutcome>) {
   const runner = vi.fn(run ?? (async () => outcome()))
   const deps = {
     store,
-    cut: vi.fn(async () => {}),
-    plant: vi.fn(async () => {}),
-    remove: vi.fn(async () => {}),
     run: (o: RunCommandOptions) => {
       calls.push(o.run)
       return runner(o)
@@ -60,15 +66,27 @@ const recorded = async (store: ReturnType<typeof createMemoryEventStore>) =>
   (await store.read(stream)).filter((e) => e.type === 'BaseChecked')
 
 describe('baseCheck', () => {
+  it('runs each prepared command with its own env and timeout', async () => {
+    const { port, runner } = setup()
+    await port.ask(question())
+    expect(runner.mock.calls[0]![0]).toMatchObject({
+      run: 'pnpm install',
+      env: { REGISTRY_TOKEN: 't' },
+      timeoutMs: 9000,
+    })
+    expect(runner.mock.calls[1]![0]).toMatchObject({ run: 'pnpm typecheck', timeoutMs: 1000 })
+    expect(runner.mock.calls[1]![0].env).not.toHaveProperty('REGISTRY_TOKEN')
+  })
+
   it('cuts, installs, runs the command, removes, records one event and answers red', async () => {
-    const { port, deps, calls, store } = setup(async (o) =>
+    const { port, calls, store } = setup(async (o) =>
       o.run === 'pnpm typecheck' ? outcome({ ok: false, exitCode: 1, evidence: '58 errors' }) : outcome(),
     )
     const answer = await port.ask(question())
     expect(answer).toEqual({ verdict: 'red', exitCode: 1, evidence: '58 errors', from: 'ran' })
     expect(calls).toEqual(['pnpm install', 'pnpm typecheck'])
-    expect(deps.cut).toHaveBeenCalledWith(`/wt/proj/base-aaaaaaa-pass-1`, SHA)
-    expect(deps.remove).toHaveBeenCalledTimes(1)
+    expect(tree.cut).toHaveBeenCalledWith(`/wt/proj/base-aaaaaaa-pass-1`, SHA)
+    expect(tree.remove).toHaveBeenCalledTimes(1)
     const events = await recorded(store)
     expect(events).toHaveLength(1)
     expect(events[0]!.data).toMatchObject({ baseSha: SHA, command: 'pnpm typecheck', ok: false, exitCode: 1 })
@@ -140,64 +158,64 @@ describe('baseCheck', () => {
 
   describe('unknown is never appended and the worktree is still removed', () => {
     it('a timeout', async () => {
-      const { port, store, deps } = setup(async (o) =>
+      const { port, store } = setup(async (o) =>
         o.run === 'pnpm typecheck' ? outcome({ ok: false, timedOut: true, exitCode: null }) : outcome(),
       )
       expect((await port.ask(question())).verdict).toBe('unknown')
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
 
     it('a failed cut', async () => {
-      const { port, store, deps, runner } = setup()
-      deps.cut.mockRejectedValueOnce(new Error('bad object'))
+      const { port, store, runner } = setup()
+      tree.cut.mockRejectedValueOnce(new Error('bad object'))
       expect((await port.ask(question())).verdict).toBe('unknown')
       expect(runner).not.toHaveBeenCalled()
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
 
     it('a failed prepared command', async () => {
-      const { port, store, deps, calls } = setup(async (o) =>
+      const { port, store, calls } = setup(async (o) =>
         o.run === 'pnpm install' ? outcome({ ok: false, exitCode: 1, evidence: 'no network' }) : outcome(),
       )
       const answer = await port.ask(question())
       expect(answer).toMatchObject({ verdict: 'unknown' })
       expect(calls).toEqual(['pnpm install'])
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
 
     it('an aborted signal', async () => {
       const controller = new AbortController()
-      const { port, store, deps } = setup(async () => {
+      const { port, store } = setup(async () => {
         controller.abort()
         return outcome({ exitCode: 1, ok: false })
       })
       expect((await port.ask(question({ signal: controller.signal }))).verdict).toBe('unknown')
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
 
     it('an abort while the cut is pending starts nothing', async () => {
       const controller = new AbortController()
-      const { port, store, deps, runner } = setup()
-      deps.cut.mockImplementationOnce(async () => controller.abort())
+      const { port, store, runner } = setup()
+      tree.cut.mockImplementationOnce(async () => controller.abort())
       expect((await port.ask(question({ signal: controller.signal }))).verdict).toBe('unknown')
       expect(runner).not.toHaveBeenCalled()
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
 
     it('an abort while the plant is pending starts nothing, with no prepared commands', async () => {
       const controller = new AbortController()
-      const { port, store, deps, runner } = setup()
-      deps.plant.mockImplementationOnce(async () => controller.abort())
+      const { port, store, runner } = setup()
+      tree.plant.mockImplementationOnce(async () => controller.abort())
       const answer = await port.ask(question({ signal: controller.signal, prepared: [] }))
       expect(answer.verdict).toBe('unknown')
       expect(runner).not.toHaveBeenCalled()
       expect(await recorded(store)).toHaveLength(0)
-      expect(deps.remove).toHaveBeenCalledTimes(1)
+      expect(tree.remove).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -209,6 +227,6 @@ describe('baseCheck', () => {
     })
     expect((await port.ask(question())).verdict).toBe('unknown')
     expect(s.runner).not.toHaveBeenCalled()
-    expect(s.deps.cut).not.toHaveBeenCalled()
+    expect(tree.cut).not.toHaveBeenCalled()
   })
 })

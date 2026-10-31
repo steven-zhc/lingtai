@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { SETUP_HOLD_TEXT, waitWords } from '../src/wait-words.ts'
-import type { WaitReason } from '../src/wait.ts'
+import { recommendedResolution, type WaitReason } from '../src/wait.ts'
 
 describe('waitWords', () => {
   it('reads an OwnQuestion bare — no run, no step to prefix with', () => {
@@ -252,5 +252,33 @@ describe('waitWords', () => {
     expect(cols.diagnosis?.what).toBe(
       'the `merge` step refused: pnpm test exited 2 (and agent/1 was not pushed: stale info)',
     )
+  })
+
+  describe('a build refusal the base shares (#744)', () => {
+    const reason: WaitReason = {
+      _tag: 'ProposedEscalated',
+      run: { runId: 'pass-1' },
+      proposal: { _tag: 'BuildRed', output: 'head output' },
+      because: {
+        _tag: 'BaseRed',
+        command: 'uv run mypy .',
+        base: 'main',
+        baseSha: '672971d0000000000000000000000000000000aa',
+        evidence: 'Found 58 errors in 6 files',
+      },
+    }
+
+    it('says which check is red on which base, and shows the base evidence rather than the head output', () => {
+      const cols = waitWords(reason, { branch: 'agent/1', base: 'main', findings: [] })
+      expect(cols.line).toContain('base is red: `uv run mypy .`')
+      expect(cols.line).toContain('main at 672971d')
+      expect(cols.diagnosis?.raw).toBe('Found 58 errors in 6 files')
+    })
+
+    it('recommends a requeue, and leaves a BuildRed with any other because as it was', () => {
+      expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe('Requeue')
+      const other: WaitReason = { ...reason, because: { _tag: 'NotAsked' } } as WaitReason
+      expect(recommendedResolution(other, { _tag: 'NotNeeded' })).not.toBe('Requeue')
+    })
   })
 })

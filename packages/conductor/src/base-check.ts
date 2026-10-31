@@ -1,7 +1,7 @@
 /**
  * **What a check says on the commit a pass was cut at** (#743, 0108 §13) — the
- * port the guard in #744 asks before a `build` refusal buys a round. Nothing
- * calls it yet.
+ * port the guard in #744 asks before a `build` refusal buys a round.
+ * `conduct.ts` builds one per store and `runPass` asks it through `baseIsRed`.
  *
  * It answers from the log when a `BaseChecked` for this commit and this
  * command is already on `int-<project>-<base>`, and otherwise cuts a throwaway
@@ -37,13 +37,33 @@ export interface BaseCheckQuestion {
   baseSha: string
   /** The `run:` text to check. */
   command: string
-  /** The `run:` texts of `prepared`, in order. */
-  prepared: readonly string[]
+  /** The `run:` actions of `prepared`, in order, each with its own env and timeout. */
+  prepared: readonly BaseCheckCommand[]
   /** The environment the commands get — already resolved by the caller. */
   env: Record<string, string>
   runId: string
   signal: AbortSignal
   timeoutMs: number
+  /**
+   * The git and filesystem work of one cut. Per ask and not per instance: the instance is shared
+   * by every pass in a conductor (#744), and the clone to cut from and the env file to plant are
+   * the asking pass's own.
+   */
+  tree: BaseCheckTree
+}
+
+export interface BaseCheckCommand {
+  run: string
+  env: Record<string, string>
+  timeoutMs: number
+}
+
+export interface BaseCheckTree {
+  /** `git worktree add --force --detach <path> <sha>`. */
+  cut: (path: string, sha: string) => Promise<void>
+  remove: (path: string) => Promise<void>
+  /** Plants the env file in the cut. */
+  plant: (path: string) => Promise<void>
 }
 
 export type BaseCheckAnswer =
@@ -53,11 +73,6 @@ export type BaseCheckAnswer =
 
 export interface BaseCheckDeps {
   store: Pick<EventStore, 'read' | 'append'>
-  /** `git worktree add --force --detach <path> <sha>`. */
-  cut: (path: string, sha: string) => Promise<void>
-  remove: (path: string) => Promise<void>
-  /** Plants the env file in the cut. */
-  plant: (path: string) => Promise<void>
   run: (options: RunCommandOptions) => Promise<CommandOutcome>
   worktreePath: (project: string, sha7: string, runId: string) => string
   /** The run-log line for a failed append or removal. */
@@ -95,24 +110,24 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
     let outcome!: CommandOutcome
     try {
       try {
-        await deps.cut(path, q.baseSha)
+        await q.tree.cut(path, q.baseSha)
       } catch (err) {
         return { verdict: 'unknown', why: `the worktree could not be cut at ${q.baseSha}: ${(err as Error).message}` }
       }
       try {
-        await deps.plant(path)
+        await q.tree.plant(path)
       } catch (err) {
         return { verdict: 'unknown', why: `the env file could not be planted: ${(err as Error).message}` }
       }
       // An abort that landed while the cut or the plant was pending: `runCommand` only hears
       // aborts that come after it starts, so nothing may be started with the signal already down.
       if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
-      const runIn = (run: string): Promise<CommandOutcome> =>
+      const runIn = (c: BaseCheckCommand): Promise<CommandOutcome> =>
         deps.run({
-          run,
-          timeoutMs: q.timeoutMs,
+          run: c.run,
+          timeoutMs: c.timeoutMs,
           cwd: path,
-          env: q.env,
+          env: c.env,
           signal: q.signal,
           ownGroup: true,
         })
@@ -120,12 +135,12 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
         const prepared = await runIn(prep)
         if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
         if (prepared.timedOut || prepared.exitCode !== 0) {
-          return { verdict: 'unknown', why: `\`${prep}\` did not succeed: ${prepared.evidence}` }
+          return { verdict: 'unknown', why: `\`${prep.run}\` did not succeed: ${prepared.evidence}` }
         }
       }
-      outcome = await runIn(q.command)
+      outcome = await runIn({ run: q.command, env: q.env, timeoutMs: q.timeoutMs })
     } finally {
-      await deps.remove(path).catch((err: Error) => {
+      await q.tree.remove(path).catch((err: Error) => {
         deps.note(`base check: could not remove ${path}: ${err.message} — it may hold the planted env file`)
       })
     }

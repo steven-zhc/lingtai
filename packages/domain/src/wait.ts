@@ -99,6 +99,18 @@ const NothingProduced = z.object({ _tag: z.literal('NothingProduced'), run: RunR
 const JudgeHandedOver = z.object({ _tag: z.literal('JudgeHandedOver'), why: z.string() })
 
 /**
+ * The refused `build` command fails on the pass's base commit too (#744, 0108 §13), so no round
+ * was bought and no judge asked. `evidence` is the base's own `BaseChecked.evidence`.
+ */
+const BaseRed = z.object({
+  _tag: z.literal('BaseRed'),
+  command: z.string(),
+  base: z.string(),
+  baseSha: z.string(),
+  evidence: z.string(),
+})
+
+/**
  * Why `ProposedEscalated` happened: `RouteEscalation` (0120 §3,
  * `route.ts`) when the router's own candidates ran out, or `JudgeHandedOver`
  * when a judge was asked and itself selected `hand-to-person` — never when no
@@ -106,7 +118,7 @@ const JudgeHandedOver = z.object({ _tag: z.literal('JudgeHandedOver'), why: z.st
  * `RouteDecision.Escalated.because` is `RouteEscalation` by construction
  * (`route.ts`'s own header), which is what makes this union true of it.
  */
-export const EscalationBecause = z.discriminatedUnion('_tag', [...RouteEscalation.options, JudgeHandedOver])
+export const EscalationBecause = z.discriminatedUnion('_tag', [...RouteEscalation.options, JudgeHandedOver, BaseRed])
 export type EscalationBecause = z.infer<typeof EscalationBecause>
 
 /** `proposed`'s router sent the pass to a person, carrying the proposal it was offered and why. */
@@ -598,11 +610,12 @@ function lastRefusedActionName(
 
 /**
  * The wait's own default resolution, with no triage advice in play —
- * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted` and
- * `AgentCrashed`, `null` everywhere else. No `default`, for the reason
+ * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted`,
+ * `AgentCrashed` and an escalation whose `because` is `BaseRed`, `null` everywhere else. No `default`, for the reason
  * {@link tableResolutions} has none.
  *
- * **`ProposedEscalated` branches on its own proposal**, so an escalated
+ * **`ProposedEscalated` branches on its own proposal** (and on a `BaseRed` `because`, #744: the
+ * refusal is not about the diff, so a round would pay an agent for the base's error), so an escalated
  * `BudgetExhausted` (`#471`) still prefills `Requeue`, the same as the direct
  * one above — `#471`'s equality is about the wait, and the card's
  * prefilled resolution is read off this function.
@@ -616,7 +629,7 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
     case 'AgentCrashed':
       return 'Requeue'
     case 'ProposedEscalated':
-      return reason.proposal._tag === 'BudgetExhausted' ? 'Requeue' : null
+      return reason.proposal._tag === 'BudgetExhausted' || reason.because._tag === 'BaseRed' ? 'Requeue' : null
     case 'OwnQuestion':
     case 'AgentQuestion':
     case 'FixerDisagrees':
