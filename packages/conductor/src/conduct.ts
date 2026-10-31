@@ -530,8 +530,8 @@ export type PassSummary = {
   ran: readonly { step: string; ending: string }[]
   /** Dollars of every `RunSpent` the pass appended; `unknown` counts the runs that reported none. */
   cost: { usd: number; unknown: number }
-  /** Why a held pass waits. Absent on any other ending. */
-  wait?: string
+  /** Why a held pass waits, whole: the commands it offers depend on more than the tag. Absent on any other ending. */
+  wait?: WaitReason
 }
 
 export type RunOnceResult =
@@ -4234,7 +4234,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       log(passLine(pass.steps, recipe.steps))
       const tookNow = (): Claimed | null => took
-      const summaryOf = (wait?: string): PassSummary => ({
+      const summaryOf = (wait?: WaitReason): PassSummary => ({
         ref: tookNow()?.ticket.ref ?? String(options.issue),
         title: tookNow()?.ticket.title ?? '',
         ran: ranVisits(pass.steps, recipe.steps),
@@ -4732,7 +4732,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runId,
           headSha,
           step: stopped?.step ?? 'proposed',
-          summary: summaryOf(reason._tag),
+          summary: summaryOf(reason),
         } satisfies RunOnceResult
       }
 

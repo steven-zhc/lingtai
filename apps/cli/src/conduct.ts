@@ -44,6 +44,7 @@ import {
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
+import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -54,7 +55,7 @@ import { Effect } from 'effect'
 
 import { stillOwed } from './continuing.ts'
 import { symbol } from './output.ts'
-import { waitCommand } from './status.ts'
+import { waitCommand } from './wait-command.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot()
@@ -638,7 +639,7 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
     result.ok === true
       ? `landed in ${result.mergeCommit.slice(0, 7)}`
       : result.ok === 'held'
-        ? `waiting for you: ${waitCommand(options.project, ref, summary?.wait ?? '')}`
+        ? `waiting for you: ${summary?.wait === undefined ? 'the board' : waitCommand(waitMoves(summary.wait, { triage: null }), { project: options.project, issue: ref, reason: summary.wait })}`
         : `stopped at ${result.stage}: ${result.detail.replace(/\s+/g, ' ').trim()}`
   const parts = [...(steps.length > 0 ? [steps.join(' ')] : []), ...(summary ? [costWords(summary.cost)] : []), where]
   const head =
