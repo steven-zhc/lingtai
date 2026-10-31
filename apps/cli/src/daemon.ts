@@ -524,7 +524,9 @@ export async function daemonCommand(
       log: trace,
       tell: (line) => console.log(line),
     })
-    for (const line of declared.describe()) trace(line)
+    // A recipe that could not be read is why nothing is told: not trace.
+    const unreadNow = new Set(declared.problems())
+    for (const line of declared.describe()) (unreadNow.has(line) ? console.log : trace)(line)
 
     // The passes in flight, held across looks (0122 §1): a look that starts
     // several returns, and the next look must still know they are running.

@@ -191,6 +191,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         const why = yield* Effect.promise(() => asked())
         if (why !== null) {
           log(why)
+          told(() => options.failed?.(why))
           return finish('paused')
         }
       }

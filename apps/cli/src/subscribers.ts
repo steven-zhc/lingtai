@@ -281,11 +281,16 @@ export function describeSubscribers({ built, quiet, unread }: SubscriberBuild): 
     ...quiet.map(
       (project) => `subscribers: ${project} declares none — nothing about it is told to anybody (recipe: subscribers:)`,
     ),
-    ...unread.map(
-      ({ project, problem }) =>
-        `subscribers: ${project} unknown, so nothing it declares is running yet — asked again each pass: ${problem}`,
-    ),
+    ...unreadLines(unread),
   ]
+}
+
+/** A project whose recipe could not be read: a person's, not the trace's (#766). */
+export function unreadLines(unread: readonly UnreadProject[]): string[] {
+  return unread.map(
+    ({ project, problem }) =>
+      `subscribers: ${project} unknown, so nothing it declares is running yet — asked again each pass: ${problem}`,
+  )
 }
 
 export interface SubscriberSetOptions extends BuildSubscribersOptions {
@@ -299,6 +304,8 @@ export interface SubscriberSet {
   subscribers(): readonly Subscriber[]
   /** The lines the daemon prints at startup. */
   describe(): string[]
+  /** The lines of `describe` about a recipe that could not be read, which a person needs. */
+  problems(): string[]
   /**
    * Reads every unread project's recipe again, and builds what it declares.
    * Costs nothing once every project has been read. Never rejects.
@@ -325,10 +332,13 @@ export async function createSubscriberSet(options: SubscriberSetOptions): Promis
   const log = options.log ?? (() => {})
   const tell = options.tell ?? log
   let current = await buildSubscribers(options)
+  // What a person was last told about each unread project, so a pass that asks again says nothing new.
+  const told = new Map<string, string>(current.unread.map((u) => [u.project, u.problem]))
 
   return {
     subscribers: () => current.built.map((b) => b.subscriber),
     describe: () => describeSubscribers(current),
+    problems: () => unreadLines(current.unread),
     async retry() {
       if (current.unread.length === 0) return
       try {
@@ -348,6 +358,11 @@ export async function createSubscriberSet(options: SubscriberSetOptions): Promis
           built: [...current.built, ...next.built],
           quiet: [...current.quiet, ...next.quiet],
           unread: next.unread,
+        }
+        for (const u of next.unread) {
+          if (told.get(u.project) === u.problem) continue
+          told.set(u.project, u.problem)
+          for (const line of unreadLines([u])) tell(line)
         }
       } catch (err) {
         tell(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`)
