@@ -666,6 +666,19 @@ which kind a wait was got inferred again in each place that needed it, from
     - **`Close` here only ends a wait.** `lingtai close` closes any ticket,
       waiting or not, and still writes `TicketClosed`; a waiting ticket
       closed also gets its `WaitResolved{Close}`.
+    - **What a resolution makes of the ticket is one fold's answer**, the
+      ticket's, in `@lingtai/domain` ([0101](0101-typescript-packages-effect-unbuilt.md) §4),
+      and the card, the page, `task_view` and the queue read that one answer:
+      - after `GrantFixRound` the ticket is **`approved`** — a person has let a
+        round run on the preserved branch — not back in the queue;
+      - after `WaitResolved{Close}` it is still **`waiting`** until
+        `TicketClosed` lands: the choice is recorded, the close is a separate
+        fact ([0109](0109-the-core-takes-a-ticket.md) §11);
+      - the answer recorded for a wait is worded from the resolution's own
+        `reason` (§6), never from a note another event may have overwritten
+        while the wait stood; `Close` and `GrantFixRound` record no answer.
+      The queue takes only what this fold calls `queued`, so a ticket approved
+      for a round, or chosen to close, is not taken again.
 
 12. **A split is written from the page, and its parent closes with its
     children.** The mockup is [`0118/Split.dc.html`](0118/Split.dc.html).
