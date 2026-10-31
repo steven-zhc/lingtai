@@ -16,7 +16,6 @@ import {
   notSessionModeDetail,
   postgresOnlyRows,
 } from '../src/doctor.js'
-import { noOriginRefusal } from '../src/first-project.js'
 import { exportedUrlRefusal, sqliteEditSentence, sqliteExportedRefusal } from '../src/init.js'
 import { dollarCeilingNote } from '../src/landing.js'
 import { DIFFERENT_SOURCE_CLASH } from '../src/source.js'
@@ -59,7 +58,6 @@ const SET: [string, string][] = [
   ['exportedUrlRefusal', exportedUrlRefusal('--database-url', 'postgres://a', 'LINGTAI_DATABASE_URL', 'postgres://b')],
   ['sqliteEditSentence', sqliteEditSentence('/h/config.yml')],
   ['sqliteExportedRefusal', sqliteExportedRefusal('LINGTAI_DATABASE_URL is exported')],
-  ['noOriginRefusal', noOriginRefusal('/repo', 'fatal: no such remote', 'Nothing was written.')],
   ['dollarCeilingNote (named)', dollarCeilingNote('codex')],
   ['dollarCeilingNote (unnamed)', dollarCeilingNote(null)],
   ['DIFFERENT_SOURCE_CLASH', DIFFERENT_SOURCE_CLASH],

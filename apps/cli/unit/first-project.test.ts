@@ -172,17 +172,15 @@ function harness(options: {
 const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', ''] as const
 
 describe('chooseFirstProject — the local branch (#394)', () => {
-  it('--local <dir> with an origin registers once, with owner: null and both repo.base and repo.remote written', async () => {
+  it('--local <dir> registers once, with owner: null and both repo.base and repo.remote written', async () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       projects: [],
       // The base question has no --base flag: an empty line at the terminal
-      // takes the detected default ("main", from symbolic-ref above).
+      // takes the detected default ("lingtai-base").
       // `--defaults` answers every one of `askRecipe`'s own questions —
       // nothing here is about what any of them says (#433).
       answers: [''],
@@ -194,38 +192,20 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       ok: true,
       project: 'local',
       name: 'repo',
-      remote: 'https://github.com/acme/widget.git',
-      base: 'main',
+      remote: '/repo',
+      base: 'lingtai-base',
     })
     expect(registered).toHaveLength(1)
     expect(registered[0]).toMatchObject({
       project: 'repo',
       owner: null,
-      base: 'main',
+      base: 'lingtai-base',
       fromSha: 'abc123f',
     })
 
     const path = `${HOME}/repo/recipe.yml`
-    expect(files.replaced[path]).toContain('base: main')
-    expect(files.replaced[path]).toContain('remote: https://github.com/acme/widget.git')
-  })
-
-  it('a relative origin is written absolute, resolved against the toplevel', async () => {
-    const { world, files } = harness({
-      git: {
-        '/home/me/repos/widget::rev-parse --show-toplevel': ok('/home/me/repos/widget\n'),
-        '/home/me/repos/widget::remote get-url origin': ok('../bare/widget.git\n'),
-        '/home/me/repos/widget::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/home/me/repos/widget::rev-parse --verify main^{commit}': ok('deadbee\n'),
-      },
-      answers: [''],
-    })
-
-    const result = await chooseFirstProject(world, { local: '/home/me/repos/widget', defaults: '', install: 'none' })
-
-    expect(result).toMatchObject({ ok: true, remote: '/home/me/repos/bare/widget.git' })
-    const path = `${HOME}/widget/recipe.yml`
-    expect(files.replaced[path]).toContain('remote: /home/me/repos/bare/widget.git')
+    expect(files.replaced[path]).toContain('base: lingtai-base')
+    expect(files.replaced[path]).toContain('remote: /repo')
   })
 
   it('a directory that is not a git repository is refused by name, and nothing is written', async () => {
@@ -274,26 +254,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(asked).toEqual([abs])
   })
 
-  it('a repository with no origin is refused by name, naming the merge lane, and nothing is written', async () => {
-    const { world, registered, files } = harness({
-      git: {
-        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': fail('fatal: No such remote'),
-      },
-    })
-
-    const result = await chooseFirstProject(world, { local: '/repo' })
-
-    expect(result).toEqual({ refused: expect.stringContaining("pushing to the repository's own origin") })
-    expect(registered).toEqual([])
-    expect(files.replaced).toEqual({})
-  })
-
   it('a name already taken by an owner is refused by name, and nothing is written', async () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
       },
       projects: [project('repo', 'someone-else')],
     })
@@ -309,7 +273,6 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/code/myapp::rev-parse --show-toplevel': ok('/code/myapp\n'),
-        '/code/myapp::remote get-url origin': ok('https://github.com/me/myapp.git\n'),
       },
       projects: [project('MyApp', 'acme')],
     })
@@ -326,7 +289,6 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
       },
       projects: [project('repo', null)],
       files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
@@ -345,7 +307,6 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/code/widget::rev-parse --show-toplevel': ok('/code/widget\n'),
-        '/code/widget::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
       },
       // Registered before owners were recorded, as a GitHub project — no
       // `repo.remote` was ever written for it, since the schema makes the
@@ -365,9 +326,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       signedIn: [],
       answers: [''],
@@ -384,9 +343,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
+        '/repo::rev-parse --verify refs/heads/develop^{commit}': ok('cafefee\n'),
       },
       // --base answers the base question itself; --defaults answers every
       // one `askRecipe` asks after it (#433).
@@ -419,8 +376,6 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       kept: 'the store chosen above is kept',
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
       },
     })
 
@@ -435,20 +390,18 @@ describe('chooseFirstProject — the local branch (#394)', () => {
 
   const LOCAL_GIT = {
     '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-    '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-    '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
   }
 
   it.each([['defaults'], ['yes']])('--%s takes the detected base branch (#700)', async (flag) => {
     const { world, registered } = harness({
-      git: { ...LOCAL_GIT, '/repo::rev-parse --verify main^{commit}': ok('abc123f\n') },
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n') },
     })
 
     const { flags } = flagsOf({ [flag]: true })
     const result = await chooseFirstProject(world, { ...flags, local: '/repo', install: 'none' })
 
-    expect(result).toMatchObject({ ok: true, base: 'main' })
-    expect(registered[0]).toMatchObject({ base: 'main', fromSha: 'abc123f' })
+    expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(registered[0]).toMatchObject({ base: 'lingtai-base', fromSha: 'abc123f' })
   })
 
   it('--defaults with no --project refuses at the project question and starts nothing (#700)', async () => {
@@ -466,24 +419,90 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(calls).toEqual([])
   })
 
-  it('--defaults refuses a detected base that does not exist, with the validation reason logged (#700)', async () => {
-    const { world, logged } = harness({
-      git: { ...LOCAL_GIT, '/repo::rev-parse --verify main^{commit}': fail('unknown revision') },
-    })
+  it('--defaults on a detached HEAD refuses, naming the directory and --base, and makes no branch (#745)', async () => {
+    const calls: string[] = []
+    const { world, logged } = harness({ git: {} })
+    world.git = async (dir, args) => {
+      calls.push(args.join(' '))
+      if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return ok('/repo\n')
+      return fail('no')
+    }
 
     const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
     expect(result).toEqual({ refused: expect.stringContaining('pass --base <branch>') })
-    expect(logged.join('\n')).toContain('main is not a branch in /repo')
+    expect(logged.join('\n')).toContain('/repo has no branch checked out')
+    expect(logged.join('\n')).toContain('--base <branch>')
+    expect(calls.some((c) => c.startsWith('branch '))).toBe(false)
+  })
+
+  it('an absent lingtai-base is made from the checked-out branch before the recipe flow, and register gets its sha (#745)', async () => {
+    const order: string[] = []
+    const { world, registered, files } = harness({ answers: [...RECIPE_FLOW_DEFAULTS] })
+    let made = false
+    world.git = async (dir, args) => {
+      const key = args.join(' ')
+      order.push(key)
+      if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
+      if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
+      if (key === 'rev-parse --verify refs/heads/main^{commit}') return ok('aaa111\n')
+      if (key === 'branch lingtai-base main') return ((made = true), ok(''))
+      if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}')
+        return made ? ok('aaa111\n') : fail('unknown revision')
+      throw new Error(`unplanned git call: ${key}`)
+    }
+    const reader = world.setupReader
+    world.setupReader = (top) => (order.push('recipe flow'), reader(top))
+
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, remote: '/repo', base: 'lingtai-base' })
+    expect(order.indexOf('branch lingtai-base main')).toBeGreaterThan(-1)
+    expect(order.indexOf('branch lingtai-base main')).toBeLessThan(order.indexOf('recipe flow'))
+    expect(registered[0]).toMatchObject({ base: 'lingtai-base', fromSha: 'aaa111' })
+    expect(files.replaced[`${HOME}/repo/recipe.yml`]).toContain('remote: /repo')
+  })
+
+  it('a tag named lingtai-base is not the branch: the branch is made and its sha registered (#745)', async () => {
+    const { world, registered } = harness({ answers: [...RECIPE_FLOW_DEFAULTS] })
+    let made = false
+    world.git = async (dir, args) => {
+      const key = args.join(' ')
+      if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
+      if (key === 'rev-parse --verify lingtai-base^{commit}') return ok('oldtag1\n')
+      if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
+      if (key === 'rev-parse --verify refs/heads/main^{commit}') return ok('aaa111\n')
+      if (key === 'branch lingtai-base main') return ((made = true), ok(''))
+      if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}') return made ? ok('aaa111\n') : fail('unknown')
+      throw new Error(`unplanned git call: ${key}`)
+    }
+
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(made).toBe(true)
+    expect(registered[0]).toMatchObject({ fromSha: 'aaa111' })
+  })
+
+  it('an existing lingtai-base is used as is: no branch call (#745)', async () => {
+    const calls: string[] = []
+    const { world } = harness({
+      git: { ...LOCAL_GIT, '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n') },
+    })
+    const git = world.git
+    world.git = async (dir, args) => (calls.push(args.join(' ')), git(dir, args))
+
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(calls.some((c) => c.startsWith('branch '))).toBe(false)
   })
 
   it('writes source.tickets: db, so the resolved recipe takes work (#396, ownerlessRefusal returns null)', async () => {
     const { world, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [''],
     })
@@ -501,9 +520,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, files, asked, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       // 'no' at the question under test's own first question, "use every
       // default?" (#433) — this test proves each later question is still
@@ -554,9 +571,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [''],
     })
@@ -580,10 +595,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered, files } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
-        '/repo::rev-parse --verify develop^{commit}': ok('cafef00\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/develop^{commit}': ok('cafef00\n'),
       },
       answers,
     })
@@ -604,10 +617,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
-        '/repo::rev-parse --verify nope^{commit}': fail('fatal: Needed a single revision'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/nope^{commit}': fail('fatal: Needed a single revision'),
       },
       answers,
     })
@@ -992,13 +1003,11 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
     const { world } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
-        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
-        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
       answers: [...RECIPE_FLOW_DEFAULTS],
     })
-    const result = await chooseFirstProject(world, { local: '/repo', base: 'main', land: 'hold' })
+    const result = await chooseFirstProject(world, { local: '/repo', base: 'lingtai-base', land: 'hold' })
     expect(result).not.toEqual({
       refused: expect.stringContaining('name two different branches'),
     })

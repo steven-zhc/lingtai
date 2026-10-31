@@ -1,6 +1,6 @@
 /**
  * The first question `init` and `add` share (#394): a GitHub repository, or a
- * directory on this machine with its own `origin`.
+ * git checkout on this machine, which is its own remote.
  *
  * **One function, both callers.** `initCommand` and `addCommand` both call
  * `chooseFirstProject`, which asks through `question()` (#392) and the App
@@ -16,8 +16,9 @@
  * how to add a GitHub one, rather than being asked the same question again.
  *
  * **The local branch writes nothing until everything has been checked.** The
- * directory is a git repository, it has an `origin` (the merge lane pushes
- * there — `packages/actions/src/merge-action.ts:47`), its name is not already
+ * directory is a git repository, it is the remote (0104 §15 — the merge lane
+ * pushes back into the checkout, `packages/actions/src/merge-action.ts:47`; no
+ * `origin` is needed), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
  * then does `askRecipe` (#431) take `repo.base`, `repo.remote` and, on an
  * absent file, `env.plantAt` as its seeds, and ask the rest of the recipe's
@@ -88,6 +89,9 @@ import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
+
+/** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
+const LINGTAI_BASE = 'lingtai-base'
 
 /** `world.git(dir, args)` — never a shell string, so a path never has to be escaped. */
 export interface GitResult {
@@ -283,15 +287,6 @@ async function askProjectKind(
   return { kind: 'github' }
 }
 
-/** The repository has no `origin` remote, which is where Lingtai lands finished work. */
-export function noOriginRefusal(toplevel: string, detail: string, kept: string): string {
-  return (
-    `${toplevel} has no origin — ${detail}. Lingtai lands finished work by pushing to the ` +
-    "repository's own origin, and there is nothing to push to " +
-    `without one. Add one with git remote add origin <url>, and run this again. ${kept}`
-  )
-}
-
 export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -372,16 +367,6 @@ export async function chooseFirstProject(
     : runGithubBranch(world, flags, flags['github'] ?? null, appCheck)
 }
 
-/** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
-function isUrlOrScpLike(remote: string): boolean {
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(remote) || /^[^@/\s]+@[^/\s]+:/.test(remote)
-}
-
-/** `origin` as git stores it, resolved to an absolute path when it is a relative one. */
-function resolveRemote(remote: string, top: string): string {
-  return isUrlOrScpLike(remote) ? remote : resolvePath(top, remote)
-}
-
 async function runLocalBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -407,13 +392,8 @@ async function runLocalBranch(
   }
   const toplevel = top.stdout.trim()
 
-  const origin = await world.git(toplevel, ['remote', 'get-url', 'origin'])
-  if (!origin.ok) {
-    return {
-      refused: noOriginRefusal(toplevel, (origin.stderr || origin.stdout).trim(), world.kept),
-    }
-  }
-  const remote = resolveRemote(origin.stdout.trim(), toplevel)
+  // The checkout itself is the remote (0104 §15): nothing a pass makes leaves the machine.
+  const remote = toplevel
   const name = basename(toplevel)
 
   // Case-insensitive, like `pick-repository.ts`'s own `same()`: on a
@@ -442,8 +422,8 @@ async function runLocalBranch(
       return {
         refused:
           typeof existingRemote === 'string'
-            ? `a project called ${name} is already registered with repo.remote: ${existingRemote}, and ${toplevel}'s ` +
-              `origin is ${remote} — a project is keyed by its name, and registering this directory would silently ` +
+            ? `a project called ${name} is already registered with repo.remote: ${existingRemote}, and ${toplevel} ` +
+              `is its own remote now — a project is keyed by its name, and registering this directory would silently ` +
               `redirect it to this one. Remove the existing project first, or rename this directory. ${world.kept}`
             : `a project called ${name} is already registered with no repo.remote recorded — it may be a project ` +
               'registered before owners were, and there is nothing here to confirm this directory is the same one ' +
@@ -455,13 +435,12 @@ async function runLocalBranch(
 
   let fromSha = ''
   const currentBase = await readRecipeKey(name, ['repo', 'base'], { home: world.home, files: world.files })
-  const symbolic = await world.git(toplevel, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
-  const current = symbolic.ok ? null : await world.git(toplevel, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const detected = symbolic.ok
-    ? symbolic.stdout.trim().replace(/^origin\//, '')
-    : current?.ok
-      ? current.stdout.trim()
-      : null
+  // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--base`
+  // names the branch the person means to land on, and `askLanding` would move the base there anyway.
+  const given = flags['land']
+  const detected = flags['base'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
+  // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
+  let source: string | null = null
 
   // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
   const baseAnswer = await question(
@@ -475,9 +454,27 @@ async function runLocalBranch(
       detected,
       kept: world.kept,
       validate: async (answer) => {
-        const check = await world.git(toplevel, ['rev-parse', '--verify', `${answer}^{commit}`])
-        if (!check.ok) return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
-        fromSha = check.stdout.trim()
+        source = null
+        const check = await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
+        if (check.ok) {
+          fromSha = check.stdout.trim()
+          return null
+        }
+        if (answer !== LINGTAI_BASE) {
+          return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
+        }
+        // Decides only: `validate` can run again on a refusal, so nothing is created here.
+        const head = await world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+        const branch = head.ok ? head.stdout.trim() : ''
+        const tip =
+          branch === '' ? null : await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+        if (tip === null || !tip.ok) {
+          return (
+            `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
+            'Check out a branch, or pass --base <branch>'
+          )
+        }
+        source = branch
         return null
       },
     },
@@ -491,6 +488,28 @@ async function runLocalBranch(
   const runtimes = await world.runtimes()
   if (!runtimes.some((r) => r.signedIn)) {
     return { refused: noRuntimesSignedInRefusal(runtimes) }
+  }
+
+  // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
+  // cuts from a mirror of this checkout at `base`.
+  let madeKept: string | null = null
+  if (source !== null) {
+    const made = await world.git(toplevel, ['branch', base, source])
+    if (!made.ok) {
+      return {
+        refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+      }
+    }
+    const tip = await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
+    if (!tip.ok) {
+      return {
+        refused:
+          `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
+          `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
+      }
+    }
+    fromSha = tip.stdout.trim()
+    madeKept = `the branch ${base} made from ${source} in ${toplevel}`
   }
 
   const path = recipePath(name, world.home)
@@ -511,7 +530,9 @@ async function runLocalBranch(
   // Not `world.kept`: that described the state before `askRecipe` writes
   // anything, and a refusal placed after its write must say what that write
   // left behind (#431 fix round, finding 3).
-  const seededKept = `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered`
+  const seededKept =
+    `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered` +
+    (madeKept === null ? '' : `; ${madeKept} is kept too`)
 
   const recipeResult = await askRecipe(world, {
     project: name,
@@ -520,7 +541,7 @@ async function runLocalBranch(
     reader: world.setupReader(toplevel),
     flags,
     buildFlags,
-    defaultBranch: async () => detected,
+    defaultBranch: async () => base,
     tryBuild: liveTrialBuild({
       project: name,
       owner: '',
@@ -533,7 +554,8 @@ async function runLocalBranch(
     history: world.history,
     seeds,
     again: `lingtai add --local ${toplevel}`,
-    keptBeforeWrite: world.kept,
+    keptBeforeWrite:
+      madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
     kept: seededKept,
     home: world.home,
     files: world.files,
@@ -549,10 +571,10 @@ async function runLocalBranch(
 
   let finalFromSha = fromSha
   if (final !== base) {
-    const check = await world.git(toplevel, ['rev-parse', '--verify', `${final}^{commit}`])
+    const check = await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${final}^{commit}`])
     if (!check.ok) {
       return {
-        refused: `${final} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}. ${ADD_KEPT}`,
+        refused: `${final} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}. ${ADD_KEPT}${madeKept === null ? '' : `; ${madeKept} is kept too`}`,
       }
     }
     finalFromSha = check.stdout.trim()

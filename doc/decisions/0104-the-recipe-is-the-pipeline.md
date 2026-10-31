@@ -214,9 +214,7 @@ in the source.
 
 ## Not built yet
 
-- **§15 is not built.** `add --local` writes the checkout's `origin` as
-  `repo.remote` and its default branch as `repo.base`, and the land does not
-  check what is checked out.
+- **§15 is half built.** The land does not check what is checked out.
 
 ---
 *Replaces archived 0005, 0028, 0029, 0045, 0046, 0047, 0061, 0063, 0071 in [decisions-archive](../decisions-archive/).*

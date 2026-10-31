@@ -45,7 +45,7 @@ export const COMMANDS = [
     usage: [
       'lingtai add [<owner>/<repo>] [flags]',
       '  A GitHub repository the App is installed on, or — with no',
-      '  argument, or --local <dir> — a directory with its own origin.',
+      '  argument, or --local <dir> — a git checkout on this machine.',
       '  --github <owner>/<repo>   same as the positional',
       '  --local <dir>             a directory on this machine instead',
       '  --project <github|local>  answers the question above, when neither',
