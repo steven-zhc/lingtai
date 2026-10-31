@@ -94,6 +94,7 @@ export const SAID: Said = {
   'source.tickets': "where this project's tickets live",
   'source.kinds': 'which labels are work, most wanted first',
   repo: 'the branch this project governs, and where it pushes',
+  'steps.end': 'what happens to the ticket once it ends',
   'steps.proposed': 'what happens once a pass is ready to land',
   'runtime.limits': 'what one pass may spend before it comes back to you',
   env: "what the agent's environment is filtered to",

@@ -124,10 +124,11 @@ describe('askRecipe — an absent file (#432)', () => {
     // `steps.proposed` and `runtime.limits` are not yet decided at the point
     // this write happens — `askLanding`/`askLimits` have not asked — so they
     // alone may carry no comment; every other block does (#432 fix round,
-    // finding 2).
+    // finding 2). `steps.end` is decided only on the GitHub path (#749); the
+    // local path seeds none, so it has no block to comment.
     for (const [dotted, sentence] of Object.entries(SAID)) {
       const comment = commentAbove(text, dotted)
-      if (comment === '') expect(['steps.proposed', 'runtime.limits'], dotted).toContain(dotted)
+      if (comment === '') expect(['steps.end', 'steps.proposed', 'runtime.limits'], dotted).toContain(dotted)
       else expect(comment, dotted).toBe(sentence)
     }
 
