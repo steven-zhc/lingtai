@@ -610,11 +610,12 @@ function lastRefusedActionName(
 
 /**
  * The wait's own default resolution, with no triage advice in play —
- * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted` and
- * `AgentCrashed`, `null` everywhere else. No `default`, for the reason
+ * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted`,
+ * `AgentCrashed` and an escalation whose `because` is `BaseRed`, `null` everywhere else. No `default`, for the reason
  * {@link tableResolutions} has none.
  *
- * **`ProposedEscalated` branches on its own proposal**, so an escalated
+ * **`ProposedEscalated` branches on its own proposal** (and on a `BaseRed` `because`, #744: the
+ * refusal is not about the diff, so a round would pay an agent for the base's error), so an escalated
  * `BudgetExhausted` (`#471`) still prefills `Requeue`, the same as the direct
  * one above — `#471`'s equality is about the wait, and the card's
  * prefilled resolution is read off this function.

@@ -2915,7 +2915,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           base,
           baseSha,
           command: action.run,
-          prepared: recipe.steps.prepared.flatMap((a) => ('run' in a ? [a.run] : [])),
+          prepared: recipe.steps.prepared.flatMap((a) =>
+            'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
+          ),
           env: envForExtension(action.env),
           runId,
           signal: baseAbort.signal,
@@ -2924,12 +2926,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             cut: async (path, sha) => {
               const cut = await gitAsked(['worktree', 'add', '--force', '--detach', path, sha])
               if (Either.isLeft(cut)) throw new Error(cut.left.detail)
+              if (submodulesOf(recipe)) {
+                // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
+                await Effect.runPromise(
+                  repo.git(['submodule', 'update', '--init', '--recursive'], {
+                    token: options.token,
+                    env: options.gitEnv,
+                    cwd: path,
+                  }),
+                )
+              }
             },
             remove: async (path) => {
               const gone = await gitAsked(['worktree', 'remove', '--force', path])
               if (Either.isLeft(gone)) throw new Error(gone.left.detail)
             },
-            plant: (path) => writeFile(resolve(path, recipe.env.plantAt), renderEnvFile(env.values), { mode: 0o600 }),
+            plant: async (path) => {
+              const plantedAt = resolve(path, recipe.env.plantAt)
+              await mkdir(dirname(plantedAt), { recursive: true })
+              await writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 })
+            },
           },
         })
         if (answer.verdict === 'red') {

@@ -36,7 +36,7 @@ function question(over: Partial<BaseCheckQuestion> = {}): BaseCheckQuestion {
     base: 'main',
     baseSha: SHA,
     command: 'pnpm typecheck',
-    prepared: ['pnpm install'],
+    prepared: [{ run: 'pnpm install', env: { REGISTRY_TOKEN: 't' }, timeoutMs: 9000 }],
     env: {},
     runId: 'pass-1',
     signal: new AbortController().signal,
@@ -66,6 +66,18 @@ const recorded = async (store: ReturnType<typeof createMemoryEventStore>) =>
   (await store.read(stream)).filter((e) => e.type === 'BaseChecked')
 
 describe('baseCheck', () => {
+  it('runs each prepared command with its own env and timeout', async () => {
+    const { port, runner } = setup()
+    await port.ask(question())
+    expect(runner.mock.calls[0]![0]).toMatchObject({
+      run: 'pnpm install',
+      env: { REGISTRY_TOKEN: 't' },
+      timeoutMs: 9000,
+    })
+    expect(runner.mock.calls[1]![0]).toMatchObject({ run: 'pnpm typecheck', timeoutMs: 1000 })
+    expect(runner.mock.calls[1]![0].env).not.toHaveProperty('REGISTRY_TOKEN')
+  })
+
   it('cuts, installs, runs the command, removes, records one event and answers red', async () => {
     const { port, calls, store } = setup(async (o) =>
       o.run === 'pnpm typecheck' ? outcome({ ok: false, exitCode: 1, evidence: '58 errors' }) : outcome(),

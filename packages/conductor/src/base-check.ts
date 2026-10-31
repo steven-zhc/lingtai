@@ -1,7 +1,7 @@
 /**
  * **What a check says on the commit a pass was cut at** (#743, 0108 §13) — the
- * port the guard in #744 asks before a `build` refusal buys a round. Nothing
- * calls it yet.
+ * port the guard in #744 asks before a `build` refusal buys a round.
+ * `conduct.ts` builds one per store and `runPass` asks it through `baseIsRed`.
  *
  * It answers from the log when a `BaseChecked` for this commit and this
  * command is already on `int-<project>-<base>`, and otherwise cuts a throwaway
@@ -37,8 +37,8 @@ export interface BaseCheckQuestion {
   baseSha: string
   /** The `run:` text to check. */
   command: string
-  /** The `run:` texts of `prepared`, in order. */
-  prepared: readonly string[]
+  /** The `run:` actions of `prepared`, in order, each with its own env and timeout. */
+  prepared: readonly BaseCheckCommand[]
   /** The environment the commands get — already resolved by the caller. */
   env: Record<string, string>
   runId: string
@@ -50,6 +50,12 @@ export interface BaseCheckQuestion {
    * the asking pass's own.
    */
   tree: BaseCheckTree
+}
+
+export interface BaseCheckCommand {
+  run: string
+  env: Record<string, string>
+  timeoutMs: number
 }
 
 export interface BaseCheckTree {
@@ -116,12 +122,12 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
       // An abort that landed while the cut or the plant was pending: `runCommand` only hears
       // aborts that come after it starts, so nothing may be started with the signal already down.
       if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
-      const runIn = (run: string): Promise<CommandOutcome> =>
+      const runIn = (c: BaseCheckCommand): Promise<CommandOutcome> =>
         deps.run({
-          run,
-          timeoutMs: q.timeoutMs,
+          run: c.run,
+          timeoutMs: c.timeoutMs,
           cwd: path,
-          env: q.env,
+          env: c.env,
           signal: q.signal,
           ownGroup: true,
         })
@@ -129,10 +135,10 @@ export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuesti
         const prepared = await runIn(prep)
         if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
         if (prepared.timedOut || prepared.exitCode !== 0) {
-          return { verdict: 'unknown', why: `\`${prep}\` did not succeed: ${prepared.evidence}` }
+          return { verdict: 'unknown', why: `\`${prep.run}\` did not succeed: ${prepared.evidence}` }
         }
       }
-      outcome = await runIn(q.command)
+      outcome = await runIn({ run: q.command, env: q.env, timeoutMs: q.timeoutMs })
     } finally {
       await q.tree.remove(path).catch((err: Error) => {
         deps.note(`base check: could not remove ${path}: ${err.message} — it may hold the planted env file`)
