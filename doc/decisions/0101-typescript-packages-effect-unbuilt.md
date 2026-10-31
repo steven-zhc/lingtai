@@ -63,7 +63,15 @@ turn limit, so every idiom it adopts is paid for again on every run.
 
 4. **The packages, by layer.** A package depends only on packages below it.
    - **Vocabulary:** `domain` (the event catalogue, reducers, upcasting, the
-     control fold). It imports only `zod`.
+     control fold). It imports only `zod`. **A stream's fold exists once, here.**
+     Every other package that needs a stream's state — the conductor, the
+     daemon, the CLI, the projector's per-stream part, and the board — calls the
+     domain fold and never folds the same events itself; the board *presents* a
+     domain state (`present(state, …)`) and joins in what is not on the stream,
+     such as the recipe's plan. A branch on an event type outside `domain` is a
+     reaction (a subscriber, a notification) or a lookup, never a second fold.
+     The snapshot of a fold ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md))
+     is only correct because there is one.
    - **Plain logic and its loaders:** `recipe` (load, validate, resolve), `actions` (running a
      declared action and proving it ran — IO, so Effect under rule 6), `agent-env` (what an agent may see),
      `env` (Lingtai's own settings, colour, and the file lock in

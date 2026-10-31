@@ -27,10 +27,12 @@ same URL can be visible from a checkout and invisible to a daemon started from
    log, it is not a fact this system has. A correction is a new event; there is
    no legitimate UPDATE or DELETE.
 
-2. **Everything is the loop, a projection, or a subscriber.** The loop appends
+2. **Everything is the loop, a projection, a subscriber, or a snapshot.** The loop appends
    events and takes one item at a time. A projection reads the log, writes a
    derived table and holds no truth. A subscriber reads the log and acts outside
-   the system without blocking it. A component that fits none of the three is
+   the system without blocking it. A snapshot is one stream's fold saved at a
+   version, a cache that any reader may ignore or discard
+   ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md)). A component that fits none of the four is
    questioned before it is built. Lingtai's own `lingtai:*` status labels on
    GitHub are output written from the log, never read back as state.
 
@@ -44,8 +46,13 @@ same URL can be visible from a checkout and invisible to a daemon started from
 
 4. **Every row carries `schemaVer`, and the catalogue governs reads and writes.**
    An event is past tense and self-contained. A type not in `@lingtai/domain`'s
-   catalogue is refused on append and on read (`UnknownEventTypeError`); a
-   payload change bumps `SCHEMA_VER` for that type and adds an upcaster. A type
+   catalogue is refused on append and on read (`UnknownEventTypeError`).
+   **An event's payload only ever gains optional fields**, which a reader takes
+   as `null` when absent, with no `SCHEMA_VER` bump and no upcaster; a rename, a
+   removal or a change of meaning is a new event type. The upcasters in
+   `packages/domain/src/upcast.ts` are frozen for the events already written under
+   them, and none is added
+   ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md) §4). A type
    that leaves the vocabulary goes in `RETIRED`: readable for ever, refused on
    append. `lingtai doctor` fails when the log holds a type this build cannot
    read.
