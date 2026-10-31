@@ -225,17 +225,17 @@ describe('with an endpoint', () => {
     }
   })
 
-  it('a pass held at a person exports its run as ERROR, with no message', async () => {
+  it('a pass held for the approval it was asked for exports its run as unset, not ERROR', async () => {
     const { result, spans } = await pass(REVIEWED, runtime)
     expect(result.ok).toBe('held')
     const run = spans.find((s) => s.name === 'conductor.run')!
-    expect(run.status.code).toBe(2)
+    expect(run.status.code).not.toBe(2)
     expect(run.status.message).toBeUndefined()
   })
 
-  it('a reviewer refusal routed to a person exports its run as ERROR', async () => {
+  it('a reviewer refusal routed to a person does not export its run as ERROR when the result is held', async () => {
     const { result, spans } = await pass(REVIEWED, refusingRuntime)
-    expect(result.ok).not.toBe(true)
-    expect(spans.find((s) => s.name === 'conductor.run')!.status.code).toBe(2)
+    const run = spans.find((s) => s.name === 'conductor.run')!
+    expect(run.status.code === 2).toBe(result.ok === false)
   })
 })

@@ -1808,7 +1808,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * come through here, except that `end`'s span is made where its actions run
  * (`tellGitHubAbout`, `tell.ts`) — here it would measure resolving them and
  * not doing them. Its status is `ERROR` when the
- * step ended on anything but a pass, with no message; the round is the only
+ * step refused, failed or never ran, with no message; the round is the only
  * attribute. A routing arrival at `proposed` is built by `runPass` and never
  * reaches here, and no action runs there.
  */
@@ -1824,7 +1824,8 @@ function runStep(
     `step ${spec.step}`,
     { 'lingtai.round': reaching.context.round ?? 0 },
     () => runStepBody(spec, options, bodies, reached, reaching),
-    (visit) => visit.ending.ending !== 'passed',
+    // `held`, `asked` and `routed` wait on a person: nothing refused.
+    (visit) => ['refused', 'did-not-finish', 'never-ran'].includes(visit.ending.ending),
   )
 }
 
