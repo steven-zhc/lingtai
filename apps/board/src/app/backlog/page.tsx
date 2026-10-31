@@ -15,7 +15,9 @@ import type { BacklogEntry } from '@lingtai/projector'
  */
 import Link from 'next/link'
 
+import { Home } from '@/app/home.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
+import { theHome } from '@/lib/home'
 
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
 
@@ -74,6 +76,7 @@ export default async function BacklogPage() {
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         <span>backlog</span>

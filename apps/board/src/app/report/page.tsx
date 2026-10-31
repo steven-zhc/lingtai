@@ -14,6 +14,8 @@
 import { report as buildReport, type Report } from '@lingtai/conductor/report'
 import Link from 'next/link'
 
+import { Home } from '@/app/home.tsx'
+import { theHome } from '@/lib/home'
 import {
   currentReport,
   kindsOf,
@@ -82,6 +84,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       <div className="bar">
         <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>

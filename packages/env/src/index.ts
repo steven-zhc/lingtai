@@ -1060,6 +1060,33 @@ export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * `stateDir()` as a person reads it: a leading `$HOME` shown as `~` (#767).
+ *
+ * Only on a path boundary — `/Users/xy` is not `~y` under `HOME=/Users/x` — and
+ * a path that does not start with the home, a relative `LINGTAI_HOME` included,
+ * is printed as `stateDir` returns it.
+ */
+export function shownHome(from: NodeJS.ProcessEnv = process.env): string {
+  const home = stateDir(from)
+  const base = (from['HOME'] ?? homedir()).replace(/\/+$/, '')
+  if (base === '') return home
+  if (home === base) return '~'
+  return home.startsWith(`${base}/`) ? `~${home.slice(base.length)}` : home
+}
+
+/**
+ * Whether a home has *nothing* set up (#767): the store is unchosen **and** there
+ * is no `config.yml`. `nothing chosen` alone is not that — a file holding only a
+ * GitHub App names no store and is still a file somebody wrote — and a file's
+ * absence alone is not it either, since an exported `LINGTAI_DATABASE_URL`
+ * chooses the store with none. The caller says whether the file exists, so this
+ * stays a fold over its arguments.
+ */
+export function nothingSetUp(choice: StoreChoice, configExists: boolean): boolean {
+  return 'refused' in choice && choice.because === 'nothing chosen' && !configExists
+}
+
+/**
  * Where a locker that was not handed a `dir` of its own takes its files (#273).
  *
  * **An environment that names its own `LINGTAI_HOME` reads that one**, exactly

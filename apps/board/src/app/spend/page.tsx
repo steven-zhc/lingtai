@@ -28,8 +28,10 @@
  */
 import Link from 'next/link'
 
+import { Home } from '@/app/home.tsx'
 import { ledger, loadBoard } from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
+import { theHome } from '@/lib/home'
 import { spendChip } from '@/lib/spend'
 
 import { SpendTable } from '../spend-table.tsx'
@@ -49,6 +51,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
       <div className="bar">
         <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
           ← Lingtai
+          <Home {...theHome()} />
         </Link>
         <span className="sep" />
         <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>

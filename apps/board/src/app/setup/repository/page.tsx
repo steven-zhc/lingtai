@@ -1,3 +1,5 @@
+import { theHome } from '@/lib/home'
+
 /**
  * Step 0, after the App exists: which repository (#168), now in the terminal
  * (#401, #391). This path still has to answer for three callers it cannot
@@ -21,5 +23,5 @@ export const dynamic = 'force-dynamic'
 
 export default async function PickRepository({ searchParams }: { searchParams: Promise<{ requested?: string }> }) {
   const params = await searchParams
-  return <TerminalScreen requested={params.requested === '1'} gh={isGhMachine()} />
+  return <TerminalScreen requested={params.requested === '1'} gh={isGhMachine()} home={theHome()} />
 }

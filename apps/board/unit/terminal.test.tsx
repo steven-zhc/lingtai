@@ -9,8 +9,10 @@ import { describe, expect, it } from 'vitest'
 
 import { TerminalScreen } from '../src/app/setup/terminal.tsx'
 
+const HOME = { path: '/Users/x/.lingtai', shown: '~/.lingtai' }
+
 describe('the terminal screen', () => {
-  const out = renderToStaticMarkup(<TerminalScreen />)
+  const out = renderToStaticMarkup(<TerminalScreen home={HOME} />)
 
   it('names the terminal command', () => {
     expect(out).toContain('pnpm lingtai add')
@@ -28,13 +30,13 @@ describe('the terminal screen', () => {
 
 describe('a requested install', () => {
   it('says an organisation owner has to approve it', () => {
-    const out = renderToStaticMarkup(<TerminalScreen requested />)
+    const out = renderToStaticMarkup(<TerminalScreen requested home={HOME} />)
     expect(out).toContain('owner has to approve')
   })
 })
 
 describe('a gh machine', () => {
-  const out = renderToStaticMarkup(<TerminalScreen gh />)
+  const out = renderToStaticMarkup(<TerminalScreen gh home={HOME} />)
 
   it('says the gh login is used and shows lingtai add <owner>/<repo>', () => {
     expect(out).toContain('<code>gh</code> login')
@@ -48,12 +50,12 @@ describe('a gh machine', () => {
   })
 
   it('does not mention a pending approval even when requested', () => {
-    expect(renderToStaticMarkup(<TerminalScreen gh requested />)).not.toContain('owner has to approve')
+    expect(renderToStaticMarkup(<TerminalScreen gh requested home={HOME} />)).not.toContain('owner has to approve')
   })
 })
 
 describe('a machine that is not gh', () => {
   it('still describes the App picker', () => {
-    expect(renderToStaticMarkup(<TerminalScreen />)).toContain('the App can see')
+    expect(renderToStaticMarkup(<TerminalScreen home={HOME} />)).toContain('the App can see')
   })
 })

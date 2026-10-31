@@ -2975,3 +2975,9 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   .rp-grid { grid-template-columns: 1fr; }
   .rp-kinds { margin-left: 0; }
 }
+/* The home, inside the brand (#767): muted and small, a fact about the bar
+   rather than a chip in it. */
+.bar .brand .home {
+  font-weight: 400; font-size: 11px; color: var(--muted);
+  margin-left: 4px; letter-spacing: 0;
+}

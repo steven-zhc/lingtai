@@ -7,12 +7,13 @@ import { readControl } from '@lingtai/daemon/control'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a fold over its arguments (#216).
-import { hasGitHubAuth } from '@lingtai/env'
+import { hasGitHubAuth, storeChoice } from '@lingtai/env'
 import Link from 'next/link'
 import { Fragment } from 'react'
 
 import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
+import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
@@ -24,6 +25,8 @@ import { codeSpans } from './code-spans.tsx'
 import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { Health } from './health.tsx'
+import { Home } from './home.tsx'
+import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
 import { Projects } from './projects.tsx'
@@ -577,6 +580,12 @@ function Queued({
  */
 export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const only = (await searchParams).project
+  // Before any read of the log: a refused store makes `loadBoard` throw the
+  // same sentence, and Next would show that as its default error page. The
+  // screen below says it instead, and mounts no `Live` — there is no log to
+  // follow (#767).
+  const choice = storeChoice()
+  if ('refused' in choice) return <NotSetUp home={theHome()} choice={choice} nothing={homeNotSetUp(choice)} />
   // Three reads waiting together rather than in a row. None of them is an
   // argument to another, and this route is re-rendered on every append to the
   // log (#112) — so a round trip spent waiting for the one before it is spent
@@ -630,6 +639,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <span className="brand">
           <span className="mark" aria-hidden="true" />
           Lingtai
+          <Home {...theHome()} />
         </span>
         <span className="sep" />
         {/* The projects, and the way to add one — `projects.tsx`, which is

@@ -1,8 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { connect } from 'node:net'
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 
-import { boardPort } from '@lingtai/env'
+import { boardPort, nothingSetUp, shownHome, stateDir, storeChoice } from '@lingtai/env'
 import { createFileLocker } from '@lingtai/env/lock'
 
 import { boardAt, serveBoard, type BoardWorld } from './board.ts'
@@ -18,6 +20,8 @@ export function liveBoardWorld(): BoardWorld {
   return {
     host: '127.0.0.1',
     hostname: hostname(),
+    home: { path: stateDir(), shown: shownHome() },
+    notSetUp: () => nothingSetUp(storeChoice(), existsSync(join(stateDir(), 'config.yml'))),
     answering: boardAt,
     bound: (port) =>
       new Promise<boolean>((resolve) => {
