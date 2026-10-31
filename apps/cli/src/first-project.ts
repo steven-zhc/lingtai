@@ -154,6 +154,10 @@ export interface FirstProjectWorld extends QuestionWorld {
    * this, so its `kept` is `'Nothing was written'`, same as the default.
    */
   kept: string
+  /** Said with `kept` when Ctrl+C stops the project, directory or base question; `init` only. */
+  startOver?: string
+  /** The command that was run, for the same line. */
+  command?: string
   /**
    * `init`'s only (#393): a configured App already answers *is the project*,
    * so the question is refused past rather than asked, and `--project`/
@@ -266,6 +270,8 @@ async function askProjectKind(
     fallback: 'github',
     choices: ['github', 'local'],
     kept,
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
   })
   if ('refused' in kind) return { refused: kind.refused }
   if (kind.answer === 'local') {
@@ -380,6 +386,8 @@ async function runLocalBranch(
     given: givenDir,
     prompt: 'the directory of the repository on this machine',
     kept: world.kept,
+    ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+    ...(world.command === undefined ? {} : { command: world.command }),
     validate: async (answer) => (answer.trim() === '' ? 'a directory is needed' : null),
   })
   if ('refused' in dirAnswer) return { refused: dirAnswer.refused }
@@ -454,6 +462,8 @@ async function runLocalBranch(
       current: typeof currentBase === 'string' ? currentBase : null,
       detected,
       kept: world.kept,
+      ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+      ...(world.command === undefined ? {} : { command: world.command }),
       validate: async (answer) => {
         source = null
         const check = await world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])

@@ -55,9 +55,12 @@ export async function askConfirm(
   return answer(await clack.confirm({ message, initialValue }))
 }
 
-/** What Ctrl+C at a question says: every earlier answer is already written, and this one was not. */
-export const STOPPED_AT_QUESTION =
-  'stopped at the question — its answer was not written, and running the command again asks it here'
+/** What Ctrl+C at a question says: what is already written, that this answer was not, and how to go on or start over. */
+export function stoppedAtQuestion(shape: Pick<AskShape, 'kept' | 'startOver' | 'command'> = {}): string {
+  const again = shape.command === undefined ? 'running the command again' : `${shape.command} again`
+  const over = shape.startOver === undefined ? '' : ` ${shape.startOver}.`
+  return `stopped at the question — ${shape.kept ?? 'Nothing was written'}. ${again} continues from here.${over}`
+}
 
 /**
  * `question()`'s live ask. Null with no terminal on both ends (0121 §9), which
@@ -81,7 +84,7 @@ export async function liveAsk(
           defaultValue: shape.defaultValue,
         })
   if (clack.isCancel(typed)) {
-    console.log(`\n${STOPPED_AT_QUESTION}`)
+    console.log(`\n${stoppedAtQuestion(shape)}`)
     process.exit(130)
   }
   return String(typed)
