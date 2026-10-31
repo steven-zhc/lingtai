@@ -7,7 +7,7 @@ import { basename } from 'node:path'
 
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
-import { type Recipe, baseOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import { type Recipe, baseOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
 import { type DoctorReport, toFixSummary } from './doctor.ts'
 import { heading, symbol, width } from './output.ts'
@@ -67,7 +67,7 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
     base: baseOf(recipe),
     remote: remoteOf(recipe),
     tickets: ticketSourceOf(recipe),
-    kinds: recipe.source.kinds,
+    kinds: kindsOf(recipe),
     writer: agentOf(steps['implement']),
     reviewer: agentOf(steps['review']),
     checks: (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run'])),
