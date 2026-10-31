@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
 import { Bar } from '../src/app/chrome'
-import { EventsBody } from '../src/app/docs/events/events-body'
+import { EventsBody, label } from '../src/app/docs/events/events-body'
 import { EventsFilter } from '../src/app/docs/events/events-filter'
 import EventsPage from '../src/app/docs/events/page'
 import { byGroup, counts, groupId, matches, parseStep, shownGroups } from '../src/lib/event-filter'
@@ -20,7 +20,7 @@ describe('/docs/events/', () => {
   it('lists every event in doc/events.json, with its links and subscribe snippet', () => {
     expect(doc.events.length).toBeGreaterThan(0)
     for (const e of doc.events) {
-      expect(html).toContain(`<code>${e.name}</code>`)
+      expect(html).toContain(`<span class="ev-name">${e.name}</span>`)
       expect(html).toContain(`href="${escaped(e.definition)}"`)
       for (const site of e.sites) expect(html).toContain(`href="${escaped(site)}"`)
       expect(html).toContain(escaped(e.subscribers))
@@ -35,13 +35,23 @@ describe('/docs/events/', () => {
     const c = counts(doc.events, STEPS)
     const spine = html.slice(html.indexOf('class="ev-spine"'), html.indexOf('class="ev-clear"'))
     let last = -1
-    STEPS.forEach((step, i) => {
-      const at = spine.indexOf(`<span class="ev-step">${i + 1} ${step}</span><span class="ev-count">${c[step]}</span>`)
+    STEPS.forEach((step) => {
+      const at = spine.indexOf(`<span class="ev-dot">${c[step]}</span><span class="ev-step">${step}</span>`)
       expect(at, step).toBeGreaterThan(last)
       last = at
     })
-    expect(spine).toContain(`<span class="ev-step">outside</span><span class="ev-count">${c.outside}</span>`)
-    expect(spine).toContain(`<span class="ev-step">no step</span><span class="ev-count">${c.none}</span>`)
+    expect(spine).toContain(`<span class="ev-dot">${c.outside}</span><span class="ev-step">outside</span>`)
+    expect(spine).toContain(`<span class="ev-dot">${c.none}</span><span class="ev-step">no step</span>`)
+  })
+
+  it('labels a link with the basename and line', () => {
+    expect(label('https://github.com/o/r/blob/abc/packages/conductor/src/conduct.ts#L3645')).toBe('conduct.ts:3645')
+    expect(label('https://github.com/o/r/blob/abc/packages/domain/src/events.ts')).toBe('events.ts')
+  })
+
+  it('has no <pre> per entry and puts the commit note after the last group', () => {
+    expect(html).not.toContain('<pre')
+    expect(html.indexOf('class="source"')).toBeGreaterThan(html.lastIndexOf('class="ev-group"'))
   })
 
   it('filters by step: review, none, and an unknown value', () => {
