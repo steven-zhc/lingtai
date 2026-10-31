@@ -23,6 +23,8 @@ import { recipePath, resolveSource } from '@lingtai/recipe'
  */
 import { type AskedBeforeAdd, askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
 import { chooseFirstProject, liveFirstProjectWorld, type FirstProjectWorld } from './first-project.ts'
+import { addSteps } from './next-steps.ts'
+import { renderNextBlock, renderNextLine } from './output.ts'
 import { liveAsk, liveSpin } from './prompt.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
 import { type CardRecipe, cardRecipe } from './setup-card.ts'
@@ -93,7 +95,7 @@ export async function addFlow(
     return 2
   }
   if (result.project === 'local') {
-    await printSetupEnd(
+    const end = await printSetupEnd(
       world,
       {
         command: 'add',
@@ -111,6 +113,12 @@ export async function addFlow(
       },
       result.hints,
     )
+    closeOn(world, end.fix, {
+      project: result.name,
+      tickets: result.card.tickets,
+      kinds: result.card.kinds,
+      slug: null,
+    })
   }
   if (result.project === 'github' && asked !== null && result.updated !== undefined && result.reach !== undefined) {
     const { owner, repo } = parseSlug(result.slug!)
@@ -129,7 +137,7 @@ export async function addFlow(
       )
       return 1
     }
-    await printSetupEnd(
+    const end = await printSetupEnd(
       world,
       {
         command: 'add',
@@ -148,8 +156,18 @@ export async function addFlow(
       },
       asked.hints,
     )
+    closeOn(world, end.fix, { project: repo, tickets: card.tickets, kinds: card.kinds, slug: `${owner}/${repo}` })
   }
   return 0
+}
+
+/** The last thing `add` prints (0121 §1): a failed doctor's one line, else the numbered block. */
+function closeOn(world: Pick<AddWorld, 'log'>, fix: string | undefined, source: Parameters<typeof addSteps>[0]): void {
+  if (fix !== undefined) {
+    world.log(renderNextLine(fix))
+    return
+  }
+  for (const line of renderNextBlock(addSteps(source))) world.log(line)
 }
 
 /** `gh, signed in as me`, `gh, signed in` when it named no login, or `the App x`. */

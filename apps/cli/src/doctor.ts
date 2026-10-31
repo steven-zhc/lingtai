@@ -126,7 +126,7 @@ import { git } from '@lingtai/repo'
 import pg from 'pg'
 
 import { readDaySpend } from './day-ceiling.ts'
-import { heading, section, symbol, width } from './output.ts'
+import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { remedyFor } from './runtimes.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
@@ -3334,14 +3334,6 @@ function seconds(ms: number): string {
   return ms < 100 ? '<0.1s' : `${(ms / 1000).toFixed(1)}s`
 }
 
-/** The width of the label column in the short view: `[problem]` and ` PROBLEM `. */
-const LABEL_COLUMN = 9
-
-/** A label right-aligned in the column. Padded from the plain word's width, since the rendered badge carries escapes. */
-function labelled(rendered: string, word: string): string {
-  return `${' '.repeat(LABEL_COLUMN - (word.length + 2))}${rendered}`
-}
-
 export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; next?: boolean } = {}): string[] {
   const { verbose = false, next = true } = opts
   const lines = [heading('doctor'), '']
@@ -3375,7 +3367,7 @@ export function renderDoctor(report: DoctorReport, opts: { verbose?: boolean; ne
     }
     const nextLine = nextOf(report.results)
     if (next && nextLine !== undefined) {
-      lines.push('', `${labelled(badge('next', 'next'), 'next')} ${paint.accent(nextLine)}`)
+      lines.push('', renderNextLine(nextLine))
     }
     return lines
   }
