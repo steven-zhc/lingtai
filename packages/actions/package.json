@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./action": "./src/action.ts"
+    "./action": "./src/action.ts",
+    "./spans": "./src/spans.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -13,7 +14,8 @@
   "dependencies": {
     "@lingtai/recipe": "workspace:*",
     "@lingtai/domain": "workspace:*",
-    "@lingtai/agent": "workspace:*"
+    "@lingtai/agent": "workspace:*",
+    "@opentelemetry/api": "^1.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

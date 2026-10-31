@@ -278,6 +278,9 @@ importers:
       '@lingtai/recipe':
         specifier: workspace:*
         version: link:../recipe
+      '@opentelemetry/api':
+        specifier: ^1.10.0
+        version: 1.10.0
     devDependencies:
       '@types/node':
         specifier: ^26.4.0
@@ -371,6 +374,21 @@ importers:
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../repo
+      '@opentelemetry/api':
+        specifier: ^1.10.0
+        version: 1.10.0
+      '@opentelemetry/context-async-hooks':
+        specifier: ^2.12.0
+        version: 2.12.0(@opentelemetry/api@1.10.0)
+      '@opentelemetry/exporter-trace-otlp-http':
+        specifier: ^0.223.0
+        version: 0.223.0(@opentelemetry/api@1.10.0)
+      '@opentelemetry/resources':
+        specifier: ^2.12.0
+        version: 2.12.0(@opentelemetry/api@1.10.0)
+      '@opentelemetry/sdk-trace-base':
+        specifier: ^2.12.0
+        version: 2.12.0(@opentelemetry/api@1.10.0)
       effect:
         specifier: ^3.22.1
         version: 3.22.1

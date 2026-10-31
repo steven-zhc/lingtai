@@ -23,6 +23,7 @@ import {
   type SentBack,
   type TheDesign,
 } from '@lingtai/actions/action'
+import { inSpan } from '@lingtai/actions/spans'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
@@ -1803,6 +1804,28 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
 }
 
 /**
+ * One step visit as a span (#791) — `step claim`, `step <name>` and `step end`
+ * all come through here, so this is the one site. Its status is `ERROR` when the
+ * step ended on anything but a pass, with no message; the round is the only
+ * attribute. A routing arrival at `proposed` is built by `runPass` and never
+ * reaches here, and no action runs there.
+ */
+async function runStep(
+  spec: StepSpec,
+  options: PassOptions,
+  bodies: StepBodies,
+  reached: readonly StepReached[],
+  reaching: Reaching,
+): Promise<StepReached> {
+  return inSpan(
+    `step ${spec.step}`,
+    { 'lingtai.round': reaching.context.round ?? 0 },
+    () => runStepBody(spec, options, bodies, reached, reaching),
+    (visit) => visit.ending.ending !== 'passed',
+  )
+}
+
+/**
  * One visit: its plugins, then its own work.
  *
  * Its plugins first because that is the order a refusal needs — at `prepared`
@@ -1816,7 +1839,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * survive every way a step can go wrong is the pass reaching `end` — see
  * `threw` below.
  */
-async function runStep(
+async function runStepBody(
   spec: StepSpec,
   options: PassOptions,
   bodies: StepBodies,

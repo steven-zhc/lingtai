@@ -666,7 +666,7 @@ export function continuationRound(runEvents: readonly Envelope[], granted: boole
 }
 
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
-  return Effect.gen(function* () {
+  const run: Effect.Effect<RunOnceResult, never, Repo | AgentHost> = Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
     // parameter was standing in for.
     const repo = yield* Repo
@@ -4810,4 +4810,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.ensuring(release('the run was interrupted')),
     )
   })
+  return run.pipe(
+    // A root: `runQueue` calls this once per ticket, and a pass is one trace
+    // rather than a branch of the queue's (#791). No stack trace — it is a path.
+    Effect.withSpan('conductor.run', {
+      root: true,
+      captureStackTrace: false,
+      attributes: { 'lingtai.ticket': options.issue },
+    }),
+  )
 }
