@@ -87,6 +87,7 @@ interface Harness {
   registered: RegisterLocalPayload[]
   authWrites: string[]
   files: RecipeFiles & { replaced: Record<string, string> }
+  removed: string[]
 }
 
 function harness(options: {
@@ -104,6 +105,7 @@ function harness(options: {
   add?: FirstProjectWorld['github']['add']
   kept?: string
   history?: FirstProjectWorld['history']
+  inFlight?: FirstProjectWorld['inFlight']
   auth?: () => 'app' | 'gh' | null
   ghStatus?: FirstProjectWorld['github']['ghStatus']
   writeAuth?: FirstProjectWorld['github']['writeAuth']
@@ -113,6 +115,7 @@ function harness(options: {
   const asked: string[] = []
   const logged: string[] = []
   const registered: RegisterLocalPayload[] = []
+  const removed: string[] = []
   const authWrites: string[] = []
   const files = mapFiles(options.files ?? {})
   const signedIn = options.signedIn ?? ['claude-code']
@@ -137,6 +140,10 @@ function harness(options: {
     },
     kept: options.kept ?? 'Nothing was written',
     history: options.history ?? (async () => []),
+    inFlight: options.inFlight ?? (async () => []),
+    removeMirror: async (project) => {
+      removed.push(project)
+    },
     github: {
       ...(options.auth === undefined ? {} : { auth: options.auth }),
       ...(options.gh === undefined ? {} : { gh: options.gh }),
@@ -153,7 +160,7 @@ function harness(options: {
       add: options.add ?? (async () => 1),
     },
   }
-  return { world, asked, logged, registered, files, authWrites }
+  return { world, asked, logged, registered, files, authWrites, removed }
 }
 
 /**
@@ -290,6 +297,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': fail('no origin'),
       },
       projects: [project('repo', null)],
       files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
@@ -1295,5 +1303,120 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
       expect(statuses).toBe(0)
       expect(h.authWrites).toEqual([])
     }
+  })
+})
+
+describe('chooseFirstProject — re-running add --local over an old recipe (#772)', () => {
+  const path = `${HOME}/repo/recipe.yml`
+  const ORIGIN = 'https://github.com/me/repo.git'
+  const OLD = `version: 2\nrepo:\n  base: main\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`
+  const git = (extra: GitPlan = {}): GitPlan => ({
+    '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+    '/repo::remote get-url origin': ok(`${ORIGIN}\n`),
+    '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+    ...extra,
+  })
+  const run = (options: Parameters<typeof harness>[0], flags: Record<string, string> = {}) => {
+    const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD }, ...options })
+    return { h, result: chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none', ...flags }) }
+  }
+  const moved = `lands: ${ORIGIN} main → this checkout, lingtai-base`
+
+  it('says where it lands, then with yes rewrites both keys and removes the mirror', async () => {
+    const { h, result } = run({ answers: ['yes'] })
+    expect(await result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(h.logged).toContain(moved)
+    expect(h.removed).toEqual(['repo'])
+    expect(h.files.replaced[path]).toContain('base: lingtai-base')
+    expect(h.files.replaced[path]).toContain('remote: /repo')
+  })
+
+  it('refuses on no, with the file and the mirror unchanged', async () => {
+    const { h, result } = run({ answers: ['no'] })
+    expect(await result).toEqual({ refused: expect.stringContaining('was not moved') })
+    expect(h.logged).toContain(moved)
+    expect(h.files.replaced).toEqual({})
+    expect(h.removed).toEqual([])
+  })
+
+  it('rewrites without asking where there is no terminal (ask answers null)', async () => {
+    const { h, result } = run({ answers: [] })
+    expect(await result).toMatchObject({ ok: true })
+    expect(h.logged).toContain(moved)
+    expect(h.removed).toEqual(['repo'])
+  })
+
+  it('refuses while a pass is in flight, naming the ticket, and writes and removes nothing', async () => {
+    const { h, result } = run({ answers: ['yes'], inFlight: async () => ['repo#7'] })
+    expect(await result).toEqual({ refused: expect.stringContaining('repo#7') })
+    expect(h.files.replaced).toEqual({})
+    expect(h.removed).toEqual([])
+    expect(h.asked).toEqual([])
+  })
+
+  it('refuses when the board cannot be read, never taking that as nothing in flight', async () => {
+    const { h, result } = run({
+      answers: ['yes'],
+      inFlight: async () => {
+        throw new Error('connection refused')
+      },
+    })
+    expect(await result).toEqual({ refused: expect.stringContaining('connection refused') })
+    expect(h.files.replaced).toEqual({})
+    expect(h.removed).toEqual([])
+  })
+
+  it('--base dev keeps dev, and the line names it', async () => {
+    const { h, result } = run(
+      { answers: ['yes'], git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }) },
+      { base: 'dev' },
+    )
+    expect(await result).toMatchObject({ ok: true, base: 'dev' })
+    expect(h.logged).toContain(`lands: ${ORIGIN} main → this checkout, dev`)
+    expect(h.files.replaced[path]).toContain('base: dev')
+  })
+
+  it('a recipe that already says the checkout and lingtai-base prints no lands line and asks nothing', async () => {
+    const { h, result } = run({
+      files: {
+        [path]:
+          'version: 2\nrepo:\n  base: lingtai-base\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      },
+    })
+    expect(await result).toMatchObject({ ok: true })
+    expect(h.logged.some((l) => l.startsWith('lands:'))).toBe(false)
+    expect(h.asked).toEqual([])
+    expect(h.removed).toEqual([])
+  })
+
+  it('a remote that is neither the checkout nor its origin is still refused by the name guard', async () => {
+    const { h, result } = run({
+      files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
+    })
+    expect(await result).toEqual({ refused: expect.stringContaining('https://github.com/other/thing.git') })
+    expect(h.removed).toEqual([])
+  })
+
+  it('a recipe on the checkout but another base still says so, asks, and checks in flight', async () => {
+    const { h, result } = run({
+      answers: ['yes'],
+      inFlight: async () => ['repo#7'],
+      git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
+      files: {
+        [path]:
+          'version: 2\nrepo:\n  base: main\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      },
+    })
+    expect(await result).toEqual({ refused: expect.stringContaining('repo#7') })
+    expect(h.logged).toContain('lands: /repo main → this checkout, lingtai-base')
+    expect(h.files.replaced).toEqual({})
+  })
+
+  it('without the ports (lingtai init) an old origin remote is still refused by the name guard', async () => {
+    const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD } })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    expect(result).toEqual({ refused: expect.stringContaining(ORIGIN) })
+    expect(h.files.replaced).toEqual({})
   })
 })

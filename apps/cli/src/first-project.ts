@@ -41,7 +41,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -55,9 +55,11 @@ import {
   taken,
 } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
+import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
 import { createAppReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
+import { readTasks } from '@lingtai/projector'
 import {
   baseOf,
   diskFiles,
@@ -69,6 +71,7 @@ import {
   type ResolvedRecipe,
   type SignedIn,
 } from '@lingtai/recipe'
+import { mirrorPathFor } from '@lingtai/repo'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -144,6 +147,13 @@ export interface FirstProjectWorld extends QuestionWorld {
   register: (payload: RegisterLocalPayload) => Promise<string>
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
+  /**
+   * The tickets of this project a pass is working now (`<project>#7`), asked of the board's own fold. It
+   * **throws** where the board cannot be read — a failed read is never "nothing in flight" (#772).
+   */
+  inFlight?: (project: string) => Promise<readonly string[]>
+  /** Removes `<home>/repos/<project>.git` so the next cut clones it from the recipe's `repo.remote`; an absent mirror succeeds (#772). */
+  removeMirror?: (project: string) => Promise<void>
   /**
    * The clause a refusal here ends with in place of "Nothing was written" —
    * what is still true about what this caller already wrote before any
@@ -382,6 +392,32 @@ export async function chooseFirstProject(
     : runGithubBranch(world, flags, flags['github'] ?? null, appCheck)
 }
 
+/** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
+function isUrlOrScpLike(remote: string): boolean {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(remote) || /^[^@/\s]+@[^/\s]+:/.test(remote)
+}
+
+/** `origin` as git stores it, resolved to an absolute path when it is a relative one. */
+function resolveRemote(remote: string, top: string): string {
+  return isUrlOrScpLike(remote) ? remote : resolvePath(top, remote)
+}
+
+/**
+ * `FirstProjectWorld.inFlight` over the board: `held` over `readTasks`, not `inFlight()`, whose
+ * `.catch(() => [])` would turn a failed read into "nothing in flight" (#772).
+ */
+export async function liveInFlight(project: string): Promise<string[]> {
+  const tasks = await readTasks({})
+  return held(tasks.filter((card) => card.project.toLowerCase() === project.toLowerCase()))
+}
+
+/** `FirstProjectWorld.removeMirror` over `node:fs`. */
+export async function liveRemoveMirror(project: string, home: string): Promise<void> {
+  await rm(mirrorPathFor(project, home), { recursive: true, force: true })
+}
+
+const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 async function runLocalBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -420,6 +456,15 @@ async function runLocalBranch(
   // overwrite that file (#394 finding 4).
   const registered = await world.projects()
   const found = registered.find((p) => p.project !== null && p.project.toLowerCase() === name.toLowerCase())
+  // True when the recipe names the remote the old `add --local` wrote — the checkout's own `origin` — so this
+  // run moves its landing to the checkout (0104 §15, #772).
+  let moving = false
+  let oldRemote = ''
+  // Only `add --local` rewrites a landing: `init` supplies neither port, and its name guard stays as it was.
+  const ports =
+    world.inFlight !== undefined && world.removeMirror !== undefined
+      ? { inFlight: world.inFlight, removeMirror: world.removeMirror }
+      : null
   if (found !== undefined && found.owner !== null) {
     return {
       refused:
@@ -435,7 +480,14 @@ async function runLocalBranch(
     // proceeding would silently re-point an existing GitHub project's stream
     // at this local directory.
     const existingRemote = await readRecipeKey(name, ['repo', 'remote'], { home: world.home, files: world.files })
-    if (existingRemote !== remote) {
+    if (typeof existingRemote === 'string' && existingRemote !== remote) {
+      // A checkout with no `origin` has only the top level to match.
+      const got = await world.git(toplevel, ['remote', 'get-url', 'origin'])
+      const origin = got.ok && got.stdout.trim() !== '' ? resolveRemote(got.stdout.trim(), toplevel) : null
+      moving = ports !== null && origin !== null && existingRemote === origin
+      oldRemote = existingRemote
+    }
+    if (existingRemote !== remote && !moving) {
       return {
         refused:
           typeof existingRemote === 'string'
@@ -467,7 +519,8 @@ async function runLocalBranch(
       flag: '--base <branch>',
       given: flags['base'] ?? null,
       prompt: "the branch this project's recipe governs and merges into",
-      current: typeof currentBase === 'string' ? currentBase : null,
+      // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
+      current: typeof currentBase === 'string' && ports === null ? currentBase : null,
       detected,
       kept: world.kept,
       ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
@@ -509,6 +562,44 @@ async function runLocalBranch(
     return { refused: noRuntimesSignedInRefusal(runtimes) }
   }
 
+  // A move is the remote leaving the old one, or the base differing from the one recorded.
+  const migrating =
+    ports !== null && found !== undefined && (moving || (typeof currentBase === 'string' && currentBase !== base))
+  // Every refusal of a move comes before the first write — the branch below is one.
+  if (migrating && ports !== null) {
+    world.log(
+      `lands: ${moving ? oldRemote : remote} ${typeof currentBase === 'string' ? currentBase : '(none)'} → this checkout, ${base}`,
+    )
+    let flying: readonly string[]
+    try {
+      flying = await ports.inFlight(name)
+    } catch (error) {
+      return {
+        refused: `could not read the board to check for a pass of ${name} in flight — ${errorText(error)}. ${world.kept}`,
+      }
+    }
+    if (flying.length > 0) {
+      return {
+        refused:
+          `a pass of ${name} is in flight (${flying.join(', ')}) — moving its landing under it would cut and land ` +
+          `on two remotes. Run this again once they finish, or after lingtai shutdown. ${world.kept}`,
+      }
+    }
+    const confirmed = await world.ask(
+      `Move ${name}'s landing from ${oldRemote} to this checkout, and rebuild its mirror? [y/N]`,
+      {
+        message: `Move ${name}'s landing to this checkout?`,
+        defaultValue: 'no',
+        choices: ['yes', 'no'],
+        kept: world.kept,
+      },
+    )
+    // `null` is no terminal: the line above is the record.
+    if (confirmed !== null && !/^y(es)?$/i.test(confirmed.trim())) {
+      return { refused: `${name}'s landing was not moved. ${world.kept}` }
+    }
+  }
+
   // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
   // cuts from a mirror of this checkout at `base`.
   let madeKept: string | null = null
@@ -529,6 +620,20 @@ async function runLocalBranch(
     }
     fromSha = tip.stdout.trim()
     madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+  }
+
+  if (moving && ports !== null) {
+    // The mirror keeps the `origin` it was cloned with, so it is cloned again from the checkout.
+    try {
+      await ports.removeMirror(name)
+    } catch (error) {
+      return {
+        refused:
+          `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed` +
+          (madeKept === null ? '' : `; ${madeKept} is kept`) +
+          '.',
+      }
+    }
   }
 
   const path = recipePath(name, world.home)
@@ -942,6 +1047,8 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
         options.log,
       ),
     history: liveHistory,
+    inFlight: liveInFlight,
+    removeMirror: (project) => liveRemoveMirror(project, home),
     github: {
       auth: () => githubAuthKind(),
       ghStatus: () => ghStatus(),
