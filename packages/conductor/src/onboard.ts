@@ -663,8 +663,8 @@ export interface AddLocalOptions {
 export async function addLocal(
   options: AddLocalOptions,
   resolved: ResolvedRecipe,
-  log: (line: string) => void = console.log,
-): Promise<string> {
+  log: (line: string) => void = () => {},
+): Promise<{ line: string; updated: boolean }> {
   const stream = projectStream(options.project)
   const existing = await eventStore.read(stream)
   await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
@@ -682,5 +682,5 @@ export async function addLocal(
   ])
   const line = registrationLine(existing, options.project, resolved)
   log(line)
-  return line
+  return { line, updated: isRegistered(reduceProject(existing)) }
 }

@@ -244,15 +244,17 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       signedIn: async () => ['claude-code'] as never[],
       registerLocal: async (payload) => {
         seen.registered.push({ project: payload.project, base: payload.base })
-        return (script.registerLocal ?? (async (p) => `added ${p.project}`))({
+        const line = await (script.registerLocal ?? (async (p) => `added ${p.project}`))({
           project: payload.project,
           base: payload.base,
         })
+        return { line, updated: false }
       },
       history: async () => [],
       doctor: async () => ({
-        text: script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
-        failed: false,
+        report: { ok: 0, notChecked: 0, deferred: 0 },
+        toFix: { count: 0, failed: false },
+        blocks: script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
       }),
     },
   }
@@ -303,7 +305,7 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
-    expect(seen.lines.join('\n')).toContain('project  local — repo, registered with the checkout itself as repo.remote')
+    expect(seen.lines.join('\n')).toMatch(/init {2}repo/)
   })
 
   it('a local project, once registered, is listed on a re-run rather than asked about again (#394)', async () => {

@@ -369,8 +369,8 @@ describe('askLimits', () => {
     expect(limits.wall).toBe('30m')
     expect(limits.usd).toBe(4)
 
-    // passCeiling's own sentence, with the dollar figure this run answered.
-    expect(lines.some((l) => l.includes('$4'))).toBe(true)
+    // The per-answer echo of the ceiling is gone (#773); a dollar ceiling's warning stays.
+    expect(lines.some((l) => l.includes('a pass'))).toBe(false)
   })
 
   it('--budget none removes usd', async () => {
@@ -409,20 +409,6 @@ describe('askLimits', () => {
     const { world: w, asked } = world(['', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, files })
     expect(asked[2]).toContain('[none]')
-  })
-
-  it("the printed ceiling is implement's own narrower bound, not the recipe's wide runtime.limits", async () => {
-    const files = mapFiles({ [PATH]: NARROW_IMPLEMENT })
-    const { world: w, lines } = world(['', '', ''])
-    // Pressing enter on every question — the ceiling itself is unchanged by
-    // this run, only the sentence that reports it is under test.
-    const result = await askLimits(w, PROJECT, {}, { home: HOME, files })
-    expect(result).toEqual({ ok: true })
-
-    const printed = lines.find((l) => l.includes('a pass'))!
-    expect(printed).toContain('10m')
-    expect(printed).toContain('4 turns')
-    expect(printed).not.toContain('2h')
   })
 
   it('a Ctrl+C at the third question keeps the first two answers — each is its own setRecipe call', async () => {

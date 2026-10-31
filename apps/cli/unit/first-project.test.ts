@@ -136,7 +136,7 @@ function harness(options: {
     setupReader: options.setupReader ?? (() => EMPTY_SETUP_READER),
     register: async (payload) => {
       registered.push(payload)
-      return `added ${payload.project}`
+      return { line: `added ${payload.project}`, updated: false }
     },
     kept: options.kept ?? 'Nothing was written',
     history: options.history ?? (async () => []),
@@ -195,13 +195,14 @@ describe('chooseFirstProject — the local branch (#394)', () => {
 
     const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       project: 'local',
       name: 'repo',
       remote: '/repo',
       base: 'lingtai-base',
       trial: expect.objectContaining({ trial: 'not-run' }),
+      updated: false,
     })
     expect(registered).toHaveLength(1)
     expect(registered[0]).toMatchObject({

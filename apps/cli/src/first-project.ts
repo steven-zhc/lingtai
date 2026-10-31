@@ -91,6 +91,7 @@ import { acceptingDefaults, question, spun, type QuestionWorld } from './questio
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
+import { cardRecipe, type CardRecipe } from './setup-card.ts'
 import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
 
@@ -144,7 +145,7 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** `askRecipe`'s `reader`, for the local branch's `askInstallAndBuild` (#431) — a real directory, over `node:fs`. */
   setupReader: (dir: string) => SetupReader
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
-  register: (payload: RegisterLocalPayload) => Promise<string>
+  register: (payload: RegisterLocalPayload) => Promise<{ line: string; updated: boolean }>
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
@@ -197,7 +198,22 @@ export interface FirstProjectWorld extends QuestionWorld {
 }
 
 export type FirstProjectOutcome =
-  | { ok: true; project: 'local'; name: string; remote: string; base: string; trial: TrialOutcome }
+  | {
+      ok: true
+      project: 'local'
+      name: string
+      remote: string
+      base: string
+      trial: TrialOutcome
+      /** The recipe as written, for the summary card. */
+      card: CardRecipe
+      /** The project was already registered. */
+      updated: boolean
+      /** The runtimes this run already probed. */
+      runtimes: readonly RuntimeFound[]
+      /** Lines the card's closing prints, muted, after the groups. */
+      hints: string[]
+    }
   | { ok: true; project: 'github'; app: 'already' | AppWaitResult; slug?: string; auth?: 'gh' }
   | { refused: string }
 
@@ -716,7 +732,7 @@ async function runLocalBranch(
 
   // `register`'s live implementation (`addLocal`) logs the "added"/"updated"
   // line itself — logging it again here printed it twice.
-  await world.register({
+  const registration = await world.register({
     project: name,
     owner: null,
     base: final,
@@ -731,6 +747,10 @@ async function runLocalBranch(
     remote,
     base: final,
     trial: recipeResult.trial,
+    card: cardRecipe(finalRecipe, toplevel),
+    updated: registration.updated,
+    runtimes,
+    hints: recipeResult.hints,
   }
 }
 
@@ -1047,7 +1067,6 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
       addLocal(
         { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },
         payload.resolved,
-        options.log,
       ),
     history: liveHistory,
     inFlight: liveInFlight,

@@ -199,18 +199,24 @@ describe('renderReadyLine', () => {
   const report = (results: DoctorReport['results']): DoctorReport =>
     ({ results, ok: 27, failed: 0, skipped: 0, deferred: 3, notChecked: 10, warned: 0 }) as unknown as DoctorReport
 
+  const ready = (r: DoctorReport) => {
+    const bad = r.results.filter((x) => x.status === 'fail').length
+    const warn = r.results.filter((x) => x.status === 'warn').length
+    return { report: r, toFix: { count: bad + warn, failed: bad > 0 } }
+  }
+
   it('is ready with doctor’s count when nothing is left to fix', () => {
-    const line = stripColour(renderReadyLine({ report: report([]) }, '/r.yml'))
+    const line = stripColour(renderReadyLine(ready(report([])), '/r.yml'))
     expect(line).toMatch(/^✓ ready — doctor: all 27 passed · .*recipe: \/r\.yml$/)
   })
 
   it('is ready with N to fix on warnings alone', () => {
-    const line = stripColour(renderReadyLine({ report: report([result('warn', 'a'), result('warn', 'b')]) }, '/r.yml'))
+    const line = stripColour(renderReadyLine(ready(report([result('warn', 'a'), result('warn', 'b')])), '/r.yml'))
     expect(line).toBe('✓ ready · 2 to fix · recipe: /r.yml')
   })
 
   it('is not ready on a failure, and never says ready', () => {
-    const line = stripColour(renderReadyLine({ report: report([result('fail', 'a'), result('warn', 'b')]) }, '/r.yml'))
+    const line = stripColour(renderReadyLine(ready(report([result('fail', 'a'), result('warn', 'b')])), '/r.yml'))
     expect(line).toBe('✗ not ready · recipe: /r.yml')
     expect(line).not.toContain('✓ ready')
   })

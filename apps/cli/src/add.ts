@@ -1,3 +1,6 @@
+import { storeChoice, type StoreChoice } from '@lingtai/env'
+import { recipePath } from '@lingtai/recipe'
+
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
  * positional, which asks the same GitHub-or-directory question `lingtai init`
@@ -20,12 +23,21 @@ import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts
 import { chooseFirstProject, liveFirstProjectWorld, type FirstProjectWorld } from './first-project.ts'
 import { liveAsk, liveSpin } from './prompt.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
+import { liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
 
 export interface AddWorld {
   project: FirstProjectWorld
   /** `askBeforeGithubAdd`'s own deps — its live ones unless a test says otherwise. */
   githubDeps?: AskBeforeGithubAddDeps
   error: (line: string) => void
+  /** Where the card goes — the same `log` the questions were asked through. */
+  log: (line: string) => void
+  /** The report `init` runs, against the same home. */
+  doctor: () => Promise<SetupDoctor>
+  /** The store this machine answers with, read the way `init` reads it. */
+  store: () => StoreChoice
+  /** For the card's `~` substitution. */
+  userHome: string
 }
 
 export async function addFlow(
@@ -75,6 +87,26 @@ export async function addFlow(
     )
     return 2
   }
+  if (result.project === 'local') {
+    await printSetupEnd(
+      world,
+      {
+        command: 'add',
+        project: result.name,
+        updated: result.updated,
+        home: world.project.home,
+        // Only `init` writes `config.yml`.
+        homeIsNew: false,
+        userHome: world.userHome,
+        store: world.store(),
+        runtimes: result.runtimes,
+        recipe: result.card,
+        trial: result.trial,
+        recipePath: recipePath(result.name, world.project.home),
+      },
+      result.hints,
+    )
+  }
   return 0
 }
 
@@ -82,5 +114,9 @@ export function liveAddWorld(): AddWorld {
   return {
     project: liveFirstProjectWorld({ ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) }),
     error: (line) => console.error(line),
+    log: (line) => console.log(line),
+    doctor: liveSetupDoctor,
+    store: () => storeChoice(process.env),
+    userHome: process.env['HOME'] ?? '',
   }
 }

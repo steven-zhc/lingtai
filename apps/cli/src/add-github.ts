@@ -25,6 +25,7 @@
 import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
 
@@ -424,6 +425,7 @@ export async function askBeforeGithubAdd(
     console.error(recipeResult.refused)
     return 1
   }
+  for (const line of recipeResult.hints) console.log(paint.muted(line))
 
   return null
 }

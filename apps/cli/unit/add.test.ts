@@ -62,6 +62,7 @@ interface Harness {
   world: AddWorld
   asked: string[]
   errors: string[]
+  logged: string[]
 }
 
 /**
@@ -90,7 +91,7 @@ function ttyHarness(): Harness {
       [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }] as RuntimeFound[],
     setupReader: () => SETUP_READER,
     exists: async () => true,
-    register: async (payload) => `added ${payload.project}`,
+    register: async (payload) => ({ line: `added ${payload.project}`, updated: false }),
     kept: 'Nothing was written',
     history: async () => [],
     inFlight: async () => [],
@@ -105,7 +106,20 @@ function ttyHarness(): Harness {
       add: async () => 1,
     },
   }
-  return { world: { project, error: (line) => errors.push(line) }, asked, errors }
+  const logged: string[] = []
+  const world: AddWorld = {
+    project,
+    error: (line) => errors.push(line),
+    log: (line) => logged.push(line),
+    doctor: async () => ({
+      report: { ok: 27, notChecked: 10, deferred: 3 },
+      toFix: { count: 0, failed: false },
+      blocks: '',
+    }),
+    store: () => ({ store: 'sqlite', path: `${HOME}/lingtai.db`, from: 'default', where: 'default' }) as never,
+    userHome: '/home/me',
+  }
+  return { world, asked, errors, logged }
 }
 
 describe('addFlow at a TTY asks the project and recipe questions, and nothing before them (#435)', () => {
@@ -125,9 +139,22 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     // answers every question beneath it without asking again — and then the summary's confirm.
     for (const prompt of asked.slice(1)) {
       expect(prompt).toMatch(
-        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?|register with the checks and landing above\?/,
+        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?|register anyway\?/,
       )
     }
     expect(asked.length).toBeGreaterThan(1)
+  })
+
+  it('a local add prints the card with add <project> and doctor’s count (#773)', async () => {
+    const { world, logged } = ttyHarness()
+    expect(await addFlow(flagsFromArgv([]), world)).toBe(0)
+    const rows = logged
+      .join('\n')
+      .split('\n')
+      .map((l) => l.trimStart())
+    expect(rows[0]).toBe('add  repo')
+    expect(rows.find((l) => l.startsWith('trial '))).toBeDefined()
+    expect(rows.find((l) => l.includes('ready — doctor: all 27 passed'))).toBeDefined()
+    expect(rows.find((l) => /^(added|Before registering)/.test(l))).toBeUndefined()
   })
 })

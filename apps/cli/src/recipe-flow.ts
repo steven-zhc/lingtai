@@ -26,7 +26,6 @@ import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
-import { paint } from '@lingtai/env/colour'
 import { readJson, snapshotPath } from '@lingtai/projector'
 import {
   baseOf,
@@ -42,7 +41,6 @@ import {
 import { askAgents } from './agents.ts'
 import type { SetupReader } from './detect-setup.ts'
 import { askLanding, askLimits } from './landing.ts'
-import { heading, keyValues } from './output.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
@@ -218,27 +216,6 @@ export async function summariseRecipe(
   }
 }
 
-/** The block printed ahead of the confirm: which checks run, whether anyone reads it, and whether a person approves the merge. */
-export function renderSummary(project: string, summary: Summary, again: string): string {
-  const rows: (readonly [string, string])[] = [
-    [
-      'checks',
-      summary.checks.length > 0
-        ? summary.checks.join(' · ')
-        : 'none — steps.build is empty, so nothing checks a diff before review',
-    ],
-    ['review', summary.review ?? 'none'],
-    [
-      'landing',
-      summary.landsUnattended
-        ? `unattended — a pass that clears review lands on ${summary.base || 'the base branch'} with no person`
-        : 'held — every pass stops at proposed for a person',
-    ],
-    ['change', again],
-  ]
-  return [heading(`Before registering ${project}`), ...keyValues(rows).map((line) => `  ${line}`)].join('\n')
-}
-
 /** `setRecipe`, with its throw turned into the same `{refused}` shape every question here returns. */
 async function writeOrRefuse(
   project: string,
@@ -257,7 +234,7 @@ async function writeOrRefuse(
 export async function askRecipe(
   world: QuestionWorld,
   at: RecipeAt,
-): Promise<{ ok: true; trial: TrialOutcome } | { refused: string }> {
+): Promise<{ ok: true; trial: TrialOutcome; hints: string[] } | { refused: string }> {
   const fileOptions = { home: at.home, files: at.files }
   const files = at.files ?? diskFiles
   const path = recipePath(at.project, at.home)
@@ -408,8 +385,7 @@ export async function askRecipe(
   // Last, and read back from the file: every registration follows this function (#542).
   const summary = await summariseRecipe(at.project, fileOptions)
   if ('refused' in summary) return summary
-  world.log(renderSummary(at.project, summary, at.again))
-  for (const line of priceHints(summary.models, (at.rates ?? fetchedRates)())) world.log(paint.muted(line))
+  const hints = priceHints(summary.models, (at.rates ?? fetchedRates)())
 
   // Only the defaults can reach here without anyone having looked: a person who
   // typed an answer, or named `--build none` or `--land <branch>`, chose it.
@@ -417,11 +393,18 @@ export async function askRecipe(
   const unseenUnattended = summary.landsUnattended && at.flags['land'] === undefined
   if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
     // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
+    const lands = `a pass lands on ${summary.base || 'the base branch'} with no one asking`
+    const asks =
+      unseenEmptyBuild && unseenUnattended
+        ? `nothing checks a diff before review, and ${lands}`
+        : unseenEmptyBuild
+          ? 'nothing checks a diff before review'
+          : lands
     const confirmed = await question(world, {
-      name: 'the summary above',
+      name: 'registering with these defaults',
       flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
       given: at.flags['defaults'] !== undefined ? 'yes' : null,
-      prompt: 'register with the checks and landing above?',
+      prompt: `${asks} — register anyway?`,
       choices: ['yes', 'no'],
       fallback: 'yes',
       kept: at.kept,
@@ -429,10 +412,10 @@ export async function askRecipe(
     if ('refused' in confirmed) return confirmed
     if (confirmed.answer === 'no') {
       return {
-        refused: `stopped at the summary — nothing was registered. ${at.kept}; running it again offers what was written as the defaults`,
+        refused: `stopped before registering — nothing was registered. ${at.kept}; running it again offers what was written as the defaults`,
       }
     }
   }
 
-  return { ok: true, trial }
+  return { ok: true, trial, hints }
 }

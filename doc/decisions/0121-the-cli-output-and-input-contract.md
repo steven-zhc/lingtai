@@ -235,9 +235,11 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 ## Not built yet
 
-- **`init` and `add` still print their questions' headings and the old
-  sections**, close on one `next:` line, and `add` on a GitHub repository still
-  prints every resolved setting after the summary.
+- **A local `init` and `add --local` end on the card** (#773). The GitHub
+  paths (`init --project github`, `add <owner>/<repo>`) and a machine that
+  already has projects still print the old sections, and `add` on a GitHub
+  repository still prints every resolved setting after the summary (#755,
+  #756); the closing `next:` is still one line (#756).
 
 ## Example
 
