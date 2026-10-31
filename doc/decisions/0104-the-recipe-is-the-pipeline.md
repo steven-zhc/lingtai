@@ -212,9 +212,5 @@ in the source.
   templating another field.
 
 
-## Not built yet
-
-- **§15 is half built.** The land does not check what is checked out.
-
 ---
 *Replaces archived 0005, 0028, 0029, 0045, 0046, 0047, 0061, 0063, 0071 in [decisions-archive](../decisions-archive/).*

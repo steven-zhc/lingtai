@@ -138,6 +138,8 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   'pending-migration': 'person',
   /** The integrator's own worktree was not clean. Lingtai cut that worktree. */
   'dirty-base': 'lingtai',
+  /** A person must switch the remote's checkout to another branch; nothing Lingtai or an agent can do. */
+  'base-checked-out': 'person',
   /** Lingtai's mirror and origin disagree about the base. Lingtai's mirror. */
   'unpushed-base': 'lingtai',
   /**
@@ -253,7 +255,7 @@ export function whoseFailure(failure: AttributedFailure): FailureOwner {
 const REFUSAL_READING: Record<
   RefusalReason,
   {
-    says: (where: { branch: string; base: string }) => string
+    says: (where: { branch: string; base: string; detail: string }) => string
     /** The move this refusal implies, or null when nobody can name one. */
     move: BlockRecommendation | null
   }
@@ -290,6 +292,18 @@ const REFUSAL_READING: Record<
     says: ({ branch, base }) =>
       `Lingtai's own checkout of ${base} was not clean, so the merge was refused. Nothing is wrong with ${branch}.`,
     move: null,
+  },
+  'base-checked-out': {
+    // The lane composes the whole sentence, with the directory, project and
+    // issue it alone holds, as the first line of `detail`.
+    says: ({ base, detail }) =>
+      detail.split('\n', 1)[0]?.trim() ||
+      `${base} is checked out in the remote's working tree — switch to another branch, then approve it.`,
+    // Approving re-runs only the land; a requeue would buy the work again (0108 §8).
+    move: {
+      action: 'approve',
+      why: 'once the remote has another branch checked out, approving re-runs only the land — a requeue would pay for the work again',
+    },
   },
   'unpushed-base': {
     says: ({ branch, base }) =>
@@ -404,7 +418,7 @@ export function diagnoseRefusal(input: {
   base: string
 }): BlockDiagnosis {
   const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null
-  const where = { branch: input.branch, base: input.base }
+  const where = { branch: input.branch, base: input.base, detail: input.detail }
   const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,
