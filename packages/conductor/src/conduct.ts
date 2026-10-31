@@ -4728,6 +4728,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (reason._tag === 'AgentCrashed' && reason.cause === 'crash' && metTheAccountWall(reason.detail)) {
           yield* standDownConductor({ of: 'mid-run', step: reason.step }, reason.detail)
         }
+        // A hold is a returned success, so the span is told which holds are a
+        // failure (#791): only a wait for what a person was asked — a question
+        // or a signoff — has nothing refused or crashed behind it. An unreadable
+        // answer, a crash, a refused check or an escalated finding is a failure
+        // that a person was handed.
+        const asked =
+          reason._tag === 'OwnQuestion' ||
+          reason._tag === 'AgentQuestion' ||
+          reason._tag === 'SignoffRequired' ||
+          (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded')
+        if (!asked) yield* Effect.annotateCurrentSpan(FAILED, true)
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
           ok: 'held',

@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { installTracing, type Tracing } from '../src/telemetry.ts'
 import { tellGitHubAbout } from '../src/tell.ts'
 import {
+  HUMAN_BEFORE_THE_LANE,
   REVIEWED,
   fakeGitHub,
   fakePorts,
@@ -22,6 +23,7 @@ import {
   once,
   project,
   refusingRuntime,
+  reviewerThatCrashes,
   runtime,
 } from '../test/one-pass.ts'
 
@@ -225,17 +227,26 @@ describe('with an endpoint', () => {
     }
   })
 
-  it('a pass held for the approval it was asked for exports its run as unset, not ERROR', async () => {
-    const { result, spans } = await pass(REVIEWED, runtime)
+  it('a pass held for the signoff it was asked for exports its run as unset, not ERROR', async () => {
+    const { result, spans } = await pass(HUMAN_BEFORE_THE_LANE, runtime)
     expect(result.ok).toBe('held')
     const run = spans.find((s) => s.name === 'conductor.run')!
     expect(run.status.code).not.toBe(2)
     expect(run.status.message).toBeUndefined()
   })
 
-  it('a reviewer refusal routed to a person does not export its run as ERROR when the result is held', async () => {
-    const { result, spans } = await pass(REVIEWED, refusingRuntime)
+  it('a run held on an unreadable reviewer answer exports ERROR too', async () => {
+    const { result, spans } = await pass(REVIEWED, runtime)
+    expect(result.ok).toBe('held')
+    expect(spans.find((s) => s.name === 'conductor.run')!.status.code).toBe(2)
+  })
+
+  it('a run held because the reviewer crashed exports ERROR, with no message', async () => {
+    const { result, spans } = await pass(REVIEWED, reviewerThatCrashes({ n: 0 }))
+    expect(result.ok).toBe('held')
     const run = spans.find((s) => s.name === 'conductor.run')!
-    expect(run.status.code === 2).toBe(result.ok === false)
+    expect(run.status.code).toBe(2)
+    expect(run.status.message).toBeUndefined()
+    expect(run.attributes).toEqual({ 'lingtai.ticket': 7 })
   })
 })
