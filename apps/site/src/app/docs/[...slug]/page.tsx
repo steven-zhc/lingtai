@@ -96,7 +96,7 @@ export default async function DocPage({ params }: Params) {
   return (
     <>
       <Bar />
-      <main className={slug === 'tutorial' ? 'tutorial-page' : undefined}>
+      <main>
         <div className="wrap doc-wrap">
           <section style={{ paddingTop: 32 }}>
             <p className="kicker">
