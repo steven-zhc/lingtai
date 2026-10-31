@@ -250,8 +250,9 @@ async function under(dirs: readonly string[]): Promise<string[]> {
 }
 
 /** Every file under `{apps,packages}/*<!---->/src/`, whatever the rule makes of it. */
-async function everything(): Promise<string[]> {
-  return under(['src'])
+let everythingOnce: Promise<readonly string[]> | undefined
+async function everything(): Promise<readonly string[]> {
+  return (everythingOnce ??= under(['src']))
 }
 
 /** Those of them the rule reads, and nothing under `doc/`. */
@@ -268,8 +269,38 @@ async function sources(): Promise<string[]> {
  * doc/reference.md for the tables and {apps,packages}/<!---->*<!---->/src/ for
  * the violations* is the case that keeps them out of the ledger.
  */
+let halvesOnce: Promise<string[]> | undefined
 async function halves(): Promise<string[]> {
-  return (await under(['unit', 'integration', 'test'])).filter((file) => READS.test(file))
+  return (halvesOnce ??= under(['unit', 'integration', 'test']).then((all) => all.filter((file) => READS.test(file))))
+}
+
+/** How many files `read` has actually read and parsed, as opposed to served from `reads`. */
+let parsed = 0
+const reads = new Map<string, Promise<{ tokens: string[]; entries: string[] }>>()
+
+/**
+ * **A file on disk, read and parsed once per run of this file.** Keyed by the
+ * repo-relative path, whose extension decides both `classes` versus
+ * `readEntries` and the script kind. The promise is stored, so concurrent
+ * callers share one read. Strings written inside a test go through `tokens`
+ * and `entries` directly and never reach here.
+ */
+function readOnce(file: string): Promise<{ tokens: string[]; entries: string[] }> {
+  let hit = reads.get(file)
+  if (!hit) {
+    hit = readFile(`${root}${file}`, 'utf8').then((src) => {
+      parsed++
+      if (file.endsWith('.css')) {
+        const found = classes(src)
+        return { tokens: found, entries: found }
+      }
+      const found = readEntries(src, file)
+      // Must stay identical to `tokens`' regex and `scannable`'s join above.
+      return { tokens: found.join('\n').match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [], entries: found }
+    })
+    reads.set(file, hit)
+  }
+  return hit
 }
 
 /** file → token → how many times the rule reads it there. */
@@ -458,13 +489,13 @@ async function count(files: readonly string[], g: ReturnType<typeof parse>): Pro
   const pairs = new Set(g.pairs.map(([a, b]) => `${a} ${b}`))
   const found = new Map<string, Map<string, number>>()
   for (const file of files) {
-    const src = await readFile(`${root}${file}`, 'utf8')
+    const read1 = await readOnce(file)
     const hit = new Map<string, number>()
-    for (const token of tokens(src, file)) {
+    for (const token of read1.tokens) {
       if (exempt.has(`${file} · ${token}`)) continue
       if (glued.has(token) || words(token).some((w) => retired.has(w))) hit.set(token, (hit.get(token) ?? 0) + 1)
     }
-    for (const entry of entries(src, file)) {
+    for (const entry of read1.entries) {
       for (const key of pairHits(entry, pairs)) hit.set(key, (hit.get(key) ?? 0) + 1)
     }
     if (hit.size > 0) found.set(file, new Map([...hit].sort(([a], [b]) => (a < b ? -1 : 1))))
@@ -524,6 +555,15 @@ describe('the retired names in doc/reference.md', () => {
    * different word. `work` immediately before `item` or `items` is the retired
    * concept, and only that pair is caught (`#450`, 2026-10-18).
    */
+  it('reads and parses each file once, however many times it is asked', async () => {
+    const g = await glossary()
+    await violations(g)
+    const after = parsed
+    await violations(g)
+    expect(parsed, 'a second scan parsed a file again').toBe(after)
+    expect(parsed).toBeLessThanOrEqual((await sources()).length + (await halves()).length)
+  })
+
   it('names the pair work + item, and it is pinned here', async () => {
     const g = await glossary()
 
@@ -710,9 +750,7 @@ describe('the retired names in doc/reference.md', () => {
     // the raw file text is the mistake to make here: the rule reads no comment,
     // so a text guard reports a subject the matcher can never be handed and
     // stays green with every one of these identifiers renamed away.
-    const read = new Set(
-      (await Promise.all((await sources()).map(async (f) => tokens(await readFile(`${root}${f}`, 'utf8'), f)))).flat(),
-    )
+    const read = new Set((await Promise.all((await sources()).map(async (f) => (await readOnce(f)).tokens))).flat())
 
     for (const token of ['checkpoint', 'checkpoints']) {
       expect(read.has(token), `the rule reads no ${token} in src/ — this case has gone stale`).toBe(true)
