@@ -35,7 +35,8 @@ export interface CardRecipe {
 
 export interface SetupCardFacts {
   command: 'init' | 'add'
-  project: string
+  /** Absent where there is no project yet (`init --project github`). */
+  project?: string
   /** The project was already registered. */
   updated: boolean
   home: string
@@ -45,9 +46,17 @@ export interface SetupCardFacts {
   userHome: string
   store: StoreChoice
   runtimes: readonly RuntimeFound[]
-  recipe: CardRecipe
-  trial: TrialOutcome
-  recipePath: string
+  /** Where the code lives: a checkout (`local`, the default), or a repository on GitHub. */
+  where?: 'local' | 'github'
+  /** How this machine reaches GitHub — `gh, signed in as me`, `the App x` — as a row of *this machine*. */
+  github?: string
+  /**
+   * `recipe` and `trial` come together, or not at all: `init --project github` has no repository yet, so
+   * its card is *this machine* alone and `recipePath` is absent with them.
+   */
+  recipe?: CardRecipe
+  trial?: TrialOutcome
+  recipePath?: string
 }
 
 /**
@@ -114,7 +123,8 @@ function agentsRow(runtimes: readonly RuntimeFound[]): string {
 /** `git@host:o/r` — user without a password, then `host:path`; the only non-URL remote printed as written. */
 const SCP_REMOTE = /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/
 
-function landsOnRow(recipe: CardRecipe, userHome: string): string {
+function landsOnRow(recipe: CardRecipe, userHome: string, site: 'local' | 'github'): string {
+  if (site === 'github') return `${recipe.base}, on GitHub`
   if (recipe.remote === null) return recipe.base
   const remote = recipe.remote
   // A remote that does not parse as a URL is printed only when it is plainly a path or scp-style;
@@ -152,7 +162,8 @@ type Row = readonly [label: string, value: string]
 
 /** The card: a heading, three groups a blank line apart, one fact a row. No closing line — that is `renderReadyLine`. */
 export function renderSetupCard(facts: SetupCardFacts): string {
-  const { recipe, userHome } = facts
+  const { recipe, trial, userHome } = facts
+  const where = facts.where ?? 'local'
   const home = `${tilde(facts.home, userHome)}${facts.homeIsNew ? '  new' : ''}`
   const groups: { title: string; rows: Row[] }[] = [
     {
@@ -161,29 +172,37 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         ['home', home],
         ['log', logRow(facts.store)],
         ['agents', agentsRow(facts.runtimes)],
-      ],
-    },
-    {
-      title: 'this project',
-      rows: [
-        ['code', `${tilde(recipe.code, userHome)}  local`],
-        ['lands on', landsOnRow(recipe, userHome)],
-        ['tickets', `${recipe.tickets === 'db' ? 'Lingtai’s table' : 'GitHub issues'} · ${recipe.kinds.join(' › ')}`],
-      ],
-    },
-    {
-      title: 'each pass',
-      rows: [
-        ['writes', agentRow(recipe.writer)],
-        ['reviews', agentRow(recipe.reviewer)],
-        ['checks', recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review'],
-        ['trial', trialRow(facts.trial)],
-        ['approve', recipe.approves ? 'you approve every pass before it lands' : 'a pass lands with no one asking'],
+        ...(facts.github === undefined ? [] : [['github', facts.github] as const]),
       ],
     },
   ]
+  if (recipe !== undefined && trial !== undefined) {
+    groups.push(
+      {
+        title: 'this project',
+        rows: [
+          ['code', where === 'github' ? `${recipe.code}  github` : `${tilde(recipe.code, userHome)}  local`],
+          ['lands on', landsOnRow(recipe, userHome, where)],
+          ['tickets', `${recipe.tickets === 'db' ? 'Lingtai’s table' : 'GitHub issues'} · ${recipe.kinds.join(' › ')}`],
+        ],
+      },
+      {
+        title: 'each pass',
+        rows: [
+          ['writes', agentRow(recipe.writer)],
+          ['reviews', agentRow(recipe.reviewer)],
+          [
+            'checks',
+            recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
+          ],
+          ['trial', trialRow(trial)],
+          ['approve', recipe.approves ? 'you approve every pass before it lands' : 'a pass lands with no one asking'],
+        ],
+      },
+    )
+  }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
-  const top = `${heading(facts.command)}  ${facts.project}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
+  const top = `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),
@@ -192,12 +211,13 @@ export function renderSetupCard(facts: SetupCardFacts): string {
 }
 
 /** The line the card closes on: ready, ready with things to fix, or not ready — never `✓ ready` for a failure or a doctor that threw. */
-export function renderReadyLine(input: ReadyInput, recipePath: string): string {
-  const tail = `recipe: ${recipePath}`
-  if ('threw' in input) return `${symbol.fail()} not ready — doctor did not finish (${input.threw}) · ${tail}`
+export function renderReadyLine(input: ReadyInput, recipePath?: string): string {
+  const tail = recipePath === undefined ? null : `recipe: ${recipePath}`
+  const end = tail === null ? '' : ` · ${tail}`
+  if ('threw' in input) return `${symbol.fail()} not ready — doctor did not finish (${input.threw})${end}`
   const { count, failed } = input.toFix
-  if (failed) return `${symbol.fail()} not ready · ${tail}`
-  if (count > 0) return `${symbol.pass()} ready · ${count} to fix · ${tail}`
+  if (failed) return `${symbol.fail()} not ready${end}`
+  if (count > 0) return `${symbol.pass()} ready · ${count} to fix${end}`
   const { notChecked, deferred } = input.report
-  return `${symbol.pass()} ready — doctor: all ${input.report.ok} passed · ${notChecked} not checked here · ${deferred} not implemented yet · ${tail}`
+  return `${symbol.pass()} ready — doctor: all ${input.report.ok} passed · ${notChecked} not checked here · ${deferred} not implemented yet${end}`
 }

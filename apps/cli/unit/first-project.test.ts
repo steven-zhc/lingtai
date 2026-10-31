@@ -157,7 +157,7 @@ function harness(options: {
       boardUrl: async () => options.boardUrl ?? null,
       waitForApp: options.waitForApp ?? (async () => ({ skipped: true })),
       picker: options.picker ?? (async () => ({ installations: [], installUrl: null })),
-      add: options.add ?? (async () => 1),
+      add: options.add ?? (async () => ({ ok: false as const })),
     },
   }
   return { world, asked, logged, registered, files, authWrites, removed }
@@ -420,7 +420,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       kept: 'the store chosen above is kept',
       waitForApp: async () => (calls.push('waitForApp'), { skipped: true }),
       picker: async () => (calls.push('picker'), { installations: [], installUrl: null }),
-      add: async () => (calls.push('add'), 1),
+      add: async () => (calls.push('add'), { ok: false as const }),
     })
 
     const result = await chooseFirstProject(world, { defaults: '' })
@@ -691,7 +691,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (options, log) => {
         added.push(options)
         log('installation 7 on acme (selected)')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -702,12 +702,15 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       project: 'github',
       app: { made: { slug: 'lingtai-steven', owner: 'steven-zhc' } },
       slug: 'acme/widget',
+      updated: false,
+      warnings: [],
+      reach: { kind: 'gh', login: 'me' },
     })
     // Written once the App answered, not before.
     expect(authWrites).toEqual(['app'])
     expect(added).toHaveLength(1)
     expect(added[0]).toMatchObject({ slug: 'acme/widget' })
-    expect(logged).toContain('installation 7 on acme (selected)')
+    expect(logged).not.toContain('installation 7 on acme (selected)')
   })
 
   it('a repository the App cannot see is refused by name, and add is never called', async () => {
@@ -720,7 +723,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -769,7 +772,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -809,7 +812,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (_options, log) => {
         log('installation 7 on acme (selected)')
         log('the installation is missing permissions:')
-        return 1
+        return { ok: false as const }
       },
     })
 
@@ -823,7 +826,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     expect(logged).toEqual(['github       app — a GitHub App is configured here'])
   })
 
-  it('a successful registration is logged once, after add returns', async () => {
+  it("a successful registration prints none of what add logged: that is the card's, not a dump (#755)", async () => {
     const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
     const picker = await listRepositories({ reader, projects: [], installUrl: null })
 
@@ -832,14 +835,15 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       picker: async () => picker,
       add: async (_options, log) => {
         log('added acme/widget')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
     const result = await chooseFirstProject(world, { github: 'acme/widget' })
 
     expect(result).toMatchObject({ ok: true, project: 'github' })
-    expect(logged).toEqual(['github       app — a GitHub App is configured here', 'added acme/widget'])
+    expect(logged).toEqual(['github       app — a GitHub App is configured here'])
+    expect(result).toMatchObject({ updated: false, warnings: [] })
   })
 
   it('--github-app given beside a slug, with an App already configured, is refused rather than silently discarded (#394 finding 8)', async () => {
@@ -848,7 +852,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -866,7 +870,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     const ticketsResult = await chooseFirstProject(worldWithTickets, {
@@ -894,7 +898,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
       add: async () => {
         addCalled = true
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     const result = await chooseFirstProject(world, {
@@ -920,7 +924,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       add: async (options, log) => {
         addCalled = true
         log('updated')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
 
@@ -1057,7 +1061,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       },
       add: async (options) => {
         calls.added.push(options)
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'
@@ -1066,7 +1070,16 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       return null
     }
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
-    expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets', auth: 'gh' })
+    expect(result).toEqual({
+      ok: true,
+      project: 'github',
+      app: 'already',
+      slug: 'acme/widgets',
+      auth: 'gh',
+      updated: false,
+      warnings: [],
+      reach: { kind: 'gh', login: 'me' },
+    })
     expect(calls).toMatchObject({ app: 0, board: 0, wait: 0, picker: 0 })
     expect(calls.added).toEqual([{ slug: 'acme/widgets', installation: undefined, base: undefined }])
   })
@@ -1077,7 +1090,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       projects: [project('widgets', 'acme')],
       add: async () => {
         added++
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'
@@ -1092,7 +1105,7 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       projects: [project('widgets', 'Acme')],
       add: async () => {
         added++
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'me' } }
       },
     })
     h.world.github.auth = () => 'gh'

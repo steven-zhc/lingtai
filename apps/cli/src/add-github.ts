@@ -25,7 +25,6 @@
 import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
-import { paint } from '@lingtai/env/colour'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
 
@@ -35,6 +34,7 @@ import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import type { TrialOutcome } from './setup-build.ts'
 import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
 
@@ -171,13 +171,22 @@ const liveDeps: AskBeforeGithubAddDeps = {
   history: liveHistory,
 }
 
+/** What the questions came to when the add goes on: the trial and the hints, for the card `add` ends on. */
+export interface AskedBeforeAdd {
+  trial: TrialOutcome
+  hints: string[]
+  /** The runtimes it probed, so the card does not probe them again. */
+  runtimes: readonly RuntimeFound[]
+}
+
+/** A number is an exit code: the add stops there. Otherwise the add goes on. */
 export async function askBeforeGithubAdd(
   slug: string,
   flags: Record<string, string>,
   deps: AskBeforeGithubAddDeps = liveDeps,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
-): Promise<number | null> {
+): Promise<number | AskedBeforeAdd> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--base`
@@ -425,7 +434,5 @@ export async function askBeforeGithubAdd(
     console.error(recipeResult.refused)
     return 1
   }
-  for (const line of recipeResult.hints) console.log(paint.muted(line))
-
-  return null
+  return { trial: recipeResult.trial, hints: recipeResult.hints, runtimes }
 }

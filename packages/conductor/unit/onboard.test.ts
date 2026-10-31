@@ -196,7 +196,7 @@ describe('Recheck', () => {
       },
       register: async (options) => {
         registered.push(options)
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
       },
     })
 
@@ -217,7 +217,7 @@ describe('Recheck', () => {
       register: async (options, log) => {
         registered.push(options)
         log('recipe: ~/.lingtai/nextloom-ai-admin/recipe.yml')
-        return 0
+        return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
       },
     })
 
@@ -231,7 +231,7 @@ describe('Recheck', () => {
       register: async (_options, log) => {
         log('the installation is missing permissions:')
         log('  issues: have read, need write — reading work items')
-        return 1
+        return { ok: false }
       },
     })
 
@@ -248,7 +248,7 @@ describe('Recheck', () => {
         installation: async () => {
           throw new Error('502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway')
         },
-        register: async () => 0,
+        register: async () => ({ ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } }),
       }),
     ).rejects.toThrow('502')
   })

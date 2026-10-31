@@ -1,5 +1,7 @@
+import type { GithubReach } from '@lingtai/conductor/onboard'
 import { storeChoice, type StoreChoice } from '@lingtai/env'
-import { recipePath } from '@lingtai/recipe'
+import { parseSlug } from '@lingtai/github'
+import { recipePath, resolveSource } from '@lingtai/recipe'
 
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
@@ -19,10 +21,11 @@ import { recipePath } from '@lingtai/recipe'
  * person typed it here, is refused rather than silently adopted when the
  * recipe disagrees (#75).
  */
-import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
+import { type AskedBeforeAdd, askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
 import { chooseFirstProject, liveFirstProjectWorld, type FirstProjectWorld } from './first-project.ts'
 import { liveAsk, liveSpin } from './prompt.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
+import { type CardRecipe, cardRecipe } from './setup-card.ts'
 import { liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
 
 export interface AddWorld {
@@ -63,9 +66,11 @@ export async function addFlow(
   }
 
   const slug = flags['github']
+  let asked: AskedBeforeAdd | null = null
   if (slug !== undefined && slug !== '') {
     const stopped = await askBeforeGithubAdd(slug, flags, world.githubDeps, buildFlags)
-    if (stopped !== null) return stopped
+    if (typeof stopped === 'number') return stopped
+    asked = stopped
   }
 
   // With a slug, `askBeforeGithubAdd` above has written each answer it was
@@ -107,7 +112,50 @@ export async function addFlow(
       result.hints,
     )
   }
+  if (result.project === 'github' && asked !== null && result.updated !== undefined && result.reach !== undefined) {
+    const { owner, repo } = parseSlug(result.slug!)
+    // Warnings come first and whatever the read-back does: the project is registered either way.
+    for (const line of result.warnings ?? []) world.log(line)
+    const path = recipePath(repo)
+    // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
+    let card: CardRecipe
+    try {
+      const text = await world.project.files.read(path)
+      if (text === null) throw new Error(`${path} is not there to read`)
+      card = cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
+    } catch (err) {
+      world.error(
+        `${repo} is registered, but its recipe could not be read back for the summary — ${(err as Error).message}`,
+      )
+      return 1
+    }
+    await printSetupEnd(
+      world,
+      {
+        command: 'add',
+        project: repo,
+        updated: result.updated,
+        home: world.project.home,
+        homeIsNew: false,
+        userHome: world.userHome,
+        store: world.store(),
+        runtimes: asked.runtimes,
+        where: 'github',
+        github: githubRow(result.reach),
+        recipe: card,
+        trial: asked.trial,
+        recipePath: path,
+      },
+      asked.hints,
+    )
+  }
   return 0
+}
+
+/** `gh, signed in as me`, `gh, signed in` when it named no login, or `the App x`. */
+export function githubRow(reach: GithubReach): string {
+  if (reach.kind === 'app') return reach.slug === null ? 'the App' : `the App ${reach.slug}`
+  return reach.login === null ? 'gh, signed in' : `gh, signed in as ${reach.login}`
 }
 
 export function liveAddWorld(): AddWorld {

@@ -268,7 +268,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(text.indexOf('next:')).toBeGreaterThan(text.indexOf('second block'))
   })
 
-  it('the heading, Machine and Store are printed by a run that does not end on the card (#773)', async () => {
+  it('init --project github ends on this machine alone, then a ready line with no recipe (#755)', async () => {
     const { world, logged } = harness({
       ghStatus: { ok: true, login: 'steven', scopes: ['repo', 'workflow'] },
     })
@@ -276,8 +276,14 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
     const text = stripColour(logged.join('\n'))
-    expect(text).toMatch(/^Machine$/m)
-    expect(text).toMatch(/^Store$/m)
+    expect(text).toMatch(/^this machine$/m)
+    expect(text).toMatch(/github\s+gh, signed in as steven/)
+    expect(text).not.toMatch(/^(Machine|Store|GitHub App)$/m)
+    expect(text).not.toContain('this project')
+    expect(text).not.toContain('each pass')
+    expect(text).not.toContain('the recipe is written once')
+    expect(text).toMatch(/^✓ ready — doctor: [^\n]*[^\n]$/m)
+    expect(text).not.toMatch(/ready[^\n]*recipe:/)
   })
 
   it('a local init exits 0 even when doctor throws, and prints why it did not finish', async () => {
@@ -374,26 +380,26 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(text).not.toContain('it answered')
   })
 
-  it('a GitHub init with a configured App says it answered', async () => {
+  it('a GitHub init with a configured App names it on the github row', async () => {
     const { world, logged } = harness({
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
     const text = logged.join('\n')
-    expect(text).toMatch(/app\s+lingtai-me, owned by me — it answered/)
-    expect(text.match(/it answered/g)).toHaveLength(1)
+    expect(text).toMatch(/github\s+the App lingtai-me/)
+    expect(text.match(/the App lingtai-me/g)).toHaveLength(1)
   })
 
-  it('a re-run on a machine with projects and a configured App says it answered once', async () => {
+  it('a re-run on a machine with projects and a configured App names it on the github row once', async () => {
     const { world, logged } = harness({
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
     world.projects = async () => [{ name: 'repo' }] as never
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     const text = logged.join('\n')
-    expect(text).toMatch(/app {2}lingtai-me, owned by me — it answered/)
-    expect(text.match(/it answered/g)).toHaveLength(1)
+    expect(text).toMatch(/github\s+the App lingtai-me/)
+    expect(text.match(/the App lingtai-me/g)).toHaveLength(1)
   })
 
   it('the GitHub branch starts the board only when boardUrl() is first asked, and only once', async () => {

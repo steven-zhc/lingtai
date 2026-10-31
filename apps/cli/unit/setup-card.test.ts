@@ -152,6 +152,37 @@ describe('renderSetupCard', () => {
   })
 })
 
+describe('renderSetupCard for a repository on GitHub (#755)', () => {
+  const GITHUB: SetupCardFacts = {
+    ...FACTS,
+    command: 'add',
+    where: 'github',
+    github: 'gh, signed in as sam',
+    recipe: { ...RECIPE, code: 'acme/widgets', remote: null, tickets: 'github' },
+  }
+
+  it('draws code, lands on and the github row', () => {
+    expect(row(GITHUB, 'code')).toBe('code      acme/widgets  github')
+    expect(row(GITHUB, 'lands on')).toMatch(/^lands on\s+lingtai-base, on GitHub$/)
+    expect(row(GITHUB, 'github')).toMatch(/^github\s+gh, signed in as sam$/)
+    expect(row(GITHUB, 'tickets')).toContain('GitHub issues')
+  })
+
+  it('draws no github row where nothing names how GitHub is reached', () => {
+    expect(row({ ...GITHUB, github: undefined }, 'github')).toBe('')
+  })
+
+  it('is this machine alone when there is no project yet', () => {
+    const { recipe: _r, trial: _t, recipePath: _p, project: _n, ...machine } = GITHUB
+    const lines = rows({ ...machine, command: 'init', github: 'the App lingtai-me' })
+    expect(lines[0]).toBe('init')
+    expect(lines).toContain('this machine')
+    expect(lines).not.toContain('this project')
+    expect(lines).not.toContain('each pass')
+    expect(lines.find((l) => l.trim().startsWith('github'))).toMatch(/the App lingtai-me/)
+  })
+})
+
 describe('cardRecipe', () => {
   it('reads the recipe as written', () => {
     const text = `version: 2
@@ -190,6 +221,22 @@ steps:
       reviewer: { agent: 'codex', model: null },
       checks: ['npm run check'],
     })
+  })
+})
+
+describe('renderReadyLine without a recipe (#755)', () => {
+  const REPORT = { ok: 27, notChecked: 10, deferred: 3 }
+
+  it('drops the recipe part on every outcome', () => {
+    const lines = [
+      renderReadyLine({ report: REPORT, toFix: { count: 0, failed: false } }),
+      renderReadyLine({ report: REPORT, toFix: { count: 2, failed: false } }),
+      renderReadyLine({ report: REPORT, toFix: { count: 2, failed: true } }),
+      renderReadyLine({ threw: 'boom' }),
+    ].map(stripColour)
+    for (const line of lines) expect(line).not.toContain('recipe:')
+    expect(lines[0]).toBe('✓ ready — doctor: all 27 passed · 10 not checked here · 3 not implemented yet')
+    expect(lines[2]).toBe('✗ not ready')
   })
 })
 
