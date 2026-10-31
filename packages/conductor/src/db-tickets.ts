@@ -20,8 +20,9 @@ import { BodyChanged } from '@lingtai/github'
  *
  * **The columns.** `tickets.labels` is a JSON array of label names, and
  * `tickets.state` is `'open' | 'closed'`. `ticket_comments` is one row per
- * comment, appended and never rewritten — there is no verb on `Tickets` that
- * edits one. Neither table has a column for `url`, a label's `color`, or
+ * comment, appended; the one rewrite is `editComment` (#750), which updates a
+ * row's `body` in place when the conductor ends a wait — so a reader that
+ * caches comments or reads only new rows must not assume a row is final. Neither table has a column for `url`, a label's `color`, or
  * `assignees`: `dbTickets` answers those `null`, `null` and `[]`, because
  * there is no web page, no colour, and this store tracks no assignee.
  * `dependencies` is always `{ blockedBy: 0 }`, never `null` — `discover.ts`'s
@@ -324,6 +325,15 @@ export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOpt
         [project, number, body, now().toISOString()],
       )
       return { id: Number(rows[0]!.id) }
+    },
+
+    async editComment(number, commentId, body) {
+      await ensureReady()
+      const rows = await sql.query<{ id: number | string }>(
+        `UPDATE ticket_comments SET body = $4 WHERE project = $1 AND number = $2 AND id = $3 RETURNING id`,
+        [project, number, commentId, body],
+      )
+      if (rows.length === 0) throw new Error(`no comment ${commentId} on ticket #${number}`)
     },
 
     async commentBodies(number) {

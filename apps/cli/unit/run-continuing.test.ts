@@ -75,6 +75,7 @@ const TICKETS: Tickets = {
   createIssue: notReached,
   comment: notReached,
   setLabels: notReached,
+  editComment: notReached,
   closeIssue: notReached,
   updateBody: notReached,
 }

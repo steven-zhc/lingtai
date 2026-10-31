@@ -35,7 +35,7 @@ import { foreignLabels } from './labels.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** What this needs of GitHub, and nothing more. */
-export type IssueChannel = Pick<Tickets, 'comment' | 'setLabels' | 'closeIssue' | 'updateBody'> & {
+export type IssueChannel = Pick<Tickets, 'comment' | 'editComment' | 'setLabels' | 'closeIssue' | 'updateBody'> & {
   /**
    * The labels as GitHub holds them — names, and the colours it sends beside
    * them. Only the names matter here: what Lingtai writes back is a set of
@@ -98,7 +98,8 @@ export interface RefChannel {
  * rather than overwritten.
  */
 export type IssueChange =
-  | { kind: 'comment'; body: string }
+  | { kind: 'comment'; body: string; waitId?: string; question?: string }
+  | { kind: 'comment-edited'; waitId: string; commentId: number; body: string }
   | { kind: 'labels'; labels: readonly string[] }
   | { kind: 'closed' }
   | { kind: 'body'; body: string; ifUnchanged?: string }
@@ -175,6 +176,10 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
         detail = String(id)
         break
       }
+      case 'comment-edited':
+        await github.editComment(issue, change.commentId, change.body)
+        detail = String(change.commentId)
+        break
       case 'labels': {
         const current = await github.getIssue(issue)
         const carried = current.labels.map((l) => l.name)
@@ -208,6 +213,9 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
         issue: String(issue),
         change: change.kind,
         error: (err as Error).message,
+        ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
+          ? { waitId: change.waitId! }
+          : {}),
       },
     )
     return { recorded: 'IssueUpdateFailed', error: err }
@@ -217,6 +225,12 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
     issue: String(issue),
     change: change.kind,
     detail,
+    ...(change.kind === 'comment' || change.kind === 'comment-edited'
+      ? {
+          ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
+          ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
+        }
+      : {}),
   })
   return { recorded: 'IssueUpdated' }
 }
@@ -357,6 +371,138 @@ export async function record(
   }
 }
 
+function firstLine(text: string): string {
+  return (
+    text
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l !== '') ?? ''
+  )
+}
+
+/** The actor as the log has it (`human:steven`), without the `human:` prefix. */
+function who(by: string): string {
+  return by.replace(/^human:/, '')
+}
+
+/** `Approved by steven.` — or `Approved.` when the log names nobody. */
+function sentence(what: string, by: string): string {
+  const name = who(by)
+  return name === '' ? `${what}.` : `${what} by ${name}.`
+}
+
+/**
+ * What a resolution became, as one sentence. A `switch` with no `default`, so
+ * a resolution added to `Resolution` is a type error here rather than a
+ * comment that silently keeps saying *waiting on you*.
+ */
+function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by: string): string {
+  switch (resolution._tag) {
+    case 'Approve':
+      return sentence('Approved', by)
+    case 'GrantFixRound': {
+      const name = who(by)
+      return name === '' ? 'One more fix round, granted.' : `One more fix round, granted by ${name}.`
+    }
+    case 'Requeue':
+    case 'EditBodyAndRequeue':
+      return `${sentence('Requeued', by).replace(/\.$/, '')} — a new pass started.`
+    case 'AnswerQuestion': {
+      const name = who(by)
+      return `${name === '' ? 'Answered' : `Answered by ${name}`}: \`${resolution.choice}\``
+    }
+    case 'Close':
+      return sentence('Closed', by)
+    case 'Split':
+      return sentence('Split', by)
+  }
+}
+
+/**
+ * **The waiting comment, rewritten into its outcome once the wait is over**
+ * (#750).
+ *
+ * Reads the stream once. A `comment` whose `IssueUpdated` carries a `waitId`
+ * is edited when the log shows that wait over — a `TicketLanded` or
+ * `TicketClosed` after its `WaitStarted`, or a `WaitResolved` for it — and no
+ * `comment-edited` for the same wait was recorded yet. An attempt is recorded
+ * whether it worked or not, so a failed edit is skipped from then on and
+ * **never answered with a second comment**: one comment per wait is the
+ * decision, and `converge.ts` deliberately never re-posts one.
+ *
+ * **A comment posted and not recorded** (a restart between the two) has no id
+ * on the log, so it is never edited and stays *waiting on you*. That is the
+ * cost of `record` being best-effort; GitHub is not searched for it. A comment
+ * posted before this existed carries no `waitId` and is left alone on purpose.
+ *
+ * Never throws, like everything here: a stream that cannot be read edits
+ * nothing and records nothing, and the next call tries again.
+ */
+export async function editEndedWaits(options: {
+  store: EventStore
+  github: IssueChannel
+  ticketId: string
+}): Promise<void> {
+  const { store, github, ticketId } = options
+  try {
+    const events = await store.read(ticketId)
+    const started = new Map<string, number>()
+    const starts: number[] = []
+    const resolved = new Map<string, PayloadOf<'WaitResolved'>>()
+    const edited = new Set<string>()
+    const posted: { waitId: string; commentId: number; question: string }[] = []
+    const landed: { at: number; data: PayloadOf<'TicketLanded'> }[] = []
+    const closed: { at: number; data: PayloadOf<'TicketClosed'> }[] = []
+    events.forEach((e, at) => {
+      if (e.type === 'WaitStarted') {
+        started.set((e.data as PayloadOf<'WaitStarted'>).waitId, at)
+        starts.push(at)
+      } else if (e.type === 'WaitResolved') {
+        const d = e.data as PayloadOf<'WaitResolved'>
+        resolved.set(d.waitId, d)
+      } else if (e.type === 'TicketLanded') landed.push({ at, data: e.data as PayloadOf<'TicketLanded'> })
+      else if (e.type === 'TicketClosed') closed.push({ at, data: e.data as PayloadOf<'TicketClosed'> })
+      else if (e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed') {
+        const d = e.data as { change?: string; waitId?: string; detail?: string; question?: string }
+        if (d.waitId === undefined) return
+        if (d.change === 'comment-edited') edited.add(d.waitId)
+        else if (d.change === 'comment' && e.type === 'IssueUpdated' && /^\d+$/.test(d.detail ?? '')) {
+          posted.push({ waitId: d.waitId, commentId: Number(d.detail), question: d.question ?? '' })
+        }
+      }
+    })
+
+    for (const p of posted) {
+      if (edited.has(p.waitId)) continue
+      const from = started.get(p.waitId)
+      if (from === undefined) continue
+      // An ending belongs to this wait only if no later wait began before it:
+      // a first wait that was approved and held again was approved, not landed.
+      const until = starts.find((s) => s > from) ?? Infinity
+      const land = landed.find((l) => l.at > from && l.at < until)
+      const res = resolved.get(p.waitId)
+      const close = closed.find((c) => c.at > from && c.at < until)
+      let outcome: string
+      if (land !== undefined) {
+        const sha = land.data.mergeCommit.slice(0, 7)
+        const base = land.data.base
+        outcome = `Landed on \`${base}\`${sha === '' ? '' : ` in \`${sha}\``}.`
+      } else if (res !== undefined) outcome = resolutionWords(res.resolution, res.by)
+      else if (close !== undefined) outcome = sentence('Closed', close.data.by)
+      else continue
+      const body = `**${outcome}**${p.question === '' ? '' : `\n\n> ${p.question}`}`
+      await tellGitHub({
+        store,
+        github,
+        ticketId,
+        change: { kind: 'comment-edited', waitId: p.waitId, commentId: p.commentId, body },
+      })
+    }
+  } catch {
+    // Deliberately silent: see above.
+  }
+}
+
 /**
  * Everything one state change implies for an issue, in the order the outbox
  * used to send it.
@@ -393,6 +539,14 @@ export async function tellGitHubAbout(options: {
   labels?: readonly string[] | null
   /** The question, when a person is now the thing being waited on. */
   question?: string
+  /** The wait `question` announces; recorded so the comment can be edited when the wait ends (#750). */
+  waitId?: string
+  /**
+   * First rewrite the waiting comment of every wait the log shows is over (#750).
+   * Passed by `conduct.ts` alone: the CLI and the board never edit, so that a
+   * comment has one writer.
+   */
+  editEnded?: boolean
   /** The events just appended; any `EndActionsResolved` among them is carried out. */
   appended?: readonly ToAppend[]
 }): Promise<void> {
@@ -404,8 +558,16 @@ export async function tellGitHubAbout(options: {
   // for a sweep that never ran. That is `#61`'s failure inside one function.
   const tell = (change: IssueWrite) => tellGitHub({ store, github, ticketId, change })
 
+  if (options.editEnded === true) await editEndedWaits({ store, github, ticketId })
+
   if (options.question !== undefined) {
-    await tell({ kind: 'comment', body: `**Lingtai is waiting on you.**\n\n${options.question}` })
+    const first = firstLine(options.question)
+    await tell({
+      kind: 'comment',
+      body: `**Lingtai is waiting on you.**\n\n${options.question}`,
+      ...(options.waitId !== undefined ? { waitId: options.waitId } : {}),
+      ...(options.waitId !== undefined && first !== '' ? { question: first } : {}),
+    })
   }
   if (options.labels != null) await tell({ kind: 'labels', labels: options.labels })
 

@@ -266,6 +266,9 @@ export interface GitHubClient {
    */
   addLabels(issue: number, labels: readonly string[]): Promise<void>
 
+  /** Replaces one comment's whole body (#750). The response is read for its status only. */
+  editComment(issue: number, commentId: number, body: string): Promise<void>
+
   /**
    * Closes an issue, as completed.
    *
@@ -415,6 +418,10 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     return request<{ id: number }>('POST', `/repos/${owner}/${repo}/issues/${issue}/comments`, {
       body,
     })
+  }
+
+  async function editComment(_issue: number, commentId: number, body: string): Promise<void> {
+    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body })
   }
 
   async function closeIssue(issue: number, reason: 'completed' | 'not_planned' = 'completed'): Promise<void> {
@@ -571,6 +578,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     // The same source `request` uses, handed out so git can authenticate too.
     token: tokenFor,
     comment,
+    editComment,
     setLabels,
     addLabels,
     closeIssue,

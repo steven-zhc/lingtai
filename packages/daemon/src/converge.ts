@@ -362,6 +362,9 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
       if (e.type !== 'IssueUpdated' && e.type !== 'IssueUpdateFailed') continue
       const d = e.data as { change?: string; detail?: string }
       if (!d.change) continue
+      // A rewritten waiting comment (#750) is attempted once and never repaired,
+      // so it is no divergence and no reason to read the issue.
+      if (d.change === 'comment-edited') continue
       lastOutcome.set(d.change, e.type)
       if (d.change === 'labels' && e.type === 'IssueUpdated') {
         lastWrote = d.detail ? d.detail.split(',').filter(Boolean) : []

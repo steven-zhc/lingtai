@@ -162,6 +162,7 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
     createIssue: async () => {
       throw new Error('the wizard wrote to GitHub: createIssue')
     },
+    editComment: async () => {},
     closeIssue: async () => {
       throw new Error('the wizard wrote to GitHub: closeIssue')
     },

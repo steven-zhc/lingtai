@@ -78,6 +78,8 @@ export interface Tickets {
   getIssue(number: number, signal?: AbortSignal): Promise<Ticket>
   createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Ticket>
   comment(issue: number, body: string): Promise<{ id: number }>
+  /** Replaces one comment's whole body; rejects when the tracker has no such comment (#750). */
+  editComment(issue: number, commentId: number, body: string): Promise<void>
   /** Replaces the whole label set. */
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
@@ -300,7 +302,7 @@ export type TicketedClient = Omit<GitHubClient, keyof Tickets> & Tickets
  *
  * `tickets === client` (`ticketsFor`'s `'github'` branch): returns `client`
  * unchanged. Otherwise returns a copy of `client` with each of `Tickets`'
- * eight verbs replaced — named explicitly rather than spread from `tickets`,
+ * nine verbs replaced — named explicitly rather than spread from `tickets`,
  * because a `DbTickets` carries extras (`commentBodies`) `GitHubClient` does
  * not have.
  *
@@ -317,6 +319,7 @@ export function passClientOf(client: GitHubClient, tickets: Tickets): TicketedCl
     getIssue: tickets.getIssue,
     createIssue: tickets.createIssue,
     comment: tickets.comment,
+    editComment: tickets.editComment,
     setLabels: tickets.setLabels,
     closeIssue: tickets.closeIssue,
     updateBody: tickets.updateBody,
