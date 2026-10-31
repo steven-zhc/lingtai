@@ -115,7 +115,12 @@ and the dollar ceiling lands before any N > 1.
      today's spend, by the standing-down path of `conduct.ts`
      ([0108](0108-a-refusal-buys-a-round.md) §11). It needs no
      `holdsAcrossStarts`: a restarted daemon recomputes and pauses again at its
-     first check.
+     first check. **The pause says it is the ceiling's in a typed field**, an
+     optional `cause` on `ConductorPaused`, and the control fold reads that
+     field — never a prefix of the reason, which is words for a person — to know
+     which pause the ceiling owns and which waiver lifts it
+     ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md) §4: an event only
+     gains optional fields).
    - A ceiling whose spend cannot be trusted to be current is not checked, and
      no work is taken.
    - **The overshoot is bounded only as far as the recipe bounds a pass.** The
