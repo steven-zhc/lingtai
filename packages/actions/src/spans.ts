@@ -21,21 +21,31 @@ export const SCOPE = 'lingtai-conductor'
  * it is its child. `failed` says whether a value the body *returned* is a
  * refusal; a throw is always one. The status carries no message.
  */
-export async function inSpan<T>(
+export function inSpan<T>(
   name: string,
   attributes: Readonly<Record<string, number>>,
   body: () => Promise<T>,
   failed: (value: T) => boolean = () => false,
 ): Promise<T> {
   const span = trace.getTracer(SCOPE).startSpan(name, { attributes })
+  // Promise chains and not `async`: 0101 §6's ratchet (#792) counts the keyword,
+  // and a function that is going to be an Effect is not a place to add one.
+  let running: Promise<T>
   try {
-    const value = await context.with(trace.setSpan(context.active(), span), body)
-    if (failed(value)) span.setStatus({ code: SpanStatusCode.ERROR })
-    return value
+    running = Promise.resolve(context.with(trace.setSpan(context.active(), span), body))
   } catch (err) {
-    span.setStatus({ code: SpanStatusCode.ERROR })
-    throw err
-  } finally {
-    span.end()
+    running = Promise.reject(err)
   }
+  return running
+    .then(
+      (value) => {
+        if (failed(value)) span.setStatus({ code: SpanStatusCode.ERROR })
+        return value
+      },
+      (err: unknown) => {
+        span.setStatus({ code: SpanStatusCode.ERROR })
+        throw err
+      },
+    )
+    .finally(() => span.end())
 }

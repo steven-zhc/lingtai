@@ -52,6 +52,7 @@ import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupe
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
+import { flushTracing, startTracing } from './tracing.ts'
 import {
   catchUpChangedTriage,
   catchUpRegisteredTriage,
@@ -211,6 +212,7 @@ export async function daemonCommand(
   verbose = true,
 ): Promise<number> {
   const trace = verbose ? (line: string) => console.log(line) : () => {}
+  await startTracing()
   // The lock, the status table, the code this process loaded, and — for a
   // restart — the refusals only a started daemon can be asked. One function for
   // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
@@ -690,6 +692,8 @@ export async function daemonCommand(
   process.on('SIGTERM', () => stop('SIGTERM'))
 
   const reason = await started.daemon.stopped
+  // After a drain and not on `stopNow`, which promised to stop now (#791).
+  await flushTracing()
   await ratesSettled()
   if (reason === 'projection-failed') {
     const failed = started.daemon.failure

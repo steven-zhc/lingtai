@@ -1810,7 +1810,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * attribute. A routing arrival at `proposed` is built by `runPass` and never
  * reaches here, and no action runs there.
  */
-async function runStep(
+function runStep(
   spec: StepSpec,
   options: PassOptions,
   bodies: StepBodies,

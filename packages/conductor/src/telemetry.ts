@@ -108,20 +108,39 @@ export type Tracing = {
 }
 
 /** The SDK, loaded by these specifiers alone — production and the tests share them. */
-export const loadSdk = async () => ({
-  base: await import('@opentelemetry/sdk-trace-base'),
-  http: await import('@opentelemetry/exporter-trace-otlp-http'),
-  hooks: await import('@opentelemetry/context-async-hooks'),
-  resources: await import('@opentelemetry/resources'),
-})
+export const loadSdk = () =>
+  Promise.all([
+    import('@opentelemetry/sdk-trace-base'),
+    import('@opentelemetry/exporter-trace-otlp-http'),
+    import('@opentelemetry/context-async-hooks'),
+    import('@opentelemetry/resources'),
+  ]).then(([base, http, hooks, resources]) => ({ base, http, hooks, resources }))
+
+/** Bounded, and a timeout or a refusal is dropped. */
+const bounded = (flushing: () => Promise<void>, ms: number): Promise<void> =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    flushing().then(
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+    )
+  })
 
 /**
  * Reads the endpoint once; with none (or a refused one) installs nothing, loads
  * nothing and prints nothing. Once per process, at the command's entry: the
  * provider lives as long as the process and the layer only points at it. The
  * exporter is injectable so a test opens no socket.
+ *
+ * Promise chains and not `async`: 0101 §6's ratchet (#792) counts the keyword.
  */
-export async function installTracing(
+export function installTracing(
   from: NodeJS.ProcessEnv,
   file?: MachineFile,
   exporter?: SpanExporter,
@@ -130,34 +149,19 @@ export async function installTracing(
   try {
     url = machineOtlpEndpoint(from, file)
   } catch {
-    return undefined
+    return Promise.resolve(undefined)
   }
-  if (url === undefined) return undefined
-  const sdk = await loadSdk()
-  const provider = new sdk.base.BasicTracerProvider({
-    // Given a resource, the provider does not fall back to the default one,
-    // whose service.name is `unknown_service:<argv0>` — a path off this machine.
-    resource: sdk.resources.resourceFromAttributes({ 'service.name': SCOPE }),
-    spanProcessors: [new sdk.base.BatchSpanProcessor(exporter ?? new sdk.http.OTLPTraceExporter({ url }))],
+  if (url === undefined) return Promise.resolve(undefined)
+  const endpoint = url
+  return loadSdk().then((sdk): Tracing => {
+    const provider = new sdk.base.BasicTracerProvider({
+      // Given a resource, the provider does not fall back to the default one,
+      // whose service.name is `unknown_service:<argv0>` — a path off this machine.
+      resource: sdk.resources.resourceFromAttributes({ 'service.name': SCOPE }),
+      spanProcessors: [new sdk.base.BatchSpanProcessor(exporter ?? new sdk.http.OTLPTraceExporter({ url: endpoint }))],
+    })
+    trace.setGlobalTracerProvider(provider)
+    context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
+    return { layer: tracingLayer, flush: (ms = 3000) => bounded(() => provider.forceFlush(), ms) }
   })
-  trace.setGlobalTracerProvider(provider)
-  context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
-  return {
-    layer: tracingLayer,
-    flush: async (ms = 3000) => {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        await Promise.race([
-          provider.forceFlush(),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, ms)
-          }),
-        ])
-      } catch {
-        // dropped
-      } finally {
-        clearTimeout(timer)
-      }
-    },
-  }
 }

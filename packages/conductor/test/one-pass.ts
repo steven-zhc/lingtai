@@ -58,14 +58,19 @@ export const withPorts = (ports: RunPorts) =>
  * cross-check this function used to run against `eventOf` would only ever
  * compare an object to itself.
  */
-export const once = async (options: Parameters<typeof runOnce>[0] & { client: GitHubClient }, ports: RunPorts) => {
+export const once = async (
+  options: Parameters<typeof runOnce>[0] & { client: GitHubClient },
+  ports: RunPorts,
+  /** What a host provides beside the ports: the tracer, where one is installed (#791). */
+  beside: Layer.Layer<never> = Layer.empty,
+) => {
   return Effect.runPromise(
     runOnce({
       // The recipe through the fake GitHub's `fileAt`, so each test keeps the
       // recipe it wrote. Where a real run reads it from is `local.test.ts`'s.
       recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? 'main'),
       ...options,
-    }).pipe(Effect.provide(withPorts(ports))),
+    }).pipe(Effect.provide(Layer.merge(withPorts(ports), beside))),
   )
 }
 
