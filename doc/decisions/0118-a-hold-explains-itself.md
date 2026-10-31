@@ -358,6 +358,19 @@ which kind a wait was got inferred again in each place that needed it, from
      where it is. Evidence a person needs and triage does not carry, such as a
      conflict's paths, still shows.
    - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
+   - **A queued, running or approved ticket's page is drawn on the same
+     frame**, and only what fills the panel and the moves differs. The header
+     is the number, the state and its age as one line, the title, and the
+     opening; the rail is drawn under it in every one of these states — the
+     run in flight, live, on a running ticket, and the last pass on a queued
+     or approved one. Where the panel says triage on a wait, a queued ticket's
+     says why it is not moving — once, with the last pass's refusal whole and
+     named as the last pass — and a running ticket's is the run log. What the
+     next pass will do at each step is folded into the rail, one cell under
+     each step, not drawn as a second list of the same ten steps. The
+     prompt that will be sent is folded by default beside Discussion, because
+     the opening above and the Ticket record already say it.
+     [design/queued-page.html](../design/queued-page.html) is the drawing.
    - **The card** on the board carries the number, the title, the rail and its
      line (a card held for a person's approval carries the rail with no line
      under it, and one line of its own: a `WAITING FOR YOU` badge, `waitWords`'

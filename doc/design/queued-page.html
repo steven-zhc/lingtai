@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — the queued page on the blocked page's frame</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ground:#f1f4f4;--surface:#fff;--ink:#0f181c;--muted:#5e6e74;--rule:#d8e0e1;--grid:#e4eaea;--accent:#0b6a70;--accent-soft:#dceded;--accent-ink:#075056;--signal:#9c5a08;--signal-soft:#f7ead6;--pass:#2c7a4c;--fail:#a33029;--fail-soft:#f6e1de;--mono:'IBM Plex Mono',ui-monospace,monospace;--sans:'IBM Plex Sans',system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground)}
+a{color:var(--accent-ink)}
+code{font-family:var(--mono);font-size:12.5px}
+.page{width:1200px;margin:0 auto;padding:20px 48px 56px;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;color:var(--ink);font:14px/1.55 var(--sans);display:flex;flex-direction:column;gap:28px}
+.note{border:1px dashed var(--signal);background:var(--signal-soft);padding:10px 14px;font-size:12.5px;color:#5a3a08}
+.note b{font-weight:600}
+nav{display:flex;align-items:center;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--rule);font:12px var(--mono);color:var(--muted)}
+nav .back{font:500 13px var(--sans);text-decoration:none}
+nav .health{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font:12.5px var(--sans);color:var(--pass)}
+.dot{width:8px;height:8px;display:inline-block}
+header{display:flex;flex-direction:column;gap:12px}
+.meta{display:flex;align-items:center;gap:14px;font:12px var(--mono);color:var(--muted)}
+.meta .state{margin-left:auto;display:inline-flex;align-items:center;gap:8px;color:var(--accent-ink)}
+h1{margin:0;font-size:20px;font-weight:600;line-height:1.3}
+.opening{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--surface);border:1px solid var(--rule)}
+.opening>div{padding:14px 18px;display:flex;flex-direction:column;gap:4px;border-right:1px solid #e9eeee}
+.opening>div:last-child{border-right:0}
+.label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.opening p{margin:0;font-size:13.5px}
+.linkbtn{align-self:flex-start;margin-top:4px;border:0;background:none;padding:0;font:500 12.5px var(--sans);color:var(--accent-ink);cursor:pointer}
+/* the rail: one drawing of the ten steps, on every state */
+.rail{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.rail>div{display:flex;flex-direction:column;gap:5px}
+.bar{height:6px;background:var(--rule)}
+.bar.pass{background:var(--pass)}.bar.fail{background:var(--fail)}.bar.skip{background:repeating-linear-gradient(90deg,var(--rule) 0 4px,transparent 4px 7px)}
+.step{font:11.5px var(--mono);color:var(--muted)}
+.step.fail{color:var(--fail);font-weight:500}
+.railline{font:12px var(--mono);color:#3a4a50}
+details.plan>summary{cursor:pointer;font:500 12.5px var(--sans);color:var(--accent-ink);list-style:none}
+details.plan>summary::before{content:"▸ "}details.plan[open]>summary::before{content:"▾ "}
+.plangrid{margin-top:8px;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.plangrid>div{background:var(--surface);border:1px solid var(--rule);padding:6px 7px;font-size:12px;line-height:1.4}
+.plangrid>div.skip{background:transparent;border-style:dashed;color:var(--muted)}
+.plangrid .k{display:block;font:10.5px var(--mono);color:var(--muted);margin-bottom:2px}
+.planfoot{margin-top:6px;font:11.5px var(--mono);color:var(--muted)}
+/* the panel the blocked page gives triage; a queued item's is why it is not moving */
+.why{background:var(--accent-soft);padding:24px 28px;display:flex;flex-direction:column;gap:14px}
+.why .head{display:flex;align-items:baseline;gap:12px}
+.why .head .label{color:var(--accent-ink)}
+.why .lead{margin:0;font-size:17px;font-weight:500}
+.why .lead .when{font:13px var(--mono);color:var(--muted);font-weight:400}
+.last{background:var(--surface);border-left:3px solid var(--fail);padding:12px 16px;display:flex;flex-direction:column;gap:6px}
+.last .label{color:var(--fail)}
+.last p{margin:0}
+.last ul{margin:2px 0 0;padding-left:18px;font:12.5px var(--mono)}
+.sowhat{margin:0;color:#3a4a50}
+.moves{display:flex;align-items:center;gap:12px}
+.btn{font:500 13px var(--sans);padding:7px 14px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.moves .what{font-size:12.5px;color:var(--muted)}
+.moves .close{margin-left:auto}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--rule);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.card .top{display:flex;align-items:center;gap:10px}
+.card .top .aside{margin-left:auto;font:11.5px var(--mono);color:var(--muted)}
+.chip{font:11px var(--mono);border:1px solid var(--rule);padding:1px 6px;color:var(--muted)}
+details.prompt>summary{cursor:pointer;font:500 12.5px var(--sans);color:var(--accent-ink);list-style:none}
+details.prompt>summary::before{content:"▸ "}details.prompt[open]>summary::before{content:"▾ "}
+pre{margin:8px 0 0;max-height:260px;overflow:auto;background:#f8faFA;border:1px solid var(--rule);padding:10px 12px;font:12px/1.5 var(--mono);white-space:pre-wrap}
+textarea{width:100%;min-height:64px;border:1px solid var(--rule);padding:8px 10px;font:13px var(--sans);resize:vertical}
+.tabs{display:flex;gap:28px;border-bottom:1px solid var(--rule);background:var(--surface);padding:12px 18px 0;font:12px var(--mono);color:var(--muted)}
+.tabs span{padding-bottom:10px}
+.tabs span b{font-weight:500;color:var(--ink);letter-spacing:.06em;margin-right:8px}
+.tabs .on{border-bottom:2px solid var(--accent)}
+.diffnote{font-size:12.5px;color:var(--muted);border-top:1px solid var(--rule);padding-top:16px}
+.diffnote ol{margin:6px 0 0;padding-left:20px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="note"><b>Prototype, not the page.</b> The queued page drawn on the blocked page's frame (0118 §2: the ticket, where it is, the panel, the moves, the record). Data is #773 as the screenshot of 2026-10-31 showed it; the conflict paths are illustrative. Nothing here is wired.</div>
+
+<!-- BAR: unchanged -->
+<nav>
+<a class="back" href="#">← Lingtai</a>
+<a href="#">~/.lingtai</a>
+<span>lingtai-773 · since 2026-10-31 15:16 UTC · offered by GitHub</span>
+<span class="health"><span class="dot" style="background:var(--pass)"></span>current</span>
+</nav>
+
+<!-- TICKET: the blocked page's header, not headings and grey boxes -->
+<header>
+<div class="meta">
+<a href="#" style="text-decoration:none">#773 ↗</a>
+<span>feature</span><span>$10.13</span><span>2 attempts · next is attempt 3</span><span>2 restarts left</span>
+<span class="state"><span class="dot" style="background:var(--accent)"></span>queued · backing off 9m</span>
+</div>
+<h1>feat(setup): init and add print the summary card, and the old sections and echoes are gone</h1>
+<div class="opening">
+<div><span class="label">Problem</span><p>A local <code>init</code> or <code>add --local</code> ends in a run of differently indented sections and one-line echoes, so what was chosen, whether the trial build passed and whether it is ready cannot be read off the screen.</p></div>
+<div><span class="label">Want</span><p>After its last question, a local <code>init</code>/<code>add</code> prints the card and ready line #754 renders, with doctor's short blocks under a <code>✓ ready · N to fix</code> or <code>✗ not ready</code> line.</p></div>
+<div><span class="label" style="color:var(--signal)">Watch out</span><p><code>Before registering</code> is what the confirm question reads. A warning is not an echo: only the lines that restate an answer go.</p><button class="linkbtn">The whole ticket ↓</button></div>
+</div>
+
+<!-- WHERE IT IS: the same rail, showing the last pass, with the next pass folded into it -->
+<div class="rail" title="attempt 2, the last pass">
+<div><span class="bar skip"></span><span class="step">claim</span></div>
+<div><span class="bar skip"></span><span class="step">admit</span></div>
+<div><span class="bar pass"></span><span class="step">prepared</span></div>
+<div><span class="bar pass"></span><span class="step">design</span></div>
+<div><span class="bar pass"></span><span class="step">implement</span></div>
+<div><span class="bar pass"></span><span class="step">build</span></div>
+<div><span class="bar pass"></span><span class="step">review</span></div>
+<div><span class="bar pass"></span><span class="step">proposed</span></div>
+<div><span class="bar fail"></span><span class="step fail">merge</span></div>
+<div><span class="bar"></span><span class="step">end</span></div>
+</div>
+<span class="railline">attempt 2: merge refused · 4 rounds back · 2 restarts left · next pass 350 turns · 75m · guarded</span>
+<details class="plan">
+<summary>What the next pass does at each step</summary>
+<div class="plangrid">
+<div class="skip"><span class="k">claim</span>skipped</div>
+<div class="skip"><span class="k">admit</span>skipped</div>
+<div><span class="k">prepared</span>install</div>
+<div><span class="k">design</span>shape it, keep the note</div>
+<div><span class="k">implement</span>write the change</div>
+<div><span class="k">build</span>install, format, lint, build</div>
+<div><span class="k">review</span>review</div>
+<div><span class="k">proposed</span>red build → agent fixes in place; re-verify red → same fix on moved base; …</div>
+<div><span class="k">merge</span>land the branch</div>
+<div><span class="k">end</span>close the ticket, sweep the arms</div>
+</div>
+<div class="planfoot">The plan reads the recipe the conductor holds now; the rail above is what attempt 2 did.</div>
+</details>
+</header>
+
+<!-- THE PANEL: where the blocked page puts triage, a queued item says why it is not moving — once -->
+<section class="why">
+<div class="head"><span class="label">Why it is not moving</span></div>
+<p class="lead">Backing off — runnable in 9m <span class="when">at 15:35 UTC</span></p>
+<div class="last">
+<span class="label">The last pass, attempt 2 · stopped at merge</span>
+<p><code>agent/773</code> does not merge into <code>main</code>: these paths conflict</p>
+<ul><li>apps/cli/src/recipe-flow.ts</li><li>apps/cli/src/setup-card.ts</li></ul>
+</div>
+<p class="sowhat">Nothing is asked of you. When the backoff ends the next conductor pass takes it from the base, as attempt 3.</p>
+<div class="moves">
+<button class="btn primary">Run it now</button><span class="what">skips the 9m backoff</span>
+<button class="btn close">Close</button>
+</div>
+</section>
+
+<!-- THE PAIR: prompt folded, discussion beside it at the same width -->
+<div class="pair">
+<div class="card">
+<div class="top"><span class="label">Next pass from base</span><span class="chip">attempt 3</span><span class="aside">ticket@2276+failure · 18,475 bytes</span></div>
+<details class="prompt">
+<summary>The prompt it will be handed</summary>
+<pre># Ticket
+
+## #773 — feat(setup): init and add print the summary card, and the old sections and echoes are gone
+
+| | |
+|---|---|
+| **Problem** | A local `init` or `add --local` ends in a run of differently indented sections …
+…</pre>
+</details>
+<div><button class="btn">Edit</button></div>
+</div>
+<div class="card">
+<div class="top"><span class="label">Discussion</span><span class="aside">reads the log, the ticket and the code — it cannot run anything</span></div>
+<textarea placeholder="why did attempt 2 not produce a branch?"></textarea>
+<div><button class="btn">Ask</button></div>
+</div>
+</div>
+
+<!-- RECORD: unchanged -->
+<div>
+<div class="tabs">
+<span class="on"><b>HISTORY</b>118 events</span><span><b>DIFF</b>33 files</span><span><b>FINDINGS</b>16 verdicts · 2 findings</span><span><b>ATTEMPTS</b>$10.13</span><span><b>TICKET</b></span>
+</div>
+</div>
+
+<div class="diffnote">
+<span class="label">What changed from today's page</span>
+<ol>
+<li><code>QUEUED 10M</code> in large type is gone; the state is the header's chip, as on every other state.</li>
+<li>The ten-step rail is drawn for a queued item too, showing the last pass; "What will happen" is folded into it, one cell under each step, instead of a second drawing of the same ten steps.</li>
+<li>"backing off — runnable in 9m" is said once. "waiting for a conductor to take it" is gone — it contradicted the backoff.</li>
+<li>"attempt 2 of 2" (bar) and "attempt 3 only" (prompt) become one sentence in the header: <em>2 attempts · next is attempt 3</em>.</li>
+<li>The last refusal is whole and labelled as the last pass, not a line cut at its colon.</li>
+<li>Problem / Want / Watch out use the blocked page's three-column opening instead of headings and grey boxes.</li>
+<li>The 18 KB prompt is folded by default; Edit stays. Discussion is beside it at the same width.</li>
+<li>Run it now says what it does next to itself; Close moves to the far end, where a destructive move is on the blocked page.</li>
+</ol>
+</div>
+
+</div>
+</body>
+</html>
