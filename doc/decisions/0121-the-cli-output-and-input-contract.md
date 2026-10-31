@@ -235,10 +235,12 @@ shutdown`'s withdrawal — never runs; a library's own `SIGINT` listener
 
 ## Not built yet
 
-- **The closing `next:` is still one line** (#756). Every `init` and `add`
-  now ends on the card: a local one and `add <owner>/<repo>` with *this
-  project* and *each pass*, and `init --project github` and a machine that
-  already has projects on *this machine* alone (#755).
+- **The closing `next:` is still one line** (#756). A local
+  `init`, `add --local` and `add <owner>/<repo>` end on the card with *this
+  project* and *each pass*; `init --project github` and a re-run on a
+  machine with a configured App end on *this machine* alone (#755). A plain
+  `init` on a `gh` machine that already has projects still prints the old
+  sections and doctor's output.
 
 ## Example
 

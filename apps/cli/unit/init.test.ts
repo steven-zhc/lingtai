@@ -428,6 +428,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     // more to print "next, install it…" — and started only once: `startBoard`
     // memoises rather than asking `boardAt`/`board` a second time.
     expect(calls).toEqual({ boardAt: 1, board: 1 })
+    expect(logged.join('\n')).toContain('the board keeps running in this terminal')
     expect(nextLines(logged)).toEqual([
       'next: open http://127.0.0.1:17820/setup/repository · lingtai add <owner>/<repo>',
     ])

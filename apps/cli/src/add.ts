@@ -114,6 +114,8 @@ export async function addFlow(
   }
   if (result.project === 'github' && asked !== null && result.updated !== undefined && result.reach !== undefined) {
     const { owner, repo } = parseSlug(result.slug!)
+    // Warnings come first and whatever the read-back does: the project is registered either way.
+    for (const line of result.warnings ?? []) world.log(line)
     const path = recipePath(repo)
     // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
     let card: CardRecipe
@@ -127,7 +129,6 @@ export async function addFlow(
       )
       return 1
     }
-    for (const line of result.warnings ?? []) world.log(line)
     await printSetupEnd(
       world,
       {

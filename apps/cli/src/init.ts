@@ -538,7 +538,11 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
   const reachRow = async (viaGh: boolean): Promise<string> => {
     if (viaGh) {
       const status = await world.ghStatus()
-      return status.ok ? `gh, signed in as ${status.login}` : 'gh, not signed in'
+      return status.ok
+        ? status.login === ''
+          ? 'gh, signed in'
+          : `gh, signed in as ${status.login}`
+        : 'gh, not signed in'
     }
     return app.configured && app.ok ? `the App ${app.slug}` : 'no App yet'
   }
@@ -741,12 +745,13 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     needBoard = 'refused' in started
     if (!cardDrawn) world.log(heading('Board'))
     if ('refused' in started) world.log(paint.fail(`the board did not start — ${started.refused}`))
-    else if (!cardDrawn) {
+    else if (started.started) {
+      // Said on the card's paths too: it is why this terminal does not return, and how to stop it.
       world.log(
-        started.started
-          ? paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again')
-          : paint.muted(`the board was already running at ${started.url} — this started none`),
+        paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again'),
       )
+    } else if (!cardDrawn) {
+      world.log(paint.muted(`the board was already running at ${started.url} — this started none`))
     }
   }
   // The GitHub paths close here too, on their own command; the configured-App
