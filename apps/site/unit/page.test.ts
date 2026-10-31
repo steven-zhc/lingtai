@@ -86,7 +86,11 @@ describe("the home page's argument", () => {
       'events',
     ])
     const links = [...`${home}\n${chrome}`.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1])
-    expect(links.every((l) => l === '/docs/tutorial/' || l === '/docs/concepts/' || l === '/docs/plugins/')).toBe(true)
+    expect(
+      links.every(
+        (l) => l === '/docs/tutorial/' || l === '/docs/concepts/' || l === '/docs/plugins/' || l === '/docs/events/',
+      ),
+    ).toBe(true)
     expect(chrome).toContain('href="/docs/tutorial/"')
     expect(chrome).toContain('href="/docs/concepts/"')
     expect(chrome).toContain('href="/docs/plugins/"')

@@ -611,6 +611,11 @@ export interface TreeGroup {
  * so a page that is published is in the tree and a page that is not cannot be —
  * there is no second list of what the sidebar shows. A directory's `index.md` is
  * first in its group, because it is the page that lists the others.
+ *
+ * **One exception, added by hand below the loop:** a public page that is not
+ * markdown is not in `SECTIONS`, so it is not in `served`. `events` is the only
+ * one (it is drawn from `doc/events.json`). A later such page needs the same
+ * entry here, guarded by the rule that decides it is served.
  */
 export async function treeOf(): Promise<TreeGroup[]> {
   const served = new Set((await servable()).map((file) => slugOf(file)))
@@ -625,6 +630,13 @@ export async function treeOf(): Promise<TreeGroup[]> {
       label: section.label,
       entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, '') })),
     })
+  }
+  if (isPublicSlug('events') || DOCS_PUBLIC) {
+    const guides = groups.find((group) => group.id === 'guides')
+    if (guides !== undefined) {
+      const at = guides.entries.findIndex((entry) => entry.slug === 'cli')
+      guides.entries.splice(at === -1 ? guides.entries.length : at + 1, 0, { slug: 'events', title: 'Events' })
+    }
   }
   return groups
 }
