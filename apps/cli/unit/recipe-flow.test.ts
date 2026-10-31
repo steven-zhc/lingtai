@@ -492,4 +492,63 @@ describe('askRecipe — the trial run (#436)', () => {
     const { calls } = await run({ 'check-build': 'no' })
     expect(calls).toEqual([])
   })
+
+  describe('a kept failed list says it is written only once it is', () => {
+    const failing = {
+      base: async () => 'main',
+      run: async () => ({
+        results: [{ command: 'pnpm test', outcome: 'failed' as const, evidence: 'boom' }],
+        nothingDeclared: false,
+      }),
+    }
+    const go = async (stopAfterKeep: boolean) => {
+      let kept = false
+      const logged: string[] = []
+      const files = mapFiles()
+      const result = await askRecipe(
+        {
+          ask: async (prompt) => {
+            if (kept && stopAfterKeep) return null
+            if (prompt.includes('use every default?')) return 'no'
+            if (prompt.includes('keep the list as it is')) {
+              kept = true
+              return 'keep'
+            }
+            return ''
+          },
+          log: (line) => logged.push(line),
+        },
+        {
+          ...BASE_AT,
+          project: 'widget',
+          local: true,
+          flags: { install: 'none', 'check-build': 'yes' },
+          buildFlags: ['pnpm test'],
+          seeds: [
+            { path: ['repo', 'base'], value: 'main' },
+            { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+          ],
+          kept: 'kept',
+          again: 'lingtai add --local /repo',
+          keptBeforeWrite: 'Nothing was written',
+          files,
+          tryBuild: failing,
+        } satisfies RecipeAt,
+      )
+      return { result, logged, files }
+    }
+
+    it('does not say it when a later question ends the command before the write', async () => {
+      const { result, logged, files } = await go(true)
+      expect(result).toHaveProperty('refused')
+      expect(files.replaced).toHaveLength(0)
+      expect(logged.some((l) => l.includes('kept the list as tried'))).toBe(false)
+    })
+
+    it('says it after the write', async () => {
+      const { result, logged } = await go(false)
+      expect(result).toMatchObject({ ok: true, trial: { trial: 'failed-kept' } })
+      expect(logged.some((l) => l.includes('kept the list as tried') && l.includes(recipePath('widget')))).toBe(true)
+    })
+  })
 })

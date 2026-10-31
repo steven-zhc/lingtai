@@ -369,7 +369,6 @@ async function tryTheBuild(
     }
     return { again: 'edit', at }
   }
-  world.log(`kept the list as tried — it is written to ${recipePath(input.project, input.home)}`)
   return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
 }
 

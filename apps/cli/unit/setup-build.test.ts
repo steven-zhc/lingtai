@@ -839,15 +839,6 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     expect(result.trial).toMatchObject({ trial: 'not-run', because: 'no checks' })
   })
 
-  it('keep logs the recipe path', async () => {
-    const { w, lines } = asking(['', 'yes', 'yes', 'keep'])
-    await askInstallAndBuild(
-      w,
-      input({ tryBuild: trial(async () => fail('a', ['b', 'c'])), files: mapFiles({ [PATH]: LISTED }) }),
-    )
-    expect(lines.some((l) => l.includes('kept the list as tried') && l.includes(PATH))).toBe(true)
-  })
-
   it('a failed install offers keep and edit only, and edit starts at the install question', async () => {
     const { w, asked } = asking(['', 'yes', 'yes', 'edit', 'pnpm i', 'yes', 'no'])
     let n = 0
