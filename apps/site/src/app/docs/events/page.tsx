@@ -26,14 +26,7 @@ export default async function EventsPage() {
             <p className="kicker">{DOCS_PUBLIC ? <Link href="/docs/">Documentation</Link> : 'Documentation'}</p>
             <div className="doc-layout">
               <DocTree groups={tree} current="events" />
-              <article>
-                <h1>Events</h1>
-                <p>
-                  A pass writes events as it goes. Pick a step to see the events it writes, and an event for where it is
-                  defined and where it is appended.
-                </p>
-                <EventsBody doc={doc} />
-              </article>
+              <EventsBody doc={doc} />
             </div>
           </section>
         </div>
