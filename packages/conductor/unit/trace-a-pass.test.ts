@@ -249,4 +249,76 @@ describe('with an endpoint', () => {
     expect(run.status.message).toBeUndefined()
     expect(run.attributes).toEqual({ 'lingtai.ticket': 7 })
   })
+  describe('a design question handed to a needs-input judge', () => {
+    const JUDGED_QUESTION = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  design:
+    - name: draft
+      agent: claude-code
+      prompt: say what shape this takes
+  proposed:
+    - name: the answer
+      judge: claude-code
+      when: needs-input
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
+`
+    const asking = (judged: Awaited<ReturnType<typeof runtime.run>>): typeof runtime => ({
+      ...runtime,
+      run: async (request) =>
+        request.runId.includes(':design:')
+          ? {
+              exitCode: 0,
+              turns: 2,
+              durationMs: 1234,
+              costUsd: 0.21,
+              failure: null,
+              text: '```question\nWhich wins?\n```',
+              sessionId: 'sess-design',
+            }
+          : judged,
+    })
+
+    it('a judge that crashed exports the run as ERROR, with no message and no events', async () => {
+      const { result, spans } = await pass(
+        JUDGED_QUESTION,
+        asking({
+          exitCode: 1,
+          turns: 0,
+          durationMs: 1_000,
+          costUsd: null,
+          failure: { kind: 'crash', detail: 'Error: boom /secret/path' },
+          text: null,
+          sessionId: 'sess-judge',
+        }),
+      )
+      expect(result.ok).toBe('held')
+      const run = spans.find((s) => s.name === 'conductor.run')!
+      expect(run.status.code).toBe(2)
+      expect(run.status.message).toBeUndefined()
+      expect(run.events).toEqual([])
+    })
+
+    it('a judge whose answer could not be read exports the run as ERROR too', async () => {
+      const { result, spans } = await pass(
+        JUDGED_QUESTION,
+        asking({
+          exitCode: 0,
+          turns: 1,
+          durationMs: 1_000,
+          costUsd: 0.1,
+          failure: null,
+          text: 'no answer in the shape asked for',
+          sessionId: 'sess-judge',
+        }),
+      )
+      expect(result.ok).toBe('held')
+      expect(spans.find((s) => s.name === 'conductor.run')!.status.code).toBe(2)
+    })
+  })
 })

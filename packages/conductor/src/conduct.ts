@@ -4737,7 +4737,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           reason._tag === 'OwnQuestion' ||
           reason._tag === 'AgentQuestion' ||
           reason._tag === 'SignoffRequired' ||
-          (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded')
+          (reason._tag === 'ProposedEscalated' &&
+            reason.proposal._tag === 'InputNeeded' &&
+            // A question no judge was asked. A needs-input judge that crashed
+            // (`JudgeHandedOver`) or answered unreadably (`UnreadableReply`) is a failure.
+            reason.because._tag === 'NotAsked')
         if (!asked) yield* Effect.annotateCurrentSpan(FAILED, true)
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
