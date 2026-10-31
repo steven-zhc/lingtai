@@ -1,0 +1,1229 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway design mock for the events page. Not wired to anything; data is doc/events.json inlined. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype — the events page, three layouts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ground:#f1f4f4;--surface:#fff;--surface-2:#e9eeee;--ink:#0f181c;--ink-2:#3a4a50;--muted:#5e6e74;--rule:#d8e0e1;--rule-2:#c3cfd1;--accent:#0b6a70;--accent-soft:#dceded;--accent-ink:#075056;--signal:#9c5a08;--signal-soft:#f7ead6;--pass:#2c7a4c;--fail:#a33029;--fail-soft:#f6e1de;--measure:68ch;
+--sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;--mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--ground:#0c1316;--surface:#131e22;--surface-2:#0f1a1e;--ink:#dde6e8;--ink-2:#b4c4c8;--muted:#87999f;--rule:#22333a;--rule-2:#2e434b;--accent:#54c6cc;--accent-soft:#10312f;--accent-ink:#7fdade;--signal:#e0a55c;--signal-soft:#33260f;--pass:#61be86;--fail:#e2776e;--fail-soft:#331816;color-scheme:dark}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:96px}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.6 var(--sans)}
+a{color:var(--accent-ink)}
+code,.mono{font-family:var(--mono)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.proto{background:var(--signal-soft);color:var(--signal);border-bottom:1px dashed var(--signal);padding:6px 16px;font:500 12px var(--mono);text-align:center}
+/* bar */
+.bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--rule);font-size:12px;color:var(--muted)}
+.bar a{color:var(--ink-2);text-decoration:none}.bar a:hover{color:var(--accent-ink)}
+.bar .brand{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.bar .mark{width:15px;height:15px;background:linear-gradient(135deg,var(--accent) 60%,#fd5d3f 60%);border-radius:2px}
+.bar .spacer{flex:1 1 auto}
+.bar a.here{color:var(--ink);font-weight:600}
+/* frame */
+.wrap{max-width:96rem;margin:0 auto;padding:0 24px}
+.doc-layout{display:grid;gap:24px;align-items:start;justify-content:center;grid-template-columns:11rem minmax(0,60rem) 10rem;padding:28px 0 96px}
+.doc-layout>article{min-width:0}
+.doctree{position:sticky;top:20px;max-height:calc(100vh - 40px);overflow-y:auto;font-size:13px;line-height:1.4}
+.doctree details{margin:0 0 14px}
+.doctree summary{cursor:pointer;font:600 11px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:4px 0;list-style:none}
+.doctree summary::-webkit-details-marker{display:none}
+.doctree summary::before{content:"▸";display:inline-block;width:1em}
+.doctree details[open]>summary::before{content:"▾"}
+.doctree ul{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:1px}
+.doctree a{display:block;padding:4px 8px;border-left:2px solid transparent;color:var(--ink-2);text-decoration:none;border-radius:0 3px 3px 0}
+.doctree a:hover{color:var(--accent-ink);background:var(--surface)}
+.doctree a[aria-current=page]{color:var(--ink);font-weight:600;border-left-color:var(--accent);background:var(--surface)}
+.contents{position:sticky;top:20px;max-height:calc(100vh - 40px);overflow-y:auto;border-left:1px solid var(--rule);padding-left:14px;font-size:13px;line-height:1.45}
+.contents h2{margin:0 0 8px;font:600 11px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.contents ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.contents a{color:var(--ink-2);text-decoration:none;display:flex;justify-content:space-between;gap:8px}
+.contents a:hover{color:var(--accent-ink)}
+.contents .n{color:var(--muted);font:12px var(--mono)}
+@media (min-width:1081px) and (max-width:1240px){.doc-layout{grid-template-columns:minmax(0,1fr) 10rem}.doctree{display:none}}
+@media (max-width:1080px){
+ .doc-layout{grid-template-columns:minmax(0,1fr);gap:24px}
+ .doctree{position:static;max-height:9.5rem;order:-2;border:1px solid var(--rule);border-radius:3px;padding:12px 14px;background:var(--surface)}
+ .contents{order:-1;position:static;max-height:none;border:1px solid var(--rule);border-radius:3px;padding:12px 14px;background:var(--surface)}
+ .contents ul{display:flex;flex-wrap:wrap;gap:6px 16px}
+}
+/* article head */
+.crumb{font:12px var(--mono);color:var(--muted);margin:0 0 6px}
+h1{margin:0 0 8px;font-size:32px;line-height:1.15;letter-spacing:-.02em}
+.lede{margin:0 0 24px;font-size:16px;line-height:1.65;color:var(--ink-2);max-width:var(--measure)}
+.lede code{font-size:13.5px}
+/* shared bits */
+.chip{display:inline-block;font:500 11px/1 var(--mono);padding:3px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent-ink);white-space:nowrap}
+.chip.out{background:transparent;border:1px dashed var(--rule-2);color:var(--muted);padding:2px 5px}
+.chip.none{background:transparent;color:var(--muted);padding-left:0}
+.chip.flat{background:var(--surface-2);color:var(--ink-2)}
+.retired{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:3px;background:var(--signal-soft);color:var(--signal);margin-left:6px;vertical-align:1px}
+.nosum{color:var(--muted);font-style:italic}
+.ev{font:500 13px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.src{font:12px var(--mono);white-space:nowrap}
+.src-list{display:inline-flex;flex-wrap:wrap;gap:2px 10px}
+.sub{display:block;font:12px/1.5 var(--mono);background:var(--surface-2);color:var(--ink-2);padding:3px 8px;border-radius:3px;width:max-content;max-width:100%;overflow-wrap:anywhere}
+.foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--muted)}
+/* floating switcher */
+.switch{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--ink);color:var(--ground);padding:6px 8px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.28);font:500 12.5px var(--sans);z-index:50}
+.switch button{border:0;background:rgba(127,127,127,.28);color:inherit;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px}
+.switch button:hover{background:rgba(127,127,127,.5)}
+.switch b{font:600 11px var(--mono);opacity:.7;margin-right:4px}
+.switch span{min-width:15rem;text-align:center}
+@media (max-width:560px){.switch span{min-width:0;max-width:10rem;font-size:11.5px}}
+
+/* ===== A: the spine ===== */
+.spine{position:sticky;top:0;z-index:5;background:var(--ground);padding:8px 0 12px;margin:0 0 8px;display:flex;align-items:flex-start;gap:0}
+.spine ol{list-style:none;margin:0;padding:0;display:flex;flex:1 1 auto;position:relative}
+.spine li{flex:1 1 0;min-width:0;position:relative;text-align:center}
+.spine li::before{content:"";position:absolute;top:11px;left:-50%;width:100%;height:2px;background:var(--rule-2)}
+.spine li:first-child::before{display:none}
+.spine a{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--ink-2);position:relative}
+.spine .node{position:relative;width:24px;height:24px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);color:var(--accent-ink);font:600 11px/20px var(--mono);z-index:1}
+.spine .node.zero{border-color:var(--rule-2);color:var(--muted)}
+.spine a:hover .node,.spine a.on .node{background:var(--accent);color:var(--surface)}
+.spine .nm{font:500 11px var(--mono)}
+.spine a.on .nm{color:var(--ink);font-weight:600}
+.spine .sp-out{margin-left:14px;padding-left:14px;border-left:2px dashed var(--rule-2);display:flex;gap:10px}
+.spine .sp-out a .node{border-style:dashed}
+.lane{position:relative;padding:0 0 30px 34px}
+.lane::before{content:"";position:absolute;left:11px;top:26px;bottom:0;width:2px;background:var(--rule-2)}
+.lane:last-child::before{display:none}
+.lane.outside::before{background:repeating-linear-gradient(var(--rule-2) 0 5px,transparent 5px 9px)}
+.lane .pin{position:absolute;left:0;top:0;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--surface);font:600 11px/24px var(--mono);text-align:center}
+.lane.outside .pin,.lane.nostep .pin{background:var(--surface);border:2px dashed var(--rule-2);color:var(--muted);line-height:20px}
+.lane h2{margin:0;font:600 18px/24px var(--mono);display:flex;align-items:baseline;gap:10px}
+.lane h2 small{font:400 12.5px var(--sans);color:var(--muted)}
+.lane .gloss{margin:2px 0 8px;font-size:13px;color:var(--muted)}
+.lane .rows{background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+.lrow{display:grid;grid-template-columns:14.5rem minmax(0,1fr) auto;gap:4px 16px;padding:9px 14px;border-top:1px solid var(--rule);align-items:baseline}
+.lrow:first-child{border-top:0}
+.lrow:hover{background:var(--surface-2)}
+.lrow .sum{font-size:14px;color:var(--ink-2)}
+.lrow .also{display:block;margin-top:4px}
+.lrow .also .chip{margin-right:4px}
+.lrow .also em{font:normal 11px var(--mono);color:var(--muted);margin-right:4px}
+.lrow .meta{font:12px var(--mono);color:var(--muted);text-align:right;white-space:nowrap}
+@media (max-width:760px){.lrow{grid-template-columns:1fr}.lrow .meta{text-align:left}.spine .nm{display:none}.spine .sp-out{margin-left:6px;padding-left:6px}}
+
+/* ===== B: the table ===== */
+.tools{position:sticky;top:0;z-index:5;background:var(--ground);padding:8px 0 10px;display:grid;gap:8px}
+.tools .r1{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tools input[type=search],.tools select{font:14px var(--sans);padding:6px 10px;border:1px solid var(--rule-2);border-radius:3px;background:var(--surface);color:var(--ink)}
+.tools input[type=search]{flex:1 1 14rem;min-width:0}
+.tools label.ck{font-size:13px;color:var(--ink-2);display:inline-flex;gap:5px;align-items:center}
+.tools .count{margin-left:auto;font:12px var(--mono);color:var(--muted)}
+.fchips{display:flex;flex-wrap:wrap;gap:5px}
+.fchips button{font:500 11.5px var(--mono);padding:4px 8px;border:1px solid var(--rule-2);background:var(--surface);color:var(--ink-2);border-radius:3px;cursor:pointer}
+.fchips button:hover{border-color:var(--accent)}
+.fchips button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.fchips button i{font-style:normal;opacity:.65;margin-left:4px}
+table.ref{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--rule);font-size:14px}
+table.ref th{position:sticky;top:var(--toolh,110px);background:var(--surface-2);text-align:left;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:7px 10px;border-bottom:1px solid var(--rule);z-index:2}
+table.ref th button{all:unset;cursor:pointer}
+table.ref th button:hover{color:var(--accent-ink)}
+table.ref td{padding:8px 10px;border-top:1px solid var(--rule);vertical-align:top}
+table.ref tr.row{cursor:pointer}
+table.ref tr.row:hover td{background:var(--surface-2)}
+table.ref td.nm{width:15rem}
+table.ref td.nm .ev::before{content:"▸";display:inline-block;width:1.1em;color:var(--muted);transition:transform .1s}
+table.ref tr.open td.nm .ev::before{transform:rotate(90deg)}
+table.ref td.st{width:11rem}
+table.ref td.st .chip{margin:0 3px 3px 0}
+table.ref td.gr{width:7.5rem;font-size:13px;color:var(--ink-2)}
+table.ref td.sm{width:5.5rem;font:12px var(--mono);color:var(--muted)}
+table.ref tr.detail td{background:var(--surface-2);padding:12px 12px 14px 26px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:14px 24px}
+.dgrid h4{margin:0 0 4px;font:600 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.dgrid p,.dgrid div{margin:0;font-size:13px}
+.dgrid .src{display:block}
+.empty{padding:30px;text-align:center;color:var(--muted);background:var(--surface);border:1px solid var(--rule)}
+@media (max-width:900px){table.ref td.gr,table.ref th.gr,table.ref td.sm,table.ref th.sm{display:none}table.ref td.nm{width:13.5rem}}
+@media (max-width:640px){table.ref td.st,table.ref th.st,table.ref td.sm,table.ref th.sm{display:none}table.ref td.nm{width:auto}}
+
+/* ===== C: the reference index ===== */
+.jump{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 28px}
+.jump a{font:500 12px var(--mono);text-decoration:none;color:var(--ink-2);border:1px solid var(--rule-2);background:var(--surface);padding:4px 9px;border-radius:3px}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink)}
+.jump a span{color:var(--muted);margin-left:5px}
+.grp{margin:0 0 40px}
+.grp>h2{margin:0 0 4px;font-size:22px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.grp>h2 small{font:400 12.5px var(--mono);color:var(--muted)}
+.entry{padding:16px 0 16px;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.entry h3{margin:0;font:500 16px/1.3 var(--mono);display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.entry h3 a.anc{color:var(--rule-2);text-decoration:none;font-weight:400;margin-left:-1.1em;width:1.1em;opacity:0}
+.entry:hover h3 a.anc,.entry:target h3 a.anc{opacity:1;color:var(--accent)}
+.entry:target{background:linear-gradient(90deg,var(--accent-soft),transparent 70%);margin:0 -10px;padding-left:10px;padding-right:10px}
+.entry .sum{margin:0;font-size:15.5px;line-height:1.55;max-width:var(--measure)}
+.entry .facts{display:grid;grid-template-columns:5.5rem minmax(0,1fr);gap:4px 12px;font-size:13px;margin-top:4px;align-items:baseline}
+.entry .facts>span:nth-child(odd){font:600 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.entry .facts .chip{margin-right:4px}
+@media (max-width:560px){.entry h3 a.anc{display:none}.entry .facts{grid-template-columns:1fr;gap:0}.entry .facts>span:nth-child(odd){margin-top:6px}}
+
+/* ===== A+C ===== */
+.spine{position:sticky;top:0;z-index:5;background:var(--ground);padding:8px 0 10px;margin:0 0 10px;display:flex;align-items:flex-start;border-bottom:1px solid var(--rule)}
+.spine button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink-2);position:relative}
+.spine li button{width:100%}.spine .sp-out button{min-width:3.4rem}
+.spine button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.spine button:hover .node{background:var(--accent-soft)}
+.spine button[aria-pressed=true] .node{background:var(--accent);color:var(--surface)}
+.spine button[aria-pressed=true] .nm{color:var(--ink);font-weight:600}
+.spine.filtering button[aria-pressed=false]{opacity:.6}
+.spine .sp-out button .node{border-style:dashed}
+.state{display:flex;align-items:center;gap:10px;min-height:28px;margin:0 0 6px;font-size:13px;color:var(--ink-2)}
+.state button{font:500 12px var(--mono);border:1px solid var(--rule-2);background:var(--surface);color:var(--accent-ink);border-radius:3px;padding:3px 8px;cursor:pointer}
+.state button:hover{border-color:var(--accent)}
+button.chip{border:0;cursor:pointer;font-family:var(--mono)}
+button.chip.out{border:1px dashed var(--rule-2)}
+button.chip:hover{outline:1px solid var(--accent)}
+button.chip.on{background:var(--accent);color:var(--surface)}
+.grp{margin:0 0 28px}
+.grp>h2{margin:0;font-size:20px}
+.entry{padding:10px 0 11px;gap:3px}
+.entry h3{font-size:14.5px;gap:4px 8px}
+.entry h3 .chips{display:inline-flex;gap:4px;flex-wrap:wrap;margin-left:auto;align-items:center}
+.entry .sum{font-size:14.5px;line-height:1.5}
+.entry .meta{margin:0;font:11.5px/1.55 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.entry .meta a{font-size:11.5px;white-space:nowrap}
+.entry .meta .dot{margin:0 6px;opacity:.6}
+.entry .meta code{background:var(--surface-2);padding:1px 5px;border-radius:3px}
+.contents .zero a{color:var(--muted);opacity:.55}
+.contents button{all:unset;cursor:pointer;color:var(--ink-2);display:flex;justify-content:space-between;gap:8px;width:100%}
+.contents button:hover{color:var(--accent-ink)}
+.contents .all{margin-top:10px;padding-top:8px;border-top:1px solid var(--rule);font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="proto">PROTOTYPE — throwaway design mock for the events page. Real data (doc/events.json), no site code.</div>
+<header class="bar">
+  <a class="brand" href="#"><span class="mark"></span>Lingtai</a>
+  <span class="spacer"></span>
+  <a href="#">Tutorial</a><a href="#">Concepts</a><a href="#">Plugins</a><a class="here" href="#">Events</a><a href="#">GitHub</a>
+</header>
+<div class="wrap doc-wrap">
+ <div class="doc-layout">
+  <nav class="doctree" aria-label="Documentation">
+   <details open><summary>Guides</summary><ul>
+    <li><a href="#">Tutorial</a></li>
+    <li><a href="#">How Lingtai thinks about a ticket</a></li>
+    <li><a href="#">Reading and changing your recipe</a></li>
+    <li><a href="#">The lingtai command line</a></li>
+    <li><a href="#" aria-current="page">Events</a></li>
+    <li><a href="#">What Lingtai needs outside itself</a></li>
+    <li><a href="#">Coming from Symphony</a></li>
+   </ul></details>
+   <details><summary>Plugins</summary><ul><li><a href="#">claude-code</a></li></ul></details>
+  </nav>
+  <article>
+   <p class="crumb">Guides / Events</p>
+   <h1>Events</h1>
+   <p class="lede" id="lede"></p>
+   <div id="body"></div>
+   <p class="foot" id="foot"></p>
+  </article>
+  <aside class="contents" id="contents" aria-label="Contents"></aside>
+ </div>
+</div>
+<script type="application/json" id="data">{
+  "sha": "312bc1f56322931722e20b3ba741252614b5fe3e",
+  "events": [
+    {
+      "name": "TicketDiscovered",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L178",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/event-store/scripts/bootstrap.mjs#L54"
+      ],
+      "subscribers": "on: [TicketDiscovered]"
+    },
+    {
+      "name": "TicketClaimed",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 3,
+      "retired": false,
+      "at": ["claim"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L188",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/claim.ts#L163"
+      ],
+      "subscribers": "on: [TicketClaimed]"
+    },
+    {
+      "name": "TicketContinued",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim"],
+      "summary": "A person's approval let a held run go on",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L226",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/claim.ts#L230"
+      ],
+      "subscribers": "on: [TicketContinued]"
+    },
+    {
+      "name": "TicketReleased",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim", "end", "outside"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L248",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/claim.ts#L261",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/reconcile.ts#L670"
+      ],
+      "subscribers": "on: [TicketReleased]"
+    },
+    {
+      "name": "WaitStarted",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["end", "outside"],
+      "summary": "A wait started — 0118 §1's model, on the log directly rather than through",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L311",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/ask.ts#L76",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L4632"
+      ],
+      "subscribers": "on: [WaitStarted]"
+    },
+    {
+      "name": "WaitResolved",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A person answered the wait. `note` **is** the answer — `lingtai answer`'s",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L324",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/resolve-wait.ts#L339"
+      ],
+      "subscribers": "on: [WaitResolved]"
+    },
+    {
+      "name": "TicketSplit",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A split was written: which children exist, and the blocked-by links between",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L360",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/resolve-wait.ts#L336"
+      ],
+      "subscribers": "on: [TicketSplit]"
+    },
+    {
+      "name": "SplitStarted",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A split write began (#608). `plan` is the plan as the person edited it, and",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L388",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/split-ticket.ts#L209"
+      ],
+      "subscribers": "on: [SplitStarted]"
+    },
+    {
+      "name": "SplitChildWritten",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A child exists, carries the approved body and kind, and hangs under the parent — read back.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L395",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/split-ticket.ts#L306"
+      ],
+      "subscribers": "on: [SplitChildWritten]"
+    },
+    {
+      "name": "SplitLinkWritten",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A child-to-child blocked-by link exists, read back. The parent's own holds are not rows.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L403",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/split-ticket.ts#L348"
+      ],
+      "subscribers": "on: [SplitLinkWritten]"
+    },
+    {
+      "name": "SplitFailed",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A split write stopped at `step` (a name from the writer's steps, or `read GitHub`) for `detail`.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L410",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/split-ticket.ts#L219"
+      ],
+      "subscribers": "on: [SplitFailed]"
+    },
+    {
+      "name": "TicketLinked",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": true,
+      "at": [],
+      "summary": "How \"merged is not correct\" becomes queryable. #134 and #136 were bugs filed",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L437",
+      "sites": [],
+      "subscribers": "on: [TicketLinked]"
+    },
+    {
+      "name": "TicketLanded",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["merge", "end"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L442",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L4377"
+      ],
+      "subscribers": "on: [TicketLanded]"
+    },
+    {
+      "name": "TicketClosed",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A person decided nobody is going to do this — the second terminal, and the",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L465",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/close.ts#L191"
+      ],
+      "subscribers": "on: [TicketClosed]"
+    },
+    {
+      "name": "DispatchRefused",
+      "group": "work item",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim"],
+      "summary": "Capability matching refused the dispatch. Never silently downgrade a tier.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L468",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L986"
+      ],
+      "subscribers": "on: [DispatchRefused]"
+    },
+    {
+      "name": "RunStarted",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 2,
+      "retired": false,
+      "at": ["design", "implement", "review"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L512",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3562"
+      ],
+      "subscribers": "on: [RunStarted]"
+    },
+    {
+      "name": "RunPrompted",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 2,
+      "retired": false,
+      "at": ["design", "implement", "review"],
+      "summary": "The prompt an agent was handed. The whole of it.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L556",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/agent/src/hook-socket.ts#L230"
+      ],
+      "subscribers": "on: [RunPrompted]"
+    },
+    {
+      "name": "RunTouchedFile",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["design", "implement", "review"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L568",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/agent/src/hook-socket.ts#L327"
+      ],
+      "subscribers": "on: [RunTouchedFile]"
+    },
+    {
+      "name": "RunContextExhausted",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["design", "implement", "review"],
+      "summary": "Compaction means the ticket was scoped too large. That is a metric, not noise.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L571",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/agent/src/hook-socket.ts#L241"
+      ],
+      "subscribers": "on: [RunContextExhausted]"
+    },
+    {
+      "name": "RunAwaitingInput",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["design", "implement", "review"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L573",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/agent/src/hook-socket.ts#L249"
+      ],
+      "subscribers": "on: [RunAwaitingInput]"
+    },
+    {
+      "name": "RunProducedDiff",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["implement", "end"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L575",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L1861"
+      ],
+      "subscribers": "on: [RunProducedDiff]"
+    },
+    {
+      "name": "RunRefsPublished",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["implement", "end"],
+      "summary": "What a claim left on origin, appended whichever way that went",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L625",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L1830"
+      ],
+      "subscribers": "on: [RunRefsPublished]"
+    },
+    {
+      "name": "RunKeptUncommitted",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["implement", "end"],
+      "summary": "**A stopped run's dirty tree, kept as its own commit rather than lost with",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L735",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L1990"
+      ],
+      "subscribers": "on: [RunKeptUncommitted]"
+    },
+    {
+      "name": "RunProposedCompletion",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["implement", "end"],
+      "summary": "The moment the gate pipeline fires.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L750",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3088",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3764"
+      ],
+      "subscribers": "on: [RunProposedCompletion]"
+    },
+    {
+      "name": "RunFinished",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["design", "implement", "review", "end"],
+      "summary": "`costUsd` and `usage` are gone (#502, 0110 §9): spend has one source,",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L756",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3728"
+      ],
+      "subscribers": "on: [RunFinished]"
+    },
+    {
+      "name": "RunFailed",
+      "group": "run",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["design", "implement", "review", "end"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L802",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3689"
+      ],
+      "subscribers": "on: [RunFailed]"
+    },
+    {
+      "name": "RunSpent",
+      "group": "run",
+      "stream": ["pass-", "chat-", "ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["prepared", "design", "implement", "review", "build", "proposed", "merge", "outside"],
+      "summary": "One `RunSpent` per paid call (0110 §1, §2): what the call was for, what it",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L850",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/cli/src/triage.ts#L797"
+      ],
+      "subscribers": "on: [RunSpent]"
+    },
+    {
+      "name": "StepsResolved",
+      "group": "verdicts",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim", "admit", "implement"],
+      "summary": "The plan for a run: all ten steps, and what will run at each.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L932",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L3591"
+      ],
+      "subscribers": "on: [StepsResolved]"
+    },
+    {
+      "name": "EndActionsResolved",
+      "group": "verdicts",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["end"],
+      "summary": "What the `end` point resolved to, and the outcome it resolved against.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L965",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/end-step.ts#L147"
+      ],
+      "subscribers": "on: [EndActionsResolved]"
+    },
+    {
+      "name": "StepStarted",
+      "group": "verdicts",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["admit", "prepared", "design", "implement", "review", "build", "proposed", "merge"],
+      "summary": "One step begins — once per step, never once per action (`StepRequested`,",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L999",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/pass.ts#L1485"
+      ],
+      "subscribers": "on: [StepStarted]"
+    },
+    {
+      "name": "StepEnded",
+      "group": "verdicts",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["admit", "prepared", "design", "implement", "review", "build", "proposed", "merge", "end"],
+      "summary": "One step ends, carrying every action it declared (0120 §1) — the one",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1137",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L4605"
+      ],
+      "subscribers": "on: [StepEnded]"
+    },
+    {
+      "name": "FindingAccepted",
+      "group": "backlog",
+      "stream": ["bkl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["end", "outside"],
+      "summary": "A person accepted a minor finding",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1164",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/backlog.ts#L257"
+      ],
+      "subscribers": "on: [FindingAccepted]"
+    },
+    {
+      "name": "FindingProposed",
+      "group": "backlog",
+      "stream": ["bkl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["end", "outside"],
+      "summary": "The ticket store has the ticket an accepted finding asked for (`#137`).",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1186",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/backlog.ts#L305"
+      ],
+      "subscribers": "on: [FindingProposed]"
+    },
+    {
+      "name": "FindingDeclined",
+      "group": "backlog",
+      "stream": ["bkl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["end", "outside"],
+      "summary": "A person declined a minor finding.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1203",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/backlog.ts#L400"
+      ],
+      "subscribers": "on: [FindingDeclined]"
+    },
+    {
+      "name": "MergeLaneWaited",
+      "group": "integration",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["merge"],
+      "summary": "A pass reached `merge` while another pass's landing held the lane (#639).",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1216",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L2853"
+      ],
+      "subscribers": "on: [MergeLaneWaited]"
+    },
+    {
+      "name": "IntegrationAttempted",
+      "group": "integration",
+      "stream": ["int-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["merge"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1218",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/repo/src/integrate.ts#L673"
+      ],
+      "subscribers": "on: [IntegrationAttempted]"
+    },
+    {
+      "name": "IntegrationRefused",
+      "group": "integration",
+      "stream": ["int-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["merge"],
+      "summary": "`paths`/`baseSha`/`headSha` are gone (#502): a conflict's three fields now",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1225",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/repo/src/integrate.ts#L287"
+      ],
+      "subscribers": "on: [IntegrationRefused]"
+    },
+    {
+      "name": "IntegrationSucceeded",
+      "group": "integration",
+      "stream": ["int-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["merge"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1231",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/repo/src/integrate.ts#L305"
+      ],
+      "subscribers": "on: [IntegrationSucceeded]"
+    },
+    {
+      "name": "BaseChecked",
+      "group": "integration",
+      "stream": ["int-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["proposed", "end"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1237",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/base-check.ts#L179"
+      ],
+      "subscribers": "on: [BaseChecked]"
+    },
+    {
+      "name": "PassRouted",
+      "group": "route",
+      "stream": ["pass-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["review", "proposed", "end"],
+      "summary": "**`proposed` chose, and the log holds the offer, the reply and the",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1279",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L4220"
+      ],
+      "subscribers": "on: [PassRouted]"
+    },
+    {
+      "name": "ConductorPaused",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim", "design", "implement", "review", "end", "outside"],
+      "summary": "What an operator told the conductor to do.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1303",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/conduct.ts#L938",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/day-ceiling.ts#L221"
+      ],
+      "subscribers": "on: [ConductorPaused]"
+    },
+    {
+      "name": "ConductorResumed",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1338",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/day-ceiling.ts#L179"
+      ],
+      "subscribers": "on: [ConductorResumed]"
+    },
+    {
+      "name": "ConductorShutdownRequested",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "Stop, once the pass in flight has finished.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1361",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/control.ts#L183",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/control.ts#L219"
+      ],
+      "subscribers": "on: [ConductorShutdownRequested]"
+    },
+    {
+      "name": "ConductorStarted",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A conductor started, from this commit, at this person's hand.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1409",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/control.ts#L258"
+      ],
+      "subscribers": "on: [ConductorStarted]"
+    },
+    {
+      "name": "ConductorShutdownWithdrawn",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "One shutdown request lifted — the one named, and nothing else.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1467",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/control.ts#L349"
+      ],
+      "subscribers": "on: [ConductorShutdownWithdrawn]"
+    },
+    {
+      "name": "OutboxDelivered",
+      "group": "control",
+      "stream": [],
+      "schemaVersion": 1,
+      "retired": true,
+      "at": [],
+      "summary": "**Retired** ([0022](../../../doc/decisions-archive/0022-the-seams.md)). Readable for",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1514",
+      "sites": [],
+      "subscribers": "on: [OutboxDelivered]"
+    },
+    {
+      "name": "OutboxFailed",
+      "group": "control",
+      "stream": [],
+      "schemaVersion": 1,
+      "retired": true,
+      "at": [],
+      "summary": "**Retired** with `OutboxDelivered` above, and for the same reasons.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1524",
+      "sites": [],
+      "subscribers": "on: [OutboxFailed]"
+    },
+    {
+      "name": "IssueUpdated",
+      "group": "control",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim", "end", "outside"],
+      "summary": "Lingtai told GitHub something about an issue, and it landed.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1566",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/edit-body.ts#L114"
+      ],
+      "subscribers": "on: [IssueUpdated]"
+    },
+    {
+      "name": "IssueUpdateFailed",
+      "group": "control",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["claim", "end", "outside"],
+      "summary": "The same attempt, refused.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1591",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/tell.ts#L210"
+      ],
+      "subscribers": "on: [IssueUpdateFailed]"
+    },
+    {
+      "name": "QueueChanged",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1600",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/board/src/app/api/webhook/route.ts#L73"
+      ],
+      "subscribers": "on: [QueueChanged]"
+    },
+    {
+      "name": "RunRequested",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": null,
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1607",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/control.ts#L402"
+      ],
+      "subscribers": "on: [RunRequested]"
+    },
+    {
+      "name": "ContinueRequested",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "An `Approve` was granted, and the run it approved is owed a continuation",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1634",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/resolve-wait.ts#L471"
+      ],
+      "subscribers": "on: [ContinueRequested]"
+    },
+    {
+      "name": "DiscussionRequested",
+      "group": "control",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "Somebody asked a question about one work item.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1659",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/board/src/app/actions.ts#L531"
+      ],
+      "subscribers": "on: [DiscussionRequested]"
+    },
+    {
+      "name": "DiscussionAsked",
+      "group": "discussion",
+      "stream": ["chat-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A question put to the discussion assistant, and what it was given to answer",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1686",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/discuss.ts#L503"
+      ],
+      "subscribers": "on: [DiscussionAsked]"
+    },
+    {
+      "name": "DiscussionAnswered",
+      "group": "discussion",
+      "stream": ["chat-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "`costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1715",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/discuss.ts#L533"
+      ],
+      "subscribers": "on: [DiscussionAnswered]"
+    },
+    {
+      "name": "DiscussionHeld",
+      "group": "discussion",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "`costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1743",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/discuss.ts#L730"
+      ],
+      "subscribers": "on: [DiscussionHeld]"
+    },
+    {
+      "name": "PromptEdited",
+      "group": "discussion",
+      "stream": ["ticket-"],
+      "schemaVersion": 2,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A sentence added to the next run's prompt, and to that one only.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1774",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/board/src/app/actions.ts#L641",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/discuss.ts#L690"
+      ],
+      "subscribers": "on: [PromptEdited]"
+    },
+    {
+      "name": "ProjectOnboardingStarted",
+      "group": "project",
+      "stream": ["prj-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A repository is on its way in: recorded, visible, and not yet conducted.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1837",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/wizard.ts#L419"
+      ],
+      "subscribers": "on: [ProjectOnboardingStarted]"
+    },
+    {
+      "name": "ProjectConfigured",
+      "group": "project",
+      "stream": ["prj-"],
+      "schemaVersion": 3,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "The recipe as resolved from origin/<base>, hashed so replays can be compared.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1866",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/onboard.ts#L601",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/onboard.ts#L672"
+      ],
+      "subscribers": "on: [ProjectConfigured]"
+    },
+    {
+      "name": "ProjectRefused",
+      "group": "project",
+      "stream": ["prj-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A conductor's pass could not look at this project, and said why — **on the",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1901",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/project.ts#L197"
+      ],
+      "subscribers": "on: [ProjectRefused]"
+    },
+    {
+      "name": "ProjectRecovered",
+      "group": "project",
+      "stream": ["prj-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "A pass looked at a project it had refused, and did not refuse it.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1919",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/project.ts#L185"
+      ],
+      "subscribers": "on: [ProjectRecovered]"
+    },
+    {
+      "name": "Reconciled",
+      "group": "project",
+      "stream": ["ctl-"],
+      "schemaVersion": 2,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "What a restarted daemon found that the log did not predict, and what it did.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1938",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/reconcile.ts#L708"
+      ],
+      "subscribers": "on: [Reconciled]"
+    },
+    {
+      "name": "GitHubAppCreated",
+      "group": "github app",
+      "stream": ["ctl-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "The team's GitHub App was minted from a manifest (`#169`).",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L1987",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/conductor/src/create-app.ts#L599"
+      ],
+      "subscribers": "on: [GitHubAppCreated]"
+    },
+    {
+      "name": "TriageStarted",
+      "group": "triage",
+      "stream": ["ticket-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "Appended before the agent is dispatched. `waitId` names the `WaitStarted`",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L2031",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/cli/src/triage.ts#L659"
+      ],
+      "subscribers": "on: [TriageStarted]"
+    },
+    {
+      "name": "WaitTriaged",
+      "group": "triage",
+      "stream": ["ticket-"],
+      "schemaVersion": 2,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "Triage's advice, or its failure, on the ticket's stream (0118 §3,",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L2042",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/cli/src/triage.ts#L182",
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/apps/cli/src/triage.ts#L1024"
+      ],
+      "subscribers": "on: [WaitTriaged]"
+    },
+    {
+      "name": "PluginFailed",
+      "group": "extension",
+      "stream": ["ext-"],
+      "schemaVersion": 1,
+      "retired": false,
+      "at": ["outside"],
+      "summary": "An event subscriber was handed an event and did not come back from it.",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/domain/src/events.ts#L2070",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/312bc1f56322931722e20b3ba741252614b5fe3e/packages/daemon/src/work-loop.ts#L414"
+      ],
+      "subscribers": "on: [PluginFailed]"
+    }
+  ]
+}</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const E = D.events;
+const STEPS = ['claim','admit','prepared','design','implement','build','review','proposed','merge','end'];
+// the pass order from doc/the-pass.html: claim admit prepared design implement build review proposed merge end
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NOSUM = 'no description in the source';
+const label = u => { const m = u.match(/\/([^\/#]+)#L(\d+)/); return m ? m[1]+':'+m[2] : u.split('/').pop(); };
+const link = u => `<a class="src" href="${esc(u)}">${esc(label(u))}</a>`;
+const sum = e => e.summary ? esc(e.summary).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code style="font-size:.9em">$1</code>') : `<span class="nosum">${NOSUM}</span>`;
+const ret = e => e.retired ? '<span class="retired">retired</span>' : '';
+const stepChip = s => s==='outside' ? '<span class="chip out" title="appended outside any pass step">outside</span>' : `<span class="chip">${s}</span>`;
+const stepChips = e => e.at.length ? [...e.at].sort((a,b)=>order(a)-order(b)).map(stepChip).join(' ') : '<span class="chip none" title="no step recorded in the source">no step</span>';
+const order = s => s==='outside' ? 99 : STEPS.indexOf(s);
+const streams = e => e.stream.length ? e.stream.map(s=>`<span class="chip flat">${esc(s)}</span>`).join(' ') : '<span class="chip none">no stream</span>';
+const sites = e => e.sites.length ? `<span class="src-list">${e.sites.map(link).join('')}</span>` : '<span class="nosum">no append site found</span>';
+const sha7 = D.sha.slice(0,7);
+const groups = [...new Set(E.map(e=>e.group))];
+const byGroup = g => E.filter(e=>e.group===g);
+
+$('#lede').innerHTML = `Everything Lingtai does is first a row in its log. This is every event type, read from the source at <a href="https://github.com/steven-zhc/lingtai/tree/${D.sha}"><code>${sha7}</code></a>: ${E.length} of them, ${E.filter(e=>e.summary).length} with a description, ${E.filter(e=>e.retired).length} retired. A <em>step</em> is where in <a href="#">the pass</a> an event is appended; <em>outside</em> means a person, the board or the daemon appends it, not a pass.`;
+$('#foot').innerHTML = `Generated from <code>doc/events.json</code> at <a href="https://github.com/steven-zhc/lingtai/tree/${D.sha}"><code>${sha7}</code></a>.`;
+
+
+const gid = g => 'g-'+g.replace(/\s+/g,'-');
+const stepName = s => s==='none' ? 'no step' : s;
+const stepChip2 = s => `<button class="chip ${s==='outside'?'out':''} ${s===sel?'on':''}" data-step="${s}" title="show only events appended at ${stepName(s)}">${s}</button>`;
+const chips = e => e.at.length ? [...e.at].sort((a,b)=>order(a)-order(b)).map(stepChip2).join('') : `<button class="chip none" data-step="none" title="no step recorded in the source">no step</button>`;
+const matches = e => !sel || (sel==='none' ? !e.at.length : e.at.includes(sel));
+const lanes = () => [...STEPS.map((s,i)=>({id:s,idx:String(i+1)})), {id:'outside',idx:'∅'}, {id:'none',idx:'?'}].map(l=>({...l,n:E.filter(e=>l.id==='none'?!e.at.length:e.at.includes(l.id)).length}));
+const dot = '<span class="dot">·</span>';
+let sel = new URLSearchParams(location.search).get('step') || '';
+if (sel && ![...STEPS,'outside','none'].includes(sel)) sel = '';
+
+function node(l){ return `<button data-step="${l.id}" aria-pressed="${l.id===sel}" title="${l.n} events"><span class="node ${l.n?'':'zero'}">${l.n}</span><span class="nm">${stepName(l.id)}</span></button>`; }
+function entry(e){
+  return `<div class="entry" id="${esc(e.name)}"><h3><a class="anc" href="#${esc(e.name)}" aria-label="link to ${esc(e.name)}">#</a>${esc(e.name)}${ret(e)}<span class="chips">${chips(e)}</span></h3>
+  <p class="sum">${sum(e)}</p>
+  <p class="meta">${e.stream.join(' ')||'no stream'}${dot}schema v${e.schemaVersion}${dot}defined ${link(e.definition)}${dot}appended ${e.sites.length?e.sites.map(link).join(', '):'<span class="nosum">no site found</span>'}${dot}<code>${esc(e.subscribers)}</code></p></div>`;
+}
+function draw(){
+  const L = lanes(), pass = L.slice(0,10), side = L.slice(10);
+  const shown = E.filter(matches);
+  const gs = groups.map(g=>({g, all:byGroup(g).length, ev:byGroup(g).filter(matches)}));
+  $('#body').innerHTML =
+   `<div class="spine ${sel?'filtering':''}" id="spine"><ol>${pass.map(l=>`<li>${node(l)}</li>`).join('')}</ol><div class="sp-out">${side.map(node).join('')}</div></div>
+   <div class="state" aria-live="polite">${sel?`<span>Showing <b>${shown.length}</b> of ${E.length} events appended at <b class="mono">${stepName(sel)}</b></span><button id="clear">show all</button>`:`<span class="nosum" style="font-style:normal">${E.length} events. Pick a step above, or a step chip on any event, to narrow the list.</span>`}</div>`+
+   gs.filter(x=>x.ev.length).map(x=>`<section class="grp" id="${gid(x.g)}"><h2>${esc(x.g)}<small>${sel?x.ev.length+' of '+x.all:x.all} event${x.all==1?'':'s'}</small></h2>${x.ev.map(entry).join('')}</section>`).join('');
+  $('#contents').innerHTML = `<h2>Groups</h2><ul>${gs.map(x=>`<li class="${x.ev.length?'':'zero'}"><a href="#${gid(x.g)}" ${x.ev.length?'':'tabindex="-1" aria-disabled="true"'}><span>${esc(x.g)}</span><span class="n">${x.ev.length}</span></a></li>`).join('')}</ul>${sel?'<div class="all"><button id="clear2">× clear step filter</button></div>':''}`;
+  const c=$('#clear'); if(c) c.onclick=()=>pick('');
+  const c2=$('#clear2'); if(c2) c2.onclick=()=>pick('');
+  try{ const u=new URL(location.href); sel?u.searchParams.set('step',sel):u.searchParams.delete('step'); history.replaceState(null,'',u); }catch(_){}
+}
+function pick(s){ sel = (s===sel)?'':s; const y=scrollY; draw(); scrollTo(0,y); }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-step]'); if(b){ pick(b.dataset.step); } });
+function goHash(){
+  const id=decodeURIComponent(location.hash.slice(1)); if(!id) return;
+  const ev=E.find(x=>x.name===id);
+  if(ev && !matches(ev)){ sel=''; draw(); }
+  const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'instant'});
+}
+addEventListener('hashchange',goHash);
+draw(); goHash();
+</script>
+</body>
+</html>
