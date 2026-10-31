@@ -117,7 +117,7 @@ describe('add on a gh machine (#708)', () => {
       checkGh: async () => null,
       check,
     })
-    expect(code).toBe(1)
+    expect(code).toEqual({ ok: false })
     expect(check).not.toHaveBeenCalled()
   })
 
@@ -128,7 +128,7 @@ describe('add on a gh machine (#708)', () => {
       checkGh,
       check: async () => null,
     })
-    expect(code).toBe(1)
+    expect(code).toEqual({ ok: false })
     expect(checkGh).not.toHaveBeenCalled()
   })
 })

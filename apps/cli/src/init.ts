@@ -515,6 +515,34 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       `the board did not start — ${why}. Everything chosen above is kept, and lingtai init again continues from here`,
     )
 
+  // *this machine* alone, for a GitHub run that has no repository yet: no project group, and a ready
+  // line without a recipe. `how` is the one row about GitHub.
+  const machineCard = async (how: string): Promise<boolean> => {
+    held.length = 0
+    const end = await printSetupEnd(
+      world,
+      {
+        command: 'init',
+        updated: false,
+        home,
+        homeIsNew,
+        userHome: world.env['HOME'] ?? '',
+        store: storeNow,
+        runtimes,
+        github: how,
+      },
+      [],
+    )
+    return end.failed
+  }
+  const reachRow = async (viaGh: boolean): Promise<string> => {
+    if (viaGh) {
+      const status = await world.ghStatus()
+      return status.ok ? `gh, signed in as ${status.login}` : 'gh, not signed in'
+    }
+    return app.configured && app.ok ? `the App ${app.slug}` : 'no App yet'
+  }
+
   let github = false
   let doctorFailed = false
   // A local run's doctor report is part of the card; every other path prints it whole, below.
@@ -629,18 +657,15 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       doctorFailed = end.failed
       cardDrawn = true
     } else {
-      flush()
       github = true
       githubNext = ['lingtai add <owner>/<repo>']
+      let how = await reachRow(chosen.auth === 'gh')
       if (chosen.auth === 'gh') {
         // No App to start a board for: the saved `gh` login is the whole of
         // the auth, and a repository is named to `lingtai add`, not picked.
       } else if (chosen.app === 'already') {
         // Nothing upstream asked for a URL on this path — `app.configured` was
         // already true, so `boardUrl()` above was never called.
-        if (app.configured && app.ok) {
-          fact(world, 'GitHub App', [['app', paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)]])
-        }
         const started = await startBoard()
         if ('refused' in started) return boardRefused(started.refused)
         const wizard = `${started.url}/setup/repository`
@@ -655,17 +680,18 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
         const started = await startBoard()
         const url = 'url' in started ? started.url : ''
         githubNext = [`open ${url}/setup/repository`, 'lingtai add <owner>/<repo>']
+        how = `the App ${chosen.app.made.slug}`
       }
       // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
       // own call to `waitForApp` (`appComeBackLine`).
       //
       // `init`'s GitHub branch never has a slug, so there is no recipe file
-      // to print here — it exists once a repository is picked.
-      world.log('the recipe is written once a repository is picked — it asks its questions at the terminal')
+      // to name here — it exists once a repository is picked.
+      doctorFailed = await machineCard(how)
+      cardDrawn = true
     }
   } else if (app.configured && !ghMachine) {
     github = true
-    fact(world, 'GitHub App', [['app', paint.pass(`${app.slug}, owned by ${app.owner} — it answered`)]])
     // Nothing new was asked — the machine already has projects, told above —
     // but a configured App still has its one remaining screen: the wizard
     // that picks a repository for it. Nothing upstream asked for a board yet.
@@ -675,6 +701,8 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     world.log(
       (await world.open(wizard)) ? paint.pass(`opened ${wizard}`) : `no browser could be opened here — open ${wizard}`,
     )
+    doctorFailed = await machineCard(await reachRow(ghMachine))
+    cardDrawn = true
   }
 
   if (!cardDrawn) {

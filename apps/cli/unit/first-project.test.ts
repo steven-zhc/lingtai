@@ -702,12 +702,15 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       project: 'github',
       app: { made: { slug: 'lingtai-steven', owner: 'steven-zhc' } },
       slug: 'acme/widget',
+      updated: false,
+      warnings: [],
+      reach: { kind: 'gh', login: 'me' },
     })
     // Written once the App answered, not before.
     expect(authWrites).toEqual(['app'])
     expect(added).toHaveLength(1)
     expect(added[0]).toMatchObject({ slug: 'acme/widget' })
-    expect(logged).toContain('installation 7 on acme (selected)')
+    expect(logged).not.toContain('installation 7 on acme (selected)')
   })
 
   it('a repository the App cannot see is refused by name, and add is never called', async () => {
@@ -823,7 +826,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     expect(logged).toEqual(['github       app — a GitHub App is configured here'])
   })
 
-  it('a successful registration is logged once, after add returns', async () => {
+  it('a successful registration prints none of what add logged: that is the card\'s, not a dump (#755)', async () => {
     const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
     const picker = await listRepositories({ reader, projects: [], installUrl: null })
 
@@ -839,7 +842,8 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     const result = await chooseFirstProject(world, { github: 'acme/widget' })
 
     expect(result).toMatchObject({ ok: true, project: 'github' })
-    expect(logged).toEqual(['github       app — a GitHub App is configured here', 'added acme/widget'])
+    expect(logged).toEqual(['github       app — a GitHub App is configured here'])
+    expect(result).toMatchObject({ updated: false, warnings: [] })
   })
 
   it('--github-app given beside a slug, with an App already configured, is refused rather than silently discarded (#394 finding 8)', async () => {
@@ -1066,7 +1070,16 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       return null
     }
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
-    expect(result).toEqual({ ok: true, project: 'github', app: 'already', slug: 'acme/widgets', auth: 'gh' })
+    expect(result).toEqual({
+      ok: true,
+      project: 'github',
+      app: 'already',
+      slug: 'acme/widgets',
+      auth: 'gh',
+      updated: false,
+      warnings: [],
+      reach: { kind: 'gh', login: 'me' },
+    })
     expect(calls).toMatchObject({ app: 0, board: 0, wait: 0, picker: 0 })
     expect(calls.added).toEqual([{ slug: 'acme/widgets', installation: undefined, base: undefined }])
   })

@@ -498,9 +498,7 @@ export type GithubReach = { kind: 'gh'; login: string | null } | { kind: 'app'; 
  * prints none of it: it prints `warnings`, which are reported here separately so
  * nothing downstream tells a warning from the rest by its words (#755).
  */
-export type Added =
-  | { ok: true; updated: boolean; warnings: readonly string[]; reach: GithubReach }
-  | { ok: false }
+export type Added = { ok: true; updated: boolean; warnings: readonly string[]; reach: GithubReach } | { ok: false }
 
 export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<Added> {
   const { owner, repo } = parseSlug(options.slug)

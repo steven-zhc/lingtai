@@ -1,5 +1,5 @@
-import { storeChoice, type StoreChoice } from '@lingtai/env'
 import type { GithubReach } from '@lingtai/conductor/onboard'
+import { storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, resolveSource } from '@lingtai/recipe'
 
@@ -122,7 +122,9 @@ export async function addFlow(
       if (text === null) throw new Error(`${path} is not there to read`)
       card = cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
     } catch (err) {
-      world.error(`${repo} is registered, but its recipe could not be read back for the summary — ${(err as Error).message}`)
+      world.error(
+        `${repo} is registered, but its recipe could not be read back for the summary — ${(err as Error).message}`,
+      )
       return 1
     }
     for (const line of result.warnings ?? []) world.log(line)

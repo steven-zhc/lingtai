@@ -281,7 +281,7 @@ describe('askBeforeGithubAdd (#402)', () => {
       ['none'],
     )
 
-    expect(code).toBeNull()
+    expect(code).toMatchObject({ trial: expect.anything(), hints: expect.any(Array) })
     expect(counted.writes).toBe(1)
 
     const path = recipePath('nextloom-ai-admin')

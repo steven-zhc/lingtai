@@ -35,7 +35,8 @@ export interface CardRecipe {
 
 export interface SetupCardFacts {
   command: 'init' | 'add'
-  project: string
+  /** Absent where there is no project yet (`init --project github`). */
+  project?: string
   /** The project was already registered. */
   updated: boolean
   home: string
@@ -190,7 +191,10 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         rows: [
           ['writes', agentRow(recipe.writer)],
           ['reviews', agentRow(recipe.reviewer)],
-          ['checks', recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review'],
+          [
+            'checks',
+            recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
+          ],
           ['trial', trialRow(trial)],
           ['approve', recipe.approves ? 'you approve every pass before it lands' : 'a pass lands with no one asking'],
         ],
@@ -198,7 +202,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
     )
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
-  const top = `${heading(facts.command)}  ${facts.project}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
+  const top = `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),

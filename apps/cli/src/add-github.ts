@@ -34,8 +34,8 @@ import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
-import { liveHistory } from './source.ts'
 import type { TrialOutcome } from './setup-build.ts'
+import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
 
 /**
