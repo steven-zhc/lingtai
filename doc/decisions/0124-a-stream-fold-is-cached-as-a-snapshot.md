@@ -57,6 +57,13 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    test, naming the fold: changing the expected value without raising the version
    is the one edit the test refuses. A snapshot whose `(name, version)` is not
    the fold's current one is never read.
+   **A field of the state is not a field of an event.** A new optional field on
+   an *event* (§4) is absent on the events written before it, and stays absent —
+   the event is the fact. A new field of a fold's *state* derived from events
+   already in the log (the last time the conductor was paused, from every
+   `ConductorPaused`) is a change to what the fold computes, and raises its
+   version, so that the state is always what the current fold makes of the whole
+   stream and never depends on when a cache happened to be written.
 
 4. **Events do not change; a different event is a new type.** An event's payload
    may only gain optional fields, which every reader treats as `null` when absent;
