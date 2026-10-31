@@ -309,6 +309,7 @@ export async function askRecipe(
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
     tryBuild: at.tryBuild ?? null,
+    recipeExisted: !absent,
     onPath: toolOnPath,
     home: at.home,
     files: at.files,
@@ -316,11 +317,18 @@ export async function askRecipe(
   })
   if ('refused' in setup) return setup
   const trial = setup.trial
+  // Said only once the write that carries the list has happened, never when it was chosen.
+  const sayKept = () => {
+    if (trial.trial === 'failed-kept') {
+      askWorld.log(`kept the list as tried — it is written to ${recipePath(at.project, at.home)}`)
+    }
+  }
   if (absent) {
     collected.push(...setup.changes)
   } else {
     const wroteSetup = await writeOrRefuse(at.project, setup.changes, fileOptions)
     if ('refused' in wroteSetup) return wroteSetup
+    sayKept()
   }
 
   const tickets = await askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
@@ -364,6 +372,7 @@ export async function askRecipe(
       : [...all, { path: ['source', 'tickets'], value: tickets.current }]
     const wrote = await writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
     if ('refused' in wrote) return wrote
+    sayKept()
   }
 
   const landed = await askLanding(askWorld, at.project, at.flags['land'] ?? null, {

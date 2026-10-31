@@ -38,6 +38,12 @@ export interface TrialReport {
   nothingDeclared: boolean
 }
 
+/** The trial: the base it will cut at (asked when it is about to run), and the run itself. */
+export interface Trial {
+  base: () => Promise<string>
+  run: (install: string | null, build: string[]) => Promise<TrialReport>
+}
+
 interface NamedRun {
   name: string
   run: string
@@ -48,7 +54,12 @@ export interface AskInstallAndBuildInput {
   reader: SetupReader
   given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
   /** Null where there is nowhere to run it — logged, never run silently. */
-  tryBuild: ((install: string | null, build: string[]) => Promise<TrialReport>) | null
+  tryBuild: Trial | null
+  /**
+   * Whether the recipe file existed when `add` began. Where it did, every
+   * earlier answer is already on disk, so "nothing is written yet" would be false.
+   */
+  recipeExisted?: boolean
   home?: string
   files?: RecipeFiles
   /** `question.ts`'s `kept` — what a refusal below says is already written. */
@@ -218,12 +229,15 @@ async function askInstall(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   detected: DetectedSetup,
+  /** The command just tried (null for none), when this is a second time round. */
+  previous?: string | null,
 ): Promise<{ run: string | null; refused: string } | { run: string | null }> {
   const current = await currentRunActions(input.project, ['steps', 'prepared'], {
     home: input.home,
     files: input.files,
   })
-  const currentRun = current[0]?.run ?? null
+  const again = previous !== undefined
+  const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? null)
 
   const answer = await question(world, {
     name: 'the install command',
@@ -231,8 +245,8 @@ async function askInstall(
     given: input.given.install,
     prompt: 'the install command',
     current: currentRun,
-    detected: detected.install?.run ?? null,
-    ...(currentRun === null && detected.install
+    detected: again ? null : (detected.install?.run ?? null),
+    ...(!again && currentRun === null && detected.install
       ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
       : {}),
     fallback: '',
@@ -243,38 +257,54 @@ async function askInstall(
   return { run: answer.answer === 'none' ? null : answer.answer }
 }
 
-/** Runs the trial build, prints its results, and decides whether a red one still writes. */
+type Tried =
+  | { ok: true; trial: TrialOutcome }
+  | { again: 'edit'; at: 'install' | 'build' }
+  | { again: 'drop'; failed: string[] }
+  | { refused: string }
+
+/**
+ * Runs the trial build, prints its results, and asks what to do with a red one:
+ * keep the list, go back and edit it, or drop the checks that failed.
+ * `asked` is false for the run `drop` repeats — choosing it was the question.
+ */
 async function tryTheBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   install: string | null,
   build: NamedRun[],
-): Promise<{ ok: true; trial: TrialOutcome } | { refused: string }> {
+  asked: boolean,
+): Promise<Tried> {
   if (build.length === 0) return { ok: true, trial: { trial: 'not-run', because: 'no checks' } }
-  if (input.tryBuild === null) {
+  const trial = input.tryBuild
+  if (trial === null) {
     world.log(
       'the trial run was not run — no checkout on this machine; the first pass’s `build` is where these first run',
     )
     return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
   }
 
-  const check = await question(world, {
-    name: 'the trial run',
-    flag: '--check-build yes, or --check-build no',
-    given: input.given.check,
-    prompt: 'run these once against the base before writing them?',
-    choices: ['yes', 'no'],
-    fallback: 'yes',
-    kept: input.kept,
-  })
-  if ('refused' in check) return { refused: check.refused }
-  if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
+  if (asked) {
+    const base = await trial.base()
+    const ending = input.recipeExisted === true ? 'This list is not written yet.' : 'Nothing is written yet.'
+    const check = await question(world, {
+      name: 'the trial run',
+      flag: '--check-build yes, or --check-build no',
+      given: input.given.check,
+      prompt: `Try them once now, on \`${base}\`, to see that they work? ${ending}`,
+      choices: ['yes', 'no'],
+      fallback: 'yes',
+      kept: input.kept,
+    })
+    if ('refused' in check) return { refused: check.refused }
+    if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
+  }
 
   world.log('running the trial build — this can take minutes')
   let report: TrialReport
   const startedAt = Date.now()
   try {
-    report = await input.tryBuild(
+    report = await trial.run(
       install,
       build.map((b) => b.run),
     )
@@ -302,20 +332,42 @@ async function tryTheBuild(
     )
   }
 
+  // A failure is a check only when it names one of the list's commands. The
+  // install, `env`, `git` and `cleanup` are not checks: dropping removes
+  // nothing that fixes them, so only `edit` (back to the install) is offered.
+  const checks = new Set(build.map((b) => b.run))
+  const failed = results.filter((r) => r.outcome === 'failed').map((r) => r.command)
+  const failedChecks = failed.filter((c) => checks.has(c) && c !== install)
+  const failedOther = failed.filter((c) => c !== 'cleanup' && !failedChecks.includes(c))
+  const canDrop = failedChecks.length > 0 && failedOther.length === 0
+
   const decide = await question(world, {
-    name: 'whether to write the failed build list',
-    flag: '--check-build no',
+    name: 'what to do with the failed build list',
+    flag: '--check-build no, or --build <command>',
     given: null,
-    prompt: 'write them anyway, or edit the list?',
-    choices: ['write', 'edit'],
+    prompt: canDrop
+      ? 'keep the list as it is, edit it, or drop the checks that failed?'
+      : 'keep the list as it is, or edit it?',
+    choices: canDrop ? ['edit', 'keep', 'drop'] : ['edit', 'keep'],
     fallback: 'edit',
     kept: input.kept,
   })
   if ('refused' in decide) return { refused: decide.refused }
+  if (decide.answer === 'drop') return { again: 'drop', failed: failedChecks }
   if (decide.answer === 'edit') {
-    return {
-      refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
+    const at = failedChecks.length > 0 && failedOther.length === 0 ? 'build' : 'install'
+    if (at === 'build' && input.given.build !== null) {
+      return {
+        refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
+      }
     }
+    if (at === 'install' && input.given.install !== null) {
+      return {
+        refused:
+          'the trial’s install failed and the list was not written — rerun with --install to give a different one',
+      }
+    }
+    return { again: 'edit', at }
   }
   return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
 }
@@ -324,8 +376,11 @@ async function askBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   detected: DetectedSetup,
+  /** The list just tried, when this is a second time round. */
+  previous?: NamedRun[],
 ): Promise<{ build: NamedRun[] } | { refused: string }> {
-  const current = await currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files })
+  const current =
+    previous ?? (await currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
 
   if (input.given.build !== null) {
     if (input.given.build.includes('none') && input.given.build.length > 1) {
@@ -349,7 +404,7 @@ async function askBuild(
   const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
   // What detection found explains a default only when the default came from it, not from the file's own list.
   const why =
-    current.length > 0
+    current.length > 0 || previous !== undefined
       ? []
       : [
           ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
@@ -362,7 +417,7 @@ async function askBuild(
       name: 'the build steps',
       flag: '--build <command> (repeatable), or --build none',
       given: null,
-      prompt: 'run these before review? yes, or no to write your own',
+      prompt: 'Each pass runs these checks before review — keep this list? (yes / no to write your own)',
       choices: ['yes', 'no'],
       fallback: 'yes',
       why,
@@ -398,13 +453,35 @@ export async function askInstallAndBuild(
   const detected = await detectSetup(input.reader)
   await printFound(world, detected, input.onPath)
 
-  const install = await askInstall(world, input, detected)
+  let install = await askInstall(world, input, detected)
   if ('refused' in install) return { refused: install.refused }
 
-  const build = await askBuild(world, input, detected)
+  let build = await askBuild(world, input, detected)
   if ('refused' in build) return { refused: build.refused }
 
-  const tried = await tryTheBuild(world, input, install.run, build.build)
+  let tried: Tried
+  for (;;) {
+    let asked = true
+    for (;;) {
+      tried = await tryTheBuild(world, input, install.run, build.build, asked)
+      if ('again' in tried && tried.again === 'drop') {
+        const failed = new Set(tried.failed)
+        build = { build: build.build.filter((b) => !failed.has(b.run)) }
+        if (build.build.length === 0) world.log('nothing will check a diff before review')
+        asked = false
+        continue
+      }
+      break
+    }
+    if (!('again' in tried)) break
+    // edit: back to the question that can change what failed, every earlier answer kept.
+    if (tried.at === 'install') {
+      install = await askInstall(world, input, detected, install.run)
+      if ('refused' in install) return { refused: install.refused }
+    }
+    build = await askBuild(world, input, detected, build.build)
+    if ('refused' in build) return { refused: build.refused }
+  }
   if ('refused' in tried) return { refused: tried.refused }
 
   const changes: RecipeChange[] = []

@@ -15,7 +15,7 @@ import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent
 import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
 import { provisionWorktree, removeWorktree, type ProvisionOptions } from '@lingtai/repo'
 
-import type { AskInstallAndBuildInput, TrialResult } from './setup-build.ts'
+import type { AskInstallAndBuildInput, TrialReport, TrialResult } from './setup-build.ts'
 
 /** Thrown by the runner, after its worktree is gone, when Ctrl+C stopped the trial. */
 export class TrialInterrupted extends Error {
@@ -111,7 +111,7 @@ async function cutOf(at: TrialAt): Promise<{ base: string; submodules: boolean }
 }
 
 export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstallAndBuildInput['tryBuild']> {
-  return async (install, build) => {
+  const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
     const options = { home: at.home, files: at.files }
     const envBlock = await readRecipeKey(at.project, ['env'], options).catch(() => null)
     const declared = (envBlock ?? {}) as Record<string, unknown>
@@ -225,6 +225,7 @@ export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstall
     }
     return { results, nothingDeclared }
   }
+  return { base: async () => (await cutOf(at)).base, run }
 }
 
 function notRun(runs: string[], because: string): TrialResult[] {
@@ -237,7 +238,7 @@ function notRun(runs: string[], because: string): TrialResult[] {
  * own Ctrl+C handling is back afterwards.
  */
 export function liveTrialBuild(at: Omit<TrialAt, 'interrupt'>): NonNullable<AskInstallAndBuildInput['tryBuild']> {
-  return async (install, build) => {
+  const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
     const controller = new AbortController()
     const onSigint = () => controller.abort()
     process.once('SIGINT', onSigint)
@@ -245,9 +246,10 @@ export function liveTrialBuild(at: Omit<TrialAt, 'interrupt'>): NonNullable<AskI
       return await trialBuild(
         { ...at, interrupt: controller.signal },
         liveTrialDeps((line) => console.log(line)),
-      )(install, build)
+      ).run(install, build)
     } finally {
       process.off('SIGINT', onSigint)
     }
   }
+  return { base: async () => (await cutOf(at)).base, run }
 }
