@@ -479,8 +479,8 @@ async function runLocalBranch(
     const got = await world.git(toplevel, ['remote', 'get-url', 'origin'])
     const origin = got.ok && got.stdout.trim() !== '' ? resolveRemote(got.stdout.trim(), toplevel) : null
     moving = ports !== null && origin !== null && existingRemote === origin
-    oldRemote = existingRemote
   }
+  if (typeof existingRemote === 'string') oldRemote = existingRemote
   if (found !== undefined && found.owner === null) {
     // `repo.remote` is optional in the schema (`recipe.ts`), so a project
     // registered before owners were recorded — #352's `unrecorded` state —
@@ -566,11 +566,13 @@ async function runLocalBranch(
   // A move is the remote leaving the old one, or the base differing from the one recorded.
   const migrating =
     ports !== null &&
-    (moving || (typeof existingRemote === 'string' && typeof currentBase === 'string' && currentBase !== base))
+    typeof existingRemote === 'string' &&
+    // Any rewrite of the recipe's landing is a move — whether or not the old remote was recognised as the checkout's `origin`.
+    (existingRemote !== remote || (typeof currentBase === 'string' && currentBase !== base))
   // Every refusal of a move comes before the first write — the branch below is one.
   if (migrating && ports !== null) {
     world.log(
-      `lands: ${moving ? oldRemote : remote} ${typeof currentBase === 'string' ? currentBase : '(none)'} → this checkout, ${base}`,
+      `lands: ${oldRemote} ${typeof currentBase === 'string' ? currentBase : '(none)'} → this checkout, ${base}`,
     )
     let flying: readonly string[]
     try {
