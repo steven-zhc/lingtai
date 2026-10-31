@@ -309,6 +309,7 @@ export async function askRecipe(
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
     tryBuild: at.tryBuild ?? null,
+    recipeExisted: !absent,
     onPath: toolOnPath,
     home: at.home,
     files: at.files,

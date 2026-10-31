@@ -40,6 +40,14 @@ function world(answers: (string | null)[] = []): { world: SetupWorld; lines: str
   }
 }
 
+/** A trial that cuts at `main`, running `run`. */
+function trial(
+  run: (install: string | null, build: string[]) => Promise<{ results: TrialResult[]; nothingDeclared: boolean }>,
+  base = 'main',
+): NonNullable<AskInstallAndBuildInput['tryBuild']> {
+  return { base: async () => base, run }
+}
+
 const EMPTY_READER: SetupReader = { has: async () => false, read: async () => null }
 
 function reader(files: Record<string, string>): SetupReader {
@@ -488,7 +496,7 @@ steps:
       w,
       input({
         given: { install: 'none', build: ['pnpm test'], check: 'yes' },
-        tryBuild: async () => failing,
+        tryBuild: trial(async () => failing),
         files,
       }),
     )
@@ -513,7 +521,7 @@ describe('a red trial build prints what ran and what did not', () => {
       w,
       input({
         given: { install: 'none', build: ['a', 'b', 'c'], check: 'yes' },
-        tryBuild: async () => report,
+        tryBuild: trial(async () => report),
         files,
       }),
     )
@@ -529,7 +537,7 @@ describe('a red trial build prints what ran and what did not', () => {
     expect(lines.some((l) => l.startsWith('failed: b') && l.includes('boom'))).toBe(true)
     expect(lines).toContain('not run: c — `b` failed first')
     expect(lines.some((l) => l.startsWith('failed: c'))).toBe(false)
-    expect(lines.asked.some((q) => q.includes('write them anyway'))).toBe(true)
+    expect(lines.asked.some((q) => q.includes('keep the list as it is'))).toBe(true)
   })
 
   it('says once, after the list, that no env was declared', async () => {
@@ -602,10 +610,10 @@ describe('the trial outcome the card reads', () => {
         w,
         input({
           given: { install: 'none', build: ['a'], check: 'yes' },
-          tryBuild: async () => {
+          tryBuild: trial(async () => {
             await vi.advanceTimersByTimeAsync(125_000)
             return passing
-          },
+          }),
           files: mapFiles({ [PATH]: BASE }),
         }),
       )
@@ -620,7 +628,11 @@ describe('the trial outcome the card reads', () => {
     const files = () => mapFiles({ [PATH]: BASE })
     const declined = await askInstallAndBuild(
       world().world,
-      input({ given: { install: 'none', build: ['a'], check: 'no' }, tryBuild: async () => passing, files: files() }),
+      input({
+        given: { install: 'none', build: ['a'], check: 'no' },
+        tryBuild: trial(async () => passing),
+        files: files(),
+      }),
     )
     expect(declined).toMatchObject({ trial: { trial: 'not-run', because: 'declined' } })
     const unoffered = await askInstallAndBuild(
@@ -641,10 +653,10 @@ describe('the trial outcome the card reads', () => {
       nothingDeclared: false,
     }
     const result = await askInstallAndBuild(
-      world(['write']).world,
+      world(['keep']).world,
       input({
         given: { install: 'none', build: ['pnpm test'], check: 'yes' },
-        tryBuild: async () => failing,
+        tryBuild: trial(async () => failing),
         files: mapFiles({ [PATH]: BASE }),
       }),
     )
@@ -701,5 +713,174 @@ describe('why a default is what it is (#773)', () => {
     const { world: w, lines } = world([])
     await askInstallAndBuild(w, input({ reader: reader(UV), files }))
     expect(lines.join('\n')).not.toContain('is at the root')
+  })
+})
+
+describe('a failed trial offers keep, edit or drop (#758)', () => {
+  const LISTED = `${BASE}steps:
+  prepared:
+    - name: install
+      run: npm ci
+  build:
+    - name: a
+      run: a
+    - name: b
+      run: b
+    - name: c
+      run: c
+`
+  const fail = (command: string, rest: string[] = []): { results: TrialResult[]; nothingDeclared: boolean } => ({
+    results: [
+      { command, outcome: 'failed', evidence: 'boom' },
+      ...rest.map((c): TrialResult => ({ command: c, outcome: 'not-run', because: `\`${command}\` failed first` })),
+    ],
+    nothingDeclared: false,
+  })
+  const ok = (...commands: string[]) => ({
+    results: commands.map((command): TrialResult => ({ command, outcome: 'passed', evidence: '' })),
+    nothingDeclared: false,
+  })
+  const asking = (answers: string[]) => {
+    const { world: base, lines } = world(answers)
+    const asked: string[] = []
+    const w: SetupWorld = {
+      ...base,
+      ask: async (prompt) => {
+        asked.push(prompt)
+        return base.ask(prompt)
+      },
+    }
+    return { w, lines, asked }
+  }
+
+  it('says what the two questions are, with the base, and what is not yet written', async () => {
+    for (const [recipeExisted, ending] of [
+      [false, 'Nothing is written yet.'],
+      [true, 'This list is not written yet.'],
+    ] as const) {
+      const { w, asked } = asking(['', 'yes', 'no'])
+      await askInstallAndBuild(
+        w,
+        input({
+          tryBuild: trial(async () => ok('a'), 'develop'),
+          recipeExisted,
+          files: mapFiles({ [PATH]: LISTED }),
+        }),
+      )
+      expect(asked.some((q) => q.includes('Each pass runs these checks before review — keep this list?'))).toBe(true)
+      const q = asked.find((x) => x.includes('Try them once now'))!
+      expect(q).toContain('on `develop`, to see that they work?')
+      expect(q).toContain(ending)
+    }
+  })
+
+  it('edit goes back to the build question, install asked once, one change returned', async () => {
+    const calls: string[][] = []
+    const { w, asked } = asking(['', 'yes', 'yes', 'edit', 'no', 'x', '', 'yes'])
+    const result = await askInstallAndBuild(
+      w,
+      input({
+        tryBuild: trial(async (_i, build) => {
+          calls.push(build)
+          return calls.length === 1 ? fail('a', ['b', 'c']) : ok('x')
+        }),
+        files: mapFiles({ [PATH]: LISTED }),
+      }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(calls).toEqual([['a', 'b', 'c'], ['x']])
+    expect(asked.filter((q) => q.includes('install command'))).toHaveLength(1)
+    expect(result.changes.filter((c) => c.path.join('.') === 'steps.build')).toHaveLength(1)
+    expect(result.trial).toMatchObject({ trial: 'passed' })
+  })
+
+  it('drop removes the failed check and tries the rest again without asking again', async () => {
+    const calls: string[][] = []
+    const { w, asked } = asking(['', 'yes', 'yes', 'drop'])
+    const result = await askInstallAndBuild(
+      w,
+      input({
+        tryBuild: trial(async (_i, build) => {
+          calls.push(build)
+          return calls.length === 1 ? fail('b', ['c']) : ok('a', 'c')
+        }),
+        files: mapFiles({ [PATH]: LISTED }),
+      }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(calls).toEqual([
+      ['a', 'b', 'c'],
+      ['a', 'c'],
+    ])
+    expect(asked.filter((q) => q.includes('Try them once now'))).toHaveLength(1)
+    const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
+    expect(build?.value).toEqual([
+      { name: 'a', run: 'a' },
+      { name: 'c', run: 'c' },
+    ])
+  })
+
+  it('drop of the only check runs no second trial and says nothing will check a diff', async () => {
+    const calls: string[][] = []
+    const { w, lines } = asking(['', 'yes', 'yes', 'drop'])
+    const result = await askInstallAndBuild(
+      w,
+      input({
+        tryBuild: trial(async (_i, build) => {
+          calls.push(build)
+          return fail('a')
+        }),
+        files: mapFiles({ [PATH]: LISTED.replace(/ {4}- name: [bc]\n {6}run: [bc]\n/g, '') }),
+      }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(calls).toHaveLength(1)
+    expect(lines).toContain('nothing will check a diff before review')
+    expect(result.trial).toMatchObject({ trial: 'not-run', because: 'no checks' })
+  })
+
+  it('keep logs the recipe path', async () => {
+    const { w, lines } = asking(['', 'yes', 'yes', 'keep'])
+    await askInstallAndBuild(
+      w,
+      input({ tryBuild: trial(async () => fail('a', ['b', 'c'])), files: mapFiles({ [PATH]: LISTED }) }),
+    )
+    expect(lines.some((l) => l.includes('kept the list as tried') && l.includes(PATH))).toBe(true)
+  })
+
+  it('a failed install offers keep and edit only, and edit starts at the install question', async () => {
+    const { w, asked } = asking(['', 'yes', 'yes', 'edit', 'pnpm i', 'yes', 'no'])
+    let n = 0
+    await askInstallAndBuild(
+      w,
+      input({
+        tryBuild: trial(async () => (++n === 1 ? fail('npm ci', ['a', 'b', 'c']) : ok('a'))),
+        files: mapFiles({ [PATH]: LISTED }),
+      }),
+    )
+    const choice = asked.find((q) => q.includes('keep the list as it is'))!
+    expect(choice).not.toContain('drop')
+    expect(asked.filter((q) => q.includes('install command'))).toHaveLength(2)
+  })
+
+  it('refuses edit by naming --build or --install when the answer was a flag', async () => {
+    const byBuild = await askInstallAndBuild(
+      world(['edit']).world,
+      input({
+        given: { install: 'none', build: ['a'], check: 'yes' },
+        tryBuild: trial(async () => fail('a')),
+        files: mapFiles({ [PATH]: BASE }),
+      }),
+    )
+    expect(byBuild).toEqual({ refused: expect.stringContaining('--build') })
+    const byInstall = await askInstallAndBuild(
+      world(['edit']).world,
+      input({
+        given: { install: 'npm ci', build: ['a'], check: 'yes' },
+        tryBuild: trial(async () => fail('npm ci', ['a'])),
+        files: mapFiles({ [PATH]: BASE }),
+      }),
+    )
+    expect(byInstall).toEqual({ refused: expect.stringContaining('--install') })
   })
 })

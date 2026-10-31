@@ -460,9 +460,12 @@ describe('askRecipe — the trial run (#436)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files: mapFiles(),
-      tryBuild: async (_install, build) => {
-        calls.push(build)
-        return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
+      tryBuild: {
+        base: async () => 'main',
+        run: async (_install, build) => {
+          calls.push(build)
+          return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
+        },
       },
     } satisfies RecipeAt)
     return { result, calls }
