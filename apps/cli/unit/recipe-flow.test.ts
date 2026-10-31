@@ -446,10 +446,12 @@ describe('askRecipe — --defaults (#433)', () => {
 describe('askRecipe — the trial run (#436)', () => {
   const run = async (flags: Record<string, string>) => {
     const calls: string[][] = []
+    const trials: unknown[] = []
     const result = await askRecipe(defaultsWorld(), {
       ...BASE_AT,
       project: 'widget',
       local: true,
+      onTrial: (t) => trials.push(t),
       flags: { install: 'none', ...flags },
       buildFlags: ['pnpm test'],
       seeds: [
@@ -465,7 +467,7 @@ describe('askRecipe — the trial run (#436)', () => {
         return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
       },
     } satisfies RecipeAt)
-    return { result, calls }
+    return { result, calls, trials }
   }
 
   it('does not run under --defaults', async () => {
@@ -474,9 +476,15 @@ describe('askRecipe — the trial run (#436)', () => {
     expect(calls).toEqual([])
   })
 
-  it('runs under --defaults --check-build yes', async () => {
-    const { calls } = await run({ defaults: '', 'check-build': 'yes' })
+  it('runs under --defaults --check-build yes, and tells the caller how it went', async () => {
+    const { calls, trials } = await run({ defaults: '', 'check-build': 'yes' })
     expect(calls).toEqual([['pnpm test']])
+    expect(trials).toEqual([expect.objectContaining({ trial: 'passed' })])
+  })
+
+  it('tells the caller a declined trial was not run', async () => {
+    const { trials } = await run({ 'check-build': 'no' })
+    expect(trials).toEqual([{ trial: 'not-run', because: 'declined' }])
   })
 
   it('skips --check-build no without asking', async () => {

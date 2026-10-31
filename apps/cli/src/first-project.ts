@@ -87,6 +87,7 @@ import { waitForKeypress } from './keypress.ts'
 import { acceptingDefaults, question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
 import { askRuntimes, type RuntimeFound } from './runtimes.ts'
+import type { TrialOutcome } from './setup-build.ts'
 import { liveHistory } from './source.ts'
 import { liveTrialBuild } from './trial-build.ts'
 
@@ -182,7 +183,7 @@ export interface FirstProjectWorld extends QuestionWorld {
 }
 
 export type FirstProjectOutcome =
-  | { ok: true; project: 'local'; name: string; remote: string; base: string }
+  | { ok: true; project: 'local'; name: string; remote: string; base: string; trial: TrialOutcome }
   | { ok: true; project: 'github'; app: 'already' | AppWaitResult; slug?: string; auth?: 'gh' }
   | { refused: string }
 
@@ -534,8 +535,12 @@ async function runLocalBranch(
     `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered` +
     (madeKept === null ? '' : `; ${madeKept} is kept too`)
 
+  const tried: { trial: TrialOutcome | null } = { trial: null }
   const recipeResult = await askRecipe(world, {
     project: name,
+    onTrial: (t) => {
+      tried.trial = t
+    },
     local: true,
     runtimes,
     reader: world.setupReader(toplevel),
@@ -597,7 +602,14 @@ async function runLocalBranch(
     fromSha: finalFromSha,
     resolved,
   })
-  return { ok: true, project: 'local', name, remote, base: final }
+  return {
+    ok: true,
+    project: 'local',
+    name,
+    remote,
+    base: final,
+    trial: tried.trial ?? { trial: 'not-run', because: 'no checks' },
+  }
 }
 
 async function runGithubBranch(

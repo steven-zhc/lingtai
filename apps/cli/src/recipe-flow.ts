@@ -45,7 +45,7 @@ import { askLanding, askLimits } from './landing.ts'
 import { heading, keyValues } from './output.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'
-import { type AskInstallAndBuildInput, askInstallAndBuild } from './setup-build.ts'
+import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
 /**
@@ -109,6 +109,11 @@ async function toolOnPath(tool: string): Promise<boolean> {
 
 export interface RecipeAt {
   project: string
+  /**
+   * Told how the trial build went, once, when it is known. A callback rather
+   * than a key on `askRecipe`'s return, which its callers compare whole.
+   */
+  onTrial?: (trial: TrialOutcome) => void
   /** A local project is never asked where its tickets come from (`askTickets`'s own rule). */
   local: boolean
   /** Already probed — this function never probes on its own. */
@@ -335,6 +340,7 @@ export async function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<{ o
     kept: askKept,
   })
   if ('refused' in setup) return setup
+  at.onTrial?.(setup.trial)
   if (absent) {
     collected.push(...setup.changes)
   } else {

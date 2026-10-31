@@ -3430,6 +3430,12 @@ interface ToFix {
   areas: string[]
 }
 
+/** How many blocks the short view draws, and whether any of them is a failure — what the ready line is decided on. */
+export function toFixSummary(report: DoctorReport): { count: number; failed: boolean } {
+  const todo = toFix(report.results)
+  return { count: todo.length, failed: todo.some((t) => t.status === 'fail') }
+}
+
 /** What the short view draws: `fail`s then `warn`s, each in area order, rows with an identical `fix` drawn once. */
 function toFix(results: readonly CheckResult[]): ToFix[] {
   const areaRank = (r: CheckResult): number => {
