@@ -1,4 +1,4 @@
-import { FAILED, SCOPE } from '@lingtai/actions/spans'
+import { FAILED, SCOPE, newSink, withSink } from '@lingtai/actions/spans'
 import { machineOtlpEndpoint, type MachineFile } from '@lingtai/env'
 import { ROOT_CONTEXT, SpanStatusCode, context, trace, type Span as OtelSpan } from '@opentelemetry/api'
 import type { SpanExporter } from '@opentelemetry/sdk-trace-base'
@@ -34,6 +34,8 @@ class BridgedSpan implements Tracer.Span {
   readonly attributes = new Map<string, unknown>()
   readonly links: Tracer.SpanLink[] = []
   readonly otel: OtelSpan
+  /** What the spans started under this one report their failures to; this span ends `ERROR` if one did. */
+  readonly sink = newSink()
   status: Tracer.SpanStatus
   readonly name: string
   readonly parent: Option.Option<Tracer.AnySpan>
@@ -73,13 +75,13 @@ class BridgedSpan implements Tracer.Span {
     this.status = { _tag: 'Ended', startTime: this.status.startTime, endTime, exit }
     // Never the cause: it carries free text — `unappended`'s message, a thrown
     // error's — and a status message is exported.
-    if (Exit.isFailure(exit)) this.otel.setStatus({ code: SpanStatusCode.ERROR })
+    if (Exit.isFailure(exit) || this.sink.errored) this.otel.setStatus({ code: SpanStatusCode.ERROR })
     this.otel.end(hrtime(endTime))
   }
 
   attribute(key: string, value: unknown): void {
     this.attributes.set(key, value)
-    // Not an attribute: a pass that came back refused or failed is an Effect
+    // Not an attribute: a caught defect is a returned result, an Effect
     // *success*, and the span would otherwise export as unset (#791).
     if (key === FAILED) {
       if (value === true) this.otel.setStatus({ code: SpanStatusCode.ERROR })
@@ -100,7 +102,7 @@ export const bridgedTracer: Tracer.Tracer = Tracer.make({
   context: (f, fiber) => {
     const span = fiber.currentSpan
     if (!(span instanceof BridgedSpan)) return f()
-    return context.with(trace.setSpan(context.active(), span.otel), f)
+    return context.with(withSink(trace.setSpan(context.active(), span.otel), span.sink), f)
   },
 })
 

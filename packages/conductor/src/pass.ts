@@ -1288,6 +1288,10 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     return visit
   }
 
+  // The router's visit as a span (#791), so a judge dispatched inside it is its
+  // child: it is `ERROR` by that action alone, like any step.
+  const routing = (...args: Parameters<typeof routeProposal>): Promise<boolean> =>
+    inSpan('step proposed', {}, () => routeProposal(...args))
   /**
    * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
    * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
@@ -1567,7 +1571,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     // `proposed`'s to answer either way.
     if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
       const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
-      if (await routeProposal(proposal, { step: at, ending }, whatArrived(reached))) continue
+      if (await routing(proposal, { step: at, ending }, whatArrived(reached))) continue
       break
     }
 
@@ -1608,7 +1612,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       // through, carrying findings above the bar — which is the one `Propose`
       // with nothing of its own to report (0058 §3b).
       const reported = ending.ending === 'passed' ? null : { step: at, ending }
-      if (await routeProposal(next.proposal, reported, whatArrived(reached))) continue
+      if (await routing(next.proposal, reported, whatArrived(reached))) continue
       break
     }
 
@@ -1833,12 +1837,8 @@ function runStep(
   finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
 ): Promise<StepReached> {
   if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
-  return inSpan(
-    `step ${spec.step}`,
-    { 'lingtai.round': reaching.context.round ?? 0 },
-    () => runStepBody(spec, options, bodies, reached, reaching).then(finish),
-    // `held`, `asked` and `routed` wait on a person: nothing refused.
-    (visit) => ['refused', 'did-not-finish', 'never-ran'].includes(visit.ending.ending),
+  return inSpan(`step ${spec.step}`, { 'lingtai.round': reaching.context.round ?? 0 }, () =>
+    runStepBody(spec, options, bodies, reached, reaching).then(finish),
   )
 }
 

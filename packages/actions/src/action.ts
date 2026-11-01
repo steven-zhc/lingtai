@@ -816,7 +816,12 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         `action ${action.kind}`,
         { 'lingtai.index': index },
         () => action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context),
-        (r) => r.verdict === 'failed' || r.verdict === 'did-not-finish' || r.verdict === 'never-ran',
+        // 0120 §1's reading: `needs-approval` and a `did-not-finish` whose
+        // `because` is `NEEDS_INPUT` are *asked* — a person was asked, nothing failed.
+        (r) =>
+          r.verdict === 'failed' ||
+          r.verdict === 'never-ran' ||
+          (r.verdict === 'did-not-finish' && r.because !== NEEDS_INPUT),
       )
     } catch (err) {
       // An action that throws is an action that failed. The alternative is an

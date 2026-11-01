@@ -598,28 +598,24 @@ export async function tellGitHubAbout(options: {
     // A write GitHub refused is a *returned* `IssueUpdateFailed`, not a throw, so
     // each body says whether it held and the spans are told.
     const held = (told: Told) => told.recorded !== 'IssueUpdateFailed'
-    await inSpan(
-      'step end',
-      {},
-      () =>
-        ordered.reduce<Promise<boolean>>(
-          (before, action, index) =>
-            before.then((all) =>
-              inSpan(
-                `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
-                { 'lingtai.index': index },
-                () =>
-                  'close' in action
-                    ? tell({ kind: 'closed' }).then(held)
-                    : 'labels' in action
-                      ? tell({ kind: 'labels', labels: action.labels }).then(held)
-                      : sweepRefsHeld({ store, github, ticketId, andTheBranch: action.branch }),
-                (ok) => !ok,
-              ).then((ok) => all && ok),
-            ),
-          Promise.resolve(true),
-        ),
-      (all) => !all,
+    await inSpan('step end', {}, () =>
+      ordered.reduce<Promise<boolean>>(
+        (before, action, index) =>
+          before.then((all) =>
+            inSpan(
+              `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
+              { 'lingtai.index': index },
+              () =>
+                'close' in action
+                  ? tell({ kind: 'closed' }).then(held)
+                  : 'labels' in action
+                    ? tell({ kind: 'labels', labels: action.labels }).then(held)
+                    : sweepRefsHeld({ store, github, ticketId, andTheBranch: action.branch }),
+              (ok) => !ok,
+            ).then((ok) => all && ok),
+          ),
+        Promise.resolve(true),
+      ),
     )
   }
 }

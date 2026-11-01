@@ -109,7 +109,8 @@ describe('with an endpoint', () => {
     expect(steps.length).toBeGreaterThan(2)
     for (const s of steps) {
       expect(parentOf(s), s.name).toBe(idOf(run!))
-      expect(typeof s.attributes['lingtai.round']).toBe('number')
+      if (!['step claim', 'step end', 'step proposed'].includes(s.name))
+        expect(typeof s.attributes['lingtai.round'], s.name).toBe('number')
     }
 
     const actions = spans.filter((s) => s.name.startsWith('action '))
@@ -236,6 +237,8 @@ describe('with an endpoint', () => {
     const run = spans.find((s) => s.name === 'conductor.run')!
     expect(run.status.code).not.toBe(2)
     expect(run.status.message).toBeUndefined()
+    // Asked is not an error anywhere: no span is ERROR.
+    expect(spans.filter((s) => s.status.code === 2).map((s) => s.name)).toEqual([])
   })
 
   it('a run held on an unreadable reviewer answer exports ERROR too', async () => {
@@ -251,7 +254,13 @@ describe('with an endpoint', () => {
     expect(run.status.code).toBe(2)
     expect(run.status.message).toBeUndefined()
     expect(run.attributes).toEqual({ 'lingtai.ticket': 7 })
+    // Status comes up from the action: the step above it is ERROR for no other reason.
     const agent = spans.filter((s) => s.name === 'action agent' && s.status.code === 2)
+    for (const a of agent) {
+      const step = spans.find((s) => s.spanContext().spanId === parentOf(a))!
+      expect(step.name).toMatch(/^step /)
+      expect(step.status.code).toBe(2)
+    }
     expect(agent.length).toBeGreaterThan(0)
     for (const s of agent) {
       expect(s.status.message).toBeUndefined()
@@ -320,6 +329,32 @@ runtime:
       expect(run.status.code).toBe(2)
       expect(run.status.message).toBeUndefined()
       expect(run.events).toEqual([])
+      // The dispatch is spanned, under the router's visit, and the failure comes up from it.
+      const judge = spans.find((s) => s.name === 'action judge')!
+      expect(judge.status.code).toBe(2)
+      expect(judge.status.message).toBeUndefined()
+      const proposed = spans.find((s) => s.name === 'step proposed')!
+      expect(proposed.status.code).toBe(2)
+      expect(judge.parentSpanContext?.spanId).toBe(proposed.spanContext().spanId)
+      expect(proposed.parentSpanContext?.spanId).toBe(run.spanContext().spanId)
+    })
+
+    it('a question no judge was asked exports no ERROR on any span', async () => {
+      const { result, spans } = await pass(
+        JUDGED_QUESTION.replace(/  proposed:[\s\S]*?(?=runtime:)/, ''),
+        asking({
+          exitCode: 0,
+          turns: 1,
+          durationMs: 1,
+          costUsd: 0,
+          failure: null,
+          text: 'x',
+          sessionId: 's',
+        }),
+      )
+      expect(result.ok).toBe('held')
+      expect(spans.find((s) => s.name === 'action agent')).toBeDefined()
+      expect(spans.filter((s) => s.status.code === 2).map((s) => s.name)).toEqual([])
     })
 
     it('a judge whose answer could not be read exports the run as ERROR too', async () => {
