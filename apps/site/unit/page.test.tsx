@@ -78,7 +78,7 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-setup"')
   })
 
-  it('renders one Docs menu with the eight public pages and no other doc link', () => {
+  it('renders one Docs menu with the nine public pages and no other doc link', () => {
     const bar = renderToStaticMarkup(<Bar />)
     expect(bar.match(/<details/g)).toHaveLength(1)
     expect(bar).toMatch(/<summary>Docs<\/summary>/)
@@ -90,6 +90,7 @@ describe("the home page's argument", () => {
       'Tutorial',
       'Concepts',
       'Requirements',
+      'What an agent can touch',
       'Recipe',
       'CLI',
       'Plugins',
@@ -109,13 +110,38 @@ describe("the home page's argument", () => {
       'recipe',
       'cli',
       'requirements',
+      'safety',
       'from-symphony',
       'plugins',
       'events',
     ])
     const links = [...home.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1])
-    expect(links.every((l) => l === '/docs/tutorial/' || l === '/docs/requirements/')).toBe(true)
+    expect(links.every((l) => l === '/docs/tutorial/' || l === '/docs/requirements/' || l === '/docs/safety/')).toBe(
+      true,
+    )
     expect(home).toContain('href="#setup"')
+  })
+
+  it('answers the common questions under the ledger, honestly about ~/.ssh', () => {
+    const html = renderToStaticMarkup(<Home />)
+    const faq = html.slice(html.indexOf('class="faq"'))
+    const block = faq.slice(0, faq.indexOf('</section>'))
+    expect(block.match(/<details/g)).toHaveLength(6)
+    for (const q of [
+      'Will it break main?',
+      'Will it run up a bill?',
+      'Will it loop forever?',
+      'What if my laptop restarts at 3am?',
+      'Can it weaken its own checks?',
+    ]) {
+      expect(block).toContain(q)
+    }
+    const honest = block.slice(block.indexOf('faq-item honest'))
+    expect(honest).toContain('~/.ssh')
+    expect(honest).toContain('HONEST ANSWER')
+    expect(honest).toContain('href="/docs/safety/"')
+    expect(honest.indexOf('By default, yes')).toBeLessThan(honest.indexOf('not a container'))
+    expect(html).not.toMatch(/\bguarded\b/i)
   })
 
   it('no longer says what stopped being true', async () => {

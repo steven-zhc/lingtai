@@ -24,7 +24,8 @@ export const INSTALL_URL = `${SITE_URL}/install.sh`
 export const DOCS_MENU: { slug: string; label: string; note?: string; rule?: boolean }[] = [
   { slug: 'tutorial', label: 'Tutorial', note: 'One ticket, start to finish' },
   { slug: 'concepts', label: 'Concepts', note: 'The steps of a pass' },
-  { slug: 'requirements', label: 'Requirements', note: 'What it needs', rule: true },
+  { slug: 'requirements', label: 'Requirements', note: 'What it needs' },
+  { slug: 'safety', label: 'What an agent can touch', note: 'Before you run it', rule: true },
   { slug: 'recipe', label: 'Recipe' },
   { slug: 'cli', label: 'CLI' },
   { slug: 'plugins', label: 'Plugins' },
