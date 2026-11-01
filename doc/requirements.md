@@ -30,7 +30,7 @@ Where this page says "any recent", the code does not check a version.
 | `bun` | A source checkout only, to build the hook binary a run refuses to start without (`pnpm --filter @lingtai/hook build`) | Any recent | Compiles `packages/hook/bin/lingtai-hook`, which is not committed | None | `apps/cli/src/run.ts:354`, `packages/hook/package.json:10` |
 | `pnpm` | A source checkout only | The version `packageManager` pins, `11.9.0`; nothing checks it | Installs and runs the workspace | None | `package.json:7` |
 | `ps` | Always | Any recent | Finds an agent left running by an earlier run, and checks whether a recorded process is still the one Lingtai started | None | `packages/agent/src/codex.ts:72`, `:118`, `packages/daemon/src/reconcile.ts:565` |
-| `launchctl` (macOS) or `systemctl --user` (Linux) | You run `lingtai service`. Not needed for a daemon started in a terminal | Any recent | Keeps the conductor and the board running and restarts them | `daemon: liveness` reports whether the daemon is up, not whether the supervisor exists | `apps/cli/src/service.ts:430`, `:457`, `:467`, `:717` |
+| `launchctl` (macOS) or `systemctl --user` (Linux) | You run `lingtai service`, which runs from a source checkout you own; the installed binary does not support it yet. Not needed for a daemon started in a terminal | Any recent | Keeps the conductor and the board running and restarts them | `daemon: liveness` reports whether the daemon is up, not whether the supervisor exists | `apps/cli/src/service.ts:430`, `:457`, `:467`, `:717` |
 | `tar` | Installing, and `lingtai upgrade` on an installed copy | Any recent | Unpacks the release | None | `apps/site/public/install.sh:66`, `apps/cli/src/install.ts:404` |
 | `shasum` or `sha256sum` | Installing | Any recent | Checks the download; the installer refuses if neither exists | None | `apps/site/public/install.sh:67-73` |
 | `lsof` | An installed copy, on `lingtai upgrade` | Any recent | Finds processes still using the old version's directory | None | `apps/cli/src/install.ts:802` |
@@ -60,8 +60,9 @@ it.
 | --- | --- | --- | --- |
 | Claude Code | Any role runs `claude-code`, including the `discuss` default | The agent runs as you. Lingtai probes `claude auth status` before it starts one | `runtime: signed in` and `runtime: <project> signed in` |
 | Codex | Any role runs `codex` | Same, with `codex login status` | `runtime: signed in` and `runtime: <project> signed in` |
-| A GitHub App you create and install on the repository | The project is a GitHub one. A `--local` project needs none | Lingtai acts on GitHub as the App, not as you | None. `lingtai add` checks the App's permissions before it records a repository |
-| GitHub access for `git` | You run `git` against the repository yourself, and for a remote that is not served by the App | A run's own push and fetch use an installation token of the App (`packages/repo/src/git.ts:47`), so they need no personal key; your own clone and any push you make use your SSH key or credentials, which Lingtai does not store | None |
+| A signed-in `gh` with the `repo` and `workflow` scopes (`gh auth login --scopes repo,workflow`) | The project is a GitHub one and `init` chose `--github-auth gh`, its default: one person lends Lingtai their own login. A `--local` project needs none | Lingtai acts on GitHub as you | `github: gh login` reports `ok` and names the account |
+| A GitHub App you create and install on the repository | The project is a GitHub one run by a team ([0114](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0114-a-github-app-not-a-token.md)). A `--local` project needs none | Lingtai acts on GitHub as the App, not as you | `github: app credentials` (`skip` under `gh`). `lingtai add` checks the App's permissions before it records a repository |
+| GitHub access for `git` | You run `git` against the repository yourself, and for a remote that is not served by the App | A run's own push and fetch use an installation token of the App in App mode, and the token `gh auth token` prints in `gh` mode (`packages/repo/src/git.ts:47`, `packages/github/src/client.ts:382`), so they need no personal key; your own clone and any push you make use your SSH key or credentials, which Lingtai does not store | None |
 | A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Put the `codex_text` block from `config.example.yml` in `~/.lingtai/config.yml` (the example file itself is never read), or export it as `LINGTAI_CODEX_TEXT_*` variables (`packages/env/src/index.ts:187`) | `discuss: <project> codex ready` and `triage: <project> codex ready` |
 | Postgres credentials | `database.url` is set | Part of the URL | `postgres: pooled connection` |
 | A Telegram bot | A `telegram` subscriber is in your recipe | To post as | None |
@@ -76,8 +77,10 @@ that differs from `codex_text.model`.
 
 ## Which choices decide what you need
 
-- **`--local` or GitHub.** `--local` needs no GitHub App and no GitHub API. It
-  still needs `git` and one agent runtime.
+- **`--local`, `gh` or a GitHub App.** `--local` needs no GitHub at all, no
+  login, App or API; it still needs `git` and one agent runtime. `gh` needs a
+  signed-in `gh` with the `repo` and `workflow` scopes. An App needs one you
+  create and install on the repository.
 - **SQLite or Postgres.** SQLite needs nothing. Postgres needs a database you
   run and a direct connection string.
 - **`claude-code` or `codex`.** Every runtime any role uses has to be installed
