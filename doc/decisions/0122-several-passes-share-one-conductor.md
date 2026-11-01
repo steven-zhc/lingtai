@@ -172,12 +172,12 @@ and the dollar ceiling lands before any N > 1.
    fetches into one repository can fail to lock a ref.
 
 7. **Every stop that exists today is marked *per project* or *stays
-   installation-wide*.** This records the classification; #449 builds it.
+   installation-wide*.** This records the classification; #675 builds the per-project pause and #676 the missing-tier pause on it.
 
    | Stop | Where today | Becomes | Lifted by |
    | --- | --- | --- | --- |
    | A person's pause | `CONTROL_STREAM`, `packages/domain/src/control.ts` | Per project: `ConductorPaused` gains an optional `project`, absent meaning installation-wide | `lingtai resume [project]` |
-   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | Per project | Fixing the setup, then a restart |
+   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | Per project, and it holds across a restart, because a restart loads the same setup | Fixing the setup, then `lingtai resume <project>` |
    | The pause after a run that never started | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Stays installation-wide: the account is shared | Itself, at `until` |
    | The daily ceiling | §5 | Stays installation-wide | Midnight, or a higher figure |
    | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | `lingtai resume` |
