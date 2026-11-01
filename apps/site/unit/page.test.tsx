@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import { Bar, DOCS_MENU } from '@/app/chrome'
 import Home from '@/app/page'
+import { Receipt } from '@/app/receipt'
+import { dollars, receiptAt } from '@/app/replay-receipt'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
@@ -128,5 +130,71 @@ describe("the home page's argument", () => {
       'Lingtai hands your tickets to Claude Code or Codex, runs your checks and a cold review, and ends every ticket in a receipt you can check',
     )
     expect(layout).not.toContain('one at a time')
+  })
+})
+
+describe('the replay receipt', () => {
+  const steps = [0, 1, 2, 3, 4, 5, 6].map(receiptAt)
+
+  it('renders a landed and a closed receipt from props', () => {
+    const base = {
+      issue: 'ISSUE #2 · X',
+      title: 'T',
+      rows: [{ key: 'Checks', value: '✗ → ✓ after 1 round' }],
+      costLabel: 'COST',
+      cost: '$1.00',
+    }
+    const landed = renderToStaticMarkup(
+      <Receipt {...base} status={{ kind: 'landed', text: 'Landed' }} stamp={{ text: 'LANDED', shown: true }} />,
+    )
+    expect(landed).toContain('r-status landed')
+    expect(landed).toContain('r-stamp on')
+    expect(landed).toContain('<span class="no">✗</span>')
+    const closed = renderToStaticMarkup(
+      <Receipt {...base} status={{ kind: 'closed', text: 'Closed' }} stamp={{ text: 'NOT LANDED', shown: true }} />,
+    )
+    expect(closed).toContain('r-status closed')
+    expect(closed).toContain('r-stamp closed on')
+    expect(closed).not.toContain('rcpt landed')
+  })
+
+  it('is stamped only at step 6, and the cost never decreases', () => {
+    expect(steps.map((s) => s.stamped)).toEqual([false, false, false, false, false, false, true])
+    const cents = steps.map((s) => s.cents)
+    expect(cents).toEqual([...cents].sort((a, b) => a - b))
+    expect(dollars(cents[6]!)).toBe('$0.40')
+  })
+
+  it('has every row empty at 0 and clamps outside 0-6', () => {
+    const s = receiptAt(0)
+    expect([s.impl, s.checks, s.review, s.approve]).toEqual(['—', '—', '—', '—'])
+    expect(s.status).toBe('Queued')
+    expect(receiptAt(99)).toBe(receiptAt(6))
+    expect(receiptAt(-1)).toBe(receiptAt(0))
+  })
+
+  it('never says log in any state', () => {
+    expect(JSON.stringify(steps)).not.toMatch(/\blogs?\b/i)
+  })
+
+  it('renders the page beside one receipt in state 0, after the hero', () => {
+    const html = renderToStaticMarkup(<Home />)
+    expect(html.match(/class="rcpt/g)).toHaveLength(1)
+    expect(html).toContain('>Queued<')
+    expect(html).toContain('$0.00')
+    expect(html).not.toContain('rcpt live landed')
+    expect(html).not.toMatch(/r-row [^"]*now/)
+    expect(html).not.toContain('r-stamp on')
+    expect(html).toContain('href="#replay"')
+    expect(html).toContain('id="replay"')
+    expect(html.indexOf('id="replay"')).toBeGreaterThan(html.indexOf('id="hero-title"'))
+  })
+
+  it('puts the replay heading after the hero in the page source', async () => {
+    const text = await prose()
+    expect(text.indexOf('The agent got it wrong. Twice.')).toBeGreaterThan(text.indexOf('Agents do the work'))
+    expect(text.indexOf('The agent got it wrong. Twice.')).toBeLessThan(
+      text.indexOf('Three steps to your first receipt.'),
+    )
   })
 })

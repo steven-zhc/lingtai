@@ -13,7 +13,7 @@
 /* The first picture answers what a visitor can hand off and what comes back. */
 .home .hero {
   display: grid; grid-template-columns: minmax(0, 1fr);
-  gap: clamp(28px, 3.5vw, 48px); align-items: center; padding: 82px 0 92px;
+  gap: clamp(28px, 3.5vw, 48px); align-items: center; padding: 82px 0 0;
 }
 .home .hero-copy { --hero-measure: 36rem; position: relative; z-index: 1; }
 .home .hero h1 { font-size: clamp(43px, 4.8vw, 68px); line-height: 1.04; max-width: 12ch; margin-bottom: 24px; }
@@ -82,4 +82,82 @@
   .home .hero { padding-top: 50px; gap: 32px; }
   .home .hero h1 { font-size: clamp(39px, 11vw, 55px); }
   .home .hero .lede { font-size: 16px; }
+}
+
+/* One receipt beside the hero and the replay: the hero and the replay are the
+   left column, the receipt is the sticky right one. */
+.home .tale { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 56px; align-items: start; }
+.home .tale-side { position: sticky; top: 24px; padding-top: 64px; }
+.home .tale .hero h1 { max-width: 12ch; }
+.home .hero-actions .watch { color: var(--ink-2); text-decoration: none; font-size: 15px; }
+.home .hero-actions .watch:hover { color: var(--accent-ink); }
+.home .replay { border-top: 1px solid var(--rule); }
+.home .replay .sub { color: var(--ink-2); font-size: 17px; line-height: 1.6; margin: 0 0 20px; }
+.tag { display: inline-block; font: 600 9.5px/1 var(--mono); letter-spacing: .06em; padding: 3px 6px; border-radius: 3px; vertical-align: 2px; white-space: nowrap; }
+.tag.ill { color: var(--muted); border: 1px dashed var(--rule-2); }
+
+.rp-scene { padding: 34px 0; border-top: 1px dashed var(--rule-2); scroll-margin-top: 24vh; }
+.rp-scene:first-child { border-top: 0; padding-top: 6px; }
+.rp-scene .time { font: 600 13px var(--mono); color: var(--accent-ink); margin-bottom: 6px; }
+.rp-scene h3 { font-size: 22px; margin: 0 0 6px; }
+.rp-scene p { color: var(--ink-2); margin: 0 0 14px; }
+.rp-scene.rp-end { height: 1px; padding: 0; border: 0; }
+.term { background: var(--ink); color: var(--ground); border-radius: 9px; font: 12px/1.7 var(--mono); padding: 14px 16px; margin: 0; overflow-x: auto; white-space: pre; }
+.term .p { color: var(--accent); }
+.term .ok { color: var(--pass); }
+.term .bad { color: var(--fail); }
+.term .dim { color: var(--muted); }
+.frame { border: 1px solid var(--rule-2); border-radius: 9px; overflow: hidden; background: var(--surface); }
+.wait { padding: 14px 16px; font-size: 13.5px; }
+.cause { background: var(--signal-soft); color: var(--signal); border-left: 3px solid var(--signal); border-radius: 3px; padding: 8px 11px; margin-bottom: 10px; line-height: 1.45; }
+.cause small { display: block; font: 600 10px var(--mono); letter-spacing: .05em; }
+.moves { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: 600 13px var(--sans); border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 5px; padding: 7px 13px; }
+.btn.pri { background: var(--signal); border-color: var(--signal); color: var(--surface); }
+.btn small { font: 600 9px var(--mono); margin-left: 6px; opacity: .85; }
+
+/* The receipt. */
+.rcpt { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 16px 16px 4px 4px; padding: 0 0 18px; box-shadow: 0 30px 70px rgba(15, 24, 28, .14), 0 2px 0 var(--rule); font-family: var(--sans); color: var(--ink); }
+.rcpt::after { content: ""; position: absolute; left: 0; right: 0; bottom: -9px; height: 10px; background: radial-gradient(circle at 7px 0, transparent 6px, var(--surface) 6.5px) 0 0 / 14px 10px repeat-x; }
+.r-top { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px dashed var(--rule-2); font: 600 11.5px var(--mono); letter-spacing: .08em; color: var(--ink-2); }
+.r-top svg { width: 18px; height: 18px; stroke: var(--muted); fill: none; stroke-width: 1.6; }
+.r-issue { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px 20px 14px; }
+.r-issue small { display: block; font: 600 10.5px var(--mono); letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+.r-issue b { font-size: 19px; letter-spacing: -.02em; line-height: 1.25; }
+.r-status { flex: none; font: 600 12.5px var(--sans); padding: 4px 12px; border-radius: 999px; }
+.r-status.queued { background: var(--surface-2); color: var(--muted); }
+.r-status.running { background: var(--accent-soft); color: var(--accent-ink); }
+.r-status.waiting { background: var(--signal-soft); color: var(--signal); }
+.r-status.landed { background: var(--pass-soft); color: var(--pass); }
+.r-status.closed { background: var(--held-soft); color: var(--held); }
+.r-rows { padding: 2px 8px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 12px; }
+.r-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 10px; border-radius: 8px; color: inherit; text-decoration: none; font-size: 15px; }
+a.r-row:hover { background: var(--accent-soft); }
+a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
+.r-k { color: var(--muted); }
+.r-v { font-weight: 500; text-align: right; }
+.r-v .no { color: var(--fail); font-weight: 600; }
+.r-v .yes { color: var(--pass); font-weight: 600; }
+.r-v .dim { color: var(--muted); font-weight: 400; }
+.r-row.pending .r-k { opacity: .6; }
+.r-row.pending .r-v { color: var(--muted); font-weight: 400; }
+.r-row.now { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.r-total { display: flex; justify-content: space-between; align-items: flex-end; padding: 14px 20px 0; }
+.r-total small { display: block; font: 600 10.5px var(--mono); letter-spacing: .08em; color: var(--muted); margin-bottom: 2px; }
+.r-total b { font-size: 40px; letter-spacing: -.04em; line-height: 1; }
+.r-stamp { font: 700 13px var(--mono); letter-spacing: .14em; color: var(--pass); border: 2.5px solid var(--pass); border-radius: 6px; padding: 5px 10px; transform: rotate(-8deg); opacity: 0; }
+.r-stamp.on { opacity: 1; }
+.r-stamp.closed { color: var(--held); border-color: var(--held); }
+.r-foot { margin: 16px 20px 0; font-size: 12px; color: var(--muted); }
+/* Motion is the reader's to ask for: without it the states still change, they just do not animate. */
+@media (prefers-reduced-motion: no-preference) {
+  .r-row { transition: background .25s; }
+  .rcpt .r-v, .rcpt .r-total b { transition: color .3s; }
+  .r-stamp { transform: rotate(-8deg) scale(1.6); transition: opacity .25s, transform .3s cubic-bezier(.3, 1.6, .5, 1); }
+  .r-stamp.on { transform: rotate(-8deg) scale(1); }
+}
+
+@media (max-width: 1080px) {
+  .home .tale { grid-template-columns: minmax(0, 1fr); }
+  .home .tale-side { position: static; padding-top: 0; order: -1; }
 }
