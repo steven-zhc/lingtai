@@ -414,3 +414,15 @@ export function money(bill: MoneyBill): string {
 export function hasMoney(bill: MoneyBill): boolean {
   return bill.reportedRuns > 0 || bill.unknown > 0
 }
+
+/**
+ * How many cards the board's Landed lane holds — `landed` and `closed` both
+ * fold into it (`LANE_OF`) — or `null` when there is nothing true to print:
+ * no snapshot (every CI deploy), no such lane, or a lane of `0`, which a log
+ * fresh from a reset would otherwise print as a boast of nothing. The whole
+ * lane's `count`, never the length of the handful of cards drawn.
+ */
+export function landedCount(snapshot: Snapshot | null): number | null {
+  const count = snapshot?.lanes.find((l) => l.id === 'landed')?.count
+  return count === undefined || count <= 0 ? null : count
+}

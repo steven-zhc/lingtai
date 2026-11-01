@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import { BuildsItself } from '@/app/builds-itself'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
+import { landedCount, type Snapshot } from '@/lib/snapshot'
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
 
@@ -12,6 +15,9 @@ async function prose(): Promise<string> {
   const page = await readFile(path.resolve(import.meta.dirname, '../src/app/page.tsx'), 'utf8')
   return page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 }
+
+/** The source with its line breaks and indentation folded to single spaces, so a sentence can be looked for whole. */
+const flat = (s: string) => s.replace(/\s+/g, ' ')
 
 describe("the home page's argument", () => {
   it('uses the public home as the installer front door', async () => {
@@ -41,8 +47,9 @@ describe("the home page's argument", () => {
     const text = await prose()
     const order = [
       'Let your backlog move',
-      'What changes for you',
-      'Why Lingtai',
+      'The loop, one stop at a time',
+      'Beside the loop',
+      'Six more things',
       'How you use it',
       'The work, in the open',
       'Know the edges',
@@ -88,12 +95,72 @@ describe("the home page's argument", () => {
     const links = [...`${home}\n${chrome}`.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1])
     expect(
       links.every(
-        (l) => l === '/docs/tutorial/' || l === '/docs/concepts/' || l === '/docs/plugins/' || l === '/docs/events/',
+        (l) =>
+          l === '/docs/tutorial/' ||
+          l === '/docs/concepts/' ||
+          l === '/docs/plugins/' ||
+          l === '/docs/events/' ||
+          l === '/docs/requirements/',
       ),
     ).toBe(true)
     expect(chrome).toContain('href="/docs/tutorial/"')
     expect(chrome).toContain('href="/docs/concepts/"')
     expect(chrome).toContain('href="/docs/plugins/"')
     expect(home).toContain('href="#setup"')
+  })
+
+  it('no longer says what stopped being true', async () => {
+    const text = flat(await prose())
+    expect(text).not.toContain('work on them one at a time')
+    expect(text).not.toContain('0.9.0 is the first release')
+    expect(text).not.toContain('nothing enforces yet')
+    expect(text).not.toContain('creates the GitHub App')
+    expect(text).not.toContain('touch the same file')
+    expect(text).toContain('On a GitHub project it will tell you to use')
+    expect(text).not.toMatch(/\b0\.11\b/)
+  })
+
+  it('carries each sentence the 0.11 tickets made true', async () => {
+    const text = flat(await prose())
+    for (const sentence of [
+      'One line per ticket from <code>lingtai start</code>: steps, cost, where it stopped, and the command when it waits',
+      'buys none and holds as',
+      'The issue closed, in a project <code>lingtai add</code> set up',
+      'whether to wait for your approval or land without asking',
+      'It ends on a summary of what it set up and what to do next',
+      'Claude Code or Codex settings still applies',
+      'Every release lists the tickets it landed and the decisions it changed',
+      'OpenTelemetry trace when you give it a collector',
+      'The run as it happens (<code>lingtai attach</code>)',
+    ]) {
+      expect(text, sentence).toContain(sentence)
+    }
+  })
+})
+
+describe('the landed figure', () => {
+  const card = (n: number, cards: number): Snapshot =>
+    ({
+      lanes: [
+        { id: 'queued', label: 'Queued', count: 9, cards: [] },
+        { id: 'landed', label: 'Landed', count: n, cards: Array.from({ length: cards }, () => ({})) },
+      ],
+    }) as unknown as Snapshot
+
+  it('is not rendered without a snapshot', () => {
+    const html = renderToStaticMarkup(<BuildsItself landed={landedCount(null)} />)
+    expect(html).toContain('Lingtai builds Lingtai')
+    expect(html.replace(/<[^>]*>/g, '')).not.toMatch(/[0-9]/)
+    expect(html).not.toContain('landed or closed')
+  })
+
+  it("is the Landed lane's count, not the cards drawn", () => {
+    const html = renderToStaticMarkup(<BuildsItself landed={landedCount(card(42, 2))} />)
+    expect(html).toContain('42 landed or closed on its board')
+  })
+
+  it('is not rendered as zero', () => {
+    const html = renderToStaticMarkup(<BuildsItself landed={landedCount(card(0, 0))} />)
+    expect(html.replace(/<[^>]*>/g, '')).not.toMatch(/[0-9]/)
   })
 })
