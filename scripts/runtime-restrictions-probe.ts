@@ -203,7 +203,9 @@ async function launch(row: Row, cwd: string, settingsPath: string, prompt: strin
     runId: `probe-${row.id}`,
     cwd,
     settingsPath,
-    env: {},
+    // The environment a pass hands an agent: Codex's reader finds the user's
+    // `config.toml` through its `HOME` (#667), so `{}` would probe no profile.
+    env: runnableEnv({}),
     limits: { turns: 3, wallMs: 5 * 60_000 },
   })
   if (!spawned) throw new Error(`${row.runtime} has no invocation()`)
