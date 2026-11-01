@@ -6,10 +6,12 @@ import type { Books, MedianReceipt, Receipt } from '../src/lib/books.ts'
 /**
  * Lingtai's books from fixed rows: no I/O, no clock (#811).
  *
- * The counts and the landed medians come from `report()`, so this file and
- * `lingtai report` cannot disagree. What `report()` does not give — p90, elapsed
- * time, the waited share, spend by purpose — is computed here from the same
- * `ticket_report` rows.
+ * The counts and the fix-round, machine-time and wait figures come from
+ * `report()`. **The cost figures deliberately do not**: a ticket nothing could
+ * price is left out here and counted in `costUnknown`, where `report()` counts it
+ * as zero, so the two differ whenever one exists (#811's Out of scope). What
+ * `report()` does not give — p90, elapsed time, the waited share, spend by
+ * purpose — is computed here from the same `ticket_report` rows.
  *
  * **Money is one unit.** A row's `reportedCents` is cents and its `estimatedUsd`
  * is dollars; `ticketMoney` is the one place they meet, and everything below is

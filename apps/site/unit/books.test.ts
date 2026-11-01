@@ -68,7 +68,7 @@ describe('takeBooks', () => {
     expect(b.cost.includesEstimates).toBe(true)
   })
 
-  it('agrees with report() on the median, so the page and `lingtai report` cannot differ', () => {
+  it('matches report() on the median when every ticket is fully priced; unpriced tickets differ on purpose', () => {
     const rows = [1, 2, 3, 4].map((i) =>
       row({
         issue: String(i),
@@ -77,6 +77,16 @@ describe('takeBooks', () => {
     )
     const r = report({ tickets: rows, spend: [], window, project: null, kinds: null })
     expect(Math.round(books(rows).cost.median! * 100)).toBe(r.landed.cost.medianCents)
+
+    // A wholly unpriced landed ticket: books leaves it out, report() counts it as zero.
+    const unpriced = row({
+      issue: '9',
+      cost: { Work: { reportedCents: 0, reportedRuns: 0, estimatedUsd: 0, estimatedRuns: 0, unknown: 1 } },
+    })
+    const two = [row(), unpriced]
+    const r2 = report({ tickets: two, spend: [], window, project: null, kinds: null })
+    expect(books(two).cost.median).toBe(3.55)
+    expect(r2.landed.cost.medianCents).not.toBe(355)
   })
 
   it('leaves a non-public project out of every figure and out of the receipts', () => {
