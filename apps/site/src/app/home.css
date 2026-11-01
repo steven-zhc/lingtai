@@ -179,11 +179,11 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .why-note { margin: 0; font-style: italic; color: var(--muted); font-size: 14px; }
 .why-vs { place-self: center; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule-2); background: var(--surface); display: grid; place-items: center; font: 600 12px var(--mono); color: var(--muted); }
 .why-card-with { border-style: dashed; border-color: var(--rule-2); }
-.why-point { display: flex; gap: 14px; color: var(--ink); text-decoration: none; font-size: 15px; line-height: 1.55; }
-.why-point b { display: block; color: var(--accent-ink); margin-bottom: 4px; }
-.why-point-text { display: block; color: var(--ink-2); }
+.why-ref { display: flex; gap: 14px; color: var(--ink); text-decoration: none; font-size: 15px; line-height: 1.55; }
+.why-ref b { display: block; color: var(--accent-ink); margin-bottom: 4px; }
+.why-ref-text { display: block; color: var(--ink-2); }
 .why-arrow { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; font-size: 18px; }
-.why-point:hover b { text-decoration: underline; }
+.why-ref:hover b { text-decoration: underline; }
 
 .ledger { position: relative; max-width: 860px; margin: 0 auto 28px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px 12px 4px 4px; box-shadow: 0 14px 36px rgba(15, 24, 28, .08); color: var(--ink); }
 .ledger::after { content: ""; position: absolute; left: 0; right: 0; bottom: -9px; height: 10px; background: radial-gradient(circle at 7px 0, transparent 6px, var(--surface) 6.5px) 0 0 / 14px 10px repeat-x; }

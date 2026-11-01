@@ -158,13 +158,13 @@ export default function Home() {
                   <span className="why-chip">Codex</span>
                   <span className="why-chip">+ a separate policy</span>
                 </figcaption>
-                <a className="why-point" href="#replay">
+                <a className="why-ref" href="#replay">
                   <span className="why-arrow" aria-hidden="true">
                     ↑
                   </span>
                   <span>
                     <b>The receipt above.</b>
-                    <span className="why-point-text">
+                    <span className="why-ref-text">
                       Checks it didn&apos;t run itself, a review by someone who didn&apos;t write it, your approval, the
                       cost — each a line you can open.
                     </span>
