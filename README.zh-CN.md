@@ -96,11 +96,11 @@ Lingtai 派出的 agent 在你的机器上运行，以你的用户身份。下�
 **未隔离**
 
 - Claude Code 运行时没有文件系统沙箱。该 agent 可以读取任何你能读的文件，包括 `~/.lingtai/config.yml`（数据库 URL 和 GitHub App 设置）和 `~/.ssh`，并且它可以访问网络。除非你自己配置了沙箱：你自己的 Claude Code 沙箱加上 `allowUnsandboxedCommands: false`，在 Lingtai 下确实有效，见 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。在 `gh` 方式下，你的 `gh` 登录也在这台机器上，所以没有沙箱的 agent 可以以你的身份运行 `gh`。Lingtai 不会把令牌交给它。
-- Codex 运行时确实在沙箱中运行（`--sandbox workspace-write`），沙箱会拒绝在其工作目录、`$TMPDIR` 和 `/tmp` 之外的写入，以及 Lingtai 为提交而添加的少数几个目录之外的写入。带有 `tier: sandboxed` 的 recipe 只由这样的运行时提供服务，Claude Code 不行。不要假定沙箱涵盖读取或网络。在 #667 落地之前，你自己的 `~/.codex/config.toml` 里的权限配置会被这个 `--sandbox` 替换；见[测量结果](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。
+- Codex 运行时确实在沙箱中运行（`--sandbox workspace-write`），沙箱会拒绝在其工作目录、`$TMPDIR` 和 `/tmp` 之外的写入，以及 Lingtai 为提交而添加的少数几个目录之外的写入。带有 `tier: sandboxed` 的 recipe 只由这样的运行时提供服务，Claude Code 不行。不要假定沙箱涵盖读取或网络。你自己的 `~/.codex/config.toml` 里权限配置的 `deny` 条目会进一步收窄运行；如果其中设置了 `sandbox_mode`，则保持原行为（配置不生效）。见[测量结果](doc/operating.md#what-your-own-runtime-configuration-can-narrow)。
 
 **如何限制**
 
-Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Codex 自己的配置限制；对 Claude Code，Lingtai 保留这些配置的效力，对 Codex，目前则会将其替换（见下）。测量于 2026-10-27，darwin，Claude Code 2.1.310 和 codex-cli 0.164.0；各行结果见 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow)（该文档只有英文版）。
+Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Codex 自己的配置限制；对 Claude Code，Lingtai 保留这些配置的效力，对 Codex，则由权限配置的 deny 条目进一步收窄（见下）。测量于 darwin：Claude Code 2.1.310（2026-10-27）和 codex-cli 0.164.0（2026-11-01）；各行结果见 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow)（该文档只有英文版）。
 
 - Claude Code：把下面这段原样放进 `~/.claude/settings.json`：
 
@@ -119,7 +119,7 @@ Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Code
   - 沙箱若没有 `allowUnsandboxedCommands: false`，在 Lingtai 下可以被绕过：`bypassPermissions` 会不经询问就批准未沙箱化的重试。
   - 未测量：没有 bubblewrap 的 Linux（那里没有沙箱）；在该沙箱下完整跑一次 pass（提交会写入工作树之外，agent 可能明显失败）；其他运行时版本；以及 `CLAUDE_CONFIG_DIR`（pass 会丢弃它，于是 Claude Code 读取 `~/.claude`）。
   - `denyRead` 与网络无关，这项设置不限制网络。
-- Codex：目前没有任何设置有效。`~/.codex/config.toml` 里的权限配置在 Lingtai 下不起作用，因为 Lingtai 的 `--sandbox` 会替换它；即使在 `read-only` 下读取也成功了（codex-cli 0.164.0）。修复是 #667，尚未落地。在此之前，请在一个你愿意让 agent 看到其文件的用户或机器下运行 Lingtai（见下）。
+- Codex：`~/.codex/config.toml` 中 `default_permissions` 所指权限配置的 `deny` 条目会在角色之上进一步收窄运行，不能放宽（codex-cli 0.164.0，`codex sandbox`：读取被拒绝，对照组读取成功）。其中若设置了 `sandbox_mode`，则保持原行为：配置不生效，读取成功。
 
 **该怎么做**
 

@@ -143,16 +143,17 @@ that does and does not protect.
   directories Lingtai adds for committing. A recipe with `tier: sandboxed` is served only by a
   runtime like that one, not by Claude Code. Do not assume the sandbox covers
   reads, or the network.
-  A permission profile in your own `~/.codex/config.toml` is replaced by that
-  `--sandbox` until #667 lands; see
+  The `deny` entries of a permission profile in your own `~/.codex/config.toml`
+  narrow the run; `sandbox_mode` there keeps the old behaviour (the profile does
+  not apply). See
   [the measurements](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
 
 **How to limit it**
 
 Lingtai adds no file-access policy of its own. An agent is limited by Claude
 Code's and Codex's own configuration, which Lingtai leaves in force for Claude
-Code and, today, replaces for Codex (below). Measured on 2026-10-27 on darwin,
-with Claude Code 2.1.310 and codex-cli 0.164.0; the rows are in
+Code, and for Codex narrows by a profile's denies (below). Measured on darwin,
+with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the rows are in
 [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
 
 - Claude Code: put exactly this in `~/.claude/settings.json`:
@@ -180,11 +181,11 @@ with Claude Code 2.1.310 and codex-cli 0.164.0; the rows are in
     which a pass drops, so Claude Code reads `~/.claude`.
   - `denyRead` says nothing about the network, and this setting does not limit
     it.
-- Codex: nothing holds today. A permission profile in `~/.codex/config.toml`
-  has no effect under Lingtai, because Lingtai's `--sandbox` replaces it; reads
-  succeeded even under `read-only` (codex-cli 0.164.0). The fix is #667 and it
-  has not landed. Until then, run Lingtai under a user or machine whose files
-  you are willing to expose (below).
+- Codex: the `deny` entries of the profile named by `default_permissions` in
+  `~/.codex/config.toml` narrow the run on top of the role, and cannot widen it
+  (codex-cli 0.164.0, `codex sandbox`: the read was refused, the control read).
+  A `sandbox_mode` there keeps the old behaviour: the profile does not apply
+  and reads succeed.
 
 **What to do**
 

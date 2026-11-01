@@ -867,7 +867,7 @@ Code and Codex; Lingtai launches them. The role's flags are the baseline
 configuration may narrow it, never widen it. Whether it does was measured, not
 read from the runtimes' documentation.
 
-Measured on 2026-10-27 on darwin, with Claude Code 2.1.310 and codex-cli 0.164.0,
+Claude Code was measured on 2026-10-27 on darwin, with Claude Code 2.1.310,
 by `scripts/runtime-restrictions-probe.ts` (`node scripts/runtime-restrictions-probe.ts`,
 run by a person; it is not in `pnpm test`). The probe builds the argv with the
 runtimes' own `invocation()` and the environment with `runnableEnv`. It never
@@ -886,11 +886,6 @@ throwaway `~/.lingtai-probe/secret.txt`.
 | c4 | same sandbox | `python3`, then retry with `dangerouslyDisableSandbox` | read: under `bypassPermissions` the unsandboxed retry is approved without asking |
 | c4b | sandbox + `allowUnsandboxedCommands: false` | same retry | refused (`PermissionError`; the retry was not possible) |
 | c5 | deny + `disableBypassPermissionsMode: "disable"` | Read tool | refused. Recorded only; not a recommendation |
-| x0 | nothing (control), `--sandbox workspace-write` | Codex's own tool | inconclusive: Codex has no non-shell read tool and declined to use the shell |
-| x1 | Codex profile below, `workspace-write` | Codex's own tool | inconclusive, same reason |
-| x2 | Codex profile below, `workspace-write` | `python3` subprocess | **read** |
-| x3 | Codex profile below, `read-only` | Codex's own read | **read** |
-| x4 | Codex profile below, `read-only` | `python3` subprocess | **read** |
 
 **Claude Code.** A user's restrictions hold under Lingtai's flags if the sandbox
 is configured with `allowUnsandboxedCommands: false`. Put exactly this in
@@ -920,8 +915,33 @@ c5 is recorded and is not advice. `disableBypassPermissionsMode` removes the
 mode Lingtai launches with, and a run without it could not write a file (see the
 comment at `claude-code.ts:252-260`).
 
-**Codex.** Under Lingtai today a user's permission profile does not apply,
-because `--sandbox` replaces it. The profile used in x1–x4 was:
+**Codex.** A user's permission profile narrows an agent Lingtai launches, by
+its `deny` entries only ([#667](https://github.com/steven-zhc/lingtai/issues/667)
+is what made this true). The profile named by `default_permissions` contributes
+its `deny`/`none` filesystem entries, following `extends` to collect them and
+never to inherit (`packages/agent/src/codex.ts:571-576`: *"Only `deny` and
+`none` are collected: a user can narrow a run and never widen it, and `extends`
+is followed only to collect, never to inherit"*). Lingtai launches the role
+itself as a profile, `lingtai_workspace_write` or `lingtai_read_only`, which
+extends `:workspace` or `:read-only` with those denies added
+(`codex.ts:1251-1278`); `--sandbox` is passed only when there are no denies
+(`codex.ts:1288`).
+
+It cannot widen anything: a `write` entry, or the user's own `extends`, is never
+carried over (`codex.ts:1251-1252`: *"Never the user's own `extends`: their chain
+may end at `:danger-full-access`"*). It cannot override `sandbox_mode` either.
+With `sandbox_mode` in the user's config the old behaviour stands: the profile
+does not apply and the run goes out with `--sandbox` (`codex.ts:591-592`). So
+does any config Lingtai cannot read: invalid TOML, a profile that is not
+defined, an `extends` cycle, or a profile named `lingtai_workspace_write` or
+`lingtai_read_only` (`codex.ts:579-620`). In each case the run log says *"the
+user's Codex permission profile did not narrow this run: …"* (`codex.ts:1419-1420`),
+and the run log is a trace and not a record (see below, and 0034). A deny that
+covers the worktree or a write root refuses the run rather than launching it
+exposed (`codex.ts:1421-1427`); that is what the code does, and was not
+measured.
+
+The profile used was:
 
 ```toml
 default_permissions = "probe"
@@ -931,14 +951,34 @@ default_permissions = "probe"
 "~/.lingtai-probe" = "none"
 ```
 
-With `--sandbox` removed from the argv, the same profile was enforced (Codex
-could not even start under it: `sandbox-exec: execvp() of '/opt/homebrew/bin/codex'
-failed: Operation not permitted`). So the role's own sandbox still holds (no
-writes outside the worktree, read-only for the reviewer), but a user cannot
-narrow reads. The fix is [#667](https://github.com/steven-zhc/lingtai/issues/667),
-held for design; this section changes no argv. `danger-full-access`,
-`--dangerously-bypass-approvals-and-sandbox` and `approval_policy=never` stay as
-they are.
+Measured on 2026-11-01 on darwin with codex-cli 0.164.0, by the same probe
+(`node scripts/runtime-restrictions-probe.ts codex --row <id>`). The profile was
+written to a throwaway `HOME`'s `.codex/config.toml`; the operator's own file
+was not touched. Through `codex exec`:
+
+| row | sandbox | reach | result |
+|---|---|---|---|
+| x0 | `workspace-write`, no profile (control) | Codex's own tool | inconclusive: Codex has no non-shell read tool and declined to use the shell |
+| x1 | `workspace-write`, profile | Codex's own tool | inconclusive, same reason |
+| x2 | `workspace-write`, profile | `python3` subprocess | no token; Codex answered *"I can't run that command because it reads a path explicitly denied by the active filesystem policy."* (2026-10-27, before #667: **read**) |
+| x3 | `read-only`, profile | Codex's own tool | inconclusive, same reason as x0 (2026-10-27: **read**) |
+| x4 | `read-only`, profile | `python3` subprocess | no token; the same answer as x2 (2026-10-27: **read**) |
+
+These show that the policy now reaches the run. They do not prove enforcement:
+the model declined rather than tried, so they prove the argv. Enforcement was
+measured without a model, handing `codex sandbox` exactly the `-c` pair
+Lingtai's `invocation()` built for each role:
+
+| role profile Lingtai built | read the secret | write in the worktree |
+|---|---|---|
+| `lingtai_workspace_write` = `{extends=":workspace", filesystem={"~/.lingtai-probe"="deny"}}` | `Operation not permitted` | yes |
+| `lingtai_read_only` = `{extends=":read-only", filesystem={"~/.lingtai-probe"="deny"}}` | `Operation not permitted` | `Operation not permitted` |
+| control: `{extends=":workspace"}`, no deny | **read** | — |
+
+The role's write boundary under `lingtai_workspace_write`, a write outside the
+worktree under the real `$HOME`, was refused; that is #667's measurement, not
+this run's. `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`
+and `approval_policy=never` stay as they are.
 
 **A config in a non-default directory.** `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
 are not in `RUNNABLE` (`packages/agent-env/src/index.ts:146`), so a pass drops
