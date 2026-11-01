@@ -89,7 +89,7 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-setup"')
   })
 
-  it('renders one Docs menu with the nine public pages and no other doc link', () => {
+  it('renders one Docs menu with the ten public pages and no other doc link', () => {
     const bar = renderToStaticMarkup(<Bar />)
     expect(bar.match(/<details/g)).toHaveLength(1)
     expect(bar).toMatch(/<summary>Docs<\/summary>/)
@@ -102,6 +102,7 @@ describe("the home page's argument", () => {
       'Concepts',
       'Requirements',
       'What an agent can touch',
+      'Best practices',
       'Recipe',
       'CLI',
       'Plugins',
@@ -122,6 +123,7 @@ describe("the home page's argument", () => {
       'cli',
       'requirements',
       'safety',
+      'guide',
       'from-symphony',
       'plugins',
       'events',
