@@ -179,7 +179,91 @@ the input the failing attempt lacked"*
 ([0028](decisions-archive/0028-the-backoff-is-the-recipes.md) §3). A request for
 something claimed, blocked or landed still matches nothing.
 
-## Gate what has failed here, and delete the gate that never fails
+## Choose a model for each role
+
+**The rule.** A recipe names a runtime and a model per action, not once:
+`agent:` and `model:` sit beside each step's action
+(`packages/recipe/src/recipe.ts:225-234`, *"0063 §2 settled that `model:` and
+`prompt:` sit beside the key"*), and `runtime.agent` is only the default a
+step's `agent:` overrides. So the question is asked once per role, and the roles
+are not equally worth paying for. This section says what **we** run, why, and as
+of when; models change faster than this page, so it is a record of one
+repository's choices and not a recommendation.
+
+**Do this.**
+
+- Write down, per role, which runtime and model you run and the reason in one
+  line. The recipe's comments are where ours live.
+- Spend the expensive model once, where the approach is decided, and the cheaper
+  one where the ticket and the shape already say what to write.
+- Put the reviewer on another vendor's model than the writer's.
+- Write the review prompt yourself, from your own repository's history (below).
+- Check that every runtime any role names is installed and signed in, before the
+  first pass.
+
+**What we use, as of 2026-11-01**, from
+[`examples/lingtai-recipe.yml`](examples/lingtai-recipe.yml) (committed that day,
+one host value redacted):
+
+| Role | Lines | Runtime, model | Why |
+|---|---|---|---|
+| shape (`design:`) | `:60-63` | Claude Code, Opus | The expensive model, once, to decide the approach with `file:line` evidence. |
+| implement | `:84-89` | Claude Code, Sonnet | The recipe's own comment: *"on the cheaper model; the reviewer below is Codex, so the review is a second opinion"*. |
+| review | `:117-132` | Codex | *"another model family than the writer's, so its blind spots are not the writer's"* (`:117-118`), with this repository's known defect shapes in its prompt. |
+| judges at `proposed:` | `:180-201` | Sonnet at `findings` and at `conflict`; `same-worktree` at `red`, `verify-failed` and `budget-exhausted` | A judgement is paid for only where one is needed; a red build, a failed re-verify and a run stopped by a ceiling are answered for nothing. |
+| triage | `:235-237` | Claude Code, no `model:` | Its own small limits (`turns: 100, wall: 15m, usd: 10.0`). With no `model:` the runtime's own default applies (`recipe.ts:229`). |
+
+**The review prompt is the one to write yourself.** Ours
+(`examples/lingtai-recipe.yml`, `review:`) reads strangely to an outsider on
+purpose: it lists six defects *this* repository has shipped, each with the issue
+it came from, and the `# [published]` comment above it (`:121-128`) says so. It
+is not advice for another repository. The generic checklist is already in
+Lingtai's built-in review brief (`packages/actions/src/agent-action.ts:182`,
+`CHECKLIST`); what a reviewer lacks is what *your* codebase keeps getting wrong.
+Fill this in from your own history:
+
+```yaml
+review:
+  - name: review
+    agent: codex          # another vendor than the writer
+    prompt: |
+      <one line: what this codebase is>
+      These mistakes have shipped here more than once. Look for them.
+
+      1. **<the mistake, as a name>.** <one real example, with its issue>.
+         Ask: <the question that catches the next one>.
+      2. ...
+```
+
+**Where the money goes.** Over tickets that landed in October 2026 (measured
+2026-11-01), work was 56% of spend, answering refusals 35%, triage 6%, judging 3%
+and discussion 0.1%. The fix rounds are a third of the spend, which is why the
+ticket and the review prompt matter more than the model. The per-turn difference
+between the two writer models is in *Size it for one pass*, above.
+
+Two things to check before a role goes live: every runtime a role names must be
+installed and signed in (`discuss.agent` defaults to `claude-code`), and a role
+on Codex without tools needs a separately billed `codex_text` key — both are on
+the [requirements page](requirements.md).
+
+## Gate what has failed
+
+**The rule.** A gate runs once per attempt, not once per item, so its cost is its
+runtime multiplied by how often your items fail — the number nobody estimates.
+Keep the gates that refuse and delete the ones that never do. A gate nobody reads
+is not a gate; it is a delay with a signature on it.
+
+**Do this.**
+
+- Put what makes the worktree usable at `prepared`, the cheapest place to fail.
+- Put the one check you would not merge without at `build`, and nothing else.
+- Keep the cold reviewer at `review`; it is the one action that costs agent money,
+  so put the cost question to it first.
+- Use `watch:` to stop for a person on a path, with no process and no agent.
+- Leave `merge:` empty unless a person will read what it holds.
+- Add a new gate only on a green base, or every ticket parks on drift that is not
+  its own.
+- For every gate, check that it runs and that you have seen it fail.
 
 Ten steps, closed forever — `claim`, `admit`, `prepared`, `design`,
 `implement`, `build`, `review`, `proposed`, `merge`, `end`
@@ -188,54 +272,48 @@ which four produce a verdict, two run for effect, one keeps what a step made,
 one reads it back, and six are names for code the pass calls itself and no step
 yet reads
 ([reference](reference.md#gate-action--14-keys-of-which-4-produce-a-verdict)).
-The design question a repository actually faces is not which steps exist; it is
-what to hang on them — and today that is six of the ten, because no plugin
-implements `claim`, `admit`, `design` or `implement`. It was four until
-2026-09-27, when `build` and `review` were each opened to a plugin; the rest of
-this section works through the points in the order the loop runs them.
+Which plugin serves which step is each plugin's own `at` in
+`packages/recipe/src/recipe.ts`; a plugin written at a step it does not serve is
+refused by name before a worktree is cut.
 
-**A gate runs once per attempt, not once per item.** This is the arithmetic
-nobody does. `wi-lingtai-87` was claimed three times and `wi-lingtai-89` twice
-([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)); every one of those
-attempts paid for `install` and for `pnpm typecheck && pnpm test` again. A
-gate's cost is its runtime multiplied by how often your items fail, and the
-second number is the one you did not estimate.
+**A gate runs once per attempt.** `wi-lingtai-87` was claimed three times and
+`wi-lingtai-89` twice
+([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)); every one of
+those attempts paid for `install` and for `pnpm typecheck && pnpm test` again.
 
-So, in the order the loop runs them:
-
-**`prepared` is for what makes the worktree usable, and it is the cheapest
-place to fail.** `git worktree add` copies no `node_modules`, so this repository
-runs `pnpm install --frozen-lockfile` with a 10-minute timeout there. The
-refusal reads `stopped at prepare: the install action refused` — *"Nothing
+**`prepared` is the cheapest place to fail.** `git worktree add` copies no
+`node_modules`, so this repository runs `pnpm install --frozen-lockfile` there.
+The refusal reads `stopped at prepare: the install action refused` — *"Nothing
 expensive ran; that is the point of failing here."* Anything you can discover
 before the agent starts, discover before the agent starts.
 
 **`build` is the check you would not merge without, and nothing else.** Here it
-is one action: `pnpm typecheck && pnpm test`, 20-minute timeout. It sat at
-`proposed:` until 2026-09-27, because `proposed` was the only step a `run:`
-could legally be declared at — never a judgement that a build belongs with the
-routing. And because this repository's `merge` point is empty (below), that one
-action and the cold reviewer below it are **all that is between an agent and
-`main`** — which the recipe says in as many words, so that nobody has to derive
-it. A checking list that has grown to five actions is five things every attempt
-pays for; if one of them has never refused, it is not protecting you, and you
-should find out whether it is even running before you keep it.
+is one action, `pnpm typecheck && pnpm test`
+(`examples/lingtai-recipe.yml:112-115`). It sat at `proposed:` until 2026-09-27,
+because `proposed` was the only step a `run:` could legally be declared at —
+never a judgement that a build belongs with the routing. And because this
+repository's `merge` point is empty, that action and the cold reviewer below it
+are **all that is between an agent and `main`**. A checking list that has grown
+to five actions is five things every attempt pays for; if one of them has never
+refused, find out whether it is even running before you keep it.
 
-**`review` is an `agent:` reviewer, and it earns its cost when self-review does
-not.** The claim
-being tested in [experiment 001](experiments/001-cold-review-issue-58.md) was
-that self-review after ~89 turns of committed reasoning is not a second opinion.
+**A new gate needs a green base.** A gate added while the base already fails it
+refuses every ticket, each for drift that is not its own, and each refusal buys
+a fix round for a failure no ticket can fix. Make the base pass first, then add
+the gate.
+
+**`review` earns its cost when self-review does not.** The claim tested in
+[experiment 001](experiments/001-cold-review-issue-58.md) was that self-review
+after ~89 turns of committed reasoning is not a second opinion.
 `nextloom-ai-admin#58` had passed self-review, `verify.sh`, CI and a human read,
 and merged; hours later the agent filed three issues against its own merged
 code. A cold reviewer given only the diff and the issue found **all four known
-defects in a single finding, plus two nobody had found** — both verified by
-hand, both still on `develop`, neither covered by any of ~300 issues. That is
-what a gate that earns its cost looks like — and `agent:` is the only action of
-the six that costs agent money, so it is the one to put this question to first.
+defects in a single finding, plus two nobody had found** — both verified by hand,
+both still on `develop`, neither covered by any of ~300 issues.
 
 **`watch:` is the cheapest gate there is.** Globs against the diff's file list,
-then `request-approval` or `fail`. No process, no agent. It is how a migration
-stops for a person without anything having to run.
+then `request-approval` or `fail`. It is how a migration stops for a person
+without anything having to run.
 
 **`merge` is where gates go to stop meaning anything.** This repository emptied
 it on 2026-09-08, and wrote the reason into the recipe rather than into a commit
@@ -244,14 +322,13 @@ message:
 > On 2026-09-08 seven changes landed and every one was approved
 > unread-in-substance, which is an approval that has stopped meaning anything.
 
-**A gate nobody reads is not a gate; it is a delay with a signature on it.** The
-honest move is to delete it and say so, which is what `merge: []` and that
-comment are. `#31`'s narrowing — a `watch:` list over `conductor`, `event-store`,
-`hook` and `actions` — is named there as the thing to reach for if the deletion
-turns out to be too far, along with the objection it has to answer: a path list
-has to be kept correct, and the first thing it would miss is the file that
-defines it. *"If it comes back it should be tried against that objection, not
-around it."*
+The honest move is to delete a gate like that and say so, which is what
+`merge: []` and that comment are. `#31`'s narrowing — a `watch:` list over
+`conductor`, `event-store`, `hook` and `actions` — is named there as the thing to
+reach for if the deletion turns out to be too far, along with the objection it
+has to answer: a path list has to be kept correct, and the first thing it would
+miss is the file that defines it. *"If it comes back it should be tried against
+that objection, not around it."*
 
 **`end` cannot refuse.** It runs on every terminal outcome, and its actions are
 effects: `close:`, `labels:` and `refs:`. The first two carry `when:` (`landed`
@@ -263,36 +340,47 @@ alone. Putting any of them at a gating point is refused by name.
 
 Check that it runs. A configured point that silently does not execute is
 indistinguishable from one that always passes, and this project has had exactly
-that: `CLAUDE.md`'s standing instruction — *"Pass `--no-merge`, by hand, every
-time"* — exists because this repository's own `merge` point **does not execute**
-(`#58`), so a run without the flag merges itself into `main` unapproved. A point
-that never refuses and a point that never runs look identical from outside, and
-this project has been on the wrong side of that for long enough to write the
-workaround into its own instructions. `lingtai doctor` carries `steps: end ran
-on what landed`, the board's bar has a `never-ran` mark of its own for a step
-that was configured and did not run, and `StepsResolved` is an
+that: `#58` was a `merge` point that **did not execute**, so a run without
+`--no-merge` merged itself into `main` unapproved. A point that never refuses and
+a point that never runs look identical from outside. `lingtai doctor` carries
+`steps: end ran on what landed`, the board's bar has a `never-ran` mark of its
+own for a step that was configured and did not run, and `StepsResolved` is an
 event rather than a convention so that an unconfigured point renders as
 `skipped` on the board and in `lingtai status` — **never omitted**. A check you
 cannot see is a check you will forget you never had.
 
 The gating half of that comparison was a `doctor` row too and is gone (`#257`):
-a plugin declares the steps it serves — its `at`, in
-`packages/recipe/src/recipe.ts` — and a plugin written at any other step is
+a plugin declares the steps it serves, and a plugin written at any other step is
 refused by name and before a worktree, so *configured and never called* is now
-something the recipe cannot say rather than something a health check hunts for
-on every log. What a person can still act on stays — an `end`
+something the recipe cannot say. What a person can still act on stays — an `end`
 effect that failed at runtime, which `lingtai end replay` resolves.
 
 ## Read a failure in this order
 
-On 2026-09-08 the question *"why is this not moving?"* was asked of `#80`,
-`#87`, `#89` and `#94` in a single day and **answered wrongly four times** —
-including once where the item was not stuck at all and would have returned by
-itself ([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)). Diagnosing
-`#89` took an hour, most of it spent rebuilding by hand a division the log had
-already made.
+**The rule.** Read a failure from the narrowest view outward: the receipt, then
+the run log, then triage's recommendation, then the events. The order matters
+because the instinctive one is wrong: on 2026-09-08 the question *"why is this
+not moving?"* was asked of `#80`, `#87`, `#89` and `#94` in a single day and
+**answered wrongly four times**, including once where the item was not stuck at
+all and would have returned by itself
+([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)). A
+disagreement is not a failure.
 
-There is an order, and it is not the order instinct offers.
+**Do this.**
+
+- Open the attempts ledger on `/task/<id>` first: one row per attempt, with its
+  prompt, files, gates and outcome.
+- Read the outcome word on the failing row before anything else; `never-started`
+  is Lingtai's own failure, not the ticket's.
+- Open the refusing gate's evidence through the pointer on the row.
+- If the item has not landed, tail the run log: `pnpm lingtai attach <runId>`.
+- Read triage's recommendation for a waiting ticket as a recommendation, not a
+  verdict.
+- When you must settle a behavioural claim, read `events` and cite the seq.
+- When a card says `disagreement`, treat it as a judgement to make, not a repair.
+
+Diagnosing `#89` took an hour, most of it spent rebuilding by hand a division the
+log had already made.
 
 **1. The attempts ledger, on `/task/<id>`.** One row per attempt, opening into
 that attempt's prompt, its files, its gates and its outcome. Start here because
@@ -325,14 +413,18 @@ into `StepFailed.evidence`, which is an event payload and therefore never
 rewritten.
 
 **4. The run log, if the item has not landed.** `pnpm lingtai attach <runId>`,
-or the run log inside that attempt's row. Both tail
-`~/.lingtai/runs/<project>/<runId>.log` and both start at the beginning however
+or the run log inside that attempt's row. Both start at the beginning however
 late you arrive; neither asks the daemon or the database anything, so they
 answer on a stopped system. **A run that landed has no log** — the file is kept
 only while something is still owed an explanation
 ([0034](decisions-archive/0034-the-run-log.md) §4). It is a trace and never a record.
 
-**5. The events.** *"Behavioural claims are settled by reading `events`, not by
+**5. Triage's recommendation.** For a ticket that is waiting, triage explains the
+wait once, without tools, and recommends; it is bounded by its own small limits
+(`examples/lingtai-recipe.yml:235-237`). Read it as a pointer to the evidence
+above, not as a replacement for it.
+
+**6. The events.** *"Behavioural claims are settled by reading `events`, not by
 reasoning about the code. A finding that cites a seq number is worth more than
 one that argues."* This is last in the order and first in authority: everything
 above is a view of it.
@@ -386,41 +478,65 @@ to yourself:
    is that attempt's work is precisely what killed the repair
    ([0033](decisions-archive/0033-the-third-kind-of-agent.md) §5).
 
-## The limits, and what each one is protecting you from
+## Set the limits
 
-Every number below is in the recipe, so a repository can read its own policy
-without opening Lingtai's source. The values are in
+**The rule.** Every limit is in the recipe, so a repository can read its own
+policy without opening Lingtai's source. Treat each as an alarm or a bound with
+a reason, set it to the failure it protects against, and read one that fires as
+information about the ticket before you raise it. The values and defaults are in
 [`reference.md`](reference.md#policy--every-number-that-decides-behaviour); what
-follows is what each is *for*, which is the part an ADR states once and a
-recipe cannot.
+follows is what each is *for*, which is the part an ADR states once and a recipe
+cannot.
 
-**`runtime.limits.turns`** — default `300`. Not a cost cap; a **scope alarm**.
-The runtime stops the agent and the run ends `error_max_turns`, and the useful
-reading of that is *the ticket was wrong*, not *the number was low*. This
-repository runs `150` and says so in the recipe. If it never fires, it is
-telling you nothing.
+**Do this.**
 
-**`runtime.limits.wall`** — default `2h`, `1h` here. The second thing it decides
-is how long a shutdown waits: `pnpm lingtai shutdown "why"` appends, returns,
-and the daemon finishes the pass in flight — the pass, not the agent, so the
-gates and the merge lane run too. That wait is `runtime.limits.wall`, and the
-command says so rather than looking hung ([0030](decisions-archive/0030-shutting-down-safely.md)).
+- Set `runtime.limits` (`turns`, `wall`, `rounds`, `restarts`) so that together
+  they say what one pass may spend; this repository's comment says it in a
+  sentence.
+- Set the daily ceiling `limits.day_usd` in your installation config before you
+  run unattended.
+- Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.
+- Keep one repair per distinct failure, and let Lingtai's own failures buy none.
+- Size `runtime.budget.evidence` to the capture your gate produces.
+- Do not expect anything to cap the number of ordinary attempts; read the ledger
+  early and use `agent:hold`.
+
+**What this repository sets** (`examples/lingtai-recipe.yml:251-258`, as of
+2026-11-01): the comment says a pass may spend five agent runs, the work and four
+rounds, of up to `turns: 350` and `wall: 75m`, then up to `restarts: 2` fresh
+starts from the base, with `rounds: 4`. Turns are priced per model.
+
+**The daily ceiling.** `limits.day_usd` is dollars per local calendar day for the
+whole installation (`config.example.yml:86-89`): *"When the day's recorded spend
+reaches it the conductor pauses until local midnight or `lingtai resume`,
+finishing every pass in flight."* Absent means no ceiling.
+
+**`runtime.limits.turns`** is not a cost cap; it is a **scope alarm**. The
+runtime stops the agent and the run ends `error_max_turns`, and the useful
+reading of that is *the ticket was wrong*, not *the number was low*. If it never
+fires, it is telling you nothing.
+
+**`runtime.limits.wall`** also decides how long a shutdown waits:
+`pnpm lingtai shutdown "why"` appends, returns, and the daemon finishes the pass
+in flight — the pass, not the agent, so the gates and the merge lane run too. That
+wait is `runtime.limits.wall`, and the command says so rather than looking hung
+([0030](decisions-archive/0030-shutting-down-safely.md)).
 `pnpm lingtai restart "why"` waits out the same limit and then starts one
 ([0042](decisions-archive/0042-the-restart-is-a-command.md)).
 
-**`gates.<point>[].timeout`** — default `15m`, **per process action, not per
-point**. Multiply by attempts, per the arithmetic above.
+**`gates.<point>[].timeout`** applies **per process action, not per point**.
+Multiply by attempts, per the arithmetic above.
 
-**`repair.on` / `repair.maxAttempts`** — `true` / `1`. A failure of *this
-repository's* buys one agent to understand it; **Lingtai's own never do** — an
-agent pointed at a missing credential or an unreachable database *"would spend
-money to report that it cannot see anything, and the report would be addressed
-to the one person who did not need it."* Three bounds make "once" structural
-rather than aspirational: one analysis per **distinct** failure, a ceiling in
-the recipe, and an analysis that fails does not trigger an analysis of the
-analysis. Drop any one and a single bad ticket spawns an agent per lap. **This
-is the only part of the design where the failure mode is unbounded spend rather
-than a wrong answer** ([0025](decisions-archive/0025-a-failure-buys-one-agent.md) §3).
+**`repair.on` / `repair.maxAttempts`.** A failure of *this repository's* buys one
+agent to understand it; **Lingtai's own never do** — an agent pointed at a
+missing credential or an unreachable database *"would spend money to report that
+it cannot see anything, and the report would be addressed to the one person who
+did not need it."* Three bounds make "once" structural rather than aspirational:
+one analysis per **distinct** failure, a ceiling in the recipe, and an analysis
+that fails does not trigger an analysis of the analysis. Drop any one and a
+single bad ticket spawns an agent per lap. **This is the only part of the design
+where the failure mode is unbounded spend rather than a wrong answer**
+([0025](decisions-archive/0025-a-failure-buys-one-agent.md) §3).
 
 The reason for the ceiling changed on 2026-09-08, and the recipe records the
 change rather than the conclusion: it used to bound only spend, because every
@@ -428,7 +544,7 @@ merge waited for a person. `merge` is empty now, so a repair that passes
 `proposed` lands unread — one attempt is the whole of the limit on how far an
 agent may go correcting itself.
 
-**`source.backoff`** — `1h`, flat. **It stops blind retries, and only blind
+**`source.backoff`** is flat. **It stops blind retries, and only blind
 retries.** A failed run releases its task, a release is a completion event, and
 a completion event starts the next pass — so without the guard the top of the
 queue is the ticket that just failed, forever, at agent prices. 0028 records
@@ -445,48 +561,43 @@ that makes a retry worth anything. An attempt that is told something the last
 one was not is not blind, and does not wait: a repair jumps the backoff, and so
 does `lingtai now`.
 
-**`runtime.budget.*`** — this is what a run is **given**, not what it may spend,
-and it is the setting most worth tuning to your own gates. `evidence` — default
-`2000` characters — is how much of one earlier failure's output the next prompt
-quotes verbatim. What fits is quoted whole; what does not is quoted as **two
-ends**, the first `evidence/2` characters and the last, with the middle elided
-and counted (#171). So at the default each end is **1000** characters, and the
-number to size against is not the failure but *the capture it sits in*: a
-command gate stores the exit line and, of its output, the last 60 lines (up
-to 8000 bytes) and, when that is not all of it, up to 2000 bytes of its start on
-top. `tsc` puts its first error in
-the start — under `pnpm -r` after a preamble of every package it checked — and
-vitest puts its
-` FAIL ` and `AssertionError` near the tail — but one `toEqual` on a four-key
-object is already 775 characters from ` FAIL ` to the end, and a longer diff or
-a second failing test pushes the first one into the elided middle, where the
-prompt never names the test or the assertion. **A failure in the middle of its
-output is the case two ends of 2000 cannot carry.** This repository's gate is
-`pnpm typecheck && pnpm test && pnpm test:db`, so its recipe sets `evidence:
-10200` — the whole capture and the line in front of it — and says so; the
-default was sized for `typecheck && test` alone, *"failures short and specific,
-so 2000 characters was a whole one rather than a fragment."* An agent that
-cannot see the failure repeats it, and the ticket buys another agent. The other three —
-`attempts: 5` rows, `findings: 5`, `diff: 400000` bytes — answer the same
-question at different scales.
+**`runtime.budget.*`** is what a run is **given**, not what it may spend, and it
+is the setting most worth tuning to your own gates. `evidence` is how much of one
+earlier failure's output the next prompt quotes verbatim. What fits is quoted
+whole; what does not is quoted as **two ends**, with the middle elided and
+counted (#171). The number to size against is not the failure but *the capture it
+sits in*: a command gate stores the exit line and the last lines of its output,
+and, when that is not all of it, a stretch of its start on top. `tsc` puts its
+first error in the start, and vitest puts its ` FAIL ` and `AssertionError` near
+the tail — but a longer diff or a second failing test pushes the first one into
+the elided middle, where the prompt never names the test or the assertion. **A
+failure in the middle of its output is the case two short ends cannot carry.**
+This repository sets `evidence: 10200` (`examples/lingtai-recipe.yml:245`) —
+sized to hold one build failure's whole capture (`:243-244`, #171) — because an
+agent that cannot see the failure repeats it, and the ticket buys another agent.
+`attempts`, `findings` and `diff` answer the same question at different scales.
 
 ### What nothing bounds
 
-**The number of ordinary attempts.** With a five-minute sweep and an hour's
-backoff, a ticket that fails every time costs about twenty-four agent runs a
-day, indefinitely. `repair.maxAttempts` caps repairs; `runQueue`'s in-memory
-`attempted` set caps one pass; neither caps the sequence, and
+**The number of ordinary attempts.** With a short sweep and a backoff, a ticket
+that fails every time costs a run per backoff interval, indefinitely.
+`repair.maxAttempts` caps repairs; `runQueue`'s in-memory `attempted` set caps
+one pass; neither caps the sequence, and
 [0028](decisions-archive/0028-the-backoff-is-the-recipes.md) leaves it undecided on
 purpose — a doubling backoff still spends forever, just on a longer timetable,
 and the right instrument for that failure is a count rather than a curve.
 
 Until there is one, **you are the count.** That is the strongest argument in this
 guide for reading the attempts ledger early and reaching for `agent:hold` rather
-than hoping: a ticket that has failed twice for the same reason will fail
-twenty-four more times today unless somebody changes what it is told.
+than hoping: a ticket that has failed twice for the same reason will keep
+failing, at agent prices, unless somebody changes what it is told.
 
 ## What to read next
 
+- [`examples/lingtai-recipe.yml`](examples/lingtai-recipe.yml) — the recipe this
+  repository runs, as of 2026-11-01; every role and limit above is a line in it.
+- [`requirements.md`](requirements.md) — which runtimes and keys a recipe needs
+  before its roles can run.
 - [`operating.md`](operating.md#when-something-refuses) — what every refusal
   means, in a table, when one of the above turns into a message on your terminal.
 - [`reference.md`](reference.md#policy--every-number-that-decides-behaviour) —
