@@ -392,9 +392,9 @@ export function findAppendSites(root: string): Site[] {
   return sites
 }
 
-type Definition = { line: number; group: string; summary: string | null }
+type Definition = { line: number; group: string; summaries: string[] }
 
-/** Where each `export const Name =` is, under which banner, and its doc comment's first sentence. */
+/** Where each `export const Name =` is, under which banner, and the `@summary` tags of its doc comment. */
 function definitions(root: string): Map<string, Definition> {
   const text = readFileSync(join(root, EVENTS_FILE), 'utf8')
   const sf = ts.createSourceFile(EVENTS_FILE, text, ts.ScriptTarget.Latest, true)
@@ -415,77 +415,31 @@ function definitions(root: string): Map<string, Definition> {
         .filter((r) => text.startsWith('/**', r.pos) && !/\n\s*\n/.test(text.slice(r.end, stmt.getStart(sf))))
         .map((r) => text.slice(r.pos, r.end))
         .at(-1)
-      out.set(decl.name.text, { line, group, summary: firstSentence(doc) })
+      out.set(decl.name.text, { line, group, summaries: summariesIn(doc) })
     }
   }
   return out
 }
 
-const ABBREVIATIONS = new Set(['e.g.', 'i.e.', 'etc.', 'cf.', 'vs.'])
-
 /**
- * The first sentence of a `/** … *\/` comment, on one line, as markdown; `null` when
- * the comment has no text. The first paragraph is joined with spaces, then cut after
- * the first `.`, `?` or `!` that is outside a backtick span or a link, is followed
- * (past any closing `*`, `_`, `)` or quote) by whitespace or the end, and is neither
- * an abbreviation nor followed by a lowercase letter. An odd `**` at the cut is
- * closed by including up to the next one. No end: the whole paragraph.
+ * Every `@summary` tag in a `/** … *\/` comment, each on one line. The comment is
+ * parsed by the compiler (as the doc of a statement of its own), so a tag runs to
+ * the next tag or the end of the comment and a wrapped one is joined with spaces.
  */
-export function firstSentence(comment: string | undefined): string | null {
-  if (comment === undefined) return null
-  const lines = comment.split('\n').map((l) =>
-    l
-      .replace(/^\s*\/?\*+\/?/, '')
-      .replace(/\*\/\s*$/, '')
-      .trim(),
-  )
-  const start = lines.findIndex((l) => l !== '')
-  if (start === -1) return null
-  const rest = lines.slice(start)
-  const blank = rest.indexOf('')
-  const text = (blank === -1 ? rest : rest.slice(0, blank)).join(' ')
+export function summariesIn(comment: string | undefined): string[] {
+  if (comment === undefined) return []
+  const sf = ts.createSourceFile('doc.ts', `${comment}\nexport const x = 0\n`, ts.ScriptTarget.Latest, true)
+  const stmt = sf.statements[0]
+  if (stmt === undefined) return []
+  return ts
+    .getJSDocTags(stmt)
+    .filter((t) => t.tagName.text === 'summary')
+    .map((t) => (ts.getTextOfJSDocComment(t.comment) ?? '').replace(/\s+/g, ' ').trim())
+}
 
-  let end = text.length
-  let inCode = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]!
-    if (c === '`') {
-      inCode = !inCode
-      continue
-    }
-    if (inCode) continue
-    if (c === '[') {
-      const close = text.indexOf(']', i)
-      if (close === -1) continue
-      i = close
-      if (text[i + 1] === '(') {
-        const paren = text.indexOf(')', i)
-        if (paren !== -1) i = paren
-      }
-      continue
-    }
-    if (c !== '.' && c !== '?' && c !== '!') continue
-    let j = i + 1
-    while (j < text.length && '*_)"”’'.includes(text[j]!)) j++
-    if (j < text.length && !/\s/.test(text[j]!)) continue
-    const word = text
-      .slice(0, i + 1)
-      .split(/\s/)
-      .at(-1)!
-      .replace(/^[^\w]+/, '')
-      .toLowerCase()
-    if (ABBREVIATIONS.has(word)) continue
-    if (/^\s*[a-z]/.test(text.slice(j))) continue
-    end = j
-    break
-  }
-
-  const bold = (s: string) => (s.replace(/`[^`]*`/g, '').match(/\*\*/g) ?? []).length
-  if (end < text.length && bold(text.slice(0, end)) % 2 === 1) {
-    const close = text.indexOf('**', end)
-    if (close !== -1) end = close + 2
-  }
-  return text.slice(0, end)
+/** The `@summary` of every event type, read from `events.ts` as the generator reads it. */
+export function summaries(root: string): Map<string, string[]> {
+  return new Map([...definitions(root)].map(([name, d]) => [name, d.summaries]))
 }
 
 /** The 1-based line of every occurrence of `anchor` in `text`; an anchor is part of one line. */
@@ -529,7 +483,7 @@ export function generate({ root, sha, ref }: { root: string; sha: string; ref?: 
       schemaVersion: SCHEMA_VER[name],
       retired: RETIRED.has(name),
       at: EVENT_AT[name],
-      summary: def.summary,
+      summary: def.summaries[0] ?? null,
       definition: permalink(named, EVENTS_FILE, def.line),
       sites: sites
         .filter((s) => s.event === name)
