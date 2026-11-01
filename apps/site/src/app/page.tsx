@@ -2,6 +2,20 @@ import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
 import { ReplayReceipt } from './replay-receipt'
 
+/** The agent alone against Lingtai: the left column says who decides, never that an agent fails. */
+const LEDGER = [
+  {
+    key: 'Completion',
+    alone: 'The agent, or tooling around it',
+    lingtai: 'Your recipe: checks, review, your approval',
+  },
+  { key: 'Checks', alone: "Inside the agent's own workflow", lingtai: "Separate steps the agent can't skip" },
+  { key: 'Rules', alone: 'Usually in the repo it edits', lingtai: 'Outside its worktree' },
+  { key: 'Recovery', alone: 'Depends on the session and setup', lingtai: 'Persisted; a restart picks it up' },
+  { key: 'Cost', alone: 'Provider or tool tracking', lingtai: 'Per ticket, with a daily ceiling' },
+  { key: 'Audit', alone: 'Session transcripts', lingtai: 'Structured events and a receipt' },
+]
+
 export default function Home() {
   return (
     <>
@@ -107,6 +121,91 @@ export default function Home() {
             </div>
             <ReplayReceipt />
           </div>
+
+          <section className="why" aria-labelledby="why-title">
+            <div className="why-head">
+              <p className="kicker">The first question</p>
+              <h2 id="why-title">Why not just give the agent the issue?</h2>
+              <p className="sub">
+                You can. At the end you get <b>its word</b> for it. With Lingtai, you get{' '}
+                <b>the receipt you just watched</b>.
+              </p>
+            </div>
+            <div className="why-pair">
+              <figure className="why-card">
+                <figcaption className="why-cap">
+                  <span className="why-alone">THE AGENT ALONE</span>
+                  <span className="why-chip">Claude Code</span>
+                  <span className="why-chip">Codex</span>
+                </figcaption>
+                <div className="why-top">
+                  <span>session · chapter-garden</span>
+                  <span>23:02</span>
+                </div>
+                <p className="why-msg">
+                  I added a <code>ReadingTime</code> component and wired it into <code>ChapterMeta</code>. I ran{' '}
+                  <code>npm test</code> — 42 passed. Ready for you to review.
+                </p>
+                <p className="why-note">Often right. But it is the agent&apos;s own account of its own work.</p>
+              </figure>
+              <span className="why-vs" aria-hidden="true">
+                vs
+              </span>
+              <figure className="why-card why-card-with">
+                <figcaption className="why-cap">
+                  <span className="why-with">WITH LINGTAI</span>
+                  <span className="why-chip">Claude Code</span>
+                  <span className="why-chip">Codex</span>
+                  <span className="why-chip">+ a separate policy</span>
+                </figcaption>
+                <a className="why-point" href="#replay">
+                  <span className="why-arrow" aria-hidden="true">
+                    ↑
+                  </span>
+                  <span>
+                    <b>The receipt above.</b>
+                    <span className="why-point-text">
+                      Checks it didn&apos;t run itself, a review by someone who didn&apos;t write it, your approval, the
+                      cost — each a line you can open.
+                    </span>
+                  </span>
+                </a>
+              </figure>
+            </div>
+            <div className="ledger">
+              <div className="ledger-top">
+                <span>LINGTAI / THE DIFFERENCE</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+                  <path d="M9 8h6M9 12h6" />
+                </svg>
+              </div>
+              <table>
+                <caption className="sr-only">The agent alone, and with Lingtai</caption>
+                <colgroup>
+                  <col className="lg-key" />
+                  <col />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <td />
+                    <th scope="col">Claude Code · Codex alone</th>
+                    <th scope="col">With Lingtai</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {LEDGER.map((row) => (
+                    <tr key={row.key}>
+                      <th scope="row">{row.key}</th>
+                      <td className="lg-a">{row.alone}</td>
+                      <td className="lg-b">{row.lingtai}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           <section className="home-setup" id="setup" aria-labelledby="setup-title">
             <div className="setup-lead">

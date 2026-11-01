@@ -161,3 +161,55 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
   .home .tale { grid-template-columns: minmax(0, 1fr); }
   .home .tale-side { position: static; padding-top: 0; order: -1; }
 }
+
+/* Why not just give the agent the issue? */
+.why { border-top: 1px solid var(--rule); padding: 56px 0 8px; }
+.why-head { text-align: center; max-width: 640px; margin: 0 auto 32px; }
+.why-head .sub { color: var(--ink-2); font-size: 17px; line-height: 1.6; margin: 0; }
+.why-head .sub b { color: var(--ink); }
+.why-pair { display: grid; grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1fr); align-items: stretch; margin-bottom: 36px; }
+.why-card { margin: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.why-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.why-alone, .why-with { font: 600 11px var(--mono); letter-spacing: .08em; color: var(--muted); margin-right: 4px; }
+.why-with { color: var(--accent-ink); }
+.why-chip { font: 600 12px var(--sans); padding: 3px 10px; border: 1px solid var(--rule-2); border-radius: 999px; color: var(--ink-2); }
+.why-top { display: flex; justify-content: space-between; font: 600 11px var(--mono); color: var(--muted); padding-bottom: 8px; border-bottom: 1px dashed var(--rule-2); }
+.why-msg { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.6; }
+.why-msg code { font: 13px var(--mono); }
+.why-note { margin: 0; font-style: italic; color: var(--muted); font-size: 14px; }
+.why-vs { place-self: center; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule-2); background: var(--surface); display: grid; place-items: center; font: 600 12px var(--mono); color: var(--muted); }
+.why-card-with { border-style: dashed; border-color: var(--rule-2); }
+.why-point { display: flex; gap: 14px; color: var(--ink); text-decoration: none; font-size: 15px; line-height: 1.55; }
+.why-point b { display: block; color: var(--accent-ink); margin-bottom: 4px; }
+.why-point-text { display: block; color: var(--ink-2); }
+.why-arrow { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; font-size: 18px; }
+.why-point:hover b { text-decoration: underline; }
+
+.ledger { position: relative; max-width: 860px; margin: 0 auto 28px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px 12px 4px 4px; box-shadow: 0 14px 36px rgba(15, 24, 28, .08); color: var(--ink); }
+.ledger::after { content: ""; position: absolute; left: 0; right: 0; bottom: -9px; height: 10px; background: radial-gradient(circle at 7px 0, transparent 6px, var(--surface) 6.5px) 0 0 / 14px 10px repeat-x; }
+.ledger-top { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px dashed var(--rule-2); font: 600 11.5px var(--mono); letter-spacing: .08em; color: var(--ink-2); }
+.ledger-top svg { width: 18px; height: 18px; stroke: var(--muted); fill: none; stroke-width: 1.6; }
+.ledger table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.ledger col.lg-key { width: 170px; }
+.ledger th, .ledger td { text-align: left; vertical-align: top; padding: 14px 20px; font-size: 15px; line-height: 1.5; }
+.ledger thead th { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 12px; padding-bottom: 12px; }
+.ledger thead th:last-child { color: var(--accent-ink); }
+.ledger tbody tr { border-bottom: 1px dashed var(--rule-2); }
+.ledger tbody tr:last-child { border-bottom: 0; }
+.ledger tbody th { font-weight: 600; color: var(--ink); }
+.ledger td.lg-a { color: var(--muted); }
+.ledger td.lg-b { color: var(--ink); }
+.ledger td.lg-b::before { content: "✓ "; color: var(--pass); font-weight: 700; }
+
+@media (max-width: 1080px) {
+  .why-pair { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .why-vs { display: none; }
+}
+@media (max-width: 700px) {
+  .ledger table, .ledger thead, .ledger tbody, .ledger tr, .ledger th, .ledger td { display: block; }
+  .ledger thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ledger tbody tr { padding: 12px 0; }
+  .ledger th, .ledger td { padding: 3px 20px; }
+  .ledger td.lg-a::before { content: "Agent alone: "; font-weight: 600; }
+  .ledger td.lg-b::before { content: "✓ With Lingtai: "; }
+}
