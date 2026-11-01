@@ -45,11 +45,11 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Lingtai — let your backlog move',
+    default: 'Lingtai — agents do the work, Lingtai keeps the books',
     template: '%s — Lingtai',
   },
   description:
-    'Lingtai takes labeled GitHub issues one at a time, gives coding agents an isolated place to work, runs your checks, and shows you what landed or needs attention.',
+    'Lingtai hands your tickets to Claude Code or Codex, runs your checks and a cold review, and ends every ticket in a receipt you can check: what the agent was given, what it produced, what passed, who let it through, and what it cost.',
   icons: {
     icon: [
       { url: '/logo-dark.png', type: 'image/png', media: '(prefers-color-scheme: dark)' },

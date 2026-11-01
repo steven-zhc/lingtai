@@ -139,7 +139,7 @@ describe('/docs/events/', () => {
   it('links Events in the bar between Plugins and GitHub', () => {
     const bar = renderToStaticMarkup(<Bar />)
     const at = (href: string) => bar.indexOf(`href="${href}"`)
-    expect(at('/docs/events')).toBeGreaterThan(at('/docs/plugins'))
-    expect(at('/docs/events')).toBeLessThan(bar.indexOf('>GitHub<'))
+    expect(at('/docs/events/')).toBeGreaterThan(at('/docs/plugins/'))
+    expect(at('/docs/events/')).toBeLessThan(bar.indexOf('>GitHub<'))
   })
 })

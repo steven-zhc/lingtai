@@ -75,6 +75,22 @@ main { flex: 1 0 auto; }
 .bar a { color: var(--ink-2); text-decoration: none; }
 .bar a:hover { color: var(--accent-ink); }
 .bar .spacer { flex: 1 1 auto; }
+/* The Docs menu: a <details>, so it opens from the keyboard with no script. */
+.docs-menu { position: relative; margin-left: 18px; }
+.docs-menu summary { cursor: pointer; list-style: none; color: var(--ink-2); font-size: 14px; }
+.docs-menu summary::-webkit-details-marker { display: none; }
+.docs-menu summary::after { content: " ▾"; font-size: 10px; }
+.docs-menu summary:hover, .docs-menu[open] summary { color: var(--accent-ink); }
+.docs-menu summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.docs-menu-list {
+  position: absolute; top: calc(100% + 10px); left: -12px; z-index: 20; min-width: 15rem; padding: 6px;
+  background: var(--surface); border: 1px solid var(--rule-2); border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(15, 24, 28, .12);
+}
+.docs-menu-list a { display: block; padding: 7px 10px; border-radius: 5px; font-size: 14px; }
+.docs-menu-list a:hover { background: var(--accent-soft); }
+.docs-menu-list small { display: block; color: var(--muted); font-size: 11.5px; }
+.docs-menu-list hr { border: 0; border-top: 1px solid var(--rule); margin: 6px 4px; }
 
 /* --- the way in ----------------------------------------------------------
    The one coral thing. */
