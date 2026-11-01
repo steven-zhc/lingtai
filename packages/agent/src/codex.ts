@@ -628,6 +628,11 @@ export function userPermissionsFrom(text: string): UserPermissions {
     isTable(active) && active.default_permissions !== undefined && typeof doc.profile === 'string'
       ? doc.profile
       : undefined
+  // `-c` splits its key on dots and keeps quote characters, so only a bare key
+  // can be addressed; any other name cannot be overridden, and `--sandbox` stays.
+  if (overrideIn !== undefined && !/^[A-Za-z0-9_-]+$/.test(overrideIn)) {
+    return { kind: 'unreadable', why: `the active profile ${overrideIn} cannot be named in a -c override` }
+  }
   return overrideIn === undefined ? { kind: 'denies', paths } : { kind: 'denies', paths, overrideIn }
 }
 
@@ -1235,7 +1240,7 @@ function argsFor(
       ? [
           '-c',
           `default_permissions=${toml(name)}`,
-          ...(overrideIn === undefined ? [] : ['-c', `profiles.${toml(overrideIn)}.default_permissions=${toml(name)}`]),
+          ...(overrideIn === undefined ? [] : ['-c', `profiles.${overrideIn}.default_permissions=${toml(name)}`]),
           '-c',
           `permissions.${name}={extends=${toml(sandbox === 'read-only' ? ':read-only' : ':workspace')}, filesystem={${[
             ...writable.map((dir) => `${toml(dir)}="write"`),

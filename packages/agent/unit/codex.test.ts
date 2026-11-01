@@ -964,7 +964,12 @@ extends = ":read-only"
     )
     expect(v).toEqual({ kind: 'denies', paths: ['/secret'], overrideIn: 'p' })
     const a = argv('workspace-write', { denies: ['/secret'], overrideIn: 'p' })
-    expect(a).toContain('profiles."p".default_permissions="lingtai_workspace_write"')
+    expect(a).toContain('profiles.p.default_permissions="lingtai_workspace_write"')
+    expect(
+      userPermissionsFrom(
+        'profile = "a.b"\n[profiles."a.b"]\ndefault_permissions = "mine"\n[permissions.mine.filesystem]\n"/s" = "deny"\n',
+      ).kind,
+    ).toBe('unreadable')
     expect(argv('workspace-write', { denies: ['/secret'] }).join(' ')).not.toContain('profiles.')
   })
 
