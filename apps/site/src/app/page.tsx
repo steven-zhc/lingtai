@@ -10,9 +10,13 @@ const LEDGER = [
   {
     key: "Who says it's done",
     alone: 'The agent, or your own scripts',
-    lingtai: 'Your tests, a review, and your OK',
+    lingtai: 'Your checks, a cold review, and your OK',
   },
-  { key: 'Tests', alone: 'Run by the agent as part of its work', lingtai: "Run separately; the agent can't skip them" },
+  {
+    key: 'Checks',
+    alone: 'Run by the agent as part of its work',
+    lingtai: "Run separately; the agent can't skip them",
+  },
   { key: 'Rules', alone: 'Usually in the repo it can edit', lingtai: 'Outside anything it can edit' },
   { key: 'After a crash', alone: 'Depends on your session', lingtai: 'Saved; it carries on after a restart' },
   { key: 'Cost', alone: "Your provider's dashboard", lingtai: 'Per ticket, with a daily limit' },
@@ -78,8 +82,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   </div>
                   <div className="rp-scene" data-step="3" id="s3">
                     <div className="time">22:58 · YOUR CHECKS</div>
-                    <h3>Your tests fail. The agent has to fix it.</h3>
-                    <p>It gets the real test output and tries again.</p>
+                    <h3>Your checks fail. The agent has to fix it.</h3>
+                    <p>It gets the real output and tries again.</p>
                     <pre className="term">
                       <span className="bad">✗</span> reading-time.test.ts{'\n'}
                       {'  '}expected &quot;6 min read&quot;, received &quot;7 min read&quot;{'\n'}
@@ -91,7 +95,7 @@ export function HomePage({ books }: { books: Books | null }) {
                   </div>
                   <div className="rp-scene" data-step="4" id="s4">
                     <div className="time">23:20 · A COLD REVIEW</div>
-                    <h3>A second reviewer finds another bug.</h3>
+                    <h3>The cold review finds another bug.</h3>
                     <p>One more fix, then the review passes.</p>
                     <pre className="term">
                       <span className="dim">review</span> <span className="bad">✗</span> rounds 5.4 minutes up to 6
@@ -102,11 +106,11 @@ export function HomePage({ books }: { books: Books | null }) {
                   <div className="rp-scene" data-step="5" id="s5">
                     <div className="time">23:41 → 07:31 · YOU</div>
                     <h3>It stops and asks. You approve in the morning.</h3>
-                    <p>You asked to approve first, so nothing is merged until you do.</p>
+                    <p>You asked to approve first, so nothing lands until you do.</p>
                     <div className="frame">
                       <div className="wait">
                         <div className="cause">
-                          <small>READY TO MERGE · YOU ASKED TO APPROVE FIRST</small>
+                          <small>READY TO LAND · YOU ASKED TO APPROVE FIRST</small>
                         </div>
                         <div className="moves">
                           <span className="btn pri">
@@ -168,8 +172,7 @@ export function HomePage({ books }: { books: Books | null }) {
                   <span>
                     <b>The receipt above.</b>
                     <span className="why-ref-text">
-                      Your tests ran it, not the agent. Another model reviewed it. You approved it. Its cost is
-                      recorded.
+                      Your checks ran it, not the agent. A cold review passed it. You approved it. Its cost is recorded.
                     </span>
                   </span>
                 </a>
@@ -214,7 +217,7 @@ export function HomePage({ books }: { books: Books | null }) {
                 <details className="faq-item">
                   <summary>Will it break main?</summary>
                   <p>
-                    Nothing is merged until your tests and the review pass. If main is already broken, it stops and
+                    Nothing lands until your checks and the cold review pass. If main is already broken, it stops and
                     tells you, instead of spending money on a bug that isn&apos;t its own.
                   </p>
                 </details>

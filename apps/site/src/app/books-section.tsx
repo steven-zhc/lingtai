@@ -60,8 +60,8 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${num(n)} 
 const joined = (parts: (string | null | false)[]) => parts.filter((p): p is string => !!p).join(' · ')
 
 const PURPOSES: Record<string, { label: string; rest: string; color: string }> = {
-  Work: { label: 'Work', rest: 'writing and reviewing the code', color: 'var(--accent)' },
-  Answering: { label: 'Fixes', rest: 'after a failed test or review', color: 'var(--signal)' },
+  Work: { label: 'Work', rest: 'writing the code, and the cold review', color: 'var(--accent)' },
+  Answering: { label: 'Fixes', rest: 'after failed checks or a refused review', color: 'var(--signal)' },
   Triage: { label: 'Triage', rest: 'telling you why it stopped', color: '#7a8fa0' },
   Judge: { label: 'Judging', rest: '', color: 'var(--pass)' },
   Discussion: { label: 'Discussion', rest: '', color: 'var(--held)' },
@@ -216,7 +216,7 @@ export function BooksSection({ books }: { books: Books }) {
             label="median machine time"
             sub={joined([
               machineMinutes.mean !== null && `mean ${span(machineMinutes.mean)}`,
-              'while agents and tests were running, not while waiting for you',
+              'while agents and checks were running, not while waiting for you',
             ])}
           />
         ) : null}
