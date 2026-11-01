@@ -1291,7 +1291,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   // The router's visit as a span (#791), so a judge dispatched inside it is its
   // child: it is `ERROR` by that action alone, like any step.
   const routing = (...args: Parameters<typeof routeProposal>): Promise<boolean> =>
-    inSpan('step proposed', {}, () => routeProposal(...args))
+    inSpan('step proposed', { 'lingtai.round': contextFor().round ?? 0 }, () => routeProposal(...args))
   /**
    * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
    * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
@@ -1486,10 +1486,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
      * routing visit is built directly by `routeProposal`'s own `record()`
      * calls rather than through `runStep` — so neither gets one either.
      */
-    await options.emit({
-      type: 'StepStarted',
-      data: { runId: options.context.runId, step: at, round: visitContext.round ?? 0 },
-    })
+    const visiting = at
     const reached = await runStep(
       spec,
       options,
@@ -1514,6 +1511,16 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
             : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
         ).then(() => recorded)
       },
+      // Inside the span too: the visit begins at the `StepStarted` write, and a
+      // store that is slow to take it or refuses it is the step's time and
+      // the step's failure (#791).
+      () =>
+        Promise.resolve(
+          options.emit({
+            type: 'StepStarted',
+            data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+          }),
+        ).then(() => undefined),
     )
     // Only a review that was actually read: an unreadable answer, a reviewer
     // that never ran or did not finish, or an action skipped before the agent
@@ -1835,10 +1842,12 @@ function runStep(
   reaching: Reaching,
   /** Runs inside the span, after the body: the write that ends the visit. */
   finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
+  /** Runs inside the span, before the body: the write that begins the visit. */
+  begin: () => Promise<void> = () => Promise.resolve(),
 ): Promise<StepReached> {
   if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
   return inSpan(`step ${spec.step}`, { 'lingtai.round': reaching.context.round ?? 0 }, () =>
-    runStepBody(spec, options, bodies, reached, reaching).then(finish),
+    begin().then(() => runStepBody(spec, options, bodies, reached, reaching).then(finish)),
   )
 }
 

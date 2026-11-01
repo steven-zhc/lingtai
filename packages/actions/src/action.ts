@@ -816,12 +816,20 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         `action ${action.kind}`,
         { 'lingtai.index': index },
         () => action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context),
-        // 0120 §1's reading: `needs-approval` and a `did-not-finish` whose
-        // `because` is `NEEDS_INPUT` are *asked* — a person was asked, nothing failed.
+        // 0120 §1's reading of the *domain* result, not the raw verdict: what
+        // `commitResultOf` / `worktreeResultOf` make of it. `asked` — a
+        // `NEEDS_INPUT` question, or a `needs-approval` from a `verdict` or
+        // `signoff` action — is not an error; a `commit` that passed with no
+        // head is `Completed{head:null}` and a `worktree` that passed with none
+        // is `NotDone`, and both read `did-not-finish`.
         (r) =>
           r.verdict === 'failed' ||
           r.verdict === 'never-ran' ||
-          (r.verdict === 'did-not-finish' && r.because !== NEEDS_INPUT),
+          (r.verdict === 'did-not-finish' && r.because !== NEEDS_INPUT) ||
+          (r.verdict === 'passed' &&
+            (action.yields === 'commit' || action.yields === 'worktree') &&
+            r.head === undefined) ||
+          (r.verdict === 'needs-approval' && action.yields !== 'verdict' && action.yields !== 'signoff'),
       )
     } catch (err) {
       // An action that throws is an action that failed. The alternative is an

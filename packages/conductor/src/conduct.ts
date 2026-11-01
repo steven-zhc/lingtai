@@ -2605,7 +2605,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // A dispatched judge is an action of the `proposed` visit (#791); a
         // built-in spends nothing and is not. Its failures mark the span
         // themselves — `held`, `neverStarted` and `unreadable` below.
-        inSpan('action judge', {}, () => askTheAgentBody(declared, on))
+        inSpan('action judge', { 'lingtai.index': 0 }, () => askTheAgentBody(declared, on))
       const askTheAgentBody = async (
         declared: Extract<Declared, { runtime: RuntimeId }>,
         on: Judging,

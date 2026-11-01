@@ -109,7 +109,7 @@ describe('with an endpoint', () => {
     expect(steps.length).toBeGreaterThan(2)
     for (const s of steps) {
       expect(parentOf(s), s.name).toBe(idOf(run!))
-      if (!['step claim', 'step end', 'step proposed'].includes(s.name))
+      if (!['step claim', 'step end'].includes(s.name))
         expect(typeof s.attributes['lingtai.round'], s.name).toBe('number')
     }
 
