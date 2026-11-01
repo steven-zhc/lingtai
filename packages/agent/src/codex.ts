@@ -559,7 +559,7 @@ function configModelFor(
 /** What the user's own Codex config says about permissions, as a verdict each caller answers differently. */
 export type UserPermissions =
   | { kind: 'none' }
-  | { kind: 'denies'; paths: readonly string[] }
+  | { kind: 'denies'; paths: readonly string[]; overrideIn?: string }
   | { kind: 'kept'; why: string }
   | { kind: 'unreadable'; why: string }
 
@@ -621,10 +621,17 @@ export function userPermissionsFrom(text: string): UserPermissions {
     }
     current = parent
   }
-  return paths.length === 0 ? { kind: 'none' } : { kind: 'denies', paths }
+  if (paths.length === 0) return { kind: 'none' }
+  // An active `[profiles.<name>]` that itself names `default_permissions` outranks
+  // the top level, so the override has to be written there too.
+  const overrideIn =
+    isTable(active) && active.default_permissions !== undefined && typeof doc.profile === 'string'
+      ? doc.profile
+      : undefined
+  return overrideIn === undefined ? { kind: 'denies', paths } : { kind: 'denies', paths, overrideIn }
 }
 
-/** `userPermissionsFrom` for the file the child will read. Never throws; a missing file is `none`. */
+/** `userPermissionsFrom` for the file the child will read. Never throws; a file that cannot be read is `unreadable`. */
 function userPermissionsAt(env: Record<string, string>, cwd: string): UserPermissions {
   const path = codexConfigPath(env, cwd)
   if (path === undefined) return { kind: 'none' }
@@ -632,8 +639,6 @@ function userPermissionsAt(env: Record<string, string>, cwd: string): UserPermis
   try {
     text = readFileSync(path, 'utf8')
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'none' }
     return { kind: 'unreadable', why: `${path}: ${(error as Error).message}` }
   }
   const verdict = userPermissionsFrom(text)
@@ -649,12 +654,13 @@ export function denyCoveringRoot(
   paths: readonly string[],
   roots: readonly string[],
   home: string | undefined,
+  cwd: string,
 ): { path: string; root: string } | undefined {
   for (const key of paths) {
     if (key.startsWith(':') || /[*?[{]/.test(key)) continue
     let literal: string
     if (key.startsWith('/')) literal = key
-    else if (key.startsWith('~/') && home) literal = join(home, key.slice(2))
+    else if (key.startsWith('~/') && home) literal = join(resolve(cwd, home), key.slice(2))
     else continue
     const p = resolve(literal)
     for (const root of roots) {
@@ -1193,6 +1199,8 @@ export function codexArgv(
     outputSchemaPath?: string
     /** The user's own profile's denies (#667). Empty or absent keeps `--sandbox`. */
     denies?: readonly string[]
+    /** The active `[profiles.<name>]` that names its own `default_permissions`, overridden too. */
+    overrideIn?: string
   },
 ): string[] {
   return argsFor(
@@ -1204,6 +1212,7 @@ export function codexArgv(
     options.extraArgs ?? [],
     options.outputSchemaPath,
     options.denies ?? [],
+    options.overrideIn,
   )
 }
 
@@ -1216,6 +1225,7 @@ function argsFor(
   extraArgs: readonly string[],
   outputSchemaPath: string | undefined,
   denies: readonly string[],
+  overrideIn?: string,
 ): string[] {
   // The role as a profile, plus only the user's denies (#667). Never the user's
   // own `extends`: their chain may end at `:danger-full-access`.
@@ -1225,6 +1235,7 @@ function argsFor(
       ? [
           '-c',
           `default_permissions=${toml(name)}`,
+          ...(overrideIn === undefined ? [] : ['-c', `profiles.${toml(overrideIn)}.default_permissions=${toml(name)}`]),
           '-c',
           `permissions.${name}={extends=${toml(sandbox === 'read-only' ? ':read-only' : ':workspace')}, filesystem={${[
             ...writable.map((dir) => `${toml(dir)}="write"`),
@@ -1296,8 +1307,8 @@ function tryParseJSON(text: string): unknown {
  * a widening bought for nothing — and the sandbox is the whole of what that mode
  * is for.
  */
-function deniesOf(verdict: UserPermissions): readonly string[] | undefined {
-  return verdict.kind === 'denies' ? verdict.paths : undefined
+function deniesOf(verdict: UserPermissions): { denies?: readonly string[]; overrideIn?: string } {
+  return verdict.kind === 'denies' ? { denies: verdict.paths, overrideIn: verdict.overrideIn } : {}
 }
 
 function writableFor(sandbox: CodexSandbox, cwd: string): readonly string[] {
@@ -1330,7 +1341,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           writable: writableFor(sandbox, request.cwd),
           extraArgs,
           outputSchemaPath: request.outputSchema ? outputSchemaPathFor(request.runId) : undefined,
-          denies: deniesOf(userPermissionsAt(request.env, request.cwd)),
+          ...deniesOf(userPermissionsAt(request.env, request.cwd)),
         }),
       }
     },
@@ -1367,7 +1378,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
         trace.note('codex', `the user's Codex permission profile did not narrow this run: ${permissions.why}`)
       } else if (permissions.kind === 'denies') {
-        const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME)
+        const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME, request.cwd)
         if (covered) {
           const detail =
             `the user's Codex permission profile denies ${covered.path}, which covers ${covered.root}; ` +
@@ -1402,7 +1413,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         writable,
         outputSchemaPath,
         extraArgs,
-        denies: deniesOf(permissions),
+        ...deniesOf(permissions),
       })
 
       return new Promise<RunOutcome>((resolve) => {

@@ -938,8 +938,10 @@ extends = ":read-only"
   it("no denies is byte for byte today's argv", () => {
     const today = argv('workspace-write', { writable: ['/g/objects'] })
     expect(argv('workspace-write', { writable: ['/g/objects'], denies: [] })).toEqual(today)
-    expect(today).toContain('--sandbox')
-    expect(today).toContain('--add-dir')
+    expect(today.slice(0, 6)).toEqual(['exec', '--json', '--cd', '/tmp/tree', '--sandbox', 'workspace-write'])
+    expect(today.filter((a) => a === '--add-dir')).toHaveLength(1)
+    expect(today[today.indexOf('--sandbox') + 1]).toBe('workspace-write')
+    expect(today[today.indexOf('--add-dir') + 1]).toBe('/g/objects')
   })
 
   it('an implementer with denies gets the role as a profile and no --sandbox or --add-dir', () => {
@@ -955,6 +957,17 @@ extends = ":read-only"
     expect(a).toContain('approval_policy=never')
   })
 
+  it('also overrides the active profile that names its own default_permissions', () => {
+    const v = userPermissionsFrom(
+      'profile = "p"\n[profiles.p]\ndefault_permissions = "mine"\n' +
+        '[permissions.mine.filesystem]\n"/secret" = "deny"\n',
+    )
+    expect(v).toEqual({ kind: 'denies', paths: ['/secret'], overrideIn: 'p' })
+    const a = argv('workspace-write', { denies: ['/secret'], overrideIn: 'p' })
+    expect(a).toContain('profiles."p".default_permissions="lingtai_workspace_write"')
+    expect(argv('workspace-write', { denies: ['/secret'] }).join(' ')).not.toContain('profiles.')
+  })
+
   it('a reader gets :read-only and no write entries', () => {
     const a = argv('read-only', { denies: ['/x'] })
     expect(a).toContain('default_permissions="lingtai_read_only"')
@@ -964,14 +977,17 @@ extends = ":read-only"
 
   it('a deny covering a root is found only for literal paths', () => {
     const roots = ['/home/u/repo/.git/objects', '/tmp/tree']
-    expect(denyCoveringRoot(['/home/u/repo/.git'], roots, '/home/u')).toEqual({
+    expect(
+      denyCoveringRoot(['~/repo'], ['/tmp/agent-worktree/home/repo/.git/objects'], 'home', '/tmp/agent-worktree')?.path,
+    ).toBe('~/repo')
+    expect(denyCoveringRoot(['/home/u/repo/.git'], roots, '/home/u', '/x')).toEqual({
       path: '/home/u/repo/.git',
       root: '/home/u/repo/.git/objects',
     })
-    expect(denyCoveringRoot(['~/repo'], roots, '/home/u')?.root).toBe('/home/u/repo/.git/objects')
-    expect(denyCoveringRoot(['/tmp/tree'], roots, undefined)?.root).toBe('/tmp/tree')
-    expect(denyCoveringRoot(['/tmp/tre'], roots, undefined)).toBeUndefined()
-    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '/', '~/x'], ['/a'], undefined)?.path).toBe('/')
-    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '~/x'], roots, undefined)).toBeUndefined()
+    expect(denyCoveringRoot(['~/repo'], roots, '/home/u', '/x')?.root).toBe('/home/u/repo/.git/objects')
+    expect(denyCoveringRoot(['/tmp/tree'], roots, undefined, '/x')?.root).toBe('/tmp/tree')
+    expect(denyCoveringRoot(['/tmp/tre'], roots, undefined, '/x')).toBeUndefined()
+    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '/', '~/x'], ['/a'], undefined, '/x')?.path).toBe('/')
+    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '~/x'], roots, undefined, '/x')).toBeUndefined()
   })
 })
