@@ -669,7 +669,7 @@ export const RunProducedDiff = z.object({
  * who finds no row on a run that did not land should look in both before
  * concluding the finalizer never fired.
  *
- * @summary The conductor pushed a run's branches to the remote repository, or recorded that there was nothing to push.
+ * @summary The conductor tried to push a run's branches to the remote, and recorded whether it pushed, had nothing to push, or was refused.
  */
 export const RunRefsPublished = z.object({
   /** `agent/<n>` — the ref the next attempt's prompt tells an agent to fetch. */
@@ -1420,7 +1420,7 @@ export const ConductorPaused = z.object({
   holdsAcrossStarts: z.boolean().default(false),
 })
 
-/** @summary A person lifted a pause, and the conductor took work again. */
+/** @summary The conductor was resumed, by a person or by itself when the daily spending limit was lifted. */
 export const ConductorResumed = z.object({ by: z.string() })
 
 /**
@@ -2160,7 +2160,7 @@ export type TriageStartedBy = z.infer<typeof TriageStartedBy>
  * The triage key is the ticket and the wait; the head and the recipe are
  * not part of it (0118 §3).
  *
- * @summary A triage agent was dispatched to advise on a waiting ticket.
+ * @summary The conductor began triaging a waiting ticket, using an agent or its own rules.
  */
 export const TriageStarted = z.strictObject({
   waitId: WaitId,
@@ -2173,7 +2173,7 @@ export const TriageStarted = z.strictObject({
  * principle 5). `attempt` matches the `TriageStarted` it finishes; a reader
  * takes only the latest attempt's result. `headSha` is the head triage read.
  *
- * @summary A triage agent gave its advice on a waiting ticket, or failed to.
+ * @summary The conductor finished triaging a waiting ticket, with advice or a failure.
  */
 export const WaitTriaged = z.strictObject({
   waitId: WaitId,

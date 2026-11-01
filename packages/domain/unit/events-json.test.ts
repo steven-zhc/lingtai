@@ -124,7 +124,7 @@ describe('every event has one plain-language @summary', () => {
       const bad: string[] = []
       if (!/^[A-Z]/.test(text) || !text.endsWith('.')) bad.push('must start with a capital and end with a period')
       if (text.length > 140) bad.push(`is ${text.length} characters, at most 140`)
-      if (/[.!?](\s|$)/.test(text.slice(0, -1))) bad.push('must be one sentence')
+      if (/[.!?]["'”’)*_`]*(\s|$)/.test(text.slice(0, -1))) bad.push('must be one sentence')
       if (
         /\b0\d{3}\b/.test(text) ||
         text.includes('§') ||
