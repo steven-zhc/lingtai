@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -116,5 +118,16 @@ describe('no books file', () => {
 
   it('reads null from a path that is not there', async () => {
     expect(await readBooks('/nonexistent/books.json')).toBeNull()
+  })
+})
+
+describe('the server/client boundary', () => {
+  it('imports no value from a "use client" file', async () => {
+    const dir = new URL('../src/app/', import.meta.url)
+    const src = await readFile(new URL('books-section.tsx', dir), 'utf8')
+    for (const m of src.matchAll(/^import\s+(?!type\b)[^'\n]*from '\.\/([^']+)'/gm)) {
+      const file = await readFile(new URL(`${m[1]}.tsx`, dir), 'utf8')
+      expect(file, `${m[1]} is a client module`).not.toMatch(/^['"]use client['"]/)
+    }
   })
 })

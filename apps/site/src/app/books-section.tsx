@@ -4,7 +4,6 @@ import type { Books, MedianReceipt, Receipt as RealReceipt } from '@/lib/books'
 
 import { REPO } from './chrome'
 import { Receipt } from './receipt'
-import { dollars } from './replay-receipt'
 
 /**
  * Lingtai's own books on the front page (#814).
@@ -16,7 +15,8 @@ import { dollars } from './replay-receipt'
  */
 
 const pct = (x: number) => `${Math.round(x * 100)}%`
-const usd = (x: number) => dollars(Math.round(x * 100))
+// Not `dollars` from ./replay-receipt: that file is 'use client', and a server component gets a reference to it, not the function.
+const usd = (x: number) => `$${(Math.round(x * 100) / 100).toFixed(2)}`
 const num = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1))
 
 /** `N min` under an hour, `H h M min` from one up. */
