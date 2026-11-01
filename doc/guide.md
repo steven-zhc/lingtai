@@ -194,9 +194,10 @@ repository's choices and not a recommendation.
 
 - Write down, per role, which runtime and model you run and the reason in one
   line. The recipe's comments are where ours live.
-- Spend the expensive model once, where the approach is decided, and the cheaper
-  one where the ticket and the shape already say what to write.
-- Put the reviewer on another vendor's model than the writer's.
+- Decide per role whether its work is worth the model's price; the table below
+  is what this repository decided, not what yours must.
+- Decide whether your reviewer should share the writer's blind spots; ours does
+  not (the table gives the recipe's reason).
 - Write the review prompt yourself, from your own repository's history (below).
 - Check that every runtime any role names is installed and signed in, before the
   first pass.
@@ -256,11 +257,12 @@ is not a gate; it is a delay with a signature on it.
 **Do this.**
 
 - Put what makes the worktree usable at `prepared`, the cheapest place to fail.
-- Put the one check you would not merge without at `build`, and nothing else.
+- Put the checks you would not merge without at `build`, and nothing else.
 - Keep the cold reviewer at `review`; it is the one action that costs agent money,
   so put the cost question to it first.
 - Use `watch:` to stop for a person on a path, with no process and no agent.
-- Leave `merge:` empty unless a person will read what it holds.
+- Declare a hold for a person at `proposed:`, never at `merge:`: `human:` and
+  `watch:` are refused at `merge`, and the lane is the last action there.
 - Add a new gate only on a green base, or every ticket parks on drift that is not
   its own.
 - For every gate, check that it runs and that you have seen it fail.
@@ -288,14 +290,16 @@ expensive ran; that is the point of failing here."* Anything you can discover
 before the agent starts, discover before the agent starts.
 
 **`build` is the check you would not merge without, and nothing else.** Here it
-is one action, `pnpm typecheck && pnpm test`
-(`examples/lingtai-recipe.yml:112-115`). It sat at `proposed:` until 2026-09-27,
-because `proposed` was the only step a `run:` could legally be declared at —
-never a judgement that a build belongs with the routing. And because this
-repository's `merge` point is empty, that action and the cold reviewer below it
-are **all that is between an agent and `main`**. A checking list that has grown
-to five actions is five things every attempt pays for; if one of them has never
-refused, find out whether it is even running before you keep it.
+is four actions (`examples/lingtai-recipe.yml:99-115`): `install`, `format`
+(`pnpm fmt:check`), `lint` and `build` (`pnpm typecheck && pnpm test`). The
+format and lint actions are separate so a refusal names which one, and they run
+first because they take seconds. It sat at `proposed:` until 2026-09-27, because
+`proposed` was the only step a `run:` could legally be declared at — never a
+judgement that a build belongs with the routing. This repository holds nothing
+for a person before the landing, so those actions and the cold reviewer below
+are **all that is between an agent and `main`**. Every action is something every
+attempt pays for; if one of them has never refused, find out whether it is even
+running before you keep it.
 
 **A new gate needs a green base.** A gate added while the base already fails it
 refuses every ticket, each for drift that is not its own, and each refusal buys
@@ -315,20 +319,13 @@ both still on `develop`, neither covered by any of ~300 issues.
 then `request-approval` or `fail`. It is how a migration stops for a person
 without anything having to run.
 
-**`merge` is where gates go to stop meaning anything.** This repository emptied
-it on 2026-09-08, and wrote the reason into the recipe rather than into a commit
-message:
-
-> On 2026-09-08 seven changes landed and every one was approved
-> unread-in-substance, which is an approval that has stopped meaning anything.
-
-The honest move is to delete a gate like that and say so, which is what
-`merge: []` and that comment are. `#31`'s narrowing — a `watch:` list over
-`conductor`, `event-store`, `hook` and `actions` — is named there as the thing to
-reach for if the deletion turns out to be too far, along with the objection it
-has to answer: a path list has to be kept correct, and the first thing it would
-miss is the file that defines it. *"If it comes back it should be tried against
-that objection, not around it."*
+**`merge` holds the landing, and no hold for a person.** This repository's
+`merge:` has one action, the merge itself (`examples/lingtai-recipe.yml:202-207`,
+whose comment says nothing holds before the landing). A hold that a person
+should read belongs at `proposed:`, one step earlier: `human:` and `watch:` serve
+only `proposed`, so a recipe that writes one at `merge` is refused by name when
+it resolves. A gate nobody reads is a delay with a signature on it; declare one
+only where somebody will read it.
 
 **`end` cannot refuse.** It runs on every terminal outcome, and its actions are
 effects: `close:`, `labels:` and `refs:`. The first two carry `when:` (`landed`
@@ -496,7 +493,6 @@ cannot.
 - Set the daily ceiling `limits.day_usd` in your installation config before you
   run unattended.
 - Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.
-- Keep one repair per distinct failure, and let Lingtai's own failures buy none.
 - Size `runtime.budget.evidence` to the capture your gate produces.
 - Do not expect anything to cap the number of ordinary attempts; read the ledger
   early and use `agent:hold`.
@@ -516,33 +512,19 @@ runtime stops the agent and the run ends `error_max_turns`, and the useful
 reading of that is *the ticket was wrong*, not *the number was low*. If it never
 fires, it is telling you nothing.
 
-**`runtime.limits.wall`** also decides how long a shutdown waits:
+**`runtime.limits.wall`** bounds each agent run, and a shutdown waits on it too:
 `pnpm lingtai shutdown "why"` appends, returns, and the daemon finishes the pass
-in flight — the pass, not the agent, so the gates and the merge lane run too. That
-wait is `runtime.limits.wall`, and the command says so rather than looking hung
-([0030](decisions-archive/0030-shutting-down-safely.md)).
-`pnpm lingtai restart "why"` waits out the same limit and then starts one
-([0042](decisions-archive/0042-the-restart-is-a-command.md)).
+in flight — the pass, not the agent, so the gates and the merge lane run too.
+But `wall` bounds **one agent call**, not the pass: a draining pass may still
+take further rounds, restarts and gates, so the wait is the pass's ceiling
+across `runtime.limits` together, which the command prints rather than looking
+hung ([0030](decisions-archive/0030-shutting-down-safely.md)). Do not schedule
+around `wall` alone. `pnpm lingtai restart "why"` waits out the same drain and
+then starts one ([0042](decisions-archive/0042-the-restart-is-a-command.md)).
 
-**`gates.<point>[].timeout`** applies **per process action, not per point**.
+**A process action's `timeout:`** applies **per action, not per point**
+(`examples/lingtai-recipe.yml:99-115` gives each build action its own).
 Multiply by attempts, per the arithmetic above.
-
-**`repair.on` / `repair.maxAttempts`.** A failure of *this repository's* buys one
-agent to understand it; **Lingtai's own never do** — an agent pointed at a
-missing credential or an unreachable database *"would spend money to report that
-it cannot see anything, and the report would be addressed to the one person who
-did not need it."* Three bounds make "once" structural rather than aspirational:
-one analysis per **distinct** failure, a ceiling in the recipe, and an analysis
-that fails does not trigger an analysis of the analysis. Drop any one and a
-single bad ticket spawns an agent per lap. **This is the only part of the design
-where the failure mode is unbounded spend rather than a wrong answer**
-([0025](decisions-archive/0025-a-failure-buys-one-agent.md) §3).
-
-The reason for the ceiling changed on 2026-09-08, and the recipe records the
-change rather than the conclusion: it used to bound only spend, because every
-merge waited for a person. `merge` is empty now, so a repair that passes
-`proposed` lands unread — one attempt is the whole of the limit on how far an
-agent may go correcting itself.
 
 **`source.backoff`** is flat. **It stops blind retries, and only blind
 retries.** A failed run releases its task, a release is a completion event, and
@@ -558,8 +540,7 @@ between one attempt and the next is **what the next attempt is told** — since
 `#82` a second attempt carries the first's release reason, its refusing gate and
 that gate's output — so delaying it further would penalise the one mechanism
 that makes a retry worth anything. An attempt that is told something the last
-one was not is not blind, and does not wait: a repair jumps the backoff, and so
-does `lingtai now`.
+one was not is not blind, and does not wait: `lingtai now` jumps the backoff.
 
 **`runtime.budget.*`** is what a run is **given**, not what it may spend, and it
 is the setting most worth tuning to your own gates. `evidence` is how much of one
@@ -581,8 +562,8 @@ agent that cannot see the failure repeats it, and the ticket buys another agent.
 
 **The number of ordinary attempts.** With a short sweep and a backoff, a ticket
 that fails every time costs a run per backoff interval, indefinitely.
-`repair.maxAttempts` caps repairs; `runQueue`'s in-memory `attempted` set caps
-one pass; neither caps the sequence, and
+`runQueue`'s in-memory `attempted` set caps one pass; nothing caps the
+sequence, and
 [0028](decisions-archive/0028-the-backoff-is-the-recipes.md) leaves it undecided on
 purpose — a doubling backoff still spends forever, just on a longer timetable,
 and the right instrument for that failure is a count rather than a curve.
