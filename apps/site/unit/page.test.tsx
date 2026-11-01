@@ -171,7 +171,7 @@ describe('why not just give the agent the issue', () => {
     }
   })
 
-  it('points at the replay receipt, as a real table', () => {
+  it('links to the replay receipt, as a real table', () => {
     expect(html).toContain('id="replay"')
     expect(html).toMatch(/<a class="why-ref" href="#replay"/)
     expect(html).toContain('<table')
