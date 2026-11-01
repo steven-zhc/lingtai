@@ -559,7 +559,7 @@ function configModelFor(
 /** What the user's own Codex config says about permissions, as a verdict each caller answers differently. */
 export type UserPermissions =
   | { kind: 'none' }
-  | { kind: 'denies'; paths: readonly string[]; overrideIn?: string }
+  | { kind: 'denies'; paths: readonly string[]; overrideIn?: string; profiles?: Record<string, unknown> }
   | { kind: 'kept'; why: string }
   | { kind: 'unreadable'; why: string }
 
@@ -629,9 +629,10 @@ export function userPermissionsFrom(text: string): UserPermissions {
       ? doc.profile
       : undefined
   // `-c` splits its key on dots and keeps quote characters, so only a bare key
-  // can be addressed; any other name cannot be overridden, and `--sandbox` stays.
-  if (overrideIn !== undefined && !/^[A-Za-z0-9_-]+$/.test(overrideIn)) {
-    return { kind: 'unreadable', why: `the active profile ${overrideIn} cannot be named in a -c override` }
+  // can be addressed by path; any other name is overridden by handing over the
+  // whole `profiles` table with that one key changed.
+  if (overrideIn !== undefined && !/^[A-Za-z0-9_-]+$/.test(overrideIn) && isTable(doc.profiles)) {
+    return { kind: 'denies', paths, overrideIn, profiles: doc.profiles }
   }
   return overrideIn === undefined ? { kind: 'denies', paths } : { kind: 'denies', paths, overrideIn }
 }
@@ -674,6 +675,18 @@ export function denyCoveringRoot(
     }
   }
   return undefined
+}
+
+/** A parsed TOML value as an inline value, every key quoted. */
+function inlineToml(v: unknown): string {
+  if (typeof v === 'string') return toml(v)
+  if (v instanceof Date) return toml(v.toISOString())
+  if (Array.isArray(v)) return `[${v.map(inlineToml).join(', ')}]`
+  if (isTable(v))
+    return `{${Object.entries(v)
+      .map(([k, x]) => `${toml(k)}=${inlineToml(x)}`)
+      .join(', ')}}`
+  return String(v)
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
@@ -1206,6 +1219,8 @@ export function codexArgv(
     denies?: readonly string[]
     /** The active `[profiles.<name>]` that names its own `default_permissions`, overridden too. */
     overrideIn?: string
+    /** Every `[profiles]` entry, when `overrideIn` is not a bare key and so cannot be addressed by path. */
+    profiles?: Record<string, unknown>
   },
 ): string[] {
   return argsFor(
@@ -1218,6 +1233,7 @@ export function codexArgv(
     options.outputSchemaPath,
     options.denies ?? [],
     options.overrideIn,
+    options.profiles,
   )
 }
 
@@ -1231,6 +1247,7 @@ function argsFor(
   outputSchemaPath: string | undefined,
   denies: readonly string[],
   overrideIn?: string,
+  profiles?: Record<string, unknown>,
 ): string[] {
   // The role as a profile, plus only the user's denies (#667). Never the user's
   // own `extends`: their chain may end at `:danger-full-access`.
@@ -1240,7 +1257,20 @@ function argsFor(
       ? [
           '-c',
           `default_permissions=${toml(name)}`,
-          ...(overrideIn === undefined ? [] : ['-c', `profiles.${overrideIn}.default_permissions=${toml(name)}`]),
+          ...(overrideIn === undefined
+            ? []
+            : profiles === undefined
+              ? ['-c', `profiles.${overrideIn}.default_permissions=${toml(name)}`]
+              : [
+                  '-c',
+                  `profiles=${inlineToml({
+                    ...profiles,
+                    [overrideIn]: {
+                      ...(isTable(profiles[overrideIn]) ? profiles[overrideIn] : {}),
+                      default_permissions: name,
+                    },
+                  })}`,
+                ]),
           '-c',
           `permissions.${name}={extends=${toml(sandbox === 'read-only' ? ':read-only' : ':workspace')}, filesystem={${[
             ...writable.map((dir) => `${toml(dir)}="write"`),
@@ -1312,8 +1342,14 @@ function tryParseJSON(text: string): unknown {
  * a widening bought for nothing — and the sandbox is the whole of what that mode
  * is for.
  */
-function deniesOf(verdict: UserPermissions): { denies?: readonly string[]; overrideIn?: string } {
-  return verdict.kind === 'denies' ? { denies: verdict.paths, overrideIn: verdict.overrideIn } : {}
+function deniesOf(verdict: UserPermissions): {
+  denies?: readonly string[]
+  overrideIn?: string
+  profiles?: Record<string, unknown>
+} {
+  return verdict.kind === 'denies'
+    ? { denies: verdict.paths, overrideIn: verdict.overrideIn, profiles: verdict.profiles }
+    : {}
 }
 
 function writableFor(sandbox: CodexSandbox, cwd: string): readonly string[] {

@@ -965,11 +965,16 @@ extends = ":read-only"
     expect(v).toEqual({ kind: 'denies', paths: ['/secret'], overrideIn: 'p' })
     const a = argv('workspace-write', { denies: ['/secret'], overrideIn: 'p' })
     expect(a).toContain('profiles.p.default_permissions="lingtai_workspace_write"')
-    expect(
-      userPermissionsFrom(
-        'profile = "a.b"\n[profiles."a.b"]\ndefault_permissions = "mine"\n[permissions.mine.filesystem]\n"/s" = "deny"\n',
-      ).kind,
-    ).toBe('unreadable')
+    const dotted = userPermissionsFrom(
+      'profile = "dev.local"\n[profiles."dev.local"]\nmodel = "m"\ndefault_permissions = "mine"\n[permissions.mine.filesystem]\n"/secret" = "deny"\n',
+    )
+    expect(dotted).toMatchObject({ kind: 'denies', paths: ['/secret'], overrideIn: 'dev.local' })
+    const d = argv(
+      'workspace-write',
+      dotted.kind === 'denies' ? { denies: dotted.paths, overrideIn: 'dev.local', profiles: dotted.profiles } : {},
+    )
+    expect(d).not.toContain('--sandbox')
+    expect(d).toContain('profiles={"dev.local"={"model"="m", "default_permissions"="lingtai_workspace_write"}}')
     expect(argv('workspace-write', { denies: ['/secret'] }).join(' ')).not.toContain('profiles.')
   })
 
