@@ -192,8 +192,8 @@ describe('why not just give the agent the issue', () => {
   )
 
   it.each([
-    ["Who says it's done", 'Your tests, a review, and your OK'],
-    ['Tests', "Run separately; the agent can't skip them"],
+    ["Who says it's done", 'Your checks, a cold review, and your OK'],
+    ['Checks', "Run separately; the agent can't skip them"],
     ['Rules', 'Outside anything it can edit'],
     ['After a crash', 'Saved; it carries on after a restart'],
     ['Cost', 'Per ticket, with a daily limit'],
