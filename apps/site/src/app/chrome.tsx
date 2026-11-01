@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Fragment } from 'react'
 
 export const REPO = 'https://github.com/steven-zhc/lingtai'
 export const SITE_URL = 'https://lingtai.hczhang.com'
@@ -19,19 +20,45 @@ export const INSTALL_URL = `${SITE_URL}/install.sh`
  * "the site extends the product's palette" a fact the build enforces instead of
  * an intention somebody has to keep.
  */
-export function Bar({ note }: { note?: string }) {
+/** The public docs, in the order the Docs menu lists them. A rule is drawn after `rule`. */
+export const DOCS_MENU: { slug: string; label: string; note?: string; rule?: boolean }[] = [
+  { slug: 'tutorial', label: 'Tutorial', note: 'One ticket, start to finish' },
+  { slug: 'concepts', label: 'Concepts', note: 'The steps of a pass' },
+  { slug: 'requirements', label: 'Requirements', note: 'What it needs', rule: true },
+  { slug: 'recipe', label: 'Recipe' },
+  { slug: 'cli', label: 'CLI' },
+  { slug: 'plugins', label: 'Plugins' },
+  { slug: 'events', label: 'Events' },
+  { slug: 'from-symphony', label: 'Coming from Symphony' },
+]
+
+/**
+ * The items are plain anchors, not `Link`: `<details>` keeps its `open` in the
+ * DOM, so a client navigation between docs pages would leave the menu open over
+ * the page just reached. A full load comes back closed, and no script is needed.
+ */
+export function Bar() {
   return (
     <header className="bar">
       <Link href="/" className="brand">
         <span className="mark" aria-hidden />
         Lingtai
       </Link>
+      <details className="docs-menu">
+        <summary>Docs</summary>
+        <div className="docs-menu-list">
+          {DOCS_MENU.map((d) => (
+            <Fragment key={d.slug}>
+              <a href={`/docs/${d.slug}/`}>
+                {d.label}
+                {d.note !== undefined && <small>{d.note}</small>}
+              </a>
+              {d.rule === true && <hr />}
+            </Fragment>
+          ))}
+        </div>
+      </details>
       <span className="spacer" />
-      {note !== undefined && <span className="chip">{note}</span>}
-      <Link href="/docs/tutorial/">Tutorial</Link>
-      <Link href="/docs/concepts/">Concepts</Link>
-      <Link href="/docs/plugins/">Plugins</Link>
-      <Link href="/docs/events/">Events</Link>
       <a href={REPO}>GitHub</a>
     </header>
   )
@@ -42,7 +69,7 @@ export function Foot() {
     <footer className="foot">
       <div className="wrap foot-layout">
         <p>
-          <b>Lingtai runs on one machine of yours.</b> It keeps its log in a local SQLite file by default, alongside a
+          <b>Lingtai runs on one machine of yours.</b> It keeps its state in a local SQLite file by default, alongside a
           clone of each repository it manages and the agent processes it starts. There is no hosted service and nothing
           to sign up for — install the CLI and run <code>lingtai init</code>.
         </p>
