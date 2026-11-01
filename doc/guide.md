@@ -488,7 +488,8 @@ cannot.
 **Do this.**
 
 - Set `runtime.limits` (`turns`, `wall`, `rounds`, `restarts`) so that together
-  they say what one pass may spend; this repository's comment says it in a
+  they say what a ticket may spend in agent runs (not how long a drain waits,
+  which also includes review and gates); this repository's comment says it in a
   sentence.
 - Set the daily ceiling `limits.day_usd` in your installation config before you
   run unattended.
@@ -516,11 +517,17 @@ fires, it is telling you nothing.
 `pnpm lingtai shutdown "why"` appends, returns, and the daemon finishes the pass
 in flight — the pass, not the agent, so the gates and the merge lane run too.
 But `wall` bounds **one agent call**, not the pass: a draining pass may still
-take further rounds, restarts and gates, so the wait is the pass's ceiling
-across `runtime.limits` together, which the command prints rather than looking
-hung ([0030](decisions-archive/0030-shutting-down-safely.md)). Do not schedule
-around `wall` alone. `pnpm lingtai restart "why"` waits out the same drain and
-then starts one ([0042](decisions-archive/0042-the-restart-is-a-command.md)).
+take further fix rounds, and the cold review and every gate run again with each,
+so the wait is longer than `wall` and longer than the work's own ceiling. The
+sentence the command prints, built from `runtime.limits`, counts only the
+`implement` runs (`packages/conductor/src/ceiling.ts`); it leaves out review
+time and process gates, so read it as a lower bound on a drain that goes through
+every round and never as a promise. A restart is not part of the drain: it
+happens after a pass has ended and the ticket has gone back through the queue.
+Do not schedule around `wall` alone, or around that sentence either, and do not
+read a long wait as a hang before you have run `pnpm lingtai attach <runId>`.
+`pnpm lingtai restart "why"` waits out the same drain and then starts one
+([0042](decisions-archive/0042-the-restart-is-a-command.md)).
 
 **A process action's `timeout:`** applies **per action, not per point**
 (`examples/lingtai-recipe.yml:99-115` gives each build action its own).
