@@ -226,3 +226,46 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
   .ledger td.lg-a::before { content: "Agent alone: "; font-weight: 600; }
   .ledger td.lg-b::before { content: "✓ With Lingtai: "; }
 }
+
+/* the books (#814) */
+.books { border-top: 1px solid var(--rule); }
+.books-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); gap: 40px; align-items: end; margin-bottom: 30px; }
+.books-head p:not(.kicker) { margin: 0; color: var(--ink-2); font-size: 16px; }
+.real-badge { display: inline-block; font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pass); background: var(--pass-soft); border: 1px solid var(--pass); border-radius: 999px; padding: 4px 11px; margin-right: 6px; }
+.figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.fig { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 16px; }
+.fig .n { font-size: 38px; font-weight: 600; letter-spacing: -.04em; line-height: 1; }
+.fig .n small { font-size: 16px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.fig .l { margin-top: 8px; font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+.fig .s { margin-top: 6px; font: 11px var(--mono); color: var(--muted); line-height: 1.45; }
+.outcome, .money { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 18px 20px; margin: 0 0 16px; }
+.outcome-head, .money-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.outcome-head b, .money-head b { font-size: 20px; letter-spacing: -.02em; }
+.outcome-head span, .money-head span { color: var(--muted); font-size: 13.5px; }
+.outcome-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--surface-2); }
+.outcome-bar i { display: block; height: 100%; }
+.outcome-bar i.landed { background: var(--pass); }
+.outcome-bar i.closed { background: var(--muted); }
+.outcome-key { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-top: 12px; font-size: 13.5px; color: var(--ink-2); }
+.outcome-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; }
+.outcome-key i.landed { background: var(--pass); }
+.outcome-key i.closed { background: var(--muted); }
+.outcome-key i.open { background: var(--surface-2); border: 1px solid var(--rule-2); }
+.real-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-top: 30px; }
+.real-grid .rcpt { box-shadow: 0 14px 34px rgba(15, 24, 28, .08); }
+.real-grid .r-issue b { font-size: 15px; }
+.real-grid .r-row { font-size: 13.5px; padding: 7px 8px; }
+.real-grid .r-total b { font-size: 26px; }
+.real-grid .r-stamp { font-size: 11px; }
+.real-grid .r-top { font-size: 10.5px; padding: 11px 16px; }
+.r-real { color: var(--pass); }
+.r-open { color: var(--accent-ink); text-decoration: none; font-weight: 600; }
+.books-repro { margin: 26px 0 0; color: var(--ink-2); font-size: 14.5px; }
+@media (max-width: 1080px) {
+  .books-head { grid-template-columns: 1fr; gap: 16px; }
+  .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .real-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .figs, .real-grid { grid-template-columns: 1fr; }
+}

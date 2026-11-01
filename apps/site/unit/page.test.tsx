@@ -5,10 +5,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Bar, DOCS_MENU } from '@/app/chrome'
-import Home from '@/app/page'
+import { HomePage } from '@/app/page'
 import { Receipt } from '@/app/receipt'
 import { dollars, receiptAt } from '@/app/replay-receipt'
+import { parseBooks } from '@/lib/books'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
+
+import { BOOKS_FILE_FIXTURE } from './books-fixture'
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
 
@@ -49,12 +52,20 @@ describe("the home page's argument", () => {
 
   it('does not lead with internals or event-log claims', async () => {
     // The rendered page, not its source: the footer's words live in Foot, not in page.tsx.
-    const rendered = renderToStaticMarkup(<Home />).replace(/<[^>]*>/g, ' ')
+    const rendered = renderToStaticMarkup(<HomePage books={null} />).replace(/<[^>]*>/g, ' ')
     for (const top of [above(await prose()), above(rendered)]) {
       expect(top).not.toMatch(/\blogs?\b/i)
       expect(top).not.toMatch(/\bevent-source|append-only|projection|Postgres sequence\b/i)
     }
     expect(rendered).toContain('keeps its state in a local SQLite file')
+  })
+
+  it('may say log only below the books kicker', () => {
+    const books = parseBooks(structuredClone(BOOKS_FILE_FIXTURE))
+    const withBooks = renderToStaticMarkup(<HomePage books={books} />).replace(/<[^>]*>/g, ' ')
+    expect(withBooks).toContain('The work, in the open')
+    expect(above(withBooks)).not.toMatch(/\blogs?\b/i)
+    expect(withBooks).toMatch(/\blog\b/i)
   })
 
   it('explains the benefit, then how to start', async () => {
@@ -123,7 +134,7 @@ describe("the home page's argument", () => {
   })
 
   it('answers the common questions under the ledger, honestly about ~/.ssh', () => {
-    const html = renderToStaticMarkup(<Home />)
+    const html = renderToStaticMarkup(<HomePage books={null} />)
     const faq = html.slice(html.indexOf('class="faq"'))
     const block = faq.slice(0, faq.indexOf('</section>'))
     expect(block.match(/<details/g)).toHaveLength(6)
@@ -173,7 +184,7 @@ describe('why not just give the agent the issue', () => {
       .replace(/&quot;/g, '"')
       .replace(/\s+/g, ' ')
       .trim()
-  const html = renderToStaticMarkup(<Home />)
+  const html = renderToStaticMarkup(<HomePage books={null} />)
   const rows = [...html.matchAll(/<tr><th scope="row">(.*?)<\/th><td[^>]*>(.*?)<\/td><td[^>]*>(.*?)<\/td><\/tr>/g)].map(
     (m) => ({ key: text(m[1]!), alone: text(m[2]!), lingtai: text(m[3]!) }),
   )
@@ -251,7 +262,7 @@ describe('the replay receipt', () => {
   })
 
   it('renders the page beside one receipt in state 0, after the hero', () => {
-    const html = renderToStaticMarkup(<Home />)
+    const html = renderToStaticMarkup(<HomePage books={null} />)
     expect(html.match(/class="rcpt/g)).toHaveLength(1)
     expect(html).toContain('>Queued<')
     expect(html).toContain('$0.00')

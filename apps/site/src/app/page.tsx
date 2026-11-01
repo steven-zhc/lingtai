@@ -1,3 +1,6 @@
+import { readBooks, type Books } from '@/lib/books'
+
+import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
 import { ReplayReceipt } from './replay-receipt'
@@ -16,7 +19,7 @@ const LEDGER = [
   { key: 'Audit', alone: 'Session transcripts', lingtai: 'Structured events and a receipt' },
 ]
 
-export default function Home() {
+export function HomePage({ books }: { books: Books | null }) {
   return (
     <>
       <Bar />
@@ -253,6 +256,8 @@ export default function Home() {
             </div>
           </section>
 
+          {books ? <BooksSection books={books} /> : null}
+
           <section className="home-setup" id="setup" aria-labelledby="setup-title">
             <div className="setup-lead">
               <p className="kicker">Start</p>
@@ -305,4 +310,8 @@ export default function Home() {
       <Foot />
     </>
   )
+}
+
+export default async function Home() {
+  return <HomePage books={await readBooks()} />
 }
