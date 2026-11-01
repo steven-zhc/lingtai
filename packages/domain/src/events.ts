@@ -6,11 +6,14 @@
  * shapes and can be thrown away in an afternoon. A wrong event name or a
  * missing payload field costs a migration over real history.
  *
- * Two rules hold for every entry:
+ * Three rules hold for every entry:
  *
  *   1. Past tense. An event is something that happened, never an intention.
  *   2. Self-contained. A reader a year from now must not need to join against
  *      GitHub, a log file, or a worktree that no longer exists.
+ *   3. Its doc comment ends in one `@summary` sentence, for a reader of the
+ *      docs: what happened and who or what did it, in plain words, with no ADR
+ *      or issue numbers. `pnpm test` fails for a type without one.
  *
  * Bump `SCHEMA_VER` for a type and add an upcaster rather than changing a
  * payload in place.
@@ -175,6 +178,7 @@ export type RuntimeId = z.infer<typeof RuntimeId>
 
 // ------------------------------------------------------------- work item ----
 
+/** @summary The conductor found a new ticket to work on, from a GitHub issue, a person, or an agent's follow-up. */
 export const TicketDiscovered = z.object({
   project: z.string(),
   source: z.enum(['github-issue', 'manual', 'agent-followup']),
@@ -185,6 +189,7 @@ export const TicketDiscovered = z.object({
   labels: z.array(z.string()),
 })
 
+/** @summary The conductor claimed a ticket and began a run on it. */
 export const TicketClaimed = z.object({
   runId: z.string(),
   /**
@@ -222,6 +227,8 @@ export const TicketClaimed = z.object({
  * structural and reads no text: a `TicketClaimed` whose `runId` an earlier
  * `TicketClaimed` on the same stream carries is read as a continuation, and
  * `claimShapeOf` (`claims.ts`) is the one place that says so.
+ *
+ * @summary A person approved a held run, and it went on.
  */
 export const TicketContinued = z.object({
   runId: z.string(),
@@ -245,6 +252,7 @@ export const ReleaseCause = z.discriminatedUnion('_tag', [
 ])
 export type ReleaseCause = z.infer<typeof ReleaseCause>
 
+/** @summary The conductor gave up its claim on a ticket, so the ticket can be taken again. */
 export const TicketReleased = z.object({ runId: z.string(), reason: z.string(), cause: ReleaseCause.nullable() })
 
 /**
@@ -307,6 +315,8 @@ export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
  * 1.0 the log is reset rather than carried forward (0118 §1). `waitId` is
  * minted by the writer (`conduct.ts`, `ask.ts`, `approve.ts`) — a UUID, the
  * way a run id is.
+ *
+ * @summary A ticket stopped to wait for a person's decision.
  */
 export const WaitStarted = z.strictObject({
   waitId: WaitId,
@@ -320,6 +330,8 @@ export const WaitStarted = z.strictObject({
  *
  * `resolution` is 0118 §1's own `Resolution`, so which move a person
  * made is a value rather than re-derived from which other event followed.
+ *
+ * @summary A person answered a waiting ticket.
  */
 export const WaitResolved = z.object({
   waitId: WaitId,
@@ -356,6 +368,8 @@ export type SplitChild = z.infer<typeof SplitChild>
  *
  * The checks are consistency only — not `splitPlanProblems`, whose rules are
  * the plan's.
+ *
+ * @summary A person approved splitting a ticket into smaller ones, and which of them depend on which.
  */
 export const TicketSplit = z
   .strictObject({
@@ -384,6 +398,8 @@ export const TicketSplit = z
  * process, so a later reader tells a writer still running from one that is
  * gone. *Interrupted* is derived from that, never written. Every progress event
  * carries `waitId` because a parent can wait again and plan keys repeat.
+ *
+ * @summary The conductor began creating the child tickets of an approved split on GitHub.
  */
 export const SplitStarted = z.strictObject({
   waitId: WaitId,
@@ -391,7 +407,11 @@ export const SplitStarted = z.strictObject({
   instance: z.string().min(1),
 })
 
-/** A child exists, carries the approved body and kind, and hangs under the parent — read back. */
+/**
+ * A child exists, carries the approved body and kind, and hangs under the parent — read back.
+ *
+ * @summary The conductor created one child ticket of a split on GitHub and confirmed it exists.
+ */
 export const SplitChildWritten = z.strictObject({
   waitId: WaitId,
   key: SplitChild.shape.key,
@@ -399,14 +419,22 @@ export const SplitChildWritten = z.strictObject({
   id: SplitChild.shape.id,
 })
 
-/** A child-to-child blocked-by link exists, read back. The parent's own holds are not rows. */
+/**
+ * A child-to-child blocked-by link exists, read back. The parent's own holds are not rows.
+ *
+ * @summary The conductor set one blocked-by link between two child tickets on GitHub and confirmed it.
+ */
 export const SplitLinkWritten = z.strictObject({
   waitId: WaitId,
   ticket: Dependency.shape.ticket,
   blockedBy: Dependency.shape.blockedBy,
 })
 
-/** A split write stopped at `step` (a name from the writer's steps, or `read GitHub`) for `detail`. */
+/**
+ * A split write stopped at `step` (a name from the writer's steps, or `read GitHub`) for `detail`.
+ *
+ * @summary Creating the tickets of a split stopped partway, because a step failed or GitHub refused.
+ */
 export const SplitFailed = z.strictObject({
   waitId: WaitId,
   step: z.string(),
@@ -433,12 +461,15 @@ export const WAIT_EVENTS = ['WaitStarted', 'WaitResolved'] as const
  * because [0019](../../../doc/decisions-archive/0019-a-second-reset.md) says a
  * type the log may still hold must stay readable: a read that drops rows makes
  * every later append fail its concurrency check.
+ *
+ * @summary No longer written: a link saying one ticket caused, followed up, or duplicated another.
  */
 export const TicketLinked = z.object({
   relation: z.enum(['caused-by', 'follows-up', 'duplicates']),
   otherRef: z.string(),
 })
 
+/** @summary A ticket's change was merged into the base branch. */
 export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string() })
 
 /**
@@ -461,10 +492,16 @@ export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string()
  * carry the attempt count, the findings and the spend of work done under an
  * intent that is no longer the intent, into every prompt after it. If the work
  * is wanted again, open a new ticket.
+ *
+ * @summary A person closed the ticket without landing it.
  */
 export const TicketClosed = z.object({ by: z.string(), reason: z.string() })
 
-/** Capability matching refused the dispatch. Never silently downgrade a tier. */
+/**
+ * Capability matching refused the dispatch. Never silently downgrade a tier.
+ *
+ * @summary The conductor refused to start an agent because its runtime lacks something the ticket requires.
+ */
 export const DispatchRefused = z.object({
   requiredTier: Tier,
   runtime: RuntimeId,
@@ -509,6 +546,7 @@ export const Invocation = z.object({
 })
 export type Invocation = z.infer<typeof Invocation>
 
+/** @summary An agent's run started on its own worktree, cut from the base commit. */
 export const RunStarted = z.object({
   ticketId: z.string(),
   runtime: RuntimeId,
@@ -552,6 +590,8 @@ export const RunStarted = z.object({
  * If that ever rivals the rest of the table the answer is to truncate at append
  * time and say in the payload that it was truncated — never to delete, which
  * the log's no-delete rule forbids in any case.
+ *
+ * @summary The conductor handed the agent its prompt.
  */
 export const RunPrompted = z.object({
   promptVersion: z.string(),
@@ -565,13 +605,20 @@ export const RunPrompted = z.object({
   prompt: z.string().nullable(),
 })
 
+/** @summary An agent edited, wrote, or deleted a file during its run. */
 export const RunTouchedFile = z.object({ path: z.string(), op: z.enum(['edit', 'write', 'delete']) })
 
-/** Compaction means the ticket was scoped too large. That is a metric, not noise. */
+/**
+ * Compaction means the ticket was scoped too large. That is a metric, not noise.
+ *
+ * @summary An agent ran out of room in its context and had to compact, a sign the ticket was too large.
+ */
 export const RunContextExhausted = z.object({ turn: z.number().int() })
 
+/** @summary An agent stopped to ask for input instead of carrying on. */
 export const RunAwaitingInput = z.object({ prompt: z.string() })
 
+/** @summary An agent's run left a branch with changes on it. */
 export const RunProducedDiff = z.object({
   branch: z.string(),
   headSha: z.string(),
@@ -621,6 +668,8 @@ export const RunProducedDiff = z.object({
  * sentence in the run log and in the conductor's output instead, and a reader
  * who finds no row on a run that did not land should look in both before
  * concluding the finalizer never fired.
+ *
+ * @summary The conductor tried to push a run's branches to the remote, and recorded whether it pushed, had nothing to push, or was refused.
  */
 export const RunRefsPublished = z.object({
   /** `agent/<n>` — the ref the next attempt's prompt tells an agent to fetch. */
@@ -731,6 +780,8 @@ export const RunRefsPublished = z.object({
  * (`agent/<n>-attempt-<k>`) is the only ref it is ever on; `agent/<n>` itself
  * carries `parentSha` at most, through `RunProducedDiff` exactly as it always
  * has.
+ *
+ * @summary The conductor saved a stopped agent's uncommitted work as a commit of its own, so it was not lost.
  */
 export const RunKeptUncommitted = z.object({
   /** `agent/<n>-attempt-<k>` — the one ref this commit is ever pushed to. */
@@ -746,12 +797,18 @@ export const RunKeptUncommitted = z.object({
   deletions: z.number().int(),
 })
 
-/** The moment the gate pipeline fires. */
+/**
+ * The moment the gate pipeline fires.
+ *
+ * @summary An agent finished and offered its work, so the checks began.
+ */
 export const RunProposedCompletion = z.object({ headSha: z.string() })
 
 /**
  * `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source,
  * `RunSpent`, and this type carried a second price for the same call.
+ *
+ * @summary An agent's process ended.
  */
 export const RunFinished = z.object({
   exitCode: z.number().int(),
@@ -799,6 +856,7 @@ export const RunFinished = z.object({
  * (`RUN_FAILURE_KINDS`) and cannot import `events.ts` without a cycle. Re-exported above under the same name.
  */
 
+/** @summary An agent's run failed. */
 export const RunFailed = z.object({
   kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
@@ -846,6 +904,8 @@ export type SpentFor = z.infer<typeof SpentFor>
  * `spend` (`#497`) is the one fold that reads this (0110 §13, §11).
  * `task_view` and `finding_backlog` must keep treating a stream that carries
  * one exactly as they treat one that does not.
+ *
+ * @summary One paid call to an agent runtime finished, and what it cost was recorded.
  */
 export const RunSpent = z.object({
   for: SpentFor,
@@ -928,6 +988,8 @@ export type RunSpent = z.infer<typeof RunSpent>
  * `conductor`, `recipe` or `actions` reads it back to decide anything — the next
  * run's recipe is read from the base branch, as ever (0005) — and
  * `conductor/unit/recorded-recipe.test.ts` holds that line.
+ *
+ * @summary The conductor worked out the plan for a run: what will happen at each of its ten steps.
  */
 export const StepsResolved = z.object({
   runId: z.string(),
@@ -961,6 +1023,8 @@ export const StepsResolved = z.object({
  * never read a recipe. 0022 deleted the outbox and the reason outlived it — a
  * rebuild that had to re-resolve `end` would depend on a recipe that has since
  * changed, and would produce a different answer for the same history.
+ *
+ * @summary The conductor worked out what to do at the end of a run, given how the run ended.
  */
 export const EndActionsResolved = z.object({
   /**
@@ -995,6 +1059,8 @@ export const EndActionsResolved = z.object({
  * One step begins — once per step, never once per action (`StepRequested`,
  * the per-action event this replaced, is gone with it: the run log carries
  * which action is running, `lingtai attach`).
+ *
+ * @summary A step of a run began.
  */
 export const StepStarted = z.object({
   runId: z.string(),
@@ -1133,6 +1199,8 @@ export const REVIEW_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
  * it — the throw is the *body's*, one layer above the outcome, and reaches
  * the log only as whatever `WaitStarted{AgentCrashed}` or requeue it
  * resolves to; there is no second `StepEnded` for it.
+ *
+ * @summary A step of a run ended, with the result of every action it ran.
  */
 export const StepEnded = z.object({
   runId: z.string(),
@@ -1160,6 +1228,8 @@ export const StepEnded = z.object({
  * Followed by `FindingProposed` once the store has the ticket. Until then the
  * entry is *accepted, not yet opened*, and opening it is safe to repeat: the
  * store's `propose` is idempotent on the finding's key.
+ *
+ * @summary A person accepted a minor review finding, to be worked as a ticket of its own.
  */
 export const FindingAccepted = z.object({
   project: z.string(),
@@ -1182,6 +1252,8 @@ export const FindingAccepted = z.object({
  *
  * The finding itself is not repeated: it is on the `StepEnded` the backlog
  * folded, and `key` is how the two are joined.
+ *
+ * @summary The ticket that an accepted finding asked for now exists in the ticket store.
  */
 export const FindingProposed = z.object({
   project: z.string(),
@@ -1199,6 +1271,8 @@ export const FindingProposed = z.object({
  * the next attempt's review will very likely say the same thing, and the
  * backlog keys it to the same entry, which this has already closed. Only ever
  * at version 0 — an accepted finding is not declined afterwards.
+ *
+ * @summary A person declined a minor review finding.
  */
 export const FindingDeclined = z.object({
   project: z.string(),
@@ -1212,15 +1286,20 @@ export const FindingDeclined = z.object({
 /**
  * A pass reached `merge` while another pass's landing held the lane (#639).
  * Appended only when it had to wait, so a lone pass's log is unchanged.
+ *
+ * @summary A run was ready to merge but waited, because another run was landing.
  */
 export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
 
+/** @summary The conductor tried to merge a run's branch into the base branch. */
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
 /**
  * `paths`/`baseSha`/`headSha` are gone (#502): a conflict's three fields now
  * live on the merge action's own result, `StepEnded`'s `Conflicted` — the
  * lane's own serialising, the daemon's wake and the board all read `reason`
  * and `detail` here and the three fields there.
+ *
+ * @summary The merge of a run's branch into the base branch was refused.
  */
 export const IntegrationRefused = z.object({
   ticketId: z.string(),
@@ -1228,12 +1307,14 @@ export const IntegrationRefused = z.object({
   reason: RefusalReason,
   detail: z.string(),
 })
+/** @summary A run's branch was merged into the base branch. */
 export const IntegrationSucceeded = z.object({
   ticketId: z.string(),
   branch: z.string(),
   base: z.string(),
   mergeCommit: z.string(),
 })
+/** @summary The conductor ran a project's check command on the base branch and recorded whether it passed. */
 export const BaseChecked = z.object({
   /** The branch, e.g. `main`. */
   base: z.string(),
@@ -1275,6 +1356,8 @@ export const BaseChecked = z.object({
  * On the **run's** stream, appended after the walk returns: the pass is the
  * thing that knows the offer, the reply and the decision together, and
  * `conduct.ts` writes what it returns.
+ *
+ * @summary The step after review chose where the ticket goes next, and the log keeps what it was offered and why it chose.
  */
 export const PassRouted = z.object({
   runId: z.string(),
@@ -1299,6 +1382,8 @@ export const PassRouted = z.object({
  * Liveness deliberately does **not** go here. A heartbeat every few seconds
  * fails the log's admission test — is this worth remembering later — and would
  * bury everything that is.
+ *
+ * @summary A person, or the conductor itself, paused the conductor so it takes no new work.
  */
 export const ConductorPaused = z.object({
   by: z.string(),
@@ -1335,6 +1420,7 @@ export const ConductorPaused = z.object({
   holdsAcrossStarts: z.boolean().default(false),
 })
 
+/** @summary The conductor was resumed, by a person or by itself when the daily spending limit was lifted. */
 export const ConductorResumed = z.object({ by: z.string() })
 
 /**
@@ -1357,6 +1443,8 @@ export const ConductorResumed = z.object({ by: z.string() })
  *
  * `ConductorResumed` lifts it, as it lifts a pause: a request nothing can
  * withdraw would be one that stopped every daemon started after it, for ever.
+ *
+ * @summary A person asked the conductor to stop once the pass in flight finishes.
  */
 export const ConductorShutdownRequested = z.object({
   by: z.string(),
@@ -1405,6 +1493,8 @@ export const ConductorShutdownRequested = z.object({
  * being told to stop are independent facts — a daemon started while a request
  * stands reads it and stops again, deliberately. `ConductorShutdownWithdrawn`
  * is the withdrawal, and it names the request it lifts.
+ *
+ * @summary A conductor started, and recorded who started it, why, and from which commit.
  */
 export const ConductorStarted = z.object({
   /**
@@ -1463,6 +1553,8 @@ export const ConductorStarted = z.object({
  * `version` is that request's position on `ctl-conductor`. The fold lifts the
  * standing request only when it is at that version, so a withdrawal that lost a
  * race to a newer request is a no-op in the log rather than an overruling of it.
+ *
+ * @summary A request to shut the conductor down was withdrawn.
  */
 export const ConductorShutdownWithdrawn = z.object({
   by: z.string(),
@@ -1510,6 +1602,8 @@ export const ConductorShutdownWithdrawn = z.object({
  * read is not an option at any price: `conduct.ts` computes `expectedVersion` as
  * `(await store.read(id)).length`, so a read that drops rows makes every later
  * append fail a concurrency check.
+ *
+ * @summary No longer written: a queued action, such as posting a GitHub comment, was carried out.
  */
 export const OutboxDelivered = z.object({
   /** `<seq>:<kind>` — stable across replay, because seq is. */
@@ -1520,7 +1614,11 @@ export const OutboxDelivered = z.object({
   detail: z.string(),
 })
 
-/** **Retired** with `OutboxDelivered` above, and for the same reasons. */
+/**
+ * **Retired** with `OutboxDelivered` above, and for the same reasons.
+ *
+ * @summary No longer written: a queued action, such as posting a GitHub comment, failed.
+ */
 export const OutboxFailed = z.object({
   ref: z.string(),
   kind: z.string(),
@@ -1562,6 +1660,8 @@ export const OutboxFailed = z.object({
  * Appended by `conductor`'s `tell.ts`, at the moment it tells GitHub. It was
  * added one commit ahead of that so the commit which deleted the outbox was
  * only about the deletion.
+ *
+ * @summary Lingtai changed a GitHub issue, such as a comment, its labels, or closing it, and GitHub accepted the change.
  */
 export const IssueUpdated = z.object({
   project: z.string(),
@@ -1587,6 +1687,8 @@ export const IssueUpdated = z.object({
  * the record without keeping the machine: what did not land, `reconcile`
  * converges by comparing what the log says an issue should look like against
  * what GitHub says it does.
+ *
+ * @summary Lingtai tried to change a GitHub issue and the change was refused or failed.
  */
 export const IssueUpdateFailed = z.object({
   project: z.string(),
@@ -1597,6 +1699,7 @@ export const IssueUpdateFailed = z.object({
   waitId: z.string().optional(),
 })
 
+/** @summary GitHub reported a change to a project's issues, so the queue needs another look. */
 export const QueueChanged = z.object({
   project: z.string(),
   /** `issues.opened`, `issues.labeled`, and so on. */
@@ -1604,6 +1707,7 @@ export const QueueChanged = z.object({
   delivery: z.string(),
 })
 
+/** @summary A person asked for a ticket to be run now. */
 export const RunRequested = z.object({
   project: z.string(),
   issue: z.string(),
@@ -1630,6 +1734,8 @@ export const RunRequested = z.object({
  * No `consumed` event, for `RunRequested`'s own reason: a request is
  * satisfied when the item stops being `approved`, which taking the
  * continuation's claim does.
+ *
+ * @summary A person approved a held run, so the conductor owes it a continuation.
  */
 export const ContinueRequested = z.object({
   project: z.string(),
@@ -1655,6 +1761,8 @@ export const ContinueRequested = z.object({
  * `chatId` is supplied by whoever asks, so a follow-up turn is another
  * `DiscussionRequested` carrying the same one. The conversation is a stream and
  * not a session; nothing has to still be running between two questions.
+ *
+ * @summary A person asked a question about a ticket.
  */
 export const DiscussionRequested = z.object({
   /** `chat-<uuid>`, which is also the stream the exchange lands on. */
@@ -1682,6 +1790,8 @@ export const DiscussionRequested = z.object({
  * second attempt is exactly that case, and reading `main` silently instead is
  * what killed the repair. Recorded before the assistant speaks, so the blind
  * spot cannot be hidden by an answer that does not mention it.
+ *
+ * @summary A question went to the discussion assistant, along with a note of what it could read to answer.
  */
 export const DiscussionAsked = z.object({
   ticketId: z.string(),
@@ -1711,7 +1821,11 @@ export const DiscussionAsked = z.object({
  * that laundered that into *the binary accepts the flag* would repeat exactly
  * what cost `#89` two attempts.
  */
-/** `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`. */
+/**
+ * `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`.
+ *
+ * @summary The discussion assistant answered a question, saying what it read and what it could not establish.
+ */
 export const DiscussionAnswered = z.object({
   text: z.string(),
   /** `main:packages/agent/src/claude-code.ts` — every file served, in order. */
@@ -1739,7 +1853,11 @@ export const DiscussionAnswered = z.object({
  * ordinary answer: a question that was answered and needed nothing written down
  * is the commonest discussion there is.
  */
-/** `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`. */
+/**
+ * `costUsd` and `usage` are gone (#502, 0110 §9): spend has one source, `RunSpent`.
+ *
+ * @summary A discussion was filed away, having produced a prompt edit, a ticket, or nothing.
+ */
 export const DiscussionHeld = z.object({
   chatId: z.string(),
   outcome: z.enum(['prompt', 'ticket', 'none']),
@@ -1770,6 +1888,8 @@ export const DiscussionHeld = z.object({
  * next run's `promptVersion` is recomputed by a reader and believed; without
  * `basedOn` an edit is a sentence with no statement of what it was a change to,
  * which for a *yes, but* is most of the meaning.
+ *
+ * @summary A person added a sentence to the next run's prompt, or took the sentence away.
  */
 export const PromptEdited = z.object({
   /**
@@ -1833,6 +1953,8 @@ export const PromptEdited = z.object({
  * ([0007](../../../doc/decisions-archive/0007-dual-runtime.md)). It is an OS username today and
  * a verified identity later — recorded now so the line becomes trustworthy
  * without being rewritten.
+ *
+ * @summary A person began adding a repository, which is recorded but not yet worked.
  */
 export const ProjectOnboardingStarted = z.object({
   /** `owner/repo`, as the wizard was given it. */
@@ -1862,6 +1984,8 @@ export const ProjectOnboardingStarted = z.object({
  * Both are nullable because events written before the field existed genuinely
  * did not record it, and inventing a value for them would be worse than saying
  * so.
+ *
+ * @summary The conductor read a project's recipe from its base branch and recorded which version it was.
  */
 export const ProjectConfigured = z.object({
   project: z.string(),
@@ -1897,6 +2021,8 @@ export const ProjectConfigured = z.object({
  * Appended only when it differs from the refusal already on record — see
  * `passTransition` — so a sweep on a loop does not write the same row every few
  * seconds into a log that keeps it for ever.
+ *
+ * @summary The conductor could not look at a project and said why, once, when it began.
  */
 export const ProjectRefused = z.object({
   project: z.string(),
@@ -1915,6 +2041,8 @@ export const ProjectRefused = z.object({
  * (0027): *it is refusing* is a refusal with no recovery after it, and *it was
  * refusing and stopped* is one with. Without it a reader would have to guess from
  * the age of the last refusal — the lease, back again.
+ *
+ * @summary The conductor looked at a project it had refused and no longer refused it.
  */
 export const ProjectRecovered = z.object({
   project: z.string(),
@@ -1934,6 +2062,8 @@ export const ProjectRecovered = z.object({
  * A batch rather than one event per finding, because "what did the restart at
  * 04:12 find" is the question people actually ask — a startup that found
  * nothing appends nothing at all.
+ *
+ * @summary A restarted conductor found state the log did not predict, and recorded what it did about it.
  */
 export const Reconciled = z.object({
   findings: z.array(
@@ -1983,6 +2113,8 @@ export const Reconciled = z.object({
  * restart to see a written App. This event names an App of ours on GitHub whose
  * key may never have landed; the setup page names it and **keeps offering
  * creation beside it**, and only a form posted before it was minted is refused.
+ *
+ * @summary A person created the team's GitHub App from Lingtai's setup page.
  */
 export const GitHubAppCreated = z.object({
   /** The App ID, as `LINGTAI_GITHUB_APP_ID` now carries it. */
@@ -2027,6 +2159,8 @@ export type TriageStartedBy = z.infer<typeof TriageStartedBy>
  * attempt on that wait, then one more than the last `TriageStarted` for it.
  * The triage key is the ticket and the wait; the head and the recipe are
  * not part of it (0118 §3).
+ *
+ * @summary The conductor began triaging a waiting ticket, using an agent or its own rules.
  */
 export const TriageStarted = z.strictObject({
   waitId: WaitId,
@@ -2038,6 +2172,8 @@ export const TriageStarted = z.strictObject({
  * Triage's advice, or its failure, on the ticket's stream (0118 §3,
  * principle 5). `attempt` matches the `TriageStarted` it finishes; a reader
  * takes only the latest attempt's result. `headSha` is the head triage read.
+ *
+ * @summary The conductor finished triaging a waiting ticket, with advice or a failure.
  */
 export const WaitTriaged = z.strictObject({
   waitId: WaitId,
@@ -2066,6 +2202,8 @@ export const WaitTriaged = z.strictObject({
  *
  * `project` is null for the events that belong to no repository — everything on
  * the control stream, which is where a pause, a shutdown and a question live.
+ *
+ * @summary An event subscriber was given an event and did not finish handling it.
  */
 export const PluginFailed = z.object({
   /**

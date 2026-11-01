@@ -13,7 +13,15 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
-import { ELSEWHERE, anchorLines, findAppendSites, firstSentence, generate, type EventsDoc } from '../scripts/events.ts'
+import {
+  ELSEWHERE,
+  anchorLines,
+  findAppendSites,
+  generate,
+  summaries,
+  summariesIn,
+  type EventsDoc,
+} from '../scripts/events.ts'
 import { EVENTS, RETIRED, type EventType } from '../src/index.ts'
 
 const root = join(fileURLToPath(import.meta.url), '..', '..', '..', '..')
@@ -87,51 +95,49 @@ describe('events.json completeness', () => {
   })
 })
 
-describe('firstSentence', () => {
+describe('summariesIn', () => {
   const doc = (...lines: string[]) => `/**\n${lines.map((l) => ` * ${l}`.trimEnd()).join('\n')}\n */`
 
-  it('joins a first sentence that wraps over two lines, and never reaches the second paragraph', () => {
-    expect(firstSentence(doc('One begins here', 'and ends there. More.', '', 'Second paragraph.'))).toBe(
-      'One begins here and ends there.',
-    )
+  it('reads the tag and not the developer text before it', () => {
+    expect(summariesIn(doc('Developer text.', '', '@summary A thing happened.'))).toEqual(['A thing happened.'])
   })
 
-  it('handles a one-line comment', () => {
-    expect(firstSentence('/** A thing. Then more. */')).toBe('A thing.')
+  it('joins a tag that wraps over two lines', () => {
+    expect(summariesIn(doc('@summary A thing', 'happened.'))).toEqual(['A thing happened.'])
   })
 
-  it('does not cut at a section number, a file name, e.g., or a dotted code span', () => {
-    expect(firstSentence('/** See 0110 §9.2 and events.ts, e.g. `main`, `x.y` here. Next. */')).toBe(
-      'See 0110 §9.2 and events.ts, e.g. `main`, `x.y` here.',
-    )
+  it('returns every tag, so two can be refused, and none for no tag or no comment', () => {
+    expect(summariesIn(doc('@summary One.', '@summary Two.'))).toEqual(['One.', 'Two.'])
+    expect(summariesIn(doc('Only prose.'))).toEqual([])
+    expect(summariesIn(undefined)).toEqual([])
   })
+})
 
-  it('cuts at a § number that ends a sentence', () => {
-    expect(firstSentence('/** See 0110 §9. Then more. */')).toBe('See 0110 §9.')
-  })
+describe('every event has one plain-language @summary', () => {
+  const found = summaries(root)
 
-  it('does not cut inside a link whose URL contains .md', () => {
-    expect(firstSentence('/** **Retired** ([0022](../../doc/0022-the-seams.md)). Readable for a while. */')).toBe(
-      '**Retired** ([0022](../../doc/0022-the-seams.md)).',
-    )
-  })
-
-  it('ends after a closing ** and after a parenthesised number', () => {
-    expect(firstSentence('/** **Bold.** Then more. */')).toBe('**Bold.**')
-    expect(firstSentence('/** A split began (#608). The plan. */')).toBe('A split began (#608).')
-  })
-
-  it('closes a bold span left open at the cut', () => {
-    expect(firstSentence('/** **Opens. Still bold** and more. Next. */')).toBe('**Opens. Still bold**')
-  })
-
-  it('returns the whole paragraph when it has no end', () => {
-    expect(firstSentence(doc('no end here', 'at all'))).toBe('no end here at all')
-  })
-
-  it('is null with no comment or no text', () => {
-    expect(firstSentence(undefined)).toBeNull()
-    expect(firstSentence('/** */')).toBeNull()
+  it('has exactly one per catalogue type, in the style the docs need', () => {
+    const wrong = (Object.keys(EVENTS) as EventType[]).flatMap((name) => {
+      const all = found.get(name) ?? []
+      if (all.length !== 1) return [`${name}: has ${all.length} @summary tags, want exactly one`]
+      const text = all[0]!
+      const bad: string[] = []
+      if (!/^[A-Z]/.test(text) || !text.endsWith('.')) bad.push('must start with a capital and end with a period')
+      if (text.length > 140) bad.push(`is ${text.length} characters, at most 140`)
+      if (/[.!?]["'”’)*_`]*(\s|$)/.test(text.slice(0, -1))) bad.push('must be one sentence')
+      if (
+        /\b0\d{3}\b/.test(text) ||
+        text.includes('§') ||
+        /#\d+/.test(text) ||
+        text.includes('](') ||
+        text.includes('**')
+      )
+        bad.push('names an ADR, section, issue, link or bold')
+      if (RETIRED.has(name) !== text.startsWith('No longer written:'))
+        bad.push('starts "No longer written:" if and only if the type is retired')
+      return bad.map((b) => `${name}: ${b}`)
+    })
+    expect(wrong).toEqual([])
   })
 })
 
