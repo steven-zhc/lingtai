@@ -79,7 +79,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 23,
     stamped: false,
-    hint: 'Tests failed. Fix round 1.',
+    hint: 'Checks failed. Fix round 1.',
   },
   {
     statusKind: 'running',
@@ -90,7 +90,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 38,
     stamped: false,
-    hint: 'The reviewer found a bug. Fix round 2.',
+    hint: 'The cold review found a bug. Fix round 2.',
   },
   {
     statusKind: 'waiting',
@@ -101,7 +101,7 @@ const STATES: readonly ReceiptState[] = [
     approve: 'waiting…',
     cents: 38,
     stamped: false,
-    hint: 'Ready to merge. Waiting for you.',
+    hint: 'Ready to land. Waiting for you.',
   },
   {
     statusKind: 'landed',
@@ -112,7 +112,7 @@ const STATES: readonly ReceiptState[] = [
     approve: 'You, 07:31',
     cents: 40,
     stamped: true,
-    hint: 'Merged. Click a line to see that step.',
+    hint: 'Landed. Click a line to see that step.',
   },
 ]
 
