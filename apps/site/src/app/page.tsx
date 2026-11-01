@@ -32,8 +32,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   <p className="kicker">For Claude Code and Codex</p>
                   <h1 id="hero-title">Agents do the work. Lingtai keeps the books.</h1>
                   <p className="lede">
-                    The agent writes the code. Your tests and a second reviewer decide whether it gets merged. Every
-                    ticket ends with a receipt: what ran, who approved it, and what it cost.
+                    The agent writes the change. Your checks and a cold review decide whether it lands &mdash; and every
+                    ticket ends in a receipt you can check.
                   </p>
                   <div className="install">
                     <CopyCommand command={`curl -fsSL ${INSTALL_URL} | sh`} />
