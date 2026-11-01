@@ -59,7 +59,12 @@ describe("the home page's argument", () => {
 
   it('explains the benefit, then how to start', async () => {
     const text = await prose()
-    const order = ['Agents do the work', 'Three steps to your first receipt.']
+    const order = [
+      'Agents do the work',
+      'The agent got it wrong. Twice.',
+      'Why not just give the agent the issue?',
+      'Three steps to your first receipt.',
+    ]
     const at = order.map((heading) => ({ heading, at: text.indexOf(heading) }))
     const missing = at.filter((s) => s.at < 0).map((s) => s.heading)
     expect(missing, `the page is missing: ${missing.join(', ')}`).toEqual([])
@@ -130,6 +135,48 @@ describe("the home page's argument", () => {
       'Lingtai hands your tickets to Claude Code or Codex, runs your checks and a cold review, and ends every ticket in a receipt you can check',
     )
     expect(layout).not.toContain('one at a time')
+  })
+})
+
+describe('why not just give the agent the issue', () => {
+  const text = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&#x27;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const html = renderToStaticMarkup(<Home />)
+  const rows = [...html.matchAll(/<tr><th scope="row">(.*?)<\/th><td[^>]*>(.*?)<\/td><td[^>]*>(.*?)<\/td><\/tr>/g)].map(
+    (m) => ({ key: text(m[1]!), alone: text(m[2]!), lingtai: text(m[3]!) }),
+  )
+
+  it.each([
+    ['Completion', 'Your recipe: checks, review, your approval'],
+    ['Checks', "Separate steps the agent can't skip"],
+    ['Rules', 'Outside its worktree'],
+    ['Recovery', 'Persisted; a restart picks it up'],
+    ['Cost', 'Per ticket, with a daily ceiling'],
+    ['Audit', 'Structured events and a receipt'],
+  ])('says of %s, with Lingtai: %s', (key, claim) => {
+    expect(rows.find((r) => r.key === key)?.lingtai).toBe(claim)
+  })
+
+  it('keeps the agent-alone column fair', () => {
+    expect(rows).toHaveLength(6)
+    const page = text(html)
+    for (const unfair of ['The session is gone', 'Found out later', 'A transcript, maybe', 'Logs and transcripts']) {
+      expect(page).not.toContain(unfair)
+    }
+  })
+
+  it('links to the replay receipt, as a real table', () => {
+    expect(html).toContain('id="replay"')
+    expect(html).toMatch(/<a class="why-ref" href="#replay"/)
+    expect(html).toContain('<table')
+    expect(html.match(/scope="col"/g)).toHaveLength(2)
+    expect(html.match(/scope="row"/g)).toHaveLength(6)
   })
 })
 
