@@ -1,0 +1,261 @@
+# Lingtai's own recipe, as it ran on 2026-11-01 — published as an example.
+# The live copy is ~/.lingtai/lingtai/recipe.yml on the conducting machine and
+# nothing reads this one. One value is redacted: env.refuseHosts named the host
+# of this installation's own database. Comments starting `# [published]` were
+# added for readers of this copy; everything else is the file as it runs.
+#
+# How Lingtai works on Lingtai — the file every pass reads, outside every worktree
+# so no agent can edit it. An edit reaches the next pass with no restart; the
+# repository's `.lingtai/config.yaml` is an inert copy that nothing reads.
+version: 2
+
+repo:
+  base: main
+  submodules: false
+
+source:
+  # Priority order, earliest first; `documentation` is last so a doc ticket is
+  # never taken ahead of a bug.
+  kinds: [bug, tech-debt, feature, documentation]
+
+  # Labels that keep an issue out of the queue. An epic is a table of contents,
+  # not work (#126).
+  exclude:
+    - blocked
+    - in-progress
+    - agent:hold
+    - agent:blocked
+    - agent:review
+    - agent:wip
+    - epic
+
+  # How long a failed attempt keeps its ticket out of the queue.
+  backoff: 1h
+
+env:
+  # The test database is the one name an agent needs; Lingtai's own log
+  # (LINGTAI_DATABASE_URL) is never given to it.
+  required:
+    - LINGTAI_TEST_DATABASE_URL
+
+  # A value naming this host is refused before the claim — it is this system's
+  # own production database (#51), on top of `prod` and `production`.
+  refuseHosts: [db.example.supabase.co]
+  # Where a worktree's copy of these values is written. Lingtai itself no longer
+  # reads a `.env.local`; the agent gets them in its environment as well.
+  plantAt: .env.local
+
+steps:
+  admit: []
+
+  # A fresh worktree has no node_modules.
+  prepared:
+    - name: install
+      run: pnpm install --frozen-lockfile
+      timeout: 10m
+      env: []
+
+  # Experiment 015: does a design make the implementing run smaller? The order
+  # matters — `file:` keeps what the action before it made.
+  design:
+    - name: shape it
+      agent: claude-code
+      model: claude-opus-5-5
+      prompt: |
+        Cite `file.ts:line` for every claim about what the code does today, and
+        quote the comment or the ADR that makes it. A shape argued from memory of
+        this codebase is the one thing the implementing agent cannot check.
+
+        Behaviour here is settled by the log, and you cannot read it. Where the
+        shape turns on what actually happened, name the event and the field that
+        would settle it rather than asserting the behaviour.
+
+        `pnpm fmt:check`, `pnpm lint`, `pnpm typecheck` and `pnpm test` are what
+        the `build` step runs. The integration half takes 803
+        seconds and is out of reach inside a pass, so a shape whose only check is
+        `pnpm test:integration` is one nothing can verify before the merge — say
+        so where that is the shape, and name the unit-level claim that stands in.
+
+        If the shape contradicts an accepted ADR, name it and say the answer is a
+        superseding file rather than an edit. The decisions are append-only.
+    - name: keep the note
+      file: doc/design/{{issue}}.md
+
+  # The implementing agent, on the cheaper model; the reviewer below is Codex,
+  # so the review is a second opinion. `prompt: ""` adds nothing to the brief.
+  implement:
+    - name: write the change
+      agent: claude-code
+      model: claude-sonnet-5-5
+      prompt: |
+        Before each commit, run `pnpm fmt` and then `pnpm lint`, and commit what
+        `pnpm fmt` changed. The `build` step refuses on `pnpm fmt:check` and
+        `pnpm lint` before it runs the tests, and a refusal there costs a round.
+
+  # The unit half only — the integration half runs after the merge (0060).
+  # fmt and lint are their own actions so a refusal names which one, and they
+  # run first because they take seconds. CI's check.yml runs both, and an agent
+  # landing that skipped them turned main's CI red (2026-10-05, #376).
+  build:
+    - name: install
+      run: CI=true pnpm install --frozen-lockfile
+      timeout: 10m
+      env: []
+    - name: format
+      run: pnpm fmt:check
+      timeout: 5m
+      env: []
+    - name: lint
+      run: pnpm lint
+      timeout: 5m
+      env: []
+    - name: build
+      run: pnpm typecheck && pnpm test
+      timeout: 20m
+      env: []
+
+  # The cold reviewer: another model family than the writer's, so its blind spots
+  # are not the writer's, told what this repository keeps getting wrong. Codex
+  # came off once after a pass hit its quota (2026-10-21); back on 2026-10-24.
+  #
+  # [published] The prompt below is deliberately about this repository and no
+  # other: an event-sourced scheduler, and six kinds of defect it has actually
+  # shipped, each with the issue it came from. Do not copy the list — copy the
+  # shape. Write down the mistakes your own repository has made more than once,
+  # one real example each, and the question a reviewer should ask to catch the
+  # next one. A reviewer told what *this* codebase gets wrong finds more than a
+  # generic checklist, which Lingtai's built-in review brief already carries
+  # (`packages/actions/src/agent-action.ts`, `CHECKLIST`).
+  review:
+    - name: review
+      agent: codex
+      model: gpt-6-astra
+      prompt: |
+        This is an event-sourced scheduler that schedules its own development.
+        Six shapes have produced real defects here. Look for them as well as the
+        checklist above.
+
+        1. **A comment that was true when it was written and is false now.**
+           This repository's signature defect: it appeared six times in a single
+           session. A lease duration that no longer exists; a `reconcile`
+           described as running only at startup; a justification resting on
+           "every merge already waits for a person" written after merges stopped
+           waiting. Ask of every comment, doc line and ADR sentence near a
+           behavioural change: does it still describe what the code now does?
+           A stale claim is a finding, and its failure scenario is the next
+           reader who believes it and acts on it.
+
+        2. **A check that is present, reported, and not looking at the thing you
+           think it is.** `#58`: the `merge` point renders as resolved and
+           executes nothing. `#89`: `runtime.limits.turns` was declared in the
+           recipe, carried through three layers, and handed to no runtime. Ask
+           of any check the diff adds or touches: what exact input does it read,
+           and is that input the thing its name claims? A check that cannot fail
+           is worse than no check, because it is believed.
+
+        3. **A guarantee that holds only because the single implementation is
+           careful.** `work-loop.ts` invokes a subscriber with no `.catch` and
+           depends on that subscriber never rethrowing. Ask whether the
+           invariant would survive a second implementation written by somebody
+           who had not read the first.
+
+        4. **A projection that is not a pure fold.** A reducer may read the
+           event and nothing else — no clock, no network, no environment.
+           Anything time-dependent makes `lingtai projection rebuild` disagree
+           with the live fold, and the two disagreeing silently is the failure.
+
+        5. **A required field added to a shared type, with a hand-written
+           literal missed.** `#89`'s first attempt added a field to
+           `RuntimeCapabilities` and missed a literal in a package the change
+           never opened. For every widened type: where else is this constructed
+           by hand?
+
+        6. **A name Lingtai reads for itself without the `LINGTAI_` prefix**
+           (`#63`) — or a project's own variable wrongly given one. A project's
+           file keeps its own names.
+
+  # The router: which way a refusal goes. A red build and a failed re-verify go
+  # back to the same worktree for free; findings and a moved base ask a judge.
+  # A ceiling goes on in the same worktree. `needs-input` is left to a person. `tamper` is off here (doc/tamper-watch.md).
+  proposed:
+    - name: a red build is the agent's to fix, in the worktree it is already in
+      judge: same-worktree
+      when: red
+    - name: a merge whose re-verify went red is the same fix on a moved base
+      judge: same-worktree
+      when: verify-failed
+    - name: the lines or the approach
+      judge: claude-code
+      model: claude-sonnet-5-5
+      when: findings
+    - name: a base that moved under this branch
+      judge: claude-code
+      model: claude-sonnet-5-5
+      when: conflict
+    # A run stopped by a ceiling goes on in the same worktree,
+    # its uncommitted work still there, each time spending a fix round; with none left it
+    # is a person's. `same-worktree` never picks a restart (which starts from the
+    # base and keeps nothing).
+    - name: a run stopped by the ceiling goes on in the worktree it left
+      judge: same-worktree
+      when: budget-exhausted
+
+  # Nothing holds before the landing; the lane is written out so an absent
+  # `merge:` and `merge: []` can never be told apart by accident.
+  merge:
+    - name: land the branch
+      merge: { strategy: merge-commit }
+
+  end:
+    - name: close the ticket
+      when: landed
+      close: true
+
+    # A ticket ended by `lingtai close` closes its issue too.
+    - name: close the ticket a person ended
+      when: closed
+      close: true
+
+    # Landed tickets lose their arms and keep `agent/<n>`, the branch a person
+    # follows from the merge commit.
+    - name: sweep the arms
+      refs: true
+      when: landed
+
+# Who is told, and never waited for. Desktop is for what nothing moves without.
+# Telegram was removed 2026-10-31: it exited 1 within 0.1s on every event
+# (49 in a day, lingtai doctor).
+subscribers:
+  - name: desktop
+    on: [IntegrationRefused, RunAwaitingInput, WaitStarted]
+    run: node apps/cli/src/notify.ts
+    env: []
+
+# Explain eligible waits once, without tools; each paid call is bounded.
+triage:
+  agent: claude-code
+  limits: { turns: 100, wall: 15m, usd: 10.0 }
+
+runtime:
+  # Passes of this project in flight at once (0122 §1). Needs limits.day_usd
+  # in ~/.lingtai/config.yml, or the installation runs one pass in all.
+  concurrency: 2
+  # How much an agent is told about the attempts before it. `evidence` is sized
+  # to hold one build failure's whole capture (#171).
+  budget:
+    evidence: 10200
+    attempts: 5
+    findings: 5
+    diff: 400000
+
+  # What one pass may spend: five agent runs (the work and four rounds) of up
+  # to 350 turns and 75 minutes, then up to two fresh starts from the base.
+  # Turns are priced per model.
+  limits:
+    turns: 350
+    wall: 75m
+    rounds: 4
+    restarts: 2
+
+  # The pass's own runtime; a step's `agent:` overrides it.
+  agent: claude-code
