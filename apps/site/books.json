@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "window": {
+    "from": "2026-10-02",
+    "to": "2026-10-31"
+  },
+  "capturedAt": "2026-11-01T22:33:56.932Z",
+  "commit": "d1be4c8e",
+  "outcomes": {
+    "landed": 283,
+    "closed": 8,
+    "open": 0,
+    "landedByKind": [
+      {
+        "kind": "bug",
+        "count": 85
+      },
+      {
+        "kind": "documentation",
+        "count": 33
+      },
+      {
+        "kind": "feature",
+        "count": 141
+      },
+      {
+        "kind": "tech-debt",
+        "count": 24
+      }
+    ]
+  },
+  "fixRounds": {
+    "median": 1,
+    "zeroOrOneShare": 0.7455830388692579,
+    "fiveOrMoreShare": 0.0636042402826855
+  },
+  "cost": {
+    "median": 3.55,
+    "mean": 6.322508833922261,
+    "p90": 12.2,
+    "includesEstimates": true,
+    "costUnknown": 1
+  },
+  "machineMinutes": {
+    "median": 10.12155,
+    "mean": 15.331651001177857
+  },
+  "elapsedMinutes": {
+    "median": 10.431333333333333,
+    "mean": 79.74585206124854,
+    "withinHourShare": 0.8268551236749117
+  },
+  "waitedShare": 0.14487632508833923,
+  "spendShare": [
+    {
+      "purpose": "Work",
+      "share": 0.5575967218955301
+    },
+    {
+      "purpose": "Answering",
+      "share": 0.3499942665206025
+    },
+    {
+      "purpose": "Judge",
+      "share": 0.032024300705989384
+    },
+    {
+      "purpose": "Triage",
+      "share": 0.059881737811796676
+    },
+    {
+      "purpose": "Discussion",
+      "share": 0.0005029730660813533
+    }
+  ],
+  "receipts": [
+    {
+      "median": true,
+      "fixRounds": 1,
+      "machineMinutes": 10.12155,
+      "waits": 0,
+      "cost": 3.55
+    },
+    {
+      "median": false,
+      "number": 782,
+      "title": "feat(site): the bar and the docs sidebar link /docs/events/, and the events page draws the sidebar",
+      "kind": "feature",
+      "outcome": "landed",
+      "fixRounds": 2,
+      "passes": 1,
+      "waits": 1,
+      "machineMinutes": 14.243016666666668,
+      "cost": 4.02
+    },
+    {
+      "median": false,
+      "number": 664,
+      "title": "fix(agent): a user's own Claude Code and Codex restrictions are proven to hold under Lingtai's launch flags, and may only narrow them",
+      "kind": "bug",
+      "outcome": "landed",
+      "fixRounds": 4,
+      "passes": 2,
+      "waits": 1,
+      "machineMinutes": 20.158416666666668,
+      "cost": 9.27
+    },
+    {
+      "median": false,
+      "number": 539,
+      "title": "A person can grant one checked fix round on preserved work",
+      "kind": "feature",
+      "outcome": "closed",
+      "fixRounds": 4,
+      "passes": 2,
+      "waits": 2,
+      "machineMinutes": 39.44273333333334,
+      "cost": 11.39
+    }
+  ]
+}
