@@ -7,10 +7,14 @@ English · [中文](README.zh-CN.md)
 
 # Lingtai
 
+**Agents do the work. Lingtai keeps the books.**
+
 Lingtai takes a queue of tickets, hands them to coding agents — several at
 once, each in a worktree of its own — and holds each change at checks and a
-cold review until it passes. It merges what passes, or stops for you, and every
-decision is written to a log on your machine.
+cold review until it passes. It merges what passes, or stops for you. Every
+step is written to a log on your machine as a result you can check: what the
+agent was given, what it produced, what passed, who let it through, and what it
+cost.
 
 ## Install
 

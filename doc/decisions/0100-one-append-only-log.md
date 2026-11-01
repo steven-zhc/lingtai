@@ -135,8 +135,27 @@ same URL can be visible from a checkout and invisible to a daemon started from
     `lingtai projection rebuild <name>`, never by hand. Every process that
     appends holds a projector while it runs.
 
+14. **An event records a result, never the process that reached it.** An
+    agent's output cannot be produced twice, so a transcript is nothing a second
+    reader could check; what is appended is what a step was given and what it
+    produced. A run's inputs are on `RunStarted` (`model`, `promptVersion`,
+    `configHash`, `baseSha`, `invocation`) and its product on `RunProducedDiff`
+    (`headSha`). Each action's result is on `StepEnded`, with the `onSha` it
+    judged and its `evidence` (a command's is its tail, which says when it was
+    clipped). A person's decision is on `WaitResolved`, with `by`. Every paid
+    call is a `RunSpent` ([0110](0110-tokens-on-the-event-money-at-display.md)),
+    and a landing is a `TicketLanded`. So a mechanical result can be checked
+    again by running it at its `onSha`, and an agent's judgement is answerable
+    (who said it, about which commit) without being repeatable. The run log is
+    a trace and not a record ([0111](0111-the-board-is-a-local-app.md)): a fact
+    a later reader must be able to check is a field on an event, never a line in
+    a log.
+
 ## Consequences
 
+- *Agents do the work. Lingtai keeps the books.* is a claim §1 and §14 make
+  true: every result is on the log with what it was given and the evidence for
+  it, and it holds only while a new event keeps that shape.
 - The board, the CLI and `doctor` cannot disagree: none of them holds state.
 - Changing a projection's shape costs a rebuild, which is one round trip per
   event on Postgres; worth knowing before putting a rebuild under a deadline.
