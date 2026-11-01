@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 export const WORKTREE_LINES: readonly string[] = [
   'taking #12  Fix a failing test',
   '#12  Fix a failing test — implement ✓ build ✓ review ✓ · $0.84 · landed in 3f9c2a1',
-  '#15  Add retry to uploader — implement ✓ build ✓ review ✗ · $1.20 · waiting for you: lingtai approve my-app --issue 15',
+  '#15  Add retry to uploader — implement ✓ build ✓ review ✗ · $1.20 · waiting for you: lingtai approve my-app --issue 15 --note "<why>"   (or the board)',
 ]
 
 function Mini({

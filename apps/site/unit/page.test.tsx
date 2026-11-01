@@ -202,7 +202,7 @@ describe('the loop illustrations', () => {
     expect(landed).toMatch(ending)
     expect(landed).toMatch(/ · landed in [0-9a-f]{7}$/)
     expect(waiting).toMatch(ending)
-    expect(waiting).toMatch(/ · waiting for you: lingtai \w+ \S+ --issue \d+$/)
+    expect(waiting).toMatch(/ · waiting for you: lingtai \w+ \S+ --issue \d+ --note "<why>" {3}\(or the board\)$/)
   })
 
   it('claim nothing the page does not say of 0.11', async () => {
