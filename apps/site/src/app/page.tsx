@@ -205,6 +205,52 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+            <div className="faq">
+              <h3 className="faq-title">Common questions</h3>
+              <div className="faq-list">
+                <details className="faq-item">
+                  <summary>Will it break main?</summary>
+                  <p>
+                    Nothing lands until your checks and the review pass. A check already red on main stops it as{' '}
+                    <em>base is red</em> — it doesn&apos;t spend rounds on breakage that isn&apos;t its own.
+                  </p>
+                </details>
+                <details className="faq-item">
+                  <summary>Will it run up a bill?</summary>
+                  <p>Every paid call is recorded. A daily ceiling pauses it until midnight, or until you resume it.</p>
+                </details>
+                <details className="faq-item">
+                  <summary>Will it loop forever?</summary>
+                  <p>
+                    Fix rounds are counted and bounded. When they run out, it stops and asks you — with a recommended
+                    answer.
+                  </p>
+                </details>
+                <details className="faq-item">
+                  <summary>What if my laptop restarts at 3am?</summary>
+                  <p>
+                    The ticket isn&apos;t lost: its commits are kept on a branch, and the next run takes it again from
+                    there.
+                  </p>
+                </details>
+                <details className="faq-item">
+                  <summary>Can it weaken its own checks?</summary>
+                  <p>No. The recipe that sets them lives outside the repository the agent edits.</p>
+                </details>
+                <details className="faq-item honest">
+                  <summary>
+                    Can it read my <code>~/.ssh</code>?<span className="faq-tag">HONEST ANSWER</span>
+                  </summary>
+                  <p>
+                    By default, yes — a Claude Code agent runs as you. Lingtai keeps its own credentials out of the
+                    agent&apos;s environment, but it is not a container. Your own sandbox closes what you choose.{' '}
+                    <a className="link" href="/docs/safety/">
+                      What an agent can touch →
+                    </a>
+                  </p>
+                </details>
+              </div>
+            </div>
           </section>
 
           <section className="home-setup" id="setup" aria-labelledby="setup-title">

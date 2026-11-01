@@ -58,7 +58,8 @@ export const DOCS_PUBLIC = false
  * first-time installer to for everything else Lingtai needs — `concepts` — the short model between the tutorial and the references (#546) — `cli` — the generated
  * command guide the tutorial ends on (#545) — `recipe` — the guide to the file `init` wrote (#544) — and `plugins` — the parent page and the
  * fourteen under it, which are the recipe's vocabulary and were written for a
- * reader who has never seen the source. Nothing else in `doc/` has been through
+ * reader who has never seen the source. `safety` is the page the home page's honest
+ * answer about `~/.ssh` sends a reader to (#809). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -71,6 +72,7 @@ export const PUBLIC_SLUGS = [
   'recipe',
   'cli',
   'requirements',
+  'safety',
   'from-symphony',
   'plugins',
   'events',
@@ -120,6 +122,7 @@ export const SECTIONS: Section[] = [
       'recipe.md',
       'cli.md',
       'requirements.md',
+      'safety.md',
       'from-symphony.md',
       'why.md',
       'guide.md',
