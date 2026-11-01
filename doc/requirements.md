@@ -1,29 +1,59 @@
-# What Lingtai needs outside itself
+# What Lingtai needs — the minimum is short; everything else is a choice you make
 
-Everything Lingtai runs, reaches or asks you to sign in to, in one place. Read
-it before [the tutorial](tutorial.md), or when `lingtai doctor` complains about
-something you did not know you needed. Coming from Symphony and wondering about
-Linear? See [coming from Symphony](from-symphony.md).
+Read this before [the tutorial](tutorial.md), or when `lingtai doctor`
+complains about something you did not know you needed. Coming from Symphony and
+wondering about Linear? See [coming from Symphony](from-symphony.md).
 
-Two things are **not** on this page:
+Not on this page: **what your project needs** (your recipe's `run:` commands
+and whatever they call are the project's requirement, not Lingtai's;
+`packages/actions/src/command.ts:403`, `packages/conductor/src/conduct.ts:490`),
+and **what building a release needs** (`bun`, `next build` and
+`node --build-sea`; installing and running one needs none of them).
 
-- **What your project needs.** Lingtai runs your recipe's `run:` commands and
-  its environment script (`packages/actions/src/command.ts:403`,
-  `packages/conductor/src/conduct.ts:490`), and whatever those call — `npm`,
-  `pnpm`, a compiler — is the managed project's requirement, not Lingtai's. The
-  tutorial's Node.js and npm are Chapter Garden's.
-- **What building a release needs.** `bun` (also needed on a checkout, in the
-  table below), `pnpm exec next build` and `node --build-sea` (`apps/release/src/build.ts`,
-  `apps/release/src/binary.ts`) produce a release. Installing and running one
-  needs none of them.
+## The minimum
 
-Where this page says "any recent", the code does not check a version.
+A local repository and one agent, which is what the tutorial's Part 1 uses
+(`--local`).
+
+- macOS or Linux, with `git` and `ps`.
+- **One** of Claude Code or Codex, installed and signed in, and every role in
+  the recipe set to it: `discuss.agent` defaults to `claude-code`, so a
+  Codex-only setup must say so there or it ends up needing `claude`.
+- The installer's own needs: `curl`, `sh`, `tar`, and `shasum` or `sha256sum`.
+- No GitHub, no database server, no account with Lingtai. The log is a SQLite
+  file at `~/.lingtai/lingtai.db`.
+
+## Add only if you…
+
+- **…keep tickets in GitHub issues.** One person: `gh` signed in with the
+  `repo` and `workflow` scopes (`--github-auth gh`, the default). A team: a
+  GitHub App you create and install ([github.md](github.md)). Lingtai's actions
+  then appear as that account.
+- **…use Codex for discussion or triage without tools.** A separately billed
+  OpenAI API key (`codex_text`); the Codex login does not supply it.
+- **…want it to keep running after you close the terminal.** `lingtai service`,
+  using `launchctl` or `systemctl --user`, which the OS already has. It runs
+  from a source checkout only; the installed binary does not support it yet.
+- **…keep the log in Postgres.** A database you run, reached by the direct
+  host, never a pooler.
+- **…want notifications.** Desktop (`terminal-notifier`, or `osascript`, which
+  macOS ships) or a Telegram bot.
+- **…run from a source checkout.** Node.js 26 or later, `pnpm`, and `bun` to
+  build the hook.
+- **…upgrade an installed copy.** `lsof`, and GitHub release downloads
+  reachable.
+
+## Full reference
+
+Every external program, service and account, with the code that touches it.
+Where a table says "any recent", the code does not check a version.
 
 ## Programs on your machine
 
 | What | Needed when | Minimum version | Why | `lingtai doctor` check | Where |
 | --- | --- | --- | --- | --- | --- |
 | `git` | Always | Any recent; 2.38 for conflict triage | Worktrees, branches, the clone Lingtai keeps of each repository, the merge lane | None. `lingtai init` runs `git --version` and stops if it fails | `packages/repo/src/git.ts:44`, `apps/cli/src/init.ts:1007`; the 2.38 check is `packages/repo/src/mirror.ts:158` |
+| `gh` | The project is a GitHub one and `init` chose `--github-auth gh`, its default. A `--local` project does not use it | Any recent | Lingtai acts on GitHub as your login | `github: gh login` | `apps/cli/src/github-auth.ts:3`, `apps/cli/src/doctor.ts:957` |
 | `claude` | Any role in the recipe runs `claude-code`. `discuss.agent` defaults to it, so leaving `discuss:` out needs it even when `runtime.agent` is `codex` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/claude-code.ts:402`, `:431` |
 | `codex` | Any role in the recipe runs `codex`: `runtime.agent`, `discuss.agent`, `triage`, a step's `agent:` or a `judge:` | Any recent | The agent that does the work | `runtime: signed in` and `runtime: <project> signed in` report whether it is signed in; neither checks the binary on its own | `packages/agent/src/codex.ts:1107`, `:1181` |
 | Node.js | A source checkout only. An installed copy carries the Node it was built with | 26 or later | Runs the CLI, the conductor and the board from source | `node: at or above the floor` | `package.json:8`, `.node-version`, `apps/cli/src/doctor.ts:2489` |
@@ -43,7 +73,7 @@ Where this page says "any recent", the code does not check a version.
 
 | What | Needed when | Why | `lingtai doctor` check | Where |
 | --- | --- | --- | --- | --- |
-| GitHub API, for your repository | The project is a GitHub one. A `--local` project does not use it | Issues, labels and branches | None. `github: installation and labels` is listed by `doctor` as deferred and checks nothing; `lingtai add` checks the App's permissions before it records a repository | `apps/cli/src/doctor.ts:883` |
+| GitHub API, for your repository | The project is a GitHub one, authenticated as your `gh` login or as the App. A `--local` project does not use it | Issues, labels and branches | `github: gh login` under `gh` auth. Under an App, `github: installation and labels` is listed by `doctor` as deferred and checks nothing; `lingtai add` checks the App's permissions before it records a repository | `apps/cli/src/doctor.ts:957`, `:1063` |
 | GitHub Releases API and release downloads | `lingtai upgrade`, and the version question `doctor` asks | Which release is newest, and the artifacts of the one you ask for. An allowlist naming only the API is not enough | `release: newest`, for an installed copy only | `apps/cli/src/install.ts:59`, `:326`, `:735` |
 | Your agent's provider | Always, through `claude` or `codex` | The work itself | None | The README row on [what is sent](../README.md) |
 | `api.openai.com`, directly | The runtime is `codex` and discussion or triage is model-only (no `tools: full`) | The Responses call that `codex` the CLI is not used for; billed separately from the Codex login | None | `packages/agent/src/codex-text.ts:65`, `packages/agent/src/runtimes.ts:116`, `config.example.yml` |
@@ -74,18 +104,3 @@ the probes in `packages/agent/src/auth.ts:31` and `:95`
 `discuss: <project> codex ready` and `triage: <project> codex ready`
 (`apps/cli/src/doctor.ts:2102`), which report a missing block or a `model`
 that differs from `codex_text.model`.
-
-## Which choices decide what you need
-
-- **`--local`, `gh` or a GitHub App.** `--local` needs no GitHub at all, no
-  login, App or API; it still needs `git` and one agent runtime. `gh` needs a
-  signed-in `gh` with the `repo` and `workflow` scopes. An App needs one you
-  create and install on the repository.
-- **SQLite or Postgres.** SQLite needs nothing. Postgres needs a database you
-  run and a direct connection string.
-- **`claude-code` or `codex`.** Every runtime any role uses has to be installed
-  and signed in. `runtime.agent` is only one role: `discuss.agent` defaults to
-  `claude-code`, and triage, steps and judges can each name a runtime. Set them
-  all to one runtime if you want to install only one.
-- **Installed copy or source checkout.** An installed copy needs no Node and no
-  `pnpm`. A checkout needs both, and `bun` to build the hook.
