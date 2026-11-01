@@ -36,10 +36,10 @@ A short template:
 ```
 | | |
 |---|---|
-| Problem | one sentence: the failure, not the area |
-| Want    | what is true when this is done |
-| Fix     | the shape of it, not the diff |
-| Watch out | the trap |
+| **Problem** | one sentence: the failure, not the area |
+| **Want** | what is true when this is done |
+| **Fix** | the shape of it, not the diff |
+| **Watch out** | the trap |
 
 ---
 
