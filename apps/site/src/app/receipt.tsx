@@ -116,7 +116,10 @@ export function Receipt(props: ReceiptProps) {
           <b {...announce}>{props.cost}</b>
         </div>
         {stamp ? (
-          <span className={`r-stamp${stamp.text === 'LANDED' ? '' : ' closed'}${stamp.shown ? ' on' : ''}`}>
+          <span
+            className={`r-stamp${stamp.text === 'LANDED' ? '' : ' closed'}${stamp.shown ? ' on' : ''}`}
+            aria-hidden={stamp.shown ? undefined : true}
+          >
             {stamp.text}
           </span>
         ) : null}

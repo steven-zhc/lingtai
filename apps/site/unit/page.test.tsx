@@ -185,6 +185,7 @@ describe('the replay receipt', () => {
     expect(html).not.toContain('rcpt live landed')
     expect(html).not.toMatch(/r-row [^"]*now/)
     expect(html).not.toContain('r-stamp on')
+    expect(html).toMatch(/class="r-stamp"[^>]*aria-hidden="true"/)
     expect(html).toContain('href="#replay"')
     expect(html).toContain('id="replay"')
     expect(html.indexOf('id="replay"')).toBeGreaterThan(html.indexOf('id="hero-title"'))

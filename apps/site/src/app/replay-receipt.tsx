@@ -160,16 +160,32 @@ export function ReplayReceipt() {
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
+    // Entries only report what changed, so the step is derived from everything
+    // currently in the band: a scene that stays in view while another leaves
+    // sends nothing, and reading only the entries would strand the receipt.
+    const inBand = new Set<number>()
+    let heroIn = false
+    const settle = () => {
+      if (heroIn) setStep(0)
+      else if (inBand.size > 0) setStep(Math.max(...inBand))
+    }
     const scenes = new IntersectionObserver(
       (entries) => {
-        for (const e of entries) if (e.isIntersecting) setStep(Number((e.target as HTMLElement).dataset.step))
+        for (const e of entries) {
+          const n = Number((e.target as HTMLElement).dataset.step)
+          if (e.isIntersecting) inBand.add(n)
+          else inBand.delete(n)
+        }
+        settle()
       },
       { rootMargin: '-48% 0px -48% 0px' },
     )
     document.querySelectorAll('.rp-scene[data-step]').forEach((n) => scenes.observe(n))
     const hero = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) setStep(0)
+        const last = entries[entries.length - 1]
+        if (last) heroIn = last.isIntersecting
+        settle()
       },
       { threshold: 0.6 },
     )
