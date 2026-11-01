@@ -1,143 +1,183 @@
-# Guide — what a repository that gets good results does differently
+# Best practices
 
-[`tutorial.md`](tutorial.md) gets you to a first merge. [`operating.md`](operating.md)
-says what every command does and what every refusal means. Neither answers the
-question that arrives in week two, when the loop is working and the results are
-mediocre and nothing is broken: **what does a repository that gets good results
-out of this actually do differently?**
+The habits that make Lingtai cheap and predictable, each with the receipt it
+came from. Every section opens with the rule and a short *do this* list; the
+evidence follows. The settings themselves are in
+[`reference.md`](reference.md#policy--every-number-that-decides-behaviour).
 
-Six things, and every one of them was learned here by paying for it. This
-project runs on itself and keeps a public log of its own failures, so each
-claim below names the run, the ticket or the decision it came from. Where a
-figure appears — `$26.53`, `15 turns`, `ninety-two seconds` — it is off
-`RunFinished` or out of a decision that quotes it, never an illustration.
+## Write the ticket as the prompt
 
-Nothing here is a setting. The settings are in
-[`reference.md`](reference.md#policy--every-number-that-decides-behaviour), and
-the last section says what each is protecting you from.
+**The rule.** The issue body *is* the agent's prompt, pasted whole:
+`prompts/ticket.md:5` is `{{body}}`. Since #643 the fix rounds and the cold
+reviewer read it too (`packages/conductor/src/conduct.ts:3929` puts the body
+into the fix brief). What the body leaves undecided, the agent guesses and the
+reviewer refuses — one paid round at a time. A ticket written to be filed is a
+prompt written by accident.
 
-## The ticket is the prompt, and it is the prompt literally
+**Do this.**
 
-`prompts/ticket.md:5` is `{{body}}`. The issue body is not summarised,
-extracted from or reasoned about before it reaches the agent — it is pasted, in
-full, between a two-line header and a description of the run. Everything the
-agent knows about *what to do* is what you typed into GitHub.
+- Open with a four-row table: **Problem**, **Want**, **Fix**, **Watch out**.
+  The table is for the person choosing what to work next. **Watch out** is the
+  row that earns it: the trap, meaning what costs money, fails silently, or has
+  been got wrong before. Leave the row out when there is no trap; never leave
+  the trap in the prose.
+- Under a rule, **Evidence**: the log excerpt, the exact output, and
+  `file.ts:line` for every claim about the code. A claim nobody found the line
+  for does not go in the ticket. Say why the problem stayed hidden, when it did.
+- **Edges**: one line per case and its rule — a read that fails, a process that
+  dies halfway, a retry, a null value.
+- **Out of scope**: what a reviewer must not hold the ticket to.
+- **Done when**, as checkboxes that a person or a test can check.
+- **Related**, saying what the other ticket *decided*, not only its number.
+  There is no `gh` inside a run.
 
-That single fact is the whole of this section. A ticket written to be filed is
-a prompt written by accident.
+A short template:
 
-### What a ticket that works looks like
+```
+| | |
+|---|---|
+| **Problem** | one sentence: the failure, not the area |
+| **Want** | what is true when this is done |
+| **Fix** | the shape of it, not the diff |
+| **Watch out** | the trap |
 
-This repository's house style is in `CLAUDE.md`, and it was assembled from
-failures rather than from taste:
+---
 
-- **Lead with the evidence** — the seq numbers, the log excerpt, the exact
-  output. Not a description of the output.
-- **Say why it stayed hidden**, when it did. That is usually the real finding,
-  and it is the part an agent cannot reconstruct.
-- **Cite `file.ts:line`**, and quote the comment or doc that makes the wrong
-  claim. An agent given a path spends no turns finding one.
-- **`## Done when`, as checkboxes** each of which a person or a test can check.
-- **`## Related`**, saying what the related ticket *decided* — not just its
-  number, which the agent cannot fetch. There is no `gh` inside a run.
+## Evidence
+The output, and file.ts:line for each claim.
 
-### What it looks like when this is skipped
+## Edges
+- a read that fails: what happens
+- a retry: what happens
 
-Two shapes, from opposite ends.
+## Out of scope
+- what a reviewer must not hold this ticket to
 
-**A ticket that prescribes the wrong method.** `nextloom-ai-admin#155` called a
-missing-browser-title fix *"a refactor needing each page's data fetching moved
-into a server wrapper."* It is not — a sibling `layout.tsx` is a server
+## Done when
+- [ ] a check a person or a test can make
+
+## Related
+- #123 — what it decided
+```
+
+**Receipts.**
+
+*A ticket that prescribes the wrong method.* One ticket called a
+missing-browser-title fix a refactor that needed each page's data fetching
+moved into a server wrapper. It was not: a sibling `layout.tsx` is a server
 component and its `metadata` applies to the page it wraps. The ticket that
-replaced it, `#156`, said what was true instead and landed in 15 turns and
-$0.83 ([experiment 006](experiments/006-the-loop-closes-unattended.md)). A
-method stated in a ticket is not a hint; it is an instruction, and a wrong one
-spends the run's judgement before the run starts.
+replaced it said what was true and landed in one short run
+([experiment 006](experiments/006-the-loop-closes-unattended.md)). A method
+stated in a ticket is not a hint; it is an instruction, and a wrong one spends
+the run's judgement before the run starts.
 
-**A ticket nobody wrote at all.** `nextloom-ai-admin#112` sat in **Waiting on
-you** for four days holding this and nothing else:
+*A ticket nobody wrote.* An item sat in **Waiting on you** for four days
+holding one line, a git conflict message with a colon in it: no diagnosis, no
+proposal, no button ([0025](decisions-archive/0025-a-failure-buys-one-agent.md)).
 
-```
-441 WorkItemBlocked  "conflict: agent/112 does not merge into develop:
-                      apps/web/src/components/users/user-lookup-panel.tsx"
-```
+*An Out of scope line that was missing.* On 2026-11-01 two passes of #811
+failed because the reviewer chased a race with a projection rebuild. The
+ticket's purpose did not need that race fixed; one line under *Out of scope*
+would have said so. Out of scope is not politeness. It is what stops a
+reviewer from finding work you did not want.
 
-A git message with a colon in it. No diagnosis, no proposal, no button
-([0025](decisions-archive/0025-a-failure-buys-one-agent.md)). That is what the far end
-of the loop looks like when the near end was not written for a reader.
+**Where a durable instruction goes.** An instruction meant to outlive one
+attempt goes in the issue body, where it is visible to everyone and read by
+every later attempt. The board's editable prompt (`PromptEdited`) applies to
+the *next run only*: it says *this attempt needs an extra sentence*, and the
+ticket says *the instruction itself is wrong*
+([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md) §6). A
+permanent override that lives only inside Lingtai is a shadow ticket body that
+nobody outside can see.
 
-### Where a durable instruction goes
+**One label decides whether any of it is read.** `packages/conductor/src/discover.ts:205`
+skips an issue with `skip: "no-kind"` when no label matches the recipe's
+`source.kinds`. That is deliberate: guessing a kind would put unclassified
+issues at the front of the queue. A well-written ticket with no kind label is
+invisible.
 
-An instruction meant to outlive one attempt goes **in the issue body**, where it
-versions as `ticket@NNNN`, is visible to everyone, and is read by every
-subsequent attempt. The board's editable prompt (`PromptEdited`) applies to the
-*next run only*. The two have one job each:
-`PromptEdited` says *this attempt needs an extra sentence*; the ticket says
-*the instruction itself is wrong*
-([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md) §6). A permanent
-override living only inside Lingtai would be a shadow ticket body — a long-lived
-instruction nobody outside can see.
+## Size it for one pass
 
-### One label decides whether any of it is read
-
-`discover.ts:115` skips an issue with `skip: "no-kind"` when no label matches
-the recipe's `source.kinds`. That is not a defaulting opportunity — *"an issue
-this recipe has no label for is not work the scheduler can prioritise, and
-guessing the first kind would put unclassified issues at the front of the
-queue."* Earlier in `kinds` wins when an issue carries two, so the list is the
-vocabulary, the filter and the priority order at once.
-
-A beautifully written ticket with no kind label is invisible.
-
-## Size the item so its result can be checked in one sitting
-
-Four items this project has receipts for:
-
-| item | what it asked for | cost | how it ended |
-|---|---|---|---|
-| `nextloom-ai-admin#157` | the `end` point closes its own issue | 8 turns, $0.63 | landed, closed with its label intact |
-| `nextloom-ai-admin#156` | six new `layout.tsx` files, no existing file touched | 15 turns, $0.83 | landed; `git diff --stat` was exactly the ticket |
-| `#84` | the repair feature — and [0025](decisions-archive/0025-a-failure-buys-one-agent.md)'s four decisions with it | one run, $26.53 | landed, and what it was thinking is gone ([0034](decisions-archive/0034-the-run-log.md) §4) |
-| `#89` | a change that turned on whether the runtime binary accepts `--max-turns` | two attempts, $13.04 | failed |
-
-The spread is forty-to-one and none of it is luck.
-
-**`#156` was checkable by construction.** Six files added, 42 insertions,
-nothing modified — *"which makes the result trivial to check"*, as the
-experiment says of the ticket before the run. The test to apply before you file
-is: **can you name the shape of the diff that would close this?** If the honest
-answer is *it depends what the agent finds*, you have written a piece of
+**The rule.** One ticket, one pass, and a result you can check in one sitting.
+Before you file, ask: *can I name the shape of the diff that would close
+this?* If the honest answer is *it depends what the agent finds*, it is
 research wearing a ticket's clothes, and a run is the most expensive way to do
 research.
 
-**`#84` was four decisions in one item.** It landed, so the cost bought
-something — but it is also the item [0034](decisions-archive/0034-the-run-log.md) §4
-names when it accepts that a landed run's log is deleted: *"`#84` cost $26.53
-and, once landed, what it was thinking is gone."* A large item that succeeds
-leaves you less able to explain it than a small one that succeeds, because the
-diff and the events are all that survive and neither says why.
+**Do this.**
 
-**`#89` rested on a fact no attempt established.** `--max-turns` is absent from
-`claude --help` and present in the binary, and two agents in a row concluded
-absence from the help text meant absence from the CLI (the flag is defined with
-`.hideHelp()`; `argsFor` in `packages/agent/src/claude-code.ts` now passes it).
-The ticket did not name the
-experiment that would settle it, so both attempts picked the same wrong one. **A
-ticket that turns on a fact about a dependency should say how to check it**, and
-if you cannot say how, that uncertainty is the item — file it as one, and let
-the implementation follow it.
+- Split along seams. A ticket that makes four decisions is four tickets.
+- Give documentation its own ticket. A documentation requirement added to a
+  code ticket grows it every round.
+- If a ticket touches the same files as another, make it wait for the other.
+- If the ticket turns on a fact about a dependency, say how to check that fact.
+  If you cannot say how, that uncertainty is the item: file it as one.
 
-There is a second signal in the recipe. This repository sets
-`runtime.limits.turns: 150` against the default of 300, and says why in the file:
-*"a run that needs hundreds of turns on this repository is a ticket that was
-scoped wrong, and stopping is the more useful answer."* The turn limit is not a
-budget. It is a scope alarm, and it should occasionally fire.
+**Receipts.** Lingtai's own records for 2026-10-02 to 10-31, measured
+2026-11-01:
 
-The review gate agrees from the other side. `runtime.budget.diff` truncates at
-400,000 bytes, and the number was chosen against
-[experiment 001](experiments/001-cold-review-issue-58.md), whose diff was 1,391
-lines across 6 files and fitted comfortably: *"far past that is a work item
-scoped too large — a megabyte produces a worse review, not a better one."*
+- 291 tickets finished; 283 landed and 8 were closed without landing.
+- Cost per landed ticket: median $3.55, mean $6.32, p90 $11.96.
+- 75% landed with 0 or 1 fix round; 6% needed 5 or more.
+- Median machine time: 10 minutes.
+
+And, on 2026-09-29 with the same configuration, `implement` cost $0.92 for a
+27-turn ticket (#317) and $17.24 for a 239-turn one (#308). Switching the model
+from Opus to Sonnet was worth about 2.19× per turn. Ticket size is the bigger
+lever.
+
+Two older failures in this repository show what an oversized ticket looks like.
+#84 was four decisions in one item: it landed, but once it did, what the run was
+thinking was gone, because a large item that succeeds leaves you less able to
+explain it than a small one
+([0034](decisions-archive/0034-the-run-log.md) §4). #89 rested on whether the
+runtime binary accepts `--max-turns`; the flag is absent from `claude --help`
+and present in the binary, two agents in a row concluded the opposite, and the
+ticket never named the experiment that would settle it.
+
+The recipe's limits say the same from the other side: the turn limit is a scope
+alarm, not a budget, and a diff too big to review is a ticket too big. Both are
+in [`reference.md`](reference.md#policy--every-number-that-decides-behaviour).
+
+## Order and release
+
+**The rule.** The kind label decides priority, a chain goes in GitHub's own
+*blocked by*, and nothing is released that you have not read. These rules are
+about GitHub issues.
+
+**Do this.**
+
+- Give every issue a kind label. The recipe's `source.kinds` is the vocabulary,
+  the filter and the priority order at once; currently `bug`, `tech-debt`,
+  `feature`, `documentation`, in that order, and the earlier kind wins when an
+  issue carries two.
+- Put a chain in *blocked by*, never in the body. The queue passes over a ticket
+  with an open blocker and takes it again on its own once the last blocker
+  closes (`packages/conductor/src/discover.ts:219`, `blocked-by`; its comment at
+  `:212-214` says it counts *open* blockers, not total).
+- Hold by default with `agent:hold`, and remove it from what you have read. An
+  unheld ticket is one you are asking the next queue pass to claim, not one you
+  are considering.
+- For the first runs against a repository, use
+  `lingtai run <project> --issue <n> --no-merge`: discovery, claim, worktree,
+  agent and gates, and then it stops and asks. `lingtai run` also takes `--max`.
+
+`agent:hold` is a label in `source.exclude`, and that list is the only one the
+queue passes over: *"Every reason an issue is passed over is the recipe's — there
+is no built-in list."* A label you have not put in `source.exclude` excludes
+nothing, however much it looks like it should.
+
+**When a ticket needs your decision first, ask it on the log.**
+`lingtai ask <project> --issue <n> "<question>"` holds the ticket before
+anything is claimed, and `lingtai answer <project> --issue <n> "<choice>"`
+hands it back with the answer on the record, where every attempt's prompt is
+told it. Do not edit the issue body to carry a decision to the agent.
+
+**When you want one thing now, say so.** `lingtai now <project> --issue <n>`
+jumps the backoff, because *"the person who types it has read the ticket and is
+the input the failing attempt lacked"*
+([0028](decisions-archive/0028-the-backoff-is-the-recipes.md) §3). A request for
+something claimed, blocked or landed still matches nothing.
 
 ## Gate what has failed here, and delete the gate that never fails
 
@@ -242,48 +282,6 @@ refused by name and before a worktree, so *configured and never called* is now
 something the recipe cannot say rather than something a health check hunts for
 on every log. What a person can still act on stays — an `end`
 effect that failed at runtime, which `lingtai end replay` resolves.
-
-## Hold by default, and unhold what you have read
-
-`agent:hold` is a label in `source.exclude`. It has no other machinery behind it
-and needs none. What it costs is one decision per ticket, and the decision is:
-**is this the next thing I want an agent to take?**
-
-Every open issue in this repository carries it, deliberately, and the recipe
-says why:
-
-> Self-hosting starts with nothing runnable and one ticket unheld at a time,
-> because the backlog contains work no agent should take — `#29` needs seven
-> unattended days, `#33` is the act of self-hosting itself.
-
-The rule that follows: **an unheld ticket is one you are asking the next queue
-pass to claim.** Not one you are considering. A backlog groomed with `agent:hold`
-off by default is a queue you have not read, and *"a queue you have not read is a
-bill you have not agreed to"* — which is also why `lingtai run` takes `--max`,
-and why the first runs against a repository should be
-`lingtai run <project> --issue <n> --no-merge`: discovery, claim, worktree,
-agent, gates, and then it stops and asks.
-
-Five more labels do the same job with different meanings, and the recipe names
-every one of them rather than Lingtai keeping a built-in list: `blocked`,
-`in-progress`, `agent:blocked`, `agent:review`, `agent:wip`. *"Every reason an issue is passed over is the recipe's — there is
-no built-in list."* Which means the corollary holds too: a label you have not
-put in `source.exclude` excludes nothing, however much it looks like it should.
-
-**When a ticket needs your decision first, ask it on the log.**
-`lingtai ask <project> --issue <n> "<question>"` holds the ticket before anything
-is claimed — the queue passes over it because the log says it is blocked, not
-because of a label — and `lingtai answer <project> --issue <n> "<choice>"` hands
-it back with the answer on the record, where every attempt's prompt is told it.
-This replaced `agent:needs-schema-approval`, which nothing ever applied, and
-editing the issue body to carry a decision to the agent (`#147`).
-
-**When you want one thing now, say so.** `lingtai now <project> --issue <n>`
-passes `backoffMs: 0` and jumps the backoff, because *"the person who types it
-has read the ticket and is the input the failing attempt lacked"*
-([0028](decisions-archive/0028-the-backoff-is-the-recipes.md) §3). Everything else still
-applies — a request for something claimed, blocked or landed still matches
-nothing, because those are facts about the log and not about the clock.
 
 ## Read a failure in this order
 
