@@ -35,6 +35,7 @@ steps:
         - "packages/telegram/**"
         - "apps/cli/**"
         - "apps/board/**"
+        - "apps/site/**"
         - "package.json"
         - "**/package.json"
         - "pnpm-lock.yaml"
@@ -83,7 +84,7 @@ repository*.
 
 `packages/actions/unit/tamper-watch.test.ts` walks the workspace: every package
 `conductor`, `hook` and `apps/cli` load — however indirectly — plus every
-workspace that depends on `@lingtai/conductor`, which is how `apps/board` is
+workspace that depends on `@lingtai/conductor`, which is how `apps/board` and `apps/site` (since #811) are
 found. Each one must be covered, or the test fails.
 
 So a new dependency, or a renamed package, breaks the build until the watch

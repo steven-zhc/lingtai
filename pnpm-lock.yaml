@@ -220,6 +220,9 @@ importers:
 
   apps/site:
     dependencies:
+      '@lingtai/conductor':
+        specifier: workspace:*
+        version: link:../../packages/conductor
       '@lingtai/domain':
         specifier: workspace:*
         version: link:../../packages/domain

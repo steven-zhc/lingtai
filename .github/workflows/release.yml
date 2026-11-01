@@ -8,6 +8,8 @@
 #
 # A tag `v*` publishes: the four binaries, the one board (pure JavaScript, the
 # same everywhere), and SHA256SUMS over all of them.
+#
+# Before tagging, the operator runs `LINGTAI_DATABASE_URL=… LINGTAI_SITE_PUBLIC_PROJECTS=… pnpm --filter @lingtai/site books --from … --to … --receipt …` and commits `apps/site/books.json` (#811); CI never runs it, because it cannot read the log.
 name: release
 
 on:
