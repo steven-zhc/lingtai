@@ -60,9 +60,9 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${num(n)} 
 const joined = (parts: (string | null | false)[]) => parts.filter((p): p is string => !!p).join(' · ')
 
 const PURPOSES: Record<string, { label: string; rest: string; color: string }> = {
-  Work: { label: 'Work', rest: 'implementing, and the cold review', color: 'var(--accent)' },
-  Answering: { label: 'Fix rounds', rest: 'answering refusals', color: 'var(--signal)' },
-  Triage: { label: 'Triage', rest: 'explaining a stop to you', color: '#7a8fa0' },
+  Work: { label: 'Work', rest: 'writing and reviewing the code', color: 'var(--accent)' },
+  Answering: { label: 'Fixes', rest: 'after a failed test or review', color: 'var(--signal)' },
+  Triage: { label: 'Triage', rest: 'telling you why it stopped', color: '#7a8fa0' },
   Judge: { label: 'Judging', rest: '', color: 'var(--pass)' },
   Discussion: { label: 'Discussion', rest: '', color: 'var(--held)' },
 }
@@ -164,7 +164,7 @@ export function BooksSection({ books }: { books: Books }) {
         <div className="outcome">
           <div className="outcome-head">
             <b>{finished} tickets finished</b>
-            <span>every ticket that reached an outcome in the window, counted once however many attempts it took</span>
+            <span>each ticket counted once, however many tries it took</span>
           </div>
           <div className="outcome-bar">
             <i className="landed" style={{ width: `${(outcomes.landed / finished) * 100}%` }} />
@@ -216,14 +216,14 @@ export function BooksSection({ books }: { books: Books }) {
             label="median machine time"
             sub={joined([
               machineMinutes.mean !== null && `mean ${span(machineMinutes.mean)}`,
-              'agents and checks running; waiting for you not counted',
+              'while agents and tests were running, not while waiting for you',
             ])}
           />
         ) : null}
         {elapsedMinutes.median !== null ? (
           <Figure
             big={<Big min={elapsedMinutes.median} />}
-            label="median from first start to landed"
+            label="median from start to landed"
             sub={joined([
               elapsedMinutes.mean !== null && `mean ${span(elapsedMinutes.mean)}`,
               elapsedMinutes.withinHourShare !== null && `${pct(elapsedMinutes.withinHourShare)} within an hour`,
@@ -237,10 +237,7 @@ export function BooksSection({ books }: { books: Books }) {
         <div className="money">
           <div className="money-head">
             <b>What the {usd(cost.median)} pays for</b>
-            <span>
-              every model call made for the ticket, reported or priced from the rate card &mdash; not your CI, your
-              machine or your time
-            </span>
+            <span>the AI model calls made for the ticket &mdash; not your CI, your machine or your time</span>
           </div>
           <div className="outcome-bar">
             {spend.map((s) => (

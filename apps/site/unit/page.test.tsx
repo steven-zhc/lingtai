@@ -151,7 +151,7 @@ describe("the home page's argument", () => {
     expect(honest).toContain('~/.ssh')
     expect(honest).toContain('HONEST ANSWER')
     expect(honest).toContain('href="/docs/safety/"')
-    expect(honest.indexOf('By default, yes')).toBeLessThan(honest.indexOf('not a container'))
+    expect(honest.indexOf('By default, yes')).toBeLessThan(honest.indexOf('not a sandbox'))
     expect(html).not.toMatch(/\bguarded\b/i)
   })
 
@@ -190,12 +190,12 @@ describe('why not just give the agent the issue', () => {
   )
 
   it.each([
-    ['Completion', 'Your recipe: checks, review, your approval'],
-    ['Checks', "Separate steps the agent can't skip"],
-    ['Rules', 'Outside its worktree'],
-    ['Recovery', 'Persisted; a restart picks it up'],
-    ['Cost', 'Per ticket, with a daily ceiling'],
-    ['Audit', 'Structured events and a receipt'],
+    ["Who says it's done", 'Your tests, a review, and your OK'],
+    ['Tests', "Run separately; the agent can't skip them"],
+    ['Rules', 'Outside anything it can edit'],
+    ['After a crash', 'Saved; it carries on after a restart'],
+    ['Cost', 'Per ticket, with a daily limit'],
+    ['Record', 'Every step recorded, and a receipt'],
   ])('says of %s, with Lingtai: %s', (key, claim) => {
     expect(rows.find((r) => r.key === key)?.lingtai).toBe(claim)
   })

@@ -46,7 +46,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 0,
     stamped: false,
-    hint: 'Scroll — the receipt fills in as it happens.',
+    hint: 'Scroll down to fill in the receipt.',
   },
   {
     statusKind: 'running',
@@ -57,7 +57,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 0,
     stamped: false,
-    hint: 'The ticket is taken.',
+    hint: 'The agent picked up the ticket.',
   },
   {
     statusKind: 'running',
@@ -68,7 +68,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 14,
     stamped: false,
-    hint: "The agent's commit is kept.",
+    hint: 'The agent committed its change.',
   },
   {
     statusKind: 'running',
@@ -79,7 +79,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 23,
     stamped: false,
-    hint: 'Your checks refused. A counted round.',
+    hint: 'Tests failed. Fix round 1.',
   },
   {
     statusKind: 'running',
@@ -90,7 +90,7 @@ const STATES: readonly ReceiptState[] = [
     approve: DASH,
     cents: 38,
     stamped: false,
-    hint: 'The review refused once. Another round.',
+    hint: 'The reviewer found a bug. Fix round 2.',
   },
   {
     statusKind: 'waiting',
@@ -101,7 +101,7 @@ const STATES: readonly ReceiptState[] = [
     approve: 'waiting…',
     cents: 38,
     stamped: false,
-    hint: 'Ready to land. It asks you first.',
+    hint: 'Ready to merge. Waiting for you.',
   },
   {
     statusKind: 'landed',
@@ -112,7 +112,7 @@ const STATES: readonly ReceiptState[] = [
     approve: 'You, 07:31',
     cents: 40,
     stamped: true,
-    hint: 'Landed. Each line opens its moment.',
+    hint: 'Merged. Click a line to see that step.',
   },
 ]
 

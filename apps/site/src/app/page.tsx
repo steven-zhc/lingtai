@@ -8,15 +8,15 @@ import { ReplayReceipt } from './replay-receipt'
 /** The agent alone against Lingtai: the left column says who decides, never that an agent fails. */
 const LEDGER = [
   {
-    key: 'Completion',
-    alone: 'The agent, or tooling around it',
-    lingtai: 'Your recipe: checks, review, your approval',
+    key: "Who says it's done",
+    alone: 'The agent, or your own scripts',
+    lingtai: 'Your tests, a review, and your OK',
   },
-  { key: 'Checks', alone: "Inside the agent's own workflow", lingtai: "Separate steps the agent can't skip" },
-  { key: 'Rules', alone: 'Usually in the repo it edits', lingtai: 'Outside its worktree' },
-  { key: 'Recovery', alone: 'Depends on the session and setup', lingtai: 'Persisted; a restart picks it up' },
-  { key: 'Cost', alone: 'Provider or tool tracking', lingtai: 'Per ticket, with a daily ceiling' },
-  { key: 'Audit', alone: 'Session transcripts', lingtai: 'Structured events and a receipt' },
+  { key: 'Tests', alone: 'Run by the agent as part of its work', lingtai: "Run separately; the agent can't skip them" },
+  { key: 'Rules', alone: 'Usually in the repo it can edit', lingtai: 'Outside anything it can edit' },
+  { key: 'After a crash', alone: 'Depends on your session', lingtai: 'Saved; it carries on after a restart' },
+  { key: 'Cost', alone: "Your provider's dashboard", lingtai: 'Per ticket, with a daily limit' },
+  { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
 
 export function HomePage({ books }: { books: Books | null }) {
@@ -32,8 +32,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   <p className="kicker">For Claude Code and Codex</p>
                   <h1 id="hero-title">Agents do the work. Lingtai keeps the books.</h1>
                   <p className="lede">
-                    The agent writes the change. Your checks and a cold review decide whether it lands &mdash; and every
-                    ticket ends in a receipt you can check.
+                    The agent writes the code. Your tests and a second reviewer decide whether it gets merged. Every
+                    ticket ends with a receipt: what ran, who approved it, and what it cost.
                   </p>
                   <div className="install">
                     <CopyCommand command={`curl -fsSL ${INSTALL_URL} | sh`} />
@@ -44,7 +44,7 @@ export function HomePage({ books }: { books: Books | null }) {
                       Set up Lingtai <span aria-hidden="true">↓</span>
                     </a>
                     <a className="watch" href="#replay">
-                      See a receipt fill in <span aria-hidden="true">↓</span>
+                      Watch an example <span aria-hidden="true">↓</span>
                     </a>
                   </div>
                 </div>
@@ -55,12 +55,12 @@ export function HomePage({ books }: { books: Books | null }) {
                   Replay <span className="tag ill">ILLUSTRATION</span>
                 </p>
                 <h2 id="replay-title">The agent got it wrong. Twice.</h2>
-                <p className="sub">How each line of that receipt got there &mdash; from the record.</p>
+                <p className="sub">Scroll down. The receipt beside it fills in one step at a time.</p>
                 <div className="rp-scenes">
                   <div className="rp-scene" data-step="1" id="s1">
                     <div className="time">22:40 · YOU</div>
                     <h3>You write a ticket. That&apos;s the whole setup.</h3>
-                    <p>One command starts the loop.</p>
+                    <p>One command starts the work.</p>
                     <pre className="term">
                       <span className="p">$</span> lingtai start{'\n'}
                       <span className="dim">chapter-garden</span>
@@ -69,8 +69,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   </div>
                   <div className="rp-scene" data-step="2" id="s2">
                     <div className="time">22:51 · THE AGENT</div>
-                    <h3>It works where it can&apos;t touch your checkout.</h3>
-                    <p>Its own worktree. Every commit kept.</p>
+                    <h3>The agent works in a separate copy of your repo.</h3>
+                    <p>Your own files stay untouched. Every commit is saved.</p>
                     <pre className="term">
                       <span className="ok">committed</span> b72d0e3{'  '}add a reading-time badge{'\n'}
                       {'          '}3 files · +38 −2
@@ -78,8 +78,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   </div>
                   <div className="rp-scene" data-step="3" id="s3">
                     <div className="time">22:58 · YOUR CHECKS</div>
-                    <h3>Your checks say no. The agent can&apos;t argue.</h3>
-                    <p>The real output is the reason &mdash; and the next round starts from it.</p>
+                    <h3>Your tests fail. The agent has to fix it.</h3>
+                    <p>It gets the real test output and tries again.</p>
                     <pre className="term">
                       <span className="bad">✗</span> reading-time.test.ts{'\n'}
                       {'  '}expected &quot;6 min read&quot;, received &quot;7 min read&quot;{'\n'}
@@ -91,8 +91,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   </div>
                   <div className="rp-scene" data-step="4" id="s4">
                     <div className="time">23:20 · A COLD REVIEW</div>
-                    <h3>A reviewer who didn&apos;t write it finds one more thing.</h3>
-                    <p>Another counted round. Then it passes.</p>
+                    <h3>A second reviewer finds another bug.</h3>
+                    <p>One more fix, then the review passes.</p>
                     <pre className="term">
                       <span className="dim">review</span> <span className="bad">✗</span> rounds 5.4 minutes up to 6
                       {'\n'}
@@ -102,11 +102,11 @@ export function HomePage({ books }: { books: Books | null }) {
                   <div className="rp-scene" data-step="5" id="s5">
                     <div className="time">23:41 → 07:31 · YOU</div>
                     <h3>It stops and asks. You approve in the morning.</h3>
-                    <p>Nothing lands at night unless you said it may.</p>
+                    <p>You asked to approve first, so nothing is merged until you do.</p>
                     <div className="frame">
                       <div className="wait">
                         <div className="cause">
-                          <small>READY TO LAND · YOU ASKED TO APPROVE FIRST</small>
+                          <small>READY TO MERGE · YOU ASKED TO APPROVE FIRST</small>
                         </div>
                         <div className="moves">
                           <span className="btn pri">
@@ -130,7 +130,7 @@ export function HomePage({ books }: { books: Books | null }) {
               <p className="kicker">The first question</p>
               <h2 id="why-title">Why not just give the agent the issue?</h2>
               <p className="sub">
-                You can. At the end you get <b>its word</b> for it. With Lingtai, you get{' '}
+                You can. Then the only proof it worked is <b>the agent saying so</b>. With Lingtai, you get{' '}
                 <b>the receipt you just watched</b>.
               </p>
             </div>
@@ -149,7 +149,7 @@ export function HomePage({ books }: { books: Books | null }) {
                   I added a <code>ReadingTime</code> component and wired it into <code>ChapterMeta</code>. I ran{' '}
                   <code>npm test</code> — 42 passed. Ready for you to review.
                 </p>
-                <p className="why-note">Often right. But it is the agent&apos;s own account of its own work.</p>
+                <p className="why-note">Often right. But that&apos;s the agent grading its own work.</p>
               </figure>
               <span className="why-vs" aria-hidden="true">
                 vs
@@ -159,7 +159,7 @@ export function HomePage({ books }: { books: Books | null }) {
                   <span className="why-with">WITH LINGTAI</span>
                   <span className="why-chip">Claude Code</span>
                   <span className="why-chip">Codex</span>
-                  <span className="why-chip">+ a separate policy</span>
+                  <span className="why-chip">+ your rules</span>
                 </figcaption>
                 <a className="why-ref" href="#replay">
                   <span className="why-arrow" aria-hidden="true">
@@ -168,8 +168,8 @@ export function HomePage({ books }: { books: Books | null }) {
                   <span>
                     <b>The receipt above.</b>
                     <span className="why-ref-text">
-                      Checks it didn&apos;t run itself, a review by someone who didn&apos;t write it, your approval, the
-                      cost — each a line you can open.
+                      Your tests ran it, not the agent. Another model reviewed it. You approved it. Its cost is
+                      recorded.
                     </span>
                   </span>
                 </a>
@@ -214,39 +214,39 @@ export function HomePage({ books }: { books: Books | null }) {
                 <details className="faq-item">
                   <summary>Will it break main?</summary>
                   <p>
-                    Nothing lands until your checks and the review pass. A check already red on main stops it as{' '}
-                    <em>base is red</em> — it doesn&apos;t spend rounds on breakage that isn&apos;t its own.
+                    Nothing is merged until your tests and the review pass. If main is already broken, it stops and
+                    tells you, instead of spending money on a bug that isn&apos;t its own.
                   </p>
                 </details>
                 <details className="faq-item">
                   <summary>Will it run up a bill?</summary>
-                  <p>Every paid call is recorded. A daily ceiling pauses it until midnight, or until you resume it.</p>
+                  <p>
+                    Every paid call is recorded. Set a daily limit and it pauses when the limit is reached, until
+                    midnight or until you resume it.
+                  </p>
                 </details>
                 <details className="faq-item">
                   <summary>Will it loop forever?</summary>
                   <p>
-                    Fix rounds are counted and bounded. When they run out, it stops and asks you — with a recommended
-                    answer.
+                    No. Each ticket gets a fixed number of fix attempts. When they run out, it stops and asks you what
+                    to do, with a suggested answer.
                   </p>
                 </details>
                 <details className="faq-item">
                   <summary>What if my laptop restarts at 3am?</summary>
-                  <p>
-                    The ticket isn&apos;t lost: its commits are kept on a branch, and the next run takes it again from
-                    there.
-                  </p>
+                  <p>Nothing is lost. Its commits are saved on a branch, and the next run carries on from there.</p>
                 </details>
                 <details className="faq-item">
                   <summary>Can it weaken its own checks?</summary>
-                  <p>No. The recipe that sets them lives outside the repository the agent edits.</p>
+                  <p>No. Your rules live outside the repository the agent edits, so it can&apos;t change them.</p>
                 </details>
                 <details className="faq-item honest">
                   <summary>
                     Can it read my <code>~/.ssh</code>?<span className="faq-tag">HONEST ANSWER</span>
                   </summary>
                   <p>
-                    By default, yes — a Claude Code agent runs as you. Lingtai keeps its own credentials out of the
-                    agent&apos;s environment, but it is not a container. Your own sandbox closes what you choose.{' '}
+                    By default, yes. A Claude Code agent runs as your user, so it can read what you can. Lingtai keeps
+                    its own secrets away from the agent, but it is not a sandbox. If you need one, run it inside yours.{' '}
                     <a className="link" href="/docs/safety/">
                       What an agent can touch →
                     </a>
@@ -300,9 +300,9 @@ export function HomePage({ books }: { books: Books | null }) {
           </section>
 
           <p className="home-edges">
-            Not a container &middot; one machine &middot; pre-1.0 &mdash;{' '}
+            Not a sandbox &middot; runs on one machine &middot; not yet 1.0 &mdash;{' '}
             <a className="link" href="/docs/requirements/">
-              what it does not do yet →
+              what it needs, and what it doesn&apos;t do yet →
             </a>
           </p>
         </div>
