@@ -3,6 +3,16 @@ import { landedCount, readSnapshot, stamp } from '@/lib/snapshot'
 import { BuildsItself } from './builds-itself'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
+import {
+  EnvironmentMini,
+  LandedMini,
+  LanesMini,
+  QueuedMini,
+  SpendMini,
+  StepsMini,
+  WaitingMini,
+  WorktreeMini,
+} from './home-minis'
 import { NoSnapshot, SnapshotBoard } from './snapshot-board'
 
 const ISSUES = 'https://github.com/steven-zhc/lingtai/issues'
@@ -58,136 +68,159 @@ export default async function Home() {
             <ol className="home-stops">
               <li id="stop-ticket">
                 <span className="home-pin">01</span>
-                <h3>A ticket</h3>
-                <p className="home-what">
-                  A GitHub issue with one of your recipe&rsquo;s kind labels, or a ticket kept on this machine with{' '}
-                  <code>lingtai ticket new</code> (local projects only). The queue passes over anything with an open
-                  blocker.
-                </p>
-                <div className="home-seedo">
+                <div className="home-stop-grid">
                   <div>
-                    <h4>You see</h4>
-                    <ul>
-                      <li>The ticket in the Queued column, in the order your kinds set</li>
-                      <li>A blocked ticket counted as blocked, not lost</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h4>You can</h4>
-                    <ul>
-                      <li>
-                        Add <code>agent:hold</code> to keep it out of the queue
-                      </li>
-                      <li>
-                        Chain tickets with GitHub&rsquo;s <em>blocked by</em>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </li>
-              <li id="stop-worktree">
-                <span className="home-pin">02</span>
-                <h3>A worktree</h3>
-                <p className="home-what">
-                  The agent works in its own worktree, with an environment filtered to what the recipe allows. Each
-                  attempt&rsquo;s commits are kept, and the next attempt starts from them.
-                </p>
-                <div className="home-seedo">
-                  <div>
-                    <h4>You see</h4>
-                    <ul>
-                      <li>
-                        The run as it happens (<code>lingtai attach</code>)
-                      </li>
-                      <li>
-                        One line per ticket from <code>lingtai start</code>: steps, cost, where it stopped, and the
-                        command when it waits
-                      </li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h4>You can</h4>
-                    <ul>
-                      <li>Let it run; nothing here needs you</li>
-                      <li>
-                        Choose the agent. Codex adds a filesystem boundary; Claude Code runs <code>guarded</code>. No
-                        container per run
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </li>
-              <li id="stop-checks">
-                <span className="home-pin">03</span>
-                <h3>Your checks</h3>
-                <p className="home-what">
-                  Your test command runs, then a second reviewer reads the diff cold. A failure goes back to the agent
-                  for a fix round. Turns, wall time and rounds are bounded.
-                </p>
-                <div className="home-seedo">
-                  <div>
-                    <h4>You see</h4>
-                    <ul>
-                      <li>A verdict per step on the board</li>
-                      <li>
-                        The ticket&rsquo;s cost so far, in dollars, on <code>/spend</code>
-                      </li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h4>You can</h4>
-                    <ul>
-                      <li>Choose the checks in your recipe</li>
-                      <li>
-                        Leave a red check to buy a fix round. A check already red on the base buys none and holds as{' '}
-                        <em>base is red</em>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </li>
-              <li id="stop-result">
-                <span className="home-pin">04</span>
-                <h3>Wait, or land</h3>
-                <p className="home-what">
-                  Passing work lands if your recipe says so. Otherwise, or when something goes wrong, the ticket stops
-                  and says why.
-                </p>
-                <div className="home-fork">
-                  <div className="home-branch home-land">
-                    <header>✓ It lands</header>
-                    <div className="home-seedo single">
-                      <div>
-                        <h4>You see</h4>
-                        <ul>
-                          <li>
-                            The ticket in Landed, its cost on <code>/report</code>
-                          </li>
-                          <li>
-                            The issue closed, in a project <code>lingtai add</code> set up
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="home-branch home-wait">
-                    <header>! It waits on you</header>
+                    <h3>A ticket</h3>
+                    <p className="home-what">
+                      A GitHub issue with one of your recipe&rsquo;s kind labels, or a ticket kept on this machine with{' '}
+                      <code>lingtai ticket new</code> (local projects only). The queue passes over anything with an open
+                      blocker.
+                    </p>
                     <div className="home-seedo">
                       <div>
                         <h4>You see</h4>
                         <ul>
-                          <li>Triage&rsquo;s reading of the cause</li>
-                          <li>The answers it allows, the recommended one first, and what each does</li>
+                          <li>The ticket in the Queued column, in the order your kinds set</li>
+                          <li>A blocked ticket counted as blocked, not lost</li>
                         </ul>
                       </div>
                       <div>
                         <h4>You can</h4>
                         <ul>
-                          <li>Continue the saved work, or start again from base, in one click</li>
-                          <li>Choose in the recipe whether to wait for your approval or land without asking</li>
+                          <li>
+                            Add <code>agent:hold</code> to keep it out of the queue
+                          </li>
+                          <li>
+                            Chain tickets with GitHub&rsquo;s <em>blocked by</em>
+                          </li>
                         </ul>
                       </div>
                     </div>
+                  </div>
+                  <QueuedMini />
+                </div>
+              </li>
+              <li id="stop-worktree">
+                <span className="home-pin">02</span>
+                <div className="home-stop-grid">
+                  <div>
+                    <h3>A worktree</h3>
+                    <p className="home-what">
+                      The agent works in its own worktree, with an environment filtered to what the recipe allows. Each
+                      attempt&rsquo;s commits are kept, and the next attempt starts from them.
+                    </p>
+                    <div className="home-seedo">
+                      <div>
+                        <h4>You see</h4>
+                        <ul>
+                          <li>
+                            The run as it happens (<code>lingtai attach</code>)
+                          </li>
+                          <li>
+                            One line per ticket from <code>lingtai start</code>: steps, cost, where it stopped, and the
+                            command when it waits
+                          </li>
+                        </ul>
+                      </div>
+                      <div>
+                        <h4>You can</h4>
+                        <ul>
+                          <li>Let it run; nothing here needs you</li>
+                          <li>
+                            Choose the agent. Codex adds a filesystem boundary; Claude Code runs <code>guarded</code>.
+                            No container per run
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                  <WorktreeMini />
+                </div>
+              </li>
+              <li id="stop-checks">
+                <span className="home-pin">03</span>
+                <div className="home-stop-grid">
+                  <div>
+                    <h3>Your checks</h3>
+                    <p className="home-what">
+                      Your test command runs, then a second reviewer reads the diff cold. A failure goes back to the
+                      agent for a fix round. Turns, wall time and rounds are bounded.
+                    </p>
+                    <div className="home-seedo">
+                      <div>
+                        <h4>You see</h4>
+                        <ul>
+                          <li>A verdict per step on the board</li>
+                          <li>
+                            The ticket&rsquo;s cost so far, in dollars, on <code>/spend</code>
+                          </li>
+                        </ul>
+                      </div>
+                      <div>
+                        <h4>You can</h4>
+                        <ul>
+                          <li>Choose the checks in your recipe</li>
+                          <li>
+                            Leave a red check to buy a fix round. A check already red on the base buys none and holds as{' '}
+                            <em>base is red</em>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                  <StepsMini />
+                </div>
+              </li>
+              <li id="stop-result">
+                <span className="home-pin">04</span>
+                <div className="home-stop-grid">
+                  <div>
+                    <h3>Wait, or land</h3>
+                    <p className="home-what">
+                      Passing work lands if your recipe says so. Otherwise, or when something goes wrong, the ticket
+                      stops and says why.
+                    </p>
+                    <div className="home-fork">
+                      <div className="home-branch home-land">
+                        <header>✓ It lands</header>
+                        <div className="home-seedo single">
+                          <div>
+                            <h4>You see</h4>
+                            <ul>
+                              <li>
+                                The ticket in Landed, its cost on <code>/report</code>
+                              </li>
+                              <li>
+                                The issue closed, in a project <code>lingtai add</code> set up
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="home-branch home-wait">
+                        <header>! It waits on you</header>
+                        <div className="home-seedo">
+                          <div>
+                            <h4>You see</h4>
+                            <ul>
+                              <li>Triage&rsquo;s reading of the cause</li>
+                              <li>The answers it allows, the recommended one first, and what each does</li>
+                            </ul>
+                          </div>
+                          <div>
+                            <h4>You can</h4>
+                            <ul>
+                              <li>Continue the saved work, or start again from base, in one click</li>
+                              <li>Choose in the recipe whether to wait for your approval or land without asking</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="home-pair">
+                    <WaitingMini />
+                    <LandedMini />
                   </div>
                 </div>
               </li>
@@ -204,6 +237,7 @@ export default async function Home() {
             </div>
             <div className="home-beside">
               <article className="home-card home-hl">
+                <SpendMini />
                 <h3>Money in dollars, with a ceiling you set</h3>
                 <p>
                   Spend per run and per ticket on <code>/spend</code>; what a day landed on <code>/report</code>. A cost
@@ -215,6 +249,7 @@ export default async function Home() {
                 </p>
               </article>
               <article className="home-card home-hl">
+                <LanesMini />
                 <h3>Several tickets at once</h3>
                 <p>
                   Set how many each project runs. Lingtai never starts two on one blocked-by chain, or two whose Fix
@@ -225,6 +260,7 @@ export default async function Home() {
                 </p>
               </article>
               <article className="home-card home-hl">
+                <EnvironmentMini />
                 <h3>The agent sees what you declared</h3>
                 <p>
                   A filtered environment, a worktree of its own, and no Lingtai setting. Your own Claude Code or Codex

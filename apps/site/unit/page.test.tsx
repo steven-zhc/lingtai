@@ -5,6 +5,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { BuildsItself } from '@/app/builds-itself'
+import {
+  EnvironmentMini,
+  LandedMini,
+  LanesMini,
+  QueuedMini,
+  SpendMini,
+  StepsMini,
+  WaitingMini,
+  WORKTREE_LINES,
+  WorktreeMini,
+} from '@/app/home-minis'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
 import { landedCount, type Snapshot } from '@/lib/snapshot'
 
@@ -162,5 +173,41 @@ describe('the landed figure', () => {
   it('is not rendered as zero', () => {
     const html = renderToStaticMarkup(<BuildsItself landed={landedCount(card(0, 0))} />)
     expect(html.replace(/<[^>]*>/g, '')).not.toMatch(/[0-9]/)
+  })
+})
+
+describe('the loop illustrations', () => {
+  const html = renderToStaticMarkup(
+    <>
+      <QueuedMini />
+      <WorktreeMini />
+      <StepsMini />
+      <WaitingMini />
+      <LandedMini />
+      <SpendMini />
+      <LanesMini />
+      <EnvironmentMini />
+    </>,
+  )
+
+  it('are eight cards, each labelled an illustration for a reader and on its face', () => {
+    expect(html.match(/role="img" aria-label="Illustration: /g)).toHaveLength(8)
+    expect(html.match(/>ILLUSTRATION</g)).toHaveLength(8)
+  })
+
+  it("print the worktree's lines in the shape lingtai start prints them", () => {
+    const [taking, landed, waiting] = WORKTREE_LINES
+    expect(taking).toMatch(/^taking #\d+ {2}\S/)
+    const ending = /^#\d+ {2}.+ — (\w+ [✓✗] )*\w+ [✓✗] · \$\d+\.\d{2} · /
+    expect(landed).toMatch(ending)
+    expect(landed).toMatch(/ · landed in [0-9a-f]{7}$/)
+    expect(waiting).toMatch(ending)
+    expect(waiting).toMatch(/ · waiting for you: lingtai \w+ \S+ --issue \d+$/)
+  })
+
+  it('claim nothing the page does not say of 0.11', async () => {
+    const src = await readFile(path.resolve(import.meta.dirname, '../src/app/home-minis.tsx'), 'utf8')
+    expect(src).not.toMatch(/\b0\.11\b/)
+    expect(src).not.toMatch(/agent:hold/)
   })
 })

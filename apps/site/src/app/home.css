@@ -134,7 +134,7 @@
 
 /* The loop, one stop at a time. */
 .home-stops { position: relative; margin: 0; padding: 0; list-style: none; }
-.home-stops > li { position: relative; padding: 0 0 40px 64px; max-width: 52rem; }
+.home-stops > li { position: relative; padding: 0 0 40px 64px; }
 .home-stops > li::before { content: ""; position: absolute; left: 21px; top: 46px; bottom: 0; width: 2px; background: var(--rule-2); }
 .home-stops > li:last-child { padding-bottom: 0; }
 .home-stops > li:last-child::before { display: none; }
@@ -159,7 +159,7 @@
 .home-card { min-width: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
 .home-beside, .home-six { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .home-hl { padding: 20px 20px 24px; }
-.home-hl h3 { margin: 0 0 10px; }
+.home-hl h3 { margin: 22px 3px 10px; }
 .home-hl p, .home-six-card p { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
 .home-six-card { padding: 18px 18px 22px; }
 .home .home-six-card h3 { font-size: 17px; margin: 10px 0 6px; }
@@ -175,11 +175,58 @@
 .setup-steps ul + p { margin-top: 8px; }
 .setup-steps p + .command { margin-top: 9px; }
 
+/* The illustrations beside each stop and card. */
+.home-stop-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 32px; align-items: start; }
+.home-stop-grid > .home-mini, .home-stop-grid > .home-pair { margin-top: 6px; }
+.home-pair { display: block; }
+.home-mini { min-height: 230px; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface-2); padding: 13px; font-size: 11.5px; min-width: 0; }
+.home-mini.short { min-height: 0; margin-top: 12px; }
+.home-pair > .home-mini:first-child { margin-top: 0; }
+.home-mini-t { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--rule-2); padding-bottom: 9px; margin-bottom: 10px; font: 10px var(--mono); color: var(--muted); white-space: nowrap; }
+.home-mini-t span { color: var(--accent-ink); }
+.home-ans { display: flex; gap: 8px; align-items: flex-start; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 7px 9px; margin-bottom: 5px; line-height: 1.35; }
+.home-ans.rec { border-left: 3px solid var(--accent); }
+.home-ans b { display: block; font-weight: 600; font-size: 11.5px; }
+.home-ans small { color: var(--muted); font-size: 10.5px; }
+.home-ans .tagrec { margin-left: auto; font: 600 9px var(--mono); color: var(--accent-ink); background: var(--accent-soft); padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+.home-cause { background: var(--signal-soft); color: var(--signal); border-left: 3px solid var(--signal); border-radius: 3px; padding: 7px 9px; margin-bottom: 8px; font-size: 11.5px; line-height: 1.4; }
+.home-cause small { display: block; font: 9.5px var(--mono); letter-spacing: .04em; margin-bottom: 2px; }
+.home-srow { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin-bottom: 4px; font-size: 11px; }
+.home-srow b { font: 500 11px var(--mono); }
+.home-srow.unk b { color: var(--muted); }
+.home-srow.landed { border-left: 3px solid var(--pass); }
+.home-srow.landed b { color: var(--pass); }
+.home-ceil { margin-top: 9px; font: 10px var(--mono); color: var(--muted); }
+.home-meter { height: 8px; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; margin: 5px 0 3px; }
+.home-meter i { display: block; height: 100%; width: 72%; background: var(--accent); }
+.home-lanes-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.home-lanes-mini > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 6px; min-height: 150px; min-width: 0; }
+.home-lanes-mini small { display: block; font: 9px var(--mono); color: var(--muted); margin-bottom: 6px; }
+.home-lanes-mini .blk { min-height: 26px; border: 1px solid var(--rule); border-left: 3px solid var(--accent); border-radius: 2px; margin-bottom: 4px; background: var(--surface-2); font: 9px/1.2 var(--mono); padding: 4px; color: var(--ink-2); overflow-wrap: anywhere; }
+.home-lanes-mini .blk.q { border-left-color: var(--rule-2); opacity: .7; }
+.home-lanes-mini .blk.landed { border-left-color: var(--pass); }
+.home-qrow { display: flex; align-items: center; gap: 9px; min-height: 34px; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; margin-bottom: 5px; font-size: 11.5px; white-space: nowrap; }
+.home-qrow i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.home-qrow em { margin-left: auto; font: 10px var(--mono); color: var(--muted); font-style: normal; }
+.home-qrow.chosen { border-left: 3px solid var(--accent); }
+.home-qrow.muted { opacity: .6; }
+.home-qrow.muted i { background: var(--rule-2); }
+.home-logline { background: var(--ink); color: var(--ground); border-radius: 4px; font: 11px/1.5 var(--mono); padding: 8px 10px; margin-bottom: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.home-logline.wait { border-left: 3px solid var(--signal); }
+.home-rail { display: grid; grid-template-columns: 22px auto 1fr; gap: 4px 9px; align-items: center; padding: 6px 0; font-size: 11.5px; }
+.home-rail .d { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: bold 11px var(--mono); border: 1px solid var(--rule-2); background: var(--surface); color: var(--muted); }
+.home-rail .d.ok { background: var(--pass-soft); color: var(--pass); border-color: var(--pass); }
+.home-rail .d.bad { background: var(--signal-soft); color: var(--signal); border-color: var(--signal); }
+.home-rail em { font: 10px var(--mono); color: var(--muted); font-style: normal; text-align: right; line-height: 1.3; }
+
 @media (max-width: 1100px) {
   .home .hero { grid-template-columns: minmax(0, 1fr); gap: 42px; }
   .home .hero h1 { max-width: 16ch; }
   .home .hero .lede { max-width: 62ch; }
   .home .pass-diagram { max-width: 800px; }
+}
+@media (max-width: 1080px) {
+  .home-stop-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 }
 @media (max-width: 800px) {
   .home section { padding: 64px 0; }
