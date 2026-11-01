@@ -54,7 +54,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 import type { TokenCounts, Usage } from '@lingtai/domain'
@@ -554,6 +554,115 @@ function configModelFor(
     return {}
   }
   return read.model === undefined ? {} : { model: read.model, modelFrom: 'config' }
+}
+
+/** What the user's own Codex config says about permissions, as a verdict each caller answers differently. */
+export type UserPermissions =
+  | { kind: 'none' }
+  | { kind: 'denies'; paths: readonly string[] }
+  | { kind: 'kept'; why: string }
+  | { kind: 'unreadable'; why: string }
+
+const isTable = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** The names Lingtai's own profiles take; a user config defining one is refused as unreadable. */
+const OWN_PROFILES = ['lingtai_workspace_write', 'lingtai_read_only'] as const
+
+/**
+ * The `deny` entries of the profile a config's `default_permissions` names (#667).
+ *
+ * Pure. Only `deny` and `none` are collected: a user can narrow a run and never
+ * widen it, and `extends` is followed only to collect, never to inherit.
+ */
+export function userPermissionsFrom(text: string): UserPermissions {
+  let doc: Record<string, unknown>
+  try {
+    doc = parseToml(text)
+  } catch (error) {
+    return {
+      kind: 'unreadable',
+      why: `the config is not valid TOML (${error instanceof Error ? error.message : String(error)})`,
+    }
+  }
+  const active = typeof doc.profile === 'string' && isTable(doc.profiles) ? doc.profiles[doc.profile] : undefined
+  const layers = [isTable(active) ? active : {}, doc]
+  const named = layers.map((l) => l.default_permissions).find((v) => v !== undefined)
+  if (typeof named !== 'string' || named.startsWith(':')) return { kind: 'none' }
+  if (layers.some((l) => l.sandbox_mode !== undefined)) {
+    return { kind: 'kept', why: 'the config also sets sandbox_mode, which overrides default_permissions' }
+  }
+  const permissions = isTable(doc.permissions) ? doc.permissions : {}
+  for (const own of OWN_PROFILES) {
+    if (own in permissions)
+      return { kind: 'unreadable', why: `the config defines permissions.${own}, a name Lingtai uses` }
+  }
+  const paths: string[] = []
+  const visited = new Set<string>()
+  let current: string | undefined = named
+  while (current !== undefined && !current.startsWith(':')) {
+    if (visited.has(current))
+      return { kind: 'unreadable', why: `permissions profile ${current} extends itself in a cycle` }
+    visited.add(current)
+    const profile: unknown = permissions[current]
+    if (!isTable(profile)) return { kind: 'unreadable', why: `permissions profile ${current} is not defined` }
+    const fs = profile.filesystem
+    if (fs !== undefined) {
+      if (!isTable(fs)) return { kind: 'unreadable', why: `permissions.${current}.filesystem is not a table` }
+      for (const [path, value] of Object.entries(fs)) {
+        if (typeof value !== 'string') {
+          return { kind: 'unreadable', why: `permissions.${current}.filesystem."${path}" is not a plain access string` }
+        }
+        if ((value === 'deny' || value === 'none') && !paths.includes(path)) paths.push(path)
+      }
+    }
+    const parent: unknown = profile.extends
+    if (parent !== undefined && typeof parent !== 'string') {
+      return { kind: 'unreadable', why: `permissions.${current}.extends is not a string` }
+    }
+    current = parent
+  }
+  return paths.length === 0 ? { kind: 'none' } : { kind: 'denies', paths }
+}
+
+/** `userPermissionsFrom` for the file the child will read. Never throws; a missing file is `none`. */
+function userPermissionsAt(env: Record<string, string>, cwd: string): UserPermissions {
+  const path = codexConfigPath(env, cwd)
+  if (path === undefined) return { kind: 'none' }
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'none' }
+    return { kind: 'unreadable', why: `${path}: ${(error as Error).message}` }
+  }
+  const verdict = userPermissionsFrom(text)
+  return verdict.kind === 'unreadable' ? { kind: 'unreadable', why: `${path}: ${verdict.why}` } : verdict
+}
+
+/**
+ * The first literal-path deny that is a root itself or one of its parents:
+ * Codex lets a more specific `write` beat a broader `deny`, so Lingtai's own
+ * grant would silently override it. Globs and `:special` keys are not checked.
+ */
+export function denyCoveringRoot(
+  paths: readonly string[],
+  roots: readonly string[],
+  home: string | undefined,
+): { path: string; root: string } | undefined {
+  for (const key of paths) {
+    if (key.startsWith(':') || /[*?[{]/.test(key)) continue
+    let literal: string
+    if (key.startsWith('/')) literal = key
+    else if (key.startsWith('~/') && home) literal = join(home, key.slice(2))
+    else continue
+    const p = resolve(literal)
+    for (const root of roots) {
+      const r = resolve(root)
+      if (r === p || r.startsWith(p.endsWith(sep) ? p : p + sep)) return { path: key, root }
+    }
+  }
+  return undefined
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
@@ -1082,6 +1191,8 @@ export function codexArgv(
     extraArgs?: readonly string[]
     /** See `outputSchemaPathFor`. Absent on every run but the cold reviewer's. */
     outputSchemaPath?: string
+    /** The user's own profile's denies (#667). Empty or absent keeps `--sandbox`. */
+    denies?: readonly string[]
   },
 ): string[] {
   return argsFor(
@@ -1092,6 +1203,7 @@ export function codexArgv(
     options.writable ?? [],
     options.extraArgs ?? [],
     options.outputSchemaPath,
+    options.denies ?? [],
   )
 }
 
@@ -1103,7 +1215,23 @@ function argsFor(
   writable: readonly string[],
   extraArgs: readonly string[],
   outputSchemaPath: string | undefined,
+  denies: readonly string[],
 ): string[] {
+  // The role as a profile, plus only the user's denies (#667). Never the user's
+  // own `extends`: their chain may end at `:danger-full-access`.
+  const name = `lingtai_${sandbox.replace('-', '_')}`
+  const permissionArgs =
+    denies.length > 0
+      ? [
+          '-c',
+          `default_permissions=${toml(name)}`,
+          '-c',
+          `permissions.${name}={extends=${toml(sandbox === 'read-only' ? ':read-only' : ':workspace')}, filesystem={${[
+            ...writable.map((dir) => `${toml(dir)}="write"`),
+            ...denies.map((path) => `${toml(path)}="deny"`),
+          ].join(', ')}}}`,
+        ]
+      : null
   return [
     'exec',
     // Parsed, not scraped, and arriving as it happens.
@@ -1112,8 +1240,7 @@ function argsFor(
     // radius stated to the runtime rather than inherited from `spawn`'s cwd.
     '--cd',
     request.cwd,
-    '--sandbox',
-    sandbox,
+    ...(permissionArgs ? [] : ['--sandbox', sandbox]),
     // Nothing is watching to approve anything. Without this a command needing
     // escalation waits for an answer that never comes and the run burns to the
     // wall clock — the Codex shape of `claude-code.ts`'s `--permission-mode`
@@ -1124,7 +1251,7 @@ function argsFor(
     // **The git directory, or the agent cannot commit what it wrote.** See
     // `gitWritableRoots` — this is the one widening of the sandbox Lingtai asks
     // for, and it is asked for by path rather than by turning the sandbox down.
-    ...writable.flatMap((dir) => ['--add-dir', dir]),
+    ...(permissionArgs ?? writable.flatMap((dir) => ['--add-dir', dir])),
     ...hookArgs,
     ...(request.model ? ['--model', request.model] : []),
     // The file `run()` writes just before this is built — `codexArgv` only
@@ -1169,6 +1296,10 @@ function tryParseJSON(text: string): unknown {
  * a widening bought for nothing — and the sandbox is the whole of what that mode
  * is for.
  */
+function deniesOf(verdict: UserPermissions): readonly string[] | undefined {
+  return verdict.kind === 'denies' ? verdict.paths : undefined
+}
+
 function writableFor(sandbox: CodexSandbox, cwd: string): readonly string[] {
   return sandbox === 'workspace-write' ? gitWritableRoots(cwd) : []
 }
@@ -1199,6 +1330,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           writable: writableFor(sandbox, request.cwd),
           extraArgs,
           outputSchemaPath: request.outputSchema ? outputSchemaPathFor(request.runId) : undefined,
+          denies: deniesOf(userPermissionsAt(request.env, request.cwd)),
         }),
       }
     },
@@ -1230,6 +1362,29 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         }
       }
 
+      const writable = writableFor(sandbox, request.cwd)
+      const permissions = userPermissionsAt(request.env, request.cwd)
+      if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
+        trace.note('codex', `the user's Codex permission profile did not narrow this run: ${permissions.why}`)
+      } else if (permissions.kind === 'denies') {
+        const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME)
+        if (covered) {
+          const detail =
+            `the user's Codex permission profile denies ${covered.path}, which covers ${covered.root}; ` +
+            "Codex lets Lingtai's more specific write grant beat it, so the run is refused rather than launched exposed"
+          trace.note('codex', detail)
+          return {
+            exitCode: null,
+            turns: 0,
+            durationMs: Date.now() - started,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'crash', detail },
+            sessionId: '',
+          }
+        }
+      }
+
       // Written just ahead of the argv that names it, and removed in `finish`
       // on every ending (`#369`). An agent that could overwrite its own answer
       // schema has no schema, so this lives in `os.tmpdir()` rather than the
@@ -1244,9 +1399,10 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       const args = codexArgv(request, request.prompt, {
         settings: wiring,
         sandbox,
-        writable: writableFor(sandbox, request.cwd),
+        writable,
         outputSchemaPath,
         extraArgs,
+        denies: deniesOf(permissions),
       })
 
       return new Promise<RunOutcome>((resolve) => {

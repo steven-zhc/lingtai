@@ -30,6 +30,8 @@ import {
   codexTrace,
   codexUsage,
   configuredModel,
+  denyCoveringRoot,
+  userPermissionsFrom,
 } from '../src/codex.ts'
 import { renderSettings } from '../src/hook-config.ts'
 import { meetsTier, missingForTier, RUN_LIMITS } from '../src/runtime.ts'
@@ -868,5 +870,108 @@ describe('guarded is an axis, not a rung', () => {
 
   it('still lets `open` through, which asks for neither promise', () => {
     expect(meetsTier({ ...sandboxedButOpenLoop, providesTier: 'open' }, 'open')).toBe(true)
+  })
+})
+
+describe('the user permission profile under Lingtai (#667)', () => {
+  const profile = (extra = '', body = '') =>
+    `default_permissions = "mine"\n${extra}\n[permissions.mine]\nextends = ":workspace"\n[permissions.mine.filesystem]\n${body}`
+
+  it('collects deny and none, never read or write', () => {
+    const v = userPermissionsFrom(profile('', '"~/secret" = "deny"\n"/x" = "none"\n"/w" = "write"\n"/r" = "read"\n'))
+    expect(v).toEqual({ kind: 'denies', paths: ['~/secret', '/x'] })
+  })
+
+  it('follows extends through a named parent, child first, without duplicates', () => {
+    const v = userPermissionsFrom(
+      `default_permissions = "a"
+[permissions.a]
+extends = "b"
+[permissions.a.filesystem]
+"/1" = "deny"
+[permissions.b]
+extends = ":read-only"
+[permissions.b.filesystem]
+"/2" = "deny"
+"/1" = "deny"
+`,
+    )
+    expect(v).toEqual({ kind: 'denies', paths: ['/1', '/2'] })
+  })
+
+  it('is none for a built-in, no default, or no denies', () => {
+    expect(userPermissionsFrom('default_permissions = ":workspace"')).toEqual({ kind: 'none' })
+    expect(userPermissionsFrom('model = "x"')).toEqual({ kind: 'none' })
+    expect(userPermissionsFrom(profile('', '"/w" = "write"\n'))).toEqual({ kind: 'none' })
+  })
+
+  it('is unreadable for a cycle, an unknown parent, bad TOML, and a name Lingtai uses', () => {
+    expect(userPermissionsFrom('default_permissions = "a"\n[permissions.a]\nextends = "a"').kind).toBe('unreadable')
+    expect(userPermissionsFrom('default_permissions = "a"\n[permissions.a]\nextends = "ghost"').kind).toBe('unreadable')
+    expect(userPermissionsFrom('default_permissions = ').kind).toBe('unreadable')
+    expect(userPermissionsFrom('default_permissions = "a"').kind).toBe('unreadable')
+    expect(
+      userPermissionsFrom(profile('[permissions.lingtai_read_only]\nextends = ":read-only"', '"/x"="deny"')).kind,
+    ).toBe('unreadable')
+  })
+
+  it("keeps today's argv where sandbox_mode is set beside default_permissions", () => {
+    expect(userPermissionsFrom('sandbox_mode = "read-only"\n' + profile('', '"/x"="deny"')).kind).toBe('kept')
+    expect(
+      userPermissionsFrom(
+        'profile = "p"\n[profiles.p]\nsandbox_mode = "workspace-write"\n' + profile('', '"/x"="deny"'),
+      ).kind,
+    ).toBe('kept')
+  })
+
+  const base = {
+    runId: 'pass-1',
+    cwd: '/tmp/tree',
+    settingsPath: '/s.json',
+    env: {},
+    limits: { turns: 150, wallMs: 3_600_000 },
+  }
+  const wiring = renderSettings({ runId: 'pass-1', hookBinary: '/opt/lingtai/lingtai-hook' })
+  const argv = (sandbox: 'workspace-write' | 'read-only', extra: object = {}) =>
+    codexArgv(base, PROMPT_ELIDED, { settings: wiring, sandbox, ...extra })
+
+  it("no denies is byte for byte today's argv", () => {
+    const today = argv('workspace-write', { writable: ['/g/objects'] })
+    expect(argv('workspace-write', { writable: ['/g/objects'], denies: [] })).toEqual(today)
+    expect(today).toContain('--sandbox')
+    expect(today).toContain('--add-dir')
+  })
+
+  it('an implementer with denies gets the role as a profile and no --sandbox or --add-dir', () => {
+    const a = argv('workspace-write', { writable: ['/g/objects'], denies: ['~/s', '/a"b'] })
+    expect(a).not.toContain('--sandbox')
+    expect(a).not.toContain('--add-dir')
+    expect(a).toContain('default_permissions="lingtai_workspace_write"')
+    expect(a).toContain(
+      'permissions.lingtai_workspace_write={extends=":workspace", filesystem={"/g/objects"="write", "~/s"="deny", "/a\\"b"="deny"}}',
+    )
+    expect(a.join(' ')).not.toContain('danger-full-access')
+    expect(a.join(' ')).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(a).toContain('approval_policy=never')
+  })
+
+  it('a reader gets :read-only and no write entries', () => {
+    const a = argv('read-only', { denies: ['/x'] })
+    expect(a).toContain('default_permissions="lingtai_read_only"')
+    expect(a).toContain('permissions.lingtai_read_only={extends=":read-only", filesystem={"/x"="deny"}}')
+    expect(a.join(' ')).not.toContain('"write"')
+  })
+
+  it('a deny covering a root is found only for literal paths', () => {
+    const roots = ['/home/u/repo/.git/objects', '/tmp/tree']
+    expect(denyCoveringRoot(['/home/u/repo/.git'], roots, '/home/u')).toEqual({
+      path: '/home/u/repo/.git',
+      root: '/home/u/repo/.git/objects',
+    })
+    expect(denyCoveringRoot(['~/repo'], roots, '/home/u')?.root).toBe('/home/u/repo/.git/objects')
+    expect(denyCoveringRoot(['/tmp/tree'], roots, undefined)?.root).toBe('/tmp/tree')
+    expect(denyCoveringRoot(['/tmp/tre'], roots, undefined)).toBeUndefined()
+    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '/', '~/x'], ['/a'], undefined)?.path).toBe('/')
+    expect(denyCoveringRoot(['**/*.env', ':tmpdir', '~/x'], roots, undefined)).toBeUndefined()
   })
 })
