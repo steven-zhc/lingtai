@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Bar, DOCS_MENU } from '@/app/chrome'
+import Home from '@/app/page'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
@@ -45,9 +46,13 @@ describe("the home page's argument", () => {
   })
 
   it('does not lead with internals or event-log claims', async () => {
-    const top = above(await prose())
-    expect(top).not.toMatch(/\blogs?\b/i)
-    expect(top).not.toMatch(/\bevent-source|append-only|projection|Postgres sequence\b/i)
+    // The rendered page, not its source: the footer's words live in Foot, not in page.tsx.
+    const rendered = renderToStaticMarkup(<Home />).replace(/<[^>]*>/g, ' ')
+    for (const top of [above(await prose()), above(rendered)]) {
+      expect(top).not.toMatch(/\blogs?\b/i)
+      expect(top).not.toMatch(/\bevent-source|append-only|projection|Postgres sequence\b/i)
+    }
+    expect(rendered).toContain('keeps its state in a local SQLite file')
   })
 
   it('explains the benefit, then how to start', async () => {

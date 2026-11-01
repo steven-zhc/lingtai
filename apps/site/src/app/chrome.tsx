@@ -69,7 +69,7 @@ export function Foot() {
     <footer className="foot">
       <div className="wrap foot-layout">
         <p>
-          <b>Lingtai runs on one machine of yours.</b> It keeps its log in a local SQLite file by default, alongside a
+          <b>Lingtai runs on one machine of yours.</b> It keeps its state in a local SQLite file by default, alongside a
           clone of each repository it manages and the agent processes it starts. There is no hosted service and nothing
           to sign up for — install the CLI and run <code>lingtai init</code>.
         </p>
