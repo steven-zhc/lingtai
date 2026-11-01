@@ -87,9 +87,15 @@ limits:
   # Dollars per local calendar day, for the whole installation (0122 §5). When
   # the day's recorded spend reaches it the conductor pauses until local midnight
   # or `lingtai resume`, finishing every pass in flight. Absent means no ceiling.
-  # Runs that reported no cost (every Codex run, and a Claude Code run that was
-  # killed) are NOT counted in it: they are named as unknown on every surface
-  # that shows today's spend, never priced. LINGTAI_LIMITS_DAY_USD overrides.
+  # It counts reported cost plus rate-card estimates: a run that reported no cost
+  # (every Codex run, and a Claude Code run that was killed) is priced from its
+  # usage and counted as an estimate, and a reported figure is never repriced. A
+  # run nothing could price is unknown and outside the figure, named as such on
+  # every surface that shows today's spend; a process that died before recording
+  # its spend is not counted either.
+  # `runtime.concurrency` above 1 needs this ceiling: without one it is ignored
+  # and the installation runs one pass in all. LINGTAI_LIMITS_DAY_USD overrides
+  # (and counts as setting it).
   # day_usd: 50
 
 # --- optional Codex model-only calls ---------------------------------------
