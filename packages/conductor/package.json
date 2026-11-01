@@ -39,7 +39,8 @@
     "./db-tickets": "./src/db-tickets.ts",
     "./wizard": "./src/wizard.ts",
     "./rate-snapshot": "./src/rate-snapshot.ts",
-    "./wizard-page": "./src/wizard-page.ts"
+    "./wizard-page": "./src/wizard-page.ts",
+    "./telemetry": "./src/telemetry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -55,6 +56,11 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/context-async-hooks": "^2.12.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-base": "^2.12.0",
     "effect": "^3.22.1",
     "pg": "^8.16.3",
     "yaml": "^2.8.1"

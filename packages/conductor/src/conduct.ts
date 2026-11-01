@@ -20,6 +20,7 @@ import {
   createWorktreeAction,
   runCommand,
 } from '@lingtai/actions'
+import { FAILED, inSpan, markFailed } from '@lingtai/actions/spans'
 import {
   NO_RUN_LOG,
   type RunLog,
@@ -666,7 +667,7 @@ export function continuationRound(runEvents: readonly Envelope[], granted: boole
 }
 
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
-  return Effect.gen(function* () {
+  const run: Effect.Effect<RunOnceResult, never, Repo | AgentHost> = Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
     // parameter was standing in for.
     const repo = yield* Repo
@@ -2600,9 +2601,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `JudgeAsked` to fold — the route is already the record of what was
        * decided, and what it spent is a `RunSpent` beside it.
        */
-      const askTheAgent = async (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> => {
+      const askTheAgent = (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> =>
+        // A dispatched judge is an action of the `proposed` visit (#791); a
+        // built-in spends nothing and is not. Its failures mark the span
+        // themselves — `held`, `neverStarted` and `unreadable` below.
+        inSpan('action judge', { 'lingtai.index': 0 }, () => askTheAgentBody(declared, on))
+      const askTheAgentBody = async (
+        declared: Extract<Declared, { runtime: RuntimeId }>,
+        on: Judging,
+      ): Promise<Judged> => {
         const named = declared.named
-        const held = (why: string): Judged => ({ next: 'waiting', named, why })
+        const held = (why: string): Judged => {
+          markFailed()
+          return { next: 'waiting', named, why }
+        }
         // `#462`: the set-of-one guard that used to live here (`on.offering
         // .length < 2`) is dead — `replyFor` (`proposed-route.ts`) answers
         // `NotAsked` before `judge` is ever called for a set that size, which
@@ -2714,6 +2726,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * person's: that is the `held` below.
          */
         if (outcome.failure?.kind === 'never-started') {
+          markFailed()
           return {
             neverStarted: {
               agent: runtime,
@@ -2739,6 +2752,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // now, not folded into `held`'s `next: 'waiting'` — it becomes
           // `JudgeReply.Unreadable` in `replyFor`, which `decideRoute` reads
           // as `UnreadableReply` rather than as a destination somebody chose.
+          markFailed()
           return {
             unreadable: {
               named,
@@ -4810,4 +4824,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.ensuring(release('the run was interrupted')),
     )
   })
+  return run.pipe(
+    // Only a caught defect is the run's own to say (#791): every other status
+    // comes up from the spans beneath it, and `ok`, `held` and the rest of
+    // `stage` are never read — a pass held for a signoff has nothing below it
+    // that failed, and one held on a crash has an action that did.
+    Effect.tap((result) =>
+      result.ok === false && result.stage === 'unexpected' ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void,
+    ),
+    // A root: `runQueue` calls this once per ticket, and a pass is one trace
+    // rather than a branch of the queue's (#791). No stack trace — it is a path.
+    Effect.withSpan('conductor.run', {
+      root: true,
+      captureStackTrace: false,
+      attributes: { 'lingtai.ticket': options.issue },
+    }),
+  )
 }

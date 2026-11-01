@@ -23,6 +23,7 @@ import {
   type SentBack,
   type TheDesign,
 } from '@lingtai/actions/action'
+import { inSpan } from '@lingtai/actions/spans'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
@@ -1287,6 +1288,10 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     return visit
   }
 
+  // The router's visit as a span (#791), so a judge dispatched inside it is its
+  // child: it is `ERROR` by that action alone, like any step.
+  const routing = (...args: Parameters<typeof routeProposal>): Promise<boolean> =>
+    inSpan('step proposed', { 'lingtai.round': contextFor().round ?? 0 }, () => routeProposal(...args))
   /**
    * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
    * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
@@ -1481,24 +1486,42 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
      * routing visit is built directly by `routeProposal`'s own `record()`
      * calls rather than through `runStep` — so neither gets one either.
      */
-    await options.emit({
-      type: 'StepStarted',
-      data: { runId: options.context.runId, step: at, round: visitContext.round ?? 0 },
-    })
-    const reached = record(
-      await runStep(spec, options, bodies, [...steps], {
+    const visiting = at
+    const reached = await runStep(
+      spec,
+      options,
+      bodies,
+      [...steps],
+      {
         context: visitContext,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
-      }),
+      },
+      // Inside the step's span, so its interval covers the `StepEnded` write
+      // and a refused append marks it (#791). **Exactly where the step's
+      // plugins ran a verdicts pipeline** (`events.ts`'s own rule for
+      // `StepEnded`) — `outcome` is `undefined` for a step with nothing
+      // declared to judge, which never opened one.
+      (visit) => {
+        const recorded = record(visit)
+        return Promise.resolve(
+          recorded.outcome === undefined
+            ? undefined
+            : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
+        ).then(() => recorded)
+      },
+      // Inside the span too: the visit begins at the `StepStarted` write, and a
+      // store that is slow to take it or refuses it is the step's time and
+      // the step's failure (#791).
+      () =>
+        Promise.resolve(
+          options.emit({
+            type: 'StepStarted',
+            data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+          }),
+        ).then(() => undefined),
     )
-    // **Exactly where the step's plugins ran a verdicts pipeline** (`events.ts`'s
-    // own rule for `StepEnded`) — `outcome` is `undefined` for a step with
-    // nothing declared to judge, which never opened one.
-    if (reached.outcome !== undefined) {
-      await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: reached.outcome } })
-    }
     // Only a review that was actually read: an unreadable answer, a reviewer
     // that never ran or did not finish, or an action skipped before the agent
     // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -1555,7 +1578,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     // `proposed`'s to answer either way.
     if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
       const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
-      if (await routeProposal(proposal, { step: at, ending }, whatArrived(reached))) continue
+      if (await routing(proposal, { step: at, ending }, whatArrived(reached))) continue
       break
     }
 
@@ -1596,7 +1619,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       // through, carrying findings above the bar — which is the one `Propose`
       // with nothing of its own to report (0058 §3b).
       const reported = ending.ending === 'passed' ? null : { step: at, ending }
-      if (await routeProposal(next.proposal, reported, whatArrived(reached))) continue
+      if (await routing(next.proposal, reported, whatArrived(reached))) continue
       break
     }
 
@@ -1803,6 +1826,32 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
 }
 
 /**
+ * One step visit as a span (#791) — `step claim`, `step <name>` and `step end`
+ * come through here, except that `end`'s span is made where its actions run
+ * (`tellGitHubAbout`, `tell.ts`) — here it would measure resolving them and
+ * not doing them. Its status is `ERROR` when the
+ * step refused, failed or never ran, with no message; the round is the only
+ * attribute. A routing arrival at `proposed` is built by `runPass` and never
+ * reaches here, and no action runs there.
+ */
+function runStep(
+  spec: StepSpec,
+  options: PassOptions,
+  bodies: StepBodies,
+  reached: readonly StepReached[],
+  reaching: Reaching,
+  /** Runs inside the span, after the body: the write that ends the visit. */
+  finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
+  /** Runs inside the span, before the body: the write that begins the visit. */
+  begin: () => Promise<void> = () => Promise.resolve(),
+): Promise<StepReached> {
+  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
+  return inSpan(`step ${spec.step}`, { 'lingtai.round': reaching.context.round ?? 0 }, () =>
+    begin().then(() => runStepBody(spec, options, bodies, reached, reaching).then(finish)),
+  )
+}
+
+/**
  * One visit: its plugins, then its own work.
  *
  * Its plugins first because that is the order a refusal needs — at `prepared`
@@ -1816,7 +1865,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * survive every way a step can go wrong is the pass reaching `end` — see
  * `threw` below.
  */
-async function runStep(
+async function runStepBody(
   spec: StepSpec,
   options: PassOptions,
   bodies: StepBodies,
