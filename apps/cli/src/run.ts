@@ -44,7 +44,6 @@ import {
   type RunOnceResult,
   type Tickets,
 } from '@lingtai/conductor'
-import { PortsLive } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { readControl } from '@lingtai/daemon'
 import type { ControlState, ProjectState } from '@lingtai/domain'
@@ -69,6 +68,7 @@ import { dayCeilingStop, type DayCeilingPorts } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
+import { flushTracing, startTracing, tracedPorts } from './tracing.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot()
@@ -288,7 +288,7 @@ export function liveRunWorld(options: RunOptions, log: (line: string) => void): 
     tallyPass,
     lock: ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }),
     projector: ProjectorLive(log),
-    ports: PortsLive,
+    ports: tracedPorts,
   }
 }
 
@@ -311,6 +311,7 @@ export async function run(
   log: (line: string) => void = console.log,
   world: RunWorld = liveRunWorld(options, log),
 ): Promise<number> {
+  await startTracing()
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -668,7 +669,7 @@ export async function run(
 
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
-  return Effect.runPromise(
+  const code = await Effect.runPromise(
     heedThePause(options.store, options.dayCeiling).pipe(
       Effect.zipRight(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
@@ -706,4 +707,6 @@ export async function run(
       ),
     ),
   )
+  await flushTracing()
+  return code
 }

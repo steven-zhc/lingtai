@@ -24,7 +24,6 @@ import { resolve } from 'node:path'
 import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
   ownerlessClient,
-  PortsLive,
   currentRecipe,
   declinedBeforeWork,
   loadProjects,
@@ -55,6 +54,7 @@ import { Effect } from 'effect'
 
 import { stillOwed } from './continuing.ts'
 import { symbol } from './output.ts'
+import { tracedPorts } from './tracing.ts'
 import { waitCommand } from './wait-command.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -370,7 +370,7 @@ export function conductWork(
       const leave = slots!.set.enter({ project: name, issue: String(issue), files })
       options.outcome.ran += 1
       const pass = Effect.runPromise(
-        world.runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) }).pipe(Effect.provide(PortsLive)),
+        world.runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) }).pipe(Effect.provide(tracedPorts)),
       ).then(
         (result) => {
           const worked = report(result)
@@ -415,7 +415,7 @@ export function conductWork(
             issue: Number(c.issue),
             continuing: { runId: c.runId },
           })
-          .pipe(Effect.provide(PortsLive)),
+          .pipe(Effect.provide(tracedPorts)),
       )
       if (result.ok === false && result.stage === 'claim') {
         options.log(`${name}: continuation of #${c.issue} declined at claim — ${result.detail}`)
@@ -483,7 +483,7 @@ export function conductWork(
       if (detached) await launch(Number(asked.issue))
       else {
         const result: RunOnceResult = await Effect.runPromise(
-          world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
+          world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
         )
         options.outcome.ran += 1
         if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
@@ -512,7 +512,7 @@ export function conductWork(
             // before it just met.
             ...(options.paused ? { paused: options.paused } : {}),
           })
-          .pipe(Effect.provide(PortsLive)),
+          .pipe(Effect.provide(tracedPorts)),
       )
       options.outcome.ran += ran.started ?? ran.ran.length
     }

@@ -20,6 +20,7 @@ import {
   createWorktreeAction,
   runCommand,
 } from '@lingtai/actions'
+import { FAILED } from '@lingtai/actions/spans'
 import {
   NO_RUN_LOG,
   type RunLog,
@@ -666,7 +667,7 @@ export function continuationRound(runEvents: readonly Envelope[], granted: boole
 }
 
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
-  return Effect.gen(function* () {
+  const run: Effect.Effect<RunOnceResult, never, Repo | AgentHost> = Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
     // parameter was standing in for.
     const repo = yield* Repo
@@ -4727,6 +4728,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (reason._tag === 'AgentCrashed' && reason.cause === 'crash' && metTheAccountWall(reason.detail)) {
           yield* standDownConductor({ of: 'mid-run', step: reason.step }, reason.detail)
         }
+        // A hold is a returned success, so the span is told which holds are a
+        // failure (#791): only a wait for what a person was asked — a question
+        // or a signoff — has nothing refused or crashed behind it. An unreadable
+        // answer, a crash, a refused check or an escalated finding is a failure
+        // that a person was handed.
+        const asked =
+          reason._tag === 'OwnQuestion' ||
+          reason._tag === 'AgentQuestion' ||
+          reason._tag === 'SignoffRequired' ||
+          (reason._tag === 'ProposedEscalated' &&
+            reason.proposal._tag === 'InputNeeded' &&
+            // A question no judge was asked. A needs-input judge that crashed
+            // (`JudgeHandedOver`) or answered unreadably (`UnreadableReply`) is a failure.
+            reason.because._tag === 'NotAsked')
+        if (!asked) yield* Effect.annotateCurrentSpan(FAILED, true)
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
           ok: 'held',
@@ -4810,4 +4826,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.ensuring(release('the run was interrupted')),
     )
   })
+  return run.pipe(
+    // A refused or failed pass is a *returned* result, an Effect success, so the
+    // span is told (#791). `stage: 'unexpected'` — a caught defect — is one too.
+    // `ok: 'held'` is not: a pass waiting for the approval it was asked for
+    // refused nothing.
+    Effect.tap((result) => (result.ok === false ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void)),
+    // A root: `runQueue` calls this once per ticket, and a pass is one trace
+    // rather than a branch of the queue's (#791). No stack trace — it is a path.
+    Effect.withSpan('conductor.run', {
+      root: true,
+      captureStackTrace: false,
+      attributes: { 'lingtai.ticket': options.issue },
+    }),
+  )
 }

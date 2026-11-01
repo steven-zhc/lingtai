@@ -36,7 +36,7 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
 import { parseDuration, type Recipe } from '@lingtai/recipe'
 import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
-import { Effect } from 'effect'
+import { Effect, Runtime as EffectRuntime } from 'effect'
 
 import { type PassClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNow } from './discover.ts'
@@ -156,7 +156,7 @@ export interface ScheduleResult {
  * A host provides `Repo` and `AgentHost` once, around the pass.
  */
 export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult, never, Repo | AgentHost> {
-  return Effect.gen(function* () {
+  const queue: Effect.Effect<ScheduleResult, never, Repo | AgentHost> = Effect.gen(function* () {
     const log = options.log ?? (() => {})
     const ran: RunOnceResult[] = []
     const attempted = new Set<string>()
@@ -164,7 +164,11 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
     let started = 0
     const waiting = new Set<string>()
     let envRefused = false
-    const context = options.slots ? yield* Effect.context<Repo | AgentHost>() : undefined
+    // The runtime and not `Effect.context`: a pass started detached runs in a root
+    // fiber of its own, and only a runtime carries the caller's tracer into it —
+    // with the context alone, every concurrent `conductor.run` went to the
+    // default tracer and never exported (#791, 0101 §6).
+    const runtime = options.slots ? yield* Effect.runtime<Repo | AgentHost>() : undefined
     /** Whether this pass has already reported a GitHub that reports no dependencies. */
     let saidDependenciesUnread = false
 
@@ -261,7 +265,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           told(() => options.took?.(entry))
           const leave = set.enter({ project: name, issue: entry.issue, files })
           started += 1
-          const pass = Effect.runPromise(
+          const pass = EffectRuntime.runPromise(runtime!)(
             runOnce({
               project: options.project,
               client: options.client,
@@ -278,7 +282,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
               ...(options.remote === undefined ? {} : { remote: options.remote }),
               log: options.log,
-            }).pipe(Effect.provide(context!)),
+            }),
           ).then(
             (result) => {
               ran.push(result)
@@ -355,6 +359,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       if (result.ok === false && result.stage === 'env') return finish('env')
     }
   })
+  return queue.pipe(Effect.withSpan('conductor.queue', { captureStackTrace: false }))
 }
 
 /**

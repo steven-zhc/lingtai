@@ -45,6 +45,8 @@ import type {
   WaitId,
 } from '@lingtai/domain'
 
+import { inSpan } from './spans.ts'
+
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
  *
@@ -808,7 +810,14 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
 
     let result: ActionResult
     try {
-      result = await action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context)
+      // Named by kind, never by `action.name` (#791): a recipe author writes the
+      // name and it can be the command itself.
+      result = await inSpan(
+        `action ${action.kind}`,
+        { 'lingtai.index': index },
+        () => action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context),
+        (r) => r.verdict === 'failed' || r.verdict === 'did-not-finish' || r.verdict === 'never-ran',
+      )
     } catch (err) {
       // An action that throws is an action that failed. The alternative is an
       // exception escaping the pipeline and a run ending with no verdict at all.

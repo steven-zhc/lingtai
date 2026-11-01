@@ -23,6 +23,7 @@ import {
   type SentBack,
   type TheDesign,
 } from '@lingtai/actions/action'
+import { inSpan } from '@lingtai/actions/spans'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
@@ -1485,20 +1486,31 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
       type: 'StepStarted',
       data: { runId: options.context.runId, step: at, round: visitContext.round ?? 0 },
     })
-    const reached = record(
-      await runStep(spec, options, bodies, [...steps], {
+    const reached = await runStep(
+      spec,
+      options,
+      bodies,
+      [...steps],
+      {
         context: visitContext,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
-      }),
+      },
+      // Inside the step's span, so its interval covers the `StepEnded` write
+      // and a refused append marks it (#791). **Exactly where the step's
+      // plugins ran a verdicts pipeline** (`events.ts`'s own rule for
+      // `StepEnded`) — `outcome` is `undefined` for a step with nothing
+      // declared to judge, which never opened one.
+      (visit) => {
+        const recorded = record(visit)
+        return Promise.resolve(
+          recorded.outcome === undefined
+            ? undefined
+            : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
+        ).then(() => recorded)
+      },
     )
-    // **Exactly where the step's plugins ran a verdicts pipeline** (`events.ts`'s
-    // own rule for `StepEnded`) — `outcome` is `undefined` for a step with
-    // nothing declared to judge, which never opened one.
-    if (reached.outcome !== undefined) {
-      await options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: reached.outcome } })
-    }
     // Only a review that was actually read: an unreadable answer, a reviewer
     // that never ran or did not finish, or an action skipped before the agent
     // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -1803,6 +1815,34 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
 }
 
 /**
+ * One step visit as a span (#791) — `step claim`, `step <name>` and `step end`
+ * come through here, except that `end`'s span is made where its actions run
+ * (`tellGitHubAbout`, `tell.ts`) — here it would measure resolving them and
+ * not doing them. Its status is `ERROR` when the
+ * step refused, failed or never ran, with no message; the round is the only
+ * attribute. A routing arrival at `proposed` is built by `runPass` and never
+ * reaches here, and no action runs there.
+ */
+function runStep(
+  spec: StepSpec,
+  options: PassOptions,
+  bodies: StepBodies,
+  reached: readonly StepReached[],
+  reaching: Reaching,
+  /** Runs inside the span, after the body: the write that ends the visit. */
+  finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
+): Promise<StepReached> {
+  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
+  return inSpan(
+    `step ${spec.step}`,
+    { 'lingtai.round': reaching.context.round ?? 0 },
+    () => runStepBody(spec, options, bodies, reached, reaching).then(finish),
+    // `held`, `asked` and `routed` wait on a person: nothing refused.
+    (visit) => ['refused', 'did-not-finish', 'never-ran'].includes(visit.ending.ending),
+  )
+}
+
+/**
  * One visit: its plugins, then its own work.
  *
  * Its plugins first because that is the order a refusal needs — at `prepared`
@@ -1816,7 +1856,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * survive every way a step can go wrong is the pass reaching `end` — see
  * `threw` below.
  */
-async function runStep(
+async function runStepBody(
   spec: StepSpec,
   options: PassOptions,
   bodies: StepBodies,
