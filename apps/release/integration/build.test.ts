@@ -244,7 +244,7 @@ async function startsEmptyPass(command: string, args: string[]): Promise<void> {
   const home = mkdtempSync(join(work, 'pass-home-'))
   writeFileSync(join(home, 'config.yml'), 'database:\n  store: sqlite\n')
   const env = { ...childEnv(), LINGTAI_HOME: home }
-  const child = spawn(command, [...args, 'start'], {
+  const child = spawn(command, [...args, 'start', '--verbose'], {
     cwd: work,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
