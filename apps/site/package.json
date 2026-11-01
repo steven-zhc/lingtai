@@ -7,9 +7,11 @@
     "dev": "node scripts/doc-assets.ts && next dev --turbopack -p 3300",
     "build": "node scripts/doc-assets.ts && node scripts/snapshot.ts && next build && node scripts/prune-hidden-docs.ts",
     "snapshot": "node scripts/snapshot.ts",
+    "books": "node scripts/books.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lingtai/conductor": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "highlight.js": "^11.11.2",

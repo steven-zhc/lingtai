@@ -141,7 +141,7 @@ describe("this repository's tamper watch", () => {
   })
 
   it('asks nothing about a diff that touches none of it', async () => {
-    const result = await judge(['apps/site/src/app/page.tsx', 'doc/README.md'])
+    const result = await judge(['apps/release/src/index.ts', 'doc/README.md'])
 
     expect(result.ok).toBe(true)
   })
