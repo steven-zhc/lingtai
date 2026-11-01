@@ -518,11 +518,14 @@ fires, it is telling you nothing.
 in flight — the pass, not the agent, so the gates and the merge lane run too.
 But `wall` bounds **one agent call**, not the pass: a draining pass may still
 take further fix rounds, and the cold review and every gate run again with each,
-so the wait is longer than `wall` and longer than the work's own ceiling. The
-sentence the command prints, built from `runtime.limits`, counts only the
-`implement` runs (`packages/conductor/src/ceiling.ts`); it leaves out review
-time and process gates, so read it as a lower bound on a drain that goes through
-every round and never as a promise. A restart is not part of the drain: it
+so the wait has no fixed relation to `wall` alone. The sentence the command
+prints, built from `runtime.limits`, multiplies the most the `implement` runs may
+take (`packages/conductor/src/ceiling.ts`); it is a maximum for those runs and
+not a minimum or an estimate. Agent calls usually finish well inside their
+limits, so a drain can end far sooner than the sentence says, and it stops
+waiting as soon as the conductor releases its lock; a drain that ends early has
+not been interrupted. It also leaves out review time and process gates, so a
+drain through every round can run past it. A restart is not part of the drain: it
 happens after a pass has ended and the ticket has gone back through the queue.
 Do not schedule around `wall` alone, or around that sentence either, and do not
 read a long wait as a hang before you have run `pnpm lingtai attach <runId>`.
