@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+
 import { readBooks, type Books } from '@/lib/books'
 
 import { BooksSection } from './books-section'
@@ -22,6 +24,8 @@ const LEDGER = [
   { key: 'Cost', alone: "Your provider's dashboard", lingtai: 'Per ticket, with a daily limit' },
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
+
+export const metadata: Metadata = { alternates: { canonical: '/' } }
 
 export function HomePage({ books }: { books: Books | null }) {
   return (

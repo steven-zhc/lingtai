@@ -61,7 +61,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   if (!(await servable()).some((f) => slugOf(f) === slug)) return {}
   const doc = await readDoc(slug)
   if (doc === null) return {}
-  return { title: doc.title, description: ledeOf(doc.body).slice(0, 200) }
+  return {
+    title: doc.title,
+    description: ledeOf(doc.body).slice(0, 200),
+    alternates: { canonical: `/docs/${slug}/` },
+  }
 }
 
 /**
