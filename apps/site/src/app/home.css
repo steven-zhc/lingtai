@@ -101,7 +101,6 @@
 .rp-scene .time { font: 600 13px var(--mono); color: var(--accent-ink); margin-bottom: 6px; }
 .rp-scene h3 { font-size: 22px; margin: 0 0 6px; }
 .rp-scene p { color: var(--ink-2); margin: 0 0 14px; }
-.rp-scene.rp-end { height: 1px; padding: 0; border: 0; }
 .term { background: var(--ink); color: var(--ground); border-radius: 9px; font: 12px/1.7 var(--mono); padding: 14px 16px; margin: 0; overflow-x: auto; white-space: pre; }
 .term .p { color: var(--accent); }
 .term .ok { color: var(--pass); }

@@ -121,8 +121,18 @@ export function HomePage({ books }: { books: Books | null }) {
                       </div>
                     </div>
                   </div>
-                  {/* Past the last scene: step 6, where the receipt is stamped. */}
-                  <div className="rp-scene rp-end" data-step="6" aria-hidden="true" />
+                  <div className="rp-scene" data-step="6" id="s6">
+                    <div className="time">07:31 · MERGED</div>
+                    <h3>It lands. The receipt is stamped.</h3>
+                    <p>Your checks run once more on the latest main, then it merges and the ticket closes.</p>
+                    <pre className="term">
+                      <span className="ok">✓</span> checks{'  '}on the latest main{'\n'}
+                      <span className="dim">merged</span>
+                      {'  '}agent/1 → main{'\n'}
+                      <span className="dim">closed</span>
+                      {'  '}#1
+                    </pre>
+                  </div>
                 </div>
               </section>
             </div>

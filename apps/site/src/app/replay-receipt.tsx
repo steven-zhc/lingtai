@@ -13,7 +13,7 @@ import { Receipt, type ReceiptProps, type ReceiptStatus } from './receipt'
  * without script sees an empty receipt, never a landed one that script empties.
  *
  * Every value is an illustration and says so. The stamp is shown at step 6
- * alone, which is the empty sentinel past the last scene.
+ * alone, the scene where the change merges.
  */
 
 export interface ReceiptState {
@@ -155,45 +155,39 @@ function propsAt(step: number): ReceiptProps {
   }
 }
 
+/** Pixels from the window's top: a scene's command crossing this line is that step reached. */
+const READ_LINE = 340
+
 export function ReplayReceipt() {
   const [step, setStep] = useState(0)
 
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    // Entries only report what changed, so the step is derived from everything
-    // currently in the band: a scene that stays in view while another leaves
-    // sends nothing, and reading only the entries would strand the receipt.
-    const inBand = new Set<number>()
-    let heroIn = false
+    // A step is reached when its scene's command — the terminal or the approval
+    // frame — has scrolled up to a fixed line, where a reader's eye is. A fixed
+    // distance from the top rather than a share of the window: the middle of the
+    // window advanced the receipt while the scene was still below what was being
+    // read.
+    const marks = Array.from(document.querySelectorAll<HTMLElement>('.rp-scene[data-step]'), (scene) => ({
+      n: Number(scene.dataset.step),
+      at: scene.querySelector<HTMLElement>('.term, .frame') ?? scene,
+    }))
+    let frame = 0
     const settle = () => {
-      if (heroIn) setStep(0)
-      else if (inBand.size > 0) setStep(Math.max(...inBand))
+      frame = 0
+      let n = 0
+      for (const m of marks) if (m.at.getBoundingClientRect().top <= READ_LINE) n = Math.max(n, m.n)
+      setStep(n)
     }
-    const scenes = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const n = Number((e.target as HTMLElement).dataset.step)
-          if (e.isIntersecting) inBand.add(n)
-          else inBand.delete(n)
-        }
-        settle()
-      },
-      { rootMargin: '-48% 0px -48% 0px' },
-    )
-    document.querySelectorAll('.rp-scene[data-step]').forEach((n) => scenes.observe(n))
-    const hero = new IntersectionObserver(
-      (entries) => {
-        const last = entries[entries.length - 1]
-        if (last) heroIn = last.isIntersecting
-        settle()
-      },
-      { threshold: 0.6 },
-    )
-    const h = document.querySelector('.hero')
-    if (h) hero.observe(h)
+    const onScroll = () => {
+      if (frame === 0) frame = requestAnimationFrame(settle)
+    }
+    settle()
+    addEventListener('scroll', onScroll, { passive: true })
+    addEventListener('resize', onScroll)
     return () => {
-      scenes.disconnect()
-      hero.disconnect()
+      removeEventListener('scroll', onScroll)
+      removeEventListener('resize', onScroll)
+      if (frame !== 0) cancelAnimationFrame(frame)
     }
   }, [])
 
