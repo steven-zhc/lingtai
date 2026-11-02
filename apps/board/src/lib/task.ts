@@ -1390,11 +1390,11 @@ export function foldRun(
             // **Only the request survives** (#502): `SignoffGranted`/
             // `SignoffRevoked` are gone with `ApprovalGranted`/
             // `ApprovalRevoked`, and continuing a signed-off run is #465's,
-            // not this ticket's — so a requested signoff stays `pending` and
+            // not this ticket's — so a requested signoff is `asked` and
             // `awaitingSha` stays set until that lands.
             case 'SignoffRequested':
               awaitingSha = fact.onSha || null
-              setStep(fact.step, fact.action, 'pending', null, [])
+              setStep(fact.step, fact.action, 'asked', null, [])
               break
 
             case 'RunEnded':
