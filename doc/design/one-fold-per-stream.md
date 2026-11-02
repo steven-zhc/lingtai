@@ -431,7 +431,7 @@ too (P3's rebuild).
    for that step clears it, and so does any `StepEnded` if `lingtai status`'s rule
    (status.ts:236) is kept. Used by `foldRun`, `foldProgress` 485, `attemptOutcome`
    374 and `lastStep` 232.
-2. `round: number`, the highest `StepStarted{implement}.round` and fix round seen. Used
+2. `implementRound: number`, the highest `StepStarted{implement}.round` and fix round seen (named apart from `step.round`, any step's round). Used
    by `continuationRound` (conduct.ts:654-665) and `foldProgress` 590.
 3. `resolved: { configHash, steps: {step, actions}[] } | null` from `StepsResolved`.
    Used by `foldRun` and `foldProgress` 467.
@@ -533,7 +533,7 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | # | Ticket | Covers | Depends | What moves |
 |---|---|---|---|---|
 | 1 | **One verdict ladder.** `stepStateOf` and `verdictOf` become one function in domain with D1's values. `RunState.steps`, `cardFactOf`, `attemptFactOf` and `boardFactOf` all read it, and the dead `NotReached` arms go | R0 | — | `refusingOn` now lists a null-head `commit` (§2.1). task_view's `verdicts` jsonb changes on a rebuild, so the ticket carries the runbook (§4) |
-| 2 | **Where a run is.** `RunState.step` (D12: only a `StepEnded` for that step clears it) and `round`. `lingtai status`'s `lastStep` and `conduct.ts`'s `continuationRound` read them | R1, C3 | — | status reads the run's state rather than scanning events |
+| 2 | **Where a run is.** `RunState.step` (D12: only a `StepEnded` for that step clears it) and `implementRound`. `lingtai status`'s `lastStep` and `conduct.ts`'s `continuationRound` read them | R1, C3 | — | status reads the run's state rather than scanning events |
 | 3 | **What a run published.** `RunState.published` (last), `kept` (a list), `route` (last). `saved-fix-work.ts`, `status.ts`, `triage.ts`, `resolve-wait.ts` and the CLI's `headOf` read them | R2, C1, C2 | — | `resolve-wait`'s `kept` match stays by `sha` **and** `arm` |
 | 4 | **How a run ended.** `RunState.failure` (sticky, D3) and `refusal`. `attempts.ts`'s `attemptOutcome` becomes a function of `RunState`, reading these with ticket 2's `step` and ticket 3's `kept` | R3, C4 | 1, 2, 3 | the evidence precedence stays: last refusal, then `RunFailed`, then the unfinished step |
 | 6 | **The board's progress.** `RunState.laneWaitedAt`, and `foldProgress` becomes `progressOf(state, plan, over)` over `RunState` (D10). Spend comes from the `spend` projection | R1, R3, C10 | 2, 4 | the `now` rules (a `StepEnded` clears only its own label; `RunFinished` clears only the agent or the lane) become a pure function of state |
@@ -649,7 +649,7 @@ scrubbed and cited by issue number, not seq.
 - **D11. A continuation counts as a lifecycle move for `since`**, as the board counts it
   today (the operator, 2026-11-02).
 - **D12. A run is in a step from its `StepStarted` until a `StepEnded` for that same
-  step** (2026-11-02). A `StepEnded` for another step does not clear it. Steps run in
+  step** (2026-11-02). A `StepEnded` for another step does not clear it, and nor does the run's end: `step` is the last step entered and not ended, and whether the run is over is `lifecycle`'s to say. Steps run in
   order, so on every real log this answers what `lingtai status` answers today.
 - **D13. An attempt has one typed ending** (2026-11-02):
   `{ kind: 'released', reason } | { kind: 'asked', waitId }`, whichever came later, and
