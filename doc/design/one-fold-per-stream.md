@@ -677,12 +677,14 @@ All of these are intended. Each lands in the ticket named, and nowhere else.
 
 - **Stale verdicts** (C9b, D2): a verdict made on an older head reads as stale on the
   task page. Today every verdict reads current.
-- **Signoff reads `asked`, not `pending`** (R0/C9c, D1). On the board this takes effect
-  at C9c, and in task_view at the P3 rebuild. A signoff that was approved stops showing
-  `awaitingSha` (D3).
-- **A null-head commit reads `did-not-finish`**, not `passed`, on the task page, and an
-  approval over it has to waive it by name (R0, D1). `worktree` `NotDone` reads
-  `did-not-finish`, not `failed`, on any surface that read `run.steps`.
+- **Signoff reads `asked`, not `pending`** (ticket 1, #821, D1), everywhere at once: the
+  board's evidence list and rail, and task_view after that ticket's rebuild. A signoff
+  that was approved stops showing `awaitingSha` at ticket 5 (D3).
+- **A null-head commit reads `did-not-finish`**, not `passed`, in `RunState`, so an
+  approval over it has to waive it by name (#821, D1); the board and task_view already
+  said `did-not-finish`. `worktree` `NotDone` reads `did-not-finish`, not `failed`, on any
+  surface that read `run.steps`, and `design` `AnswerUnreadable` reads `failed` on the
+  board and in task_view.
 - **`approved` after a fix round is granted** (P3b, D5). The card leaves Queued, and
   `lingtai status` and the drain stop counting it as queued.
 - **Close stays `waiting`** until `TicketClosed` lands (P3c), instead of flashing
