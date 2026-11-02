@@ -51,6 +51,7 @@ export const metadata: Metadata = {
   description:
     'Lingtai hands your tickets to Claude Code or Codex, runs your checks and a cold review, and ends every ticket in a receipt you can check: what the agent was given, what it produced, what passed, who let it through, and what it cost.',
   openGraph: { type: 'website', siteName: 'Lingtai' },
+  twitter: { card: 'summary_large_image' },
   icons: {
     icon: [
       { url: '/logo-dark.png', type: 'image/png', media: '(prefers-color-scheme: dark)' },

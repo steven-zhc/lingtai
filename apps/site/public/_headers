@@ -1,7 +1,8 @@
 # Cloudflare's headers file. `public/` is copied verbatim into `out/`, so this
 # lands at the root of the deployed site, which is where Cloudflare reads it.
 #
-# Only one rule here earns its place, and it is about `curl … | sh`.
+# Two rules here earn their place: the first is about `curl … | sh`, the second
+# about the link preview.
 #
 # **`text/plain`, deliberately.** `.sh` would otherwise be served as a type the
 # browser downloads, and the front page links to this file as *the script* — an
@@ -17,3 +18,10 @@
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=300, must-revalidate
   X-Content-Type-Options: nosniff
+
+# **`image/png` for the link preview.** Next writes the generated Open Graph
+# image as `out/opengraph-image`, with no extension, so nothing else would tell
+# Cloudflare its type — and a preview served as a download is one a social
+# crawler drops.
+/opengraph-image
+  Content-Type: image/png
