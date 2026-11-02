@@ -18,6 +18,8 @@
 import { isReached, type Reached } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
+import { routeNext } from './routing.ts'
+import type { Step } from './vocabulary.ts'
 
 /**
  * `never-ran` is not a verdict about the diff, and is here because the absence
@@ -136,6 +138,19 @@ export interface RunState {
   /** Latest verdict per gate name, each carrying the sha it was made against. */
   steps: Readonly<Record<string, StepState>>
 
+  /**
+   * The last step entered and not yet ended, with the round it was entered on
+   * (D12). A `StepEnded` for a different step leaves it; `RunFinished` and
+   * `RunFailed` do not touch it, so a run that died inside a step still says
+   * which — whether the run is over is `lifecycle`'s to say.
+   */
+  step: { step: Step; round: number } | null
+  /**
+   * The highest round an `implement` step started on or a `FixRound` route
+   * reached, 0 before either. Not `step.round`, which is any step's.
+   */
+  implementRound: number
+
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
   version: number
@@ -160,6 +175,8 @@ export const emptyRun: RunState = {
   prompts: 0,
   prompt: null,
   steps: {},
+  step: null,
+  implementRound: 0,
   receipt: null,
   version: 0,
   lastSeq: null,
@@ -385,11 +402,30 @@ export function applyRun(state: RunState, event: Envelope): RunState {
     }
 
     // No per-action step any more (0120's own Consequences: the board loses
-    // which action of a step is running). `StepStarted` is once per step, so
-    // there is nothing here to key a `StepState` by — `lingtai attach`'s run
-    // log is where a running step's current action is now.
-    case 'StepStarted':
-      return { ...state, ...at }
+    // which action of a step is running), so nothing keys a `StepState` by it.
+    // `StepStarted` sets `step` and raises `implementRound` when it is an
+    // `implement` start; `lingtai attach`'s run log is where a running step's
+    // current action is now.
+    case 'StepStarted': {
+      const d = event.data as PayloadOf<'StepStarted'>
+      return {
+        ...state,
+        ...at,
+        step: { step: d.step, round: d.round },
+        implementRound: d.step === 'implement' ? Math.max(state.implementRound, d.round) : state.implementRound,
+      }
+    }
+
+    // A fix round's route reaches its round whichever step it names (`to`).
+    // `routeNext` throws `ImpossibleRouteError` on a stored route it cannot
+    // replay, as the projections already do; nothing here hides that.
+    case 'PassRouted': {
+      const d = event.data as PayloadOf<'PassRouted'>
+      const next = routeNext(d.offer, d.reply, d.decision, { runId: d.runId })
+      return next._tag === 'FixRound'
+        ? { ...state, ...at, implementRound: Math.max(state.implementRound, next.round) }
+        : { ...state, ...at }
+    }
 
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
@@ -410,7 +446,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           }
         }
       }
-      return { ...next, ...at }
+      const ended = d.outcome.step
+      return { ...next, ...at, step: state.step?.step === ended ? null : state.step }
     }
 
     default:

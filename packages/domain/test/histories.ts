@@ -28,7 +28,18 @@ import {
   passStream,
   ticketStream,
 } from '../src/index.ts'
-import { aClaim, aLanding, aRelease, aResolution, aRun, aRunFailure, aSplit, aWait, type RunFixture } from './events.ts'
+import {
+  aClaim,
+  aLanding,
+  aRoute,
+  aRelease,
+  aResolution,
+  aRun,
+  aRunFailure,
+  aSplit,
+  aWait,
+  type RunFixture,
+} from './events.ts'
 import { makeStream } from './support.ts'
 
 /** The instant clock-reading folds are folded at. After every `at` below. */
@@ -573,6 +584,51 @@ export const scenarios = {
 } as const
 
 /**
+ * Histories added after `scenarios` (#822), so no locked `seq` above moves. Same rule: append only.
+ */
+function fixRoundRouted(): readonly Envelope[] {
+  const run = aRun(passStream('fix-round-routed'))
+  const offer = {
+    proposal: { _tag: 'BuildRed' as const, output: 'review refused' },
+    available: [
+      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
+    ],
+    unavailable: [],
+  }
+  const reply = { _tag: 'Selected' as const, candidate: 'fix-lines', why: 'the lines are wrong' }
+  const decision = { _tag: 'Selected' as const, candidate: 'fix-lines' }
+  return stamp([
+    runStarted(run, runTicket),
+    ...run.aStepEnded(
+      outcome('implement', 0, [
+        act('commit', 'fix', 'sha-1', { _tag: 'Completed', head: 'sha-1', question: null }, 'agent'),
+      ]),
+    ),
+    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')])),
+    ...aRoute(run, { offer, reply, decision }),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 1 }),
+  ])
+}
+
+/** D12: a `StepEnded` for a step other than the one entered leaves the step. */
+function stepEndedForAnother(): readonly Envelope[] {
+  const run = aRun(passStream('step-ended-for-another'))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
+    run.event('StepEnded', { runId: run.runId, outcome: outcome('review', 0, []) }),
+  ])
+}
+
+export const lateHistories = {
+  run: {
+    fixRoundRouted: fixRoundRouted(),
+    stepEndedForAnother: stepEndedForAnother(),
+  },
+} as const
+
+/**
  * The event types each stream kind's histories must contain: every catalogue
  * `case` label of `applyRun` / `applyTicket` (the retired `TicketLinked`
  * included), exactly `CONTROL_FOLD_TYPES`, and the chat and finding streams'
@@ -591,6 +647,7 @@ export const COVERS = {
     'RunFailed',
     'StepStarted',
     'StepEnded',
+    'PassRouted',
   ],
   ticket: [
     'TicketDiscovered',

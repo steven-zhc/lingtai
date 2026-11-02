@@ -32,7 +32,6 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
 import {
-  type PayloadOf,
   type SpentFor,
   type Tier,
   WIP_COMMIT_PREFIX,
@@ -42,16 +41,16 @@ import {
 } from '@lingtai/domain'
 import {
   CONTROL_STREAM,
-  type Envelope,
   type ReleaseCause,
+  type RunState,
   type RuntimeId,
   type Step,
   type ToAppend,
   passIdOf,
   passStream,
   reduceControl,
+  reduceRun,
   reduceTicket,
-  routesOf,
   stepOutcomesOf,
   waitsOf,
   designAsksOf,
@@ -652,18 +651,8 @@ function detailOf(ending: PassOver['stopped']): string {
  * `runPass`'s, and this is the caller the pass was written to be called by.
  */
 /** A grant buys the next implement visit after every round already recorded on this run. */
-export function continuationRound(runEvents: readonly Envelope[], granted: boolean): number {
-  const lastFixRound = routesOf(runEvents)
-    .filter((route) => route.next._tag === 'FixRound')
-    .at(-1)
-  const lastRecordedRound = Math.max(
-    0,
-    lastFixRound?.next._tag === 'FixRound' ? lastFixRound.next.round : 0,
-    ...runEvents
-      .filter((event) => event.type === 'StepStarted' && (event.data as PayloadOf<'StepStarted'>).step === 'implement')
-      .map((event) => (event.data as PayloadOf<'StepStarted'>).round),
-  )
-  return granted ? lastRecordedRound + 1 : lastRecordedRound
+export function continuationRound(run: RunState, granted: boolean): number {
+  return granted ? run.implementRound + 1 : run.implementRound
 }
 
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
@@ -1097,6 +1086,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
+      const runState = reduceRun(runEvents)
       const granted = folded.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
@@ -1134,8 +1124,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted && grantedAdviceOf(before, adviceWaitId) !== undefined
           ? { advice: grantedAdviceOf(before, adviceWaitId)! }
           : {}),
-        roundsSpent: continuationRound(runEvents, granted),
-        ...(priorGrant ? { roundLimit: continuationRound(runEvents, granted) } : {}),
+        roundsSpent: continuationRound(runState, granted),
+        ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(granted && grantCriterion(reason) !== null
           ? {
               grant: {
