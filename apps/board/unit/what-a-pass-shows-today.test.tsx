@@ -3058,7 +3058,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
     },
     {
       step: 'proposed',
-      state: 'pending',
+      state: 'asked',
     },
     {
       step: 'merge',
@@ -5186,7 +5186,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
     },
     {
       step: 'merge',
-      state: 'failed',
+      state: 'asked',
     },
     {
       step: 'end',
@@ -5905,7 +5905,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
     },
     {
       step: 'merge',
-      state: 'failed',
+      state: 'asked',
     },
     {
       step: 'end',
@@ -6624,7 +6624,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
     },
     {
       step: 'merge',
-      state: 'failed',
+      state: 'asked',
     },
     {
       step: 'end',
@@ -7579,7 +7579,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
     },
     {
       step: 'proposed',
-      state: 'pending',
+      state: 'asked',
     },
     {
       step: 'merge',
@@ -8346,7 +8346,7 @@ it('13. a judge answer is unreadable', () => {
     },
     {
       step: 'proposed',
-      state: 'pending',
+      state: 'asked',
     },
     {
       step: 'merge',

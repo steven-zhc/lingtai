@@ -15,7 +15,7 @@
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */
-import type { Action } from './action.ts'
+import { isReached, type Reached } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
 
@@ -39,15 +39,7 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from 
  * opposite things to a person — one is a question and the other is broken
  * machinery — and for a fortnight the difference was a substring of a `because`.
  */
-export type StepVerdict =
-  | 'requested'
-  | 'running'
-  | 'passed'
-  | 'failed'
-  | 'never-ran'
-  | 'did-not-finish'
-  | 'asked'
-  | 'waived'
+export type StepVerdict = 'passed' | 'failed' | 'never-ran' | 'did-not-finish' | 'asked' | 'waived'
 
 export interface StepFinding {
   file: string
@@ -190,115 +182,128 @@ function withStep(state: RunState, step: StepState): Readonly<Record<string, Ste
 }
 
 /**
- * One action's `Action` (0120 §1), read as the `StepState` this aggregate
- * has always kept — the nine-string ladder `StepVerdict` names, `evidence`
- * for a person, `findings` for a program, and `by`/`reason` for a waiver.
+ * The one ladder: a reached action read as the `StepVerdict` every surface
+ * shows — `RunState.steps`, `task_view`'s cards and the board. An exhaustive
+ * switch over `yields` × `result._tag`, with no default and no fallback; a
+ * `NotReached` action has no verdict and cannot be passed (`isReached`).
  */
-function stepStateOf(key: string, action: Action): StepState {
-  const base = { step: key, onSha: action.onSha, by: null, reason: null }
+export function verdictOf(action: Reached): StepVerdict {
   switch (action.yields) {
     case 'verdict':
       switch (action.result._tag) {
         case 'Completed':
-          return {
-            ...base,
-            verdict: action.result.assessment.verdict === 'accepted' ? 'passed' : 'failed',
-            evidence: action.evidence,
-            findings: action.result.assessment.findings,
-          }
+          return action.result.assessment.verdict === 'accepted' ? 'passed' : 'failed'
         case 'AnswerUnreadable':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'failed'
         case 'Interrupted':
-          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+          return 'did-not-finish'
         case 'NeverStarted':
-          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+          return 'never-ran'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'commit':
       switch (action.result._tag) {
         case 'Completed':
-          return {
-            ...base,
-            verdict: action.result.question !== null ? 'asked' : 'passed',
-            evidence: action.result.question ?? action.evidence,
-            findings: [],
-          }
+          // `question` first: an agent that asked is `asked` whether or not it
+          // also committed. A `head` of `null` is *produced nothing*.
+          if (action.result.question !== null) return 'asked'
+          return action.result.head !== null ? 'passed' : 'did-not-finish'
         case 'Interrupted':
-          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+          return 'did-not-finish'
         case 'NotDone':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'failed'
         case 'NeverStarted':
-          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+          return 'never-ran'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'design':
       switch (action.result._tag) {
         case 'Drafted':
-          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+          return 'passed'
         case 'Asked':
-          return { ...base, verdict: 'asked', evidence: action.result.question, findings: [] }
+          return 'asked'
         case 'AnswerUnreadable':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'failed'
         case 'Interrupted':
         case 'NotDone':
-          return { ...base, verdict: 'did-not-finish', evidence: action.evidence, findings: [] }
+          return 'did-not-finish'
         case 'NeverStarted':
-          return { ...base, verdict: 'never-ran', evidence: action.evidence, findings: [] }
+          return 'never-ran'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'signoff':
       switch (action.result._tag) {
         case 'Completed':
-          return action.result.requested === null
-            ? { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
-            : { ...base, verdict: 'asked', evidence: action.result.requested.question, findings: [] }
+          return action.result.requested === null ? 'passed' : 'asked'
         case 'NotDone':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'failed'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'merge':
       switch (action.result._tag) {
         case 'Completed':
-          return {
-            ...base,
-            verdict: action.result.integration._tag === 'Integrated' ? 'passed' : 'failed',
-            evidence: action.evidence,
-            findings: [],
-          }
+          return action.result.integration._tag === 'Integrated' ? 'passed' : 'failed'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'worktree':
       switch (action.result._tag) {
         case 'Completed':
-          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+          return 'passed'
         case 'NotDone':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'did-not-finish'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
+    // eslint-disable-next-line no-fallthrough
     case 'nothing':
       switch (action.result._tag) {
         case 'Completed':
-          return { ...base, verdict: 'passed', evidence: action.evidence, findings: [] }
+          return 'passed'
         case 'NotDone':
-          return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+          return 'failed'
         case 'Waived':
-          return { ...base, verdict: 'waived', evidence: null, findings: [] }
+          return 'waived'
       }
-      break
   }
-  return { ...base, verdict: 'failed', evidence: action.evidence, findings: [] }
+}
+
+/** The question a reached action carries, if it asked one — a string, not a verdict. */
+function questionOf(action: Reached): string | null {
+  switch (action.yields) {
+    case 'commit':
+      return action.result._tag === 'Completed' ? action.result.question : null
+    case 'design':
+      return action.result._tag === 'Asked' ? action.result.question : null
+    case 'signoff':
+      return action.result._tag === 'Completed' ? (action.result.requested?.question ?? null) : null
+    default:
+      return null
+  }
+}
+
+/** One reached `Action` (0120 §1) as the `StepState` this aggregate keeps. */
+function stepStateOf(key: string, action: Reached): StepState {
+  const verdict = verdictOf(action)
+  return {
+    step: key,
+    onSha: action.onSha,
+    by: null,
+    reason: null,
+    verdict,
+    evidence: verdict === 'waived' ? null : (questionOf(action) ?? action.evidence),
+    findings:
+      action.yields === 'verdict' && action.result._tag === 'Completed' ? action.result.assessment.findings : [],
+  }
 }
 
 export function applyRun(state: RunState, event: Envelope): RunState {
@@ -390,7 +395,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       const d = event.data as PayloadOf<'StepEnded'>
       let next = state
       for (const action of d.outcome.actions) {
-        if (action.result._tag === 'NotReached') continue
+        if (!isReached(action)) continue
         const key = `${d.outcome.step}:${action.name}`
         next = { ...next, steps: withStep(next, stepStateOf(key, action)) }
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {

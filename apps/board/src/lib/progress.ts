@@ -563,9 +563,9 @@ export function foldProgress(
               // `SignoffRevoked` are gone with `ApprovalGranted`/
               // `ApprovalRevoked`, #502): continuing a signed-off run is
               // #465's, not this ticket's, so a requested signoff stays
-              // `pending` on this fold until that lands.
+              // `asked` on this fold until that lands.
               const key = `${fact.step}:${fact.action}`
-              verdicts.set(key, 'pending')
+              verdicts.set(key, 'asked')
               now = { label: key, since: event.at.toISOString(), budgetMs: null }
               break
             }

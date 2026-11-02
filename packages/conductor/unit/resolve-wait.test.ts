@@ -17,6 +17,7 @@ import {
   ticketStream,
 } from '@lingtai/domain'
 import { aClaim, aRelease, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { histories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -1220,6 +1221,12 @@ describe('resolveWait', () => {
 
     const folded = reduceRun(await store.read('pass-12'))
     expect(refusingOn(folded, SHA)).toEqual([])
+  })
+
+  it('refusingOn lists a commit that produced no head on the approved sha', () => {
+    // D1 (#821): `Completed` with `head: null` did not finish, so an approval must waive it by name.
+    const folded = reduceRun(histories.run.commitCompletedNoHead)
+    expect(refusingOn(folded, 'sha-1')).toEqual(['implement:keep'])
   })
 
   /**

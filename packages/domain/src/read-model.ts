@@ -11,12 +11,13 @@
  * slice: it filters by `type` and keys by `runId`/`streamId`, which is also
  * what the projections see, since they fold in global `seq` order too.
  */
-import type { Action, StepOutcome, WaitId } from './action.ts'
+import { isReached, type Action, type Reached, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
+import { verdictOf, type StepVerdict } from './run.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import { waitWords } from './wait-words.ts'
@@ -144,127 +145,6 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
 
 // -------------------------------------------------------------- cardFactOf ----
 
-/**
- * What a card counts an action's result as.
- *
- * Nine strings survive from before the switch, so `task_view`'s own reading
- * of them does not have to change: `passed`, `failed`, `never-ran`,
- * `did-not-finish`, `asked`, `waived`, `pending` (a `signoff` action with a
- * live `requested`). `approved` has no writer here any more — an approval is
- * `WaitResolved{Approve}` on the ticket stream, and the action it resolves
- * is recorded `Waived` only once the run it belongs to continues (0120 §6,
- * #465, not this ticket).
- */
-function verdictOf(action: Action): string {
-  switch (action.yields) {
-    case 'verdict':
-      switch (action.result._tag) {
-        case 'Completed':
-          return action.result.assessment.verdict === 'accepted' ? 'passed' : 'failed'
-        case 'AnswerUnreadable':
-          return 'failed'
-        case 'Interrupted':
-          return 'did-not-finish'
-        case 'NeverStarted':
-          return 'never-ran'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'signoff':
-      switch (action.result._tag) {
-        case 'Completed':
-          return action.result.requested === null ? 'passed' : 'pending'
-        case 'Waived':
-          return 'waived'
-        case 'NotDone':
-          return 'failed'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'commit':
-      switch (action.result._tag) {
-        case 'Completed':
-          // `question !== null` first: an agent that asked is `asked`
-          // whether or not it also committed. Otherwise a `head` of `null` is
-          // `changedNothing`'s own reading (`action.ts`) of *produced
-          // nothing* — the escalation `pass-next.ts` raises as
-          // `NothingProduced`/`FixerDisagrees` — and a card is not allowed to
-          // call that `passed`.
-          if (action.result.question !== null) return 'asked'
-          return action.result.head !== null ? 'passed' : 'did-not-finish'
-        case 'Interrupted':
-          return 'did-not-finish'
-        case 'NotDone':
-          return 'failed'
-        case 'NeverStarted':
-          return 'never-ran'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'design':
-      switch (action.result._tag) {
-        case 'Drafted':
-          return 'passed'
-        case 'Asked':
-          return 'asked'
-        case 'AnswerUnreadable':
-        case 'NotDone':
-          return 'did-not-finish'
-        case 'Interrupted':
-          return 'did-not-finish'
-        case 'NeverStarted':
-          return 'never-ran'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'worktree':
-      switch (action.result._tag) {
-        case 'Completed':
-          return 'passed'
-        case 'NotDone':
-          return 'did-not-finish'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'merge':
-      switch (action.result._tag) {
-        case 'Completed':
-          return action.result.integration._tag === 'Integrated' ? 'passed' : 'failed'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-    case 'nothing':
-      switch (action.result._tag) {
-        case 'Completed':
-          return 'passed'
-        case 'NotDone':
-          return 'failed'
-        case 'Waived':
-          return 'waived'
-        case 'NotReached':
-          return 'passed'
-      }
-      break
-  }
-  return 'failed'
-}
-
 /** What an action's own result does to a card's `awaiting_sha`/`note`, beside the verdict itself. */
 export type ApprovalEffect = { readonly _tag: 'Requested'; readonly question: string; readonly onSha: string } | null
 
@@ -284,7 +164,7 @@ function approvalEffectOf(action: Action): ApprovalEffect {
  * excluded) — a step with two checks writes two cells.
  */
 export type CardFact =
-  | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: string; readonly approval: ApprovalEffect }
+  | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: StepVerdict; readonly approval: ApprovalEffect }
   | { readonly _tag: 'RoundOpened'; readonly round: number; readonly findings: number; readonly action: string }
   | {
       readonly _tag: 'WaitStarted'
@@ -307,14 +187,12 @@ export function cardFactOf(event: Envelope): CardFact[] {
   switch (event.type) {
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
-      return d.outcome.actions
-        .filter((action) => action.result._tag !== 'NotReached')
-        .map((action) => ({
-          _tag: 'Verdict' as const,
-          key: `${d.outcome.step}:${action.name}`,
-          verdict: verdictOf(action),
-          approval: approvalEffectOf(action),
-        }))
+      return d.outcome.actions.filter(isReached).map((action) => ({
+        _tag: 'Verdict' as const,
+        key: `${d.outcome.step}:${action.name}`,
+        verdict: verdictOf(action),
+        approval: approvalEffectOf(action),
+      }))
     }
 
     case 'PassRouted': {
@@ -489,11 +367,13 @@ export type BoardFact =
   | { readonly _tag: 'WaitTriaged'; readonly attempt: number; readonly result: TriageResult }
   | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
 
-function boardEndingOf(action: Action): 'Passed' | 'Failed' | 'NeverRan' | 'DidNotFinish' | 'Asked' | 'Waived' {
-  const verdict = verdictOf(action)
+function boardEndingOf(action: Reached): 'Passed' | 'Failed' | 'NeverRan' | 'DidNotFinish' | 'Asked' | 'Waived' {
+  const verdict: StepVerdict = verdictOf(action)
   switch (verdict) {
     case 'passed':
       return 'Passed'
+    case 'failed':
+      return 'Failed'
     case 'never-ran':
       return 'NeverRan'
     case 'did-not-finish':
@@ -502,12 +382,10 @@ function boardEndingOf(action: Action): 'Passed' | 'Failed' | 'NeverRan' | 'DidN
       return 'Asked'
     case 'waived':
       return 'Waived'
-    default:
-      return 'Failed'
   }
 }
 
-function boardStepEndedOf(outcome: StepOutcome, action: Action): Extract<BoardFact, { _tag: 'StepEnded' }> {
+function boardStepEndedOf(outcome: StepOutcome, action: Reached): Extract<BoardFact, { _tag: 'StepEnded' }> {
   const ending = boardEndingOf(action)
   const refused = action.yields === 'verdict' && action.result._tag === 'Completed' ? action.result.assessment : null
   return {
@@ -529,7 +407,7 @@ export function boardFactOf(event: Envelope): BoardFact[] {
       const d = event.data as PayloadOf<'StepEnded'>
       const facts: BoardFact[] = []
       for (const action of d.outcome.actions) {
-        if (action.result._tag === 'NotReached') continue
+        if (!isReached(action)) continue
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
           facts.push({
             _tag: 'SignoffRequested',

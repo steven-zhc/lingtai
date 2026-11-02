@@ -531,10 +531,10 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
     })
   })
 
-  it("leaves a granted sign-off's own verdict `pending`, since nothing re-records the action until the run that owns it continues (0120 §6, #465)", async () => {
+  it("leaves a granted sign-off's own verdict `asked`, since nothing re-records the action until the run that owns it continues (0120 §6, #465)", async () => {
     const granted = await fold(afterApprovalGranted)
     const row = taskOf(granted.tasks, 'ticket-pin-approval') as { verdicts: string }
-    expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'pending' })
+    expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'asked' })
   })
 
   /**

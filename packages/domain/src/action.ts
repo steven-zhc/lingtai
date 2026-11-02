@@ -218,6 +218,13 @@ export const Action = z.discriminatedUnion('yields', [
 ])
 export type Action = z.infer<typeof Action>
 
+/** An action that ran far enough to have a result of its own: `NotReached` excluded. */
+export type Reached = Action & { result: Exclude<Action['result'], NotReached> }
+
+export function isReached(action: Action): action is Reached {
+  return action.result._tag !== 'NotReached'
+}
+
 /** A step ending, with every action it declared, the ones not run included. */
 export const StepOutcome = z.object({
   step: Step,
