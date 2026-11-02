@@ -390,9 +390,9 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
 
 ## 2. What domain needs first
 
-These are additions, except where a decision (§5) changes a meaning. Each fold has a
-`version` from T0 onwards (§3). An addition that changes the fold's result for some
-history raises that version and adds a hash row (0124 §3).
+These are additions, except where a decision (§5) changes a meaning. Each lands in its
+final shape in the §3 ticket that first needs it (D15); no fold carries a version
+until the snapshots do (0124 §1).
 
 ### 2.1 The verdict ladder (D1, R0)
 
@@ -511,141 +511,96 @@ replaces backlog.ts:141-162 and conductor/backlog.ts:177, :184 and :344.
 
 ## 3. Tickets, in order
 
-One file or one fold per ticket. T0 comes first. The other ticket kinds are:
+**Rewritten 2026-11-02, on the operator's principle: no intermediate state.** Each
+fold reaches its final shape, the one §5 decides, directly. The plan this replaces
+first reproduced today's behaviour (legacy copies, characterization pins, a fold
+registered at "version 1 = today"), then changed it one cell at a time, with a
+version bump each. That was scaffolding, and all of it would have had to be taken
+down again. Nothing is stored that a version could invalidate until snapshots
+exist, so the registry, the codec and the version table land with the snapshot
+store (0124 §1 as edited on 2026-11-02).
 
-- **R-tickets** change only domain, plus its tests. They change no caller.
-- **C-tickets** switch one caller to domain, and add no domain field.
-- **P-tickets** switch one projection.
+**Each ticket is a vertical slice.** It adds one piece of a domain fold in its
+final shape, moves **every** reader of that piece onto it, and deletes the code it
+replaces in the same diff. No ticket leaves a domain field nobody reads, a
+projection column nobody reads, or a copy of an old fold. A slice too large for one
+pass is split along the state it adds, never into "add it" then "use it".
 
-A ticket that changes a fold's result on purpose (marked **⚑**) does three things:
+The *covers* column names the rows of the old table (R/C/P, still used by §2 and
+§6) that each ticket absorbs. The rows that remove a disagreement between the board
+and the conductor come first: 1, 4, 6, 5, then 7–9 and 11–12.
 
-- raises that fold's `version`;
-- adds one row to its version→hash table;
-- adds one named assertion per changed cell, for example
-  `it('D1: commit with null head is did-not-finish')`.
-
-It changes no pin (§4).
-
-| # | Ticket | Depends | Risk (concrete) |
-|---|---|---|---|
-| **T0a** | Fixture histories in `packages/domain/test/histories.ts`, built with the existing `makeStream`/`aRun`/`aClaim`/… (`packages/domain/test/events.ts`). They cover every event type each of run/ticket/control/chat/finding handles (0124 §3) **and the cells that tell the old folds from the new**: a `commit` with a null head; `worktree` `NotDone`; `design` `AnswerUnreadable`; a `NotReached` action; a signoff requested and then cleared by a later lifecycle event; a `RunFailed` followed by a `RunFinished`; a verdict on an older head after a force-push; a claim after `TicketClosed`; `GrantFixRound`, `Close` and an `IntegrationSucceeded` with no `TicketLanded`; an answer while `RunAwaitingInput` overwrote the note; a continuation naming an unclaimed run; and an orphan `DiscussionAnswered` | none | none. Edge: `makeStream`'s seq is module-global (`task-view-rebuild.test.ts:18-20`), so histories are built once, at module scope |
-| **T0b-1** | Characterization pins (unit project), generated from **today's** code, for the board's run folds: `foldRun` and `foldProgress`. It lands their `legacy…` copies, verbatim and with their whole closure (domain's `boardFactOf`/`verdictOf` included, since R0 changes that ladder), under `apps/board/test/legacy/`, and the board's snapshot-hash list (§4.1). Pins are end states, under two argument sets: no plan with `over: false`, and a fixed plan with `over: true` | T0a | none. It only adds tests |
-| **T0b-2** | The same for the board's ticket and chat folds: `standingOf`, `claimsOf` (board), `ticketFieldsOf`, `foldChat`, `backoffOf`, adding rows to the board's hash list | T0b-1 | none |
-| **T0b-3** | The same for the conductor's and the CLI's: `priorAttempts`, `attemptOutcome`, `turnsOf`, `outstanding`, `headOf` (cli), `lastStep`, `resumedPast`/`liftOwnPause` (tested through the public function), each package with its own `test/legacy/` and hash list | T0b-1 | none |
-| **T0c** | Rebuild pins for `ticket_report` (new) and `spend`, on `createSqliteProjectionStore(openSqliteProjections(':memory:'))`. It **reuses** the existing `packages/projector/unit/backlog-rebuild.test.ts` (already a never-regenerated snapshot pin, #481) and `spend-rebuild.test.ts` (assertion-based, so it gains a snapshot), and adds a `ticket-report-rebuild.test.ts` in their shape. task_view is already pinned by `task-view-rebuild.test.ts` | T0a | none |
-| **T0d** | 0124 §1/§3 in domain: the fold registry `{name, version, initial, apply, encode, decode}`, the codec (`bigint`, `Date`, absent vs `null`), the version→hash table and its test, and `decode(encode(s))` over each fixture history. Register `run` and `ticket` at **version 1 = today's result** (`reduceX = events.reduce(apply, initial)`). There is no snapshot storage yet | T0a | low. `reduceControl` has no `apply` yet, so control registers in R7, not here (decided 2026-11-02) |
-| R0 ⚑ | **One verdict ladder** (D1, §2.1): `stepStateOf` and `verdictOf` become one function in domain. It covers the four live cells and deletes the dead `NotReached` arms. Raises `run` | T0d | **Changes one approval decision**: `refusingOn` (`resolve-wait.ts:77-84`) now lists a null-head `commit`. `worktree` `NotDone` changes nothing there. Moves `resolve-wait.test.ts` and `approve-outcome.test.ts`. The `signoff` → `asked` cell changes task_view's `verdicts` jsonb **only after a rebuild**, which is done with P3's (§5 D1) |
-| R1 | `RunState.step`, `round` | T0d | additive; raises `run` |
-| R2 | `RunState.published`, `kept`, `route` | T0d | additive; raises `run` |
-| R3 ⚑ | `RunState.resolved`, `promptMeta`, `failure` (sticky, D3), `laneWaitedAt`, `refusal`; `filesOf` | T0d | `failure` is D3's change; the rest is additive. Raises `run` |
-| R4 | `TicketState.claims`, `lastAttemptAt`, `since` (D11) | T0d | additive; raises `ticket` |
-| R5 | `TicketState.lastMove` | R4 | additive; raises `ticket` |
-| R6 ⚑ | `TicketState.title`/`kind` from `TicketClaimed` (D4); `project`/`externalRef` from the stream id | T0d | It changes `reduceTicket(...).title/.kind/.externalRef`, and the wording of domain's answer question (ticket.ts:407-411). Prompts are not affected: `{{title}}` is replaced from the `ticket` argument of `renderPrompt` (`prompt.ts:221`, `:230`), which comes from the queue entry, not from `reduceTicket`. The ticket checks every reader of these fields |
-| R7 | `applyControl` + `evaluateControl(state, now)` (0124 §2), and the control fold registers at version 1. `reduceControl(events, now)` keeps its signature, and the fold reads only `CONTROL_FOLD_TYPES` | T0d | Callers are unchanged |
-| R8 | `ConductorPaused.cause` (optional, D8), and the fold keeps the ceiling cause. Raises `control` | R7 | An old event has no `cause`: the `CEILING_REASON` prefix rule stays as the fallback for events written before R8 (0124 §4) |
-| R9 | The GitHub-write ledger on `TicketState` (D9). Raises `ticket` | R4 | additive |
-| R9b | `reduceChat`, registered | T0d | new fold |
-| R9c | The backlog-finding fold, registered (D7) | T0d | new fold |
-| C1 | cli/discuss.ts `headOf` → `reduceRun().headSha` | T0b-3 | lowest. The same two events, with the same last-wins |
-| C2 | `RunState.published` readers: saved-fix-work.ts:13, status.ts:202, triage.ts:461-462, resolve-wait.ts:407-418 | R2 | low. Every one takes "last". `resolve-wait`'s `kept` match is by `sha` **and** `arm` (418-421), so `kept` must be a list, not last-only |
-| C3 | `RunState.step`/`round` readers: status.ts `lastStep`, conduct.ts `continuationRound` | R1 | low. `lastStep` returns null after **any** later `StepEnded` (236), not only that step's. Keep the rule or pin the difference |
-| C4 | attempts.ts `attemptOutcome` → `reduceRun` | R1, R2, R3 | medium. The `evidence` precedence today is the last refusal, then `RunFailed`, then the unfinished step (395-400). The new code keeps that order, not the lifecycle's |
-| C5 | attempts.ts `priorAttempts` → `TicketState.claims` | R4 | medium. `ended` is whichever of the release reason and *blocked, asking* comes **later** (171-183 runs before the switch on the same event) |
-| C6 | board `claimsOf` + `backoffOf` → `TicketState.claims`/`lastAttemptAt` | R4 | medium. `claimsOf` defaults `released` to `'released'` on an empty reason and ignores waits, which disagrees with C5's `ended`. `backoffOf` counts continuations and `claimsOf` does not. Keep two fields; do not unify them |
-| C7 | board `ticketFieldsOf` → `TicketState.title/kind/labels` | R6 | low after R6. The board reads `labels` off `TicketClaimed`, which has no `labels` (events.ts:188-213), so that read is dead |
-| C8 | board `standingOf` after-move block and `since` → `TicketState.lastMove`/`since` | R5 | medium. For `since`, the board counts a `TicketContinued` naming an unclaimed run as a move (the comment above `LIFECYCLE_MOVES`), and D11 keeps that |
-| C9a | board `foldRun` → `reduceRun` + `present(state)`, **with no intended change**. The view keeps today's ladder values and `current: true` through the mapping | R1, R2, R3 | medium. Proved by the dual run over every prefix (§4.2). `failure` is already sticky in the board, so R3 changes nothing here |
-| C9b ⚑ | Stale verdicts are shown (D2): `current` comes from `stepsOn`. **User-visible** | C9a | The task page marks a verdict on an older head as stale (§6) |
-| C9c ⚑ | The board takes the one ladder (R0) and clears `awaitingSha` with the lifecycle (D3) | C9a, R0 | user-visible: `asked` instead of `pending`, and an approved signoff stops showing as waiting (§6) |
-| C10 | board `foldProgress` → `reduceRun` + `progressOf(state, plan, over)` | R1, R3, **D10** | high. The `now` ordering rules (StepEnded clears only if the label matches, 524-533; RunFinished clears only AGENT or LANE) must survive as a pure function of state. Spend comes from the `spend` projection |
-| C11 | `foldChat`, `turnsOf`, `outstanding`, cli/discuss.ts:462 → `reduceChat` | R9b | low. `outstanding` counts answers (775), while `foldChat`/`turnsOf` drop an answer with no open turn (`foldChat`'s `!turn \|\| turn.answer !== null`, conductor/discuss.ts:759-760). An orphan answer makes `outstanding` say *answered* while the fold shows the ask open. Pin it |
-| C12 | day-ceiling.ts → `ControlState` | R7, R8 | medium. The pause's `until` lapse is now evaluated after the fold |
-| C13 | the ledger readers: board `bodyOutcome`, converge.ts:356/369, tell.ts's comment half | R9 | low |
-| P1 | spend.ts `spend_kind` → `TicketState.kind` (claim kind, latest non-null) | R6, P2's state column | low. The SQL is already "latest non-null by seq" (167-174) |
-| P2 ⚑ | ticket_report: outcome/passes/claims/waits from `applyTicket` state, kept as an encoded `TicketState` (T0d codec) in the row. **Deletes the reopen-after-close (372-375)**, because `closed` absorbs (D6) | R4, T0d | medium. It needs a `ticket_report` rebuild, and it moves the rows of any history with a claim after a close. Only an old log has one: since #151, `claimTicket` refuses anything not `backlog` (`claim.ts:127`) |
-| P3a | task_view: **add** the encoded `TicketState` column, written on every ticket event, and **read by nothing**. No behaviour change | R4-R6, T0d | **Shape drift** (#84, `projector/src/shape.ts`): `create table if not exists` never adds a column, so a daemon that restarts onto P3a before `lingtai projection rebuild task_view` stops at its first append. Carries the runbook (§4.6) |
-| P3b ⚑ | task_view `state` from `TicketState`: `WaitResolved{GrantFixRound}` → `approved` | P3a | **The queue's input moves**: `selectRunnable` (`queue.ts:97`) stops offering a granted ticket, and `inFlight()` (`daemon/src/control.ts:391`, `task-view.ts:634-645`) does not count it. Moves `conductor/unit/queue.test.ts`, `task-view-rebuild.test.ts`'s pin row, and `projector/integration/task-view.test.ts` (that file is not run by the pass) |
-| P3c ⚑ | `WaitResolved{Close}` → `waiting` until `TicketClosed` | P3a | the queue's input moves as in P3b; `queue.test.ts` |
-| P3d ⚑ | a claim after `TicketClosed` is ignored (D6) | P3a | old logs only (`claim.ts:127`) |
-| P3e ⚑ | `IntegrationSucceeded` alone is not `landed` | P3a | the board's Landed column. Check `inFlight`/`selectRunnable` for a row left `approved`/`running` |
-| P3f ⚑ | `answer` from `answers[]`, worded by `waitWords(reason).line` | P3a, R6 | the board's answer text changes (§6) |
-| P4 | backlog finding status → the domain finding fold (D7) | R9c | low |
-| last | 0124 §5-§10: the snapshot table in every store, the epoch, writing behind at a commit point, and reading snapshot plus tail, starting with the control stream | all of the above | 0124 §6's read is `read(streamId, fromVersion)`. #796's `readTypes` is a second read path for the control fold, and the ticket decides how the two compose |
-
-**Which rows go first (2026-11-02).** The table is the dependency order; within
-it, the rows that remove a disagreement between the board and the conductor are
-cut first: R0 → C9a → C9c (the two ladders), R6 (null `title`/`kind`), P2 (the
-reopen after a close) and P3a → P3b–f (task_view against domain). The rows that
-only remove a duplicate — C1–C3, C5, C11–C13, R7–R9c, P1, P4 — follow. Every row
-is cut through write-ticket when the one before it lands, against the code as it
-is then; only T0b-1 to T0d are opened ahead.
+| # | Ticket | Covers | Depends | What moves |
+|---|---|---|---|---|
+| 1 | **One verdict ladder.** `stepStateOf` and `verdictOf` become one function in domain with D1's values. `RunState.steps`, `cardFactOf`, `attemptFactOf` and `boardFactOf` all read it, and the dead `NotReached` arms go | R0 | — | `refusingOn` now lists a null-head `commit` (§2.1). task_view's `verdicts` jsonb changes on a rebuild, so the ticket carries the runbook (§4) |
+| 2 | **Where a run is.** `RunState.step` (D12: only a `StepEnded` for that step clears it) and `round`. `lingtai status`'s `lastStep` and `conduct.ts`'s `continuationRound` read them | R1, C3 | — | status reads the run's state rather than scanning events |
+| 3 | **What a run published.** `RunState.published` (last), `kept` (a list), `route` (last). `saved-fix-work.ts`, `status.ts`, `triage.ts`, `resolve-wait.ts` and the CLI's `headOf` read them | R2, C1, C2 | — | `resolve-wait`'s `kept` match stays by `sha` **and** `arm` |
+| 4 | **How a run ended.** `RunState.resolved`, `promptMeta`, `failure` (sticky, D3), `refusal`, `laneWaitedAt`, and `filesOf(state)`. `attempts.ts`'s `attemptOutcome` reads them | R3, C4 | 1 | the evidence precedence stays: last refusal, then `RunFailed`, then the unfinished step |
+| 6 | **The board's progress.** `foldProgress` becomes `progressOf(state, plan, over)` over `RunState` (D10). Spend comes from the `spend` projection | R1, R3, C10 | 2, 4 | the `now` rules (a `StepEnded` clears only its own label; `RunFinished` clears only the agent or the lane) become a pure function of state |
+| 5 | **The board's run.** `foldRun` becomes `reduceRun` plus a `present(state)` that draws `RunView`. Stale verdicts show (D2), and `awaitingSha` clears with the lifecycle (D3) | C9a–c | 1, 3, 4, 6 | user-visible: §6's stale verdicts, `asked`, cleared signoff |
+| 7 | **A ticket's attempts.** `TicketState.claims`, each with a typed `ended` (D13), `lastAttemptAt` and `since` (D11). `priorAttempts`, the board's `claimsOf` and `backoffOf` read them, and the board's dead `repair` field goes (D16) | R4, C5, C6 | — | the board shows an attempt that ended by asking a person |
+| 8 | **What a ticket is.** `title`/`kind` from `TicketClaimed`, and `project`/`externalRef` from the stream id (D4). The board's `ticketFieldsOf` reads them | R6, C7 | — | domain's answer question names the agent branch again (§2.3) |
+| 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
+| 10 | **What Lingtai wrote to GitHub.** The ledger on `TicketState` (D9). The board's `bodyOutcome`, `converge.ts` and `tell.ts`'s comment half read it | R9, C13 | — | — |
+| 11 | **task_view is the ticket fold.** The row's `state` and `answer` come from `TicketState`, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 9 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
+| 12 | **ticket_report is the ticket fold.** outcome, passes, claims and waits come from `TicketState`. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7 | rebuild, runbook |
+| 13 | **spend's kind.** `spend_kind` from `TicketState.kind` | P1 | 8 | rebuild, runbook |
+| 14 | **The control fold.** `applyControl` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains a typed `cause`, its `schemaVer` goes up, and an upcaster derives the cause of an older event from its reason (D8, D16). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `applyControl` reads |
+| 15 | **The chat fold.** `reduceChat` (D14). The board's `foldChat`, `turnsOf`, `outstanding` and the CLI's count read it | R9b, C11 | — | an orphan answer no longer counts as answering anything |
+| 16 | **The finding fold.** Domain's backlog-finding fold; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
+| — | Snapshots, with 0124's registry, codec and version table | last | all | not in 0.12 |
 
 R (17) and the S branches marked "leave" are left alone. That covers tell (apart from
-C13's ledger half), extension, work-loop, markdown, webhook, create-app, end-step,
-base-check, daemon/control `startAfter`, cli/day-ceiling and triage:674/784.
+ticket 10's ledger half), extension, work-loop, markdown, webhook, create-app,
+end-step, base-check, daemon/control `startAfter`, cli/day-ceiling and
+triage:674/784.
 
-**Ordering against #790.** #797's C- and P-tickets land **before** #790's row 4 (the
-projector as Effects), row 8 (`conductor/pass.ts`) and row 9 (the daemon loop). Those
-rows rewrite the same files, `task-view.ts`, `ticket-report.ts`, `spend.ts` and
-`attempts.ts`'s callers. #791 (tracing) and #792 (the Effect ratchet) are unaffected.
+**Ordering against #790.** These tickets land **before** #790's row 4 (the projector
+as Effects), row 8 (`conductor/pass.ts`) and row 9 (the daemon loop). Those rows
+rewrite the same files.
+
+Each ticket is cut through write-ticket when the one it depends on lands, against the
+code as it is then.
 
 ---
 
-## 4. How each ticket proves what moved and what did not
+## 4. How each ticket proves what it changed
 
-1. **Pins land once, in T0b/T0c, and only there.** They follow
-   `task-view-rebuild.test.ts`'s header convention: *"generated from today's code,
-   and never regenerated after the src change… inspect the changed values rather than
-   regenerating"*. On top of that convention, **a unit test holds a hash of every
-   `.snap` file** that T0b/T0c commit, as a committed list of `file → sha256` to
-   which rows are only added — one list per package, beside its own
-   `__snapshots__`, so no package reads another's directory (2026-11-02). Each
-   `legacy…` copy lives in the package of the code it copies, under `test/legacy/`,
-   and freezes everything it calls that a later #797 ticket may change. `vitest -u`, or a hand edit to a snapshot, changes the
-   hash, and that test goes red, naming the file. No C- or P-ticket may touch a
-   `.snap` file or the hash list.
-2. **An intended change is a version, not a pin edit.** A ⚑ ticket leaves every pin
-   and every legacy copy as it is. Where its change reaches a pinned view, the pin's
-   test compares **through an explicit, named delta**: a function in the test, one
-   entry per decision cell (`D1: commit null head`, …), that maps the legacy result
-   to the intended one. The pinned bytes stay byte-identical. The same ticket raises
-   the fold's `version`, adds a hash row (0124 §3), and adds one named `it(...)` per
-   changed cell. A reviewer reads the delta function and the new rows, which name the
-   decision, rather than a snapshot diff.
-3. **The dual run in the switching ticket.** The `legacy…` copy from T0b, not one
-   written in the switching diff, is folded over every fixture history beside the new
-   fold. Both are mapped to the **view the page draws** (`RunView`, `StandingView`,
-   `DiscussionView`, a task_view row) and compared with `toStrictEqual`, through the
-   named delta if the ticket is ⚑. Every prefix of every history is folded too (each
-   `k` in `1..n`), because the page renders mid-run. That exercises the "running" and
-   "pending" cells a whole-history pin never sees. A legacy copy is deleted in a
-   follow-up, never in the diff that first proves equality.
-4. **Domain R-tickets** are proved by the 0124 §3 hash table (from T0d), by
-   `reduce(h) === prefix-apply(h)`, and by `decode(encode(s))`.
-5. **Projections:** the rebuild pin must give the same rows, through the named delta
-   for a ⚑ P-ticket. For P2 and P3, an incremental apply in batches of 1, 3 and all
-   must give the same rows as a rebuild. That is 0022's "replay, never repair", and it
-   catches a state column that a batch boundary loses (cf. spend.ts:153-157's warning
-   about the `claimed` set).
-6. **The runbook for every task_view or ticket_report ticket** (P2, P3a-f, and R0's
-   signoff cell), in the ticket body:
-   1. `lingtai shutdown "…"` and wait for the drain (0030). Do this **before** the
+1. **The decision is the test.** The domain half of a ticket asserts the state §5
+   decides over the fixture histories in `@lingtai/domain/test/histories` (#798),
+   one named `it(...)` per decided cell (`it('D1: a commit with no head did not
+   finish')`). The fixtures are hash-locked and never edited. A case they lack is a
+   new history, appended.
+2. **The existing suite holds everything else.** The tests of the readers being moved
+   (`standing.test.tsx`, `progress.test.ts`, `task-page.test.tsx`, `queue.test.ts`,
+   …) are the record of today's behaviour. They keep passing, and **an assertion
+   changes only where a decision in §5 says so**. Each changed assertion names its
+   decision, and a reviewer refuses an unexplained one.
+3. **The old code goes in the same diff.** No `legacy…` copy, no export kept for a
+   caller not yet moved. `git show` is the record of what it was.
+4. **Projections.** A rebuild over the fixtures gives the rows the decisions say, and
+   an incremental apply in batches of 1, 3 and all gives the same rows as a rebuild
+   (0022's *replay, never repair*; cf. `spend.ts:153-157`'s warning about the
+   `claimed` set).
+5. **The runbook, for every ticket that changes what a projection stores** (1, 11, 12,
+   13, 16), in the ticket body:
+   1. `lingtai shutdown "…"`, and wait for the drain (0030). This comes **before** the
       rebuild: `inFlight()` reads task_view and takes a failed read as `[]`
-      (`daemon/src/control.ts:391-394`), so during a rebuild a drain would be told
-      nothing is in flight.
+      (`daemon/src/control.ts:391-394`), so a drain during a rebuild is told nothing
+      is in flight.
    2. Merge.
-   3. `lingtai projection rebuild task_view` (or `ticket_report`). It drops the table
-      and replays, and the board shows a partial table until the replay finishes
+   3. `lingtai projection rebuild <name>`. It drops the table and replays, and the
+      board shows a partial table until the replay finishes
       (`projector/src/projection.ts:232-251`).
-   4. `lingtai restart "picking up #…"`. `lingtai doctor`'s shape check must be green
+   4. `lingtai restart "picking up #…"`, with `lingtai doctor`'s shape check green
       first.
-7. `pnpm test` and `pnpm typecheck` only. No `Done when` asks for
+6. `pnpm typecheck` and `HOME=/nonexistent pnpm test` only. No `Done when` asks for
    `pnpm test:integration` (CLAUDE.md).
 
 Watch out: a recorded fixture exported from the live log is tempting, but it carries
-prompt and issue text, and 0124 notes the log can be reset. Synthetic histories built
-from the `test/events.ts` builders are the durable pin. A recorded one, if added at
-all, is scrubbed and cited by issue number, not seq.
+prompt and issue text, and the log can be reset. Synthetic histories built from the
+`test/events.ts` builders are the durable record. A recorded one, if added at all, is
+scrubbed and cited by issue number, not seq.
 
 ---
 
@@ -683,20 +638,36 @@ all, is scrubbed and cited by issue number, not seq.
   exists only in an old log.
 - **D7. Domain gains `reduceChat` (R9b) and a backlog-finding fold (R9c).** P4 is
   required.
-- **D8. `ConductorPaused` gains an optional typed `cause`.** The day ceiling's pause is
-  recognised by it, falling back to the reason prefix for events written before it.
-  `CONTROL_FOLD_TYPES` stays in step.
+- **D8. `ConductorPaused` gains a typed `cause`.** The day ceiling's pause is
+  recognised by it alone. An event written before it is upcast (D16): its
+  `schemaVer` step derives the cause from the reason prefix, so the fold never reads
+  the reason. `CONTROL_FOLD_TYPES` stays in step.
 - **D9. The GitHub-write ledger is a `TicketState` field (R9, C13).**
 - **D10. Facts of progress are `RunState`**: the current step, round, since, lane wait,
   plan and rounds opened. Phase labels and budgets stay on the board. Spend is read
   from the `spend` projection only.
 - **D11. A continuation counts as a lifecycle move for `since`**, as the board counts it
-  today. This is the default; it was not discussed.
-- **Sequencing.** T0 lands first, **including 0124's registry, codec and version→hash
-  table (T0d) at version 1 = today's behaviour**. From then on, every ⚑ ticket raises
-  its fold's version, adds a hash row, and adds a named assertion per changed cell.
-  Snapshot storage and the snapshot-plus-tail read land last. #797's C- and
-  P-tickets go before #790's rows 4, 8 and 9.
+  today (the operator, 2026-11-02).
+- **D12. A run is in a step from its `StepStarted` until a `StepEnded` for that same
+  step** (2026-11-02). A `StepEnded` for another step does not clear it. Steps run in
+  order, so on every real log this answers what `lingtai status` answers today.
+- **D13. An attempt has one typed ending** (2026-11-02):
+  `{ kind: 'released', reason } | { kind: 'asked', waitId }`, whichever came later, and
+  no words. The conductor and the board each word it with `waitWords`. The board's
+  default of `'released'` for an empty reason goes.
+- **D14. An answer belongs to the latest unanswered ask before it** (2026-11-02). An
+  answer with no open ask is ignored, and a request is outstanding exactly when an
+  ask has no answer. `outstanding`'s count goes.
+- **D15. No intermediate state** (2026-11-02). A fold reaches its §5 shape directly,
+  in vertical slices (§3); there are no legacy copies, characterization pins or
+  version bumps on the way, and 0124's registry lands with the snapshots.
+- **D16. Old logs are upcast, never branched on** (2026-11-02). A payload whose shape
+  changed gets a `schemaVer` step in `upcast.ts`. A sequence the conductor can no
+  longer write, like a claim after a close, is absorbed by the fold's own rule
+  (`closed` is terminal, D6). A field only an old log could fill, like the board's
+  `Claim.repair`, is deleted. The log is not reset.
+- **Sequencing.** §3's order. Snapshot storage and the snapshot-plus-tail read land
+  last, after 0.12. #797's tickets go before #790's rows 4, 8 and 9.
 
 ---
 

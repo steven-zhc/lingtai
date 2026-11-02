@@ -40,13 +40,12 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    what JSON does not: `bigint` (`lastSeq`, a refusal's `seq`), `Date`, and the
    difference between an absent key and `null`. A unit test per fold asserts
    `decode(encode(s))` is strictly equal to `s` over its fixture history.
-   **The registry, the codec and the version table come first, the snapshots
-   last.** Each fold is registered at version 1 with what it computes today,
-   before any of its readers are moved onto it, so that every deliberate change
-   on the way — and the one-fold work makes several
-   ([design/one-fold-per-stream.md](../design/one-fold-per-stream.md) §5) — is a
-   version and a row in the table rather than a silent difference; the
-   snapshot store is built once the folds have their final shape.
+   **The registry, the codec and the version table land with the snapshot
+   store, after the folds have their final shape.** A version exists to
+   invalidate a stored snapshot, and until one is stored there is nothing for
+   it to invalidate: a fold reaches its final shape directly
+   ([design/one-fold-per-stream.md](../design/one-fold-per-stream.md) §5), and
+   is registered at version 1 with that shape.
 
 2. **What depends on the clock is not folded.** A fold's state is a function of
    the events alone. Whatever depends on *now* — the control state's pause that
