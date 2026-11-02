@@ -21,7 +21,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, waitWords, type ProjectState } from '@lingtai/domain'
+import { agentBranchOf, reduceRun, waitWords, type ProjectState } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -226,19 +226,11 @@ export interface StatusRun {
 }
 
 /**
- * The step a run is inside: its last `StepStarted`, unless a `StepEnded` came after it,
- * and then it is between steps (null). A failed read throws — it is not "no step".
+ * The step a run is inside: `RunState.step` off its folded stream (D12). A failed read throws — it
+ * is not "no step".
  */
 async function lastStep(runId: string): Promise<StatusRun['step']> {
-  const events = await eventStore.read(runId)
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i]!
-    if (e.type === 'StepEnded') return null
-    if (e.type !== 'StepStarted') continue
-    const d = e.data as { step: string; round: number }
-    return { step: d.step, round: d.round }
-  }
-  return null
+  return reduceRun(await eventStore.read(runId)).step
 }
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */

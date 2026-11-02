@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
 import { emptyRun, stepsOn, reduceRun } from '../src/index.ts'
+import { lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const started = {
@@ -323,5 +324,43 @@ describe('reduceRun', () => {
 
     expect(s.lifecycle.status).toBe('running')
     expect(s.version).toBe(2)
+  })
+})
+
+describe('RunState.step and implementRound (#822)', () => {
+  const at = (runId = 'r') => makeStream(runId)
+
+  it('StepStarted sets step, and its own StepEnded clears it', () => {
+    const event = at()
+    const begun = [event('StepStarted', { runId: 'r', step: 'build', round: 2 })]
+    expect(reduceRun(begun).step).toEqual({ step: 'build', round: 2 })
+    const ended = [...begun, event('StepEnded', { runId: 'r', outcome: { step: 'build', round: 2, actions: [] } })]
+    expect(reduceRun(ended).step).toBeNull()
+  })
+
+  it('RunFailed leaves step', () => {
+    const event = at()
+    const state = reduceRun([
+      event('StepStarted', { runId: 'r', step: 'review', round: 0 }),
+      event('RunFailed', { kind: 'timeout', detail: 'wall' }),
+    ])
+    expect(state.step).toEqual({ step: 'review', round: 0 })
+  })
+
+  it('a non-implement start does not raise implementRound', () => {
+    const event = at()
+    const state = reduceRun([event('StepStarted', { runId: 'r', step: 'review', round: 3 })])
+    expect(state.implementRound).toBe(0)
+  })
+
+  it('D12: a StepEnded for another step leaves step', () => {
+    const state = reduceRun(lateHistories.run.stepEndedForAnother)
+    expect(state.step).toEqual({ step: 'implement', round: 0 })
+  })
+
+  it('a FixRound route raises implementRound', () => {
+    const state = reduceRun(lateHistories.run.fixRoundRouted)
+    expect(state.implementRound).toBe(1)
+    expect(state.step).toEqual({ step: 'implement', round: 1 })
   })
 })

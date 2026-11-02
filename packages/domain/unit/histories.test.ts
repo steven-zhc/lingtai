@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
 import { CONTROL_FOLD_TYPES, EVENTS, parseTicketStream, reduceControl, reduceRun, reduceTicket } from '../src/index.ts'
-import { COVERS, NOW, histories, scenarios } from '../test/histories.ts'
+import { COVERS, NOW, histories, lateHistories, scenarios } from '../test/histories.ts'
 import hashes from './histories.hashes.json'
 
 const src = (file: string) => fileURLToPath(new URL(`../src/${file}`, import.meta.url))
@@ -48,7 +48,7 @@ function caseLabels(file: string, fn: string): Set<string> {
   return labels
 }
 
-const singles = Object.entries(histories).flatMap(([kind, byName]) =>
+const singles = [...Object.entries(histories), ...Object.entries(lateHistories)].flatMap(([kind, byName]) =>
   Object.entries(byName as Record<string, readonly Envelope[]>).map(([name, events]) => ({
     kind: kind as keyof typeof histories,
     name,

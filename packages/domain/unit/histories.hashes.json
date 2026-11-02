@@ -26,5 +26,7 @@
   "finding.declined": "9d1fe02867364e57f539c20f5d424ace34d915899a1154a04c1c8a519f284eea",
   "scenario.integratedWithoutLanding": "30d2c1ac1d0a09b18318d83a24c5d08faa77b662b6280d475f648de032cd1734",
   "scenario.answerAfterRunNote": "cd514e995f03c0f6772c7b9dd489741d5edd106617d673afe178af7d7efaf58d",
-  "scenario.landedWithRun": "b660ccee6008fc7a44d00317bbaa44a394fa681950e0b098d61b0374ef9b6d76"
+  "scenario.landedWithRun": "b660ccee6008fc7a44d00317bbaa44a394fa681950e0b098d61b0374ef9b6d76",
+  "run.fixRoundRouted": "d7c0514c68eaa49ba1ce9b20260f0c8d57ab02d5c8a081f83eda437f77a5c174",
+  "run.stepEndedForAnother": "9dcdb17b152718755786e245f775506b52f34b03b936de1ea27eb8b2c0c527df"
 }
