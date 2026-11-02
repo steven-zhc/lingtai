@@ -529,9 +529,11 @@ It changes no pin (§4).
 | # | Ticket | Depends | Risk (concrete) |
 |---|---|---|---|
 | **T0a** | Fixture histories in `packages/domain/test/histories.ts`, built with the existing `makeStream`/`aRun`/`aClaim`/… (`packages/domain/test/events.ts`). They cover every event type each of run/ticket/control/chat/finding handles (0124 §3) **and the cells that tell the old folds from the new**: a `commit` with a null head; `worktree` `NotDone`; `design` `AnswerUnreadable`; a `NotReached` action; a signoff requested and then cleared by a later lifecycle event; a `RunFailed` followed by a `RunFinished`; a verdict on an older head after a force-push; a claim after `TicketClosed`; `GrantFixRound`, `Close` and an `IntegrationSucceeded` with no `TicketLanded`; an answer while `RunAwaitingInput` overwrote the note; a continuation naming an unclaimed run; and an orphan `DiscussionAnswered` | none | none. Edge: `makeStream`'s seq is module-global (`task-view-rebuild.test.ts:18-20`), so histories are built once, at module scope |
-| **T0b** | Characterization pins (unit project), generated from **today's** code: `foldRun`, `foldProgress`, `standingOf`, `claimsOf`, `ticketFieldsOf`, `foldChat`, `backoffOf`, `priorAttempts`, `attemptOutcome`, `turnsOf`, `outstanding`, `headOf`, `lastStep`, `resumedPast`/`liftOwnPause` (exported, or tested through the public function). This ticket also lands each `legacy…` copy of those functions, verbatim, under `test/legacy/`, and the snapshot-hash test (§4.1) | T0a | none. It only adds tests |
+| **T0b-1** | Characterization pins (unit project), generated from **today's** code, for the board's run folds: `foldRun` and `foldProgress`. It lands their `legacy…` copies, verbatim and with their whole closure (domain's `boardFactOf`/`verdictOf` included, since R0 changes that ladder), under `apps/board/test/legacy/`, and the board's snapshot-hash list (§4.1). Pins are end states, under two argument sets: no plan with `over: false`, and a fixed plan with `over: true` | T0a | none. It only adds tests |
+| **T0b-2** | The same for the board's ticket and chat folds: `standingOf`, `claimsOf` (board), `ticketFieldsOf`, `foldChat`, `backoffOf`, adding rows to the board's hash list | T0b-1 | none |
+| **T0b-3** | The same for the conductor's and the CLI's: `priorAttempts`, `attemptOutcome`, `turnsOf`, `outstanding`, `headOf` (cli), `lastStep`, `resumedPast`/`liftOwnPause` (tested through the public function), each package with its own `test/legacy/` and hash list | T0b-1 | none |
 | **T0c** | Rebuild pins for `ticket_report` (new) and `spend`, on `createSqliteProjectionStore(openSqliteProjections(':memory:'))`. It **reuses** the existing `packages/projector/unit/backlog-rebuild.test.ts` (already a never-regenerated snapshot pin, #481) and `spend-rebuild.test.ts` (assertion-based, so it gains a snapshot), and adds a `ticket-report-rebuild.test.ts` in their shape. task_view is already pinned by `task-view-rebuild.test.ts` | T0a | none |
-| **T0d** | 0124 §1/§3 in domain: the fold registry `{name, version, initial, apply, encode, decode}`, the codec (`bigint`, `Date`, absent vs `null`), the version→hash table and its test, and `decode(encode(s))` over each fixture history. Register `run`, `ticket` and `control` at **version 1 = today's result** (`reduceX = events.reduce(apply, initial)`). There is no snapshot storage yet | T0a | low. `reduceControl` has no `apply` yet, so control registers after R7, or T0d wraps it. Say which in the ticket |
+| **T0d** | 0124 §1/§3 in domain: the fold registry `{name, version, initial, apply, encode, decode}`, the codec (`bigint`, `Date`, absent vs `null`), the version→hash table and its test, and `decode(encode(s))` over each fixture history. Register `run` and `ticket` at **version 1 = today's result** (`reduceX = events.reduce(apply, initial)`). There is no snapshot storage yet | T0a | low. `reduceControl` has no `apply` yet, so control registers in R7, not here (decided 2026-11-02) |
 | R0 ⚑ | **One verdict ladder** (D1, §2.1): `stepStateOf` and `verdictOf` become one function in domain. It covers the four live cells and deletes the dead `NotReached` arms. Raises `run` | T0d | **Changes one approval decision**: `refusingOn` (`resolve-wait.ts:77-84`) now lists a null-head `commit`. `worktree` `NotDone` changes nothing there. Moves `resolve-wait.test.ts` and `approve-outcome.test.ts`. The `signoff` → `asked` cell changes task_view's `verdicts` jsonb **only after a rebuild**, which is done with P3's (§5 D1) |
 | R1 | `RunState.step`, `round` | T0d | additive; raises `run` |
 | R2 | `RunState.published`, `kept`, `route` | T0d | additive; raises `run` |
@@ -539,12 +541,12 @@ It changes no pin (§4).
 | R4 | `TicketState.claims`, `lastAttemptAt`, `since` (D11) | T0d | additive; raises `ticket` |
 | R5 | `TicketState.lastMove` | R4 | additive; raises `ticket` |
 | R6 ⚑ | `TicketState.title`/`kind` from `TicketClaimed` (D4); `project`/`externalRef` from the stream id | T0d | It changes `reduceTicket(...).title/.kind/.externalRef`, and the wording of domain's answer question (ticket.ts:407-411). Prompts are not affected: `{{title}}` is replaced from the `ticket` argument of `renderPrompt` (`prompt.ts:221`, `:230`), which comes from the queue entry, not from `reduceTicket`. The ticket checks every reader of these fields |
-| R7 | `applyControl` + `evaluateControl(state, now)` (0124 §2). `reduceControl(events, now)` keeps its signature, and the fold reads only `CONTROL_FOLD_TYPES` | T0d | Callers are unchanged. The control fold registers here if T0d did not |
+| R7 | `applyControl` + `evaluateControl(state, now)` (0124 §2), and the control fold registers at version 1. `reduceControl(events, now)` keeps its signature, and the fold reads only `CONTROL_FOLD_TYPES` | T0d | Callers are unchanged |
 | R8 | `ConductorPaused.cause` (optional, D8), and the fold keeps the ceiling cause. Raises `control` | R7 | An old event has no `cause`: the `CEILING_REASON` prefix rule stays as the fallback for events written before R8 (0124 §4) |
 | R9 | The GitHub-write ledger on `TicketState` (D9). Raises `ticket` | R4 | additive |
 | R9b | `reduceChat`, registered | T0d | new fold |
 | R9c | The backlog-finding fold, registered (D7) | T0d | new fold |
-| C1 | cli/discuss.ts `headOf` → `reduceRun().headSha` | T0b | lowest. The same two events, with the same last-wins |
+| C1 | cli/discuss.ts `headOf` → `reduceRun().headSha` | T0b-3 | lowest. The same two events, with the same last-wins |
 | C2 | `RunState.published` readers: saved-fix-work.ts:13, status.ts:202, triage.ts:461-462, resolve-wait.ts:407-418 | R2 | low. Every one takes "last". `resolve-wait`'s `kept` match is by `sha` **and** `arm` (418-421), so `kept` must be a list, not last-only |
 | C3 | `RunState.step`/`round` readers: status.ts `lastStep`, conduct.ts `continuationRound` | R1 | low. `lastStep` returns null after **any** later `StepEnded` (236), not only that step's. Keep the rule or pin the difference |
 | C4 | attempts.ts `attemptOutcome` → `reduceRun` | R1, R2, R3 | medium. The `evidence` precedence today is the last refusal, then `RunFailed`, then the unfinished step (395-400). The new code keeps that order, not the lifecycle's |
@@ -570,6 +572,14 @@ It changes no pin (§4).
 | P4 | backlog finding status → the domain finding fold (D7) | R9c | low |
 | last | 0124 §5-§10: the snapshot table in every store, the epoch, writing behind at a commit point, and reading snapshot plus tail, starting with the control stream | all of the above | 0124 §6's read is `read(streamId, fromVersion)`. #796's `readTypes` is a second read path for the control fold, and the ticket decides how the two compose |
 
+**Which rows go first (2026-11-02).** The table is the dependency order; within
+it, the rows that remove a disagreement between the board and the conductor are
+cut first: R0 → C9a → C9c (the two ladders), R6 (null `title`/`kind`), P2 (the
+reopen after a close) and P3a → P3b–f (task_view against domain). The rows that
+only remove a duplicate — C1–C3, C5, C11–C13, R7–R9c, P1, P4 — follow. Every row
+is cut through write-ticket when the one before it lands, against the code as it
+is then; only T0b-1 to T0d are opened ahead.
+
 R (17) and the S branches marked "leave" are left alone. That covers tell (apart from
 C13's ledger half), extension, work-loop, markdown, webhook, create-app, end-step,
 base-check, daemon/control `startAfter`, cli/day-ceiling and triage:674/784.
@@ -588,7 +598,10 @@ rows rewrite the same files, `task-view.ts`, `ticket-report.ts`, `spend.ts` and
    and never regenerated after the src change… inspect the changed values rather than
    regenerating"*. On top of that convention, **a unit test holds a hash of every
    `.snap` file** that T0b/T0c commit, as a committed list of `file → sha256` to
-   which rows are only added. `vitest -u`, or a hand edit to a snapshot, changes the
+   which rows are only added — one list per package, beside its own
+   `__snapshots__`, so no package reads another's directory (2026-11-02). Each
+   `legacy…` copy lives in the package of the code it copies, under `test/legacy/`,
+   and freezes everything it calls that a later #797 ticket may change. `vitest -u`, or a hand edit to a snapshot, changes the
    hash, and that test goes red, naming the file. No C- or P-ticket may touch a
    `.snap` file or the hash list.
 2. **An intended change is a version, not a pin edit.** A ⚑ ticket leaves every pin
