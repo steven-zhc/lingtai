@@ -1573,6 +1573,11 @@ export async function loadCurrentTriageStatus(
   return currentTriageStatus(standing, card ?? null, triageContextOf(project?.recipe.triage !== undefined, daemon))
 }
 
+/** The run whose wait the ticket is stopped at now, else null; an `OwnQuestion` hold names none (D13). */
+export function heldRunOf(life: TicketLifecycle): string | null {
+  return life.status === 'blocked' ? life.runId : null
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await timed('events.task', () => eventStore.read(taskId))
 
@@ -1618,8 +1623,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // Each stream is folded once; everything below draws from these states.
   const states = claims.map((_, i) => reduceRun(streams[i] ?? []))
   // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
-  const life = ticketState.lifecycle
-  const heldRun = life.status === 'blocked' ? life.runId : null
+  const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
   const folded = claims.map((c, i) =>
     presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
