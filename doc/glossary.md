@@ -38,21 +38,21 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   (0100). Every event belongs to one **stream**.
 - **Stream** (流) — the events about one thing, in order. The id's prefix says
   what the thing is (`packages/domain/src/streams.ts`).
-- **Apply event** (应用事件) — the one rule that takes a stream's state and its
-  next event and returns the state after it. Each kind of stream has exactly one,
-  in `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
+- **Reduce** — the one rule that takes a stream's state and its next event and
+  returns the state after it. Each kind of stream has exactly one, in
+  `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
   board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
-  Code: `applyRun(state, event)`, `applyTicket`, `applyControl`, and so on.
-  `reduceRun(events)` and its siblings are *apply every event of the stream, from
-  the start*. The older words *fold* and *reduce* mean the same thing; say *apply
-  event*.
-- **State** (状态) — what applying every event of one stream gives. A state is
+  Code: `reduceRunEvent(state, event)` reduces one event and `reduceRun(events)`
+  a whole stream from the start, and likewise for every stream (the one-event
+  step is still named `applyRun`, `applyTicket`, … until it is renamed). Say
+  *reduce*: the older words *fold* and *apply* mean the same thing.
+- **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a
   projection or a caller's join.
 - **Projection** (投影) — a table built from the whole log in `seq` order, for
   questions across many streams (`task_view`, `ticket_report`, `spend`,
   `finding_backlog`). Where a row needs one stream's state, the projection stores
-  that state in the row and applies each new event to it with the same domain
+  that state in the row and reduces each new event into it with the same domain
   rule. It is corrected only by `lingtai projection rebuild <name>`.
 
 The states, one per kind of stream:
