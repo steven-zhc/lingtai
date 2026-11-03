@@ -45,7 +45,8 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   Code: `reduceRunEvent(state, event)` reduces one event and `reduceRun(events)`
   a whole stream from the start, and likewise for every stream (the one-event
   step is still named `applyRun`, `applyTicket`, … until it is renamed). Say
-  *reduce*: the older words *fold* and *apply* mean the same thing.
+  *reduce* for the act and **reducer** for the rule (the run reducer); the older
+  words *fold* and *apply* mean the same thing.
 - **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a
   projection or a caller's join.

@@ -456,5 +456,7 @@ take effect is run once per clone:
 Without it, `git blame` on any reformatted line answers the sweep instead of the
 commit that decided the line's content, which is 468 files' worth of wrong
 answer. A commit earns a line in that file only when it contains nothing but
-formatting and `pnpm typecheck` and `pnpm test` were green across it; an `oxfmt`
+formatting, or nothing but a scripted rename of identifiers and words (the
+hand edits that follow a rename are a separate commit and earn no line), and
+`pnpm typecheck` and `pnpm test` were green across it; an `oxfmt`
 version bump changes its output, so each bump's reformat is its own line.
