@@ -257,6 +257,7 @@ describe('the totals', () => {
       usage: [],
       estimatedUsd: null,
       estimateFetched: null,
+      grant: null,
       kind: null,
     }
   }

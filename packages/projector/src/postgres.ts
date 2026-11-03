@@ -18,7 +18,7 @@ import { postgresUrl } from '@lingtai/env'
 import pg from 'pg'
 
 import type { BacklogEntry } from './backlog.ts'
-import type { SpendRow } from './spend.ts'
+import { grantOfFor, type SpendRow } from './spend.ts'
 import { CheckpointRewoundError, columnOf } from './store.ts'
 import type {
   BacklogQuery,
@@ -209,6 +209,7 @@ function toSpendRow(row: pg.QueryResultRow): SpendRow {
     estimatedUsd: row.estimated_usd ?? null,
     estimateFetched: row.estimate_fetched ?? null,
     kind: row.kind ?? null,
+    grant: grantOfFor(row.spent_for),
   }
 }
 

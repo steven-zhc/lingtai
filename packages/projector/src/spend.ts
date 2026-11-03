@@ -303,6 +303,15 @@ export interface SpendRow {
   estimateFetched: boolean | null
   /** The ticket's kind as its run's claim carried it when folded; null where unclassified. */
   kind: string | null
+  /** The wait a person's grant resolved, when this row paid for a granted round; null otherwise. */
+  grant: string | null
+}
+
+/** `spent_for.grant` where the row is an `Action` and names one; null otherwise. */
+export function grantOfFor(spentFor: unknown): string | null {
+  if (typeof spentFor !== 'object' || spentFor === null) return null
+  const f = spentFor as { _tag?: unknown; grant?: unknown }
+  return f._tag === 'Action' && typeof f.grant === 'string' ? f.grant : null
 }
 
 export interface ReadSpendOptions extends SpendQuery {

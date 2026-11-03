@@ -25,6 +25,7 @@ import {
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
+  reduceRun,
 } from '@lingtai/domain'
 import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
 import { hasGitHubAuth } from '@lingtai/env'
@@ -85,7 +86,7 @@ import {
   type WaitingNeighbour,
 } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
-import { describeHeld, elapsed, foldProgress, type RunProgress } from './progress.ts'
+import { describeHeld, elapsed, foldProgress, spentOf, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
@@ -97,6 +98,7 @@ import {
   billText,
   currentSpend,
   emptyBill,
+  grantedOf,
   PURPOSES,
   totalBill,
   unknownBill,
@@ -2057,13 +2059,19 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
   // is nothing to spend yet, or the run that is running will not say.
   const named = runs.find((r) => r.runId === standing.runId)?.progress ?? null
+  // The rounds come off the run's state and the grants off `spend` (#826); only
+  // where there is progress, so a run with nothing to spend has no held line.
+  const namedGranted = grantedOf(spend.filter((row) => row.pass === standing.runId))
   const held =
     named === null
       ? null
       : describeHeld({
-          spent: named.rounds.spent,
-          granted: named.granted,
-          roundsOf: named.rounds.of ?? limits?.rounds ?? null,
+          spent: spentOf(
+            reduceRun(streams[claims.findIndex((c) => c.runId === standing.runId)] ?? []).roundsOpened,
+            namedGranted,
+          ),
+          granted: namedGranted,
+          roundsOf: limits?.rounds ?? null,
           restarts: standing.restarts,
           restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? null),
         })

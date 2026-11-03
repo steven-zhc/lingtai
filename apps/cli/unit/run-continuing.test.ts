@@ -278,6 +278,7 @@ describe('run continues what a person approved (#747)', () => {
       usage: [],
       estimatedUsd: null,
       estimateFetched: null,
+      grant: null,
       kind: null,
     }
     const world: RunWorld = {

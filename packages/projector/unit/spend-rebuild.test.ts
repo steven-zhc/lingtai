@@ -336,6 +336,32 @@ describe('store.spend reads the folded table, filtered and ordered the way readS
   })
 })
 
+describe('store.spend reads the grant a round was paid for with', () => {
+  it('has the wait id on a granted Action row, null on an automatic one and on a Judge row', async () => {
+    const run = aRun('pass-pin-grant')
+    const stream = [
+      aRunStarted(run, wi(9)),
+      aRunSpent(run.event, { _tag: 'Action', step: 'implement', name: 'agent', round: 1 }),
+      aRunSpent(run.event, { _tag: 'Action', step: 'implement', name: 'agent', round: 2, grant: 'wait-9' as WaitId }),
+      aRunSpent(run.event, { _tag: 'Judge', when: 'findings' }),
+    ]
+    const db = openSqliteProjections(':memory:')
+    const store = createSqliteProjectionStore(db)
+    try {
+      await store.transact((ctx) => spendProjection.create(ctx))
+      await store.transact((ctx) => spendProjection.apply(stream, ctx))
+      const rows = await store.spend({})
+      const by = (purpose: string, round: number | null) =>
+        rows.find((r) => r.purpose === purpose && r.round === round)!
+      expect(by('Action', 2).grant).toBe('wait-9')
+      expect(by('Action', 1).grant).toBeNull()
+      expect(by('Judge', null).grant).toBeNull()
+    } finally {
+      await store.close()
+    }
+  })
+})
+
 describe('spend.ts reads RunSpent and no old spend source', () => {
   const SRC = fileURLToPath(new URL('../src/spend.ts', import.meta.url))
   const code = readFileSync(SRC, 'utf8')

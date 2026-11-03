@@ -363,4 +363,8 @@ describe('RunState.step and implementRound (#822)', () => {
     expect(state.implementRound).toBe(1)
     expect(state.step).toEqual({ step: 'implement', round: 1 })
   })
+
+  it('a FixRound route is a round opened', () => {
+    expect(reduceRun(lateHistories.run.fixRoundRouted).roundsOpened).toEqual([1])
+  })
 })

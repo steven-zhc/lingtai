@@ -1,5 +1,14 @@
 /** Deterministic presentation data, folded from local wait events. */
-import { decideRoute, offerFor, STEPS, type Envelope, type Finding, type Proposal, type Step } from '@lingtai/domain'
+import {
+  decideRoute,
+  offerFor,
+  reduceRun,
+  STEPS,
+  type Envelope,
+  type Finding,
+  type Proposal,
+  type Step,
+} from '@lingtai/domain'
 import { aClaim, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { TriageFacts, TriageResult, TriageStatus } from '@lingtai/domain/wait'
@@ -8,7 +17,8 @@ import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/pro
 import { taskViewProjection } from '@lingtai/projector/task-view'
 
 import { toCard } from '@/lib/board'
-import { describeHeld } from '@/lib/progress'
+import { describeHeld, spentOf } from '@/lib/progress'
+import { grantedOf } from '@/lib/spend'
 import {
   foldChat,
   foldRun,
@@ -443,7 +453,15 @@ export async function preview(name: CaseName) {
     previewStanding.fixWork = savedFixWork(standing.runId, runs.get(standing.runId) ?? [])
   }
   const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
-  const card = toCard(projected, null, progress)
+  // The preview's fixtures carry no `RunSpent`, so no round was granted (#826).
+  const rounds =
+    progress === null
+      ? null
+      : {
+          spent: spentOf(reduceRun(runs.get(standing.runId as string) ?? []).roundsOpened, grantedOf([])),
+          granted: grantedOf([]),
+        }
+  const card = toCard(projected, null, progress, null, null, undefined, undefined, undefined, null, rounds)
   const status: TriageStatus =
     'status' in spec && spec.status === 'NotDeclared'
       ? { _tag: 'NotDeclared' }
@@ -475,8 +493,8 @@ export async function preview(name: CaseName) {
     held:
       representative && progress
         ? describeHeld({
-            spent: progress.rounds.spent,
-            granted: progress.granted,
+            spent: rounds?.spent ?? 0,
+            granted: rounds?.granted ?? [],
             roundsOf: 2,
             restarts: 0,
             restartsOf: 1,

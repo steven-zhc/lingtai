@@ -31,6 +31,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
 import {
   decideRoute,
   offerFor,
+  reduceRun,
   STEPS,
   type Action,
   type Envelope,
@@ -47,9 +48,9 @@ import { describe, expect, it } from 'vitest'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
-import { foldProgress } from '../src/lib/progress.ts'
+import { foldProgress, spentOf, type RunProgress } from '../src/lib/progress.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
-import { emptyBill, type Bill } from '../src/lib/spend.ts'
+import { emptyBill, grantedOf, type Bill } from '../src/lib/spend.ts'
 
 /** A bill with one reported row, for a card fixture that wants a single dollar figure. */
 function billFor(usd: number | null): Bill {
@@ -403,6 +404,14 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
   }
 }
 
+/**
+ * What the board hands `toCard` for the held line (#826): the rounds off the
+ * run's state, no grants (these fixtures carry no `RunSpent`), and nothing
+ * where there is no progress, so no held line either.
+ */
+const roundsFor = (events: Envelope[], progress: RunProgress | null) =>
+  progress === null ? null : { spent: spentOf(reduceRun(events).roundsOpened, grantedOf([])), granted: grantedOf([]) }
+
 const card = (
   t: Partial<TaskCard>,
   events: Envelope[],
@@ -411,14 +420,18 @@ const card = (
   limits: { rounds: number; restarts: number } | null = null,
 ) => {
   const merged = task(t)
+  const progress = foldProgress(events, plan, over)
   return toCard(
     merged,
     null,
-    foldProgress(events, plan, over),
+    progress,
     null,
     limits,
     billFor(COST_USD),
     billFor(REPAIR_COST_USD),
+    undefined,
+    null,
+    roundsFor(events, progress),
   )
 }
 
@@ -444,7 +457,8 @@ const render = (
 const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
   const one = task(t)
   const [candidate] = railCandidates([one])
-  return toCard(one, null, candidate ? foldProgress(events, plan, candidate.over) : null)
+  const progress = candidate ? foldProgress(events, plan, candidate.over) : null
+  return toCard(one, null, progress, null, null, undefined, undefined, undefined, null, roundsFor(events, progress))
 }
 
 // --- reading the markup ----------------------------------------------------
