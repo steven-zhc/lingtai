@@ -218,15 +218,14 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
   }
 
   /** At start, gives the checkpoint a moment to arrive for the first beat, and no longer. */
-  const dated = async (done: Promise<void>): Promise<void> => {
+  const dated = (done: Promise<void>): Promise<void> => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([
+    return Promise.race([
       done,
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, CHECKPOINT_WAIT_MS)
       }),
-    ])
-    clearTimeout(timer)
+    ]).then(() => clearTimeout(timer))
   }
 
   try {
