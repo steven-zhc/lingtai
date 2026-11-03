@@ -252,7 +252,7 @@ export async function daemonCommand(
   // daemon whose lock it printed on the next line. `startBeacon` keeps one
   // timer for the whole life of the process, so there is no stretch of it
   // during which nothing says "still here".
-  const beacon = startBeacon('starting', { code })
+  const beacon = startBeacon('starting', { code, stoppedProjections: () => started.daemon.stoppedProjections })
   // This process's own start, dated by the store's clock and not this host's:
   // `TriageStarted` is dated by the store, and a database ahead of this host
   // would read an attempt a previous conductor cut off as `Running` (#576). The
@@ -696,8 +696,8 @@ export async function daemonCommand(
   await flushTracing()
   await ratesSettled()
   if (reason === 'projection-failed') {
-    const failed = started.daemon.failure
-    console.error(`stopped: ${failed?.projection} failed — ${String(failed?.error)}`)
+    const failed = started.daemon.stoppedProjections.find((p) => p.name === 'task_view')
+    console.error(`stopped: ${failed?.name} failed — ${failed?.error}`)
     return 1
   }
   console.log('stopped')

@@ -52,6 +52,36 @@
 import type { EventStore } from '@lingtai/event-store/store'
 
 /**
+ * A projection that stopped alone, as the beacon carries it (#839).
+ *
+ * The checkpoint is the exact fact: every event up to it is folded, none after.
+ * `null` where the read that would have dated it failed — an undated entry says
+ * more than a missing one.
+ */
+export interface StoppedProjection {
+  readonly name: string
+  readonly checkpoint: bigint | null
+  readonly error: string
+}
+
+/** The column's text: `checkpoint` is a string, since JSON has no bigint. */
+export function encodeStopped(list: readonly StoppedProjection[]): string {
+  return JSON.stringify(list.map((p) => ({ ...p, checkpoint: p.checkpoint === null ? null : p.checkpoint.toString() })))
+}
+
+/** Back from the column. A value that will not parse throws rather than becoming a wrong number. */
+export function decodeStopped(value: unknown): StoppedProjection[] | null {
+  if (value === null || value === undefined) return null
+  const raw: unknown = typeof value === 'string' ? JSON.parse(value) : value
+  if (!Array.isArray(raw)) throw new Error(`the beacon's stopped_projections is unreadable: ${String(value)}`)
+  return raw.map((p: { name: string; checkpoint: string | null; error: string }) => ({
+    name: p.name,
+    checkpoint: p.checkpoint === null ? null : BigInt(p.checkpoint),
+    error: p.error,
+  }))
+}
+
+/**
  * The beacon's row, as a store hands it back.
  *
  * One row for the whole installation, enforced by its primary key. Two daemons
@@ -77,6 +107,11 @@ export interface DaemonStatus {
    */
   codeSha: string | null
   codeDirty: boolean
+  /**
+   * Projections that stopped alone in this process. Null is a row written by a
+   * daemon that predates the field — unknown, never `[]` (#839).
+   */
+  stoppedProjections: readonly StoppedProjection[] | null
 }
 
 /**
@@ -97,6 +132,8 @@ export interface Beat {
   currentRunId: string | null
   codeSha: string | null
   codeDirty: boolean
+  /** Written on every beat. Absent writes `[]`. */
+  stoppedProjections?: readonly StoppedProjection[]
   /** The first beat of this process: the row begins again, whoever wrote it before. */
   fresh: boolean
   /**

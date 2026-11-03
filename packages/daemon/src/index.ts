@@ -28,7 +28,7 @@ export {
 // `node:sqlite` on a Postgres install. `choose.ts` is the one file that names
 // both, and `unit/one-store.test.ts` is what keeps it the only one (#179).
 export { processDaemonStore, withDaemonStore, type DaemonStoreOptions } from './choose.ts'
-export { type Beat, type DaemonStore, type StreamQuery } from './store.ts'
+export { type Beat, type DaemonStore, type StoppedProjection, type StreamQuery } from './store.ts'
 export {
   CONTROL_STREAM,
   HEARTBEAT_MS,

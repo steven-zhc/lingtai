@@ -706,6 +706,46 @@ async function schema(url: string): Promise<CheckResult[]> {
 }
 
 /**
+ * Projections that stopped alone in the running daemon (#839).
+ *
+ * `restartAnswers`, so `lingtai restart` does not refuse its own remedy: the
+ * rebuild does not clear a live daemon's list, the restart does. A beacon that
+ * cannot be read is a `fail` with the error, and that one a restart does not fix.
+ */
+export function stoppedProjections(
+  read: () => ReturnType<typeof readStatus> = () => readStatus(),
+): Promise<CheckResult> {
+  const name = 'projections: stopped'
+  return read().then(
+    (status): CheckResult => {
+      if (!status || !lastBeat(status).up) return { name, status: 'ok', detail: 'no daemon is running' }
+      const list = status.stoppedProjections
+      if (list === null) return { name, status: 'ok', detail: 'the running daemon predates this check' }
+      if (list.length === 0) return { name, status: 'ok', detail: 'every projection the daemon follows is folding' }
+      return {
+        name,
+        status: 'fail',
+        title: `${list.length} projection(s) stopped`,
+        detail: list
+          .map(
+            (p) =>
+              `${p.name} stopped ${p.checkpoint === null ? 'at an unread checkpoint' : `at seq ${p.checkpoint}`}: ${p.error} — rebuild first: lingtai projection rebuild ${p.name}, then lingtai restart`,
+          )
+          .join('\n'),
+        fix: 'rebuild first: `lingtai projection rebuild <name>`, then `lingtai restart`',
+        restartAnswers: true,
+      }
+    },
+    (err): CheckResult => ({
+      name,
+      status: 'fail',
+      title: 'the beacon could not be read',
+      detail: (err as Error).message,
+    }),
+  )
+}
+
+/**
  * `url` refines a Postgres connection and never picks the store: left out, this
  * folds through the one this machine wrote down (#179), which is what lets a
  * file-backed machine have this row at all.
@@ -3105,6 +3145,7 @@ export async function runDoctor(
     await step('the log', async () => results.push(await logReachable(choice.path, queries)))
     await step('projections', async () => results.push(await projections(undefined, reach.lags)))
     await step('projection shapes', async () => results.push(await projectionShapes(undefined, reach.shapes)))
+    await step('stopped projections', () => stoppedProjections(reach.status).then((r) => void results.push(r)))
     await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
     await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
     await step('spend', async () => results.push(await spendToday(reach.spend)))
@@ -3146,6 +3187,7 @@ export async function runDoctor(
     await step('the schema', async () => results.push(...(await schema(direct))))
     await step('projections', async () => results.push(await projections(pooled)))
     await step('projection shapes', async () => results.push(await projectionShapes(pooled)))
+    await step('stopped projections', () => stoppedProjections().then((r) => void results.push(r)))
     await step('the daemon', async () => results.push(await daemonLiveness()))
     // Beside liveness, never folded into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.

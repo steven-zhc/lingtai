@@ -672,7 +672,7 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
           : {
               ok: true,
               since: 30,
-              daemon: { stopped: Promise.resolve('asked'), stop: () => void (stopped = true), failure: null },
+              daemon: { stopped: Promise.resolve('asked'), stop: () => void (stopped = true), stoppedProjections: [] },
             },
       code: async () => scene.runs ?? prepared.examined,
       control: facts.control,
