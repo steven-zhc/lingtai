@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One reduce 说明</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* 布局：单栏长文，左侧编号小节；表格和图可横向滚动 */
+  --bg: #f6f7f5;
+  --panel: #ffffff;
+  --ink: #1d2320;
+  --muted: #5d6862;
+  --line: #d9dfdb;
+  --accent: #1f6f5c;
+  --accent-soft: #e2f0eb;
+  --warn: #9a5b00;
+  --warn-soft: #fbf0dc;
+  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131715; --panel: #1b201e; --ink: #e4e9e6; --muted: #9aa6a0;
+    --line: #2f3833; --accent: #6cc4a8; --accent-soft: #1e332c;
+    --warn: #e2b060; --warn-soft: #352a17; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131715; --panel: #1b201e; --ink: #e4e9e6; --muted: #9aa6a0;
+  --line: #2f3833; --accent: #6cc4a8; --accent-soft: #1e332c;
+  --warn: #e2b060; --warn-soft: #352a17; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.75 var(--font-body); }
+main { max-width: 920px; margin: 0 auto; padding: 48px 20px 96px; display: grid; gap: 48px; }
+header h1 { font: 700 2.1rem/1.3 var(--font-display); margin: 0 0 12px; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 46em; }
+section { display: grid; gap: 16px; }
+h2 { font: 700 1.45rem/1.35 var(--font-display); margin: 0; display: flex; gap: 12px; align-items: baseline; text-wrap: balance; }
+h2 .n { font: 500 .9rem var(--font-mono); color: var(--accent); }
+h3 { font-size: 1.05rem; margin: 8px 0 0; }
+p { margin: 0; max-width: 46em; }
+code { font: .88em var(--font-mono); background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+.lead { font-size: 1.08rem; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 10px; }
+.rule { border-left: 4px solid var(--accent); }
+.warn { border-left: 4px solid var(--warn); background: var(--warn-soft); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-weight: 500; color: var(--muted); background: var(--bg); white-space: nowrap; }
+td:first-child { white-space: nowrap; }
+.pill { display: inline-block; font: 500 .78rem var(--font-mono); padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+.done { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.run { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+dl { margin: 0; display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 10px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+dt { font: 500 .9rem var(--font-mono); color: var(--accent); }
+dd { margin: 0; }
+@media (max-width: 560px) { dl { grid-template-columns: 1fr; } dd { margin-bottom: 8px; } }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: stretch; }
+.node { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: .9rem; }
+.node b { display: block; font-size: .95rem; margin-bottom: 4px; }
+.node.key { border: 2px solid var(--accent); }
+.arrow { color: var(--muted); font: .85rem var(--font-mono); }
+ol.seq { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; }
+ol.seq li { padding-left: 4px; }
+ol.seq .ev { font: 500 .88rem var(--font-mono); }
+ol.seq .st { color: var(--muted); font-size: .9rem; }
+ul { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: 46em; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer { color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>One reduce per stream：最终逻辑说明</h1>
+  <p>0.12 的主题叫「一本账」（one set of books），对应 epic #797。本文是英文规格书 <code>doc/design/one-fold-per-stream.md</code> 的中文导读（文件名保留旧词 fold，内容已改用 reduce），说明这项工作做完后系统怎么运作。更新于 2026-11-03（晚）：术语统一成 reduce / reducer、attempt、stale；加入「一份实现」和「按 seq 去重」两条原则，以及由此新增的 #842–#848 和 attempt 改名票。</p>
+</header>
+
+<section>
+  <h2><span class="n">01</span>第一性原则</h2>
+  <div class="box rule">
+    <p class="lead">系统就是一个 event log。把一个事件 reduce 进一条 stream 的状态，这条规则只有一份实现，放在 <code>@lingtai/domain</code> 里。conductor、CLI、board、projection 都调用它，谁都不再自己扫事件去算状态。</p>
+  </div>
+  <ul>
+    <li><b>代码可以共享，规则不能复制。</b>如果共享之后调用变得别扭（比如投影读不到一条 stream），就去优化调用方式，例如加一个 codec、把 state 存进行里，而不是另写一份规则。</li>
+    <li><b>功能内聚。</b>同一个功能只放在一个地方。投影里只允许留纯粹的连接（link 表、一行一条的 RunSpent），它们不算状态。</li>
+    <li><b>投递至少一次，按 seq 去重（D18）。</b>两个 runner 可能把同一个事件各投递一次；存下来的 state 用 <code>lastSeq</code> 跳过已经处理过的事件。#838 就是卡在这里，已经按这条规则补上 fix round。</li>
+    <li><b>不留中间状态（D15）。</b>每张票加一个最终形态的字段，把所有读者都迁过去，旧代码在同一个 diff 里删掉。</li>
+  </ul>
+  <p>改动之前，§0 统计出 domain 之外按事件类型分支的地方有 151 处，其中很多是同一件事被算了好几遍，而且规则略有不同。比如「这个 run 有没有能续做的 saved head」，conductor、<code>lingtai status</code> 和 board 各写了一份判断。</p>
+</section>
+
+<section>
+  <h2><span class="n">02</span>名词表</h2>
+  <dl>
+    <dt>event / 事件</dt><dd><code>events</code> 表里的一行，只追加、不修改。日志是唯一的事实来源。</dd>
+    <dt>stream / 流</dt><dd>关于同一个主题的那一串事件，按顺序排列。从 id 的前缀能看出它是什么主题。主题有意分开：一张票、对它的每次 attempt、关于它的每场讨论是三条 stream，靠事件里带的 id 互相引用（<code>TicketClaimed.runId</code>、<code>RunStarted.ticketId</code>、<code>DiscussionHeld.chatId</code>），不合成一条。</dd>
+    <dt>reduce / reducer</dt><dd>reduce 是动作，reducer 是这条规则本身（the run reducer），结果叫 state。reducer 拿到一条 stream 的当前 state 和下一个事件，返回之后的 state。每种 stream 只有一条这样的规则。代码里 <code>reduceRunEvent(state, event)</code> 处理一个事件，<code>reduceRun(events)</code> 从头 reduce 整条 stream。旧名字 fold 和 apply 说的是同一件事，以后统一叫 reduce。一个事件那一步现在还叫 <code>applyRun</code>/<code>applyTicket</code>，最后由改名票 #848 统一改掉。</dd>
+    <dt>state / 状态</dt><dd>把一条 stream 的全部事件 reduce 完得到的结果。一个 state 只描述一条 stream；需要两条 stream 才能回答的问题，属于 projection 或调用方自己做的 join。</dd>
+    <dt>projection / 投影</dt><dd>按 <code>seq</code> 顺序读整个日志建出来的表，用来回答跨很多 stream 的问题：<code>task_view</code>（看板和队列）、<code>ticket_report</code>、<code>spend</code>、<code>finding_backlog</code>。一行需要某条 stream 的 state 时，就把这份 state 存在行里，每来一个新事件就用 domain 的同一条规则 reduce 进去。投影出错只能用 <code>lingtai projection rebuild</code> 重放修正。</dd>
+    <dt>codec</dt><dd>把 state 编码后存进行里、读出来再解码。哪个投影第一个存某种 state，这种 state 的 codec 就跟着那张票落地（ADR 0124 §1）。形状不对的 state 会按名字报错，并提示要做哪次 rebuild。ticket 的 codec 在 #833，run 的 codec 在 #844。</dd>
+    <dt>按 seq 去重（D18）</dt><dd>CLI 和 daemon 各有一个投影 runner，共用同一个 checkpoint，同一个事件可能被两边各处理一次。存进行里的 state 带着 <code>lastSeq</code>，一个事件的 seq 如果不大于它，就在 reduce 之前跳过。去重只看事件身份，所以写入方写不出的序列照样抛错。</dd>
+    <dt>present</dt><dd>把 state 画成页面需要的样子，比如 <code>presentRun(state, …)</code>。present 只负责画，不能再 reduce 一次。</dd>
+    <dt>verdict ladder</dt><dd>某个 step 的某个 action 的结果，算 passed、failed 还是 did-not-finish 的那张对照表。原来有两份，#821 合成了一份。</dd>
+    <dt>attempt / agent run</dt><dd>attempt（尝试）是 Lingtai 对一张票的一次修改尝试：领一次票，从头到尾走一遍 step，对应一条 <code>pass-…</code> stream。批准、批 fix round 都还在同一个 attempt 里继续；requeue 或 restart 会开一个新的 attempt。agent run 是 attempt 里的一次 agent 调用（implement、每个 fix round、judge）。pass 这个词不再使用。日志里已经写下的名字保持不变：<code>pass-</code> 前缀、<code>runId</code> 字段、<code>Run…</code> 事件名（D20）。</dd>
+    <dt>head / base</dt><dd>每个 attempt 在自己的分支上干活。base 是 attempt 开始时 base 分支上的那个 commit；head 是 agent 在分支上做出的最新 commit（<code>RunState.headSha</code>，来自 <code>RunProducedDiff</code> 和 <code>RunProposedCompletion</code>）。</dd>
+    <dt>onSha / stale</dt><dd><code>onSha</code> 是事实：一个 verdict 判定时针对的 commit。stale 是由它推出的判断：从 build 开始，<code>onSha</code> 已经不是 head 的 verdict 就是 stale（D2）。只说 stale，不说「不是 current」；board 上的 <code>current: boolean</code> 会在 #848 里改名为 <code>stale</code>。</dd>
+    <dt>saved head</dt><dd>被 hold 住的 attempt 留下的一个干净、已经 push 的 head，fix round 可以接着它做。由 <code>savedHeadOf(state)</code> 判断，结果有四种：<code>Saved</code>、<code>WipHead</code>、<code>BranchDiverged</code>、<code>NoSavedHead</code>。</dd>
+    <dt>upcast（D16）</dt><dd>不再新增 upcaster。新加的 payload 字段都是可选的，旧事件读出来就是没有这个字段（ADR 0100 §4、0124 §4）。</dd>
+    <dt>fixture histories</dt><dd><code>packages/domain/test/histories.ts</code> 里手工造的事件序列，每条都用 hash 锁定、不再修改。新的 history 一律写成模块级 const，接在最后一个后面，这样已有的 seq 不会变动。</dd>
+    <dt>snapshot（0124）</dt><dd>以后会缓存 state，读的时候只 reduce 快照之后的那一段尾巴。这一步放在最后做，不在 0.12 里。</dd>
+  </dl>
+  <h3>每种 state 是什么的 state</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>State</th><th>Stream</th><th>描述的是什么</th></tr></thead>
+    <tbody>
+      <tr><td><code>RunState</code>（将改名为 <code>AttemptState</code>）</td><td><code>pass-…</code>，一个 attempt 一条</td><td>一张票的一次 attempt：lifecycle、agent 的 head 和产出、当前所在的 step、每个 step 的 verdict 和对应的 commit、怎么结束的（被拒、失败）、给 fix round 留下的 saved head，以及 board 画进度条要用的计划和时间点。</td></tr>
+      <tr><td><code>TicketState</code></td><td><code>ticket-{project}-{issue}</code>，一个 issue 一条</td><td>一张票跨所有 attempt 的状态：处在哪一步（backlog、claimed、等人、closed、landed），它是什么（title、kind、project、issue），每次 attempt 和它的结局，人最后一次对它做了什么，每个 wait 以及对应的 triage 和处理结果，开过哪些 discussion，Lingtai 往 GitHub 写过什么。</td></tr>
+      <tr><td><code>ControlState</code></td><td><code>ctl-conductor</code>，每台机器一条</td><td>conductor 现在能不能领活：是否暂停、谁停的、为什么、停到什么时候、暂停的 cause，以及是否有一个还没处理的 drain 请求。跟时钟有关的部分（到点自动解除的暂停）由读的人用 <code>evaluateControl(state, now)</code> 自己算。</td></tr>
+      <tr><td><code>ProjectState</code></td><td><code>prj-{project}</code>，每个仓库一条</td><td>Lingtai 对一个仓库知道的事：owner、base 分支、最近一次解析出的 recipe hash，以及一个还没恢复的拒绝。</td></tr>
+      <tr><td><code>IntegrationState</code></td><td><code>int-{project}-{base}</code>，每个 base 分支一条</td><td>一个 base 分支的 merge lane：空闲，还是正在合并哪张票的 head，以及尝试了几次。</td></tr>
+      <tr><td><code>ChatState</code></td><td><code>chat-…</code>，每场讨论一条</td><td>跟 agent 关于一张票的一场讨论：问了什么、答了什么、有几个已经回答。</td></tr>
+      <tr><td>finding state</td><td><code>bkl-{project}-{key}</code>，每个 finding 一条</td><td>reviewer 提出、送进 backlog 的一个 finding：proposed、accepted 还是 declined。</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">03</span>数据怎么流</h2>
+  <div class="flow">
+    <div class="node"><b>写入方</b>daemon、CLI、board 上的操作，往日志里追加事件</div>
+    <div class="node"><b>events</b>唯一的事实来源，只追加不修改</div>
+    <div class="node key"><b>domain 的 reduce</b>每种 stream 一条规则：run · ticket · control · project · integration · chat · finding</div>
+    <div class="node"><b>读者</b>conductor、CLI、board 拿到 state 后决定做什么、画什么；投影把 state 存在行里</div>
+  </div>
+  <div class="box">
+    <h3>读者的规矩</h3>
+    <ul>
+      <li>要一条 stream 的任何事实，先 reduce 出 state，再读字段。不要写 <code>for (const e of events) if (e.type === …)</code> 去算状态。</li>
+      <li>投影也一样：一行要用到的 ticket 部分和 run 部分，都存一份 state，新事件来了用 domain 的 reduce 处理。投影里只剩纯粹的连接。</li>
+      <li>措辞由各个界面自己决定。domain 返回的是带类型的答案，conductor、status、board 各自翻译成自己的句子。</li>
+      <li>reduce 抛错就让它抛（#822）。现在投影里一抛错，整个 daemon 就会停；#839–#841 改成只停这一个投影，task_view 停了就只是不再领票。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span>RunState（已全部合并）</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>字段</th><th>从哪个事件来</th><th>规则</th><th>票</th></tr></thead>
+    <tbody>
+      <tr><td><code>steps</code></td><td><code>StepEnded</code></td><td>每个 action 的 verdict，全系统只用一张 ladder（D1）</td><td><span class="pill done">#821</span></td></tr>
+      <tr><td><code>step</code></td><td><code>StepStarted</code>/<code>StepEnded</code></td><td><code>{step, round, since}</code>，表示最后进入、还没结束的那个 step。只有同一个 step 的 StepEnded 才把它清掉（D12）</td><td><span class="pill done">#822 · #827</span></td></tr>
+      <tr><td><code>implementRound</code></td><td>implement 的 StepStarted、<code>PassRouted</code></td><td>取两者中最大的轮次，只会上升</td><td><span class="pill done">#822</span></td></tr>
+      <tr><td><code>published</code> · <code>kept</code></td><td><code>RunRefsPublished</code> · <code>RunKeptUncommitted</code></td><td>published 取最后一条；kept 全部保留。<code>savedHeadOf</code> 是唯一的 saved head 规则</td><td><span class="pill done">#823</span></td></tr>
+      <tr><td><code>route</code></td><td><code>PassRouted</code></td><td>最后一条，存原始 payload，triage 读它</td><td><span class="pill done">#824</span></td></tr>
+      <tr><td><code>failure</code> · <code>refusal</code> · <code>produced</code></td><td><code>RunFailed</code> · 被拒的 StepEnded · <code>RunProducedDiff</code></td><td>failure 一旦出现就一直保留（D3）；produced 取代原来的 branch 和 diff</td><td><span class="pill done">#825</span></td></tr>
+      <tr><td><code>roundsOpened</code></td><td>FixRound 的 PassRouted</td><td>打开过的轮次号列表</td><td><span class="pill done">#826</span></td></tr>
+      <tr><td><code>resolved</code>、<code>laneWaitedAt</code>、时间点</td><td><code>StepsResolved</code>、<code>MergeLaneWaited</code> 等</td><td>只记时间点，阶段名称由 board 算（D10）；merge 的 StepEnded 结束 lane 等待</td><td><span class="pill done">#827</span></td></tr>
+      <tr><td><code>promptMeta</code></td><td><code>RunPrompted</code></td><td><code>{version, bytes}</code></td><td><span class="pill done">#828</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">05</span>TicketState</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>字段</th><th>规则</th><th>票</th></tr></thead>
+    <tbody>
+      <tr><td><code>claims</code>（每次 attempt 带 <code>ended</code>）、<code>lastAttemptAt</code>、<code>since</code></td><td>ended 是 <code>released{reason}</code> 或 <code>asked{reason}</code>，两者取较晚发生的那个（D13）；续做也算 lifecycle 的一次变化（D11）；closed 之后来的事件一律不算</td><td><span class="pill done">#829</span></td></tr>
+      <tr><td><code>title</code>/<code>kind</code>、<code>project</code>/<code>externalRef</code></td><td>title/kind 来自 TicketClaimed，取最新的非空值；project/externalRef 从 stream id 解析（D4）</td><td><span class="pill done">#830</span></td></tr>
+      <tr><td><code>lastMove</code></td><td>人最后一次操作，以及之后发生了什么</td><td><span class="pill done">#831</span></td></tr>
+      <tr><td><code>github</code></td><td>写 GitHub 的账本：每种写入最后一次的结果（D9）</td><td><span class="pill done">#832</span></td></tr>
+      <tr><td><code>waits</code></td><td>每个 wait，连同它的 triage 和处理结果。<code>waitsOf</code>/<code>triageFactsOf</code> 改成读这个字段</td><td><span class="pill">#842</span></td></tr>
+      <tr><td><code>discussions</code></td><td>为这张票开过的讨论，board 的 <code>chatIdsFor</code> 读它</td><td><span class="pill">#843</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>#842 和 #843 必须在 #833 之前合并，因为 #833 会把 TicketState 编码后存进投影，存下来的形状必须已经是最终形状。</p>
+</section>
+
+<section>
+  <h2><span class="n">06</span>其他 state</h2>
+  <ul>
+    <li><b>ControlState</b>（<span class="pill done">#836</span>）：拆成不读时钟的 reduce，加上 <code>evaluateControl(state, now)</code>。<code>ConductorPaused</code> 多了一个可选的 <code>cause</code>（person、setup、account-limit、day-ceiling），没有升版本，也没有 upcaster（D8）。day ceiling 只看 <code>cause</code>，再加上 <code>ceilingWaivedUntil</code>，就知道这次暂停是不是自己设的。</li>
+    <li><b>ChatState</b>（<span class="pill done">#837</span>）：一个回答归到它之前最近一个还没回答的提问。「还有没有待处理的请求」比较的是请求数和已回答数，而不是「有没有哪个提问没回答」，否则一次崩溃就会让 CLI 每一轮都再买一次讨论（D14）。</li>
+    <li><b>finding state</b>（<span class="pill run">#838 已批 fix round</span>）：一个 finding 是 proposed、accepted 还是 declined。conductor 和 <code>finding_backlog</code> 都读它；<code>finding_backlog</code> 加一列 <code>last_seq</code> 用来去重。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">07</span>投影改成读 state</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>票</th><th>做什么</th><th>依赖</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill">#833</span></td><td>ticket_report：加入 ticket 的 codec，TicketState 存进行里并按 seq 去重；outcome、passes、kind、waits 都从 state 里读；删掉「关闭后又被重新打开」（D6）</td><td>#829–#832、#842、#843（已对着合并后的代码重新核对过）</td></tr>
+      <tr><td><span class="pill">#834</span></td><td>task_view 的 ticket 部分：state、answer 和 triage 列从 TicketState 里读；D5 的四种情况和 D6 一次 rebuild 全部落地</td><td>#833</td></tr>
+      <tr><td><span class="pill">#835</span></td><td>spend 的 kind 从存下来的 TicketState 里读</td><td>#833</td></tr>
+      <tr><td><span class="pill">#844</span></td><td>task_view 的 run 部分：加入 run 的 codec，每个 attempt 存一份 RunState（按 seq 去重）；head、diff、turns、verdicts 等列都由纯函数 <code>rowOf(ticket, run)</code> 算出</td><td>#834</td></tr>
+      <tr><td><span class="pill">#845</span></td><td>task_view 的 note 列改成「两边 state 最近一次变化」对应的那句话；删掉 <code>cardFactOf</code></td><td>#844</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>ticket_report 里 run 的那部分都是连接和求和，没有在算 run 的状态，所以不需要单独开票。</p>
+</section>
+
+<section>
+  <h2><span class="n">08</span>收尾</h2>
+  <ul>
+    <li><b>#846 收尾票</b>：提交一份剩余事件分支的白名单。每条按文件、函数、事件类型、次数登记，并写明类别（join / reaction / select）和理由。测试会让不在名单上的分支失败，也会让名单里已经不存在的条目失败。<code>runSubject</code> 和 <code>groupHistory</code> 改成读 <code>RunState.ticketId</code>；D1–D16 每条决策都要有对应的命名测试。</li>
+    <li><b>#847 文档票</b>：改正 reference 和 operating guide 里已经不对的句子，每次 rebuild 写一条升级说明。已经定稿的文案不动。</li>
+    <li><b>#848 改名票</b>：<code>applyX</code> → <code>reduceXEvent</code>；投影接口 <code>Projection.apply</code> → <code>reduce</code>；<code>foldRun</code> → <code>presentRunEvents</code>，<code>foldChat</code> → <code>presentChat</code> 等；verdict 的 <code>current</code> → <code>stale</code>（取反）；注释和文档里的 fold 都改成 reduce。脚本改名的那个 commit 加进 <code>.git-blame-ignore-revs</code>，手工修改另起一个 commit。排在最后。</li>
+    <li><b>attempt 改名票（#849–#858）</b>：排在 #848 之后，一张接一张：#849 domain（<code>RunState</code> → <code>AttemptState</code>、<code>reduceRun</code> → <code>reduceAttempt</code>）；#850 conductor（<code>runPass</code> → <code>runAttempt</code>，主循环的一圈叫 turn）；#851 board、CLI、site 的名字；#852/#853 用户看得到的文字（hero 和 slogan 不动）；#854 文件改名加跳转（<code>the-attempt.html</code>、<code>one-reduce-per-stream.md</code>）；#855–#858 文档、ADR 正文和设计文档。只改声明的名字和文件名，事件名、payload 字段、<code>--json</code> 键、投影的列都不改，所以不需要 rebuild。</li>
+    <li><b>snapshot</b>：0124 的缓存，放在 0.12 之后。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">09</span>走一遍：一个 attempt 的事件和 RunState</h2>
+  <div class="box">
+  <ol class="seq">
+    <li><span class="ev">RunStarted</span>　<span class="st">lifecycle=running，记下 openedAt、agentStartedAt</span></li>
+    <li><span class="ev">StepsResolved</span>　<span class="st">resolved = {configHash, 十个 step}</span></li>
+    <li><span class="ev">StepStarted implement 0</span>　<span class="st">step = {implement, 0, since}</span></li>
+    <li><span class="ev">RunProducedDiff → sha-1</span>　<span class="st">produced 和 headSha 都是 sha-1</span></li>
+    <li><span class="ev">StepEnded implement</span>　<span class="st">step = null；implement 的 verdict = passed</span></li>
+    <li><span class="ev">StepStarted review → StepEnded review（拒绝）</span>　<span class="st">review:cold 判为 failed，onSha=sha-1；记下 refusal</span></li>
+    <li><span class="ev">PassRouted → FixRound(1)</span>　<span class="st">route；implementRound = 1；roundsOpened = [1]</span></li>
+    <li><span class="ev">StepStarted implement 1 → RunProducedDiff → sha-2</span>　<span class="st">headSha = sha-2，review:cold 过期（D2）</span></li>
+    <li><span class="ev">StepStarted merge → MergeLaneWaited</span>　<span class="st">记下 laneWaitedAt，进度条显示正在等 merge lane</span></li>
+    <li><span class="ev">StepEnded merge</span>　<span class="st">step = null，等待结束（这是 #827 修掉的 bug）</span></li>
+  </ol>
+  </div>
+  <p>这些事件 task_view 也会收到。#844 之后，它把同一份 RunState 存在行里，卡片上的列直接从 state 算出来，不再自己写 <code>case</code>。</p>
+</section>
+
+<section>
+  <h2><span class="n">10</span>定下来的规则（D1–D16）</h2>
+  <ul>
+    <li><b>D1</b> 全系统只有一张 verdict ladder。</li>
+    <li><b>D2</b> 过期的 verdict 要显示出来，从 build 开始算。</li>
+    <li><b>D3</b> 失败一直算失败；请求过的 signoff 在 lifecycle 往前走之后清掉。</li>
+    <li><b>D4–D6</b> 票的字段来自 claim 和 stream id；task_view 以 domain 的结论为准；closed 是终态。</li>
+    <li><b>D7–D9</b> 新增 chat 和 finding 两个 reduce；pause 带一个可选的 cause；GitHub 写入账本放进 TicketState。</li>
+    <li><b>D10</b> 进度相关的事实放在 RunState 里，只记时间点。</li>
+    <li><b>D11–D14</b> 续做算一次移动；step 只由它自己的 StepEnded 结束；一次 attempt 只有一个结局，带上 wait 的原因；比较请求数和已回答数。</li>
+    <li><b>D15</b> 不留中间状态。<b>D16</b> 不针对旧日志写分支，不新增 upcaster。</li>
+    <li><b>D17 一份实现</b>：投影也调用 domain 的 reducer，只有纯连接、reaction 和 select 可以留在 domain 之外，名单由 #846 提交并用测试守住。</li>
+    <li><b>D18 按 seq 去重</b>：投递至少一次，存下来的 state 跳过 seq 不大于 <code>lastSeq</code> 的事件。</li>
+    <li><b>D19 统一叫 reduce</b>：动作叫 reduce，规则叫 reducer，结果叫 state。</li>
+    <li><b>D20 统一叫 attempt</b>：对一张票的一次修改尝试叫 attempt；run 只指一次 agent 调用；pass 不再使用。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">11</span>用户能看到的变化</h2>
+  <div class="box warn"><p>这是一次重构，大部分东西应该和以前一样。下面这些变化是有意的，各自只在对应的那张票里落地。</p></div>
+  <ul>
+    <li>task page 上，针对旧 head 作出的 verdict 会标成过期（#828）；signoff 显示 asked（#821）；请求过人的 step 会显示它问的问题（#828）。</li>
+    <li>等过 merge lane、之后被拒的卡片显示拒绝原因（#827）。</li>
+    <li>如果这张票正卡在这次 attempt 的 wait 上，attempt 显示 asked；人处理之后，回到它的 run 本身的状态（#829）。</li>
+    <li>task_view（#834）：批了 fix round 之后状态是 approved，note 写「fix round granted — continues once a conductor is free」；Close 一直显示 waiting，直到 TicketClosed 落地；只有 TicketLanded 才算 landed。</li>
+    <li>卡片（#844/#845）：新 claim 刚开始时还没有 head，不再显示上一个 run 的 head；approval 只在这次 attempt 被请求 signoff 时出现；两条短暂的 integration note 不再显示。</li>
+    <li>每次 rebuild 期间，board 上看到的表不完整。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">12</span>用 DDD 的话说</h2>
+  <p>每条 stream 是一个 aggregate，这条 stream 上的事件全部 reduce 到它自己的 state 上。边界划得小：只有必须一起原子成立的不变量才放进同一个 aggregate。Lingtai 里没有哪个不变量要求一张票和它的 attempt、或者一张票和它的讨论在一次写入里同时改，所以它们是不同的 aggregate。</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>DDD</th><th>Lingtai</th></tr></thead>
+    <tbody>
+      <tr><td>aggregate 类型</td><td>一类 stream：ticket、attempt、discussion、merge lane、project、control</td></tr>
+      <tr><td>aggregate</td><td>一条 stream（<code>ticket-lingtai-829</code>、<code>pass-…</code>）</td></tr>
+      <tr><td>aggregate 的 state</td><td><code>TicketState</code>、<code>RunState</code>（将改为 attempt state）……</td></tr>
+      <tr><td>apply / when</td><td>reducer</td></tr>
+      <tr><td>command handler</td><td>conductor、CLI、board：读 state，做决定，<code>append(stream, expectedVersion, events)</code></td></tr>
+      <tr><td>一致性边界</td><td>一条 stream 的版本号：只有在同一条 stream 内，一次写入才是原子的</td></tr>
+      <tr><td>引用别的 aggregate</td><td>事件上带对方的 id</td></tr>
+      <tr><td>process manager</td><td>conductor 按顺序往几条 stream 写；<code>reconcile</code> 把崩溃留下的半截状态推完或撤回</td></tr>
+      <tr><td>read model</td><td>投影：<code>task_view</code>、<code>ticket_report</code>、<code>spend</code>、<code>finding_backlog</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>跨 aggregate 怎么做到最终一致</h3>
+  <ul>
+    <li><b>单点裁决</b>：需要互斥的决定只在一个 aggregate 上做，比如能不能领票只看 ticket stream 的版本号。</li>
+    <li><b>先写意图</b>：<code>TicketClaimed</code> 带着 <code>runId</code>，后面的步骤都能从它推出来。</li>
+    <li><b>process manager 推进</b>：conductor 读几份 state，往下一条 stream 写。</li>
+    <li><b>补偿</b>：推不下去就追加一条反向事件，比如 <code>reconcile</code> 发现领票的 worker 已经不在，就追加 <code>TicketReleased</code>。</li>
+    <li><b>幂等</b>：写入带 <code>expectedVersion</code>；投影按 seq 去重（D18）。</li>
+    <li><b>读的一方接受中间态</b>：已领票、还没开始的 attempt，就照实显示 claimed。</li>
+    <li><b>日志本身就是 outbox</b>：订阅方从日志读，读到哪里记在 checkpoint 里。</li>
+  </ul>
+</section>
+
+<footer>依据：<code>doc/design/one-fold-per-stream.md</code>（D17–D20）、<code>doc/glossary.md</code> § The log and its states，以及 #821–#858 的正文。截至 2026-11-03：#821–#832、#836、#837、#839–#841 已合并；#838 已批 fix round；其余已放开，按依赖顺序排队。</footer>
+
+</main>
+</body>
+</html>
