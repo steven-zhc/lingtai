@@ -1215,6 +1215,54 @@ describe('waitTriage', () => {
     expect(prompt).toContain('1 file changed, 2 insertions(+)')
   })
 
+  it('takes the last PassRouted and the last RunRefsPublished off the folded run', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 8)
+    const runId = 'pass-8'
+    const headSha = 'c'.repeat(40)
+    const run = makeStream(runId)
+    const offer = {
+      proposal: { _tag: 'BuildRed' as const, output: 'red' },
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } }],
+      unavailable: [],
+    }
+    const routed = (why: string) =>
+      run('PassRouted', {
+        runId,
+        offer,
+        reply: { _tag: 'Selected', candidate: 'hand-to-person', why },
+        decision: { _tag: 'Selected', candidate: 'hand-to-person' },
+      })
+    const published = (detail: string) =>
+      run('RunRefsPublished', {
+        branch: 'agent/8',
+        arm: 'agent/8-attempt-1',
+        headSha,
+        outcome: 'published',
+        detail,
+        branchCarries: true,
+      })
+    await store.append(runId, 0, [
+      run('RunProducedDiff', { branch: 'agent/8', headSha, files: 1, insertions: 1, deletions: 0 }),
+      routed('first-judge-reason'),
+      published('first-published-detail'),
+      routed('second-judge-reason'),
+      published('second-published-detail'),
+    ])
+
+    let prompt = ''
+    const { runtime } = stubRuntime((request) => {
+      prompt = request.prompt
+      return ADVISED
+    })
+    await waitTriage(fakeDeps(store, runtime), requestOn(ticketId, aWaitId(), { reason: reasonOn(runId) }))
+
+    expect(prompt).toContain('second-judge-reason')
+    expect(prompt).not.toContain('first-judge-reason')
+    expect(prompt).toContain('second-published-detail')
+    expect(prompt).not.toContain('first-published-detail')
+  })
+
   it("labels the readable head with the run's real attempt number, from the ticket's own claim order — not a hardcoded attempt-1", async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 9)

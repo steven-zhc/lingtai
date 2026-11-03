@@ -383,4 +383,27 @@ describe('RunState.step and implementRound (#822)', () => {
   it('the last refusal is kept', () => {
     expect(reduceRun(histories.run.fixRoundThenLanded).refusal?.key).toBe('review:cold')
   })
+
+  it('route is the last PassRouted payload, whatever its next', () => {
+    const history = lateHistories.run.fixRoundRouted
+    const routed = history.findLast((e) => e.type === 'PassRouted')!
+    expect(reduceRun(history).route).toEqual(routed.data)
+    expect(reduceRun(history.filter((e) => e.type !== 'PassRouted')).route).toBeNull()
+  })
+
+  it('route is set when the route is not a FixRound too', () => {
+    const history = lateHistories.run.fixRoundRouted
+    const routed = history.findLast((e) => e.type === 'PassRouted')!
+    const handed = {
+      ...routed,
+      data: {
+        ...(routed.data as Record<string, unknown>),
+        reply: { _tag: 'Selected', candidate: 'hand-to-person', why: 'a person decides' },
+        decision: { _tag: 'Selected', candidate: 'hand-to-person' },
+      },
+    }
+    const state = reduceRun(history.map((e) => (e === routed ? (handed as typeof e) : e)))
+    expect(state.route).toEqual(handed.data)
+    expect(state.roundsOpened).toEqual([])
+  })
 })
