@@ -491,22 +491,10 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     }
   })
 
-  it('applying a batch a second follower already applied changes nothing', async () => {
-    const whole = await fold(events)
-    const db = openSqliteProjections(':memory:')
-    try {
-      const store = createSqliteProjectionStore(db)
-      await store.transact((ctx) => backlogProjection.create(ctx))
-      await store.transact((ctx) => backlogProjection.apply(events, ctx))
-      await store.transact((ctx) => backlogProjection.apply(events, ctx))
-      const backlog = await store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
-      expect(backlog).toEqual(whole.backlog)
-    } finally {
-      db.close()
-    }
-  })
-
-  it('a second, different proposal is not a replay: it throws and the row keeps the first', async () => {
+  it.each([
+    ['different', 'https://x/other'],
+    ['identical', 'https://x/212'],
+  ])('a second proposal with a %s url throws and the row keeps the first', async (_name, url) => {
     const db = openSqliteProjections(':memory:')
     try {
       const store = createSqliteProjectionStore(db)
@@ -517,7 +505,7 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
         key: acceptedKey,
         by: 'human:t',
         externalRef: '212',
-        url: 'https://x/other',
+        url,
       })
       await expect(store.transact((ctx) => backlogProjection.apply([second], ctx))).rejects.toThrow(
         backlogStream(PROJECT, acceptedKey),

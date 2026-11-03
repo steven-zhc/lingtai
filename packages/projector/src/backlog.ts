@@ -184,19 +184,9 @@ export const backlogProjection: Projection = {
           )
           // A finding nothing raised has no row to be wrong about.
           if (!row) break
-          // Followers in other processes keep their own cursors, and the fenced
-          // checkpoint lets a batch another follower already applied be applied
-          // again. An event the row already carries is a replay, not an order
-          // no writer makes: the old unconditional updates were idempotent, so
-          // this one is too.
-          // The row keeps no proposal seq, so a proposal is a replay only when
-          // the whole recorded proposal (ref and url) is the one on the row; a
-          // second proposal that differs in either falls through to the fold,
-          // which throws on it.
-          if (event.type === 'FindingProposed') {
-            const p = event.data as PayloadOf<'FindingProposed'>
-            if (row.proposed_ref === p.externalRef && (row.proposed_url ?? null) === (p.url ?? null)) break
-          } else if (row.decided_seq !== null && String(row.decided_seq) === String(seq)) break
+          // No replay guard: a projection's writes and its checkpoint advance
+          // share a transaction, so an event is never applied twice, and the row
+          // keeps no proposal seq that could tell a replay from a second proposal.
           const before = findingOfRow(row, d)
           const after = applyFinding(before, event)
           if (before.status === 'open' && after.status === 'accepted') {
