@@ -19,7 +19,7 @@ import { isReached, type Reached } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
 import { routeNext } from './routing.ts'
-import type { Step } from './vocabulary.ts'
+import type { Finding, Step } from './vocabulary.ts'
 
 /**
  * `never-ran` is not a verdict about the diff, and is here because the absence
@@ -113,8 +113,8 @@ export interface RunState {
 
   /** Current head of the agent's branch. Changes invalidate gate verdicts. */
   headSha: string | null
-  branch: string | null
-  diff: { files: number; insertions: number; deletions: number } | null
+  /** The last `RunProducedDiff`, whole. `headSha` has a second writer, so it is not a copy of this. */
+  produced: PayloadOf<'RunProducedDiff'> | null
 
   /** Files the agent wrote, in order, so the card can show them live. */
   touched: readonly { path: string; op: 'edit' | 'write' | 'delete' }[]
@@ -156,6 +156,11 @@ export interface RunState {
    */
   roundsOpened: readonly number[]
 
+  /** The last `RunFailed`. Never cleared: a later `RunFinished` does not undo it (D3). */
+  failure: { readonly kind: RunFailureKind; readonly detail: string } | null
+  /** The last refused verdict, by `step:action` key. Not cleared by a later pass or a new head. */
+  refusal: { readonly key: string; readonly evidence: string; readonly findings: readonly Finding[] } | null
+
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
   /** The last `RunRefsPublished`, whatever its outcome — a later `unrecorded` row replaces a `published` one. */
@@ -178,8 +183,9 @@ export const emptyRun: RunState = {
   worktree: null,
   invocation: null,
   headSha: null,
-  branch: null,
-  diff: null,
+  produced: null,
+  failure: null,
+  refusal: null,
   touched: [],
   compactedAtTurns: [],
   prompts: 0,
@@ -386,9 +392,8 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        branch: d.branch,
+        produced: d,
         headSha: d.headSha,
-        diff: { files: d.files, insertions: d.insertions, deletions: d.deletions },
         lifecycle: state.lifecycle.status === 'awaiting-input' ? { status: 'running' } : state.lifecycle,
       }
     }
@@ -411,7 +416,12 @@ export function applyRun(state: RunState, event: Envelope): RunState {
 
     case 'RunFailed': {
       const d = event.data as PayloadOf<'RunFailed'>
-      return { ...state, ...at, lifecycle: { status: 'failed', kind: d.kind, detail: d.detail } }
+      return {
+        ...state,
+        ...at,
+        failure: { kind: d.kind, detail: d.detail },
+        lifecycle: { status: 'failed', kind: d.kind, detail: d.detail },
+      }
     }
 
     // No per-action step any more (0120's own Consequences: the board loses
@@ -452,6 +462,16 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         if (!isReached(action)) continue
         const key = `${d.outcome.step}:${action.name}`
         next = { ...next, steps: withStep(next, stepStateOf(key, action)) }
+        if (
+          action.yields === 'verdict' &&
+          action.result._tag === 'Completed' &&
+          action.result.assessment.verdict === 'refused'
+        ) {
+          next = {
+            ...next,
+            refusal: { key, evidence: action.evidence, findings: action.result.assessment.findings },
+          }
+        }
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
           next = {
             ...next,

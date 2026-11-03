@@ -23,7 +23,7 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceTicket, type Envelope } from '@lingtai/domain'
+import { reduceRun, reduceTicket, type Envelope } from '@lingtai/domain'
 import type { StepAction } from '@lingtai/recipe'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -115,7 +115,7 @@ export function nextPrompt(input: {
 
   const previous = attempts[attempts.length - 1]
   if (previous && input.lastRun !== null) {
-    previous.outcome = attemptOutcome(input.lastRun, input.budget)
+    previous.outcome = attemptOutcome(reduceRun(input.lastRun), input.budget)
   }
 
   // Two blocks and not one. The history is what every second attempt has; the

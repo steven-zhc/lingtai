@@ -37,17 +37,8 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, Envelope, Finding, PayloadOf } from '@lingtai/domain'
-import {
-  attemptFactOf,
-  cardFactOf,
-  claimShapeOf,
-  headOf,
-  routesOf,
-  stepOutcomesOf,
-  waitBranchOf,
-  waitWords,
-} from '@lingtai/domain'
+import type { AnswerRecord, Envelope, Finding, PayloadOf, RunState } from '@lingtai/domain'
+import { cardFactOf, claimShapeOf, headOf, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -317,94 +308,26 @@ function movedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
 }
 
 /**
- * What one earlier run produced and what refused it.
- *
- * Read from the envelopes rather than through `reduceRun` because the two facts
- * wanted here are not both in that fold: `RunState.gates` keeps the latest
- * verdict per gate and the last *refusal* is what this attempt needs, and a
- * gate that started and never returned a verdict — the run died inside it — has
- * no verdict to keep.
+ * What one earlier run produced and what refused it, read off its `RunState`:
+ * `refusal`, `failure` and `step` are kept there for this. Precedence: the last
+ * refusal, then the run's own failure, then the step it died inside.
  */
-export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBudget): AttemptOutcome {
-  let produced: AttemptOutcome['produced'] = null
-  let kept: AttemptOutcome['kept'] = null
-  let receipt: AttemptOutcome['receipt'] = null
-  let evidence: AttemptOutcome['evidence'] = null
-  let failed: AttemptOutcome['evidence'] = null
-  const unfinished = new Set<string>()
-
-  for (const event of runEvents) {
-    switch (event.type) {
-      case 'RunProducedDiff': {
-        const d = event.data as PayloadOf<'RunProducedDiff'>
-        produced = d
-        break
-      }
-
-      case 'RunKeptUncommitted': {
-        const d = event.data as PayloadOf<'RunKeptUncommitted'>
-        kept = d
-        break
-      }
-
-      case 'RunFinished': {
-        const d = event.data as PayloadOf<'RunFinished'>
-        receipt = { turns: d.turns }
-        break
-      }
-
-      case 'RunFailed': {
-        const d = event.data as PayloadOf<'RunFailed'>
-        failed = { what: `the run itself (${d.kind})`, text: d.detail }
-        break
-      }
-
-      /**
-       * **`StepStarted` opens `unfinished`, keyed by step rather than by
-       * action** (#502) — the actions a step declares are not known until the
-       * pipeline has run, and `StepStarted` is written once per step, not
-       * once per action any more. `StepEnded` closes it for the whole step,
-       * and `attemptFactOf`'s own per-action facts are read alongside it for
-       * whichever one refused: a verdict that passed closes with nothing to
-       * show (a quota, a crash, a question — none of them judged the code, so
-       * the failure block for each is empty on purpose, `#133`/0057 §1/`#296`);
-       * a refused one closes **with** evidence, the most specific thing on the
-       * stream, so the last one wins over anything else recorded here.
-       */
-      case 'StepStarted': {
-        const d = event.data as PayloadOf<'StepStarted'>
-        unfinished.add(d.step)
-        break
-      }
-
-      default: {
-        if (event.type === 'StepEnded') {
-          unfinished.delete((event.data as PayloadOf<'StepEnded'>).outcome.step)
-        }
-        for (const fact of attemptFactOf(event)) {
-          if (fact.refused !== null) {
-            evidence = {
-              what: fact.key,
-              text: findingsAppended(fact.refused.evidence, fact.refused.findings, budget.findings),
-            }
-          }
-        }
-        break
-      }
-    }
+export function attemptOutcome(state: RunState, budget: PromptBudget): AttemptOutcome {
+  const { refusal, failure, step } = state
+  const evidence: AttemptOutcome['evidence'] =
+    refusal !== null
+      ? { what: refusal.key, text: findingsAppended(refusal.evidence, refusal.findings, budget.findings) }
+      : failure !== null
+        ? { what: `the run itself (${failure.kind})`, text: failure.detail }
+        : step !== null
+          ? { what: step.step, text: 'it started and never returned a verdict.' }
+          : null
+  return {
+    produced: state.produced,
+    kept: state.kept.at(-1) ?? null,
+    evidence,
+    receipt: state.receipt === null ? null : { turns: state.receipt.turns },
   }
-
-  if (evidence === null) evidence = failed
-  if (evidence === null) {
-    // The ticket's "which point it died at": a gate that started and never
-    // returned a verdict. There is no output to quote — the fact is the finding.
-    const [died] = [...unfinished]
-    if (died !== undefined) {
-      evidence = { what: died, text: 'it started and never returned a verdict.' }
-    }
-  }
-
-  return { produced, kept, evidence, receipt }
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */

@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome } from '../src/index.ts'
 import {
-  attemptFactOf,
   designAsksOf,
   boardFactOf,
   cardFactOf,
@@ -267,18 +266,6 @@ describe('findingsRaisedOf', () => {
     const run = aRun('pass-1')
     const outcome: StepOutcome = { step: 'review', round: 0, actions: [verdict('review', 'sha-a', false)] }
     expect(run.aStepEnded(outcome).flatMap(findingsRaisedOf)).toEqual([])
-  })
-})
-
-describe('attemptFactOf', () => {
-  it('answers one StepEnded fact per action, with a refusal keyed to its own evidence and findings', () => {
-    const run = aRun('pass-1')
-    const outcome: StepOutcome = { step: 'build', round: 0, actions: [verdict('pnpm test', 'sha-a', false)] }
-    const facts = run.aStepEnded(outcome).flatMap(attemptFactOf)
-
-    expect(facts).toEqual([
-      { _tag: 'StepEnded', key: 'build:pnpm test', refused: { evidence: 'exit 1', findings: [] } },
-    ])
   })
 })
 
