@@ -19,6 +19,7 @@ import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
 import { verdictOf, type StepVerdict } from './run.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
+import { reduceTicket } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import { waitWords } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
@@ -82,18 +83,13 @@ export function routesOf(events: readonly Envelope[]): RoutedPass[] {
 /** One `WaitStarted` folded to its `WaitReason`, with its own `Resolution` once one lands — matched by `waitId`, never by position. */
 export type WaitFold = { readonly waitId: WaitId; readonly reason: WaitReason; readonly resolution: Resolution | null }
 
-/** Every `WaitStarted` on the slice, paired with the `WaitResolved` naming the same `waitId`, if any has landed. */
+/** Every wait on the slice, with the resolution naming its `waitId`, if any — a read of `reduceTicket(events).waits`. */
 export function waitsOf(events: readonly Envelope[]): WaitFold[] {
-  return events
-    .filter((e) => e.type === 'WaitStarted')
-    .map((e) => {
-      const data = e.data as PayloadOf<'WaitStarted'>
-      const resolved = events.find(
-        (x) => x.type === 'WaitResolved' && (x.data as PayloadOf<'WaitResolved'>).waitId === data.waitId,
-      )
-      const resolution = resolved === undefined ? null : (resolved.data as PayloadOf<'WaitResolved'>).resolution
-      return { waitId: data.waitId, reason: data.reason, resolution }
-    })
+  return reduceTicket(events).waits.map((w) => ({
+    waitId: w.waitId,
+    reason: w.reason,
+    resolution: w.resolution?.resolution ?? null,
+  }))
 }
 
 /** How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`). */
@@ -105,35 +101,19 @@ export function designAsksOf(events: readonly Envelope[]): number {
 
 /**
  * One wait's triage facts off the ticket's stream — the latest `TriageStarted`
- * for `waitId`, by `attempt` rather than position, and the `WaitTriaged`
+ * for `waitId` (read off the reduce, `TicketState.waits`), by `attempt` rather than position, and the `WaitTriaged`
  * finishing that same attempt, if one has landed. `events.ts`: *"`attempt`
  * matches the `TriageStarted` it finishes; a reader takes only the latest
  * attempt's result"* — so a `WaitTriaged` for an earlier attempt, or for a
  * `waitId` with no `TriageStarted` at all, is never read.
  */
 export function triageFactsOf(events: readonly Envelope[], waitId: WaitId): TriageFacts {
-  const starts = events.filter(
-    (e) => e.type === 'TriageStarted' && (e.data as PayloadOf<'TriageStarted'>).waitId === waitId,
-  )
-  const latestStart = starts.reduce<Envelope | null>((latest, e) => {
-    const attempt = (e.data as PayloadOf<'TriageStarted'>).attempt
-    const latestAttempt = latest === null ? -1 : (latest.data as PayloadOf<'TriageStarted'>).attempt
-    return attempt > latestAttempt ? e : latest
-  }, null)
-  const started =
-    latestStart === null
-      ? null
-      : { attempt: (latestStart.data as PayloadOf<'TriageStarted'>).attempt, at: latestStart.at }
-  const triaged =
-    started === null
-      ? undefined
-      : events.find(
-          (e) =>
-            e.type === 'WaitTriaged' &&
-            (e.data as PayloadOf<'WaitTriaged'>).waitId === waitId &&
-            (e.data as PayloadOf<'WaitTriaged'>).attempt === started.attempt,
-        )
-  return { started, result: triaged === undefined ? null : (triaged.data as PayloadOf<'WaitTriaged'>).result }
+  const wait = reduceTicket(events).waits.findLast((w) => w.waitId === waitId)
+  const started = wait?.triage.started ?? null
+  return {
+    started: started === null ? null : { attempt: started.attempt, at: started.at },
+    result: wait?.triage.result ?? null,
+  }
 }
 
 // --------------------------------------------------------- releaseCauseOf ----

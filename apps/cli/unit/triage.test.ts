@@ -768,6 +768,9 @@ describe('waitTriage', () => {
     const ticketId = ticketStream('lingtai', 3)
     const waitId = aWaitId()
     const seenOnFirstCall: string[] = []
+    await store.append(ticketId, 0, [
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: OWN_QUESTION } },
+    ])
 
     const { runtime } = stubRuntime(async () => {
       seenOnFirstCall.push(...typesOf(await store.read(ticketId)))

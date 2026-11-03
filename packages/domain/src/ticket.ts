@@ -22,15 +22,107 @@
 import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
 import type { Envelope } from './envelope.ts'
-import type { PayloadOf, ReleaseCause, SplitChild, Tier } from './events.ts'
+import type { PayloadOf, ReleaseCause, SplitChild, Tier, TriageStartedBy } from './events.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
-import type { Resolution, WaitReason } from './wait.ts'
+import type { Resolution, TriageResult, WaitReason } from './wait.ts'
 
 /** How an attempt ended: the later of a release and a question put to a person (D13). */
 export type AttemptEnding =
   | { readonly kind: 'released'; readonly reason: string }
   | { readonly kind: 'asked'; readonly reason: WaitReason }
+
+/**
+ * One wait, reduced once (#842). `waitsOf`, `triageFactsOf`, `designAsksOf`, the
+ * CLI's triage and `editEndedWaits` all read this rather than scanning the stream.
+ */
+export interface TicketWait {
+  readonly waitId: WaitId
+  readonly reason: WaitReason
+  /** The `WaitStarted`'s own `at`. */
+  readonly at: Date
+  /** The first `WaitResolved` naming this wait. */
+  readonly resolution: { readonly resolution: Resolution; readonly by: string } | null
+  readonly triage: {
+    /** The latest `TriageStarted` by attempt. */
+    readonly started: { readonly attempt: number; readonly at: Date; readonly by: TriageStartedBy } | null
+    /** The first `WaitTriaged` for that attempt. */
+    readonly result: TriageResult | null
+    /** That `WaitTriaged`'s `headSha`. */
+    readonly headSha: string | null
+  }
+  /** The first `TicketLanded` while this is the latest wait. */
+  readonly landed: { readonly mergeCommit: string; readonly base: string } | null
+  /** The first `TicketClosed` while this is the latest wait. */
+  readonly closed: { readonly by: string } | null
+}
+
+/**
+ * The waits rule, once. Called for every event before `closed` absorbs anything,
+ * so a closed ticket's waits read as a scan of its stream reads them.
+ */
+export function reduceWaits(waits: readonly TicketWait[], event: Envelope): readonly TicketWait[] {
+  switch (event.type) {
+    case 'WaitStarted': {
+      const d = event.data as PayloadOf<'WaitStarted'>
+      return [
+        ...waits,
+        {
+          waitId: d.waitId,
+          reason: d.reason,
+          at: event.at,
+          resolution: null,
+          triage: { started: null, result: null, headSha: null },
+          landed: null,
+          closed: null,
+        },
+      ]
+    }
+    case 'WaitResolved': {
+      const d = event.data as PayloadOf<'WaitResolved'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && w.resolution === null
+          ? { ...w, resolution: { resolution: d.resolution, by: d.by } }
+          : w,
+      )
+    }
+    case 'TriageStarted': {
+      const d = event.data as PayloadOf<'TriageStarted'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && d.attempt > (w.triage.started?.attempt ?? 0)
+          ? {
+              ...w,
+              triage: { started: { attempt: d.attempt, at: event.at, by: d.by }, result: null, headSha: null },
+            }
+          : w,
+      )
+    }
+    case 'WaitTriaged': {
+      const d = event.data as PayloadOf<'WaitTriaged'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && w.triage.started?.attempt === d.attempt && w.triage.result === null
+          ? { ...w, triage: { ...w.triage, result: d.result, headSha: d.headSha } }
+          : w,
+      )
+    }
+    case 'TicketLanded': {
+      const d = event.data as PayloadOf<'TicketLanded'>
+      const i = waits.length - 1
+      return i < 0 || waits[i]!.landed !== null
+        ? waits
+        : waits.map((w, j) => (j === i ? { ...w, landed: { mergeCommit: d.mergeCommit, base: d.base } } : w))
+    }
+    case 'TicketClosed': {
+      const d = event.data as PayloadOf<'TicketClosed'>
+      const i = waits.length - 1
+      return i < 0 || waits[i]!.closed !== null
+        ? waits
+        : waits.map((w, j) => (j === i ? { ...w, closed: { by: d.by } } : w))
+    }
+    default:
+      return waits
+  }
+}
 
 export interface TicketClaim {
   readonly runId: string
@@ -263,6 +355,9 @@ export interface TicketState {
    */
   github: GitHubLedger
 
+  /** Every wait, oldest first, with its triage, resolution and ending (#842). */
+  waits: readonly TicketWait[]
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number
   /** Global position of the last event applied. */
@@ -289,6 +384,7 @@ export const emptyTicket: TicketState = {
   pendingPrompt: null,
   answers: [],
   github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
+  waits: [],
   version: 0,
   lastSeq: null,
 }
@@ -316,7 +412,11 @@ function endClaim(claims: readonly TicketClaim[], runId: string, ended: AttemptE
 export function applyTicket(prior: TicketState, event: Envelope): TicketState {
   // D4: a ticket's project and issue are its stream's, whatever the event.
   const own = prior.project === null && isTicketStream(event.streamId) ? parseTicketStream(event.streamId) : null
-  const base = own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }
+  const waits = reduceWaits(prior.waits, event)
+  const base = {
+    ...(own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }),
+    waits,
+  }
   // D11: a stream's first event is where `since` starts; a lifecycle event moves it.
   // `WaitResolved` has several returns, so it moves `since` here; the guard below
   // puts it back, because `closed` absorbs it.

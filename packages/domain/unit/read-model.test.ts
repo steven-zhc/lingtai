@@ -151,6 +151,7 @@ describe('triageFactsOf', () => {
     const startedAt = new Date('2026-09-01T00:00:00.000Z')
     const failed: TriageResult = { _tag: 'TriageFailed', why: 'could not parse an answer' }
     const events = [
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, waitId),
       ...aTriageStart(item, waitId, 1, startedAt),
       ...aTriageStart(item, otherWaitId, 1),
       ...aTriaged(item, otherWaitId, 1, failed),
@@ -169,7 +170,11 @@ describe('triageFactsOf', () => {
       summary: 'patching will not converge',
       want: null,
     }
-    const events = [...aTriageStart(item, waitId, 1, startedAt), ...aTriaged(item, waitId, 1, advised)]
+    const events = [
+      ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, waitId),
+      ...aTriageStart(item, waitId, 1, startedAt),
+      ...aTriaged(item, waitId, 1, advised),
+    ]
     expect(triageFactsOf(events, waitId)).toEqual({ started: { attempt: 1, at: startedAt }, result: advised })
   })
 
@@ -182,6 +187,7 @@ describe('triageFactsOf', () => {
       const failed: TriageResult = { _tag: 'TriageFailed', why: 'could not parse an answer' }
       const secondStartedAt = new Date('2026-09-02T00:00:00.000Z')
       const events = [
+        ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, waitId),
         ...aTriageStart(item, waitId, 1, new Date('2026-09-01T00:00:00.000Z')),
         ...aTriaged(item, waitId, 1, failed),
         ...aTriageStart(item, waitId, 2, secondStartedAt),

@@ -1,6 +1,6 @@
 import type { ActionFinding } from '@lingtai/actions'
 import { SEVERITIES } from '@lingtai/domain'
-import { aTriageStart, aTriaged, aWaitId } from '@lingtai/domain/test/events'
+import { aTriageStart, aTriaged, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 /**
  * Whether a refused review buys an agent, what that agent is told, and what a
@@ -1636,7 +1636,11 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
 
     it('reads FixableLines on the wait asked about', () => {
       const w = aWaitId()
-      const events = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, advised(lines))]
+      const events = [
+        ...aWait(item, { _tag: 'OwnQuestion', question: 'q', by: 'steven' }, w),
+        ...aTriageStart(item, w, 1),
+        ...aTriaged(item, w, 1, advised(lines)),
+      ]
       expect(grantedAdviceOf(events, w)).toEqual({ on: 'lines', fixes })
     })
 
@@ -1677,7 +1681,11 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
 
       it('carries each divergent hunk’s question and recommended answer into the brief', () => {
         const w = aWaitId()
-        const events = [...aTriageStart(item, w, 1), ...aTriaged(item, w, 1, conflict([divergent, mechanical]))]
+        const events = [
+          ...aWait(item, { _tag: 'OwnQuestion', question: 'q', by: 'steven' }, w),
+          ...aTriageStart(item, w, 1),
+          ...aTriaged(item, w, 1, conflict([divergent, mechanical])),
+        ]
         const advice = grantedAdviceOf(events, w)
         expect(advice).toEqual({
           on: 'hunks',
