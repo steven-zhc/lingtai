@@ -38,12 +38,13 @@
  */
 import {
   backlogStream,
-  type Envelope,
   type Finding,
+  type FindingState,
   type PayloadOf,
   SEVERITIES,
   type Severity,
   parsePayload,
+  reduceFinding,
   ticketStream,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
@@ -165,32 +166,18 @@ export interface DecideOptions {
   entry?: (project: string, key: string) => Promise<BacklogEntry | undefined>
 }
 
-type StreamState =
-  | { state: 'open' }
-  | { state: 'accepted'; accepted: Envelope<PayloadOf<'FindingAccepted'>> }
-  | { state: 'decided'; last: Envelope }
-
-/** The log settles it, not the projection: a decision a moment old may not be folded yet. */
-function stateOf(stream: readonly Envelope[]): StreamState {
-  const last = stream.at(-1)
-  if (!last) return { state: 'open' }
-  if (last.type === 'FindingAccepted') {
-    return { state: 'accepted', accepted: last as Envelope<PayloadOf<'FindingAccepted'>> }
+function decidedDetail(key: string, state: FindingState): string {
+  if (state.status === 'accepted' && state.proposed) {
+    const p = state.proposed
+    return `${key} was already accepted — it is ${p.url ?? `#${p.externalRef}`} (seq ${p.seq})`
   }
-  return { state: 'decided', last }
-}
-
-function decidedDetail(key: string, last: Envelope): string {
-  if (last.type === 'FindingProposed') {
-    const d = last.data as PayloadOf<'FindingProposed'>
-    return `${key} was already accepted — it is ${d.url ?? `#${d.externalRef}`} (seq ${last.seq})`
-  }
-  return `${key} was already decided — ${last.type} at seq ${last.seq}`
+  if (state.status === 'declined') return `${key} was already decided — FindingDeclined at seq ${state.seq}`
+  return `${key} was already decided`
 }
 
 async function readEntry(
   options: DecideOptions,
-): Promise<{ entry: BacklogEntry; stream: StreamState; events: EventStore } | string> {
+): Promise<{ entry: BacklogEntry; stream: FindingState; events: EventStore } | string> {
   if (!options.by.startsWith('human:')) {
     return `a backlog entry is decided by a person, and ${options.by} is not one`
   }
@@ -198,7 +185,8 @@ async function readEntry(
   const entry = await read(options.project, options.key)
   if (!entry) return `no backlog entry ${options.key} in ${options.project}`
   const events = options.events ?? eventStore
-  const stream = stateOf(await events.read(backlogStream(options.project, options.key)))
+  // The log settles it, not the projection: a decision a moment old may not be folded yet.
+  const stream = reduceFinding(await events.read(backlogStream(options.project, options.key)))
   return { entry, stream, events }
 }
 
@@ -224,19 +212,21 @@ export async function acceptFinding(
   const { entry, stream, events } = found
   const kind = options.kind?.trim() ?? ''
 
-  if (stream.state === 'decided') return { ok: false, detail: decidedDetail(options.key, stream.last) }
+  if (stream.status === 'declined' || (stream.status === 'accepted' && stream.proposed)) {
+    return { ok: false, detail: decidedDetail(options.key, stream) }
+  }
 
-  if (stream.state === 'accepted') {
-    const d = stream.accepted.data
+  if (stream.status === 'accepted') {
+    const d = stream
     if (kind && kind !== d.kind) {
       return {
         ok: false,
         detail:
-          `${options.key} was accepted as "${d.kind}" by ${d.by} at seq ${stream.accepted.seq}, ` +
+          `${options.key} was accepted as "${d.kind}" by ${d.by} at seq ${d.seq}, ` +
           `and that is the issue opening it again opens — leave out --kind`,
       }
     }
-    return open(options, entry, events, d, stream.accepted.at)
+    return open(options, entry, events, { kind: d.kind, labels: [...d.labels] }, d.at)
   }
 
   if (!kind) return { ok: false, detail: 'an accepted finding needs a kind' }
@@ -340,14 +330,14 @@ async function settle(
   events: EventStore,
   ref: ProposedRef,
 ): Promise<BacklogDecision> {
-  const last = (await events.read(backlogStream(options.project, options.key))).at(-1)
-  if (last?.type !== 'FindingProposed') {
+  const state = reduceFinding(await events.read(backlogStream(options.project, options.key)))
+  if (state.status !== 'accepted' || !state.proposed) {
     return {
       ok: false,
-      detail: `${options.key} changed while it was being opened — ${last?.type ?? 'nothing'} is on the log`,
+      detail: `${options.key} changed while it was being opened — it is ${state.status}`,
     }
   }
-  const recorded = last.data as PayloadOf<'FindingProposed'>
+  const recorded = state.proposed
   const is = recorded.url ?? `#${recorded.externalRef}`
   // The same issue, or one this call only found: nothing of this call's to withdraw.
   if (recorded.externalRef === ref.externalRef || !ref.created) {
@@ -386,13 +376,13 @@ export async function declineFinding(options: DecideOptions & { reason: string }
   const found = await readEntry(options)
   if (typeof found === 'string') return { ok: false, detail: found }
   const { stream, events } = found
-  if (stream.state === 'accepted') {
+  if (stream.status === 'accepted' && !stream.proposed) {
     return {
       ok: false,
-      detail: `${options.key} was accepted by ${stream.accepted.data.by} at seq ${stream.accepted.seq} — ${again(options)}`,
+      detail: `${options.key} was accepted by ${stream.by} at seq ${stream.seq} — ${again(options)}`,
     }
   }
-  if (stream.state === 'decided') return { ok: false, detail: decidedDetail(options.key, stream.last) }
+  if (stream.status !== 'open') return { ok: false, detail: decidedDetail(options.key, stream) }
 
   try {
     await events.append(backlogStream(options.project, options.key), 0, [

@@ -21,6 +21,7 @@
  */
 import type { Action, Envelope, EventType, StepOutcome, WaitId } from '../src/index.ts'
 import {
+  backlogStream,
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
   chatStream,
@@ -890,6 +891,21 @@ const late_twoAsksTwoAnswers = (() => {
   ])
 })()
 
+/** D7: an accept with nothing after it — opening the issue is still owed. */
+const late_acceptedOnly = (() => {
+  const f = makeStream(backlogStream(PROJECT, 'minor-3'))
+  return stamp([f('FindingAccepted', { ...finding('minor-3'), kind: 'tech-debt', labels: [] })])
+})()
+
+/** D7: a stream no writer makes — a decline, then an accept. It throws. */
+const late_declinedThenAccepted = (() => {
+  const f = makeStream(backlogStream(PROJECT, 'minor-4'))
+  return stamp([
+    f('FindingDeclined', { ...finding('minor-4'), reason: 'not worth a ticket' }),
+    f('FindingAccepted', { ...finding('minor-4'), kind: 'tech-debt', labels: [] }),
+  ])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -922,6 +938,10 @@ export const lateHistories = {
   chat: {
     retriedRequest: late_retriedRequest,
     twoAsksTwoAnswers: late_twoAsksTwoAnswers,
+  },
+  finding: {
+    acceptedOnly: late_acceptedOnly,
+    declinedThenAccepted: late_declinedThenAccepted,
   },
 } as const
 

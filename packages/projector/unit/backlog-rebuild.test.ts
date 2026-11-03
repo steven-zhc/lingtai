@@ -22,7 +22,7 @@
  * would get a different `raised_seq` depending on which `it` ran first.
  */
 import type { Action, Envelope, Finding } from '@lingtai/domain'
-import { backlogStream, findingKey } from '@lingtai/domain'
+import { backlogStream, findingKey, reduceFinding } from '@lingtai/domain'
 import { aRun } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -471,5 +471,42 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
       }),
     ])
     expect(withSpent).toEqual(baseline)
+  })
+
+  it('folds the same rows in batches of 1, of 3 and all at once', async () => {
+    const whole = await fold(events)
+    for (const size of [1, 3]) {
+      const db = openSqliteProjections(':memory:')
+      try {
+        const store = createSqliteProjectionStore(db)
+        await store.transact((ctx) => backlogProjection.create(ctx))
+        for (let i = 0; i < events.length; i += size) {
+          await store.transact((ctx) => backlogProjection.apply(events.slice(i, i + size), ctx))
+        }
+        const backlog = await store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
+        expect(backlog, `batches of ${size}`).toEqual(whole.backlog)
+      } finally {
+        db.close()
+      }
+    }
+  })
+
+  it('writes decision columns that equal what reduceFinding says of each decision stream', async () => {
+    const { backlog } = await fold(events)
+    for (const key of [declinedKey, acceptedKey, acceptedOnlyKey]) {
+      const stream = events.filter((e) => e.streamId === backlogStream(PROJECT, key))
+      const state = reduceFinding(stream)
+      const row = backlog.find((r) => r.key === key)!
+      expect(row.status).toBe(state.status)
+      if (state.status === 'open') continue
+      expect(row.decided_by).toBe(state.by)
+      expect(String(row.decided_seq)).toBe(String(state.seq))
+      if (state.status === 'declined') expect(row.reason).toBe(state.reason)
+      if (state.status === 'accepted') {
+        expect(row.kind).toBe(state.kind)
+        expect(row.proposed_ref ?? null).toBe(state.proposed?.externalRef ?? null)
+        expect(row.proposed_url ?? null).toBe(state.proposed?.url ?? null)
+      }
+    }
   })
 })
