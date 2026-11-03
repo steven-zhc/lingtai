@@ -621,6 +621,30 @@ function stepEndedForAnother(): readonly Envelope[] {
   ])
 }
 
+/** A ceiling stop inside a step: `RunFinished` then `RunFailed`, as one append (#825). */
+function failedInsideStep(): readonly Envelope[] {
+  const run = aRun(passStream('failed-inside-step'))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
+    run.event('RunFinished', { exitCode: 1, turns: 30, durationMs: 90_000 }),
+    ...aRunFailure(run, 'out-of-turns', 'the turn ceiling'),
+  ])
+}
+
+/** A refused review, then the run crashes in the fix round (#825). */
+function refusedThenFailed(): readonly Envelope[] {
+  const run = aRun(passStream('refused-then-failed'))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-1', files: 1, insertions: 4, deletions: 1 }),
+    run.event('StepStarted', { runId: run.runId, step: 'review', round: 0 }),
+    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')])),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 1 }),
+    ...aRunFailure(run, 'crash', 'the agent exited 1'),
+  ])
+}
+
 type Published = {
   outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded'
   headSha: string | null
@@ -673,6 +697,8 @@ export const lateHistories = {
     ),
     armOnly: publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' }),
     nothingCommitted: publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null }),
+    failedInsideStep: failedInsideStep(),
+    refusedThenFailed: refusedThenFailed(),
   },
 } as const
 

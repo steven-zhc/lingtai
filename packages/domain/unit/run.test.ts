@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
 import { emptyRun, stepsOn, reduceRun } from '../src/index.ts'
-import { lateHistories } from '../test/histories.ts'
+import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const started = {
@@ -103,7 +103,7 @@ describe('reduceRun', () => {
       }),
     ])
     expect(moved.lifecycle.status).toBe('running')
-    expect(moved.diff).toEqual({ files: 3, insertions: 40, deletions: 2 })
+    expect(moved.produced).toMatchObject({ files: 3, insertions: 40, deletions: 2 })
   })
 
   it('enters gating on a proposed completion and collects verdicts', () => {
@@ -366,6 +366,22 @@ describe('RunState.step and implementRound (#822)', () => {
 
   it('a FixRound route is a round opened', () => {
     expect(reduceRun(lateHistories.run.fixRoundRouted).roundsOpened).toEqual([1])
+  })
+
+  it('D3: a failure stays a failure', () => {
+    expect(reduceRun(histories.run.failedThenFinished).failure).toMatchObject({ kind: 'crash' })
+  })
+
+  it('a failure inside a step is the failure', () => {
+    const state = reduceRun(lateHistories.run.failedInsideStep)
+    expect(state.failure).toMatchObject({ kind: 'out-of-turns' })
+    expect(state.step).toEqual({ step: 'implement', round: 0 })
+    expect(state.receipt?.turns).toBe(30)
+    expect(state.refusal).toBeNull()
+  })
+
+  it('the last refusal is kept', () => {
+    expect(reduceRun(histories.run.fixRoundThenLanded).refusal?.key).toBe('review:cold')
   })
 
   it('route is the last PassRouted payload, whatever its next', () => {

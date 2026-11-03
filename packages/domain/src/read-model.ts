@@ -283,42 +283,6 @@ export function findingsRaisedOf(event: Envelope): FindingsRaised[] {
   return out
 }
 
-// ----------------------------------------------------------- attemptFactOf ----
-
-/**
- * What `attempts.ts` (`@lingtai/conductor`) reads off one event at a time to
- * tell a later attempt what an earlier one did. One `StepEnded` may answer
- * several — one per action it declared, `NotReached` excluded.
- */
-export type AttemptFact = {
-  readonly _tag: 'StepEnded'
-  readonly key: string
-  readonly refused: { readonly evidence: string; readonly findings: readonly Finding[] } | null
-}
-
-/** `attemptFactOf`'s one entry point — see the section header for what it does and does not answer. */
-export function attemptFactOf(event: Envelope): AttemptFact[] {
-  if (event.type !== 'StepEnded') return []
-  const d = event.data as PayloadOf<'StepEnded'>
-  return d.outcome.actions
-    .filter((action) => action.result._tag !== 'NotReached')
-    .map((action) => {
-      const key = `${d.outcome.step}:${action.name}`
-      if (
-        action.yields === 'verdict' &&
-        action.result._tag === 'Completed' &&
-        action.result.assessment.verdict === 'refused'
-      ) {
-        return {
-          _tag: 'StepEnded' as const,
-          key,
-          refused: { evidence: action.evidence, findings: action.result.assessment.findings },
-        }
-      }
-      return { _tag: 'StepEnded' as const, key, refused: null }
-    })
-}
-
 // -------------------------------------------------------------- boardFactOf ----
 
 /**
