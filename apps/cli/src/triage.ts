@@ -27,6 +27,7 @@ import {
 import {
   parsePayload,
   parseTicketStream,
+  reduceRun,
   reduceTicket,
   ticketStream,
   triageFactsOf,
@@ -48,7 +49,7 @@ import { readTasks, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
 import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, type ConflictedPath } from '@lingtai/repo'
 
-import { headOf, prepare } from './discuss.ts'
+import { prepare } from './discuss.ts'
 import { prepareTriageCheckout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
@@ -174,7 +175,7 @@ async function finishInterrupted(
         (e.data as PayloadOf<'TriageStarted'>).attempt === facts.started!.attempt,
     )!
     const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
-    const headSha = runId === null ? null : headOf(await deps.store.read(runId))
+    const headSha = runId === null ? null : reduceRun(await deps.store.read(runId)).headSha
     const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
     try {
       await deps.store.append(ticketId, events.length, [
@@ -457,11 +458,10 @@ async function gatherEvidence(
   if (runId !== null) {
     // An unreadable run stream is not evidence that the attempt has no head.
     const runEvents = await deps.store.read(runId)
-    for (const e of runEvents) {
-      if (e.type === 'PassRouted') routed = e.data as PayloadOf<'PassRouted'>
-      if (e.type === 'RunRefsPublished') published = e.data as PayloadOf<'RunRefsPublished'>
-    }
-    head = headOf(runEvents)
+    const run = reduceRun(runEvents)
+    routed = run.route
+    published = run.published
+    head = run.headSha
   }
 
   const baseSha = await guard(deps.mirror.refSha({ project, ref: base, signal })).catch(() => null)
@@ -499,7 +499,7 @@ async function gatherEvidence(
       routed,
       published,
       diffStat,
-      // `head`, the log's own claim (`headOf`, `RunProducedDiff.headSha`) —
+      // `head`, the log's own claim (`RunState.headSha`) —
       // never `headSha`, the mirror's resolution of it. A mirror that cannot
       // resolve a head the attempt did produce (a pruned worktree, a re-cloned
       // mirror) must not read as "the attempt committed nothing": the log is
@@ -1026,7 +1026,7 @@ async function waitTriageWithin(
           data: parsePayload('WaitTriaged', {
             waitId: request.waitId,
             attempt,
-            // `headOf(run) ?? baseSha ?? ''` — the empty string is for a mirror
+            // `RunState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
             // with no base either, where `reading` already says no file can be
             // read.
             headSha: headSha ?? baseSha ?? '',

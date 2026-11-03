@@ -158,6 +158,8 @@ export interface RunState {
 
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
+  /** The last `PassRouted`, as written — the raw payload, not `routeNext`'s answer. */
+  route: PayloadOf<'PassRouted'> | null
   /** The last `RunRefsPublished`, whatever its outcome — a later `unrecorded` row replaces a `published` one. */
   published: PayloadOf<'RunRefsPublished'> | null
   /** Every `RunKeptUncommitted`, in order. */
@@ -189,6 +191,7 @@ export const emptyRun: RunState = {
   implementRound: 0,
   roundsOpened: [],
   receipt: null,
+  route: null,
   published: null,
   kept: [],
   version: 0,
@@ -441,8 +444,9 @@ export function applyRun(state: RunState, event: Envelope): RunState {
             ...at,
             implementRound: Math.max(state.implementRound, next.round),
             roundsOpened: [...state.roundsOpened, next.round],
+            route: d,
           }
-        : { ...state, ...at }
+        : { ...state, ...at, route: d }
     }
 
     case 'StepEnded': {
