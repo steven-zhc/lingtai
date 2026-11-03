@@ -24,10 +24,8 @@ import {
   discussionSection,
   holdDiscussion,
   MAX_READ_ROUNDS,
-  outstanding,
   parseReply,
   readingFor,
-  turnsOf,
   type Answered,
   type DiscussionEvidence,
 } from '../src/discuss.ts'
@@ -320,14 +318,6 @@ describe('concludeDiscussion', () => {
 
     const events = await store.read(ticketId)
     expect(events.map((e) => e.type)).toEqual(['DiscussionHeld'])
-  })
-})
-
-describe('whether a request has been answered', () => {
-  it('counts answers against asks rather than needing a consumed event', () => {
-    const answers = [envelope('DiscussionAnswered', {})]
-    expect(outstanding(1, answers)).toBe(false)
-    expect(outstanding(2, answers)).toBe(true)
   })
 })
 
@@ -637,24 +627,6 @@ describe('holding one question', () => {
 
     const answer = answerOf(store.appended)
     expect(answer.failure).toContain(`${MAX_READ_ROUNDS} rounds`)
-  })
-})
-
-describe('the conversation, read back', () => {
-  // **`spendOf`/`usageOf` are gone (#502, 0110 §9/§13)**: `DiscussionAnswered`
-  // carries no dollar figure or usage of its own any more — the `spend`
-  // projection folds `RunSpent` alone, and this fold is `turnsOf`'s claim only.
-  it('pairs each ask with the answer that followed it', () => {
-    const events = [
-      envelope('DiscussionAsked', { question: 'why?', by: 'human:steven', reading: [] }),
-      envelope('DiscussionAnswered', { text: 'because' }),
-      envelope('DiscussionAsked', { question: 'and then?', by: 'human:steven', reading: [] }),
-    ]
-
-    expect(turnsOf(events)).toEqual([
-      { question: 'why?', by: 'human:steven', answer: 'because' },
-      { question: 'and then?', by: 'human:steven', answer: null },
-    ])
   })
 })
 

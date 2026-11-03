@@ -150,7 +150,6 @@ function blocked(): TaskDetail {
     chatId: 'chat-1',
     attempt: 1,
     waiting: true,
-    costUsd: 0.12,
     held: null,
     turns: [
       {
@@ -163,7 +162,6 @@ function blocked(): TaskDetail {
           failure: null,
           cannot: [],
           read: [],
-          costUsd: 0.12,
           proposal: null,
         },
       },
@@ -532,7 +530,6 @@ describe('a running task', () => {
       chatId: 'chat-2',
       attempt: 1,
       waiting: false,
-      costUsd: 0.2,
       held: null,
       turns: [
         {
@@ -545,7 +542,6 @@ describe('a running task', () => {
             failure: null,
             cannot: ['run the reviewer'],
             read: [],
-            costUsd: 0.2,
             proposal: { kind: 'prompt', text: 'use a fresh session id' },
           },
         },

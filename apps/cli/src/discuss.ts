@@ -45,7 +45,6 @@ import {
   FILE_BYTES,
   holdDiscussion,
   LOG_LINES,
-  outstanding,
   readingFor,
   type DiscussionEvidence,
   type DiscussionPorts,
@@ -57,11 +56,13 @@ import { runLogPath } from '@lingtai/conductor/run-log'
 import {
   chatStream,
   parseTicketStream,
+  reduceChat,
   reduceControl,
   reduceRun,
   reduceTicket,
   triageFactsOf,
   CONTROL_STREAM,
+  type ChatState,
   type DiscussionRequest,
   type Envelope,
   type ProjectState,
@@ -420,6 +421,15 @@ export async function answerDiscussion(
 }
 
 /**
+ * The oldest request not yet answered, or null when the chat has caught up.
+ *
+ * The nth request is outstanding exactly when fewer than n turns are answered.
+ */
+export function nextRequest(asks: readonly DiscussionRequest[], chat: ChatState): DiscussionRequest | null {
+  return asks[chat.answered] ?? null
+}
+
+/**
  * Every question the log holds that nothing has answered, answered.
  *
  * Called at daemon startup, because a request made while the daemon was down is
@@ -444,11 +454,12 @@ export async function answerOutstanding(log: (line: string) => void = () => {}):
     // an event that has already been.
     for (;;) {
       const events = await eventStore.read(chatStream(chatId))
-      if (!outstanding(asks.length, events)) break
-      // The oldest unanswered one. Answers land in order, so the nth request is
-      // outstanding exactly when there are fewer than n answers.
-      const next = asks[events.filter((e) => e.type === 'DiscussionAnswered').length]
-      if (!next) break
+      // D14: requests are counted against answered *turns*, and an answer with
+      // no open ask counts for nothing. Never "some turn has no answer": a
+      // daemon that died between ask and answer leaves that turn unanswered for
+      // ever, and the retry appends a second ask.
+      const next = nextRequest(asks, reduceChat(events))
+      if (next === null) break
       await answerDiscussion(next, log).catch((err: unknown) =>
         log(`discussion ${chatId} failed: ${(err as Error).message}`),
       )

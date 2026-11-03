@@ -9,6 +9,7 @@ import {
   chatStream,
   claimShapeOf,
   emptyTicket,
+  reduceChat,
   reduceControl,
   reduceTicket,
   splitProgressOf,
@@ -1065,7 +1066,6 @@ export interface DiscussionTurnView {
     /** What it said it could not establish without a command it does not have. */
     cannot: string[]
     proposal: { kind: 'prompt' | 'ticket'; text: string } | null
-    costUsd: number | null
     /** Set when it did not finish. The turn still cost what it cost. */
     failure: string | null
   } | null
@@ -1077,11 +1077,6 @@ export interface DiscussionView {
   /** The attempt it was asked about, or null for the item as a whole. */
   attempt: number | null
   turns: DiscussionTurnView[]
-  /**
-   * The meter (0033 §4). Null when nothing has reported a figure — which is not
-   * the same as free, and is why `RunFinished.costUsd` is nullable too.
-   */
-  costUsd: number | null
   /** True while a question has no answer: the daemon has not got to it yet. */
   waiting: boolean
   /** Which artefact it produced, once it was closed. Null while it is open. */
@@ -1095,48 +1090,29 @@ export interface DiscussionView {
  * conversation is testable without a database.
  */
 export function foldChat(chatId: string, events: readonly Envelope[], held: DiscussionView['held']): DiscussionView {
-  const turns: DiscussionTurnView[] = []
-  let attempt: number | null = null
-  let cost: number | null = null
-
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'DiscussionAsked') {
-      if (typeof d['attempt'] === 'number') attempt = d['attempt']
-      turns.push({
-        question: String(d['question'] ?? ''),
-        by: String(d['by'] ?? ''),
-        at: e.at.toISOString(),
-        reading: Array.isArray(d['reading']) ? d['reading'].map(String) : [],
-        answer: null,
-      })
-      continue
-    }
-    if (e.type !== 'DiscussionAnswered') continue
-    const turn = turns[turns.length - 1]
-    if (!turn || turn.answer !== null) continue
-    const costUsd = typeof d['costUsd'] === 'number' ? d['costUsd'] : null
-    if (costUsd !== null) cost = (cost ?? 0) + costUsd
-    const proposal = d['proposal'] as { kind?: unknown; text?: unknown } | null | undefined
-    turn.answer = {
-      text: String(d['text'] ?? ''),
-      read: Array.isArray(d['read']) ? d['read'].map(String) : [],
-      cannot: Array.isArray(d['cannot']) ? d['cannot'].map(String) : [],
-      proposal:
-        proposal && (proposal.kind === 'prompt' || proposal.kind === 'ticket')
-          ? { kind: proposal.kind, text: String(proposal.text ?? '') }
-          : null,
-      costUsd,
-      failure: typeof d['failure'] === 'string' ? d['failure'] : null,
-    }
-  }
-
+  const chat = reduceChat(events)
   return {
     chatId,
-    attempt,
-    turns,
-    costUsd: cost,
-    waiting: turns.some((t) => t.answer === null),
+    attempt: chat.attempt,
+    turns: chat.turns.map((t) => ({
+      question: t.question,
+      by: t.by,
+      at: t.at.toISOString(),
+      reading: [...t.reading],
+      // Field by field: the view is serialised to the client, and the payload
+      // also carries `turns` and `durationMs`.
+      answer:
+        t.answer === null
+          ? null
+          : {
+              text: t.answer.text,
+              read: [...t.answer.read],
+              cannot: [...t.answer.cannot],
+              proposal: t.answer.proposal,
+              failure: t.answer.failure,
+            },
+    })),
+    waiting: chat.turns.some((t) => t.answer === null),
     held,
   }
 }

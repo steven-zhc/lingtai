@@ -44,7 +44,7 @@ const ASKED = {
 }
 
 describe('one conversation, folded', () => {
-  it('pairs each question with its answer and totals the spend as it goes', () => {
+  it('pairs each question with its answer (D16: no per-conversation cost)', () => {
     const chat = foldChat(
       'chat-1',
       [
@@ -56,7 +56,6 @@ describe('one conversation, folded', () => {
           proposal: { kind: 'prompt', text: 'pass --max-turns' },
           turns: 4,
           durationMs: 9_000,
-          costUsd: 0.42,
           failure: null,
         }),
         e('chat-1', 'DiscussionAsked', { ...ASKED, question: 'and attempt 1?' }, '2026-09-09T10:05:00Z'),
@@ -66,7 +65,6 @@ describe('one conversation, folded', () => {
 
     expect(chat.turns).toHaveLength(2)
     expect(chat.turns[0]?.answer?.proposal).toEqual({ kind: 'prompt', text: 'pass --max-turns' })
-    expect(chat.costUsd).toBeCloseTo(0.42, 5)
     // The second question has no answer yet, so the page can say so rather than
     // rendering an empty turn that reads as an answer of nothing.
     expect(chat.waiting).toBe(true)
@@ -83,8 +81,8 @@ describe('one conversation, folded', () => {
     expect(chat.turns[0]?.reading.join(' ')).toContain('attempt 2 left no branch')
   })
 
-  /** A turn that failed still cost what it cost. A meter that can miss a spend is not one. */
-  it("counts a failed turn's money", () => {
+  /** D16: a failed turn is still an answered one — it is not `waiting`. */
+  it('folds a failed turn as answered, with its failure', () => {
     const chat = foldChat(
       'chat-1',
       [
@@ -96,38 +94,14 @@ describe('one conversation, folded', () => {
           proposal: null,
           turns: 1,
           durationMs: 300_000,
-          costUsd: 0.19,
           failure: 'timeout: no result within 300000ms',
         }),
       ],
       null,
     )
 
-    expect(chat.costUsd).toBeCloseTo(0.19, 5)
     expect(chat.turns[0]?.answer?.failure).toContain('timeout')
     expect(chat.waiting).toBe(false)
-  })
-
-  /** Null and zero are different answers, exactly as they are for a run. */
-  it('reports no spend rather than zero when nothing said what it cost', () => {
-    const chat = foldChat(
-      'chat-1',
-      [
-        e('chat-1', 'DiscussionAsked', ASKED),
-        e('chat-1', 'DiscussionAnswered', {
-          text: 'x',
-          read: [],
-          cannot: [],
-          proposal: null,
-          turns: 1,
-          durationMs: 1,
-          costUsd: null,
-          failure: null,
-        }),
-      ],
-      null,
-    )
-    expect(chat.costUsd).toBeNull()
   })
 })
 
@@ -173,7 +147,7 @@ describe('the ledger', () => {
 })
 
 function chat(): DiscussionView {
-  return { chatId: 'chat-1', attempt: null, turns: [], costUsd: null, waiting: false, held: 'none' }
+  return { chatId: 'chat-1', attempt: null, turns: [], waiting: false, held: 'none' }
 }
 
 function discussionSpent(costUsd: number | null): SpendRow {

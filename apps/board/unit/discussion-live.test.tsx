@@ -34,7 +34,7 @@ const waiting: DiscussionView = {
   chatId: 'chat-1',
   attempt: 2,
   waiting: true,
-  costUsd: null,
+
   held: null,
   turns: [
     {
@@ -100,7 +100,7 @@ describe('the box while it is being answered', () => {
       turns: [
         {
           ...waiting.turns[0]!,
-          answer: { text: 'it did', failure: null, cannot: [], read: [], costUsd: 0.1, proposal: null },
+          answer: { text: 'it did', failure: null, cannot: [], read: [], proposal: null },
         },
       ],
     }
@@ -184,7 +184,7 @@ describe('the conversation, as turns', () => {
     turns: [
       {
         ...waiting.turns[0]!,
-        answer: { text: 'it did', failure: null, cannot: [], read: [], costUsd: 0.1, proposal: null },
+        answer: { text: 'it did', failure: null, cannot: [], read: [], proposal: null },
       },
     ],
   }

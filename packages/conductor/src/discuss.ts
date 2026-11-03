@@ -66,7 +66,15 @@
  * no dollar figure of its own any more, and `held.costUsd` below is the
  * caller's own in-memory receipt, not a second write of the same fact.
  */
-import { chatStream, parsePayload, type Envelope, type RuntimeId, type ToAppend, type Usage } from '@lingtai/domain'
+import {
+  chatStream,
+  parsePayload,
+  reduceChat,
+  type ChatTurn,
+  type RuntimeId,
+  type ToAppend,
+  type Usage,
+} from '@lingtai/domain'
 import type { TriageResult } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 
@@ -240,13 +248,6 @@ should be. There are exactly two places it can go and you choose which:
 
 You are proposing, not deciding. A person clicks, or does not.`
 
-/** One turn of the exchange, as the chat stream holds it. */
-export interface ChatTurn {
-  question: string
-  by: string
-  answer: string | null
-}
-
 /**
  * The document the assistant is handed.
  *
@@ -313,7 +314,10 @@ export function buildBrief(input: {
     input.history.length === 0
       ? ''
       : `## Earlier in this conversation\n\n${input.history
-          .map((t) => `**${t.by} asked:** ${t.question}\n\n**You answered:** ${t.answer ?? '(no answer was recorded)'}`)
+          .map(
+            (t) =>
+              `**${t.by} asked:** ${t.question}\n\n**You answered:** ${t.answer === null ? '(no answer was recorded)' : t.answer.text}`,
+          )
           .join('\n\n')}\n`
 
   const files = renderServed(input.served)
@@ -508,7 +512,7 @@ export async function holdDiscussion(ports: DiscussionPorts, options: Discussion
     reading: [...options.evidence.reading],
   })
 
-  const history = turnsOf(before)
+  const history = reduceChat(before).turns
   const served: { at: string; text: string | null }[] = []
   let turns = 0
   let durationMs = 0
@@ -738,42 +742,6 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
   ])
 
   return { ok, detail }
-}
-
-/**
- * The conversation so far, from the stream.
- *
- * Pairs an ask with the answer that followed it. An ask with nothing after it
- * is a question the daemon never got to — kept, so the assistant sees that it
- * was asked and the page can say the same.
- */
-export function turnsOf(events: readonly Envelope[]): ChatTurn[] {
-  const turns: ChatTurn[] = []
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'DiscussionAsked') {
-      turns.push({ question: String(d['question'] ?? ''), by: String(d['by'] ?? ''), answer: null })
-      continue
-    }
-    if (e.type !== 'DiscussionAnswered') continue
-    const last = turns[turns.length - 1]
-    if (last && last.answer === null) last.answer = String(d['text'] ?? '')
-  }
-  return turns
-}
-
-/**
- * Whether a request has been answered yet.
- *
- * The whole of the request's state machine, and it is arithmetic rather than a
- * `consumed` event — the same rule `RunRequested` follows, where a request is
- * satisfied by the item ceasing to be queued. Asks and answers are counted
- * because a conversation is several requests against one stream, and the nth
- * request is outstanding exactly when fewer than n answers exist.
- */
-export function outstanding(asked: number, events: readonly Envelope[]): boolean {
-  const answered = events.filter((e) => e.type === 'DiscussionAnswered').length
-  return answered < asked
 }
 
 /**

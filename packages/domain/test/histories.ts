@@ -873,6 +873,23 @@ const late_ceilingLapsedThenResumed = (() => {
   return stamp([c('ConductorPaused', ceilingPause(LIFTED_UNTIL)), c('ConductorResumed', { by: 'steven' })])
 })()
 
+/** D14: an ask, the same question asked again after a crash, then one answer. */
+const late_retriedRequest = (() => {
+  const c = makeStream(chatStream('9001-3'))
+  return stamp([c('DiscussionAsked', ASK), c('DiscussionAsked', ASK), c('DiscussionAnswered', ANSWER)])
+})()
+
+/** D14: two asks, then two answers — the first answer belongs to the second ask. */
+const late_twoAsksTwoAnswers = (() => {
+  const c = makeStream(chatStream('9001-4'))
+  return stamp([
+    c('DiscussionAsked', ASK),
+    c('DiscussionAsked', { ...ASK, question: 'and the second?' }),
+    c('DiscussionAnswered', ANSWER),
+    c('DiscussionAnswered', { ...ANSWER, text: 'second answer' }),
+  ])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -901,6 +918,10 @@ export const lateHistories = {
     ceilingThenPersonPause: late_ceilingThenPersonPause,
     ceilingWaivedThenRepaused: late_ceilingWaivedThenRepaused,
     ceilingLapsedThenResumed: late_ceilingLapsedThenResumed,
+  },
+  chat: {
+    retriedRequest: late_retriedRequest,
+    twoAsksTwoAnswers: late_twoAsksTwoAnswers,
   },
 } as const
 

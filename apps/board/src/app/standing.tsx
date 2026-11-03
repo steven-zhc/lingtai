@@ -465,8 +465,8 @@ export function Standing({
   /**
    * Every closed conversation's own total, already folded — `task.totals.byPurpose.Discussion`,
    * `spend`'s Discussion rows for this ticket — so the box's meter agrees with
-   * the Attempts label's split rather than re-summing `DiscussionView.costUsd`
-   * itself (`#498`).
+   * the Attempts label's split rather than summing a figure per
+   * conversation itself (`#498`).
    */
   discussionBill?: Bill
   /** What the next attempt will be handed. Null when there will not be one. */

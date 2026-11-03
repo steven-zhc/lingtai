@@ -17,7 +17,15 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
-import { CONTROL_FOLD_TYPES, EVENTS, parseTicketStream, reduceControl, reduceRun, reduceTicket } from '../src/index.ts'
+import {
+  CONTROL_FOLD_TYPES,
+  EVENTS,
+  parseTicketStream,
+  reduceChat,
+  reduceControl,
+  reduceRun,
+  reduceTicket,
+} from '../src/index.ts'
 import { COVERS, NOW, histories, lateHistories, scenarios } from '../test/histories.ts'
 import hashes from './histories.hashes.json'
 
@@ -73,11 +81,12 @@ describe('coverage', () => {
     })
   }
 
-  it('COVERS holds every catalogue case label of applyRun, applyTicket and applyControl', () => {
+  it('COVERS holds every catalogue case label of applyRun, applyTicket, applyControl and applyChat', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
     expect(missing(caseLabels('run.ts', 'applyRun'), COVERS.run)).toEqual([])
     expect(missing(caseLabels('ticket.ts', 'applyTicket'), COVERS.ticket)).toEqual([])
     expect(missing(caseLabels('control.ts', 'applyControl'), COVERS.control)).toEqual([])
+    expect(missing(caseLabels('chat.ts', 'applyChat'), COVERS.chat)).toEqual([])
   })
 
   it('COVERS.control is CONTROL_FOLD_TYPES', () => {
@@ -88,6 +97,7 @@ describe('coverage', () => {
 describe('the histories fold', () => {
   for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceRun(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
+  for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
   for (const h of singles.filter((s) => s.kind === 'control')) {
     it(`control.${h.name}`, () => void reduceControl(h.events, NOW))
   }
