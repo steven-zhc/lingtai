@@ -719,33 +719,87 @@ function implementThenReviewed(): readonly Envelope[] {
   ])
 }
 
+const late_fixRoundRouted = fixRoundRouted()
+const late_stepEndedForAnother = stepEndedForAnother()
+const late_publishedClean = publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' })
+const late_publishedWithWip = publishedRun(
+  'published-with-wip',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+)
+const late_wipRecorded = publishedRun(
+  'wip-recorded',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+)
+const late_wipOnAnotherArm = publishedRun(
+  'wip-on-another-arm',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
+)
+const late_armOnly = publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' })
+const late_nothingCommitted = publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null })
+const late_failedInsideStep = failedInsideStep()
+const late_refusedThenFailed = refusedThenFailed()
+const late_planResolved = planResolved()
+const late_laneWaited = laneWaited()
+const late_implementThenReviewed = implementThenReviewed()
+
+/** D4: titles come from the claims, the latest non-null winning. */
+const late_titledByClaims = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9107))
+  const claim = (r: string, title: string | null, kind: string | null) =>
+    t('TicketClaimed', { runId: passStream(r), worker: 'conductor:1', title, kind })
+  const released = (r: string) => t('TicketReleased', { runId: passStream(r), reason: 'failed', cause: null })
+  return stamp([
+    claim('t9107-1', 'first', 'bug'),
+    released('t9107-1'),
+    claim('t9107-2', null, null),
+    released('t9107-2'),
+    claim('t9107-3', 'renamed', 'feature'),
+  ])
+})()
+
+/** D4: an escalated proposal answered with a requeue — the answer's question names the branch. */
+const late_escalatedThenRequeued = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9108))
+  const r1 = passStream('t9108-1')
+  const w = wait('9108-escalated')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      {
+        _tag: 'ProposedEscalated',
+        run: { runId: r1 },
+        proposal: { _tag: 'VerifyRed', output: 'red' },
+        because: { _tag: 'NotAsked' },
+      } as never,
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Requeue' }, 'steven', 'not this way'),
+  ])
+})()
+
 export const lateHistories = {
   run: {
-    fixRoundRouted: fixRoundRouted(),
-    stepEndedForAnother: stepEndedForAnother(),
-    publishedClean: publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' }),
-    publishedWithWip: publishedRun(
-      'published-with-wip',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
-    ),
-    wipRecorded: publishedRun(
-      'wip-recorded',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
-    ),
-    wipOnAnotherArm: publishedRun(
-      'wip-on-another-arm',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
-    ),
-    armOnly: publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' }),
-    nothingCommitted: publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null }),
-    failedInsideStep: failedInsideStep(),
-    refusedThenFailed: refusedThenFailed(),
-    planResolved: planResolved(),
-    laneWaited: laneWaited(),
-    implementThenReviewed: implementThenReviewed(),
+    fixRoundRouted: late_fixRoundRouted,
+    stepEndedForAnother: late_stepEndedForAnother,
+    publishedClean: late_publishedClean,
+    publishedWithWip: late_publishedWithWip,
+    wipRecorded: late_wipRecorded,
+    wipOnAnotherArm: late_wipOnAnotherArm,
+    armOnly: late_armOnly,
+    nothingCommitted: late_nothingCommitted,
+    failedInsideStep: late_failedInsideStep,
+    refusedThenFailed: late_refusedThenFailed,
+    planResolved: late_planResolved,
+    laneWaited: late_laneWaited,
+    implementThenReviewed: late_implementThenReviewed,
+  },
+  ticket: {
+    titledByClaims: late_titledByClaims,
+    escalatedThenRequeued: late_escalatedThenRequeued,
   },
 } as const
 

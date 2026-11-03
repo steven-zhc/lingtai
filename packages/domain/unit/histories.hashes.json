@@ -39,5 +39,7 @@
   "run.refusedThenFailed": "ca7f2731dc0170077d7ab1c2243cbfc5354cb742ea88e2a477eb94832d0e8f20",
   "run.planResolved": "29d7971b5a3505ca57d3ed487a033a3e5e9b45c9560345fff07dd924c7b5f548",
   "run.laneWaited": "6f97f36136b5898b4c1c6cdd854e7a0ada58c36bddd938183f64283f5a959f45",
-  "run.implementThenReviewed": "1b1a32921bc11787e413718d64e10e6a88715db90030defd10ad2a440da06001"
+  "run.implementThenReviewed": "1b1a32921bc11787e413718d64e10e6a88715db90030defd10ad2a440da06001",
+  "ticket.titledByClaims": "2aa5e8408c26518e763e43c887ddc510d49651ff0c003aece1d7b573a567b94c",
+  "ticket.escalatedThenRequeued": "5447aedf901483a736e608abe8664634cacc583ae6f78b55a2b3545204d50375"
 }

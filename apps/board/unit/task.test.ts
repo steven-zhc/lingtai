@@ -1,4 +1,4 @@
-import type { Envelope } from '@lingtai/domain'
+import { reduceTicket, type Envelope } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 /**
  * The attempt is the unit, and the page can say what each one cost.
@@ -16,16 +16,7 @@ import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { backoffOf } from '../src/lib/queued.ts'
-import {
-  claimsOf,
-  foldRun,
-  groupHistory,
-  standingOf,
-  ticketFieldsOf,
-  totalsOf,
-  type Claim,
-  type RunView,
-} from '../src/lib/task.ts'
+import { claimsOf, foldRun, groupHistory, standingOf, totalsOf, type Claim, type RunView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -399,10 +390,12 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
     expect(claimsOf(next)).toEqual(claimsOf(old))
   })
 
-  it('keeps the title, kind and labels from the claim', () => {
+  it('keeps the title and kind from the claim (D4: labels stays empty, a claim has none)', () => {
     const { old, next } = streams()
-    const fields = { title: 'the title', kind: 'bug', labels: ['bug'] }
-    expect(ticketFieldsOf(old)).toEqual(fields)
-    expect(ticketFieldsOf(next)).toEqual(fields)
+    const fields = { title: 'the title', kind: 'bug', labels: [] }
+    for (const own of [old, next]) {
+      const t = reduceTicket(own)
+      expect({ title: t.title, kind: t.kind, labels: t.labels }).toEqual(fields)
+    }
   })
 })
