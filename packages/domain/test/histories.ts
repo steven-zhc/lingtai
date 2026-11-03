@@ -962,6 +962,69 @@ const late_closedByPersonThenClaimed = (() => {
   ])
 })()
 
+/** #842: two triage attempts, a late result for the first, a duplicate result, and a second resolution. */
+const late_triagedTwice = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9114))
+  const r1 = passStream('t9114-1')
+  const w = wait('9114-crash')
+  const agent = { _tag: 'Agent', runtime: 'claude-code', model: 'sonnet' } as const
+  const failed = (why: string) => ({ _tag: 'TriageFailed', why }) as const
+  const by = { _tag: 'Mechanical' } as const
+  const triaged = (attempt: number, why: string) =>
+    t('WaitTriaged', { waitId: w, attempt, headSha: `head-${attempt}`, result: failed(why), by })
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, { _tag: 'AgentCrashed', run: { runId: r1 }, step: 'implement', cause: 'crash', detail: 'died' }, w),
+    t('TriageStarted', { waitId: w, attempt: 1, by: agent }),
+    triaged(1, 'first'),
+    t('TriageStarted', { waitId: w, attempt: 2, by: agent }),
+    triaged(1, 'late'),
+    triaged(2, 'second'),
+    triaged(2, 'duplicate'),
+    ...aResolution(t, w, { _tag: 'Requeue' }),
+    ...aResolution(t, w, { _tag: 'Requeue' }, 'someone'),
+  ])
+})()
+
+/** #842: a wait begun after the ticket closed is still a wait. */
+const late_waitAfterClosed = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9115))
+  const r1 = passStream('t9115-1')
+  return stamp([
+    ...aClaim(t, r1),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    ...aWait(
+      t,
+      { _tag: 'AgentCrashed', run: { runId: r1 }, step: 'implement', cause: 'crash', detail: 'died' },
+      wait('9115-late'),
+    ),
+  ])
+})()
+
+/** #842: two approved waits, then a landing, which belongs to the second. */
+const late_waitThenLanded = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9116))
+  const r1 = passStream('t9116-1')
+  const w1 = wait('9116-one')
+  const w2 = wait('9116-two')
+  const reason = {
+    _tag: 'SignoffRequired',
+    run: { runId: r1 },
+    step: 'proposed',
+    action: 'human',
+    question: 'ship it?',
+  } as const
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, reason, w1),
+    ...aResolution(t, w1, { _tag: 'Approve', onSha: 'sha-1' }),
+    t('TicketContinued', { runId: r1, worker: 'conductor:1' }),
+    ...aWait(t, reason, w2),
+    ...aResolution(t, w2, { _tag: 'Approve', onSha: 'sha-2' }),
+    ...aLanding(t, 'abcdef1234567', BASE),
+  ])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -988,6 +1051,9 @@ export const lateHistories = {
     releasedWithoutReason: late_releasedWithoutReason,
     closedByPerson: late_closedByPerson,
     closedByPersonThenClaimed: late_closedByPersonThenClaimed,
+    triagedTwice: late_triagedTwice,
+    waitAfterClosed: late_waitAfterClosed,
+    waitThenLanded: late_waitThenLanded,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,
@@ -1035,6 +1101,8 @@ export const COVERS = {
     'TicketReleased',
     'WaitStarted',
     'WaitResolved',
+    'TriageStarted',
+    'WaitTriaged',
     'TicketSplit',
     'TicketLinked',
     'TicketClosed',

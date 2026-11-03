@@ -2111,19 +2111,25 @@ describe('the subject, at the top', () => {
       summary: 'Try again',
       want,
     })
+    const reason = { _tag: 'OwnQuestion', question: 'why?', by: 'user' }
+    const waits = [
+      e(ITEM, 'WaitStarted', { waitId: older, reason }),
+      e(ITEM, 'WaitStarted', { waitId: current, reason }),
+    ]
     const events = [
+      ...waits,
       e(ITEM, 'TriageStarted', { waitId: older, attempt: 1 }),
       e(ITEM, 'WaitTriaged', { waitId: older, attempt: 1, result: advised('old') }),
       e(ITEM, 'TriageStarted', { waitId: current, attempt: 1 }),
       e(ITEM, 'WaitTriaged', { waitId: current, attempt: 1, result: advised('current') }),
     ]
     expect(currentWaitWant(events, HELD)).toBe('current')
-    expect(currentWaitWant(events.slice(0, 2), HELD)).toBeNull()
+    expect(currentWaitWant(events.slice(0, 4), HELD)).toBeNull()
     expect(currentWaitWant(events, { ...HELD, state: 'landed' })).toBeNull()
-    expect(currentWaitWant(events.slice(0, 3), HELD)).toBeNull()
+    expect(currentWaitWant(events.slice(0, 5), HELD)).toBeNull()
     expect(
       currentWaitWant(
-        events.slice(0, 3).concat(
+        events.slice(0, 5).concat(
           e(ITEM, 'WaitTriaged', {
             waitId: current,
             attempt: 1,
@@ -2136,7 +2142,7 @@ describe('the subject, at the top', () => {
     expect(
       currentWaitWant(
         [
-          ...events.slice(0, 3),
+          ...events.slice(0, 5),
           e(ITEM, 'WaitTriaged', {
             waitId: current,
             attempt: 1,

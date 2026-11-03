@@ -432,7 +432,7 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
  *
  * Reads the stream once, the comments and their edits off the ticket's
  * `github` ledger. A `comment` whose `IssueUpdated` carries a `waitId`
- * is edited when the log shows that wait over — a `TicketLanded` or
+ * is edited when the reduce (`TicketState.waits`) shows that wait over — a `TicketLanded` or
  * `TicketClosed` after its `WaitStarted`, or a `WaitResolved` for it — and no
  * `comment-edited` for the same wait was recorded yet. An attempt is recorded
  * whether it worked or not, so a failed edit is skipped from then on and
@@ -455,42 +455,24 @@ export async function editEndedWaits(options: {
   const { store, github, ticketId } = options
   try {
     const events = await store.read(ticketId)
-    const started = new Map<string, number>()
-    const starts: number[] = []
-    const resolved = new Map<string, PayloadOf<'WaitResolved'>>()
-    const ledger = reduceTicket(events).github
+    const state = reduceTicket(events)
+    const ledger = state.github
     const edited = new Set<string>(ledger.edited)
     const posted = ledger.comments
-    const landed: { at: number; data: PayloadOf<'TicketLanded'> }[] = []
-    const closed: { at: number; data: PayloadOf<'TicketClosed'> }[] = []
-    events.forEach((e, at) => {
-      if (e.type === 'WaitStarted') {
-        started.set((e.data as PayloadOf<'WaitStarted'>).waitId, at)
-        starts.push(at)
-      } else if (e.type === 'WaitResolved') {
-        const d = e.data as PayloadOf<'WaitResolved'>
-        resolved.set(d.waitId, d)
-      } else if (e.type === 'TicketLanded') landed.push({ at, data: e.data as PayloadOf<'TicketLanded'> })
-      else if (e.type === 'TicketClosed') closed.push({ at, data: e.data as PayloadOf<'TicketClosed'> })
-    })
 
     for (const p of posted) {
       if (edited.has(p.waitId)) continue
-      const from = started.get(p.waitId)
-      if (from === undefined) continue
-      // An ending belongs to this wait only if no later wait began before it:
-      // a first wait that was approved and held again was approved, not landed.
-      const until = starts.find((s) => s > from) ?? Infinity
-      const land = landed.find((l) => l.at > from && l.at < until)
-      const res = resolved.get(p.waitId)
-      const close = closed.find((c) => c.at > from && c.at < until)
+      // The latest wait with this id, the one `triageFactsOf` reads. An ending belongs
+      // to a wait only while it is the latest: a first wait that was approved and held
+      // again was approved, not landed (`reduceWaits`).
+      const wait = state.waits.findLast((w) => w.waitId === p.waitId)
+      if (wait === undefined) continue
       let outcome: string
-      if (land !== undefined) {
-        const sha = land.data.mergeCommit.slice(0, 7)
-        const base = land.data.base
-        outcome = `Landed on \`${base}\`${sha === '' ? '' : ` in \`${sha}\``}.`
-      } else if (res !== undefined) outcome = resolutionWords(res.resolution, res.by)
-      else if (close !== undefined) outcome = sentence('Closed', close.data.by)
+      if (wait.landed !== null) {
+        const sha = wait.landed.mergeCommit.slice(0, 7)
+        outcome = `Landed on \`${wait.landed.base}\`${sha === '' ? '' : ` in \`${sha}\``}.`
+      } else if (wait.resolution !== null) outcome = resolutionWords(wait.resolution.resolution, wait.resolution.by)
+      else if (wait.closed !== null) outcome = sentence('Closed', wait.closed.by)
       else continue
       const body = `**${outcome}**${p.question === '' ? '' : `\n\n> ${p.question}`}`
       await tellGitHub({

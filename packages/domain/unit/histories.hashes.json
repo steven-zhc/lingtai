@@ -55,5 +55,8 @@
   "ticket.askedThenAnswered": "7a5cf3089ffd413f7a84f01ef8bf491f29fbc3fa9a54a662a5cf15f5d4c7d938",
   "ticket.releasedWithoutReason": "01022312c076a08c38082b992d8cbd98825a3c4159647557dae4ca2e75338b29",
   "ticket.closedByPerson": "331489ddb963e1706411bbc204ee3c1262fc16bd1546cf9a6ae0691f79ca2ca9",
-  "ticket.closedByPersonThenClaimed": "83b4204e7ffc5560b184f22cbf5d3d55150250bf5265d780752900a2673e0efc"
+  "ticket.closedByPersonThenClaimed": "83b4204e7ffc5560b184f22cbf5d3d55150250bf5265d780752900a2673e0efc",
+  "ticket.triagedTwice": "1bf0781f1ee1a9f636d73667eebb067b72fd5f1487dfce434744d305cb7528c7",
+  "ticket.waitAfterClosed": "7e0762619635e71610aa5ba8327f631bbec84f887b5c89c322594331c582d76a",
+  "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645"
 }
