@@ -40,6 +40,7 @@ export const BACKLOG_TABLE = 'finding_backlog'
 
 interface DecisionRow {
   status: string
+  last_seq: string | number | bigint | null
   decided_seq: string | number | bigint | null
   proposed_ref: string | null
   proposed_url: string | null
@@ -137,6 +138,7 @@ export const backlogProjection: Projection = {
         proposed_ref     text,
         proposed_url     text,
         reason           text,
+        last_seq         bigint,
         primary key (project, key)
       )`)
     await ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
@@ -179,21 +181,24 @@ export const backlogProjection: Projection = {
           // has already updated it, and the fold must see that.
           const d = event.data as { project: string; key: string }
           const [row] = await ctx.query<DecisionRow>(
-            `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
+            `select status, last_seq, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
             [d.project, d.key],
           )
           // A finding nothing raised has no row to be wrong about.
           if (!row) break
-          // No replay guard: a projection's writes and its checkpoint advance
-          // share a transaction, so an event is never applied twice, and the row
-          // keeps no proposal seq that could tell a replay from a second proposal.
+          // Delivery is at-least-once: two runners share this checkpoint and each
+          // commits its batch before advancing it, so one can hand over an event
+          // the other already folded. An event no newer than the last one reduced
+          // into the row is that replay, by identity (its seq) — never by payload.
+          if (row.last_seq !== null && BigInt(row.last_seq) >= event.seq) break
           const before = findingOfRow(row, d)
           const after = applyFinding(before, event)
           if (before.status === 'open' && after.status === 'accepted') {
             const a = event.data as PayloadOf<'FindingAccepted'>
             await ctx.query(
               `update finding_backlog
-                 set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
+                 set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6,
+                     last_seq = $5
                where project = $1 and key = $2`,
               [a.project, a.key, a.by, event.at, seq, a.kind],
             )
@@ -202,16 +207,16 @@ export const backlogProjection: Projection = {
             await ctx.query(
               `update finding_backlog
                  set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
-                     reason = $6
+                     reason = $6, last_seq = $5
                where project = $1 and key = $2`,
               [x.project, x.key, x.by, event.at, seq, x.reason],
             )
           } else if (after !== before) {
             const p = event.data as PayloadOf<'FindingProposed'>
             await ctx.query(
-              `update finding_backlog set proposed_ref = $3, proposed_url = $4
+              `update finding_backlog set proposed_ref = $3, proposed_url = $4, last_seq = $5
                where project = $1 and key = $2`,
-              [p.project, p.key, p.externalRef, p.url],
+              [p.project, p.key, p.externalRef, p.url, seq],
             )
           }
           break

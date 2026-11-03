@@ -6,7 +6,10 @@
  * **Generated from today's code, and never regenerated after the `src`
  * change.** The snapshot this file commits alongside it was captured against
  * `backlog.ts` before #481's rewrite; `vitest -u` after the rewrite would turn
- * this file into a tautology rather than a pin. If this test goes red, the
+ * this file into a tautology rather than a pin. **Regenerated once, for #838:**
+ * the rows gained one key, `last_seq` (the seq of the last finding event reduced
+ * into the row, so a replayed event is skipped by identity), and nothing else in
+ * them changed. If this test goes red, the
  * fold changed — fix `backlog.ts`/`read-model.ts`, never the snapshot.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
@@ -491,29 +494,42 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     }
   })
 
-  it.each([
-    ['different', 'https://x/other'],
-    ['identical', 'https://x/212'],
-  ])('a second proposal with a %s url throws and the row keeps the first', async (_name, url) => {
+  it('an event handed over twice, as a second runner would, leaves the row as one delivery does', async () => {
     const db = openSqliteProjections(':memory:')
     try {
       const store = createSqliteProjectionStore(db)
       await store.transact((ctx) => backlogProjection.create(ctx))
       await store.transact((ctx) => backlogProjection.apply(events, ctx))
-      const second = acceptedStream('FindingProposed', {
+      const rows = () => store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
+      const once = await rows()
+      const decided = events.filter((e) => e.streamId === backlogStream(PROJECT, acceptedKey))
+      await store.transact((ctx) => backlogProjection.apply(decided, ctx))
+      await store.transact((ctx) => backlogProjection.apply(decided, ctx))
+      expect(await rows()).toEqual(once)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('a decline after an accept, with a greater seq, still throws and the row keeps the accept', async () => {
+    const db = openSqliteProjections(':memory:')
+    try {
+      const store = createSqliteProjectionStore(db)
+      await store.transact((ctx) => backlogProjection.create(ctx))
+      await store.transact((ctx) => backlogProjection.apply(events, ctx))
+      const later = acceptedStream('FindingDeclined', {
         project: PROJECT,
         key: acceptedKey,
         by: 'human:t',
-        externalRef: '212',
-        url,
+        reason: 'changed my mind',
       })
-      await expect(store.transact((ctx) => backlogProjection.apply([second], ctx))).rejects.toThrow(
+      await expect(store.transact((ctx) => backlogProjection.apply([later], ctx))).rejects.toThrow(
         backlogStream(PROJECT, acceptedKey),
       )
       const [row] = await store.transact((ctx) =>
-        ctx.query('select proposed_url from finding_backlog where key = $1', [acceptedKey]),
+        ctx.query('select status from finding_backlog where key = $1', [acceptedKey]),
       )
-      expect(row!.proposed_url).toBe('https://x/212')
+      expect(row!.status).toBe('accepted')
     } finally {
       db.close()
     }
