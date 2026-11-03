@@ -43,5 +43,10 @@
   "ticket.titledByClaims": "2aa5e8408c26518e763e43c887ddc510d49651ff0c003aece1d7b573a567b94c",
   "ticket.escalatedThenRequeued": "5447aedf901483a736e608abe8664634cacc583ae6f78b55a2b3545204d50375",
   "ticket.githubLedger": "2ab32985272f19506561fa31b3ad95298bd0c826119c71a44a541de7fac8f1a4",
-  "ticket.bodyBeforeAnotherWait": "89ada064265bd442cd13229c8c9ea2932f40fee769b3aad2346281239038f819"
+  "ticket.bodyBeforeAnotherWait": "89ada064265bd442cd13229c8c9ea2932f40fee769b3aad2346281239038f819",
+  "control.ceilingResumedByPerson": "cfa1abdef33d8e247d0546f0ce054bd2bca4b8f66ea023a0d02b3011c2568b1b",
+  "control.ceilingResumedByLingtai": "4d54741c7a622bd1777169c1dfdc43e73556a8eb464b303b428caced026680dc",
+  "control.ceilingThenPersonPause": "ed043b14deed2ad8041cfb44d5319300e7aaecf99bed0b5d9383ce65900c07a8",
+  "control.ceilingWaivedThenRepaused": "054c4911bc881eb5a3396830de2b59dcc60ac06577b92a4a03f122271139d67d",
+  "control.ceilingLapsedThenResumed": "f77e8c685926af653487927b4d31d5893b8328166876ed8af00f010f98f0a130"
 }

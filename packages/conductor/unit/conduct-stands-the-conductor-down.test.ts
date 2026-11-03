@@ -136,6 +136,7 @@ describe('when a run never starts', () => {
     // `lingtai` and not a person: a pause with nobody's name on it would read as a
     // bug rather than as a decision.
     expect(d.by).toBe('lingtai')
+    expect((d as { cause?: string }).cause).toBe('account-limit')
     // Read out of the message, not guessed at: 11pm in Chicago, as an instant —
     // and asked back in Chicago, because that is where the message said it.
     expect(wallHourIn('America/Chicago', d.until)).toBe('23')
