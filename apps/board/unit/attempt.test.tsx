@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
@@ -16,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Attempt } from '../src/app/task/[id]/page.tsx'
-import { foldRun, type Claim } from '../src/lib/task.ts'
+import { foldRun } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -37,7 +38,7 @@ function e(streamId: string, type: string, data: unknown): Envelope {
 
 const RUN = 'pass-33333333-0000-0000-0000-000000000000'
 const SHA = 'c'.repeat(40)
-const claim = (): Claim => ({ runId: RUN, at: '2026-09-10T07:40:00.000Z', repair: false, released: null })
+const claim = (): TicketClaim => ({ runId: RUN, at: new Date('2026-09-10T07:40:00.000Z'), ended: null })
 
 /** Started and nothing since: `outcomeOf`'s `running`. */
 const running = () => foldRun(claim(), 2, [e(RUN, 'RunStarted', { baseSha: SHA })])

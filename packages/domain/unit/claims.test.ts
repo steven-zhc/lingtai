@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { claimShapeOf, claimsOf, reduceTicket, type WaitId } from '../src/index.ts'
+import { claimShapeOf, reduceTicket, type WaitId } from '../src/index.ts'
+import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream } from '../test/support.ts'
 
 const claim = (runId: string) => ({ runId, worker: 'w', title: null, kind: null })
@@ -29,32 +30,7 @@ function stream(continuation: 'old' | 'new') {
   ]
 }
 
-describe('claimsOf', () => {
-  it('reads an old-form continuation as a continuation', () => {
-    expect(claimsOf(stream('old')).map((c) => c.shape)).toEqual(['claim', 'continuation'])
-  })
-
-  it('reads a TicketContinued as a continuation', () => {
-    expect(claimsOf(stream('new')).map((c) => c.shape)).toEqual(['claim', 'continuation'])
-  })
-
-  it('reads a first claim with null title and kind as a claim', () => {
-    const e = makeStream('t')
-    expect(claimsOf([e('TicketClaimed', claim('r1'))]).map((c) => c.shape)).toEqual(['claim'])
-  })
-
-  it('reads two runIds as two claims', () => {
-    const e = makeStream('t')
-    const shapes = claimsOf([e('TicketClaimed', claim('r1')), e('TicketClaimed', claim('r2'))]).map((c) => c.shape)
-    expect(shapes).toEqual(['claim', 'claim'])
-  })
-
-  it('does not count a TicketContinued as having claimed its run', () => {
-    const e = makeStream('t')
-    const events = [e('TicketContinued', { runId: 'r9', worker: 'w' }), e('TicketClaimed', claim('r9'))]
-    expect(claimsOf(events).map((c) => c.shape)).toEqual(['continuation', 'claim'])
-  })
-
+describe('claimShapeOf', () => {
   it('says nothing about an event that is neither', () => {
     const e = makeStream('t')
     expect(claimShapeOf(e('WaitStarted', { waitId: 'w' as WaitId, reason }), [])).toBeNull()
@@ -89,5 +65,59 @@ describe('reduceTicket over a continuation', () => {
     expect(s.lifecycle).toEqual({ status: 'backlog' })
     expect(s.runs).toEqual([])
     expect(s.version).toBe(1)
+  })
+})
+
+describe('the attempts a ticket holds (#829)', () => {
+  it('D13: an attempt that asked and was then released ended released', () => {
+    const [c] = reduceTicket(lateHistories.ticket.askedThenReleasedByPerson).claims
+    expect(c?.ended).toEqual({ kind: 'released', reason: 'Requeued by steven.' })
+  })
+
+  it('D13: an attempt answered without a release ended asking', () => {
+    const { claims } = reduceTicket(lateHistories.ticket.askedThenAnswered)
+    expect(claims).toHaveLength(1)
+    const ended = claims[0]?.ended
+    expect(ended?.kind).toBe('asked')
+    expect(ended?.kind === 'asked' && ended.reason._tag).toBe('AgentQuestion')
+  })
+
+  it('D13: an attempt closed from its wait ended asking', () => {
+    const { claims } = reduceTicket(histories.ticket.waitsResolvedBeforeClose)
+    expect(claims).toHaveLength(1)
+    const ended = claims[0]?.ended
+    expect(ended?.kind).toBe('asked')
+    expect(ended?.kind === 'asked' && ended.reason._tag).toBe('SignoffRequired')
+  })
+
+  it('D13: an empty release reason stays empty', () => {
+    const [c] = reduceTicket(lateHistories.ticket.releasedWithoutReason).claims
+    expect(c?.ended).toEqual({ kind: 'released', reason: '' })
+  })
+
+  it('D6: a claim after a close is not an attempt and moves nothing', () => {
+    const events = histories.ticket.claimedAfterClosed
+    const s = reduceTicket(events)
+    expect(s.claims).toHaveLength(1)
+    expect(s.claims[0]?.ended).toBeNull()
+    expect(s.since).toEqual(events[1]!.at)
+    expect(s.lastAttemptAt).toEqual(events[0]!.at)
+  })
+
+  it('D11: a continuation moves since and lastAttemptAt', () => {
+    const events = histories.ticket.waitsResolvedBeforeClose
+    const s = reduceTicket(events)
+    const continued = events.find((e) => e.type === 'TicketContinued')!
+    expect(reduceTicket(events.slice(0, events.indexOf(continued) + 1)).lastAttemptAt).toEqual(continued.at)
+    expect(reduceTicket(events.slice(0, events.indexOf(continued) + 1)).since).toEqual(continued.at)
+    expect(s.claims).toHaveLength(1)
+  })
+
+  it('D11: an unclaimed run’s continuation moves both and adds no claim', () => {
+    const events = histories.ticket.continuedUnclaimedRun
+    const ghost = reduceTicket(events.slice(0, 2))
+    expect(ghost.claims).toHaveLength(1)
+    expect(ghost.lastAttemptAt).toEqual(events[1]!.at)
+    expect(ghost.since).toEqual(events[1]!.at)
   })
 })

@@ -890,6 +890,42 @@ const late_twoAsksTwoAnswers = (() => {
   ])
 })()
 
+/** #829 D13: an attempt that asked, was requeued by a person, and so was released in the same append. */
+const late_askedThenReleasedByPerson = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9109))
+  const r1 = passStream('t9109-1')
+  const w = wait('9109-check')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'CheckRefused', run: { runId: r1 }, step: 'proposed', action: 'test', evidence: 'red', findings: [] },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Requeue' }),
+    ...aRelease(t, r1, 'Requeued by steven.', { _tag: 'ByPerson', waitId: w }),
+  ])
+})()
+
+/** #829 D13: an attempt that asked and was answered, which returns the ticket to the backlog with no release. */
+const late_askedThenAnswered = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9110))
+  const r1 = passStream('t9110-1')
+  const w = wait('9110-ask')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, { _tag: 'AgentQuestion', run: { runId: r1 }, step: 'design', question: 'which of the two?' }, w),
+    ...aResolution(t, w, { _tag: 'AnswerQuestion', choice: 'the first' }),
+  ])
+})()
+
+/** #829 D13: a release whose reason is empty stays empty. */
+const late_releasedWithoutReason = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9111))
+  const r1 = passStream('t9111-1')
+  return stamp([...aClaim(t, r1), ...aRelease(t, r1, '')])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -911,6 +947,9 @@ export const lateHistories = {
     escalatedThenRequeued: late_escalatedThenRequeued,
     githubLedger: githubLedgerH,
     bodyBeforeAnotherWait: bodyBeforeAnotherWaitH,
+    askedThenReleasedByPerson: late_askedThenReleasedByPerson,
+    askedThenAnswered: late_askedThenAnswered,
+    releasedWithoutReason: late_releasedWithoutReason,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,

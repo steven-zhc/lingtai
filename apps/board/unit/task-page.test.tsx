@@ -19,6 +19,7 @@
 import { readFileSync } from 'node:fs'
 
 import type { StepPlan } from '@lingtai/conductor/filter'
+import type { TicketClaim } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -30,7 +31,6 @@ import {
   foldRun,
   standingOf,
   totalsOf,
-  type Claim,
   type DiscussionView,
   type RunView,
   type TaskDetail,
@@ -68,7 +68,7 @@ function verdictAction(name: string, evidence: string, verdict: 'accepted' | 're
     result: { _tag: 'Completed', assessment: { verdict, findings: [] } },
   }
 }
-const claim: Claim = { runId: RUN, at: '2026-09-14T04:00:00.000Z', repair: false, released: null }
+const claim: TicketClaim = { runId: RUN, at: new Date('2026-09-14T04:00:00.000Z'), ended: null }
 
 const TICKET: TicketView = {
   project: 'lingtai',

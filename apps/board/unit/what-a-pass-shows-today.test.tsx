@@ -64,8 +64,8 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `progress.ts:60-76`).
  *
  * **Rows 15, 15b and 15c pin no strip and no run-side history at all.** A
- * decline at `claim` never writes a `TicketClaimed`, so `claimsOf(own)`
- * (`task.ts:973`) is `[]` for this run; `loadTask` reads a run's own stream
+ * decline at `claim` never writes a `TicketClaimed`, so `reduceTicket(own).claims`
+ * is `[]` for this run; `loadTask` reads a run's own stream
  * only through `streams = claims.map((c) => eventStore.read(c.runId))`
  * (`task.ts:1485`), so that stream is never read, and `progressOf` is never
  * called for it either (`task.ts:1541-1542` gates on `folded.length - 1 >=

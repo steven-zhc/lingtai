@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
 import { PLUGINS, Recipe, resolveRecipe, withheld, type StepAction, type PluginSecrets } from '@lingtai/recipe'
@@ -16,7 +17,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { Attempt, RECORD_TABS } from '../src/app/task/[id]/page.tsx'
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from '../src/lib/recipe.ts'
-import { foldRun, type Claim, type RunView } from '../src/lib/task.ts'
+import { foldRun, type RunView } from '../src/lib/task.ts'
 
 const RECIPE = `
 version: 2
@@ -63,7 +64,7 @@ function e(type: string, data: unknown): Envelope {
   }
 }
 
-const claim: Claim = { runId: RUN, at: '2026-09-16T09:59:00.000Z', repair: false, released: null }
+const claim: TicketClaim = { runId: RUN, at: new Date('2026-09-16T09:59:00.000Z'), ended: null }
 
 /** A finished run, with `StepsResolved` naming `configHash` — or with none. */
 function runWith(configHash: string | null): RunView {
