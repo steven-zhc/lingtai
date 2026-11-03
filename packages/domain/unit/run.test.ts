@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
-import { emptyRun, stepsOn, reduceRun } from '../src/index.ts'
+import { emptyRun, filesOf, stepsOn, reduceRun } from '../src/index.ts'
 import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
@@ -435,5 +435,30 @@ describe('RunState instants and the recorded plan (#827)', () => {
     const state = reduceRun(lateHistories.run.planResolved)
     expect(state.resolved?.configHash).toBe('cfg-plan')
     expect(state.resolved?.steps).toHaveLength(10)
+  })
+})
+
+describe('filesOf and promptMeta (#828)', () => {
+  it('filesOf gives each path once, in first-touch order, with its last op', () => {
+    const e = makeStream('run-files')
+    const state = reduceRun([
+      e('RunTouchedFile', { path: 'a.ts', op: 'write' }),
+      e('RunTouchedFile', { path: 'b.ts', op: 'edit' }),
+      e('RunTouchedFile', { path: 'a.ts', op: 'delete' }),
+    ])
+    expect(filesOf(state)).toEqual([
+      { path: 'a.ts', op: 'delete' },
+      { path: 'b.ts', op: 'edit' },
+    ])
+  })
+
+  it('promptMeta matches the last RunPrompted', () => {
+    const e = makeStream('run-prompt-meta')
+    expect(reduceRun([]).promptMeta).toBeNull()
+    const state = reduceRun([
+      e('RunPrompted', { promptVersion: 'ticket@1', bytes: 5, prompt: 'one' }),
+      e('RunPrompted', { promptVersion: 'ticket@2', bytes: 9, prompt: 'two' }),
+    ])
+    expect(state.promptMeta).toEqual({ version: 'ticket@2', bytes: 9 })
   })
 })

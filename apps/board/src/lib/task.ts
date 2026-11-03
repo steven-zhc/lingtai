@@ -6,7 +6,6 @@ import { readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   applyTicket,
-  boardFactOf,
   chatStream,
   claimShapeOf,
   emptyTicket,
@@ -20,12 +19,14 @@ import {
   waitWords,
   WAIT_EVENTS,
   type BlockDiagnosis,
-  type BoardFact,
   type Envelope,
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
   reduceRun,
+  filesOf,
+  STEPS,
+  type RunState as DomainRunState,
 } from '@lingtai/domain'
 import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
 import { hasGitHubAuth } from '@lingtai/env'
@@ -1199,24 +1200,6 @@ export interface Claim {
 }
 
 /**
- * `StepEnded.ending` → the verdict it closes a point on.
- *
- * No verdict for `NeverRan` (the agent never started, #133), `DidNotFinish`
- * (it started and ended with no receipt, local and ends the pass, 0057 §1–3;
- * §4's retry is deleted, `#234`) or `Asked` (a question rather than a fault —
- * it reaches `proposed` and may end at a person, `#296`, 0058 §3c) — but each
- * still closes the point, exactly as `Passed`/`Failed` do.
- */
-const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['ending'], string> = {
-  Passed: 'passed',
-  Failed: 'failed',
-  NeverRan: 'never-ran',
-  DidNotFinish: 'did-not-finish',
-  Asked: 'asked',
-  Waived: 'waived',
-}
-
-/**
  * Every claim this item made, oldest first.
  *
  * Deduplicated by `runId` the way `ticket.ts` deduplicates `runs`: a second
@@ -1260,14 +1243,65 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
 }
 
 /**
- * One attempt, folded from its own stream and the claim that opened it.
+ * One attempt, drawn from the run's `RunState` and the claim that opened it.
  *
- * The gate fold is what used to run once for the page; it runs once per run
- * now, which is the whole of "a gate runs once per attempt". `current` is still
- * applied after the fold, because `headSha` is only final once every event has
- * been seen — a verdict recorded before a force-push is stale, and which ones
- * those are is not knowable while still reading.
+ * There is no second fold of the run stream here: `reduceRun` is the one, and
+ * this is a drawing of what it holds. Joined from outside are the claim (when
+ * it was opened, why it was released) and `progress`, which needs the recipe's
+ * plan and whether this attempt landed — neither is on the stream.
  */
+export function presentRun(
+  state: DomainRunState,
+  claim: Claim,
+  attempt: number,
+  progress: RunProgress | null,
+): RunView {
+  const build = STEPS.indexOf('build')
+  const steps: StepVerdict[] = Object.values(state.steps).map((s) => {
+    const name = s.step.slice(0, s.step.indexOf(':'))
+    // Steps before `build` make the head, so their `onSha` is the commit they
+    // started on and is never the final head (D2).
+    const current =
+      STEPS.indexOf(name as (typeof STEPS)[number]) < build || state.headSha === null || s.onSha === state.headSha
+    return { step: s.step, state: s.verdict, current, evidence: s.evidence, findings: [...s.findings] }
+  })
+  if (state.step !== null) {
+    steps.push({ step: `${state.step.step}:`, state: 'running', current: true, evidence: null, findings: [] })
+  }
+
+  return {
+    runId: claim.runId,
+    attempt,
+    at: claim.at,
+    repair: claim.repair,
+    baseSha: state.baseSha,
+    headSha: state.headSha,
+    configHash: state.resolved?.configHash ?? null,
+    turns: state.receipt?.turns ?? null,
+    // Filled in by `loadTask`, from `spend` — this fold has no database to
+    // read it off (0110 §13: `RunFinished` stopped being a spend source).
+    costUsd: emptyBill(),
+    durationMs: state.receipt?.durationMs ?? null,
+    outcome: outcomeOf(state, claim),
+    files: filesOf(state),
+    diff:
+      state.produced === null
+        ? null
+        : {
+            branch: state.produced.branch,
+            files: state.produced.files,
+            insertions: state.produced.insertions,
+            deletions: state.produced.deletions,
+          },
+    prompt: state.promptMeta === null ? null : { ...state.promptMeta, text: state.prompt },
+    // Offered only while the lifecycle still awaits it (D3).
+    awaitingSha: state.lifecycle.status === 'awaiting-approval' ? state.lifecycle.onSha || null : null,
+    steps,
+    progress,
+  }
+}
+
+/** `presentRun` for a caller holding events rather than a state. */
 export function foldRun(
   claim: Claim,
   attempt: number,
@@ -1280,170 +1314,8 @@ export function foldRun(
    */
   { plan, over = false }: { plan?: StepPlan; over?: boolean } = {},
 ): RunView {
-  let baseSha: string | null = null
-  let headSha: string | null = null
-  let configHash: string | null = null
-  let turns: number | null = null
-  let durationMs: number | null = null
-  let exitCode: number | null = null
-  let failure: string | null = null
-  let started = false
-  let finished = false
-  let prompt: PromptView | null = null
-  let diff: RunView['diff'] = null
-  let awaitingSha: string | null = null
-  /** Keyed by path: an agent touches one file many times and the page wants the file. */
-  const files = new Map<string, TouchedFile>()
-  const steps = new Map<string, StepVerdict>()
-
-  // `point:action` — see task-view. Two points may run an action of the same
-  // name, and the page has to show both.
-  const setStep = (step: string, action: string, state: string, evidence: string | null, findings: Finding[]) => {
-    const key = `${step}:${action}`
-    steps.set(key, { step: key, state, current: true, evidence, findings })
-  }
-
-  for (const e of run) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    switch (e.type) {
-      case 'RunStarted':
-        started = true
-        baseSha = String(d['baseSha'] ?? '') || null
-        break
-      // `StepsResolved` and not `RunStarted`, though both carry the hash: the
-      // gates on this page are the ones it named, so it is the one the recipe
-      // beside them has to answer to (#190).
-      case 'StepsResolved':
-        configHash = String(d['configHash'] ?? '') || null
-        break
-      case 'RunPrompted':
-        prompt = {
-          version: String(d['promptVersion'] ?? ''),
-          bytes: Number(d['bytes'] ?? 0),
-          text: typeof d['prompt'] === 'string' ? d['prompt'] : null,
-        }
-        break
-      case 'RunTouchedFile': {
-        const path = String(d['path'] ?? '')
-        // The last op wins: a file written and then deleted is a deletion, and
-        // what the reader wants is what became of the file rather than the
-        // order the agent got there in.
-        if (path) files.set(path, { path, op: String(d['op'] ?? '') })
-        break
-      }
-      case 'RunProducedDiff':
-        headSha = String(d['headSha'] ?? '') || null
-        diff = {
-          branch: String(d['branch'] ?? ''),
-          files: Number(d['files'] ?? 0),
-          insertions: Number(d['insertions'] ?? 0),
-          deletions: Number(d['deletions'] ?? 0),
-        }
-        break
-      case 'RunProposedCompletion':
-        headSha = String(d['headSha'] ?? '') || null
-        break
-      case 'RunFinished':
-        finished = true
-        turns = Number(d['turns'] ?? 0)
-        durationMs = Number(d['durationMs'] ?? 0)
-        exitCode = Number(d['exitCode'] ?? 0)
-        break
-
-      // No verdict and no side effect here either: the board reads it
-      // directly, the one place this fold still matches an event's own type
-      // rather than `boardFactOf`'s fact.
-      case 'StepStarted':
-        setStep(String(d['step']), String(d['action'] ?? ''), 'running', null, [])
-        break
-
-      default: {
-        // **A `StepEnded` deletes the bare `${step}:` placeholder above, even
-        // where it declared no actions at all** — `boardFactOf` answers `[]`
-        // for an empty outcome, so the loop below never reaches this case,
-        // and the placeholder would sit in `steps` for ever, counted as one
-        // more verdict the task page was never asked about.
-        if (e.type === 'StepEnded') {
-          const step = (d['outcome'] as { step?: string } | undefined)?.step
-          if (step !== undefined) steps.delete(`${step}:`)
-        }
-
-        for (const fact of boardFactOf(e)) {
-          switch (fact._tag) {
-            // `Waived` closes here too since #502 — one more `StepEnded`
-            // outcome, not a fact of its own.
-            case 'StepEnded':
-              setStep(
-                fact.step,
-                fact.action,
-                STEP_ENDING_STATE[fact.ending],
-                // Called `detail` rather than `evidence` on the ending that is
-                // not `Passed`/`Failed`, because it is evidence about the
-                // *account* and never about the diff (#133). Read here rather
-                // than renamed at the seam, because `Evidence` shows only gates
-                // that said something (`evidence.tsx:114`): reading the wrong
-                // key would drop the one gate that stopped the run off the page
-                // ADR 0041 §2 wrote it for.
-                fact.evidence ?? fact.detail ?? null,
-                [...(fact.findings ?? [])],
-              )
-              break
-
-            // **Only the request survives** (#502): `SignoffGranted`/
-            // `SignoffRevoked` are gone with `ApprovalGranted`/
-            // `ApprovalRevoked`, and continuing a signed-off run is #465's,
-            // not this ticket's — so a requested signoff is `asked` and
-            // `awaitingSha` stays set until that lands.
-            case 'SignoffRequested':
-              awaitingSha = fact.onSha || null
-              setStep(fact.step, fact.action, 'asked', null, [])
-              break
-
-            case 'RunEnded':
-              failure = fact.kind || 'failed'
-              break
-
-            default:
-              break
-          }
-        }
-      }
-    }
-  }
-
-  for (const g of steps.values()) {
-    const onSha = run.find(
-      (e) => (e.data as { step?: string })?.step === g.step && (e.data as { onSha?: string })?.onSha,
-    )
-    const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null
-    g.current = headSha === null || sha === null || sha === headSha
-  }
-
-  const all = [...steps.values()]
-
-  return {
-    runId: claim.runId,
-    attempt,
-    at: claim.at,
-    repair: claim.repair,
-    baseSha,
-    headSha,
-    configHash,
-    turns,
-    // Filled in by `loadTask`, from `spend` — this fold has no database to
-    // read it off (0110 §13: `RunFinished` stopped being a spend source).
-    costUsd: emptyBill(),
-    durationMs,
-    outcome: outcomeOf({ failure, finished, exitCode, started, released: claim.released }),
-    files: [...files.values()],
-    diff,
-    prompt,
-    awaitingSha,
-    steps: all,
-    // The plan the conductor wrote down when this run started is read inside
-    // the fold, and so are the states 0016 §4 needs kept apart.
-    progress: progressOf(reduceRun(run), plan, over),
-  }
+  const state = reduceRun(run)
+  return presentRun(state, claim, attempt, progressOf(state, plan, over))
 }
 
 /**
@@ -1455,20 +1327,13 @@ export function foldRun(
  * stream is empty says so rather than borrowing a state from a run that never
  * appended anything.
  */
-function outcomeOf(seen: {
-  failure: string | null
-  finished: boolean
-  exitCode: number | null
-  started: boolean
-  released: string | null
-}): RunOutcome {
-  if (seen.failure !== null) return { state: 'failed', detail: seen.failure }
-  if (seen.finished) {
-    const bad = seen.exitCode !== null && seen.exitCode !== 0
-    return { state: 'finished', detail: bad ? `exit ${seen.exitCode}` : null }
+function outcomeOf(state: DomainRunState, claim: Claim): RunOutcome {
+  if (state.failure !== null) return { state: 'failed', detail: state.failure.kind }
+  if (state.receipt !== null) {
+    return { state: 'finished', detail: state.receipt.exitCode !== 0 ? `exit ${state.receipt.exitCode}` : null }
   }
-  if (seen.released !== null) return { state: 'released', detail: seen.released }
-  if (seen.started) return { state: 'running', detail: null }
+  if (claim.released !== null) return { state: 'released', detail: claim.released }
+  if (state.agentStartedAt !== null) return { state: 'running', detail: null }
   return { state: 'claimed', detail: 'nothing on its stream' }
 }
 
@@ -1891,7 +1756,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // been asked rather than before. See `exists`.
   if (!exists(own, ticket)) return null
 
-  const folded = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []))
+  // Each stream is folded once; everything below draws from these states.
+  const states = claims.map((_, i) => reduceRun(streams[i] ?? []))
+  const folded = claims.map((c, i) => presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false)))
   const attempts = new Map(folded.map((r) => [r.runId, r.attempt]))
 
   const conductor = reduceControl(control)
@@ -2041,9 +1908,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const landed = standing.state === 'landed'
   const runs = (
     last >= 0 && (landed || plan !== undefined)
-      ? folded.map((r, i) =>
-          i === last ? { ...r, progress: progressOf(reduceRun(streams[i] ?? []), plan, landed) } : r,
-        )
+      ? folded.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
       : folded
   ).map((r) => {
     const recipe = recipes.get(r.runId)
@@ -2068,10 +1933,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     named === null
       ? null
       : describeHeld({
-          spent: spentOf(
-            reduceRun(streams[claims.findIndex((c) => c.runId === standing.runId)] ?? []).roundsOpened,
-            namedGranted,
-          ),
+          spent: spentOf(states[claims.findIndex((c) => c.runId === standing.runId)]?.roundsOpened ?? [], namedGranted),
           granted: namedGranted,
           roundsOf: limits?.rounds ?? null,
           restarts: standing.restarts,

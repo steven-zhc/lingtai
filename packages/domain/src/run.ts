@@ -132,6 +132,11 @@ export interface RunState {
    * only a length.
    */
   prompt: string | null
+  /**
+   * The last `RunPrompted`'s own version and byte count. Not `promptVersion`,
+   * which is `RunStarted`'s. Kept for a v1 event too, which has no text.
+   */
+  promptMeta: { version: string; bytes: number } | null
 
   /** Latest verdict per gate name, each carrying the sha it was made against. */
   steps: Readonly<Record<string, StepState>>
@@ -202,6 +207,7 @@ export const emptyRun: RunState = {
   compactedAtTurns: [],
   prompts: 0,
   prompt: null,
+  promptMeta: null,
   steps: {},
   step: null,
   openedAt: null,
@@ -229,6 +235,16 @@ export const emptyRun: RunState = {
 export function stepsOn(state: RunState): StepState[] {
   if (state.headSha === null) return []
   return Object.values(state.steps).filter((g) => g.onSha === state.headSha)
+}
+
+/**
+ * The files the agent touched: each path once, at the position of its first
+ * touch, with the op of its last.
+ */
+export function filesOf(state: RunState): { path: string; op: 'edit' | 'write' | 'delete' }[] {
+  const files = new Map<string, { path: string; op: 'edit' | 'write' | 'delete' }>()
+  for (const t of state.touched) files.set(t.path, { path: t.path, op: t.op })
+  return [...files.values()]
 }
 
 function withStep(state: RunState, step: StepState): Readonly<Record<string, StepState>> {
@@ -386,7 +402,13 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       // The count is what it always was; the text is what #88 added. A v1 event
       // has none, and leaving the previous one in place would be a lie about
       // which prompt this run was given.
-      return { ...state, ...at, prompts: state.prompts + 1, prompt: d.prompt }
+      return {
+        ...state,
+        ...at,
+        prompts: state.prompts + 1,
+        prompt: d.prompt,
+        promptMeta: { version: d.promptVersion, bytes: d.bytes },
+      }
     }
 
     case 'RunTouchedFile': {
