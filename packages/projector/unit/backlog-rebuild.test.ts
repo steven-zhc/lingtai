@@ -511,6 +511,45 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     }
   })
 
+  it('a runner that read the open row before another folded the accept and proposal cannot move last_seq backwards', async () => {
+    const db = openSqliteProjections(':memory:')
+    try {
+      const store = createSqliteProjectionStore(db)
+      const decided = events.filter((e) => e.streamId === backlogStream(PROJECT, acceptedKey))
+      const rest = events.filter((e) => !decided.includes(e))
+      await store.transact((ctx) => backlogProjection.create(ctx))
+      await store.transact((ctx) => backlogProjection.apply(rest, ctx))
+      let interleaved = false
+      await store.transact(async (ctx) => {
+        const racing = {
+          ...ctx,
+          query: (async (sql: string, params?: unknown[]) => {
+            const rows = await ctx.query(sql, params)
+            if (!interleaved && sql.includes('select status, last_seq')) {
+              interleaved = true
+              // the other runner folds both events while this one holds the open row
+              await backlogProjection.apply(decided, ctx)
+            }
+            return rows
+          }) as typeof ctx.query,
+        }
+        await backlogProjection.apply([decided[0]!], racing)
+      })
+      expect(interleaved).toBe(true)
+      const read = () =>
+        store.transact((ctx) =>
+          ctx.query('select status, last_seq, proposed_ref from finding_backlog where key = $1', [acceptedKey]),
+        )
+      const [row] = await read()
+      expect(String(row!.last_seq)).toBe(String(decided[1]!.seq))
+      expect(row!.proposed_ref).not.toBeNull()
+      await store.transact((ctx) => backlogProjection.apply([decided[1]!], ctx))
+      expect(await read()).toEqual([row])
+    } finally {
+      db.close()
+    }
+  })
+
   it('a decline after an accept, with a greater seq, still throws and the row keeps the accept', async () => {
     const db = openSqliteProjections(':memory:')
     try {
