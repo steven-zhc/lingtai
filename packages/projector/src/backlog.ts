@@ -42,6 +42,7 @@ interface DecisionRow {
   status: string
   decided_seq: string | number | bigint | null
   proposed_ref: string | null
+  proposed_url: string | null
 }
 
 /**
@@ -178,7 +179,7 @@ export const backlogProjection: Projection = {
           // has already updated it, and the fold must see that.
           const d = event.data as { project: string; key: string }
           const [row] = await ctx.query<DecisionRow>(
-            `select status, decided_seq, proposed_ref from finding_backlog where project = $1 and key = $2`,
+            `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
             [d.project, d.key],
           )
           // A finding nothing raised has no row to be wrong about.
@@ -188,8 +189,13 @@ export const backlogProjection: Projection = {
           // again. An event the row already carries is a replay, not an order
           // no writer makes: the old unconditional updates were idempotent, so
           // this one is too.
+          // The row keeps no proposal seq, so a proposal is a replay only when
+          // the whole recorded proposal (ref and url) is the one on the row; a
+          // second proposal that differs in either falls through to the fold,
+          // which throws on it.
           if (event.type === 'FindingProposed') {
-            if (row.proposed_ref === (event.data as PayloadOf<'FindingProposed'>).externalRef) break
+            const p = event.data as PayloadOf<'FindingProposed'>
+            if (row.proposed_ref === p.externalRef && (row.proposed_url ?? null) === (p.url ?? null)) break
           } else if (row.decided_seq !== null && String(row.decided_seq) === String(seq)) break
           const before = findingOfRow(row, d)
           const after = applyFinding(before, event)

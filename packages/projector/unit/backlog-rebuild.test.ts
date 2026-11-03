@@ -506,6 +506,31 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     }
   })
 
+  it('a second, different proposal is not a replay: it throws and the row keeps the first', async () => {
+    const db = openSqliteProjections(':memory:')
+    try {
+      const store = createSqliteProjectionStore(db)
+      await store.transact((ctx) => backlogProjection.create(ctx))
+      await store.transact((ctx) => backlogProjection.apply(events, ctx))
+      const second = acceptedStream('FindingProposed', {
+        project: PROJECT,
+        key: acceptedKey,
+        by: 'human:t',
+        externalRef: '212',
+        url: 'https://x/other',
+      })
+      await expect(store.transact((ctx) => backlogProjection.apply([second], ctx))).rejects.toThrow(
+        backlogStream(PROJECT, acceptedKey),
+      )
+      const [row] = await store.transact((ctx) =>
+        ctx.query('select proposed_url from finding_backlog where key = $1', [acceptedKey]),
+      )
+      expect(row!.proposed_url).toBe('https://x/212')
+    } finally {
+      db.close()
+    }
+  })
+
   it('writes decision columns that equal what reduceFinding says of each decision stream', async () => {
     const { backlog } = await fold(events)
     for (const key of [declinedKey, acceptedKey, acceptedOnlyKey]) {
