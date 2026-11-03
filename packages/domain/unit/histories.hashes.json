@@ -28,5 +28,11 @@
   "scenario.answerAfterRunNote": "cd514e995f03c0f6772c7b9dd489741d5edd106617d673afe178af7d7efaf58d",
   "scenario.landedWithRun": "b660ccee6008fc7a44d00317bbaa44a394fa681950e0b098d61b0374ef9b6d76",
   "run.fixRoundRouted": "d7c0514c68eaa49ba1ce9b20260f0c8d57ab02d5c8a081f83eda437f77a5c174",
-  "run.stepEndedForAnother": "9dcdb17b152718755786e245f775506b52f34b03b936de1ea27eb8b2c0c527df"
+  "run.stepEndedForAnother": "9dcdb17b152718755786e245f775506b52f34b03b936de1ea27eb8b2c0c527df",
+  "run.publishedClean": "ccb3850788039f67df44c5a64b104ce661a17d83b6ba34a69c45deff1f184339",
+  "run.publishedWithWip": "784b55afc087c187b6fd191516207e5d93da0c058248d7a1b149fce0ecda6fc7",
+  "run.wipRecorded": "f01d6a71ac5b2640912b819329c63fce4544aab9b34cc7892fb8965597b019a5",
+  "run.wipOnAnotherArm": "59514ee95b9238579a92f434c4fad84a418a43916e19560ec42283d4c7c8f9a9",
+  "run.armOnly": "d4082764608d141d35620c431395a96f002d503bb98aabe5c294b9b1ca3b1661",
+  "run.nothingCommitted": "20e23eb060d191a25f2cff45286a176e35f6e3d585bc22e49d897378d631601f"
 }

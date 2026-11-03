@@ -21,7 +21,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, reduceRun, waitWords, type ProjectState } from '@lingtai/domain'
+import { agentBranchOf, reduceRun, savedHeadOf, waitWords, type ProjectState, type SavedHead } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -37,7 +37,7 @@ import { waitCommand } from './wait-command.ts'
 export function conflictRecommendation(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
-  savedHead?: SavedHead,
+  savedHead?: SavedHeadReading,
 ): string | null {
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
@@ -58,7 +58,7 @@ export function conflictRecommendation(
 export function conflictLines(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
-  savedHead?: SavedHead,
+  savedHead?: SavedHeadReading,
 ): { rec: string | null; advised: string | null } | null {
   const result = triage?.result
   if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
@@ -102,7 +102,7 @@ export function waitDetail(
   words: Parameters<typeof describeWaitLines>[0],
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
-  savedHead?: SavedHead,
+  savedHead?: SavedHeadReading,
 ): string[] {
   const lines = describeWaitLines(words)
   const c = conflictLines(reason, triage, savedHead)
@@ -114,7 +114,7 @@ export function waitDetail(
 }
 
 /** A run's saved head: whether one is there, or why that could not be read. */
-export type SavedHead = boolean | { unreadable: string }
+export type SavedHeadReading = boolean | { unreadable: string }
 
 export interface StatusOptions {
   /** Restrict to one project. */
@@ -183,7 +183,7 @@ export interface StatusReading {
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusRun['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
-  savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHead>
+  savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHeadReading>
 }
 
 /**
@@ -197,24 +197,24 @@ async function hasSavedHead(
   runId: string,
   project: ProjectState,
   clientFor: ClientFor = githubClientFor,
-): Promise<SavedHead> {
+): Promise<SavedHeadReading> {
   try {
-    const saved = (await eventStore.read(runId)).findLast((e) => e.type === 'RunRefsPublished')?.data as
-      | { outcome?: string; branchCarries?: boolean; headSha?: string; branch?: string }
-      | undefined
-    if (
-      !(
-        (saved?.outcome === 'published' || saved?.outcome === 'already-published') &&
-        saved.branchCarries !== false &&
-        saved.headSha &&
-        saved.branch
-      )
-    )
-      return false
-    return (await (await clientFor(project)).refSha(`heads/${saved.branch}`)) === saved.headSha
+    return await readingOf(savedHeadOf(reduceRun(await eventStore.read(runId))), project, clientFor)
   } catch (e) {
     return { unreadable: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** Only `Saved` goes on to the remote comparison; every other answer is no saved head. */
+export function readingOf(
+  saved: SavedHead,
+  project: ProjectState,
+  clientFor: ClientFor = githubClientFor,
+): Promise<boolean> {
+  if (saved._tag !== 'Saved') return Promise.resolve(false)
+  return clientFor(project)
+    .then((client) => client.refSha(`heads/${saved.ref}`))
+    .then((sha) => sha === saved.head)
 }
 
 /** Where one running pass is: its run, and the step and round of the last `StepStarted` (#640). */
@@ -433,7 +433,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         wait?: TaskCard['wait']
         triage?: TaskCard['triage']
         awaitingSha?: string | null
-        savedHead?: SavedHead
+        savedHead?: SavedHeadReading
       },
       restarts: number,
     ): StatusRow => {

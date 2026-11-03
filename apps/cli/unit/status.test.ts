@@ -15,6 +15,7 @@ import { stripColour } from '../src/output.ts'
 import {
   offerFailedLine,
   offerLine,
+  readingOf,
   renderStatus,
   conflictLines,
   conflictRecommendation,
@@ -667,5 +668,28 @@ describe('waitDetail (#656)', () => {
     const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
     expect(detail(disagrees, undefined)).toEqual(describeWaitLines(words).map((l) => l.text))
     expect(detail(disagrees, undefined).join('\n')).not.toContain('recommends')
+  })
+})
+
+describe('readingOf', () => {
+  const project = {} as never
+  const refSha = vi.fn(async (ref: string) => (ref === 'heads/agent/9' ? 'sha-1' : null))
+  const clientFor = (async () => ({ refSha })) as never
+
+  it('Saved goes on to the remote compare', async () => {
+    const saved = { _tag: 'Saved', head: 'sha-1', ref: 'agent/9' } as const
+    expect(await readingOf(saved, project, clientFor)).toBe(true)
+    expect(await readingOf({ ...saved, head: 'sha-2' }, project, clientFor)).toBe(false)
+  })
+
+  it('every other tag is false without asking the remote', async () => {
+    refSha.mockClear()
+    for (const saved of [
+      { _tag: 'WipHead', arm: 'a', armSha: 's', recorded: true },
+      { _tag: 'BranchDiverged', arm: 'a', branch: 'b' },
+      { _tag: 'NoSavedHead' },
+    ] as const)
+      expect(await readingOf(saved, project, clientFor)).toBe(false)
+    expect(refSha).not.toHaveBeenCalled()
   })
 })

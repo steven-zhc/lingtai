@@ -31,6 +31,7 @@ import {
   reduceRun,
   reduceTicket,
   type RunState,
+  savedHeadOf,
   type ToAppend,
   type WaitId,
 } from '@lingtai/domain'
@@ -403,50 +404,34 @@ async function savedHead(
   runId: string | null,
 ): Promise<Refused | { ok: true; head: string; ref: string }> {
   if (runId === null) return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
-  const events = await store.read(runId)
-  const published = events.filter((e) => e.type === 'RunRefsPublished').at(-1)
-  const saved = published?.data as PayloadOf<'RunRefsPublished'> | undefined
-  // A WIP commit on the arm does not taint the clean head already published
-  // on the issue branch. Continue that head; never cut from the WIP arm.
-  const cleanBranch =
-    saved !== undefined &&
-    (saved.outcome === 'published' || saved.outcome === 'already-published') &&
-    saved.branchCarries !== false
-  if (saved?.armSha != null && !cleanBranch) {
-    const recorded = events.some(
-      (e) =>
-        e.type === 'RunKeptUncommitted' &&
-        (e.data as PayloadOf<'RunKeptUncommitted'>).sha === saved.armSha &&
-        (e.data as PayloadOf<'RunKeptUncommitted'>).arm === saved.arm,
-    )
-    return {
-      ok: false,
-      ticketId,
-      reason: recorded ? 'wip-head' : 'unrecorded-wip',
-      detail: recorded
-        ? `Run ${runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
-        : `Run ${runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
-    }
+  const saved = savedHeadOf(reduceRun(await store.read(runId)))
+  switch (saved._tag) {
+    case 'Saved':
+      return { ok: true, head: saved.head, ref: saved.ref }
+    case 'WipHead':
+      return {
+        ok: false,
+        ticketId,
+        reason: saved.recorded ? 'wip-head' : 'unrecorded-wip',
+        detail: saved.recorded
+          ? `Run ${runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
+          : `Run ${runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
+      }
+    case 'BranchDiverged':
+      return {
+        ok: false,
+        ticketId,
+        reason: 'branch-diverged',
+        detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
+      }
+    case 'NoSavedHead':
+      return {
+        ok: false,
+        ticketId,
+        reason: 'no-saved-head',
+        detail: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+      }
   }
-  if (saved?.outcome === 'arm-only') {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'branch-diverged',
-      detail: `${saved.arm} holds the saved work, but ${saved.branch} rejected its push and may have diverged. Reconcile those refs before continuing; a fix grant cannot overwrite the issue branch.`,
-    }
-  }
-  const head = cleanBranch ? saved.headSha : null
-  const ref = cleanBranch ? saved.branch : null
-  if (!head || !ref) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'no-saved-head',
-      detail: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
-    }
-  }
-  return { ok: true, head, ref }
 }
 
 /**
