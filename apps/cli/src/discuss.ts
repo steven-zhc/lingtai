@@ -58,6 +58,7 @@ import {
   chatStream,
   parseTicketStream,
   reduceControl,
+  reduceRun,
   reduceTicket,
   triageFactsOf,
   CONTROL_STREAM,
@@ -143,25 +144,6 @@ export function logLines(events: readonly Envelope[], limit: number): string[] {
 }
 
 /**
- * The commit an attempt produced, from that attempt's own stream.
- *
- * The log and not the branch ref, which is the whole of the second blind spot:
- * `worktree add -B` leaves `agent/<n>` pointing at the base after an attempt
- * that committed nothing, so the ref existing proves nothing about the attempt.
- * `RunProducedDiff` is the attempt saying it produced something.
- */
-export function headOf(run: readonly Envelope[]): string | null {
-  let head: string | null = null
-  for (const e of run) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'RunProducedDiff' || e.type === 'RunProposedCompletion') {
-      if (typeof d['headSha'] === 'string') head = d['headSha']
-    }
-  }
-  return head
-}
-
-/**
  * The ticket the brief carries, or the reason it could not be read — a
  * sentence in the brief rather than an absence (#76). Read through the one
  * reader, so a `db` project's ticket comes from its table (#731).
@@ -201,7 +183,13 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   // 1-based, in claim order — the same numbering the detail page shows, so a
   // question about "attempt 2" means the attempt the page called 2.
   const index = request.attempt === null ? -1 : request.attempt - 1
-  const head = index >= 0 ? headOf(streams[index] ?? []) : null
+  // The commit an attempt produced, from that attempt's own stream.
+  //
+  // The log and not the branch ref, which is the whole of the second blind spot:
+  // `worktree add -B` leaves `agent/<n>` pointing at the base after an attempt
+  // that committed nothing, so the ref existing proves nothing about the attempt.
+  // `RunProducedDiff` is the attempt saying it produced something.
+  const head = index >= 0 ? reduceRun(streams[index] ?? []).headSha : null
 
   const state = await loadProject(project).catch(() => null)
   const base = state?.base ?? 'main'
