@@ -25,7 +25,7 @@ import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { readControl, resumeConductor } from '../src/control.ts'
+import { pauseConductor, readControl, resumeConductor } from '../src/control.ts'
 
 describe('readControl obeys a marked pause across a restart', () => {
   it('reads a pause with holdsAcrossStarts: true even from below the watermark', async () => {
@@ -92,5 +92,14 @@ describe('readControl obeys a marked pause across a restart', () => {
 
     const scoped = await readControl(store, since)
     expect(scoped.paused).toBe(false)
+  })
+})
+
+describe('pauseConductor writes its cause (#836)', () => {
+  it('appends a person’s pause with cause: person, read back from the store', async () => {
+    const store = createMemoryEventStore()
+    await pauseConductor('human:ada', 'the queue is wrong', store)
+    const [pause] = await store.read(CONTROL_STREAM)
+    expect((pause!.data as { cause?: string }).cause).toBe('person')
   })
 })
