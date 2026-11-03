@@ -27,7 +27,14 @@ import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import pg from 'pg'
 
-import type { Beat, DaemonStatus, DaemonStore, StreamQuery } from './store.ts'
+import {
+  type Beat,
+  type DaemonStatus,
+  type DaemonStore,
+  type StreamQuery,
+  decodeStopped,
+  encodeStopped,
+} from './store.ts'
 
 export interface PostgresDaemonStoreOptions {
   /**
@@ -87,6 +94,9 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
         await client.query(
           `alter table daemon_status add column if not exists code_dirty boolean not null default false`,
         )
+        // #839. No default and nullable: a row from before this reads null, which
+        // is unknown, never `[]`.
+        await client.query(`alter table daemon_status add column if not exists stopped_projections jsonb`)
       } finally {
         await client.end()
       }
@@ -100,8 +110,8 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
         // a process's first beat begins it again.
         await client.query(
           `insert into daemon_status
-             (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-           values (1, $1, $2, coalesce($8::timestamptz, now()), now(), $3, $4, $5, $6)
+             (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty, stopped_projections)
+           values (1, $1, $2, coalesce($8::timestamptz, now()), now(), $3, $4, $5, $6, $9::jsonb)
            on conflict (id) do update
              set pid = excluded.pid,
                  host = excluded.host,
@@ -110,7 +120,8 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
                  state = excluded.state,
                  current_run_id = excluded.current_run_id,
                  code_sha = excluded.code_sha,
-                 code_dirty = excluded.code_dirty`,
+                 code_dirty = excluded.code_dirty,
+                 stopped_projections = excluded.stopped_projections`,
           [
             beat.pid,
             beat.host,
@@ -120,6 +131,7 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
             beat.codeDirty,
             beat.fresh,
             beat.startedAt,
+            encodeStopped(beat.stoppedProjections ?? []),
           ],
         )
       } finally {
@@ -145,6 +157,7 @@ export function createPostgresDaemonStore(options: PostgresDaemonStoreOptions = 
           // report.
           codeSha: row.code_sha ?? null,
           codeDirty: row.code_dirty ?? false,
+          stoppedProjections: decodeStopped(row.stopped_projections),
         }
       } catch (err) {
         // The table not existing means no daemon has ever started, which is a

@@ -77,7 +77,7 @@ import { readTasks, type TaskCard } from '@lingtai/projector'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
-import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore } from './store.ts'
+import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore, type StoppedProjection } from './store.ts'
 
 // The stream name, the state and the fold moved to `@lingtai/domain` when
 // `conductor` needed to ask whether the conductor is already paused (0031 §3)
@@ -445,6 +445,8 @@ export interface BeatOptions {
   code?: CodeVersion | null
   /** Where the row is. Defaults to the store this machine wrote down (#179). */
   store?: DaemonStore
+  /** The projections stopped alone, as of this beat (#839). Absent writes `[]`. */
+  stoppedProjections?: readonly StoppedProjection[]
 }
 
 /**
@@ -466,6 +468,7 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
       codeDirty: code?.dirty ?? false,
       fresh,
       startedAt,
+      stoppedProjections: options.stoppedProjections ?? [],
     }),
   )
 }
@@ -517,13 +520,15 @@ export interface Beacon {
   stop(last?: string): Promise<void>
 }
 
-export interface BeaconOptions extends BeatOptions {
+export interface BeaconOptions extends Omit<BeatOptions, 'stoppedProjections'> {
   /** How often to say "still here". `HEARTBEAT_MS` is the only one in production. */
   every?: number
+  /** Read on every beat, so a projection that stops later is carried by the next one (#839). */
+  stoppedProjections?: () => readonly StoppedProjection[]
 }
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, startedAt = null, ...beatOptions } = options
+  const { every = HEARTBEAT_MS, startedAt = null, stoppedProjections, ...beatOptions } = options
   let current = state
   let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
@@ -543,7 +548,7 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
     chain = chain.then(async () => {
       try {
         const fresh = !begun
-        await beat(word, { ...beatOptions, fresh, startedAt })
+        await beat(word, { ...beatOptions, fresh, startedAt, stoppedProjections: stoppedProjections?.() ?? [] })
         begun = true
       } catch {
         // Every beat, the first one included — and that is a change. Startup

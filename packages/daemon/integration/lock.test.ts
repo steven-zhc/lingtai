@@ -47,6 +47,6 @@ describe('the daemon', () => {
 
     started.daemon.stop()
     expect(await started.daemon.stopped).toBe('asked')
-    expect(started.daemon.failure).toBeNull()
+    expect(started.daemon.stoppedProjections).toEqual([])
   })
 })

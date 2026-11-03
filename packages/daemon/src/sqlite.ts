@@ -32,7 +32,14 @@ import type { DatabaseSync } from 'node:sqlite'
 import { createSqliteEventStore, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { EventStore } from '@lingtai/event-store/store'
 
-import type { Beat, DaemonStatus, DaemonStore, StreamQuery } from './store.ts'
+import {
+  type Beat,
+  type DaemonStatus,
+  type DaemonStore,
+  type StreamQuery,
+  decodeStopped,
+  encodeStopped,
+} from './store.ts'
 
 /**
  * The one mutable row, in SQLite's types.
@@ -56,6 +63,18 @@ const SCHEMA = `
   );
 `
 
+/**
+ * Widens a table that already exists on the conducting machine. `SCHEMA` is
+ * `CREATE TABLE IF NOT EXISTS`, so a column added only there reaches fresh files
+ * and no other (#839). Left out of `SCHEMA` on purpose, so a fresh file takes
+ * the same path as an old one — and with no default, so an old row reads `NULL`.
+ */
+function widen(db: DatabaseSync): void {
+  const columns = db.prepare('PRAGMA table_info(daemon_status)').all() as { name: string }[]
+  if (!columns.some((c) => c.name === 'stopped_projections'))
+    db.exec('ALTER TABLE daemon_status ADD COLUMN stopped_projections TEXT')
+}
+
 /** The clock, in the representation the column holds. SQLite's own, as `events.at` is. */
 const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
 
@@ -77,6 +96,7 @@ export function openSqliteDaemon(path: string, busyMs?: number): DatabaseSync {
   try {
     db.exec('PRAGMA case_sensitive_like = ON')
     db.exec(SCHEMA)
+    widen(db)
     return db
   } catch (err) {
     db.close()
@@ -99,6 +119,7 @@ interface StatusRow {
   current_run_id: string | null
   code_sha: string | null
   code_dirty: number
+  stopped_projections: string | null
 }
 
 /** Loud rather than an `Invalid Date` carried into a health dot. */
@@ -117,6 +138,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
 
     async create() {
       db.exec(SCHEMA)
+      widen(db)
     },
 
     async beat(beat: Beat) {
@@ -125,8 +147,8 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
       // began where it is, and a process's first beat begins it again.
       db.prepare(
         `INSERT INTO daemon_status
-           (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty)
-         VALUES (1, ?, ?, coalesce(?, ${NOW}), ${NOW}, ?, ?, ?, ?)
+           (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty, stopped_projections)
+         VALUES (1, ?, ?, coalesce(?, ${NOW}), ${NOW}, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE
            SET pid = excluded.pid,
                host = excluded.host,
@@ -135,7 +157,8 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
                state = excluded.state,
                current_run_id = excluded.current_run_id,
                code_sha = excluded.code_sha,
-               code_dirty = excluded.code_dirty`,
+               code_dirty = excluded.code_dirty,
+               stopped_projections = excluded.stopped_projections`,
       ).run(
         beat.pid,
         beat.host,
@@ -144,6 +167,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
         beat.currentRunId,
         beat.codeSha,
         beat.codeDirty ? 1 : 0,
+        encodeStopped(beat.stoppedProjections ?? []),
         beat.fresh ? 1 : 0,
       )
     },
@@ -168,6 +192,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
         currentRunId: row.current_run_id ?? null,
         codeSha: row.code_sha ?? null,
         codeDirty: !!row.code_dirty,
+        stoppedProjections: decodeStopped(row.stopped_projections),
       }
     },
 

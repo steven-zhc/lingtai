@@ -135,6 +135,7 @@ describe("what the beacon's row means", () => {
     currentRunId: null,
     codeSha: null,
     codeDirty: false,
+    stoppedProjections: null,
     ...over,
   })
 
