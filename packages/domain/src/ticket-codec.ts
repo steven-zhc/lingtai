@@ -152,5 +152,43 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
     const issue = parsed.error.issues[0]!
     return refuse(`${issue.path.length === 0 ? 'ticket_state' : issue.path.join('.')}: ${issue.message}`)
   }
-  return parsed.data as TicketState
+  // The reused event schemas are not strict, so a field of another shape inside a reason or a payload copy
+  // is stripped by the parse above. Whatever the parse dropped or filled, the stored value no longer equals
+  // the state's own encoding, and that is another shape.
+  const state = parsed.data as TicketState
+  const differs = firstDifference(value, JSON.parse(encodeTicket(state)), 'ticket_state')
+  if (differs !== null) return refuse(`${differs}: not part of today's shape`)
+  return state
+}
+
+/** The path of the first place two parsed JSON values differ, or `null` for none. Key order is not a difference. */
+function firstDifference(a: unknown, b: unknown, path: string): string | null {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return path
+    for (let i = 0; i < a.length; i++) {
+      const d = firstDifference(a[i], b[i], `${path}.${i}`)
+      if (d !== null) return d
+    }
+    return null
+  }
+  if (
+    typeof a === 'object' &&
+    typeof b === 'object' &&
+    a !== null &&
+    b !== null &&
+    !Array.isArray(a) &&
+    !Array.isArray(b)
+  ) {
+    const x = a as Record<string, unknown>
+    const y = b as Record<string, unknown>
+    for (const key of new Set([...Object.keys(x), ...Object.keys(y)])) {
+      // `undefined` is absent: JSON never holds it.
+      if (x[key] === undefined && y[key] === undefined) continue
+      if (!(key in x) || !(key in y) || x[key] === undefined || y[key] === undefined) return `${path}.${key}`
+      const d = firstDifference(x[key], y[key], `${path}.${key}`)
+      if (d !== null) return d
+    }
+    return null
+  }
+  return Object.is(a, b) ? null : path
 }

@@ -55,6 +55,19 @@ describe('decodeTicket refuses another shape', () => {
     )
   })
 
+  it('refuses a field the nested event schemas would strip', () => {
+    const withWait = streams.flatMap(([, e]) => e).reduce(applyTicket, emptyTicket)
+    expect(withWait.waits.length).toBeGreaterThan(0)
+    const bad = structuredClone(good)
+    bad.waits[0].reason.fromAnotherShape = 1
+    expect(() => decodeTicket(bad, 'ticket_report', 'ticket-x-1')).toThrow(
+      /waits\.0\.reason\.fromAnotherShape.*lingtai projection rebuild ticket_report/s,
+    )
+    const own = structuredClone(good)
+    own.waits[0].reason = { _tag: 'OwnQuestion', question: 'q', extra: 'x' }
+    expect(() => decodeTicket(own, 'ticket_report')).toThrow(/rebuild/)
+  })
+
   it('refuses a field it does not know, null, and text that is not JSON', () => {
     expect(() => decodeTicket({ ...good, extra: 1 }, 'ticket_report')).toThrow(/rebuild/)
     expect(() => decodeTicket(null, 'ticket_report')).toThrow(/ticket_state.*rebuild/s)

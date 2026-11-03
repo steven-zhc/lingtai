@@ -6,7 +6,8 @@
  * second into 0 rows — the dedupe is never a read followed by a write.
  */
 import type { Envelope } from '@lingtai/domain'
-import { applyTicket } from '@lingtai/domain'
+import type { TicketState } from '@lingtai/domain'
+import { applyTicket, emptyTicket, encodeTicket } from '@lingtai/domain'
 import { lateHistories } from '@lingtai/domain/test/histories'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -49,7 +50,9 @@ beforeEach(() => {
 
 describe('a second delivery of an event', () => {
   it('leaves the row as one delivery does, and a later event still reduces', async () => {
-    const claimedAndTriaged = events.slice(0, 5)
+    // Up to and including the stored WaitTriaged for attempt 1 (not the TriageStarted for attempt 2).
+    const claimedAndTriaged = events.slice(0, events.findIndex((e) => e.type === 'WaitTriaged') + 1)
+    expect(claimedAndTriaged.at(-1)!.type).toBe('WaitTriaged')
     const one = await once(claimedAndTriaged)
     const twice = await withStore(async (store) => {
       await store.transact((ctx) => projection.apply(claimedAndTriaged, ctx))
@@ -61,7 +64,7 @@ describe('a second delivery of an event', () => {
     const all = await withStore(async (store) => {
       await store.transact((ctx) => projection.apply(claimedAndTriaged, ctx))
       await store.transact((ctx) => projection.apply(claimedAndTriaged.slice(-1), ctx))
-      await store.transact((ctx) => projection.apply(events.slice(5), ctx))
+      await store.transact((ctx) => projection.apply(events.slice(claimedAndTriaged.length), ctx))
       return store.transact(rows)
     })
     expect(all).toEqual(await once(events))
@@ -69,20 +72,24 @@ describe('a second delivery of an event', () => {
 
   it('is skipped before applyTicket is called', async () => {
     await withStore(async (store) => {
-      await store.transact((ctx) => projection.apply(events.slice(0, 3), ctx))
+      const upToTriage = events.slice(0, events.findIndex((e) => e.type === 'WaitTriaged') + 1)
+      expect(upToTriage.at(-1)!.type).toBe('WaitTriaged')
+      await store.transact((ctx) => projection.apply(upToTriage, ctx))
       const calls = vi.mocked(applyTicket).mock.calls.length
-      await store.transact((ctx) => projection.apply(events.slice(0, 3), ctx))
+      await store.transact((ctx) => projection.apply(upToTriage, ctx))
+      await store.transact((ctx) => projection.apply(upToTriage.slice(-1), ctx))
       expect(vi.mocked(applyTicket).mock.calls.length).toBe(calls)
     })
   })
 
   it('reduceStoredTicket reduces only an event past the stored lastSeq', () => {
-    const first = reduceStoredTicket(undefined, events[0]!, 'ticket_report')!
-    const stored = JSON.parse(JSON.stringify(first.after, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)))
+    const n = events.findIndex((e) => e.type === 'WaitTriaged') + 1
+    const state = events.slice(0, n).reduce<TicketState>(applyTicket, emptyTicket)
+    const stored = JSON.parse(encodeTicket(state))
     vi.mocked(applyTicket).mockClear()
-    expect(reduceStoredTicket(stored, events[0]!, 'ticket_report')).toBeNull()
+    expect(reduceStoredTicket(stored, events[n - 1]!, 'ticket_report')).toBeNull()
     expect(applyTicket).not.toHaveBeenCalled()
-    expect(reduceStoredTicket(stored, events[1]!, 'ticket_report')).not.toBeNull()
+    expect(reduceStoredTicket(stored, events[n]!, 'ticket_report')).not.toBeNull()
   })
 
   it('is one effect when two runners both read the old row before either writes', async () => {
