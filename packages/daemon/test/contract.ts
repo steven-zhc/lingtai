@@ -42,6 +42,7 @@
  * `event-store/test/contract.ts` be passed unchanged by a store written months
  * later (#178).
  */
+import { CONTROL_STREAM } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { describe, expect, it } from 'vitest'
 
@@ -299,6 +300,9 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         expect(paused.paused).toBe(true)
         expect(paused.by).toBe('human:ada')
         expect(paused.reason).toBe('the queue is wrong')
+        expect(paused.cause).toBe('person')
+        const stored = (await store.events.read(CONTROL_STREAM)).at(-1)!
+        expect((stored.data as { cause?: string }).cause).toBe('person')
 
         await resumeConductor('human:ada', store.events)
         expect((await readControl(store.events)).paused).toBe(false)

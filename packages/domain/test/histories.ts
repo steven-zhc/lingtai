@@ -787,7 +787,7 @@ const ceilingPause = (until: string) => ({
   reason: 'daily ceiling reached — $5.00 of $5.00',
   until,
   holdsAcrossStarts: false,
-  cause: 'day-ceiling',
+  cause: 'day-ceiling' as const,
 })
 
 /** 0124 §2, D8: a person's resume of the ceiling's pause waives it until that pause's midnight. */
@@ -807,7 +807,7 @@ const late_ceilingThenPersonPause = (() => {
   const c = makeStream(CONTROL_STREAM)
   return stamp([
     c('ConductorPaused', ceilingPause(HOLDING_UNTIL)),
-    c('ConductorPaused', { ...pause(null), cause: 'person' }),
+    c('ConductorPaused', { ...pause(null), cause: 'person' as const }),
     c('ConductorResumed', { by: 'steven' }),
   ])
 })()

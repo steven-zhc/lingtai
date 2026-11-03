@@ -39,6 +39,7 @@ describe('readControl obeys a marked pause across a restart', () => {
           reason: 'purecheck: claude-code cannot provide sandboxed: missing filesystem-sandbox.',
           until: null,
           holdsAcrossStarts: true,
+          cause: 'setup',
         }),
       },
     ])
@@ -49,6 +50,7 @@ describe('readControl obeys a marked pause across a restart', () => {
     expect(scoped.paused).toBe(true)
     expect(scoped.by).toBe('lingtai')
     expect(scoped.reason).toContain('sandboxed')
+    expect(scoped.cause).toBe('setup')
   })
 
   it('leaves a person’s unmarked pause below the watermark invisible, as before #405', async () => {

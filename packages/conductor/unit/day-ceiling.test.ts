@@ -133,6 +133,13 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
   })
 
+  it('writes the pause with its cause, which is what the fold reads', async () => {
+    const store = createMemoryEventStore()
+    await check([today(60)], store)
+    const [pause] = await store.read(CONTROL_STREAM)
+    expect((pause!.data as { cause?: string }).cause).toBe('day-ceiling')
+  })
+
   it('lifts at midnight: yesterday’s rows pause nothing the next day', async () => {
     const store = createMemoryEventStore()
     await check([today(60)], store)

@@ -13,7 +13,7 @@
  * guarantee it is not (#332). A process that died before it appended `RunSpent`
  * leaves no row at all, and is not counted either.
  */
-import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope } from '@lingtai/domain'
+import { CONTROL_STREAM, parsePayload, reduceControl } from '@lingtai/domain'
 import type { Usage } from '@lingtai/domain'
 import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
 import type { EventStore } from '@lingtai/event-store'
