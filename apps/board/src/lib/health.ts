@@ -18,6 +18,8 @@
 import { held as heldBy, lastBeat, readStatus } from '@lingtai/daemon/control'
 import { projectionLag, readTasks } from '@lingtai/projector'
 
+import { stoppedOnTheWire, type StoppedOnTheWire } from './stopped.ts'
+
 export interface Health {
   /** Events between the projection and the head. Null when it was never built. */
   lag: number | null
@@ -27,6 +29,11 @@ export interface Health {
   sinceBeatMs: number | null
   /** The passes in flight, one per running or verifying ticket — the title says how many when several (#640). */
   inFlight: string[]
+  /**
+   * Projections the daemon reports stopped (#839). Null is *unknown* — no beacon
+   * read, or one written before the field — and is never the same as empty.
+   */
+  stoppedProjections: StoppedOnTheWire[] | null
   /** Set when the health read itself failed, which is its own kind of answer. */
   error?: string
 }
@@ -47,7 +54,7 @@ export async function readHealth(): Promise<Health> {
     const row = lags.find((l) => l.name === PROJECTION)
     const lag = row ? Number(row.lag) : null
 
-    if (!status) return { lag, daemon: 'never', sinceBeatMs: null, inFlight: held }
+    if (!status) return { lag, daemon: 'never', sinceBeatMs: null, inFlight: held, stoppedProjections: null }
     // The same function `lingtai doctor` reads this row with, so the chip and
     // the check cannot come to different answers about one row — which is the
     // shape of `#64`. `starting` counts as `up` here and reads as *catching
@@ -60,10 +67,18 @@ export async function readHealth(): Promise<Health> {
       daemon: beat.up ? 'up' : 'stale',
       sinceBeatMs: beat.ageMs,
       inFlight: held,
+      stoppedProjections: stoppedOnTheWire(status.stoppedProjections),
     }
   } catch (err) {
     // Reported as its own state. A board that cannot tell you whether it is
     // current must not render as though it is.
-    return { lag: null, daemon: 'never', sinceBeatMs: null, inFlight: [], error: (err as Error).message }
+    return {
+      lag: null,
+      daemon: 'never',
+      sinceBeatMs: null,
+      inFlight: [],
+      stoppedProjections: null,
+      error: (err as Error).message,
+    }
   }
 }

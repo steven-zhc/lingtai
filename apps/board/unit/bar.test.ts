@@ -22,12 +22,14 @@ import { describe, expect, it } from 'vitest'
 import { bearing, type CodeNews } from '../src/lib/bearing.ts'
 import { ledger, toCard, toColumns } from '../src/lib/board.ts'
 import type { Health } from '../src/lib/health.ts'
+import { stoppedOnTheWire } from '../src/lib/stopped.ts'
 
 const board = (over: Partial<Health> = {}): Health => ({
   lag: 0,
   daemon: 'up',
   sinceBeatMs: 2_000,
   inFlight: [],
+  stoppedProjections: [],
   ...over,
 })
 
@@ -449,5 +451,54 @@ describe('the health dot counts passes in flight (#640)', () => {
     const two = bearing('open', board({ inFlight: ['lingtai#1', 'lingtai#2'] }), null)
     expect(two.title).toContain('2 passes in flight')
     expect(bearing('open', board({ inFlight: ['lingtai#1'] }), null).title).not.toContain('in flight')
+  })
+})
+
+describe('the health dot names a stopped projection (#840)', () => {
+  const spend = { name: 'spend', checkpoint: '12', error: 'boom' }
+
+  it('is warn and names the projection while the beacon is up', () => {
+    const b = bearing('open', board({ stoppedProjections: [spend] }), null)
+    expect(b.tone).toBe('warn')
+    expect(b.label).toBe('spend stopped')
+    expect(b.why).toContain('rebuild first: lingtai projection rebuild spend, then lingtai restart')
+    expect(b.title).toContain('spend stopped at seq 12: boom')
+  })
+
+  it('counts several, and keeps the stopped remedy ahead of stale code', () => {
+    const b = bearing(
+      'open',
+      board({ stoppedProjections: [spend, { name: 'ticket_report', checkpoint: null, error: 'x' }] }),
+      behind,
+    )
+    expect(b.label).toBe('2 projections stopped')
+    expect(b.why).toContain('rebuild spend, lingtai projection rebuild ticket_report, then lingtai restart')
+    expect(b.title).toContain('at an unread checkpoint')
+    expect(b.title).toContain(behind.said)
+  })
+
+  it('an empty list is exactly today’s answer', () => {
+    const b = bearing('open', board(), null)
+    expect(b.tone).toBe('pass')
+    expect(b.why).toBeNull()
+  })
+
+  it('null gives today’s result with the predates title', () => {
+    const b = bearing('open', board({ stoppedProjections: null }), null)
+    expect(b.tone).toBe('pass')
+    expect(b.title).toContain('the running daemon predates the stopped-projection report')
+  })
+
+  it('a stale beacon says stale, not stopped', () => {
+    const stale = { daemon: 'stale', sinceBeatMs: 90_000, lag: 3 } as const
+    const withList = bearing('open', board({ ...stale, stoppedProjections: [spend] }), null)
+    expect(withList).toEqual(bearing('open', board({ ...stale, stoppedProjections: [] }), null))
+    expect(`${withList.label} ${withList.why} ${withList.title}`).not.toContain('stopped')
+  })
+
+  it('crosses the wire: a bigint checkpoint does not break JSON', () => {
+    const wire = stoppedOnTheWire([{ name: 'spend', checkpoint: 12n, error: 'boom' }])
+    expect(JSON.parse(JSON.stringify(board({ stoppedProjections: wire }))).stoppedProjections[0].checkpoint).toBe('12')
+    expect(stoppedOnTheWire(null)).toBeNull()
   })
 })

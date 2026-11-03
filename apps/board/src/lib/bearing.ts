@@ -73,7 +73,10 @@ function beating(health: Health): string {
   if (health.daemon === 'up') {
     // The count rides in the title and never in a chip of its own (#134); one pass or none says nothing (#640).
     const side = health.inFlight.length > 1 ? ` · ${health.inFlight.length} passes in flight` : ''
-    return `daemon beating ${secs}s ago${side}`
+    // Null while up: the beacon was written before the stopped list existed, so none can be ruled out (#840).
+    const unknown =
+      health.stoppedProjections === null ? ' · the running daemon predates the stopped-projection report' : ''
+    return `daemon beating ${secs}s ago${side}${unknown}`
   }
   if (health.daemon === 'stale') return `no beat for ${secs}s`
   return 'no daemon has ever run'
@@ -121,6 +124,25 @@ export function bearing(
       label: 'unknown',
       why: 'the projection could not be read',
       title: also(`could not read the projection: ${board.error}`),
+    }
+  }
+  // Only while the beacon is live: on a stale one the list is a dead process's.
+  const stopped = board.daemon === 'up' ? (board.stoppedProjections ?? []) : []
+  if (stopped.length > 0) {
+    const names = stopped.map((p) => p.name)
+    const detail = stopped
+      .map(
+        (p) =>
+          `${p.name} stopped ${p.checkpoint === null ? 'at an unread checkpoint' : `at seq ${p.checkpoint}`}: ${p.error}`,
+      )
+      .join('; ')
+    const rebuild = names.map((n) => `lingtai projection rebuild ${n}`).join(', ')
+    const said = names.length === 1 ? `${names[0]} stopped` : `${names.length} projections stopped`
+    return {
+      tone: 'warn',
+      label: said,
+      why: `${said} — rebuild first: ${rebuild}, then lingtai restart`,
+      title: also(`${detail} — ${beating(board)}`),
     }
   }
   if (board.lag === null) {
