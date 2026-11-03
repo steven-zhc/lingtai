@@ -153,6 +153,11 @@ export interface RunState {
 
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
+  /** The last `RunRefsPublished`, whatever its outcome — a later `unrecorded` row replaces a `published` one. */
+  published: PayloadOf<'RunRefsPublished'> | null
+  /** Every `RunKeptUncommitted`, in order. */
+  kept: readonly PayloadOf<'RunKeptUncommitted'>[]
+
   version: number
   lastSeq: bigint | null
 }
@@ -178,6 +183,8 @@ export const emptyRun: RunState = {
   step: null,
   implementRound: 0,
   receipt: null,
+  published: null,
+  kept: [],
   version: 0,
   lastSeq: null,
 }
@@ -450,10 +457,52 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return { ...next, ...at, step: state.step?.step === ended ? null : state.step }
     }
 
+    case 'RunRefsPublished':
+      return { ...state, ...at, published: event.data as PayloadOf<'RunRefsPublished'> }
+
+    case 'RunKeptUncommitted':
+      return { ...state, ...at, kept: [...state.kept, event.data as PayloadOf<'RunKeptUncommitted'>] }
+
     default:
       // See the note in ticket.ts: ignored, not rejected.
       return { ...state, ...at }
   }
+}
+
+/**
+ * Whether a held run left a clean pushed head a fix round can continue from, and
+ * if not, why. The conductor's grant, `lingtai status` and the board all ask
+ * this; each words the answer itself.
+ */
+export type SavedHead =
+  | { readonly _tag: 'Saved'; readonly head: string; readonly ref: string }
+  | { readonly _tag: 'WipHead'; readonly arm: string; readonly armSha: string; readonly recorded: boolean }
+  | { readonly _tag: 'BranchDiverged'; readonly arm: string; readonly branch: string }
+  | { readonly _tag: 'NoSavedHead' }
+
+/**
+ * The rules, in the order the grant checks them: a WIP head first, then a
+ * diverged branch, then no head at all. A row without `branchCarries` is carried.
+ */
+export function savedHeadOf(state: RunState): SavedHead {
+  const saved = state.published
+  if (saved === null) return { _tag: 'NoSavedHead' }
+  // A WIP commit on the arm does not taint the clean head already published on
+  // the issue branch. Continue that head; never cut from the WIP arm.
+  const cleanBranch =
+    (saved.outcome === 'published' || saved.outcome === 'already-published') && saved.branchCarries !== false
+  if (saved.armSha != null && !cleanBranch) {
+    const armSha = saved.armSha
+    return {
+      _tag: 'WipHead',
+      arm: saved.arm,
+      armSha,
+      recorded: state.kept.some((k) => k.sha === armSha && k.arm === saved.arm),
+    }
+  }
+  if (saved.outcome === 'arm-only') return { _tag: 'BranchDiverged', arm: saved.arm, branch: saved.branch }
+  if (!cleanBranch || !saved.headSha || !saved.branch) return { _tag: 'NoSavedHead' }
+  return { _tag: 'Saved', head: saved.headSha, ref: saved.branch }
 }
 
 export function reduceRun(events: readonly Envelope[]): RunState {

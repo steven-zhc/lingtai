@@ -645,10 +645,9 @@ export const RunProducedDiff = z.object({
  * One type rather than four, and appended on **every** outcome including the
  * ones that are not failures: what the incident needed was not a record of
  * pushes but the answer to *did this happen at all*, and only an event that is
- * always there answers that. It settles nothing and nothing reads it to decide
- * anything — `run.ts` has no case for it — which is 0034 §8's test passed on
- * purpose, in the other direction: the account belongs on the log because it
- * outlives the file, not because anything branches on it.
+ * always there answers that. Since #468 and #652 a grant decides on it: `run.ts` folds
+ * the last one into `RunState.published`, and `savedHeadOf` says whether it left
+ * a clean head a fix round can continue from.
  *
  * **Every outcome of the publish, which is not every run.** A run that *landed*
  * has none of these and is meant to: the finalizer that publishes is skipped on
@@ -750,9 +749,10 @@ export const RunRefsPublished = z.object({
    * who does not know the field still reads `branch and arm at headSha` and
    * is right.
    *
-   * **Never read in place of `RunKeptUncommitted`.** This exists only so the
-   * history line does not say the arm shares a sha it never had; the WIP's
-   * own files, insertions and deletions are that event's, not this one's.
+   * **Never read in place of `RunKeptUncommitted`.** A grant decides on it
+   * (`savedHeadOf`: an `armSha` on a row whose branch does not carry it is a WIP
+   * head), and the history line uses it so as not to say the arm shares a sha it
+   * never had; the WIP's own files, insertions and deletions are that event's.
    */
   armSha: z.string().nullable().optional(),
   /**

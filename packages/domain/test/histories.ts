@@ -621,10 +621,58 @@ function stepEndedForAnother(): readonly Envelope[] {
   ])
 }
 
+type Published = {
+  outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded'
+  headSha: string | null
+  branchCarries?: boolean
+  armSha?: string | null
+}
+
+/** A run that published (#823); each kept WIP follows its `RunRefsPublished`, as the writer appends them. */
+function publishedRun(
+  name: string,
+  row: Published,
+  kept: readonly { arm: string; sha: string }[] = [],
+): readonly Envelope[] {
+  const run = aRun(passStream(name))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('RunRefsPublished', { branch: 'agent/9', arm: 'agent/9-attempt-1', detail: name, ...row }),
+    ...kept.map((k) =>
+      run.event('RunKeptUncommitted', {
+        ...k,
+        parentSha: 'sha-1',
+        stoppedBy: 'interrupted',
+        files: 1,
+        insertions: 2,
+        deletions: 0,
+      }),
+    ),
+  ])
+}
+
 export const lateHistories = {
   run: {
     fixRoundRouted: fixRoundRouted(),
     stepEndedForAnother: stepEndedForAnother(),
+    publishedClean: publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' }),
+    publishedWithWip: publishedRun(
+      'published-with-wip',
+      { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
+      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+    ),
+    wipRecorded: publishedRun(
+      'wip-recorded',
+      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+    ),
+    wipOnAnotherArm: publishedRun(
+      'wip-on-another-arm',
+      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+      [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
+    ),
+    armOnly: publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' }),
+    nothingCommitted: publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null }),
   },
 } as const
 
@@ -648,6 +696,8 @@ export const COVERS = {
     'StepStarted',
     'StepEnded',
     'PassRouted',
+    'RunRefsPublished',
+    'RunKeptUncommitted',
   ],
   ticket: [
     'TicketDiscovered',
