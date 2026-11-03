@@ -534,11 +534,13 @@ export async function daemonCommand(
     // One hook for the loop and the pass, so the two cannot drift (#210). A
     // stopped task_view comes first and in memory: a person's Resume must not
     // lift it, and it appends nothing (#841).
-    const claiming = (): Promise<string | null> => {
-      const stopped = notTakingWork(started.daemon.stoppedProjections)
-      return stopped !== null
-        ? Promise.resolve(stopped)
-        : pausedSentence({ control: () => readControl(undefined, since) })
+    // The stop is read again after the asynchronous reads: a task_view that
+    // stops while they are in flight must still stop this claim.
+    const claiming = async (): Promise<string | null> => {
+      const before = notTakingWork(started.daemon.stoppedProjections)
+      if (before !== null) return before
+      const paused = await pausedSentence({ control: () => readControl(undefined, since) })
+      return notTakingWork(started.daemon.stoppedProjections) ?? paused
     }
 
     // The passes in flight, held across looks (0122 §1): a look that starts
