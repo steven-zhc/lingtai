@@ -27,6 +27,7 @@ import {
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
+  notTakingWork,
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
@@ -530,6 +531,19 @@ export async function daemonCommand(
     const unreadNow = new Set(declared.problems())
     for (const line of declared.describe()) (unreadNow.has(line) ? console.log : trace)(line)
 
+    // One hook for the loop and the pass, so the two cannot drift (#210). A
+    // stopped task_view comes first and in memory: a person's Resume must not
+    // lift it, and it appends nothing (#841).
+    // The stop is read again after the asynchronous reads: a task_view that
+    // stops while they are in flight must still stop this claim.
+    const claiming = (): Promise<string | null> => {
+      const before = notTakingWork(started.daemon.stoppedProjections)
+      if (before !== null) return Promise.resolve(before)
+      return pausedSentence({ control: () => readControl(undefined, since) }).then(
+        (paused) => notTakingWork(started.daemon.stoppedProjections) ?? paused,
+      )
+    }
+
     // The passes in flight, held across looks (0122 §1): a look that starts
     // several returns, and the next look must still know they are running.
     const slots = createSlots()
@@ -548,7 +562,7 @@ export async function daemonCommand(
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
-      paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
+      paused: claiming,
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
@@ -592,7 +606,7 @@ export async function daemonCommand(
           // the same scope as the loop's own (#159): a run that stands the
           // conductor down must stop the next claim in this pass, not the next
           // pass (#210).
-          paused: () => pausedSentence({ control: () => readControl(undefined, since) }),
+          paused: claiming,
           log: trace,
           tell: (line) => console.log(line),
           many: registered.length > 1,
@@ -691,15 +705,10 @@ export async function daemonCommand(
   process.on('SIGINT', () => stop('SIGINT'))
   process.on('SIGTERM', () => stop('SIGTERM'))
 
-  const reason = await started.daemon.stopped
+  await started.daemon.stopped
   // After a drain and not on `stopNow`, which promised to stop now (#791).
   await flushTracing()
   await ratesSettled()
-  if (reason === 'projection-failed') {
-    const failed = started.daemon.stoppedProjections.find((p) => p.name === 'task_view')
-    console.error(`stopped: ${failed?.name} failed — ${failed?.error}`)
-    return 1
-  }
   console.log('stopped')
   return 0
 }

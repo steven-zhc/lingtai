@@ -465,6 +465,13 @@ describe('the health dot names a stopped projection (#840)', () => {
     expect(b.title).toContain('spend stopped at seq 12: boom')
   })
 
+  it('says not taking work for a stopped task_view', () => {
+    const b = bearing('open', board({ stoppedProjections: [{ name: 'task_view', checkpoint: '4', error: 'x' }] }), null)
+    expect(b.label).toBe('task_view stopped')
+    expect(b.why).toContain('not taking work')
+    expect(b.why).toContain('lingtai projection rebuild task_view')
+  })
+
   it('counts several, and keeps the stopped remedy ahead of stale code', () => {
     const b = bearing(
       'open',

@@ -8,6 +8,7 @@ import type { Log } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
+import { notTakingWork } from '../src/daemon.ts'
 import type { DaemonStore } from '../src/store.ts'
 import { createWorkLoop } from '../src/work-loop.ts'
 
@@ -93,5 +94,30 @@ describe('the work loop drain', () => {
     expect(reasons).toEqual(['startup'])
 
     await loop.stop()
+  })
+
+  it('a stopped task_view stops the loop claiming', async () => {
+    const stopped = [{ name: 'task_view', checkpoint: 3n, error: 'boom' }]
+    const reasons: string[] = []
+    const loop = createWorkLoop({
+      sweepMs: 0,
+      eventLog: log,
+      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      paused: async () => notTakingWork(stopped),
+      pass: async (reason) => {
+        reasons.push(reason)
+      },
+    })
+    await loop.start()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reasons).toEqual([])
+    await loop.stop()
+  })
+
+  it("a person's resume does not lift it", async () => {
+    const stopped = [{ name: 'task_view', checkpoint: 3n, error: 'boom' }]
+    const control = async () => ({ paused: false })
+    const hook = async () => notTakingWork(stopped) ?? ((await control()).paused ? 'paused' : null)
+    expect(await hook()).toContain('not taking work')
   })
 })
