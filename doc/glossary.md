@@ -58,6 +58,9 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   the `runId` field (the attempt's stream id) and the `Run…` event names.
 - **Agent run** — one invocation of an agent inside an attempt: the implement, each
   fix round, a judge. *Run* on its own means this and nothing else.
+- **Turn** — one go round the conductor's loop: it looks at each project and
+  starts the attempts there is room for. A *sweep* is the turn the five-minute
+  fallback timer starts, as against one an event wakes.
 - **Head** and **base** — an attempt works on its own branch. Its *base* is the commit
   on the base branch it started from; its *head* is the newest commit the agent
   has produced there (`RunState.headSha`, set by `RunProducedDiff` and
