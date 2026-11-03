@@ -56,7 +56,7 @@ import {
   designAsksOf,
   ticketStream,
 } from '@lingtai/domain'
-import type { ProjectState } from '@lingtai/domain'
+import type { PauseCause, ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
@@ -952,6 +952,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       until: string | null
       reason: string
       holdsAcrossStarts: boolean
+      cause: Extract<PauseCause, 'setup' | 'account-limit'>
     }): Effect.Effect<{ kind: 'appended' } | { kind: 'already-paused'; reason: string | null } | { kind: 'failed' }> =>
       Effect.promise(async () => {
         const events = await store.read(CONTROL_STREAM)
@@ -968,6 +969,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               reason: input.reason,
               until: input.until,
               holdsAcrossStarts: input.holdsAcrossStarts,
+              cause: input.cause,
             }),
           },
         ])
@@ -1037,7 +1039,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * the same wrong setup.
        */
       const pausedSentence = `${base} Every queued item would meet the same thing, so the conductor is taking no work until the setup is fixed — run \`lingtai resume\` once it is.`
-      const outcome = yield* pauseConductorOnce({ until: null, reason: pausedSentence, holdsAcrossStarts: true })
+      const outcome = yield* pauseConductorOnce({
+        until: null,
+        reason: pausedSentence,
+        holdsAcrossStarts: true,
+        cause: 'setup',
+      })
       if (outcome.kind === 'appended') {
         log(`dispatch refused — conductor paused until the setup is fixed: ${pausedSentence}`)
       } else if (outcome.kind === 'already-paused') {
@@ -1432,7 +1439,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `holdsAcrossStarts: false` — a restart's fresh watermark is meant to
         // leave this pause behind (0102 §3); unlike the setup refusal above,
         // restarting is itself a reasonable response to a run that never started.
-        const outcome = yield* pauseConductorOnce({ until: until.toISOString(), reason, holdsAcrossStarts: false })
+        const outcome = yield* pauseConductorOnce({
+          until: until.toISOString(),
+          reason,
+          holdsAcrossStarts: false,
+          cause: 'account-limit',
+        })
         if (outcome.kind === 'appended') {
           log(
             `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'} — conductor paused until ${until.toISOString()}`,

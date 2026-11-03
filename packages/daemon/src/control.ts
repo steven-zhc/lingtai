@@ -126,7 +126,7 @@ export async function readControl(store: EventStore = eventStore, since = 0): Pr
   if (scoped.paused) return scoped
   const whole = reduceControl(events)
   if (!whole.paused || !whole.holdsAcrossStarts) return scoped
-  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until }
+  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
 }
 
 /**
@@ -163,7 +163,7 @@ export async function pauseConductor(
   store: EventStore = eventStore,
   until: Date | null = null,
 ): Promise<void> {
-  await append('ConductorPaused', { by, reason, until: until?.toISOString() ?? null }, store)
+  await append('ConductorPaused', { by, reason, until: until?.toISOString() ?? null, cause: 'person' }, store)
 }
 
 export async function resumeConductor(by: string, store: EventStore = eventStore): Promise<void> {

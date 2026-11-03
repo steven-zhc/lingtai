@@ -88,6 +88,7 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
     expect(d.until).toBeNull()
     // And a restart loads the same setup, so the pause has to survive one (#405).
     expect(d.holdsAcrossStarts).toBe(true)
+    expect((d as { cause?: string }).cause).toBe('setup')
     expect(d.reason).toContain(PROJECT)
     expect(d.reason).toContain('sandboxed')
     expect(d.reason).toContain('filesystem-sandbox')

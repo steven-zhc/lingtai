@@ -58,6 +58,8 @@ function controlWith(continuing: ControlState['continuing']): ControlState {
     reason: null,
     until: null,
     holdsAcrossStarts: false,
+    cause: null,
+    ceilingWaivedUntil: null,
     shutdown: null,
     requested: [],
     continuing,

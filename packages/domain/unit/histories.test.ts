@@ -73,11 +73,11 @@ describe('coverage', () => {
     })
   }
 
-  it('COVERS holds every catalogue case label of applyRun, applyTicket and reduceControl', () => {
+  it('COVERS holds every catalogue case label of applyRun, applyTicket and applyControl', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
     expect(missing(caseLabels('run.ts', 'applyRun'), COVERS.run)).toEqual([])
     expect(missing(caseLabels('ticket.ts', 'applyTicket'), COVERS.ticket)).toEqual([])
-    expect(missing(caseLabels('control.ts', 'reduceControl'), COVERS.control)).toEqual([])
+    expect(missing(caseLabels('control.ts', 'applyControl'), COVERS.control)).toEqual([])
   })
 
   it('COVERS.control is CONTROL_FOLD_TYPES', () => {

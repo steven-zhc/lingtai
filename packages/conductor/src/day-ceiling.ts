@@ -13,7 +13,7 @@
  * guarantee it is not (#332). A process that died before it appended `RunSpent`
  * leaves no row at all, and is not counted either.
  */
-import { CONTROL_STREAM, parsePayload, reduceControl, type Envelope } from '@lingtai/domain'
+import { CONTROL_STREAM, parsePayload, reduceControl } from '@lingtai/domain'
 import type { Usage } from '@lingtai/domain'
 import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
 import type { EventStore } from '@lingtai/event-store'
@@ -127,38 +127,14 @@ export const fetchedNote = (day: { fetchedRuns: number }): string =>
 export const ceilingReached = (day: DaySpend, ceilingUsd: number): boolean =>
   day.reportedCents + day.estimatedCents >= Math.round(ceilingUsd * 100)
 
-/** What a ceiling pause's reason begins with: `by: 'lingtai'` and a timed `until` are also a provider quota pause's, so this is what tells them apart. */
+/** The opening of the sentence a person reads on a ceiling pause. `cause: 'day-ceiling'` is what tells it from a provider quota pause's, never this text. */
 const CEILING_REASON = 'daily ceiling reached — '
-
-/** True when the last ceiling pause has been resumed and its day is not over. */
-function resumedPast(events: readonly Envelope[], now: Date): boolean {
-  let until: number | null = null
-  let waived = false
-  // Whether the pause now holding is the ceiling's own: a resume only waives the ceiling after that one.
-  let holding = false
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'ConductorPaused') {
-      holding = d['by'] === 'lingtai' && typeof d['reason'] === 'string' && d['reason'].startsWith(CEILING_REASON)
-      if (holding) {
-        until = typeof d['until'] === 'string' ? Date.parse(d['until']) : null
-        waived = false
-      }
-      // Any other pause (a quota refusal, a person's) is not the ceiling's, and leaves its waiver as it was.
-    } else if (e.type === 'ConductorResumed') {
-      // The ceiling's own lift (a raised figure, below) is not a person's waiver.
-      if (holding && d['by'] !== 'lingtai') waived = true
-      holding = false
-    }
-  }
-  return waived && until !== null && !Number.isNaN(until) && now.getTime() < until
-}
 
 /**
  * A pause that is the ceiling's own and still holds while today is under the
  * figure — the figure was raised or removed — is lifted here, because the
  * callers ask this before the control stream's pause and so lift it before it is
- * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which `resumedPast` does not
+ * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which the fold does not
  * count as a person's waiver. Any other pause is left alone.
  */
 async function liftOwnPause(store: EventStore, now: Date): Promise<void> {
@@ -166,15 +142,7 @@ async function liftOwnPause(store: EventStore, now: Date): Promise<void> {
   const control = reduceControl(events, now)
   // `ConductorResumed` also withdraws a standing shutdown request (reduceControl),
   // and an unrelated shutdown is not ours to withdraw: leave the pause for it.
-  if (!control.paused || control.shutdown !== null) return
-  let own = false
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (e.type === 'ConductorPaused') {
-      own = d['by'] === 'lingtai' && typeof d['reason'] === 'string' && d['reason'].startsWith(CEILING_REASON)
-    } else if (e.type === 'ConductorResumed') own = false
-  }
-  if (!own) return
+  if (!control.paused || control.shutdown !== null || control.cause !== 'day-ceiling') return
   await store.append(CONTROL_STREAM, events.length, [
     { type: 'ConductorResumed', actor: 'conductor', data: parsePayload('ConductorResumed', { by: 'lingtai' }) },
   ])
@@ -214,8 +182,9 @@ export async function dayCeilingPause(options: DayCeilingOptions): Promise<strin
   const events = await options.store.read(CONTROL_STREAM)
   // `lingtai resume` after one of our own pauses lifts the ceiling for the rest
   // of the day that pause covered: it is not asked again until that midnight.
-  if (resumedPast(events, now)) return null
-  if (!reduceControl(events, now).paused) {
+  const control = reduceControl(events, now)
+  if (control.ceilingWaivedUntil !== null) return null
+  if (!control.paused) {
     await options.store.append(CONTROL_STREAM, events.length, [
       {
         type: 'ConductorPaused',
@@ -225,6 +194,7 @@ export async function dayCeilingPause(options: DayCeilingOptions): Promise<strin
           reason: CEILING_REASON + reason,
           until: nextLocalMidnight(now).toISOString(),
           holdsAcrossStarts: false,
+          cause: 'day-ceiling',
         }),
       },
     ])

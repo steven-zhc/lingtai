@@ -826,6 +826,53 @@ function bodyBeforeAnotherWait(): readonly Envelope[] {
 const githubLedgerH = githubLedger()
 const bodyBeforeAnotherWaitH = bodyBeforeAnotherWait()
 
+/** A day-ceiling pause, as `dayCeilingPause` writes one. */
+const ceilingPause = (until: string) => ({
+  by: 'lingtai',
+  reason: 'daily ceiling reached — $5.00 of $5.00',
+  until,
+  holdsAcrossStarts: false,
+  cause: 'day-ceiling' as const,
+})
+
+/** 0124 §2, D8: a person's resume of the ceiling's pause waives it until that pause's midnight. */
+const late_ceilingResumedByPerson = (() => {
+  const c = makeStream(CONTROL_STREAM)
+  return stamp([c('ConductorPaused', ceilingPause(HOLDING_UNTIL)), c('ConductorResumed', { by: 'steven' })])
+})()
+
+/** The ceiling lifting its own pause is not a waiver. */
+const late_ceilingResumedByLingtai = (() => {
+  const c = makeStream(CONTROL_STREAM)
+  return stamp([c('ConductorPaused', ceilingPause(HOLDING_UNTIL)), c('ConductorResumed', { by: 'lingtai' })])
+})()
+
+/** A person's pause on top of the ceiling's makes the standing pause theirs, so their resume waives nothing. */
+const late_ceilingThenPersonPause = (() => {
+  const c = makeStream(CONTROL_STREAM)
+  return stamp([
+    c('ConductorPaused', ceilingPause(HOLDING_UNTIL)),
+    c('ConductorPaused', { ...pause(null), cause: 'person' as const }),
+    c('ConductorResumed', { by: 'steven' }),
+  ])
+})()
+
+/** A new ceiling pause clears the waiver the last one was given. */
+const late_ceilingWaivedThenRepaused = (() => {
+  const c = makeStream(CONTROL_STREAM)
+  return stamp([
+    c('ConductorPaused', ceilingPause(HOLDING_UNTIL)),
+    c('ConductorResumed', { by: 'steven' }),
+    c('ConductorPaused', ceilingPause(HOLDING_UNTIL)),
+  ])
+})()
+
+/** A waiver whose pause's midnight is already past at `NOW` has lapsed. */
+const late_ceilingLapsedThenResumed = (() => {
+  const c = makeStream(CONTROL_STREAM)
+  return stamp([c('ConductorPaused', ceilingPause(LIFTED_UNTIL)), c('ConductorResumed', { by: 'steven' })])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -847,6 +894,13 @@ export const lateHistories = {
     escalatedThenRequeued: late_escalatedThenRequeued,
     githubLedger: githubLedgerH,
     bodyBeforeAnotherWait: bodyBeforeAnotherWaitH,
+  },
+  control: {
+    ceilingResumedByPerson: late_ceilingResumedByPerson,
+    ceilingResumedByLingtai: late_ceilingResumedByLingtai,
+    ceilingThenPersonPause: late_ceilingThenPersonPause,
+    ceilingWaivedThenRepaused: late_ceilingWaivedThenRepaused,
+    ceilingLapsedThenResumed: late_ceilingLapsedThenResumed,
   },
 } as const
 
