@@ -489,6 +489,12 @@ describe('the health dot names a stopped projection (#840)', () => {
     expect(b.title).toContain('the running daemon predates the stopped-projection report')
   })
 
+  it('null with no board yet still says the daemon predates the report', () => {
+    const b = bearing('open', board({ lag: null, stoppedProjections: null }), null)
+    expect(b.label).toBe('no board yet')
+    expect(b.title).toContain('the running daemon predates the stopped-projection report')
+  })
+
   it('a stale beacon says stale, not stopped', () => {
     const stale = { daemon: 'stale', sinceBeatMs: 90_000, lag: 3 } as const
     const withList = bearing('open', board({ ...stale, stoppedProjections: [spend] }), null)

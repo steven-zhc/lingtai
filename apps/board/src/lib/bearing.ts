@@ -67,16 +67,20 @@ export interface Bearing {
   title: string
 }
 
+/** Null while up: the beacon was written before the stopped list existed, so none can be ruled out (#840). */
+function predates(health: Health): string {
+  return health.daemon === 'up' && health.stoppedProjections === null
+    ? ' · the running daemon predates the stopped-projection report'
+    : ''
+}
+
 /** How long ago the daemon last said anything, as a phrase. */
 function beating(health: Health): string {
   const secs = Math.round((health.sinceBeatMs ?? 0) / 1000)
   if (health.daemon === 'up') {
     // The count rides in the title and never in a chip of its own (#134); one pass or none says nothing (#640).
     const side = health.inFlight.length > 1 ? ` · ${health.inFlight.length} passes in flight` : ''
-    // Null while up: the beacon was written before the stopped list existed, so none can be ruled out (#840).
-    const unknown =
-      health.stoppedProjections === null ? ' · the running daemon predates the stopped-projection report' : ''
-    return `daemon beating ${secs}s ago${side}${unknown}`
+    return `daemon beating ${secs}s ago${side}${predates(health)}`
   }
   if (health.daemon === 'stale') return `no beat for ${secs}s`
   return 'no daemon has ever run'
@@ -150,7 +154,7 @@ export function bearing(
       tone: 'idle',
       label: 'no board yet',
       why: 'nothing has been folded yet — run: lingtai daemon',
-      title: also('task_view has never been built'),
+      title: also(`task_view has never been built${predates(board)}`),
     }
   }
 
