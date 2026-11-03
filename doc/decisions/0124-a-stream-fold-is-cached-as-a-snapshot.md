@@ -45,7 +45,11 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    invalidate a stored snapshot, and until one is stored there is nothing for
    it to invalidate: a fold reaches its final shape directly
    ([design/one-fold-per-stream.md](../design/one-fold-per-stream.md) §5), and
-   is registered at version 1 with that shape.
+   is registered at version 1 with that shape. One codec lands earlier: the
+   ticket fold's, because `task_view`, `ticket_report` and `spend` each store a
+   ticket's state in their rows (design §3, ticket 12). It is written once the
+   ticket fold has its final shape, and a stored state of another shape is
+   refused by name, so a later change to the fold is a rebuild of those three.
 
 2. **What depends on the clock is not folded.** A fold's state is a function of
    the events alone. Whatever depends on *now* — the control state's pause that

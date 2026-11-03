@@ -475,10 +475,10 @@ too (P3's rebuild).
      event change, and gives an old log the same answer as a new one.
    - `labels` stays null: `TicketClaimed` has no `labels` (events.ts:188-213), and
      the board's own read of it is dead (C7).
-2. `claims: { runId, at, released: string|null, blockedBy: WaitId|null }[]`, a fresh
-   claim per `claimShapeOf === 'claim'`. Used by `claimsOf` and `priorAttempts` 161.
+2. `claims: { runId, at, ended: AttemptEnding | null }[]`, a fresh claim per
+   `claimShapeOf === 'claim'`, with D13's ending. Used by `claimsOf` and `priorAttempts` 161.
 3. `lastAttemptAt: Date | null`, set by a claim **or** a continuation. Used by
-   `backoffOf` 210 and task_view's `last_attempt_at`.
+   `backoffOf` 210, and by task_view's `last_attempt_at` from ticket 11.
 4. `since: Date`, the `at` of the last lifecycle event, where a continuation counts
    (D11). Used by `standingOf`.
 5. `lastMove: { waitId, resolution, by, note, current: boolean, then: 'closed'|'released'|null, releaseCause }`.
@@ -503,7 +503,9 @@ changes it.
 
 ### 2.5 New: `ChatState` (`chat-` stream, D7)
 
-`{ attempt, turns: {question, by, at, reading, answer|null}[], costUsd, answered: number }`.
+`{ attempt, turns: {question, by, at, reading, answer|null}[], answered: number }`. No
+`costUsd`: `DiscussionAnswered` has carried none since #502, so only a field no log
+can fill would hold it (D16).
 It replaces the board's `foldChat`, `turnsOf` (conductor/discuss.ts:750), `outstanding`
 (775) and the count at cli/discuss.ts:462.
 
@@ -551,10 +553,10 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 8 | **What a ticket is.** `title`/`kind` from `TicketClaimed`, and `project`/`externalRef` from the stream id (D4). The board's `ticketFieldsOf` reads them | R6, C7 | — | domain's answer question names the agent branch again (§2.3) |
 | 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
 | 10 | **What Lingtai wrote to GitHub.** The ledger on `TicketState` (D9). The board's `bodyOutcome`, `converge.ts` and `tell.ts`'s comment half read it | R9, C13 | — | — |
-| 11 | **task_view is the ticket fold.** The row's `state` and `answer` come from `TicketState`, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 9 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
-| 12 | **ticket_report is the ticket fold.** outcome, passes, claims and waits come from `TicketState`. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7 | rebuild, runbook |
-| 13 | **spend's kind.** `spend_kind` from `TicketState.kind` | P1 | 8 | rebuild, runbook |
-| 14 | **The control fold.** `applyControl` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains a typed `cause`, its `schemaVer` goes up, and an upcaster derives the cause of an older event from its reason (D8, D16). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `applyControl` reads |
+| 11 | **task_view is the ticket fold.** The row stores its ticket's `TicketState` (12's codec), and `state` and `answer` come from it, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 12 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
+| 12 | **ticket_report is the ticket fold.** It lands the ticket fold's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims and `kind` come from it, and the waits stay the report's own fold. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10 (the state's final shape) | rebuild, runbook |
+| 13 | **spend's kind.** `spend_kind` from a stored `TicketState.kind` | P1 | 12 | rebuild, runbook |
+| 14 | **The control fold.** `applyControl` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains an optional typed `cause`, with no `schemaVer` bump and no upcaster (D8, 0100 §4). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `applyControl` reads |
 | 15 | **The chat fold.** `reduceChat` (D14). The board's `foldChat`, `turnsOf`, `outstanding` and the CLI's count read it | R9b, C11 | — | an orphan answer no longer counts as answering anything |
 | 16 | **The finding fold.** Domain's backlog-finding fold; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
 | — | Snapshots, with 0124's registry, codec and version table | last | all | not in 0.12 |
@@ -603,6 +605,8 @@ code as it is then.
       (`projector/src/projection.ts:232-251`).
    4. `lingtai restart "picking up #…"`, with `lingtai doctor`'s shape check green
       first.
+   5. Restart the board (by its port, `:17820`). It holds a projector on the old code,
+      and its runner meets the new table until it restarts.
 6. `pnpm typecheck` and `HOME=/nonexistent pnpm test` only. No `Done when` asks for
    `pnpm test:integration` (CLAUDE.md).
 
@@ -640,8 +644,8 @@ scrubbed and cited by issue number, not seq.
   - an answer is worded from the resolution's reason, not from `note`.
 
   This changes the queue's input (`queue.ts:97`, `inFlight`) and is accepted. It means
-  a rebuild on deploy, under the §4.6 runbook: P3a adds the column with no behaviour
-  change, then there is one ticket per cell.
+  a rebuild on deploy, under the §4.5 runbook, once: ticket 11 lands all four cells
+  together (D15).
 - **D6. `closed` is absorbing, everywhere** (#151, ticket.ts:237-251). A claim after
   `TicketClosed` changes no lifecycle in domain, task_view (P3d) or ticket_report
   (P2, which deletes the reopen at 372-375). The conductor never appends such a claim:
@@ -649,10 +653,13 @@ scrubbed and cited by issue number, not seq.
   exists only in an old log.
 - **D7. Domain gains `reduceChat` (R9b) and a backlog-finding fold (R9c).** P4 is
   required.
-- **D8. `ConductorPaused` gains a typed `cause`.** The day ceiling's pause is
-  recognised by it alone. An event written before it is upcast (D16): its
-  `schemaVer` step derives the cause from the reason prefix, so the fold never reads
-  the reason. `CONTROL_FOLD_TYPES` stays in step.
+- **D8. `ConductorPaused` gains an optional typed `cause`** (`person`, `setup`,
+  `account-limit`, `day-ceiling`). The day ceiling's pause is recognised by it alone,
+  and the fold never reads the reason. Per 0100 §4 it is an optional field: no
+  `schemaVer` bump and no upcaster, so an event written before it folds to no cause,
+  which is never the ceiling's (the operator, 2026-11-03). The cost is a ceiling
+  pause written on the deploy day, which lifts at midnight. `CONTROL_FOLD_TYPES`
+  stays in step.
 - **D9. The GitHub-write ledger is a `TicketState` field (R9, C13).**
 - **D10. Facts of progress are `RunState`**: the current step, round, since, lane wait,
   plan, rounds opened, and when the run opened, its agent started and it asked a person
@@ -664,17 +671,23 @@ scrubbed and cited by issue number, not seq.
   step** (2026-11-02). A `StepEnded` for another step does not clear it, and nor does the run's end: `step` is the last step entered and not ended, and whether the run is over is `lifecycle`'s to say. Steps run in
   order, so on every real log this answers what `lingtai status` answers today.
 - **D13. An attempt has one typed ending** (2026-11-02):
-  `{ kind: 'released', reason } | { kind: 'asked', waitId }`, whichever came later, and
-  no words. The conductor and the board each word it with `waitWords`. The board's
+  `{ kind: 'released', reason } | { kind: 'asked', waitId, reason }`, whichever came
+  later, and no words; `asked` carries the `WaitReason` so a reader words it without
+  a second scan (the operator, 2026-11-03). Every person's requeue also releases
+  (`resolve-wait.ts` `releaseOf`), so `asked` is an attempt still held, closed from
+  its wait, or continued after an approval; the board ranks it after `running`. The conductor and the board each word it with `waitWords`. The board's
   default of `'released'` for an empty reason goes.
 - **D14. An answer belongs to the latest unanswered ask before it** (2026-11-02). An
-  answer with no open ask is ignored, and a request is outstanding exactly when an
-  ask has no answer. `outstanding`'s count goes.
+  answer with no open ask is ignored, and requests are outstanding exactly when fewer
+  turns are answered than requests were made. Never "some ask has no answer": a crash
+  between ask and answer leaves that ask unanswered for ever, and a loop on it buys a
+  paid discussion every time round. `outstanding`'s count goes.
 - **D15. No intermediate state** (2026-11-02). A fold reaches its §5 shape directly,
   in vertical slices (§3); there are no legacy copies, characterization pins or
   version bumps on the way, and 0124's registry lands with the snapshots.
-- **D16. Old logs are upcast, never branched on** (2026-11-02). A payload whose shape
-  changed gets a `schemaVer` step in `upcast.ts`. A sequence the conductor can no
+- **D16. Old logs are never branched on** (2026-11-02). A new payload field is
+  optional and absent on older events (0100 §4, 0124 §4); the upcasters that exist
+  stay, and none is added. A sequence the conductor can no
   longer write, like a claim after a close, is absorbed by the fold's own rule
   (`closed` is terminal, D6). A field only an old log could fill, like the board's
   `Claim.repair`, is deleted. The log is not reset.
