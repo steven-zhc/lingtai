@@ -10,8 +10,13 @@
  *
  * ## The rules
  *
- * - **A pass is a claim, and a continuation is not** (`claimShapeOf`, 0109 §5).
- *   Both open an interval of machine time.
+ * - **A pass is one of the ticket reduce's `claims`** (`applyTicket`, 0109 §5), and
+ *   a continuation is not. `ticket_state` is the stored `TicketState`, and
+ *   `outcome`, `passes`, `kind` and `waits` are read off it, never reduced here
+ *   (D4, D6). **A change to what `applyTicket` returns makes stored rows stale**:
+ *   `decodeTicket` refuses them by name, and §4.5's runbook rebuilds this table.
+ *   A claim or continuation opens an interval of machine time only where the
+ *   reduce holds that run, so a claim `closed` absorbed opens none.
  * - **Fix rounds are summed over passes**: the distinct `(pass stream, round)`
  *   pairs of `Action` `RunSpent`s at round 1 or above (#658: 14 over 4 passes).
  * - **An interval ends at its last sign of life** between its opening and its
@@ -33,12 +38,23 @@
  *   put it on (unlike `spend`, which keeps it with a null ticket).
  */
 import type { Envelope, PayloadOf } from '@lingtai/domain'
-import { chatStream, claimShapeOf, cleared, isPassStream, isTicketStream, parseTicketStream } from '@lingtai/domain'
+import type { TicketState, TicketWait } from '@lingtai/domain'
+import {
+  chatStream,
+  cleared,
+  decodeTicket,
+  emptyTicket,
+  encodeTicket,
+  isPassStream,
+  isTicketStream,
+  parseTicketStream,
+} from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, ProjectionContext } from './store.ts'
+import { reduceStoredTicket } from './ticket-row.ts'
 
 export const TICKET_REPORT_TABLE = 'ticket_report'
 
@@ -82,21 +98,20 @@ interface OpenInterval {
   lifeAt: string | null
 }
 
-/** A `ticket_report` row, as the fold holds it. */
+/**
+ * A `ticket_report` row, as the fold holds it. What the report reads about the
+ * lifecycle is derived from `ticketState` on every save, so none of it is kept here.
+ */
 interface State {
   ticket: string
-  kind: string | null
-  outcome: 'open' | 'landed' | 'closed'
-  outcomeAt: Date | null
-  passes: number
+  /** The ticket reduce (`applyTicket`) for this stream. `emptyTicket` until a ticket-stream event arrives. */
+  ticketState: TicketState
   machineMs: number
   intervalsEmpty: number
-  passTimes: string[]
   reviews: ReportReview[]
-  waits: ReportWait[]
   cost: Record<string, PurposeCost>
-  /** runId → whether an `Action` `RunSpent` was paid on it. Only claims are here. */
-  claims: Record<string, boolean>
+  /** The runs an `Action` `RunSpent` was paid on. Not only claims: only membership is read. */
+  paid: string[]
   /** `stream:round`, each distinct pair once. */
   rounds: string[]
   open: OpenInterval[]
@@ -155,81 +170,108 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
 
 const fresh = (ticket: string): State => ({
   ticket,
-  kind: null,
-  outcome: 'open',
-  outcomeAt: null,
-  passes: 0,
+  ticketState: emptyTicket,
   machineMs: 0,
   intervalsEmpty: 0,
-  passTimes: [],
   reviews: [],
-  waits: [],
   cost: {},
-  claims: {},
+  paid: [],
   rounds: [],
   open: [],
   appliedSeq: 0n,
 })
 
-async function load(ctx: ProjectionContext, ticket: string): Promise<State> {
+/**
+ * The row for `ticket`, and its `ticket_state` column as stored: `undefined`
+ * for no row, which is the one case that reduces from `emptyTicket`.
+ */
+async function load(ctx: ProjectionContext, ticket: string): Promise<{ s: State; stored: unknown }> {
   const [row] = await ctx.query<Record<string, unknown>>('select * from ticket_report where ticket = $1', [ticket])
-  if (!row) return fresh(ticket)
+  if (!row) return { s: fresh(ticket), stored: undefined }
   return {
-    ticket,
-    kind: (row.kind as string | null) ?? null,
-    outcome: row.outcome as State['outcome'],
-    outcomeAt: row.outcome_at === null || row.outcome_at === undefined ? null : new Date(row.outcome_at as string),
-    passes: Number(row.passes),
-    machineMs: Number(row.machine_ms),
-    intervalsEmpty: Number(row.intervals_empty),
-    passTimes: json(row.pass_times, []),
-    reviews: json(row.reviews, []),
-    waits: json(row.waits, []),
-    cost: json(row.cost, {}),
-    claims: json(row.claims, {}),
-    rounds: json(row.rounds, []),
-    open: json(row.open_intervals, []),
-    appliedSeq: BigInt(String(row.applied_seq ?? 0)),
+    stored: row.ticket_state,
+    s: {
+      ...fresh(ticket),
+      machineMs: Number(row.machine_ms),
+      intervalsEmpty: Number(row.intervals_empty),
+      reviews: json(row.reviews, []),
+      cost: json(row.cost, {}),
+      paid: json(row.paid, []),
+      rounds: json(row.rounds, []),
+      open: json(row.open_intervals, []),
+      appliedSeq: BigInt(String(row.applied_seq ?? 0)),
+    },
+  }
+}
+
+/** A wait as the report shows it, off the reduce's. */
+function reportWaitOf(w: TicketWait): ReportWait {
+  const { started, result } = w.triage
+  if (result !== null && started === null) throw new Error(`${w.waitId} holds a triage result with no attempt`)
+  return {
+    waitId: w.waitId,
+    at: w.at.toISOString(),
+    reason: w.reason._tag,
+    triage:
+      result === null || started === null
+        ? null
+        : {
+            attempt: started.attempt,
+            result: result._tag,
+            cause: result._tag === 'TriageAdvised' ? result.cause._tag : null,
+          },
+    resolution: w.resolution?.resolution._tag ?? null,
   }
 }
 
 async function save(ctx: ProjectionContext, s: State): Promise<void> {
   const project = parseTicketStream(s.ticket)?.project ?? null
+  const t = s.ticketState
+  const status = t.lifecycle.status
+  const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
+  // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
+  const outcomeAt = outcome === 'open' ? null : t.since
+  // The write's own condition is the dedupe, one atomic statement and never a read then a write: of two
+  // runners that loaded the same row, the second touches 0 rows. `applied_seq` is set to the event's seq
+  // on every save, and so is `lastSeq` inside `ticket_state` on every ticket-stream save, so
+  // `applied_seq >= lastSeq` holds for every stored row and this guard is at least as strict as one on `lastSeq`.
   await ctx.query(
     `insert into ticket_report
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
-        claims, rounds, open_intervals, applied_seq)
+        paid, rounds, open_intervals, ticket_state, applied_seq)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb,
-             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19)
+             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb, $20)
      on conflict (ticket) do update set
        project = excluded.project, kind = excluded.kind, outcome = excluded.outcome,
        outcome_at = excluded.outcome_at, passes = excluded.passes, fix_rounds = excluded.fix_rounds,
        machine_ms = excluded.machine_ms, intervals_empty = excluded.intervals_empty,
        intervals_open = excluded.intervals_open, unknown_claims = excluded.unknown_claims,
        pass_times = excluded.pass_times, reviews = excluded.reviews, waits = excluded.waits,
-       cost = excluded.cost, claims = excluded.claims, rounds = excluded.rounds,
-       open_intervals = excluded.open_intervals, applied_seq = excluded.applied_seq
+       cost = excluded.cost, paid = excluded.paid, rounds = excluded.rounds,
+       open_intervals = excluded.open_intervals, ticket_state = excluded.ticket_state,
+       applied_seq = excluded.applied_seq
      where ticket_report.applied_seq < excluded.applied_seq`,
     [
       s.ticket,
       project,
-      s.kind,
-      s.outcome,
-      s.outcomeAt,
-      s.passes,
+      t.kind,
+      outcome,
+      outcomeAt,
+      t.claims.length,
       s.rounds.length,
       s.machineMs,
       s.intervalsEmpty,
       s.open.length,
-      Object.values(s.claims).filter((paid) => !paid).length,
-      JSON.stringify(s.passTimes),
+      t.claims.filter((c) => !s.paid.includes(c.runId)).length,
+      JSON.stringify(t.claims.map((c) => c.at.toISOString())),
       JSON.stringify(s.reviews),
-      JSON.stringify(s.waits),
+      JSON.stringify(t.waits.map(reportWaitOf)),
       JSON.stringify(s.cost),
-      JSON.stringify(s.claims),
+      JSON.stringify(s.paid),
       JSON.stringify(s.rounds),
       JSON.stringify(s.open),
+      encodeTicket(t),
       s.appliedSeq.toString(),
     ],
   )
@@ -315,9 +357,10 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         reviews         jsonb not null,
         waits           jsonb not null,
         cost            jsonb not null,
-        claims          jsonb not null,
+        paid            jsonb not null,
         rounds          jsonb not null,
         open_intervals  jsonb not null,
+        ticket_state    jsonb not null,
         applied_seq     bigint not null default 0
       )`)
     await ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
@@ -340,7 +383,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
     for (const event of events) {
       // Which ticket's row this event touches, and what it does to it.
       let ticket: string | null = null
-      let change: ((s: State) => void) | null = null
+      let change: ((s: State, after: TicketState | null) => void) | null = null
 
       switch (event.type) {
         case 'RunStarted': {
@@ -358,21 +401,12 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         case 'TicketClaimed':
         case 'TicketContinued': {
           const d = event.data as PayloadOf<'TicketClaimed'>
+          // The stream belongs to this ticket whatever the reduce makes of the claim.
           await link(ctx, d.runId, event.streamId)
-          ticket = event.streamId
-          change = (s) => {
-            const shape = claimShapeOf(event, Object.keys(s.claims))
-            if (shape === 'claim') {
-              s.passes += 1
-              s.passTimes.push(event.at.toISOString())
-              s.claims[d.runId] ??= false
-              if (event.type === 'TicketClaimed') s.kind = d.kind
-            }
-            // A new claim after a close reopens the ticket; a landing stays.
-            if (s.outcome === 'closed') {
-              s.outcome = 'open'
-              s.outcomeAt = null
-            }
+          change = (s, after) => {
+            // An interval opens only where the reduce holds this run: a claim `closed` absorbed, and a
+            // continuation of a run nobody claimed, open none (D6).
+            if (after?.lifecycle.status !== 'claimed' || after.lifecycle.runId !== d.runId) return
             s.open.push({
               openedSeq: event.seq.toString(),
               runId: d.runId,
@@ -385,68 +419,11 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         }
 
         case 'TicketLanded':
-          ticket = event.streamId
-          change = (s) => {
-            endIntervals(s)
-            s.outcome = 'landed'
-            s.outcomeAt = event.at
-          }
-          break
-
-        case 'TicketClosed':
-          ticket = event.streamId
-          change = (s) => {
-            endIntervals(s)
-            if (s.outcome !== 'landed') {
-              s.outcome = 'closed'
-              s.outcomeAt = event.at
-            }
-          }
-          break
-
+        case 'WaitStarted':
         case 'TicketReleased':
-          ticket = event.streamId
+        case 'TicketClosed':
           change = endIntervals
           break
-
-        case 'WaitStarted': {
-          const d = event.data as PayloadOf<'WaitStarted'>
-          ticket = event.streamId
-          change = (s) => {
-            endIntervals(s)
-            s.waits.push({
-              waitId: d.waitId,
-              at: event.at.toISOString(),
-              reason: d.reason._tag,
-              triage: null,
-              resolution: null,
-            })
-          }
-          break
-        }
-
-        case 'WaitTriaged': {
-          const d = event.data as PayloadOf<'WaitTriaged'>
-          ticket = event.streamId
-          change = (s) => {
-            const wait = s.waits.find((w) => w.waitId === d.waitId)
-            // A reader takes only the latest attempt's result (`WaitTriaged`'s own comment).
-            if (!wait || (wait.triage !== null && wait.triage.attempt > d.attempt)) return
-            const cause = d.result._tag === 'TriageAdvised' ? d.result.cause._tag : null
-            wait.triage = { attempt: d.attempt, result: d.result._tag, cause }
-          }
-          break
-        }
-
-        case 'WaitResolved': {
-          const d = event.data as PayloadOf<'WaitResolved'>
-          ticket = event.streamId
-          change = (s) => {
-            const wait = s.waits.find((w) => w.waitId === d.waitId)
-            if (wait) wait.resolution = d.resolution._tag
-          }
-          break
-        }
 
         case 'StepEnded': {
           const d = event.data as PayloadOf<'StepEnded'>
@@ -496,7 +473,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
             } else bill.unknown += 1
 
             if (d.for._tag !== 'Action') return
-            if (onPass && event.streamId in s.claims) s.claims[event.streamId] = true
+            if (onPass && !s.paid.includes(event.streamId)) s.paid.push(event.streamId)
             if (d.for.round >= 1) {
               const key = `${event.streamId}:${d.for.round}`
               if (!s.rounds.includes(key)) s.rounds.push(key)
@@ -509,11 +486,17 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
           break
       }
 
+      // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not,
+      // so the state is current when the next lifecycle event arrives.
+      const onTicketStream = isTicketStream(event.streamId)
+      if (onTicketStream) ticket = event.streamId
+
       // Anything else on a pass stream is a sign of life for the interval that opened it.
-      if (change === null && isPassStream(event.streamId)) {
+      if (change === null && !onTicketStream && isPassStream(event.streamId)) {
         ticket = await ticketOf(ctx, event.streamId)
         if (ticket !== null) {
-          const s = await load(ctx, ticket)
+          const { s, stored } = await load(ctx, ticket)
+          if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
           if (s.appliedSeq < event.seq && signOfLife(s, event, event.streamId)) {
             s.appliedSeq = event.seq
             await save(ctx, s)
@@ -521,12 +504,19 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         }
         continue
       }
-      if (ticket === null || change === null) continue
+      if (ticket === null) continue
+      if (change === null && !onTicketStream) continue
 
-      const s = await load(ctx, ticket)
+      const { s, stored } = await load(ctx, ticket)
       // A replay (a second follower from an older cursor) must not add twice.
       if (s.appliedSeq >= event.seq) continue
-      change(s)
+      let after: TicketState | null = null
+      if (onTicketStream) {
+        const reduced = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE)
+        if (reduced === null) continue
+        after = s.ticketState = reduced.after
+      } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
+      change?.(s, after)
       s.appliedSeq = event.seq
       // A pass-stream event is also a sign of life, whatever else it did.
       if (isPassStream(event.streamId)) signOfLife(s, event, event.streamId)

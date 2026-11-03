@@ -14,6 +14,7 @@
  * so it is unit under 0060 §1.
  */
 import type { Envelope } from '@lingtai/domain'
+import { decodeTicket } from '@lingtai/domain'
 import { histories, lateHistories, scenarios } from '@lingtai/domain/test/histories'
 import { describe, expect, it } from 'vitest'
 
@@ -27,7 +28,7 @@ const all: Envelope[] = [
   ...Object.values(scenarios).flatMap((s) => [...s.ticket, ...s.runs.flat(), ...(s.integration ?? [])]),
 ].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
 
-async function fold(batches: readonly (readonly Envelope[])[]): Promise<ProjectionRow[]> {
+async function foldAll(batches: readonly (readonly Envelope[])[], withState: boolean): Promise<ProjectionRow[]> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
@@ -35,10 +36,20 @@ async function fold(batches: readonly (readonly Envelope[])[]): Promise<Projecti
     await store.transact((ctx) => projection.create(ctx))
     for (const batch of batches) await store.transact((ctx) => projection.apply(batch, ctx))
     const rows = await store.transact((ctx) => ctx.query('select * from ticket_report order by ticket'))
-    return rows.map(({ ticket_state: _state, ...rest }) => rest)
+    return withState ? rows : rows.map(({ ticket_state: _state, ...rest }) => rest)
   } finally {
     db.close()
   }
+}
+
+const fold = (batches: readonly (readonly Envelope[])[]) => foldAll(batches, false)
+
+const parse = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v)
+
+/** The one row a single history makes, with its stored state. */
+async function rowOf(events: readonly Envelope[]): Promise<ProjectionRow> {
+  const [row] = await foldAll([events], true)
+  return row!
 }
 
 describe('ticket_report rebuilds to the rows it held before it read the ticket reduce', () => {
@@ -52,5 +63,46 @@ describe('ticket_report rebuilds to the rows it held before it read the ticket r
       Array.from({ length: Math.ceil(all.length / n) }, (_, i) => all.slice(i * n, i * n + n))
     expect(await fold(chunks(1))).toEqual(whole)
     expect(await fold(chunks(3))).toEqual(whole)
+  })
+
+  it('D6: a claim after a close reopens nothing', async () => {
+    for (const events of [histories.ticket.claimedAfterClosed, lateHistories.ticket.closedByPersonThenClaimed]) {
+      const row = await rowOf(events)
+      expect(row).toMatchObject({ outcome: 'closed', passes: 1, intervals_open: 0 })
+      expect(parse(row.open_intervals)).toEqual([])
+    }
+  })
+
+  it('a continuation of a run nobody claimed opens no interval', async () => {
+    const row = await rowOf(histories.ticket.continuedUnclaimedRun)
+    expect(row).toMatchObject({ passes: 1, intervals_open: 2 })
+    expect(parse(row.open_intervals).map((i: { runId: string }) => i.runId)).not.toContain('pass-t9102-ghost')
+  })
+
+  it('D4: a null claim does not blank the kind', async () => {
+    const events = lateHistories.ticket.titledByClaims
+    expect((await rowOf(events.slice(0, 3))).kind).toBe('bug')
+    expect((await rowOf(events)).kind).toBe('feature')
+  })
+
+  it("D4: the kind a ticket was discovered with is the ticket reduce's kind too", async () => {
+    expect((await rowOf(histories.ticket.claimedReleasedClaimedLanded)).kind).toBe('bug')
+  })
+
+  it('waits read the reduce: the latest started attempt, its first result, and the first resolution', async () => {
+    const row = await rowOf(lateHistories.ticket.triagedTwice)
+    const [wait] = decodeTicket(row.ticket_state, 'ticket_report').waits
+    expect(wait!.triage.result).toMatchObject({ _tag: 'TriageFailed', why: 'second' })
+    expect(wait!.resolution?.by).not.toBe('someone')
+    expect(parse(row.waits)).toEqual([
+      expect.objectContaining({ triage: { attempt: 2, result: 'TriageFailed', cause: null }, resolution: 'Requeue' }),
+    ])
+  })
+
+  it('applied_seq is the last event on the ticket stream, whether or not the switch names its type', async () => {
+    for (const events of [lateHistories.ticket.discussionsHeld, lateHistories.ticket.triagedTwice]) {
+      const row = await rowOf(events)
+      expect(BigInt(String(row.applied_seq))).toBe(events[events.length - 1]!.seq)
+    }
   })
 })

@@ -155,7 +155,7 @@ describe('ticket_report', () => {
     expect(row).toMatchObject({ unknown_claims: 1, passes: 2 })
   })
 
-  it('folds the outcome: landed stays, a close is undone by a later claim', async () => {
+  it('folds the outcome: a landing is landed, and a close is final (D6: a later claim reopens nothing)', async () => {
     const t = makeStream(T)
     const closed = await fold([
       [claim(t, 'pass-pin-a', 'bug', 0), t('TicketClosed', { by: 'p', reason: 'r' }, { at: at(1) })],
@@ -169,16 +169,23 @@ describe('ticket_report', () => {
         claim(t2, 'pass-pin-b', 'bug', 2),
       ],
     ])
-    expect(reopened).toMatchObject({ outcome: 'open' })
+    // D6: `closed` absorbs the claim, so there is no second pass and no interval.
+    expect(reopened).toMatchObject({ outcome: 'closed', passes: 1, intervals_open: 0 })
     const t3 = makeStream(T)
     const landed = await fold([
-      [
-        claim(t3, 'pass-pin-a', 'bug', 0),
-        t3('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) }),
-        t3('TicketClosed', { by: 'p', reason: 'r' }, { at: at(2) }),
-      ],
+      [claim(t3, 'pass-pin-a', 'bug', 0), t3('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) })],
     ])
     expect(landed).toMatchObject({ outcome: 'landed' })
+    // A close after a landing is a sequence `close.ts` refuses to write; the reduce's answer is `closed`.
+    const t4 = makeStream(T)
+    const closedAfterLanding = await fold([
+      [
+        claim(t4, 'pass-pin-a', 'bug', 0),
+        t4('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) }),
+        t4('TicketClosed', { by: 'p', reason: 'r' }, { at: at(2) }),
+      ],
+    ])
+    expect(closedAfterLanding).toMatchObject({ outcome: 'closed' })
   })
 
   it('does not add an event twice when a second follower replays it from an older cursor', async () => {
@@ -191,10 +198,10 @@ describe('ticket_report', () => {
     expect(parse(twice?.cost).Answering).toMatchObject({ reportedCents: 50, reportedRuns: 1 })
   })
 
-  it('takes the kind of the last claim even when it is null', async () => {
+  it('D4: a claim with a null kind keeps the kind an earlier one named', async () => {
     const t = makeStream(T)
     const row = await fold([[claim(t, 'pass-pin-a', 'bug', 0), claim(t, 'pass-pin-b', null, 1)]])
-    expect(row).toMatchObject({ passes: 2, kind: null })
+    expect(row).toMatchObject({ passes: 2, kind: 'bug' })
   })
 
   it('rebuilding gives the rows of the live fold', async () => {
