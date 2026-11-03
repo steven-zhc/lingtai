@@ -50,7 +50,15 @@ Lingtai is an event log. Everything else is what the log's events add up to.
 - **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a
   projection or a caller's join.
-- **Head** and **base** — a pass works on its own branch. Its *base* is the commit
+- **Attempt** (尝试) — one try at changing a ticket: Lingtai claims it and works it
+  through the steps once. One attempt is one `pass-…` stream. A continuation
+  (Approve, GrantFixRound) stays in the same attempt; a Requeue or a restart starts
+  a new one. Say *attempt*, never *pass* or *run*, for this. Names the log already
+  holds stay as they are, because an event never changes: the `pass-` stream prefix,
+  the `runId` field (the attempt's stream id) and the `Run…` event names.
+- **Agent run** — one invocation of an agent inside an attempt: the implement, each
+  fix round, a judge. *Run* on its own means this and nothing else.
+- **Head** and **base** — an attempt works on its own branch. Its *base* is the commit
   on the base branch it started from; its *head* is the newest commit the agent
   has produced there (`RunState.headSha`, set by `RunProducedDiff` and
   `RunProposedCompletion`).
@@ -68,7 +76,7 @@ The states, one per kind of stream:
 
 | State | Stream | What it is |
 |---|---|---|
-| **RunState** | `pass-…`, one per pass | One pass of one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/run.ts`. |
+| **RunState** (to be renamed the attempt state) | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/run.ts`. |
 | **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its passes: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
 | **ControlState** | `ctl-conductor`, one per machine | Whether the conductor may take work: paused or not, by whom, why and until when, and a standing request to drain. What depends on the clock (a pause that lifts at `until`) is evaluated by the reader. `packages/domain/src/control.ts`. |
 | **ProjectState** | `prj-{project}`, one per repository | What Lingtai was told about a repository: its owner, base branch, the recipe hash last resolved, and a refusal nothing has recovered from yet. `packages/domain/src/project.ts`. |

@@ -718,6 +718,10 @@ scrubbed and cited by issue number, not seq.
 - **D19. The word is *reduce*** (the operator, 2026-11-03; `doc/glossary.md`).
   `reduceRunEvent(state, event)` for one event, `reduceRun(events)` for a stream. This
   document says *fold* where it was written before; ticket 19 renames it.
+- **D20. The word is *attempt*** (the operator, 2026-11-03; `doc/glossary.md`). One
+  try at changing a ticket, one `pass-…` stream, is an *attempt*; *run* means one
+  agent invocation inside it; *pass* is retired. The log's own names (`pass-`,
+  `runId`, `Run…` events) stay. The rename is its own ticket, after ticket 19.
 - **Sequencing.** §3's order. Snapshot storage and the snapshot-plus-tail read land
   last, after 0.12. #797's tickets go before #790's rows 4, 8 and 9.
 
