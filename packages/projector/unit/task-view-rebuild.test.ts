@@ -3,11 +3,16 @@
  * dispatches through `cardFactOf` as it did while it matched the old event
  * types and `Hold` directly.
  *
- * **Generated from today's code, and never regenerated after the `src`
- * change.** The snapshot this file commits alongside it was captured against
- * `task-view.ts` before #480's rewrite. #522 removed only the four redundant
- * columns from it. If this test goes red, the fold changed — inspect the
- * changed values rather than regenerating the pin.
+ * **Generated from the code before #480's rewrite, and regenerated once since.**
+ * #522 removed four redundant columns from it, and #834 regenerated it once when
+ * `task_view` began reading its columns off the ticket reduce. That change added
+ * `ticket_seq` to every row (the column is new, nothing in a row moved) and moved
+ * exactly one value: `ticket-pin-dispatch`'s `updated_seq`, 28 -> 27, because a
+ * `DispatchRefused` on a blocked ticket moves no derived column and so leaves the
+ * card's age alone ("an event that moves no derived column does not move it").
+ * The `ticket` column itself is not in the pin: it grows with `TicketState`. If
+ * this test goes red now, the fold changed — inspect the changed values rather
+ * than regenerating the pin, and name the rule that explains each row.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
  * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
@@ -486,7 +491,8 @@ async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Proje
     await store.transact((ctx) => taskViewProjection.create(ctx))
     await store.transact((ctx) => taskViewProjection.apply(events.slice(0, upTo), ctx))
     return await store.transact(async (ctx) => ({
-      tasks: await ctx.query('select * from task_view order by task_id'),
+      // Every column but `ticket`: the stored reduce grows with `TicketState`, and a new field must not churn this pin (#834).
+      tasks: (await ctx.query('select * from task_view order by task_id')).map(({ ticket: _ticket, ...row }) => row),
       runs: await ctx.query('select * from task_view_run order by run_id'),
     }))
   } finally {

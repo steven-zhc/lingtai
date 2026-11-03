@@ -59,8 +59,8 @@ async function storeWith(column: 'verdicts' | 'gates'): Promise<ProjectionStore>
     }
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq, ticket, ticket_seq)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, '{}', 1)`,
       ['ticket-drift-1', 'drift', '1', 'gates', RUN, RECORDED, new Date().toISOString(), 1],
     )
   })
@@ -144,8 +144,8 @@ async function storeWithReasonColumn(column: 'wait_reason' | 'old_reason'): Prom
     }
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, wait_id, ${column}, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
+         (task_id, project, issue, state, run_id, wait_id, ${column}, updated_at, updated_seq, ticket, ticket_seq)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, '{}', 1)`,
       [
         'ticket-drift-2',
         'drift',
@@ -201,8 +201,8 @@ async function storeWithoutWaitColumns(): Promise<ProjectionStore> {
     await ctx.query('alter table task_view drop column wait_reason')
     await ctx.query(
       `insert into task_view
-         (task_id, project, issue, state, run_id, updated_at, updated_seq)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
+         (task_id, project, issue, state, run_id, updated_at, updated_seq, ticket, ticket_seq)
+       values ($1, $2, $3, $4, $5, $6, $7, '{}', 1)`,
       ['ticket-drift-3', 'drift', '3', 'waiting', RUN, new Date().toISOString(), 1],
     )
   })
