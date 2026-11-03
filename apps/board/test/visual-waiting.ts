@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 /** Deterministic presentation data, folded from local wait events. */
 import {
   decideRoute,
@@ -19,16 +20,7 @@ import { taskViewProjection } from '@lingtai/projector/task-view'
 import { toCard } from '@/lib/board'
 import { describeHeld, spentOf } from '@/lib/progress'
 import { grantedOf } from '@/lib/spend'
-import {
-  foldChat,
-  foldRun,
-  savedFixWork,
-  standingOf,
-  totalsOf,
-  type Claim,
-  type StandingView,
-  type TaskDetail,
-} from '@/lib/task'
+import { foldChat, foldRun, savedFixWork, standingOf, totalsOf, type StandingView, type TaskDetail } from '@/lib/task'
 
 import { WAIT_FIXTURES } from './waits.ts'
 
@@ -442,7 +434,7 @@ export async function preview(name: CaseName) {
   for (const [id] of chats) runs.delete(id)
   const discussions = chats.map(([id, events]) => foldChat(id, events, null))
   const foldedRuns = [...runs.entries()].map(([runId, events], index) => {
-    const claim: Claim = { runId, at: (events[0]?.at ?? new Date(0)).toISOString(), repair: false, released: null }
+    const claim: TicketClaim = { runId, at: events[0]?.at ?? new Date(0), ended: null }
     return foldRun(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)

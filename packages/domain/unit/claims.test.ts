@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { claimShapeOf, claimsOf, reduceTicket, type WaitId } from '../src/index.ts'
+import { claimShapeOf, reduceTicket, type WaitId } from '../src/index.ts'
 import { makeStream } from '../test/support.ts'
 
 const claim = (runId: string) => ({ runId, worker: 'w', title: null, kind: null })
@@ -29,32 +29,7 @@ function stream(continuation: 'old' | 'new') {
   ]
 }
 
-describe('claimsOf', () => {
-  it('reads an old-form continuation as a continuation', () => {
-    expect(claimsOf(stream('old')).map((c) => c.shape)).toEqual(['claim', 'continuation'])
-  })
-
-  it('reads a TicketContinued as a continuation', () => {
-    expect(claimsOf(stream('new')).map((c) => c.shape)).toEqual(['claim', 'continuation'])
-  })
-
-  it('reads a first claim with null title and kind as a claim', () => {
-    const e = makeStream('t')
-    expect(claimsOf([e('TicketClaimed', claim('r1'))]).map((c) => c.shape)).toEqual(['claim'])
-  })
-
-  it('reads two runIds as two claims', () => {
-    const e = makeStream('t')
-    const shapes = claimsOf([e('TicketClaimed', claim('r1')), e('TicketClaimed', claim('r2'))]).map((c) => c.shape)
-    expect(shapes).toEqual(['claim', 'claim'])
-  })
-
-  it('does not count a TicketContinued as having claimed its run', () => {
-    const e = makeStream('t')
-    const events = [e('TicketContinued', { runId: 'r9', worker: 'w' }), e('TicketClaimed', claim('r9'))]
-    expect(claimsOf(events).map((c) => c.shape)).toEqual(['continuation', 'claim'])
-  })
-
+describe('claimShapeOf', () => {
   it('says nothing about an event that is neither', () => {
     const e = makeStream('t')
     expect(claimShapeOf(e('WaitStarted', { waitId: 'w' as WaitId, reason }), [])).toBeNull()

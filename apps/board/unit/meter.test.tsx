@@ -105,7 +105,6 @@ function run(over: Partial<RunView> = {}): RunView {
     runId: 'pass-1',
     attempt: 1,
     at: '2026-09-08T03:00:00.000Z',
-    repair: false,
     baseSha: null,
     headSha: null,
     configHash: null,

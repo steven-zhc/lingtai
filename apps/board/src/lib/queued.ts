@@ -33,7 +33,7 @@ import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { claimShapeOf, STEPS, type Envelope } from '@lingtai/domain'
+import { reduceTicket, STEPS, type Envelope } from '@lingtai/domain'
 import type { TurnLimit } from '@lingtai/recipe/duration'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
 
@@ -196,7 +196,9 @@ export function planOf(
 /**
  * When the backoff stops holding this item, from its own stream.
  *
- * The one input `heldUntil` reads off this stream, folded here rather than
+ * The one input `heldUntil` reads off this stream — `reduceTicket`'s
+ * `lastAttemptAt`, which counts a continuation of an unclaimed run as an
+ * attempt (D11) — rather than
  * read back off `task_view`: the projection writes `last_attempt_at` from the
  * claim's own timestamp, so this fold and that row cannot disagree (the
  * projection learns `TicketContinued` in its own ticket under #681). `repair
@@ -208,15 +210,7 @@ export function planOf(
  * fold in `task.ts` makes.
  */
 export function backoffOf(own: readonly Envelope[], backoffMs: number, now: number = Date.now()): Date | null {
-  let lastAttemptAt: Date | null = null
-  const claimed = new Set<string>()
-  for (const e of own) {
-    // Either shape of claim is an attempt: an old-form continuation moves it today.
-    if (claimShapeOf(e, claimed) === null) continue
-    lastAttemptAt = e.at
-    if (e.type === 'TicketClaimed') claimed.add(String((e.data as { runId?: unknown }).runId ?? ''))
-  }
-  return heldUntil({ lastAttemptAt, repairPending: false }, backoffMs, now)
+  return heldUntil({ lastAttemptAt: reduceTicket(own).lastAttemptAt, repairPending: false }, backoffMs, now)
 }
 
 function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {

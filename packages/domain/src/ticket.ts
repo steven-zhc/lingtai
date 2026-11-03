@@ -27,6 +27,18 @@ import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import type { WaitReason } from './wait.ts'
 
+/** How an attempt ended: the later of a release and a question put to a person (D13). */
+export type AttemptEnding =
+  | { readonly kind: 'released'; readonly reason: string }
+  | { readonly kind: 'asked'; readonly reason: WaitReason }
+
+export interface TicketClaim {
+  readonly runId: string
+  readonly at: Date
+  /** Whichever of a `TicketReleased` for this run or a `WaitStarted` naming it came later (D13). Null while held. */
+  readonly ended: AttemptEnding | null
+}
+
 export type TicketLifecycle =
   | { status: 'backlog' }
   /**
@@ -169,6 +181,15 @@ export interface TicketState {
 
   /** Runs that have held this item, oldest first. A re-run appends. */
   runs: readonly string[]
+  /**
+   * One per fresh claim, oldest first — an attempt (D13). A continuation of a
+   * held run is not one, and neither is a claim after `closed`.
+   */
+  claims: readonly TicketClaim[]
+  /** The `at` of the last claim or continuation, an unclaimed run's continuation included (D11). */
+  lastAttemptAt: Date | null
+  /** The `at` of the last lifecycle event the fold applied, else of the stream's first event (D11). */
+  since: Date | null
 
   /**
    * Every approach this item has abandoned, oldest first
@@ -239,6 +260,9 @@ export const emptyTicket: TicketState = {
   split: null,
   dispatchRefusals: [],
   runs: [],
+  claims: [],
+  lastAttemptAt: null,
+  since: null,
   restarts: [],
   pendingPrompt: null,
   answers: [],
@@ -253,7 +277,7 @@ export const emptyTicket: TicketState = {
  * nothing else, and a list you can read is the only way that stays true when a
  * seventh transition is added.
  */
-const LIFECYCLE_EVENTS = new Set([
+export const LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
   'TicketClaimed',
   'TicketContinued',
   'TicketReleased',
@@ -263,10 +287,18 @@ const LIFECYCLE_EVENTS = new Set([
   'TicketClosed',
 ])
 
+function endClaim(claims: readonly TicketClaim[], runId: string, ended: AttemptEnding): readonly TicketClaim[] {
+  return claims.map((c) => (c.runId === runId ? { ...c, ended } : c))
+}
+
 export function applyTicket(prior: TicketState, event: Envelope): TicketState {
   // D4: a ticket's project and issue are its stream's, whatever the event.
   const own = prior.project === null && isTicketStream(event.streamId) ? parseTicketStream(event.streamId) : null
-  const state = own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }
+  const base = own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }
+  // D11: a stream's first event is where `since` starts; a lifecycle event moves it.
+  // `WaitResolved` has several returns, so it moves `since` here; the guard below
+  // puts it back, because `closed` absorbs it.
+  const state = base.since === null || event.type === 'WaitResolved' ? { ...base, since: event.at } : base
   const at = { version: event.version, lastSeq: event.seq }
 
   /**
@@ -282,7 +314,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
    * a closed item's card does not go stale; only its lifecycle is settled.
    */
   if (state.lifecycle.status === 'closed' && LIFECYCLE_EVENTS.has(event.type)) {
-    return { ...state, ...at }
+    return { ...state, ...at, since: prior.since ?? event.at }
   }
 
   switch (event.type) {
@@ -303,12 +335,16 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       const d = event.data as PayloadOf<'TicketClaimed'>
       // One rule for both forms (`claims.ts`). A continuation of a run nobody
       // claimed continues nothing and records nothing.
-      if (claimShapeOf(event, state.runs) === 'continuation' && !state.runs.includes(d.runId)) {
-        return { ...state, ...at }
+      const shape = claimShapeOf(event, state.runs)
+      if (shape === 'continuation' && !state.runs.includes(d.runId)) {
+        return { ...state, ...at, lastAttemptAt: event.at, since: event.at }
       }
       return {
         ...state,
         ...at,
+        claims: shape === 'claim' ? [...state.claims, { runId: d.runId, at: event.at, ended: null }] : state.claims,
+        lastAttemptAt: event.at,
+        since: event.at,
         // Replaces whatever lifecycle was there. A claim while blocked is not an
         // error to represent — it is the unblock-and-retry path — and it cannot
         // leave the block behind, because the union has room for only one.
@@ -366,6 +402,8 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
         ...state,
         ...at,
         lifecycle: { status: 'backlog' },
+        since: event.at,
+        claims: endClaim(state.claims, d.runId, { kind: 'released', reason: d.reason }),
         restarts:
           d.cause?._tag === 'Restart'
             ? [...state.restarts, { after: d.runId, restart: d.cause.restart }]
@@ -381,6 +419,11 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       return {
         ...state,
         ...at,
+        since: event.at,
+        claims:
+          'run' in d.reason
+            ? endClaim(state.claims, d.reason.run.runId, { kind: 'asked', reason: d.reason })
+            : state.claims,
         lifecycle: {
           status: 'blocked',
           waitId: d.waitId,
@@ -505,7 +548,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
 
     case 'TicketClosed': {
       const d = event.data as PayloadOf<'TicketClosed'>
-      return { ...state, ...at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
+      return { ...state, ...at, since: event.at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
     }
 
     case 'TicketLanded': {
@@ -513,6 +556,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       return {
         ...state,
         ...at,
+        since: event.at,
         lifecycle: { status: 'landed', mergeCommit: d.mergeCommit, base: d.base },
       }
     }

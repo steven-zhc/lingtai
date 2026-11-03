@@ -246,17 +246,6 @@ export function Attempt({
         <span className="aname">
           <span className="anum">{alone ? 'the run' : `attempt ${run.attempt}`}</span>
           <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>
-          {/* Named, because a repair was an ordinary run with no vocabulary of
-              its own (0025) and its spend is counted apart from the work's
-              (#84). **Only ever on an attempt from before `#143`**: a refusal
-              buys no run now, so nothing can put this chip on a new one — and
-              it stays because an old ticket's second attempt really was one,
-              and dropping the chip would fold that money into the work's. */}
-          {run.repair ? (
-            <span className="pill hold" title="this attempt is the one a failure bought — a purchase retired by #143">
-              repair
-            </span>
-          ) : null}
           {/* A pointer, not a copy: the whole of a failure is in this attempt's
               own history, and printing it twice is how two copies of one fact
               come to disagree (design §2). */}
