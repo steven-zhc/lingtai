@@ -41,5 +41,10 @@
   "run.laneWaited": "6f97f36136b5898b4c1c6cdd854e7a0ada58c36bddd938183f64283f5a959f45",
   "run.implementThenReviewed": "1b1a32921bc11787e413718d64e10e6a88715db90030defd10ad2a440da06001",
   "ticket.titledByClaims": "2aa5e8408c26518e763e43c887ddc510d49651ff0c003aece1d7b573a567b94c",
-  "ticket.escalatedThenRequeued": "5447aedf901483a736e608abe8664634cacc583ae6f78b55a2b3545204d50375"
+  "ticket.escalatedThenRequeued": "5447aedf901483a736e608abe8664634cacc583ae6f78b55a2b3545204d50375",
+  "control.ceilingResumedByPerson": "50cae0706e6744cd656b9d2f1b29e4104216b77554c6d3c78139bad3d4a16df8",
+  "control.ceilingResumedByLingtai": "912625dde31c9096fb39a1852b00ef5573d5e974c98a0bf839291613ef06d6a7",
+  "control.ceilingThenPersonPause": "44f0a8a8690144b9f7b52a6f52c21401d0b1cca467f1c25748a943226984a59d",
+  "control.ceilingWaivedThenRepaused": "c96e018b530f3cd4e3262064d2457c584bc8e97fd583d1534ba484a6cff33fa7",
+  "control.ceilingLapsedThenResumed": "8a3eab15003611e4f238c3fe46e7192bc7a487f8cba13d64f01599da17d39460"
 }

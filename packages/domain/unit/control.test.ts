@@ -14,10 +14,11 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { CONTROL_FOLD_TYPES, reduceControl } from '../src/control.ts'
+import { CONTROL_FOLD_TYPES, applyControl, emptyControl, evaluateControl, reduceControl } from '../src/control.ts'
 import type { Envelope } from '../src/envelope.ts'
 import { Actor } from '../src/envelope.ts'
 import { type EventType, SCHEMA_VER } from '../src/events.ts'
+import { NOW as NOW_FIXTURE, histories, lateHistories } from '../test/histories.ts'
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -321,6 +322,8 @@ describe('a withdrawal written with a handoff, before #167', () => {
     expect(state.shutdown).toBeNull()
     expect(Object.keys(state).sort()).toEqual([
       'by',
+      'cause',
+      'ceilingWaivedUntil',
       'continuing',
       'discussions',
       'holdsAcrossStarts',
@@ -412,5 +415,62 @@ describe('CONTROL_FOLD_TYPES (#796)', () => {
     const all = log([base, { type, data: universal }])
     const only = all.filter((e) => (CONTROL_FOLD_TYPES as readonly string[]).includes(e.type))
     expect(reduceControl(only, NOW)).toEqual(reduceControl(all, NOW))
+  })
+})
+
+describe('the control fold in two halves (#836)', () => {
+  const cells = lateHistories.control
+
+  it('D8: a person’s resume of the ceiling’s pause waives it until that pause’s midnight', () => {
+    const c = reduceControl(cells.ceilingResumedByPerson, NOW_FIXTURE)
+    expect(c.paused).toBe(false)
+    expect(c.cause).toBeNull()
+    expect(c.ceilingWaivedUntil?.toISOString()).toBe('2026-09-02T00:00:00.000Z')
+  })
+
+  it('D8: the ceiling lifting its own pause waives nothing', () => {
+    expect(reduceControl(cells.ceilingResumedByLingtai, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
+  })
+
+  it('D8: a person’s pause on top of the ceiling’s is theirs, and their resume waives nothing', () => {
+    const standing = reduceControl(cells.ceilingThenPersonPause.slice(0, 2), NOW_FIXTURE)
+    expect(standing.cause).toBe('person')
+    expect(reduceControl(cells.ceilingThenPersonPause, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
+  })
+
+  it('D8: a new ceiling pause clears the waiver', () => {
+    const c = reduceControl(cells.ceilingWaivedThenRepaused, NOW_FIXTURE)
+    expect(c.paused).toBe(true)
+    expect(c.cause).toBe('day-ceiling')
+    expect(c.ceilingWaivedUntil).toBeNull()
+  })
+
+  it('D8: a waiver whose midnight has already passed is no waiver', () => {
+    expect(reduceControl(cells.ceilingLapsedThenResumed, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
+  })
+
+  it('0124 §2: applyControl reads no clock, and evaluateControl lapses a timed pause', () => {
+    const applied = histories.control.pausedUntilLifted.reduce(applyControl, emptyControl)
+    expect(applied.paused).toBe(true)
+    const evaluated = evaluateControl(applied, NOW_FIXTURE)
+    expect(evaluated.paused).toBe(false)
+    expect(evaluated.until).toBeNull()
+    // Nothing lapsing hands back the very state it was given.
+    expect(evaluateControl(evaluated, NOW_FIXTURE)).toBe(evaluated)
+  })
+
+  it('0124 §2: folding does not write into emptyControl', () => {
+    reduceControl(histories.control.requestsQueued, NOW_FIXTURE)
+    expect(emptyControl.requested).toEqual([])
+    expect(emptyControl.continuing).toEqual([])
+    expect(emptyControl.discussions).toEqual([])
+  })
+
+  it('0100 §4: a pause with no cause is nobody’s in particular', () => {
+    const paused = (data: Record<string, unknown>) =>
+      reduceControl(log([{ type: 'ConductorPaused', data: { by: 'lingtai', reason: 'old', ...data } }]), NOW)
+    expect(paused({}).cause).toBeNull()
+    expect(paused({ cause: 'not-a-cause' }).cause).toBeNull()
+    expect(paused({ cause: 'setup' }).cause).toBe('setup')
   })
 })
