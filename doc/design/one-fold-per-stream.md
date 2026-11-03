@@ -433,11 +433,15 @@ too (P3's rebuild).
    374 and `lastStep` 232.
 2. `implementRound: number`, the highest `StepStarted{implement}.round` and fix round seen (named apart from `step.round`, any step's round). Used
    by `continuationRound` (conduct.ts:654-665) and `foldProgress` 590.
-3. `resolved: { configHash, steps: {step, actions}[] } | null` from `StepsResolved`.
-   Used by `foldRun` and `foldProgress` 467.
+3. `resolved: { configHash, steps: {step, actions}[] } | null` from `StepsResolved`,
+   added whole by ticket 6b, which first reads `steps` (`foldProgress` 467); ticket 5
+   reads `configHash` (#190). The unread `RunState.configHash` from `RunStarted` goes
+   with it.
 4. `promptMeta: { version, bytes } | null` from `RunPrompted`. Used by `foldRun`.
-5. `published: PayloadOf<'RunRefsPublished'> | null`, the last one. Used by
-   `saved-fix-work.ts:13`, `status.ts:202`, `triage.ts:462` and `resolve-wait.ts:407`.
+5. `published: PayloadOf<'RunRefsPublished'> | null`, the last one, with
+   `savedHeadOf(state): SavedHead` (ticket 3a): the one rule for a clean pushed head a
+   fix round can continue from, in the conductor's order, read by `resolve-wait.ts`,
+   `status.ts` and the board's `saved-fix-work.ts`. Triage reads `published` (3b).
 6. `kept: PayloadOf<'RunKeptUncommitted'>[]`. Used by `resolve-wait.ts:418` and
    `attempts.ts:344`.
 7. `route: PayloadOf<'PassRouted'> | null`, the last one. Used by `triage.ts:461`.
@@ -445,8 +449,11 @@ too (P3's rebuild).
    `attemptOutcome`, where today it is `attemptFactOf` at attempts.ts:384-391.
 9. `failure: { kind, detail } | null`. It is sticky and independent of `lifecycle`
    (D3). Used by `foldRun`'s `outcomeOf` and `attemptOutcome` 356.
+9a. `produced: PayloadOf<'RunProducedDiff'> | null`, the last one (ticket 4). It
+   replaces `branch` and `diff`, so the fact is held once (the operator, 2026-11-02).
 10. `laneWaitedAt: Date | null` from `MergeLaneWaited`. Used by `foldProgress` 473.
-11. The facts of progress in D10: the rounds opened. Grant spend is **not** state: D10
+11. The facts of progress in D10: the rounds opened (6a), and the instants `step.since`,
+    `openedAt`, `agentStartedAt` and `askedAt` (6b). Grant spend is **not** state: D10
     reads spend from the `spend` projection only.
 12. Helpers rather than state: `filesOf(state)` (dedupe `touched` by path, last op
     wins). The ladder is R0.
@@ -534,10 +541,12 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 |---|---|---|---|---|
 | 1 | **One verdict ladder.** `stepStateOf` and `verdictOf` become one function in domain with D1's values. `RunState.steps`, `cardFactOf`, `attemptFactOf` and `boardFactOf` all read it, and the dead `NotReached` arms go | R0 | — | `refusingOn` now lists a null-head `commit` (§2.1). task_view's `verdicts` jsonb changes on a rebuild, so the ticket carries the runbook (§4) |
 | 2 | **Where a run is.** `RunState.step` (D12: only a `StepEnded` for that step clears it) and `implementRound`. `lingtai status`'s `lastStep` and `conduct.ts`'s `continuationRound` read them | R1, C3 | — | status reads the run's state rather than scanning events |
-| 3 | **What a run published.** `RunState.published` (last), `kept` (a list), `route` (last). `saved-fix-work.ts`, `status.ts`, `triage.ts`, `resolve-wait.ts` and the CLI's `headOf` read them | R2, C1, C2 | — | `resolve-wait`'s `kept` match stays by `sha` **and** `arm` |
-| 4 | **How a run ended.** `RunState.failure` (sticky, D3) and `refusal`. `attempts.ts`'s `attemptOutcome` becomes a function of `RunState`, reading these with ticket 2's `step` and ticket 3's `kept` | R3, C4 | 1, 2, 3 | the evidence precedence stays: last refusal, then `RunFailed`, then the unfinished step |
-| 6 | **The board's progress.** `RunState.laneWaitedAt`, and `foldProgress` becomes `progressOf(state, plan, over)` over `RunState` (D10). Spend comes from the `spend` projection | R1, R3, C10 | 2, 4 | the `now` rules (a `StepEnded` clears only its own label; `RunFinished` clears only the agent or the lane) become a pure function of state |
-| 5 | **The board's run.** `RunState.resolved` and `promptMeta`, and `filesOf(state)`; `foldRun` becomes `reduceRun` plus a `present(state)` that draws `RunView`. Stale verdicts show (D2), and `awaitingSha` clears with the lifecycle (D3) | C9a–c | 1, 3, 4, 6 | user-visible: §6's stale verdicts, `asked`, cleared signoff |
+| 3a | **A run's saved head.** `RunState.published` (last), `kept` (a list) and `savedHeadOf`. `resolve-wait.ts`, `status.ts` and `saved-fix-work.ts` read it and keep their own sentences | R2, C1 | 2 | `resolve-wait`'s `kept` match stays by `sha` **and** `arm` |
+| 3b | **What triage reads.** `RunState.route` (last). Triage reads `route`, `published` and `headSha`; the CLI's `headOf` goes | C2 | 2, 3a | — |
+| 4 | **How a run ended.** `RunState.failure` (sticky, D3) and `refusal`. `attempts.ts`'s `attemptOutcome` becomes a function of `RunState`, reading these with ticket 2's `step` and ticket 3a's `kept`. `produced` replaces `branch` and `diff` | R3, C4 | 1, 2, 3a | the evidence precedence stays: last refusal, then `RunFailed`, then the unfinished step |
+| 6a | **The held budget line.** `RunState.roundsOpened`, `SpendRow.grant` (the existing `spent_for` column, no rebuild) and `spentOf`; `RunProgress` loses `rounds` and `granted` | R3, C10 | 2 | — |
+| 6b | **The board's progress.** `resolved`, `laneWaitedAt` and the instants (D10), and `foldProgress` becomes `progressOf(state, plan, over)` over `RunState`. The lane wait ends at `merge`'s `StepEnded` | R1, C10 | 4, 6a | the `now` rules (a `StepEnded` clears only its own label; `RunFinished` clears only the agent or the lane) become a pure function of state |
+| 5 | **The board's run.** `RunState.resolved` and `promptMeta`, and `filesOf(state)`; `foldRun` becomes `reduceRun` plus a `present(state)` that draws `RunView`. Stale verdicts show (D2), and `awaitingSha` clears with the lifecycle (D3) | C9a–c | 3a, 4, 6b | user-visible: §6's stale verdicts, `asked`, cleared signoff |
 | 7 | **A ticket's attempts.** `TicketState.claims`, each with a typed `ended` (D13), `lastAttemptAt` and `since` (D11). `priorAttempts`, the board's `claimsOf` and `backoffOf` read them, and the board's dead `repair` field goes (D16) | R4, C5, C6 | — | the board shows an attempt that ended by asking a person |
 | 8 | **What a ticket is.** `title`/`kind` from `TicketClaimed`, and `project`/`externalRef` from the stream id (D4). The board's `ticketFieldsOf` reads them | R6, C7 | — | domain's answer question names the agent branch again (§2.3) |
 | 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
@@ -617,7 +626,9 @@ scrubbed and cited by issue number, not seq.
   (`resolve-wait.ts:77-84`) now lists it. `signoff` becomes `asked` in task_view by
   the rebuild done with P3's.
 - **D2. Stale verdicts are shown.** `current` comes from `stepsOn`, so a verdict made on
-  an older head reads as stale on the task page (C9b).
+  an older head reads as stale on the task page (C9b). Steps before `build` make the head
+  and are never stale: a verdict's `onSha` is the commit its step started on
+  (`pass.ts:1967`), so comparing those would mark every run (the operator, 2026-11-02).
 - **D3. A failure stays a failure; a requested signoff is cleared** by a later lifecycle
   event. `RunFailed` is not undone by a later `RunFinished`; `awaitingSha` is cleared.
 - **D4. Title and kind come from `TicketClaimed`** in `applyTicket`, latest non-null
@@ -644,7 +655,8 @@ scrubbed and cited by issue number, not seq.
   the reason. `CONTROL_FOLD_TYPES` stays in step.
 - **D9. The GitHub-write ledger is a `TicketState` field (R9, C13).**
 - **D10. Facts of progress are `RunState`**: the current step, round, since, lane wait,
-  plan and rounds opened. Phase labels and budgets stay on the board. Spend is read
+  plan, rounds opened, and when the run opened, its agent started and it asked a person
+  (the operator, 2026-11-02). Phase labels and budgets stay on the board. Spend is read
   from the `spend` projection only.
 - **D11. A continuation counts as a lifecycle move for `since`**, as the board counts it
   today (the operator, 2026-11-02).
@@ -693,4 +705,9 @@ All of these are intended. Each lands in the ticket named, and nowhere else.
 - **Answer question wording** (P3f, R6): the question beside an answer is
   `waitWords(reason).line`, naming the agent branch now that `externalRef` comes from
   the stream id, instead of whatever sentence was in `note` when the person answered.
+- **The merge lane's wait ends with the merge step** (6b): a card refused after a lane
+  wait reads `merge: … refused`, not `waiting for the merge lane`, which nothing cleared.
+- **An asked step shows its question** (ticket 5): a requested signoff, a design `Asked`
+  and a commit with a question show the question as evidence on the task page, instead
+  of "no question was recorded".
 - **The board is partial during each rebuild** (§4.6), for as long as the replay takes.
