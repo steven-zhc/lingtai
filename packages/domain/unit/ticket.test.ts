@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { emptyTicket, reduceTicket, waitWords, WaitStarted, type WaitId } from '../src/index.ts'
+import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
 const discovered = {
@@ -442,5 +443,24 @@ describe('WaitStarted is strict about what rides beside reason', () => {
   it('refuses the old WorkItemBlocked payload, which carries a hold rather than a reason', () => {
     const old = { hold: { _tag: 'Question', question: 'which design?', by: 'steven' } }
     expect(WaitStarted.safeParse(old).success).toBe(false)
+  })
+})
+
+describe('D4: a ticket knows what it is', () => {
+  it('D4: title and kind come from the claims, latest non-null', () => {
+    const h = lateHistories.ticket.titledByClaims
+    const after = (n: number) => reduceTicket(h.slice(0, n))
+    expect([after(3).title, after(3).kind]).toEqual(['first', 'bug'])
+    expect([after(5).title, after(5).kind]).toEqual(['renamed', 'feature'])
+  })
+
+  it('D4: project and issue come from the stream id', () => {
+    const s = reduceTicket(histories.ticket.continuedUnclaimedRun)
+    expect([s.project, s.externalRef]).toEqual(['lingtai', '9102'])
+  })
+
+  it('D4: an answer names the agent branch', () => {
+    const s = reduceTicket(lateHistories.ticket.escalatedThenRequeued)
+    expect(s.answers[0]!.question).toMatch(/^agent\/9108 is waiting on you\./)
   })
 })

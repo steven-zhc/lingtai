@@ -719,31 +719,67 @@ function implementThenReviewed(): readonly Envelope[] {
   ])
 }
 
-const fixRoundRoutedH = fixRoundRouted()
-const stepEndedForAnotherH = stepEndedForAnother()
-const publishedCleanH = publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' })
-const publishedWithWipH = publishedRun(
+const late_fixRoundRouted = fixRoundRouted()
+const late_stepEndedForAnother = stepEndedForAnother()
+const late_publishedClean = publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' })
+const late_publishedWithWip = publishedRun(
   'published-with-wip',
   { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
   [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
 )
-const wipRecordedH = publishedRun(
+const late_wipRecorded = publishedRun(
   'wip-recorded',
   { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
   [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
 )
-const wipOnAnotherArmH = publishedRun(
+const late_wipOnAnotherArm = publishedRun(
   'wip-on-another-arm',
   { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
   [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
 )
-const armOnlyH = publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' })
-const nothingCommittedH = publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null })
-const failedInsideStepH = failedInsideStep()
-const refusedThenFailedH = refusedThenFailed()
-const planResolvedH = planResolved()
-const laneWaitedH = laneWaited()
-const implementThenReviewedH = implementThenReviewed()
+const late_armOnly = publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' })
+const late_nothingCommitted = publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null })
+const late_failedInsideStep = failedInsideStep()
+const late_refusedThenFailed = refusedThenFailed()
+const late_planResolved = planResolved()
+const late_laneWaited = laneWaited()
+const late_implementThenReviewed = implementThenReviewed()
+
+/** D4: titles come from the claims, the latest non-null winning. */
+const late_titledByClaims = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9107))
+  const claim = (r: string, title: string | null, kind: string | null) =>
+    t('TicketClaimed', { runId: passStream(r), worker: 'conductor:1', title, kind })
+  const released = (r: string) => t('TicketReleased', { runId: passStream(r), reason: 'failed', cause: null })
+  return stamp([
+    claim('t9107-1', 'first', 'bug'),
+    released('t9107-1'),
+    claim('t9107-2', null, null),
+    released('t9107-2'),
+    claim('t9107-3', 'renamed', 'feature'),
+  ])
+})()
+
+/** D4: an escalated proposal answered with a requeue — the answer's question names the branch. */
+const late_escalatedThenRequeued = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9108))
+  const r1 = passStream('t9108-1')
+  const w = wait('9108-escalated')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      {
+        _tag: 'ProposedEscalated',
+        run: { runId: r1 },
+        proposal: { _tag: 'VerifyRed', output: 'red' },
+        because: { _tag: 'NotAsked' },
+      } as never,
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Requeue' }, 'steven', 'not this way'),
+  ])
+})()
 
 /** #832 D9: what Lingtai wrote to GitHub — a waiting comment, labels, a body, an edit, two refusals. */
 function githubLedger(): readonly Envelope[] {
@@ -792,21 +828,23 @@ const bodyBeforeAnotherWaitH = bodyBeforeAnotherWait()
 
 export const lateHistories = {
   run: {
-    fixRoundRouted: fixRoundRoutedH,
-    stepEndedForAnother: stepEndedForAnotherH,
-    publishedClean: publishedCleanH,
-    publishedWithWip: publishedWithWipH,
-    wipRecorded: wipRecordedH,
-    wipOnAnotherArm: wipOnAnotherArmH,
-    armOnly: armOnlyH,
-    nothingCommitted: nothingCommittedH,
-    failedInsideStep: failedInsideStepH,
-    refusedThenFailed: refusedThenFailedH,
-    planResolved: planResolvedH,
-    laneWaited: laneWaitedH,
-    implementThenReviewed: implementThenReviewedH,
+    fixRoundRouted: late_fixRoundRouted,
+    stepEndedForAnother: late_stepEndedForAnother,
+    publishedClean: late_publishedClean,
+    publishedWithWip: late_publishedWithWip,
+    wipRecorded: late_wipRecorded,
+    wipOnAnotherArm: late_wipOnAnotherArm,
+    armOnly: late_armOnly,
+    nothingCommitted: late_nothingCommitted,
+    failedInsideStep: late_failedInsideStep,
+    refusedThenFailed: late_refusedThenFailed,
+    planResolved: late_planResolved,
+    laneWaited: late_laneWaited,
+    implementThenReviewed: late_implementThenReviewed,
   },
   ticket: {
+    titledByClaims: late_titledByClaims,
+    escalatedThenRequeued: late_escalatedThenRequeued,
     githubLedger: githubLedgerH,
     bodyBeforeAnotherWait: bodyBeforeAnotherWaitH,
   },

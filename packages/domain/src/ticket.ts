@@ -23,7 +23,7 @@ import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
 import type { Envelope } from './envelope.ts'
 import type { PayloadOf, SplitChild, Tier } from './events.ts'
-import { agentBranchOf } from './streams.ts'
+import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import type { WaitReason } from './wait.ts'
 
@@ -141,12 +141,12 @@ export interface GitHubLedger {
 export interface TicketState {
   lifecycle: TicketLifecycle
 
-  /** Null until `TicketDiscovered`; a stream can be read before it exists. */
+  /** From the stream id (D4); null only on a stream that is not a ticket's. */
   project: string | null
   source: 'github-issue' | 'manual' | 'agent-followup' | null
   externalRef: string | null
   title: string | null
-  /** Whatever label the recipe's `source.kinds` matched. Null until discovered. */
+  /** Whatever label the recipe's `source.kinds` matched. Latest non-null of `TicketClaimed` and `TicketDiscovered`. */
   kind: string | null
   labels: readonly string[]
 
@@ -263,7 +263,10 @@ const LIFECYCLE_EVENTS = new Set([
   'TicketClosed',
 ])
 
-export function applyTicket(state: TicketState, event: Envelope): TicketState {
+export function applyTicket(prior: TicketState, event: Envelope): TicketState {
+  // D4: a ticket's project and issue are its stream's, whatever the event.
+  const own = prior.project === null && isTicketStream(event.streamId) ? parseTicketStream(event.streamId) : null
+  const state = own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }
   const at = { version: event.version, lastSeq: event.seq }
 
   /**
@@ -288,11 +291,9 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       return {
         ...state,
         ...at,
-        project: d.project,
         source: d.source,
-        externalRef: d.externalRef,
-        title: d.title,
-        kind: d.kind,
+        title: d.title ?? state.title,
+        kind: d.kind ?? state.kind,
         labels: d.labels,
       }
     }
@@ -326,6 +327,10 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
         // the event folds through the default below and changes nothing but the
         // version.
         pendingPrompt: null,
+        // A `TicketContinued` has no title or kind, and a claim that carries
+        // nulls must not blank what an earlier one named.
+        title: event.type === 'TicketClaimed' ? (d.title ?? state.title) : state.title,
+        kind: event.type === 'TicketClaimed' ? (d.kind ?? state.kind) : state.kind,
       }
     }
 
@@ -372,8 +377,7 @@ export function applyTicket(state: TicketState, event: Envelope): TicketState {
       const d = event.data as PayloadOf<'WaitStarted'>
       // `state.externalRef` rather than re-parsing the stream id (`#502`'s
       // `read-model.ts` has no aggregate to read it off and does that
-      // instead): null only for a question asked before `TicketDiscovered`
-      // (`lingtai ask`), where there is no branch yet either.
+      // instead): null only on a stream that is not a ticket's.
       return {
         ...state,
         ...at,

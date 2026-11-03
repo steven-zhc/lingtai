@@ -10,10 +10,10 @@ import {
   claimShapeOf,
   emptyTicket,
   reduceControl,
+  reduceTicket,
   splitProgressOf,
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
-  isTicketStream,
   parseTicketStream,
   triageFactsOf,
   waitWords,
@@ -840,15 +840,10 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
   const run = named ?? runs.at(-1) ?? null
   const blocked = life.status === 'blocked'
   const approved = life.status === 'approved'
-  // The stream id names the issue whenever no event recorded it (a ticket
-  // first seen before `externalRef` was folded), so the sentence opens on
-  // `agent/<n>` rather than on nothing.
-  const issue =
-    item.externalRef ??
-    (own[0] !== undefined && isTicketStream(own[0].streamId) ? parseTicketStream(own[0].streamId)?.issue : undefined)
+  const issue = item.externalRef
   const words = blocked
     ? waitWords(life.reason, {
-        branch: issue === undefined ? '' : agentBranchOf(issue),
+        branch: issue === null ? '' : agentBranchOf(issue),
         base: '',
         findings: [],
       })
@@ -1455,33 +1450,6 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
 }
 
 /**
- * What the log recorded about the ticket: title, kind and labels.
- *
- * A continuation carries none of them, which is why `TicketContinued` is not in
- * this loop and the first claim's title is not blanked.
- */
-export function ticketFieldsOf(own: readonly Envelope[]): {
-  title: string | null
-  kind: string | null
-  labels: string[]
-} {
-  let title: string | null = null
-  let kind: string | null = null
-  let labels: string[] = []
-  for (const e of own) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    // `TicketDiscovered` is the queue's own event and predates 0012; a claim
-    // carries the same two fields precisely so a rebuilt projection has them.
-    if (e.type === 'TicketDiscovered' || e.type === 'TicketClaimed') {
-      title = (d['title'] as string | null) ?? title
-      kind = (d['kind'] as string | null) ?? kind
-      if (Array.isArray(d['labels'])) labels = d['labels'] as string[]
-    }
-  }
-  return { title, kind, labels }
-}
-
-/**
  * The ticket, from the log first and GitHub second.
  *
  * The order matters. A title recorded on `TicketClaimed` is what the ticket
@@ -1495,7 +1463,9 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   if (!parsed) return null
   const { project, issue } = parsed
 
-  const { title, kind, labels } = ticketFieldsOf(own)
+  const folded = reduceTicket(own)
+  const { title, kind } = folded
+  const labels = [...folded.labels]
 
   const state = await loadProject(project).catch(() => null)
   const base = { project, ref: issue, title, kind, labels, compareUrl: null as string | null }
