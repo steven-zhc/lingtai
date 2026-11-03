@@ -491,6 +491,21 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     }
   })
 
+  it('applying a batch a second follower already applied changes nothing', async () => {
+    const whole = await fold(events)
+    const db = openSqliteProjections(':memory:')
+    try {
+      const store = createSqliteProjectionStore(db)
+      await store.transact((ctx) => backlogProjection.create(ctx))
+      await store.transact((ctx) => backlogProjection.apply(events, ctx))
+      await store.transact((ctx) => backlogProjection.apply(events, ctx))
+      const backlog = await store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
+      expect(backlog).toEqual(whole.backlog)
+    } finally {
+      db.close()
+    }
+  })
+
   it('writes decision columns that equal what reduceFinding says of each decision stream', async () => {
     const { backlog } = await fold(events)
     for (const key of [declinedKey, acceptedKey, acceptedOnlyKey]) {

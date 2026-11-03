@@ -40,6 +40,7 @@ export const BACKLOG_TABLE = 'finding_backlog'
 
 interface DecisionRow {
   status: string
+  decided_seq: string | number | bigint | null
   proposed_ref: string | null
 }
 
@@ -177,11 +178,19 @@ export const backlogProjection: Projection = {
           // has already updated it, and the fold must see that.
           const d = event.data as { project: string; key: string }
           const [row] = await ctx.query<DecisionRow>(
-            `select status, proposed_ref from finding_backlog where project = $1 and key = $2`,
+            `select status, decided_seq, proposed_ref from finding_backlog where project = $1 and key = $2`,
             [d.project, d.key],
           )
           // A finding nothing raised has no row to be wrong about.
           if (!row) break
+          // Followers in other processes keep their own cursors, and the fenced
+          // checkpoint lets a batch another follower already applied be applied
+          // again. An event the row already carries is a replay, not an order
+          // no writer makes: the old unconditional updates were idempotent, so
+          // this one is too.
+          if (event.type === 'FindingProposed') {
+            if (row.proposed_ref === (event.data as PayloadOf<'FindingProposed'>).externalRef) break
+          } else if (row.decided_seq !== null && String(row.decided_seq) === String(seq)) break
           const before = findingOfRow(row, d)
           const after = applyFinding(before, event)
           if (before.status === 'open' && after.status === 'accepted') {
