@@ -22,10 +22,114 @@
 import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
 import type { Envelope } from './envelope.ts'
-import type { PayloadOf, SplitChild, Tier } from './events.ts'
+import type { PayloadOf, ReleaseCause, SplitChild, Tier, TriageStartedBy } from './events.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
-import type { WaitReason } from './wait.ts'
+import type { Resolution, TriageResult, WaitReason } from './wait.ts'
+
+/** How an attempt ended: the later of a release and a question put to a person (D13). */
+export type AttemptEnding =
+  | { readonly kind: 'released'; readonly reason: string }
+  | { readonly kind: 'asked'; readonly reason: WaitReason }
+
+/**
+ * One wait, reduced once (#842). `waitsOf`, `triageFactsOf`, `designAsksOf`, the
+ * CLI's triage and `editEndedWaits` all read this rather than scanning the stream.
+ */
+export interface TicketWait {
+  readonly waitId: WaitId
+  readonly reason: WaitReason
+  /** The `WaitStarted`'s own `at`. */
+  readonly at: Date
+  /** The first `WaitResolved` naming this wait. */
+  readonly resolution: { readonly resolution: Resolution; readonly by: string } | null
+  readonly triage: {
+    /** The latest `TriageStarted` by attempt. */
+    readonly started: { readonly attempt: number; readonly at: Date; readonly by: TriageStartedBy } | null
+    /** The first `WaitTriaged` for that attempt. */
+    readonly result: TriageResult | null
+    /** That `WaitTriaged`'s `headSha`. */
+    readonly headSha: string | null
+  }
+  /** The first `TicketLanded` while this is the latest wait. */
+  readonly landed: { readonly mergeCommit: string; readonly base: string } | null
+  /** The first `TicketClosed` while this is the latest wait. */
+  readonly closed: { readonly by: string } | null
+}
+
+/**
+ * The waits rule, once. Called for every event before `closed` absorbs anything,
+ * so a closed ticket's waits read as a scan of its stream reads them.
+ */
+export function reduceWaits(waits: readonly TicketWait[], event: Envelope): readonly TicketWait[] {
+  switch (event.type) {
+    case 'WaitStarted': {
+      const d = event.data as PayloadOf<'WaitStarted'>
+      return [
+        ...waits,
+        {
+          waitId: d.waitId,
+          reason: d.reason,
+          at: event.at,
+          resolution: null,
+          triage: { started: null, result: null, headSha: null },
+          landed: null,
+          closed: null,
+        },
+      ]
+    }
+    case 'WaitResolved': {
+      const d = event.data as PayloadOf<'WaitResolved'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && w.resolution === null
+          ? { ...w, resolution: { resolution: d.resolution, by: d.by } }
+          : w,
+      )
+    }
+    case 'TriageStarted': {
+      const d = event.data as PayloadOf<'TriageStarted'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && d.attempt > (w.triage.started?.attempt ?? 0)
+          ? {
+              ...w,
+              triage: { started: { attempt: d.attempt, at: event.at, by: d.by }, result: null, headSha: null },
+            }
+          : w,
+      )
+    }
+    case 'WaitTriaged': {
+      const d = event.data as PayloadOf<'WaitTriaged'>
+      return waits.map((w) =>
+        w.waitId === d.waitId && w.triage.started?.attempt === d.attempt && w.triage.result === null
+          ? { ...w, triage: { ...w.triage, result: d.result, headSha: d.headSha } }
+          : w,
+      )
+    }
+    case 'TicketLanded': {
+      const d = event.data as PayloadOf<'TicketLanded'>
+      const i = waits.length - 1
+      return i < 0 || waits[i]!.landed !== null
+        ? waits
+        : waits.map((w, j) => (j === i ? { ...w, landed: { mergeCommit: d.mergeCommit, base: d.base } } : w))
+    }
+    case 'TicketClosed': {
+      const d = event.data as PayloadOf<'TicketClosed'>
+      const i = waits.length - 1
+      return i < 0 || waits[i]!.closed !== null
+        ? waits
+        : waits.map((w, j) => (j === i ? { ...w, closed: { by: d.by } } : w))
+    }
+    default:
+      return waits
+  }
+}
+
+export interface TicketClaim {
+  readonly runId: string
+  readonly at: Date
+  /** Whichever of a `TicketReleased` for this run or a `WaitStarted` naming it came later (D13). Null while held. */
+  readonly ended: AttemptEnding | null
+}
 
 export type TicketLifecycle =
   | { status: 'backlog' }
@@ -169,6 +273,36 @@ export interface TicketState {
 
   /** Runs that have held this item, oldest first. A re-run appends. */
   runs: readonly string[]
+  /**
+   * One per fresh claim, oldest first — an attempt (D13). A continuation of a
+   * held run is not one, and neither is a claim after `closed`.
+   */
+  claims: readonly TicketClaim[]
+  /** The `at` of the last claim or continuation, an unclaimed run's continuation included (D11). */
+  lastAttemptAt: Date | null
+  /** The `at` of the last lifecycle event the fold applied, else of the stream's first event (D11). */
+  since: Date | null
+  /**
+   * The last person's move on a wait, and what followed it (#831). The board's
+   * *After the move* block reads this and nothing else.
+   */
+  lastMove: {
+    readonly waitId: WaitId
+    readonly resolution: Resolution
+    readonly by: string
+    readonly note: string
+    /**
+     * True from the move until anything else moves the ticket: a `WaitStarted`, a claim or a
+     * continuation, a landing, or a second close or release. The move's own first close or
+     * release does not end it.
+     */
+    readonly current: boolean
+    /** The first close or release after the move, while it is current. */
+    readonly then:
+      | { readonly kind: 'closed'; readonly reason: string }
+      | { readonly kind: 'released'; readonly reason: string; readonly cause: ReleaseCause | null }
+      | null
+  } | null
 
   /**
    * Every approach this item has abandoned, oldest first
@@ -221,6 +355,9 @@ export interface TicketState {
    */
   github: GitHubLedger
 
+  /** Every wait, oldest first, with its triage, resolution and ending (#842). */
+  waits: readonly TicketWait[]
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number
   /** Global position of the last event applied. */
@@ -239,10 +376,15 @@ export const emptyTicket: TicketState = {
   split: null,
   dispatchRefusals: [],
   runs: [],
+  claims: [],
+  lastAttemptAt: null,
+  since: null,
+  lastMove: null,
   restarts: [],
   pendingPrompt: null,
   answers: [],
   github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
+  waits: [],
   version: 0,
   lastSeq: null,
 }
@@ -253,7 +395,7 @@ export const emptyTicket: TicketState = {
  * nothing else, and a list you can read is the only way that stays true when a
  * seventh transition is added.
  */
-const LIFECYCLE_EVENTS = new Set([
+export const LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
   'TicketClaimed',
   'TicketContinued',
   'TicketReleased',
@@ -263,10 +405,22 @@ const LIFECYCLE_EVENTS = new Set([
   'TicketClosed',
 ])
 
+function endClaim(claims: readonly TicketClaim[], runId: string, ended: AttemptEnding): readonly TicketClaim[] {
+  return claims.map((c) => (c.runId === runId ? { ...c, ended } : c))
+}
+
 export function applyTicket(prior: TicketState, event: Envelope): TicketState {
   // D4: a ticket's project and issue are its stream's, whatever the event.
   const own = prior.project === null && isTicketStream(event.streamId) ? parseTicketStream(event.streamId) : null
-  const state = own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }
+  const waits = reduceWaits(prior.waits, event)
+  const base = {
+    ...(own === null ? prior : { ...prior, project: own.project, externalRef: own.issue }),
+    waits,
+  }
+  // D11: a stream's first event is where `since` starts; a lifecycle event moves it.
+  // `WaitResolved` has several returns, so it moves `since` here; the guard below
+  // puts it back, because `closed` absorbs it.
+  const stated = base.since === null || event.type === 'WaitResolved' ? { ...base, since: event.at } : base
   const at = { version: event.version, lastSeq: event.seq }
 
   /**
@@ -281,9 +435,32 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
    * The facts that outlive a transition — title, labels, links — still apply, so
    * a closed item's card does not go stale; only its lifecycle is settled.
    */
-  if (state.lifecycle.status === 'closed' && LIFECYCLE_EVENTS.has(event.type)) {
-    return { ...state, ...at }
+  if (stated.lifecycle.status === 'closed' && LIFECYCLE_EVENTS.has(event.type)) {
+    return { ...stated, ...at, since: prior.since ?? event.at }
   }
+
+  // #831: any lifecycle event other than the move itself ends the move, except the first
+  // close or release it caused, which is what followed it. `closed` returned above, so a
+  // claim after a close never gets here (D6).
+  const m = stated.lastMove
+  const ended: Pick<TicketState, 'lastMove'> =
+    m === null || !LIFECYCLE_EVENTS.has(event.type) || event.type === 'WaitResolved'
+      ? { lastMove: m }
+      : m.current && m.then === null && event.type === 'TicketClosed'
+        ? { lastMove: { ...m, then: { kind: 'closed', reason: (event.data as PayloadOf<'TicketClosed'>).reason } } }
+        : m.current && m.then === null && event.type === 'TicketReleased'
+          ? {
+              lastMove: {
+                ...m,
+                then: {
+                  kind: 'released',
+                  reason: (event.data as PayloadOf<'TicketReleased'>).reason,
+                  cause: (event.data as PayloadOf<'TicketReleased'>).cause ?? null,
+                },
+              },
+            }
+          : { lastMove: { ...m, current: false } }
+  const state = { ...stated, ...ended }
 
   switch (event.type) {
     case 'TicketDiscovered': {
@@ -303,12 +480,16 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       const d = event.data as PayloadOf<'TicketClaimed'>
       // One rule for both forms (`claims.ts`). A continuation of a run nobody
       // claimed continues nothing and records nothing.
-      if (claimShapeOf(event, state.runs) === 'continuation' && !state.runs.includes(d.runId)) {
-        return { ...state, ...at }
+      const shape = claimShapeOf(event, state.runs)
+      if (shape === 'continuation' && !state.runs.includes(d.runId)) {
+        return { ...state, ...at, lastAttemptAt: event.at, since: event.at }
       }
       return {
         ...state,
         ...at,
+        claims: shape === 'claim' ? [...state.claims, { runId: d.runId, at: event.at, ended: null }] : state.claims,
+        lastAttemptAt: event.at,
+        since: event.at,
         // Replaces whatever lifecycle was there. A claim while blocked is not an
         // error to represent — it is the unblock-and-retry path — and it cannot
         // leave the block behind, because the union has room for only one.
@@ -366,6 +547,8 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
         ...state,
         ...at,
         lifecycle: { status: 'backlog' },
+        since: event.at,
+        claims: endClaim(state.claims, d.runId, { kind: 'released', reason: d.reason }),
         restarts:
           d.cause?._tag === 'Restart'
             ? [...state.restarts, { after: d.runId, restart: d.cause.restart }]
@@ -381,6 +564,11 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       return {
         ...state,
         ...at,
+        since: event.at,
+        claims:
+          'run' in d.reason
+            ? endClaim(state.claims, d.reason.run.runId, { kind: 'asked', reason: d.reason })
+            : state.claims,
         lifecycle: {
           status: 'blocked',
           waitId: d.waitId,
@@ -434,11 +622,20 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       // case used to return to the backlog and drop `note` on the floor, so the
       // log held the decision and no state, projection or prompt could say it.
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
+      // #831: `current` is read off the lifecycle before this event changes it.
+      const lastMove = {
+        waitId: d.waitId,
+        resolution: d.resolution,
+        by: d.by,
+        note: d.note,
+        current: block !== null && block.waitId === d.waitId,
+        then: null,
+      }
       // A question withdrawn was never answered (an `OwnQuestion` resolved by
       // `Requeue` rather than `AnswerQuestion`), so there is nothing to keep:
       // the item is back in the backlog and no attempt is told anything.
       if (d.resolution._tag === 'Requeue' && block?.reason._tag === 'OwnQuestion') {
-        return { ...state, ...at, lifecycle: { status: 'backlog' } }
+        return { ...state, ...at, lastMove, lifecycle: { status: 'backlog' } }
       }
       // **`Approve` moves to `approved`** (#465) — a continuation is owed,
       // not a fresh claim, and `block.runId` is never null here:
@@ -448,6 +645,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
         return {
           ...state,
           ...at,
+          lastMove,
           lifecycle: {
             status: 'approved',
             runId: block.runId!,
@@ -467,11 +665,12 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
         d.resolution._tag !== 'AnswerQuestion' &&
         d.resolution._tag !== 'Split'
       ) {
-        return { ...state, ...at }
+        return { ...state, ...at, lastMove }
       }
       return {
         ...state,
         ...at,
+        lastMove,
         lifecycle: { status: 'backlog' },
         answers: [
           ...state.answers,
@@ -505,7 +704,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
 
     case 'TicketClosed': {
       const d = event.data as PayloadOf<'TicketClosed'>
-      return { ...state, ...at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
+      return { ...state, ...at, since: event.at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
     }
 
     case 'TicketLanded': {
@@ -513,6 +712,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       return {
         ...state,
         ...at,
+        since: event.at,
         lifecycle: { status: 'landed', mergeCommit: d.mergeCommit, base: d.base },
       }
     }

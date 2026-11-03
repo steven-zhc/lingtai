@@ -1,4 +1,4 @@
-import { reduceTicket, type Envelope } from '@lingtai/domain'
+import { reduceTicket, type Envelope, type TicketClaim } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 /**
  * The attempt is the unit, and the page can say what each one cost.
@@ -16,7 +16,7 @@ import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { backoffOf } from '../src/lib/queued.ts'
-import { claimsOf, foldRun, groupHistory, standingOf, totalsOf, type Claim, type RunView } from '../src/lib/task.ts'
+import { foldRun, groupHistory, heldRunOf, standingOf, totalsOf, type RunView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -37,43 +37,27 @@ function e(streamId: string, type: string, data: unknown): Envelope {
 
 const RUN_1 = 'pass-11111111-0000-0000-0000-000000000000'
 const RUN_2 = 'pass-22222222-0000-0000-0000-000000000000'
-const CLAIM: Claim = { runId: RUN_1, at: '2026-09-08T04:12:15.000Z', repair: false, released: null }
+const CLAIM: TicketClaim = { runId: RUN_1, at: new Date('2026-09-08T04:12:15.000Z'), ended: null }
 
 describe('the claims an item made', () => {
   it('keeps every one, in order, where the page kept only the last', () => {
-    const claims = claimsOf([
+    const claims = reduceTicket([
       e('ticket-lingtai-89', 'TicketDiscovered', { externalRef: '89' }),
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
       e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'timeout' }),
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_2 }),
-    ])
+    ]).claims
 
     expect(claims.map((c) => c.runId)).toEqual([RUN_1, RUN_2])
-    expect(claims[0]?.released).toBe('timeout')
-    expect(claims[1]?.released).toBeNull()
-  })
-
-  /**
-   * **The repair field is always `false` now** (`#502`). `RepairRequested`
-   * is not a type this build's catalogue carries any more — nothing has
-   * bought a repair since `#143`, and the reset this ticket's merge runs
-   * leaves no pre-`#143` row for `claimsOf` to read one off.
-   */
-  it('reads no attempt as a repair, since nothing has bought one since #143', () => {
-    const claims = claimsOf([
-      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
-      e('ticket-lingtai-89', 'TicketReleased', { runId: RUN_1, reason: 'conflict' }),
-      e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_2 }),
-    ])
-
-    expect(claims.map((c) => c.repair)).toEqual([false, false])
+    expect(claims[0]?.ended).toEqual({ kind: 'released', reason: 'timeout' })
+    expect(claims[1]?.ended).toBeNull()
   })
 
   it('counts a claim naming a run it already holds as the same attempt', () => {
-    const claims = claimsOf([
+    const claims = reduceTicket([
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
       e('ticket-lingtai-89', 'TicketClaimed', { runId: RUN_1 }),
-    ])
+    ]).claims
 
     expect(claims).toHaveLength(1)
   })
@@ -183,7 +167,9 @@ describe('one attempt', () => {
   })
 
   it('says a run was released rather than leaving it reading as still running', () => {
-    const run = foldRun({ ...CLAIM, released: 'shutdown' }, 1, [e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) })])
+    const run = foldRun({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
+      e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
+    ])
 
     expect(run.outcome).toEqual({ state: 'released', detail: 'shutdown' })
   })
@@ -287,12 +273,11 @@ describe('the totals', () => {
    * returns `[]`, so `billOf([])` used to fold to five empty bills and the
    * Attempts label said nothing at all — "nothing spent" rather than
    * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
-   * run, credited by its own `repair` flag.
+   * run, credited to Work.
    */
   it('reads each run with not one row in spend as unknown, never as nothing', () => {
-    const totals = totalsOf([run({ runId: RUN_1, repair: false }), run({ runId: RUN_2, repair: true })], [], [])
-    expect(totals.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
-    expect(totals.byPurpose.Answering).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 1 })
+    const totals = totalsOf([run({ runId: RUN_1 }), run({ runId: RUN_2 })], [], [])
+    expect(totals.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
   })
 })
 
@@ -339,7 +324,7 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
   }
   const withAt = (env: Envelope, when: string): Envelope => ({ ...env, at: at(when) })
 
-  const runsOf = (own: Envelope[]): RunView[] => claimsOf(own).map((c, i) => foldRun(c, i + 1, []))
+  const runsOf = (own: Envelope[]): RunView[] => reduceTicket(own).claims.map((c, i) => foldRun(c, i + 1, []))
 
   /** The same stream twice: only the last event differs in type and payload. */
   function streams(): { old: Envelope[]; next: Envelope[] } {
@@ -386,8 +371,8 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
 
   it('opens no second claim', () => {
     const { old, next } = streams()
-    expect(claimsOf(old)).toHaveLength(1)
-    expect(claimsOf(next)).toEqual(claimsOf(old))
+    expect(reduceTicket(old).claims).toHaveLength(1)
+    expect(reduceTicket(next).claims).toEqual(reduceTicket(old).claims)
   })
 
   it('keeps the title and kind from the claim (D4: labels stays empty, a claim has none)', () => {
@@ -397,5 +382,75 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
       const t = reduceTicket(own)
       expect({ title: t.title, kind: t.kind, labels: t.labels }).toEqual(fields)
     }
+  })
+})
+
+describe('an attempt asked (#829)', () => {
+  const ITEM = 'ticket-lingtai-829'
+  const signoff = {
+    _tag: 'SignoffRequired' as const,
+    run: { runId: RUN_1 },
+    step: 'merge' as const,
+    action: 'human:land',
+    question: 'land it?',
+  }
+  const approve = () =>
+    e(ITEM, 'WaitResolved', {
+      waitId: 'wait-1',
+      by: 'human:steven',
+      resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) },
+      note: '',
+    })
+  const started = () => e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) })
+  const finished = () => e(RUN_1, 'RunFinished', { exitCode: 0, turns: 3, durationMs: 10, costUsd: 0 })
+
+  /** What `loadTask` does for each attempt, over one ticket and its run. */
+  function drawn(own: Envelope[], run: Envelope[]) {
+    const t = reduceTicket(own)
+    const held = t.claims[0]!.runId === heldRunOf(t.lifecycle)
+    return foldRun(t.claims[0]!, 1, run, { held }).outcome
+  }
+
+  it('finished then held at signoff reads asked; after approve-and-continue it reads by its run again', () => {
+    const claimed = e(ITEM, 'TicketClaimed', { runId: RUN_1, worker: 'w' })
+    const wait = e(ITEM, 'WaitStarted', { waitId: 'wait-1', reason: signoff })
+    const run = [started(), finished()]
+
+    expect(drawn([claimed, wait], run)).toEqual({ state: 'asked', detail: 'ready to land — land it?' })
+
+    const continued = [claimed, wait, approve(), e(ITEM, 'TicketContinued', { runId: RUN_1, worker: 'w' })]
+    expect(drawn(continued, run)).toEqual({ state: 'finished', detail: null })
+  })
+
+  it('reads asked with no receipt, and running once approved and continued', () => {
+    const claimed = e(ITEM, 'TicketClaimed', { runId: RUN_1, worker: 'w' })
+    const wait = e(ITEM, 'WaitStarted', { waitId: 'wait-1', reason: signoff })
+
+    expect(drawn([claimed, wait], [started()]).state).toBe('asked')
+    expect(
+      drawn([claimed, wait, approve(), e(ITEM, 'TicketContinued', { runId: RUN_1, worker: 'w' })], [started()]),
+    ).toEqual({ state: 'running', detail: null })
+  })
+
+  it('draws the past ask of an answered attempt only when its run got nowhere; a failure wins even while held', () => {
+    const ask = {
+      _tag: 'AgentQuestion' as const,
+      run: { runId: RUN_1 },
+      step: 'design' as const,
+      question: 'which?',
+    }
+    const claimed = e(ITEM, 'TicketClaimed', { runId: RUN_1, worker: 'w' })
+    const wait = e(ITEM, 'WaitStarted', { waitId: 'wait-1', reason: ask })
+    const answered = e(ITEM, 'WaitResolved', {
+      waitId: 'wait-1',
+      by: 'human:steven',
+      resolution: { _tag: 'AnswerQuestion', choice: 'the first' },
+      note: 'the first',
+    })
+
+    expect(drawn([claimed, wait, answered], []).state).toBe('asked')
+    expect(drawn([claimed, wait, answered], [started()]).state).toBe('running')
+    const failed = e(RUN_1, 'RunFailed', { kind: 'never-started', detail: 'x' })
+    expect(drawn([claimed, wait], [started(), failed]).state).toBe('failed')
   })
 })

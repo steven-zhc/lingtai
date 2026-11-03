@@ -891,6 +891,141 @@ const late_twoAsksTwoAnswers = (() => {
   ])
 })()
 
+/** #829 D13: an attempt that asked, was requeued by a person, and so was released in the same append. */
+const late_askedThenReleasedByPerson = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9109))
+  const r1 = passStream('t9109-1')
+  const w = wait('9109-check')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'CheckRefused', run: { runId: r1 }, step: 'proposed', action: 'test', evidence: 'red', findings: [] },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Requeue' }),
+    ...aRelease(t, r1, 'Requeued by steven.', { _tag: 'ByPerson', waitId: w }),
+  ])
+})()
+
+/** #829 D13: an attempt that asked and was answered, which returns the ticket to the backlog with no release. */
+const late_askedThenAnswered = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9110))
+  const r1 = passStream('t9110-1')
+  const w = wait('9110-ask')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, { _tag: 'AgentQuestion', run: { runId: r1 }, step: 'design', question: 'which of the two?' }, w),
+    ...aResolution(t, w, { _tag: 'AnswerQuestion', choice: 'the first' }),
+  ])
+})()
+
+/** #829 D13: a release whose reason is empty stays empty. */
+const late_releasedWithoutReason = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9111))
+  const r1 = passStream('t9111-1')
+  return stamp([...aClaim(t, r1), ...aRelease(t, r1, '')])
+})()
+
+/** #831: a person closed the ticket from a sign-off, and the close followed their move. */
+const late_closedByPerson = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9112))
+  const r1 = passStream('t9112-1')
+  const w = wait('9112-sign')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: r1 }, step: 'proposed', action: 'human', question: 'ship it?' },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Close' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+  ])
+})()
+
+/** #831 D6: the same close, on its own stream, then a claim `closed` absorbs. */
+const late_closedByPersonThenClaimed = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9113))
+  const r1 = passStream('t9113-1')
+  const r2 = passStream('t9113-2')
+  const w = wait('9113-sign')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: r1 }, step: 'proposed', action: 'human', question: 'ship it?' },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Close' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    ...aClaim(t, r2),
+  ])
+})()
+
+/** #842: two triage attempts, a late result for the first, a duplicate result, and a second resolution. */
+const late_triagedTwice = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9114))
+  const r1 = passStream('t9114-1')
+  const w = wait('9114-crash')
+  const agent = { _tag: 'Agent', runtime: 'claude-code', model: 'sonnet' } as const
+  const failed = (why: string) => ({ _tag: 'TriageFailed', why }) as const
+  const by = { _tag: 'Mechanical' } as const
+  const triaged = (attempt: number, why: string) =>
+    t('WaitTriaged', { waitId: w, attempt, headSha: `head-${attempt}`, result: failed(why), by })
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, { _tag: 'AgentCrashed', run: { runId: r1 }, step: 'implement', cause: 'crash', detail: 'died' }, w),
+    t('TriageStarted', { waitId: w, attempt: 1, by: agent }),
+    triaged(1, 'first'),
+    t('TriageStarted', { waitId: w, attempt: 2, by: agent }),
+    triaged(1, 'late'),
+    triaged(2, 'second'),
+    triaged(2, 'duplicate'),
+    ...aResolution(t, w, { _tag: 'Requeue' }),
+    ...aResolution(t, w, { _tag: 'Requeue' }, 'someone'),
+  ])
+})()
+
+/** #842: a wait begun after the ticket closed is still a wait. */
+const late_waitAfterClosed = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9115))
+  const r1 = passStream('t9115-1')
+  return stamp([
+    ...aClaim(t, r1),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    ...aWait(
+      t,
+      { _tag: 'AgentCrashed', run: { runId: r1 }, step: 'implement', cause: 'crash', detail: 'died' },
+      wait('9115-late'),
+    ),
+  ])
+})()
+
+/** #842: two approved waits, then a landing, which belongs to the second. */
+const late_waitThenLanded = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9116))
+  const r1 = passStream('t9116-1')
+  const w1 = wait('9116-one')
+  const w2 = wait('9116-two')
+  const reason = {
+    _tag: 'SignoffRequired',
+    run: { runId: r1 },
+    step: 'proposed',
+    action: 'human',
+    question: 'ship it?',
+  } as const
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(t, reason, w1),
+    ...aResolution(t, w1, { _tag: 'Approve', onSha: 'sha-1' }),
+    t('TicketContinued', { runId: r1, worker: 'conductor:1' }),
+    ...aWait(t, reason, w2),
+    ...aResolution(t, w2, { _tag: 'Approve', onSha: 'sha-2' }),
+    ...aLanding(t, 'abcdef1234567', BASE),
+  ])
+})()
+
 /** D7: an accept with nothing after it — opening the issue is still owed. */
 const late_acceptedOnly = (() => {
   const f = makeStream(backlogStream(PROJECT, 'minor-3'))
@@ -927,6 +1062,14 @@ export const lateHistories = {
     escalatedThenRequeued: late_escalatedThenRequeued,
     githubLedger: githubLedgerH,
     bodyBeforeAnotherWait: bodyBeforeAnotherWaitH,
+    askedThenReleasedByPerson: late_askedThenReleasedByPerson,
+    askedThenAnswered: late_askedThenAnswered,
+    releasedWithoutReason: late_releasedWithoutReason,
+    closedByPerson: late_closedByPerson,
+    closedByPersonThenClaimed: late_closedByPersonThenClaimed,
+    triagedTwice: late_triagedTwice,
+    waitAfterClosed: late_waitAfterClosed,
+    waitThenLanded: late_waitThenLanded,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,
@@ -978,6 +1121,8 @@ export const COVERS = {
     'TicketReleased',
     'WaitStarted',
     'WaitResolved',
+    'TriageStarted',
+    'WaitTriaged',
     'TicketSplit',
     'TicketLinked',
     'TicketClosed',

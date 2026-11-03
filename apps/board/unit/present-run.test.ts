@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 /**
  * `presentRun` draws an attempt from `RunState` (#828). Each test is named for
  * the decision of `doc/design/one-fold-per-stream.md` it holds.
@@ -7,9 +8,9 @@ import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
-import { foldRun, presentRun, type Claim } from '../src/lib/task.ts'
+import { foldRun, presentRun } from '../src/lib/task.ts'
 
-const claim: Claim = { runId: 'run-1', at: '2026-08-01T00:00:00.000Z', repair: false, released: null }
+const claim: TicketClaim = { runId: 'run-1', at: new Date('2026-08-01T00:00:00.000Z'), ended: null }
 const view = (events: readonly Envelope[]) => foldRun(claim, 1, events)
 const stepOf = (events: readonly Envelope[], prefix: string) =>
   view(events).steps.find((s) => s.step.startsWith(prefix))

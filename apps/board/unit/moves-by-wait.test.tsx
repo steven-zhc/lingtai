@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 /**
  * #442: the task page's moves row draws exactly the controls
  * `allowedResolutions(standing.reason)` offers, and none it does not.
@@ -18,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Standing } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { foldRun, standingOf, type Claim } from '../src/lib/task.ts'
+import { foldRun, standingOf } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
 
 const OUTGOING: OutgoingView = {
@@ -54,7 +55,7 @@ function splitByStream(
 function standingFor(fx: WaitFixture) {
   const { own, runs } = splitByStream(fx.taskId, fx.events)
   const folded = [...runs.entries()].map(([runId, events], i) => {
-    const claim: Claim = { runId, at: (events[0]?.at ?? new Date(0)).toISOString(), repair: false, released: null }
+    const claim: TicketClaim = { runId, at: events[0]?.at ?? new Date(0), ended: null }
     return foldRun(claim, i + 1, events)
   })
   return standingOf(own, folded)

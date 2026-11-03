@@ -51,6 +51,14 @@
   "control.ceilingLapsedThenResumed": "f77e8c685926af653487927b4d31d5893b8328166876ed8af00f010f98f0a130",
   "chat.retriedRequest": "564e966009605812fc96cdf6b61dc9a8822438f21f3be55742707336efb726bc",
   "chat.twoAsksTwoAnswers": "e950318694db99ff579ee5514cc18453fdf23f1b4d7478aeb87625a828353f72",
-  "finding.acceptedOnly": "83fbdeda51e14be05efbcbce13838d553beba36793b833fd458312ab6b3dcd72",
-  "finding.declinedThenAccepted": "22121badcd0fbee8211a24561dda482896fe26d736ab035a98d7c017b6025a9c"
+  "ticket.askedThenReleasedByPerson": "61ff0fc012466ee49c10db4b594c775a85fbe9a4cbaa683356ba58d25dab57ee",
+  "ticket.askedThenAnswered": "7a5cf3089ffd413f7a84f01ef8bf491f29fbc3fa9a54a662a5cf15f5d4c7d938",
+  "ticket.releasedWithoutReason": "01022312c076a08c38082b992d8cbd98825a3c4159647557dae4ca2e75338b29",
+  "ticket.closedByPerson": "331489ddb963e1706411bbc204ee3c1262fc16bd1546cf9a6ae0691f79ca2ca9",
+  "ticket.closedByPersonThenClaimed": "83b4204e7ffc5560b184f22cbf5d3d55150250bf5265d780752900a2673e0efc",
+  "ticket.triagedTwice": "1bf0781f1ee1a9f636d73667eebb067b72fd5f1487dfce434744d305cb7528c7",
+  "ticket.waitAfterClosed": "7e0762619635e71610aa5ba8327f631bbec84f887b5c89c322594331c582d76a",
+  "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645",
+  "finding.acceptedOnly": "930fccf402b4deea60bcce8a60653b124ead4b25dd6e30a3aab141cfa36e4aeb",
+  "finding.declinedThenAccepted": "718b7801dfac06fd40f2f00691a60321741ea628df99bada1122550fb96e3c27"
 }

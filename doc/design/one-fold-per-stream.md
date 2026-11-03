@@ -486,6 +486,12 @@ too (P3's rebuild).
 6. The GitHub-write ledger (D9): the last outcome per `IssueUpdated.change`, with its
    comment id, from `IssueUpdated`/`IssueUpdateFailed`. Used by the board's
    `bodyOutcome`, `converge.ts:356`/`:369` and `tell.ts`'s comment half.
+7. `waits`: every wait with its triage, its first resolution, and whether the ticket
+   landed or closed before the next wait began (t22). `waitsOf`, `triageFactsOf`,
+   `designAsksOf`, `tell.ts`'s `editEndedWaits` and the CLI's triage read it, and so do
+   ticket_report's waits and task_view's triage columns once they store the state.
+8. `discussions`: the discussions held for the ticket (t23). The board's `chatIdsFor`
+   reads it.
 
 `closed` stays absorbing (ticket.ts:237-251, #151). D6 keeps it, so nothing here
 changes it.
@@ -554,11 +560,19 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
 | 10 | **What Lingtai wrote to GitHub.** The ledger on `TicketState` (D9). The board's `bodyOutcome`, `converge.ts` and `tell.ts`'s comment half read it | R9, C13 | — | — |
 | 11 | **task_view is the ticket fold.** The row stores its ticket's `TicketState` (12's codec), and `state` and `answer` come from it, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 12 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
-| 12 | **ticket_report is the ticket fold.** It lands the ticket fold's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims and `kind` come from it, and the waits stay the report's own fold. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10 (the state's final shape) | rebuild, runbook |
+| 12 | **ticket_report is the ticket fold.** It lands the ticket fold's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims, waits and `kind` come from it. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10, 7b, 7c (the state's final shape) | rebuild, runbook |
 | 13 | **spend's kind.** `spend_kind` from a stored `TicketState.kind` | P1 | 12 | rebuild, runbook |
 | 14 | **The control fold.** `applyControl` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains an optional typed `cause`, with no `schemaVer` bump and no upcaster (D8, 0100 §4). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `applyControl` reads |
 | 15 | **The chat fold.** `reduceChat` (D14). The board's `foldChat`, `turnsOf`, `outstanding` and the CLI's count read it | R9b, C11 | — | an orphan answer no longer counts as answering anything |
 | 16 | **The finding fold.** Domain's backlog-finding fold; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
+| 7b | **A ticket's waits.** `TicketState.waits` (§2.3 item 7); every reader of a wait moves onto it | U3 | — | — |
+| 7c | **A ticket's discussions.** `TicketState.discussions`; the board's `chatIdsFor` | U1 | — | — |
+| 11r-a | **task_view's run half is the run reduce.** Each pass's `RunState` is stored (a run codec) and a pure `rowOf(ticket, run)` derives the run columns | P3 (run) | 11 | rebuild, runbook; a new claim shows no head |
+| 11r-b | **task_view's note.** The sentence of the latest transition of either state; `cardFactOf` goes | P3 (note) | 11r-a | rebuild, runbook; the transient integration notes go |
+| 17 | **Nothing else reduces a stream.** A committed list of the event-type branches left outside domain (joins, reactions, selects), and a test that fails on any branch not on it; `RunState.ticketId` readers; a named test per decision | U2 | all above | — |
+| 18 | **Documentation.** The reference and the operating guide, and an upgrade note per rebuild | — | all above | — |
+| 19 | **One word.** `applyX` → `reduceXEvent`, `Projection.apply` → `reduce`, and *fold* → *reduce* in names, comments and docs | — | last | — |
+| 20 | **The word is attempt** (D20). Ten tickets, #849–#858: domain, conductor and board/CLI names; package and app strings; the renamed documents with redirects; the docs, ADR bodies and living designs. Nothing the log or a projection stores is renamed | — | 19 | — |
 | — | Snapshots, with 0124's registry, codec and version table | last | all | not in 0.12 |
 
 R (17) and the S branches marked "leave" are left alone. That covers tell (apart from
@@ -691,6 +705,24 @@ scrubbed and cited by issue number, not seq.
   longer write, like a claim after a close, is absorbed by the fold's own rule
   (`closed` is terminal, D6). A field only an old log could fill, like the board's
   `Claim.repair`, is deleted. The log is not reset.
+- **D17. One implementation, projections included** (the operator, 2026-11-03). The
+  system is an event log, and reducing an event into a stream's state is one rule
+  with one implementation in domain. A projection that needs a stream's state stores
+  it in the row and calls the same reduce; only pure joins, reactions and selects
+  stay as event-type branches outside domain, and ticket 17 commits that list. When
+  sharing makes a call awkward, the call is optimised, never the rule copied.
+- **D18. Delivery is at-least-once, so a stored state dedupes by `seq`** (the
+  operator, 2026-11-03). Two runners share one checkpoint and can each deliver an
+  event; an event whose `seq` is not above the stored state's `lastSeq` is skipped
+  before the reduce. It looks at nothing else, so a sequence no writer makes still
+  throws (#822, #838).
+- **D19. The word is *reduce*** (the operator, 2026-11-03; `doc/glossary.md`).
+  `reduceRunEvent(state, event)` for one event, `reduceRun(events)` for a stream. This
+  document says *fold* where it was written before; ticket 19 renames it.
+- **D20. The word is *attempt*** (the operator, 2026-11-03; `doc/glossary.md`). One
+  try at changing a ticket, one `pass-…` stream, is an *attempt*; *run* means one
+  agent invocation inside it; *pass* is retired. The log's own names (`pass-`,
+  `runId`, `Run…` events) stay. The rename is its own ticket, after ticket 19.
 - **Sequencing.** §3's order. Snapshot storage and the snapshot-plus-tail read land
   last, after 0.12. #797's tickets go before #790's rows 4, 8 and 9.
 

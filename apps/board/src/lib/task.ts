@@ -5,10 +5,7 @@ import { readProjectTicket } from '@lingtai/conductor/read-ticket'
 import { readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
-  applyTicket,
   chatStream,
-  claimShapeOf,
-  emptyTicket,
   reduceChat,
   reduceControl,
   reduceTicket,
@@ -18,9 +15,9 @@ import {
   parseTicketStream,
   triageFactsOf,
   waitWords,
-  WAIT_EVENTS,
   type BlockDiagnosis,
   type Envelope,
+  type TicketClaim,
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
@@ -219,13 +216,14 @@ export interface TicketView {
 /**
  * How an attempt ended, in the log's own words.
  *
- * Five, because the fourth and fifth are the ones a `runId` and a gate list
- * could never say. `claimed` is a run whose stream is empty — the claim landed
- * and nothing followed it — and `released` is a claim given back without the
- * run ever finishing. Both used to render as an attempt that was simply
- * missing, which is the same complaint `skipped` answers one level up.
+ * Six, because the last three are the ones a `runId` and a gate list could never
+ * say. `claimed` is a run whose stream is empty — the claim landed and nothing
+ * followed it; `released` is a claim given back without the run ever finishing;
+ * `asked` is an attempt stopped waiting for a person (D13), or one that ended
+ * asking and was never released. All used to render as an attempt that was
+ * simply missing, which is the same complaint `skipped` answers one level up.
  */
-export type RunState = 'claimed' | 'running' | 'released' | 'finished' | 'failed'
+export type RunState = 'claimed' | 'running' | 'asked' | 'released' | 'finished' | 'failed'
 
 export interface RunOutcome {
   state: RunState
@@ -266,22 +264,6 @@ export interface RunView {
   attempt: number
   /** When the claim landed, ISO. */
   at: string
-  /**
-   * True when this attempt is the one a bought repair paid for.
-   *
-   * There is no event saying so — 0025 refuses a repair a vocabulary of its own,
-   * and the claim is what consumes the pending repair. This is that fold, and it
-   * is here because a page that showed one money figure would fold a default-on
-   * agent's spend into the work's and make it an invisible bill (#84).
-   *
-   * **Never true of an attempt started after `#143`**, and still read for ever.
-   * A refusal buys no run now, so nothing appends one any more, and
-   * `ticket.ts` has dropped the fold this mirrored; `task-view.ts` keeps its
-   * own for the same reason this one stays: a log that holds the event holds a
-   * second attempt that *was* a repair, and reading it as ordinary work would
-   * move real money into the wrong figure.
-   */
-  repair: boolean
   baseSha: string | null
   headSha: string | null
   /**
@@ -622,25 +604,6 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
   return said === '' ? raw.trim() === '' : raw.includes(said)
 }
 
-/**
- * The events that replace the lifecycle in `applyTicket`.
- *
- * Listed rather than inferred, because *when the state began* is the second
- * half of this block and nothing else on the item's stream may move it: a
- * `TicketLinked`, a restarted pass or a gate reporting late are all
- * appended while the hold stands, and none of them is the hold starting.
- */
-// A `TicketContinued` moves it by type, even naming a run nobody claimed (which
-// `applyTicket` ignores): that case has no old-form counterpart and nothing writes it.
-const LIFECYCLE_MOVES = new Set([
-  'TicketClaimed',
-  'TicketContinued',
-  'TicketReleased',
-  ...WAIT_EVENTS,
-  'TicketLanded',
-  'TicketClosed',
-])
-
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
   if (text === null) return null
@@ -821,12 +784,8 @@ function whoWaits(life: TicketLifecycle): string {
  * envelopes and nothing else.
  */
 export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
-  let item = emptyTicket
-  let since = own[0]?.at ?? null
-  for (const e of own) {
-    item = applyTicket(item, e)
-    if (LIFECYCLE_MOVES.has(e.type)) since = e.at
-  }
+  const item = reduceTicket(own)
+  const since = item.since
 
   const life = item.lifecycle
   const named =
@@ -850,65 +809,45 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
       })
     : null
   const raw = words?.diagnosis?.raw ?? null
-  const lastMove = [...own].reverse().find((e) => e.type === 'WaitResolved')
-  const moveIndex = lastMove === undefined ? -1 : own.indexOf(lastMove)
-  const move = lastMove?.data as { waitId: string; resolution: { _tag: string }; by: string; note: string } | undefined
-  const startedForMove = own
-    .slice(0, moveIndex)
-    .findLastIndex((e) => e.type === 'WaitStarted' && (e.data as { waitId: string }).waitId === move?.waitId)
-  const currentMove =
-    move !== undefined && startedForMove >= 0 && !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
-  const outcome = own.slice(moveIndex + 1).find((e) => e.type === 'TicketClosed' || e.type === 'TicketReleased')
-  const latestLifecycle = [...own].reverse().find((e) => LIFECYCLE_MOVES.has(e.type))
-  const closed =
-    outcome?.type === 'TicketClosed' &&
-    latestLifecycle === outcome &&
-    life.status === 'closed' &&
-    currentMove &&
-    move?.resolution._tag === 'Close'
+  // The last person's move and what followed it are the fold's (`TicketState.lastMove`), not a rescan.
+  const m = item.lastMove
+  const live = m !== null && m.current
+  const closed = live && m.then?.kind === 'closed' && life.status === 'closed' && m.resolution._tag === 'Close'
   const released =
-    outcome?.type === 'TicketReleased' &&
-    latestLifecycle === outcome &&
+    live &&
+    m.then?.kind === 'released' &&
     life.status === 'backlog' &&
-    currentMove &&
-    (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue') &&
-    (outcome.data as { cause?: { _tag: string; waitId?: string } }).cause?._tag === 'ByPerson' &&
-    (outcome.data as { cause: { waitId: string } }).cause.waitId === move?.waitId
+    (m.resolution._tag === 'Requeue' || m.resolution._tag === 'EditBodyAndRequeue') &&
+    m.then.cause?._tag === 'ByPerson' &&
+    m.then.cause.waitId === m.waitId
   const requeued =
-    currentMove &&
-    latestLifecycle === lastMove &&
+    live &&
+    m.then === null &&
     life.status === 'backlog' &&
-    (move?.resolution._tag === 'Requeue' ||
-      move?.resolution._tag === 'EditBodyAndRequeue' ||
-      move?.resolution._tag === 'AnswerQuestion')
-  const continued =
-    currentMove &&
-    latestLifecycle === lastMove &&
-    life.status === 'approved' &&
-    move?.resolution._tag === 'GrantFixRound'
+    (m.resolution._tag === 'Requeue' ||
+      m.resolution._tag === 'EditBodyAndRequeue' ||
+      m.resolution._tag === 'AnswerQuestion')
+  const continued = live && m.then === null && life.status === 'approved' && m.resolution._tag === 'GrantFixRound'
   const body = item.github.last.body
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
     afterMove:
-      move !== undefined && (closed || released || requeued || continued)
+      m !== null && (closed || released || requeued || continued)
         ? {
-            resolution: move.resolution._tag,
-            by: move.by,
-            note: move.note,
+            resolution: m.resolution._tag,
+            by: m.by,
+            note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
               ? 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'The wait was resolved; a new pass starts from base.'
                 : released
-                  ? `${(outcome!.data as { reason: string }).reason} A new pass starts from base.`
-                  : (outcome!.data as { reason: string }).reason,
-            ...(continued
-              ? {
-                  ref: (move.resolution as { ref?: string }).ref,
-                  head: (move.resolution as { onSha?: string }).onSha,
-                }
+                  ? `${m.then?.reason ?? ''} A new pass starts from base.`
+                  : (m.then?.reason ?? ''),
+            ...(continued && m.resolution._tag === 'GrantFixRound'
+              ? { ref: m.resolution.ref, head: m.resolution.onSha }
               : {}),
           }
         : null,
@@ -1146,59 +1085,6 @@ export function chatIdsFor(
   return order.map((chatId) => ({ chatId, held: held.get(chatId) ?? null }))
 }
 
-/** A claim, as the item's own stream recorded it. */
-export interface Claim {
-  runId: string
-  /** ISO, from the envelope: the log's own time and not a field on the payload. */
-  at: string
-  repair: boolean
-  /** The reason the claim was given back, or null while it is still held. */
-  released: string | null
-}
-
-/**
- * Every claim this item made, oldest first.
- *
- * Deduplicated by `runId` the way `ticket.ts` deduplicates `runs`: a second
- * claim naming a run already claimed is the same attempt, not a fourth one.
- *
- * The repair walk mirrored a fold in `ticket.ts` — a bought repair left a
- * repair pending and the next claim consumed it — and was written here rather
- * than borrowed because this needs it for *every* run, where the aggregate kept
- * only the current one. The aggregate's half is gone with the purchase (`#143`)
- * and this half stays, because an old log still holds the event and the attempt
- * it bought.
- */
-export function claimsOf(own: readonly Envelope[]): Claim[] {
-  const claims: Claim[] = []
-  // `RepairBought` is not a fact `boardFactOf` can answer any more — nothing
-  // buys a repair since #143, and the event itself is gone with the switch
-  // (#502): the field stays on `Claim` for a log still carrying the old
-  // purchase, which the reset this ticket's merge runs leaves behind.
-  const pendingRepair = false
-
-  for (const e of own) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    if (
-      claimShapeOf(
-        e,
-        claims.map((c) => c.runId),
-      ) === 'claim'
-    ) {
-      const runId = String(d['runId'] ?? '')
-      if (runId) {
-        claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null })
-      }
-    }
-    if (e.type === 'TicketReleased') {
-      const held = claims.find((c) => c.runId === String(d['runId'] ?? ''))
-      if (held) held.released = String(d['reason'] ?? '') || 'released'
-    }
-  }
-
-  return claims
-}
-
 /**
  * One attempt, drawn from the run's `RunState` and the claim that opened it.
  *
@@ -1209,9 +1095,13 @@ export function claimsOf(own: readonly Envelope[]): Claim[] {
  */
 export function presentRun(
   state: DomainRunState,
-  claim: Claim,
+  claim: TicketClaim,
   attempt: number,
   progress: RunProgress | null,
+  /** Whether the ticket is stopped at **this attempt's** wait now (`loadTask` reads it off the lifecycle). */
+  held: boolean = false,
+  /** The branch `waitWords` words an `asked` detail with. */
+  branch: string = '',
 ): RunView {
   const build = STEPS.indexOf('build')
   const steps: StepVerdict[] = Object.values(state.steps).map((s) => {
@@ -1229,8 +1119,7 @@ export function presentRun(
   return {
     runId: claim.runId,
     attempt,
-    at: claim.at,
-    repair: claim.repair,
+    at: claim.at.toISOString(),
     baseSha: state.baseSha,
     headSha: state.headSha,
     configHash: state.resolved?.configHash ?? null,
@@ -1239,7 +1128,7 @@ export function presentRun(
     // read it off (0110 §13: `RunFinished` stopped being a spend source).
     costUsd: emptyBill(),
     durationMs: state.receipt?.durationMs ?? null,
-    outcome: outcomeOf(state, claim),
+    outcome: outcomeOf(state, claim, held, branch),
     files: filesOf(state),
     diff:
       state.produced === null
@@ -1260,7 +1149,7 @@ export function presentRun(
 
 /** `presentRun` for a caller holding events rather than a state. */
 export function foldRun(
-  claim: Claim,
+  claim: TicketClaim,
   attempt: number,
   run: readonly Envelope[],
   /**
@@ -1269,28 +1158,46 @@ export function foldRun(
    * attempt is the one that landed — the whole difference between `pending`
    * and `never-ran`. Neither is on the run's own stream. See `loadTask`.
    */
-  { plan, over = false }: { plan?: StepPlan; over?: boolean } = {},
+  {
+    plan,
+    over = false,
+    held = false,
+    branch = '',
+  }: { plan?: StepPlan; over?: boolean; held?: boolean; branch?: string } = {},
 ): RunView {
   const state = reduceRun(run)
-  return presentRun(state, claim, attempt, progressOf(state, plan, over))
+  return presentRun(state, claim, attempt, progressOf(state, plan, over), held, branch)
 }
 
 /**
  * How the attempt ended, worst-first and never "running" by omission.
  *
- * The order is the point. A run released without ever finishing is `released`
- * and not `running` — reading a claim that was given back three days ago as a
- * run still in flight is the card's own #100, one page along — and a claim whose
- * stream is empty says so rather than borrowing a state from a run that never
- * appended anything.
+ * The order is the point. `failed` first (D3). Then `asked` **while the ticket is
+ * stopped at this attempt's wait** (`held`), ahead of `finished`: an attempt held
+ * at a signoff after its agent finished is waiting for a person, not done. A run
+ * released without ever finishing is `released` and not `running` — reading a
+ * claim that was given back three days ago as a run still in flight is the
+ * card's own #100, one page along. A past ask, one nobody released and the
+ * lifecycle has moved on from, ranks just above `claimed`, so the attempt reads
+ * by its run wherever its run got anywhere. A claim whose stream is empty says
+ * so rather than borrowing a state from a run that never appended anything.
  */
-function outcomeOf(state: DomainRunState, claim: Claim): RunOutcome {
+function outcomeOf(state: DomainRunState, claim: TicketClaim, held: boolean, branch: string): RunOutcome {
+  const asked = (): RunOutcome => {
+    const ended = claim.ended
+    return {
+      state: 'asked',
+      detail: ended?.kind === 'asked' ? waitWords(ended.reason, { branch, base: '', findings: [] }).line : null,
+    }
+  }
   if (state.failure !== null) return { state: 'failed', detail: state.failure.kind }
+  if (held && claim.ended?.kind === 'asked') return asked()
   if (state.receipt !== null) {
     return { state: 'finished', detail: state.receipt.exitCode !== 0 ? `exit ${state.receipt.exitCode}` : null }
   }
-  if (claim.released !== null) return { state: 'released', detail: claim.released }
+  if (claim.ended?.kind === 'released') return { state: 'released', detail: claim.ended.reason }
   if (state.agentStartedAt !== null) return { state: 'running', detail: null }
+  if (claim.ended?.kind === 'asked') return asked()
   return { state: 'claimed', detail: 'nothing on its stream' }
 }
 
@@ -1305,9 +1212,8 @@ function outcomeOf(state: DomainRunState, claim: Claim): RunOutcome {
  * **A run that contributed not one `Action` row is unknown, never free**
  * (0110 §7): `ticket-lingtai-89`'s two attempts predate `RunSpent`, so `rows` is
  * empty and `billOf([])` folds to five empty bills — which reads as nothing
- * spent, the defect this ticket exists to remove. Credited to Work or
- * Answering by `run.repair`, the same split `billOf` makes for a row that did
- * arrive.
+ * spent, the defect this ticket exists to remove. Credited to Work, the
+ * purpose `billOf` gives a row that did arrive.
  */
 export function totalsOf(
   runs: readonly RunView[],
@@ -1317,8 +1223,7 @@ export function totalsOf(
   const byPurpose = billOf(rows)
   for (const run of runs) {
     if (rows.some((row) => row.pass === run.runId && row.purpose === 'Action')) continue
-    const purpose = run.repair ? 'Answering' : 'Work'
-    byPurpose[purpose] = addBill(byPurpose[purpose], unknownBill(1))
+    byPurpose.Work = addBill(byPurpose.Work, unknownBill(1))
   }
   return {
     attempts: runs.length,
@@ -1647,13 +1552,19 @@ export async function loadCurrentTriageStatus(
   return currentTriageStatus(standing, card ?? null, triageContextOf(project?.recipe.triage !== undefined, daemon))
 }
 
+/** The run whose wait the ticket is stopped at now, else null; an `OwnQuestion` hold names none (D13). */
+export function heldRunOf(life: TicketLifecycle): string | null {
+  return life.status === 'blocked' ? life.runId : null
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const own = await timed('events.task', () => eventStore.read(taskId))
 
   // Every claim, and not the last one. A task can be claimed several times —
   // `ticket-lingtai-87` three, `ticket-lingtai-89` twice — and each claim opens a stream
   // of its own that the page kept no room for (#102).
-  const claims = claimsOf(own)
+  const ticketState = reduceTicket(own)
+  const claims = ticketState.claims
 
   // Beside the run streams rather than after them: one side is a handful of
   // database reads and the other is two calls to GitHub, and the page waits for
@@ -1690,7 +1601,12 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   // Each stream is folded once; everything below draws from these states.
   const states = claims.map((_, i) => reduceRun(streams[i] ?? []))
-  const folded = claims.map((c, i) => presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false)))
+  // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
+  const heldRun = heldRunOf(ticketState.lifecycle)
+  const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
+  const folded = claims.map((c, i) =>
+    presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
+  )
   const attempts = new Map(folded.map((r) => [r.runId, r.attempt]))
 
   const conductor = reduceControl(control)

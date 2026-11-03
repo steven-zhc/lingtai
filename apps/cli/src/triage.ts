@@ -159,7 +159,8 @@ async function finishInterrupted(
 ): Promise<void> {
   for (let tries = 0; tries < 5; tries += 1) {
     const events = await deps.store.read(ticketId)
-    const lifecycle = reduceTicket(events).lifecycle
+    const reduced = reduceTicket(events)
+    const lifecycle = reduced.lifecycle
     if (lifecycle.status !== 'blocked' || lifecycle.waitId !== waitId) return
     const facts = triageFactsOf(events, waitId)
     if (
@@ -168,12 +169,7 @@ async function finishInterrupted(
       triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: startedAt })._tag !== 'Interrupted'
     )
       return
-    const started = events.findLast(
-      (e) =>
-        e.type === 'TriageStarted' &&
-        (e.data as PayloadOf<'TriageStarted'>).waitId === waitId &&
-        (e.data as PayloadOf<'TriageStarted'>).attempt === facts.started!.attempt,
-    )!
+    const started = reduced.waits.findLast((w) => w.waitId === waitId)!.triage.started!
     const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
     const headSha = runId === null ? null : reduceRun(await deps.store.read(runId)).headSha
     const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
@@ -187,7 +183,7 @@ async function finishInterrupted(
             attempt: facts.started.attempt,
             headSha: headSha ?? baseSha ?? '',
             result: { _tag: 'TriageFailed', why: 'interrupted' },
-            by: (started.data as PayloadOf<'TriageStarted'>).by,
+            by: started.by,
           }),
         },
       ])
@@ -601,15 +597,12 @@ async function waitTriageWithin(
     }
   }
   const waitIsCurrent = (events: readonly Envelope[]): boolean =>
-    !events.some((e) => e.type === 'WaitStarted' && (e.data as PayloadOf<'WaitStarted'>).waitId === request.waitId) ||
-    currentWait(events, request.waitId)
+    !reduceTicket(events).waits.some((w) => w.waitId === request.waitId) || currentWait(events, request.waitId)
   if (!waitIsCurrent(before)) {
     return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
   }
-  const priorAttempts = before
-    .filter((e) => e.type === 'TriageStarted' && (e.data as { waitId?: unknown }).waitId === request.waitId)
-    .map((e) => (e.data as { attempt: number }).attempt)
-  const attempt = priorAttempts.length === 0 ? 1 : Math.max(...priorAttempts) + 1
+  const attempt =
+    (reduceTicket(before).waits.findLast((w) => w.waitId === request.waitId)?.triage.started?.attempt ?? 0) + 1
 
   const proposal = request.reason._tag === 'ProposedEscalated' ? request.reason.proposal : null
   const conflict = proposal?._tag === 'MergeConflict' && proposal.baseSha !== null && proposal.headSha !== null

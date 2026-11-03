@@ -37,8 +37,8 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, Envelope, Finding, PayloadOf, RunState } from '@lingtai/domain'
-import { cardFactOf, claimShapeOf, headOf, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
+import type { AnswerRecord, AttemptEnding, Envelope, Finding, RunState } from '@lingtai/domain'
+import { headOf, reduceTicket, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -143,70 +143,36 @@ export interface PriorAttempt {
 }
 
 /**
- * Every attempt this item has already had, oldest first.
+ * Every attempt this item has already had, oldest first — `reduceTicket`'s
+ * `claims`, numbered and worded (D13).
  *
  * A claim is an attempt: `TicketClaimed` ×N is what "attempts: N" on a card
  * counts, so it is what this counts. Called **before** the claim this run is
  * about to make, so the run asking does not appear in its own history.
+ *
+ * The ending is whichever of a release and a question came later, so a person's
+ * requeue of an asked attempt (which appends a release in the same append) reads
+ * as the release. `closed` absorbs: nothing ends a claim on a closed ticket, and
+ * the conductor never asks about one (`claim.ts` refuses anything not `backlog`),
+ * so `armFor`'s numbering cannot move.
  */
 export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
-  const attempts: PriorAttempt[] = []
-  const byRun = new Map<string, PriorAttempt>()
+  // `waitWords` needs the branch the card's own `question` was composed with —
+  // the default `pass` would open every `ProposedEscalated`/`AnswerUnreadable`
+  // sentence on no subject. It reads the stream id, which is one per ticket.
+  const branch = itemEvents.length === 0 ? '' : waitBranchOf(itemEvents[0]!)
+  return reduceTicket(itemEvents).claims.map((c, i) => ({
+    n: i + 1,
+    runId: c.runId,
+    ended: endedWords(c.ended, branch),
+    outcome: null,
+  }))
+}
 
-  for (const event of itemEvents) {
-    // Read through `cardFactOf` before any switch on `event.type`, so this
-    // file names no event type for a wait starting — `cardFactOf`'s own
-    // switch (`read-model.ts`, shared with `task_view`) is the one place
-    // that has to move when #464 renames the event, rather than this file
-    // also carrying a case label that would silently stop matching.
-    for (const card of cardFactOf(event)) {
-      if (card._tag !== 'WaitStarted') continue
-      const runId = 'run' in card.reason ? card.reason.run.runId : null
-      const attempt = runId === null ? undefined : byRun.get(runId)
-      // An attempt that ended by asking a person ended just as much as one
-      // that was released, and the question is the reason. `waitWords` needs
-      // the branch the card's own `question` was composed with
-      // (`read-model.ts`'s `waitBranchOf`) — the default `pass` would open
-      // every `ProposedEscalated`/`AnswerUnreadable` sentence on no subject.
-      if (attempt) {
-        const line = waitWords(card.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line
-        attempt.ended = `blocked, asking: ${line}`
-      }
-    }
-
-    switch (event.type) {
-      case 'TicketContinued':
-      case 'TicketClaimed': {
-        const d = event.data as PayloadOf<'TicketClaimed'>
-        if (claimShapeOf(event, byRun.keys()) === 'continuation') break
-        // A second claim by the same run is the same attempt claiming again,
-        // not a new one — the same reason `TicketState.runs` will not list it
-        // twice. `continueTicket` (`claim.ts`) writes exactly this, on every
-        // continuation (#465): its own re-claim lands on the log as a second
-        // `TicketClaimed` naming the run already in `runs`, and `armFor`
-        // (below) depends on this guard de-duplicating it — a continuation's
-        // own claim must not count as a fresh attempt.
-        const attempt: PriorAttempt = {
-          n: attempts.length + 1,
-          runId: d.runId,
-          ended: null,
-          outcome: null,
-        }
-        attempts.push(attempt)
-        byRun.set(d.runId, attempt)
-        break
-      }
-
-      case 'TicketReleased': {
-        const d = event.data as PayloadOf<'TicketReleased'>
-        const attempt = byRun.get(d.runId)
-        if (attempt) attempt.ended = d.reason
-        break
-      }
-    }
-  }
-
-  return attempts
+function endedWords(ended: AttemptEnding | null, branch: string): string | null {
+  if (ended === null) return null
+  if (ended.kind === 'released') return ended.reason
+  return `blocked, asking: ${waitWords(ended.reason, { branch, base: '', findings: [] }).line}`
 }
 
 /**

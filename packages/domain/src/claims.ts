@@ -7,8 +7,7 @@
  * of one. The rule is structural: it never reads `title` or `kind`, because a
  * first claim made without the queue entry to hand has both null too.
  *
- * Written per event so a fold that holds one event at a time (`applyTicket`)
- * and one that holds the stream (`claimsOf`) share a single implementation.
+ * Written per event, for the fold that holds one event at a time (`applyTicket`).
  */
 import type { Envelope } from './envelope.ts'
 import type { PayloadOf } from './events.ts'
@@ -26,18 +25,4 @@ export function claimShapeOf(event: Envelope, claimed: Iterable<string>): ClaimS
   const { runId } = event.data as PayloadOf<'TicketClaimed'>
   for (const r of claimed) if (r === runId) return 'continuation'
   return 'claim'
-}
-
-/** The whole-stream form: one entry per claim-shaped event, in order. */
-export function claimsOf(events: readonly Envelope[]): Array<{ event: Envelope; runId: string; shape: ClaimShape }> {
-  const claimed = new Set<string>()
-  const out: Array<{ event: Envelope; runId: string; shape: ClaimShape }> = []
-  for (const event of events) {
-    const shape = claimShapeOf(event, claimed)
-    if (shape === null) continue
-    const { runId } = event.data as PayloadOf<'TicketClaimed'>
-    out.push({ event, runId, shape })
-    if (event.type === 'TicketClaimed') claimed.add(runId)
-  }
-  return out
 }

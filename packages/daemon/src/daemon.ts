@@ -24,9 +24,9 @@
  * the beacon (`stoppedProjections`) and in `lingtai doctor`, and the daemon
  * keeps conducting: a fold bug in `spend` must not take every project's work
  * down with it, nor loop under the supervisor — the bad event is the first thing
- * catch-up reads, so a restart would throw on it again (#839). `task_view` is
- * the exception for now: the conductor drains on it, so its failure still stops
- * the daemon, at start by throwing and live by shutting down.
+ * catch-up reads, so a restart would throw on it again (#839). `task_view`
+ * stops alone like the rest, and the conductor takes no new claim while it is
+ * stopped (`notTakingWork`), since the queue and the backoff read it (#841).
  *
  * One of those failures is knowable on the way up: a projection whose table no
  * longer has the columns its DDL declares will throw on the first event that
@@ -76,8 +76,20 @@ export interface DaemonOptions {
 
 export type { StoppedProjection } from './store.ts'
 
-/** The one projection whose failure still stops the daemon; 17c (#841) removes that. */
-const STOPS_THE_DAEMON = 'task_view'
+/** The projection the queue and the backoff read; while it is stopped the conductor takes no claim (#841). */
+const WORK_PROJECTION = 'task_view'
+
+/**
+ * The sentence the work loop answers `paused` with while `task_view` is
+ * stopped, or null. In memory only: a control pause would be cleared by any
+ * `ConductorResumed` and would outlive the process (#841).
+ */
+export function notTakingWork(stopped: readonly StoppedProjection[]): string | null {
+  const entry = stopped.find((s) => s.name === WORK_PROJECTION)
+  if (!entry) return null
+  const at = entry.checkpoint === null ? 'an unread checkpoint' : `seq ${entry.checkpoint}`
+  return `${WORK_PROJECTION} stopped at ${at} — not taking work until it is rebuilt: \`lingtai projection rebuild ${WORK_PROJECTION}\`, then \`lingtai restart\``
+}
 
 /** How long start waits for a stopped projection's checkpoint before it goes undated. */
 const CHECKPOINT_WAIT_MS = 2000
@@ -117,7 +129,7 @@ export interface Daemon {
   readonly stoppedProjections: readonly StoppedProjection[]
 }
 
-export type StopReason = 'asked' | 'projection-failed'
+export type StopReason = 'asked'
 
 /** Stands in for `locker` where `acquire` is replaced and never reads it. */
 const NO_LOCKER: Locker = {
@@ -167,9 +179,6 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
   const stoppedList: StoppedProjection[] = []
   /** By name, so that the handler error and the rejected `start()` it causes record once. */
   const recording = new Map<string, Promise<void>>()
-  /** Set synchronously, which the list is not: it waits on a store read. */
-  let taskViewFailed = false
-  let returned = false
   const runners: ProjectionRunner[] = []
 
   let settle: (reason: StopReason) => void = () => {}
@@ -236,15 +245,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         // A connection error retries inside `subscribe`; a handler error has
         // already stopped that runner. The rest keep running (#839).
         if (phase !== 'handler') return
-        const recorded = recordStopped(projection.name, () => runner, error)
-        if (projection.name !== STOPS_THE_DAEMON) return
-        taskViewFailed = true
-        // Before `returned`, the start path throws and owns the lock; a shutdown
-        // here would release it a second time.
-        if (returned) {
-          void recorded
-          shutdown('projection-failed')
-        }
+        void recordStopped(projection.name, () => runner, error)
       }
       runner = (options.runnerFor ?? ((p, e) => createProjectionRunner({ projection: p, onError: e })))(
         projection,
@@ -264,7 +265,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
           tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
         // A handler error during catch-up, which is what a restart under the
         // supervisor meets first: stop that projection and bring the daemon up.
-        if (!(err instanceof ProjectionShapeError) && runner.failure !== null && projection.name !== STOPS_THE_DAEMON) {
+        if (!(err instanceof ProjectionShapeError) && runner.failure !== null) {
           await dated(recordStopped(projection.name, () => runner, runner.failure))
           options.onRunner?.(projection, runner)
           continue
@@ -276,7 +277,6 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
       // it is what the eye lands on when there is one.
       log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`))
     }
-    if (taskViewFailed) throw new Error('task_view stopped while the daemon was starting')
   } catch (err) {
     // Started nothing useful. Release rather than sit on the lock and keep the
     // next daemon out.
@@ -285,7 +285,6 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
     throw err
   }
 
-  returned = true
   log(paint.accent(`daemon up — ${runners.length} projection(s)`))
 
   return {

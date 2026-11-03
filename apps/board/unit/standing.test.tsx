@@ -1,3 +1,4 @@
+import type { TicketClaim } from '@lingtai/domain'
 import type { Action, Envelope, Finding, Step } from '@lingtai/domain'
 import { aWaitId } from '@lingtai/domain/test/events'
 import { recommendedResolution } from '@lingtai/domain/wait'
@@ -29,7 +30,6 @@ import {
   foldRun,
   savedFixWork,
   standingOf,
-  type Claim,
   type StandingView,
 } from '../src/lib/task.ts'
 
@@ -82,7 +82,7 @@ it('exposes unpushed work only while its wait is current', () => {
   ).toBeNull()
 })
 
-const claim = (runId: string, at: string): Claim => ({ runId, at, repair: false, released: null })
+const claim = (runId: string, at: string): TicketClaim => ({ runId, at: new Date(at), ended: null })
 
 /** A `verdict`-yield action, the shape a gate's own check or review declares. */
 function verdictAction(
@@ -477,7 +477,7 @@ describe('the evidence', () => {
     ])
     // The repair, from a log written before `#143` retired the purchase: it
     // finished, cleanly, and produced nothing.
-    const repair = foldRun({ runId: RUN_2, at: '2026-09-08T06:00:00.000Z', repair: true, released: null }, 2, [
+    const repair = foldRun({ runId: RUN_2, at: new Date('2026-09-08T06:00:00.000Z'), ended: null }, 2, [
       e(RUN_2, 'RunStarted', { baseSha: SHA }),
       e(RUN_2, 'RunFinished', { turns: 5, durationMs: 60_000, exitCode: 0 }),
     ])
@@ -2111,19 +2111,25 @@ describe('the subject, at the top', () => {
       summary: 'Try again',
       want,
     })
+    const reason = { _tag: 'OwnQuestion', question: 'why?', by: 'user' }
+    const waits = [
+      e(ITEM, 'WaitStarted', { waitId: older, reason }),
+      e(ITEM, 'WaitStarted', { waitId: current, reason }),
+    ]
     const events = [
+      ...waits,
       e(ITEM, 'TriageStarted', { waitId: older, attempt: 1 }),
       e(ITEM, 'WaitTriaged', { waitId: older, attempt: 1, result: advised('old') }),
       e(ITEM, 'TriageStarted', { waitId: current, attempt: 1 }),
       e(ITEM, 'WaitTriaged', { waitId: current, attempt: 1, result: advised('current') }),
     ]
     expect(currentWaitWant(events, HELD)).toBe('current')
-    expect(currentWaitWant(events.slice(0, 2), HELD)).toBeNull()
+    expect(currentWaitWant(events.slice(0, 4), HELD)).toBeNull()
     expect(currentWaitWant(events, { ...HELD, state: 'landed' })).toBeNull()
-    expect(currentWaitWant(events.slice(0, 3), HELD)).toBeNull()
+    expect(currentWaitWant(events.slice(0, 5), HELD)).toBeNull()
     expect(
       currentWaitWant(
-        events.slice(0, 3).concat(
+        events.slice(0, 5).concat(
           e(ITEM, 'WaitTriaged', {
             waitId: current,
             attempt: 1,
@@ -2136,7 +2142,7 @@ describe('the subject, at the top', () => {
     expect(
       currentWaitWant(
         [
-          ...events.slice(0, 3),
+          ...events.slice(0, 5),
           e(ITEM, 'WaitTriaged', {
             waitId: current,
             attempt: 1,

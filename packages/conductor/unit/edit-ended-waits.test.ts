@@ -62,6 +62,31 @@ describe('the waiting comment becomes its outcome', () => {
     expect((edited[0]!.data as { waitId: string }).waitId).toBe('w1')
   })
 
+  it('a landing belongs to the latest wait: w1 reads its approval, w2 reads the landing (#842)', async () => {
+    const w = await world()
+    await w.add([w.wait('w1')])
+    await w.hold('w1', 'first?')
+    await w.add([
+      w.resolve('w1', { _tag: 'Approve', onSha: 'x' }),
+      {
+        type: 'TicketContinued',
+        actor: 'conductor',
+        data: { runId: 'pass-1', worker: 'conductor:1' } as never,
+      },
+      w.wait('w2'),
+    ])
+    await w.hold('w2', 'second?')
+    await w.add([
+      w.resolve('w2', { _tag: 'Approve', onSha: 'y' }),
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'ab5848a1234', base: 'main' } },
+    ])
+    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    expect(w.tickets.commentBodies(1)).toEqual([
+      '**Approved by steven.**\n\n> first?',
+      '**Landed on `main` in `ab5848a`.**\n\n> second?',
+    ])
+  })
+
   it.each([
     [{ _tag: 'Approve', onSha: 'x' }, '**Approved by steven.**'],
     [{ _tag: 'GrantFixRound', onSha: 'x', ref: 'r' }, '**One more fix round, granted by steven.**'],
