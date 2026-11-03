@@ -35,7 +35,6 @@ describe('reduceRun', () => {
     const s = reduceRun([e('RunStarted', started)])
 
     expect(s.lifecycle.status).toBe('running')
-    expect(s.configHash).toBe('cfg123')
     expect(s.promptVersion).toBe('ticket@3')
     // How it was invoked, and not only which runtime took it (#88).
     expect(s.invocation?.command).toBe('claude')
@@ -333,7 +332,7 @@ describe('RunState.step and implementRound (#822)', () => {
   it('StepStarted sets step, and its own StepEnded clears it', () => {
     const event = at()
     const begun = [event('StepStarted', { runId: 'r', step: 'build', round: 2 })]
-    expect(reduceRun(begun).step).toEqual({ step: 'build', round: 2 })
+    expect(reduceRun(begun).step).toEqual(expect.objectContaining({ step: 'build', round: 2 }))
     const ended = [...begun, event('StepEnded', { runId: 'r', outcome: { step: 'build', round: 2, actions: [] } })]
     expect(reduceRun(ended).step).toBeNull()
   })
@@ -344,7 +343,7 @@ describe('RunState.step and implementRound (#822)', () => {
       event('StepStarted', { runId: 'r', step: 'review', round: 0 }),
       event('RunFailed', { kind: 'timeout', detail: 'wall' }),
     ])
-    expect(state.step).toEqual({ step: 'review', round: 0 })
+    expect(state.step).toEqual(expect.objectContaining({ step: 'review', round: 0 }))
   })
 
   it('a non-implement start does not raise implementRound', () => {
@@ -355,13 +354,13 @@ describe('RunState.step and implementRound (#822)', () => {
 
   it('D12: a StepEnded for another step leaves step', () => {
     const state = reduceRun(lateHistories.run.stepEndedForAnother)
-    expect(state.step).toEqual({ step: 'implement', round: 0 })
+    expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
   })
 
   it('a FixRound route raises implementRound', () => {
     const state = reduceRun(lateHistories.run.fixRoundRouted)
     expect(state.implementRound).toBe(1)
-    expect(state.step).toEqual({ step: 'implement', round: 1 })
+    expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 1 }))
   })
 
   it('a FixRound route is a round opened', () => {
@@ -375,7 +374,7 @@ describe('RunState.step and implementRound (#822)', () => {
   it('a failure inside a step is the failure', () => {
     const state = reduceRun(lateHistories.run.failedInsideStep)
     expect(state.failure).toMatchObject({ kind: 'out-of-turns' })
-    expect(state.step).toEqual({ step: 'implement', round: 0 })
+    expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
     expect(state.receipt?.turns).toBe(30)
     expect(state.refusal).toBeNull()
   })
@@ -405,5 +404,36 @@ describe('RunState.step and implementRound (#822)', () => {
     const state = reduceRun(history.map((e) => (e === routed ? (handed as typeof e) : e)))
     expect(state.route).toEqual(handed.data)
     expect(state.roundsOpened).toEqual([])
+  })
+})
+
+describe('RunState instants and the recorded plan (#827)', () => {
+  const last = <T>(xs: readonly T[], type: string) =>
+    [...xs].reverse().find((e) => (e as { type: string }).type === type) as { at: Date }
+
+  it('step.since is the last StepStarted, agentStartedAt the RunStarted, openedAt the first event', () => {
+    const events = lateHistories.run.fixRoundRouted
+    const state = reduceRun(events)
+    expect(state.step?.since).toEqual(last(events, 'StepStarted').at)
+    expect(state.agentStartedAt).toEqual(events.find((e) => e.type === 'RunStarted')!.at)
+    expect(state.openedAt).toEqual(events[0]!.at)
+  })
+
+  it('laneWaitedAt is the MergeLaneWaited at', () => {
+    const events = lateHistories.run.laneWaited
+    expect(reduceRun(events).laneWaitedAt).toEqual(events.find((e) => e.type === 'MergeLaneWaited')!.at)
+  })
+
+  it('askedAt is the signoff StepEnded at, and stays after the lifecycle moves on', () => {
+    const events = histories.run.signoffRequestedThenLifecycle
+    const state = reduceRun(events)
+    expect(state.askedAt).toEqual(events.find((e) => e.type === 'StepEnded')!.at)
+    expect(state.lifecycle.status).not.toBe('awaiting-approval')
+  })
+
+  it('resolved holds the hash and the ten steps', () => {
+    const state = reduceRun(lateHistories.run.planResolved)
+    expect(state.resolved?.configHash).toBe('cfg-plan')
+    expect(state.resolved?.steps).toHaveLength(10)
   })
 })

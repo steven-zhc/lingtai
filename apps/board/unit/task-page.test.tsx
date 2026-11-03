@@ -664,11 +664,11 @@ describe('the rail on the task page', () => {
 
   /**
    * **Since `#502` neither named action reads as specifically running** —
-   * there is no action-level `StepStarted` any more, so `foldProgress`
+   * there is no action-level `StepStarted` any more, so `progressOf`
    * cannot say which of `build`/`review` is the one in flight; both read
    * `pending`. A third cell appears after them: the placeholder `StepStarted`
    * sets `verdicts['proposed:']` (empty action name) to `running`, and
-   * `foldProgress` draws that as an "extra" action the plan did not name.
+   * `progressOf` draws that as an "extra" action the plan did not name.
    */
   it("draws proposed's build and review as two pending cells, plus the running placeholder", () => {
     const rank = opening(page(building(PLAN)))

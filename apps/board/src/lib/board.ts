@@ -60,7 +60,7 @@ import {
 } from '@lingtai/projector/task-view'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
-import { describeHeld, foldProgress, spentOf, type Granted, type RunProgress } from './progress.ts'
+import { describeHeld, progressOf, spentOf, type Granted, type RunProgress } from './progress.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBills,
@@ -1025,9 +1025,10 @@ async function laneProgress(
         const events = await eventStore.read(task.runId as string)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        const progress = foldProgress(events, plans.get(task.project), over)
+        const state = reduceRun(events)
+        const progress = progressOf(state, plans.get(task.project), over)
         // The rounds ride only where the rail does: a stream with no progress has no held line.
-        const opened = progress === null ? null : reduceRun(events).roundsOpened
+        const opened = progress === null ? null : state.roundsOpened
         return [task.taskId, progress, headOf(task, events), opened] as const
       } catch {
         return [task.taskId, null, null, null] as const
@@ -1055,7 +1056,7 @@ export interface RailCandidate {
   /**
    * The item **landed** — not merely that it is over.
    *
-   * This is `foldProgress`'s third argument and the only thing that turns a
+   * This is `progressOf`'s third argument and the only thing that turns a
    * point that recorded nothing from `pending` into `never-ran`, so it is held
    * to the strict anchor: *an item that landed is the case with no excuse — a
    * change on the base branch went past every point on its way there*. A **closed** item has that excuse and shares

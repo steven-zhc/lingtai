@@ -48,7 +48,7 @@ import { describe, expect, it } from 'vitest'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
-import { foldProgress, spentOf, type RunProgress } from '../src/lib/progress.ts'
+import { progressOf, spentOf, type RunProgress } from '../src/lib/progress.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
 import { emptyBill, grantedOf, type Bill } from '../src/lib/spend.ts'
 
@@ -420,7 +420,7 @@ const card = (
   limits: { rounds: number; restarts: number } | null = null,
 ) => {
   const merged = task(t)
-  const progress = foldProgress(events, plan, over)
+  const progress = progressOf(reduceRun(events), plan, over)
   return toCard(
     merged,
     null,
@@ -457,7 +457,7 @@ const render = (
 const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
   const one = task(t)
   const [candidate] = railCandidates([one])
-  const progress = candidate ? foldProgress(events, plan, candidate.over) : null
+  const progress = candidate ? progressOf(reduceRun(events), plan, candidate.over) : null
   return toCard(one, null, progress, null, null, undefined, undefined, undefined, null, roundsFor(events, progress))
 }
 
@@ -792,7 +792,7 @@ describe('a card answering a refusal', () => {
     const html = render({}, fixRound())
 
     // No "of 3": `RouteOffer` never stores the recipe's own ceiling (#502),
-    // so `foldProgress` has no denominator to read off the event itself.
+    // so `progressOf` has no denominator to read off the event itself.
     expect(sentence(html)).toMatch(/^fixing round 1 \d/)
     expect(html).not.toContain('build refused')
     expect(html).not.toContain('between steps')
@@ -1036,12 +1036,12 @@ describe('the eight states', () => {
    * was over.
    */
   it('reaches the card from the run doctor fails on', () => {
-    const over = foldProgress(landedPastMerge(), MERGE_PLAN, true)
+    const over = progressOf(reduceRun(landedPastMerge()), MERGE_PLAN, true)
     expect(over?.steps.find((p) => p.step === 'merge')?.state).toBe('never-ran')
 
     // And never on a run still in flight, where a point not reached yet is the
     // ordinary case and painting it red would put the fail colour everywhere.
-    const live = foldProgress(landedPastMerge(), MERGE_PLAN, false)
+    const live = progressOf(reduceRun(landedPastMerge()), MERGE_PLAN, false)
     expect(live?.steps.find((p) => p.step === 'merge')?.state).toBe('pending')
   })
 })
@@ -1105,7 +1105,7 @@ describe('the hatch, and what may not draw it', () => {
    * recipe the run never saw cannot accuse it of skipping a step.
    */
   it('never draws it from a plan the log did not record', () => {
-    const over = foldProgress(noPlanRecorded(), PLAN, true)
+    const over = progressOf(reduceRun(noPlanRecorded()), PLAN, true)
 
     expect(over?.steps.map((p) => p.state)).toEqual([
       'skipped',
@@ -1288,7 +1288,7 @@ describe('the plan folded into the rail (#781)', () => {
     tier: 'guarded',
   })
   const none = () => {
-    const p = foldProgress([resolved(PLAN)], PLAN, false)
+    const p = progressOf(reduceRun([resolved(PLAN)]), PLAN, false)
     if (p === null) throw new Error('a resolved plan folds to progress')
     return p
   }

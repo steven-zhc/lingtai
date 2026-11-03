@@ -3,7 +3,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * #482: what today's code shows for the history rows and the progress strip,
  * for every ending `what-a-pass-writes-today.test.ts` (#461) pins — before
  * #484 is free to rewrite `task.ts`'s `groupHistory` and `progress.ts`'s
- * `foldProgress` onto the read model (`waitsOf`/`routesOf`/`stepOutcomesOf`).
+ * `progressOf` onto the read model (`waitsOf`/`routesOf`/`stepOutcomesOf`).
  *
  * **Mirrored, not imported.** #461's rows are `it`s inside a conductor test
  * that drives a real pass through fakes with ~1000 lines of its own setup;
@@ -24,7 +24,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  *
  * **Two helpers, so #484 edits two bodies and not forty literals.** `historyOf`
  * routes through `groupHistory` (`task.ts`) and `stripOf` through
- * `foldProgress`/`Segs` (`progress.ts`, `rail.tsx`) exactly as the task page
+ * `progressOf`/`Segs` (`progress.ts`, `rail.tsx`) exactly as the task page
  * draws them (`task/[id]/page.tsx:264`'s own `labels`). If #484 moves the page
  * onto `stepOutcomesOf`/`routesOf`, these two functions are what change —
  * every literal below stays put, which is the whole point of pinning through
@@ -55,7 +55,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * a real fact about today's code against this fixture, not a mistake in it.
  *
  * One `StepPlan`, empty, for every fixture that carries a real
- * `StepsResolved`: `foldProgress` reads a step's planned actions off the
+ * `StepsResolved`: `progressOf` reads a step's planned actions off the
  * run's own `StepsResolved` first and the passed-in plan only as a fallback
  * before that event lands (`progress.ts:539`), so for those rows the empty
  * plan is inert except for `claim`, `admit` and `implement`'s own defaults,
@@ -67,7 +67,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * decline at `claim` never writes a `TicketClaimed`, so `claimsOf(own)`
  * (`task.ts:973`) is `[]` for this run; `loadTask` reads a run's own stream
  * only through `streams = claims.map((c) => eventStore.read(c.runId))`
- * (`task.ts:1485`), so that stream is never read, and `foldProgress` is never
+ * (`task.ts:1485`), so that stream is never read, and `progressOf` is never
  * called for it either (`task.ts:1541-1542` gates on `folded.length - 1 >=
  * 0`, and `folded = claims.map(...)` is `[]`). `history: groupHistory([...own,
  * ...streams.flat()], attempts)` (`task.ts:1578`) therefore folds `own`
@@ -85,19 +85,19 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * `loadTask` calls `planFor` only for `'running'` or `'blocked'`
  * (`task.ts:1525-1527`), so `plan` stays `undefined`; `landed` is `false`
  * (the item never lands here); and `task.ts:1541`'s gate,
- * `last >= 0 && (landed || plan !== undefined)`, is false — `foldProgress` is
+ * `last >= 0 && (landed || plan !== undefined)`, is false — `progressOf` is
  * never called on the last attempt, `run.progress` stays `null`, and the task
  * page draws the empty-stream paragraph instead of a `<Segs>` strip. Pinning
  * a strip for either row would be the same invented page view the paragraph
  * above refuses for 15/15b/15c.
  */
-import type { Envelope, EventType } from '@lingtai/domain'
+import { reduceRun, type Envelope, type EventType } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import { Segs } from '../src/app/rail.tsx'
-import { foldProgress } from '../src/lib/progress.ts'
+import { progressOf } from '../src/lib/progress.ts'
 import { groupHistory } from '../src/lib/task.ts'
 
 /** One event, loosely typed: every fixture below is a real captured payload, re-validated through `makeStream`'s own `parsePayload`. */
@@ -135,13 +135,13 @@ function documentsOf(events: readonly Envelope[], attempts: ReadonlyMap<string, 
 
 const EMPTY_PLAN: StepPlan = new Map()
 
-/** `foldProgress` + `<Segs labels>`, reduced to one `{step, state}` pair per segment — the rail's own information content. */
+/** `progressOf` + `<Segs labels>`, reduced to one `{step, state}` pair per segment — the rail's own information content. */
 function stripOf(
   runEvents: readonly Envelope[],
   landed: boolean,
   plan: StepPlan = EMPTY_PLAN,
 ): { step: string; state: string }[] {
-  const progress = foldProgress(runEvents, plan, landed)
+  const progress = progressOf(reduceRun(runEvents), plan, landed)
   const html = renderToStaticMarkup(<Segs steps={progress?.steps ?? []} at={null} labels />)
   return [...html.matchAll(/<li class="seg s-([a-z-]+)"[^>]*>.*?<span class="slab [^"]*">([a-z]+)<\/span><\/li>/g)].map(
     (m) => ({ step: m[2]!, state: m[1]! }),

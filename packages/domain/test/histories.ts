@@ -26,6 +26,7 @@ import {
   chatStream,
   integrationStream,
   passStream,
+  STEPS,
   ticketStream,
 } from '../src/index.ts'
 import {
@@ -675,6 +676,33 @@ function publishedRun(
   ])
 }
 
+/** #827: a run, then the plan it was given — all ten steps. */
+function planResolved(): readonly Envelope[] {
+  const run = aRun(passStream('plan-resolved'))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('StepsResolved', {
+      runId: run.runId,
+      configHash: 'cfg-plan',
+      steps: STEPS.map((step) => ({ step, actions: step === 'build' ? ['test', 'lint'] : [] })),
+    }),
+  ])
+}
+
+/** #827: a pass waits for the merge lane inside `merge`, then merge ends. */
+function laneWaited(): readonly Envelope[] {
+  const run = aRun(passStream('lane-waited'))
+  return stamp([
+    runStarted(run, runTicket),
+    run.event('StepStarted', { runId: run.runId, step: 'merge', round: 0 }),
+    run.event('MergeLaneWaited', { behind: { runId: 'pass-other', issue: '12' } }),
+    run.event('StepEnded', {
+      runId: run.runId,
+      outcome: outcome('merge', 0, [act('verdict', 'lane', 'sha-1', refused, 'merge')]),
+    }),
+  ])
+}
+
 export const lateHistories = {
   run: {
     fixRoundRouted: fixRoundRouted(),
@@ -699,6 +727,8 @@ export const lateHistories = {
     nothingCommitted: publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null }),
     failedInsideStep: failedInsideStep(),
     refusedThenFailed: refusedThenFailed(),
+    planResolved: planResolved(),
+    laneWaited: laneWaited(),
   },
 } as const
 
@@ -721,6 +751,8 @@ export const COVERS = {
     'RunFailed',
     'StepStarted',
     'StepEnded',
+    'StepsResolved',
+    'MergeLaneWaited',
     'PassRouted',
     'RunRefsPublished',
     'RunKeptUncommitted',

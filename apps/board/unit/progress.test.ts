@@ -10,7 +10,6 @@ import {
   type Proposal,
   type Step,
 } from '@lingtai/domain'
-import type { SpendRow } from '@lingtai/projector'
 /**
  * What a running card says about *now*.
  *
@@ -25,9 +24,12 @@ import type { SpendRow } from '@lingtai/projector'
  * it the per-action budget this file used to read while a point was still in
  * flight. What a `StepEnded` carries once the point is done is unchanged.
  */
+import { lateHistories } from '@lingtai/domain/test/histories'
+import { makeStream } from '@lingtai/domain/test/support'
+import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { AGENT, describeHeld, elapsed, foldProgress, spentOf, type StepState } from '../src/lib/progress.ts'
+import { AGENT, describeHeld, elapsed, progressOf, spentOf, type StepState } from '../src/lib/progress.ts'
 import { grantedOf } from '../src/lib/spend.ts'
 
 let seq = 0n
@@ -110,7 +112,7 @@ const stateOf = (steps: readonly { step: string; state: StepState }[], step: str
 
 describe('where a run has got to', () => {
   it('names the point it is at, with no per-action budget to show', () => {
-    const progress = foldProgress(timeline(), PLAN)
+    const progress = progressOf(reduceRun(timeline()), PLAN)
 
     // **Since `#502`**: `StepStarted` carries no action, so `now.label` is
     // the bare step — `stepOf` already reads a label's head rather than
@@ -124,12 +126,12 @@ describe('where a run has got to', () => {
   it("measures elapsed from the run's first event, not from the agent's", () => {
     // The prepare gates run before `RunStarted`; a run that has spent six
     // minutes installing has spent six minutes.
-    expect(foldProgress(timeline(), PLAN)?.since).toBe('2026-09-04T17:12:20.000Z')
+    expect(progressOf(reduceRun(timeline()), PLAN)?.since).toBe('2026-09-04T17:12:20.000Z')
   })
 
   it('is at the agent, against the wall clock as applied, while the agent runs', () => {
     const upToAgent = timeline().slice(0, 4)
-    const progress = foldProgress(upToAgent, PLAN)
+    const progress = progressOf(reduceRun(upToAgent), PLAN)
 
     expect(progress?.now?.label).toBe(AGENT)
     expect(progress?.now?.since).toBe('2026-09-04T17:12:30.000Z')
@@ -144,7 +146,7 @@ describe('where a run has got to', () => {
    */
   it('says so when the agent has finished and no point has started', () => {
     const between = timeline().slice(0, 6)
-    expect(foldProgress(between, PLAN)?.now).toBeNull()
+    expect(progressOf(reduceRun(between), PLAN)?.now).toBeNull()
   })
 
   /**
@@ -153,7 +155,7 @@ describe('where a run has got to', () => {
    * the only other way a point can be silent.
    */
   it('shows all ten steps, and which are done', () => {
-    const steps = foldProgress(timeline(), PLAN)?.steps ?? []
+    const steps = progressOf(reduceRun(timeline()), PLAN)?.steps ?? []
 
     expect(steps.map((p) => p.step)).toEqual([...STEPS])
     expect(stateOf(steps, 'admit')).toBe('skipped')
@@ -171,7 +173,7 @@ describe('where a run has got to', () => {
    */
   it('names a configured point before StepsResolved has landed', () => {
     const first = timeline().slice(0, 2)
-    const steps = foldProgress(first, PLAN)?.steps ?? []
+    const steps = progressOf(reduceRun(first), PLAN)?.steps ?? []
 
     expect(stateOf(steps, 'proposed')).toBe('pending')
     expect(steps.find((p) => p.step === 'proposed')?.planned).toEqual(['build'])
@@ -183,7 +185,7 @@ describe('where a run has got to', () => {
       ...timeline(),
       at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
     ]
-    const progress = foldProgress(failed, PLAN)
+    const progress = progressOf(reduceRun(failed), PLAN)
 
     expect(stateOf(progress?.steps ?? [], 'proposed')).toBe('failed')
     // The verdict ended the phase; nothing is executing.
@@ -208,7 +210,7 @@ describe('where a run has got to', () => {
       result: { _tag: 'Completed', head: null, question: 'the ticket names two `base` values — which did you mean?' },
     }
     const asked = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [askedAction]))]
-    expect(stateOf(foldProgress(asked, PLAN)?.steps ?? [], 'proposed')).toBe('asked')
+    expect(stateOf(progressOf(reduceRun(asked), PLAN)?.steps ?? [], 'proposed')).toBe('asked')
 
     const crashedAction: Action = {
       plugin: 'agent',
@@ -219,7 +221,7 @@ describe('where a run has got to', () => {
       result: { _tag: 'Interrupted', cause: 'out-of-turns' },
     }
     const crashed = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [crashedAction]))]
-    expect(stateOf(foldProgress(crashed, PLAN)?.steps ?? [], 'proposed')).toBe('did-not-finish')
+    expect(stateOf(progressOf(reduceRun(crashed), PLAN)?.steps ?? [], 'proposed')).toBe('did-not-finish')
   })
 
   /**
@@ -239,14 +241,14 @@ describe('where a run has got to', () => {
       result: { _tag: 'Completed', requested: { question: 'land this?' } },
     }
     const held = [...timeline().slice(0, 6), at('2026-09-04T17:21:00Z', 'StepEnded', ended('merge', [signoffAction]))]
-    const progress = foldProgress(held, PLAN)
+    const progress = progressOf(reduceRun(held), PLAN)
 
     expect(progress?.now?.label).toBe('merge:read it')
     expect(progress?.now?.budgetMs).toBeNull()
   })
 
   it('has nothing to say about a run with no events', () => {
-    expect(foldProgress([], PLAN)).toBeNull()
+    expect(progressOf(reduceRun([]), PLAN)).toBeNull()
   })
 
   /**
@@ -254,7 +256,7 @@ describe('where a run has got to', () => {
    * the same rule the Queued column follows when GitHub will not answer (#76).
    */
   it('still says where a run is when no recipe could be read', () => {
-    const progress = foldProgress(timeline())
+    const progress = progressOf(reduceRun(timeline()))
 
     expect(progress?.now?.label).toBe('proposed')
     expect(progress?.now?.budgetMs).toBeNull()
@@ -449,3 +451,94 @@ describe('the stopwatch', () => {
     expect(elapsed(-5_000)).toBe('0s')
   })
 })
+
+/** `now`, drawn from `RunState`'s instants (#827). */
+describe('progressOf: now', () => {
+  const T = (n: number) => new Date(Date.UTC(2026, 8, 4, 12, 0, n))
+  const runStarted = (e: ReturnType<typeof makeStream>, at: Date) =>
+    e(
+      'RunStarted',
+      {
+        ticketId: 't',
+        runtime: 'claude-code',
+        model: 'm',
+        promptVersion: 'p',
+        baseSha: 'b',
+        configHash: 'c',
+        worktree: '/w',
+        invocation: { command: 'claude', args: [], tier: 'guarded', limits: { turns: 10, wallMs: 600_000 } },
+      },
+      { at },
+    )
+  const stepStarted = (e: ReturnType<typeof makeStream>, step: Step, round: number, at: Date) =>
+    e('StepStarted', { runId: 'r', step, round }, { at })
+  const finished = (e: ReturnType<typeof makeStream>, at: Date) =>
+    e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }, { at })
+  const nowOf = (events: readonly Envelope[]) => progressOf(reduceRun(events))?.now
+
+  it('the lane wait ends with merge', () => {
+    const events = lateHistories.run.laneWaited
+    const before = events.slice(0, events.length - 1)
+    expect(nowOf(before)?.label).toBe('waiting for the merge lane')
+    expect(nowOf(events)).toBeNull()
+  })
+
+  it('is null between RunFinished and implement ending', () => {
+    const e = makeStream('r')
+    const events = [stepStarted(e, 'implement', 0, T(0)), runStarted(e, T(1)), finished(e, T(5))]
+    expect(nowOf(events)).toBeNull()
+  })
+
+  it('reads the agent while it runs, against wallMs', () => {
+    const e = makeStream('r')
+    const now = nowOf([stepStarted(e, 'implement', 0, T(0)), runStarted(e, T(1))])
+    expect(now).toEqual({ label: AGENT, since: T(1).toISOString(), budgetMs: 600_000 })
+  })
+
+  it('a fixing round reads fixing round 1 against wallMs', () => {
+    const e = makeStream('r')
+    const events = [runStarted(e, T(0)), finished(e, T(2)), stepStarted(e, 'implement', 1, T(3))]
+    expect(nowOf(events)).toEqual({ label: 'fixing round 1', since: T(3).toISOString(), budgetMs: 600_000 })
+  })
+
+  it('an asked signoff reads its key from askedAt', () => {
+    const asked = progressOf(reduceRun(signoffAsked(T(7))))
+    expect(asked?.now).toEqual({ label: 'merge:read it', since: T(7).toISOString(), budgetMs: null })
+  })
+
+  it('a tie: StepStarted merge and MergeLaneWaited at one instant reads the lane', () => {
+    const e = makeStream('r')
+    const events = [
+      stepStarted(e, 'merge', 0, T(4)),
+      e('MergeLaneWaited', { behind: { runId: 'o', issue: '1' } }, { at: T(4) }),
+    ]
+    expect(nowOf(events)?.label).toBe('waiting for the merge lane')
+  })
+
+  it('a tie: StepStarted implement and RunStarted at one instant reads agent', () => {
+    const e = makeStream('r')
+    expect(nowOf([stepStarted(e, 'implement', 0, T(4)), runStarted(e, T(4))])?.label).toBe(AGENT)
+  })
+
+  it('a second RunStarted after a RunFinished reads agent again', () => {
+    const e = makeStream('r')
+    const events = [runStarted(e, T(0)), finished(e, T(2)), runStarted(e, T(4))]
+    expect(nowOf(events)?.label).toBe(AGENT)
+  })
+})
+
+function signoffAsked(at: Date): readonly Envelope[] {
+  const e = makeStream('r')
+  const action = {
+    plugin: 'human',
+    name: 'read it',
+    onSha: 'sha-1',
+    evidence: '',
+    yields: 'signoff',
+    result: { _tag: 'Completed', requested: { question: 'ship it?' } },
+  } as unknown as Action
+  return [
+    e('StepStarted', { runId: 'r', step: 'merge', round: 0 }, { at: new Date(at.getTime() - 1000) }),
+    e('StepEnded', { runId: 'r', outcome: { step: 'merge', round: 0, actions: [action] } }, { at }),
+  ]
+}
