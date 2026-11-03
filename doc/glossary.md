@@ -29,3 +29,40 @@ disagree, the code is right and this is corrected.
   [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
   0120 §5.
 - [The pass](the-pass.html) shows where each of these arrives from.
+
+## The log and its states
+
+Lingtai is an event log. Everything else is what the log's events add up to.
+
+- **Event** (事件) — one row of the `events` table, appended and never changed
+  (0100). Every event belongs to one **stream**.
+- **Stream** (流) — the events about one thing, in order. The id's prefix says
+  what the thing is (`packages/domain/src/streams.ts`).
+- **Apply event** (应用事件) — the one rule that takes a stream's state and its
+  next event and returns the state after it. Each kind of stream has exactly one,
+  in `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
+  board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
+  Code: `applyRun(state, event)`, `applyTicket`, `applyControl`, and so on.
+  `reduceRun(events)` and its siblings are *apply every event of the stream, from
+  the start*. The older words *fold* and *reduce* mean the same thing; say *apply
+  event*.
+- **State** (状态) — what applying every event of one stream gives. A state is
+  about one stream and nothing else; an answer that needs two streams is a
+  projection or a caller's join.
+- **Projection** (投影) — a table built from the whole log in `seq` order, for
+  questions across many streams (`task_view`, `ticket_report`, `spend`,
+  `finding_backlog`). Where a row needs one stream's state, the projection stores
+  that state in the row and applies each new event to it with the same domain
+  rule. It is corrected only by `lingtai projection rebuild <name>`.
+
+The states, one per kind of stream:
+
+| State | Stream | What it is |
+|---|---|---|
+| **RunState** | `pass-…`, one per pass | One pass of one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/run.ts`. |
+| **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its passes: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
+| **ControlState** | `ctl-conductor`, one per machine | Whether the conductor may take work: paused or not, by whom, why and until when, and a standing request to drain. What depends on the clock (a pause that lifts at `until`) is evaluated by the reader. `packages/domain/src/control.ts`. |
+| **ProjectState** | `prj-{project}`, one per repository | What Lingtai was told about a repository: its owner, base branch, the recipe hash last resolved, and a refusal nothing has recovered from yet. `packages/domain/src/project.ts`. |
+| **IntegrationState** | `int-{project}-{base}`, one per base branch | The merge lane for one base branch: idle or attempting which ticket's head, and how many attempts. `packages/domain/src/integration.ts`. |
+| **ChatState** | `chat-…`, one per discussion | One discussion with an agent about a ticket: its asks and answers, and how many are answered. `packages/domain/src/chat.ts`. |
+| **Finding state** | `bkl-{project}-{key}`, one per finding | One reviewer finding sent to the backlog: proposed, accepted or declined. `packages/domain/src/backlog.ts`. |
