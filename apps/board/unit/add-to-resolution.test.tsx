@@ -18,7 +18,7 @@ const turn = (
   chatId: 'chat-1',
   attempt: 2,
   waiting: false,
-  costUsd: null,
+
   held,
   turns: [
     {
@@ -26,7 +26,7 @@ const turn = (
       by: 'human:steven',
       at: '2026-09-10T10:00:00.000Z',
       reading: [],
-      answer: { text: 'Because the lock is held.', read: [], cannot: [], proposal, costUsd: null, failure: null },
+      answer: { text: 'Because the lock is held.', read: [], cannot: [], proposal, failure: null },
     },
   ],
 })

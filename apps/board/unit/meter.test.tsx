@@ -26,14 +26,13 @@ function chat(over: Partial<DiscussionView> = {}): DiscussionView {
     chatId: 'chat-1',
     attempt: 2,
     turns: [],
-    costUsd: null,
     waiting: false,
     held: null,
     ...over,
   }
 }
 
-function turn(question: string, costUsd: number | null) {
+function turn(question: string) {
   return {
     question,
     by: 'human:steven',
@@ -44,7 +43,6 @@ function turn(question: string, costUsd: number | null) {
       read: [],
       cannot: [],
       proposal: null,
-      costUsd,
       failure: null,
     },
   }
@@ -62,15 +60,11 @@ describe('the meter', () => {
    * stop it. `no limit` is said rather than implied — an unstated limit reads as
    * a limit somebody else is keeping.
    */
-  it('reads the running cost, the messages and the absence of a limit', () => {
-    const html = render([
-      chat({
-        costUsd: 0.64,
-        turns: [turn('why no branch?', 0.2), turn('and the flag?', 0.3), turn('so?', 0.14)],
-      }),
-    ])
+  it('reads the messages and the absence of a limit, with no figure of its own (D16)', () => {
+    const html = render([chat({ turns: [turn('why no branch?'), turn('and the flag?'), turn('so?')] })])
 
-    expect(html).toContain('this conversation $0.64 · 3 messages · no limit')
+    expect(html).toContain('this conversation no figure · 3 messages · no limit')
+    expect(html).not.toContain('chatcost')
   })
 
   it('says the boundary, and no figure, before the first question', () => {
@@ -86,7 +80,7 @@ describe('the meter', () => {
    * still in flight says it was asked and waits for the number.
    */
   it('does not print a zero for a cost nobody has reported', () => {
-    const html = render([chat({ costUsd: null, waiting: true, turns: [turn('why?', null)] })])
+    const html = render([chat({ waiting: true, turns: [turn('why?')] })])
 
     expect(html).toContain('this conversation asked · 1 message · no limit')
     expect(html).not.toContain('$0.00')
@@ -100,7 +94,7 @@ describe('the meter', () => {
    * running total moved.
    */
   it('reports what closed conversations came to once none is open', () => {
-    const html = render([chat({ held: 'none', costUsd: 0.42, turns: [turn('why?', 0.42)] })], '$0.42')
+    const html = render([chat({ held: 'none', turns: [turn('why?')] })], '$0.42')
 
     expect(html).toContain('1 held · $0.42 · no limit')
   })

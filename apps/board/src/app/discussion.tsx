@@ -64,11 +64,6 @@ import { useFollowing } from './live.tsx'
 import { useLogTail, type TailState } from './run-log.tsx'
 import { useTriageDraft } from './triage-picks.tsx'
 
-/** `$1.20`, or nothing at all when no figure was reported. See `costUsd`. */
-function meter(costUsd: number | null): string | null {
-  return costUsd === null ? null : `$${costUsd.toFixed(2)}`
-}
-
 /**
  * The meter, on the box's own rule: `this conversation $0.64 · 3 messages · no limit`.
  *
@@ -90,7 +85,7 @@ function meter(costUsd: number | null): string | null {
 function openMeter(open: DiscussionView): string {
   const messages = open.turns.length
   return [
-    `this conversation ${meter(open.costUsd) ?? (open.waiting ? 'asked' : 'no figure')}`,
+    `this conversation ${open.waiting ? 'asked' : 'no figure'}`,
     `${messages} message${messages === 1 ? '' : 's'}`,
     'no limit',
   ].join(' · ')
@@ -701,9 +696,6 @@ export function Discussion({
                             ) : (
                               <span className="chatread">read no files</span>
                             )}
-                            {meter(t.answer.costUsd) ? (
-                              <span className="chatcost">{meter(t.answer.costUsd)}</span>
-                            ) : null}
                           </p>
 
                           {/* The proposal, and the two places it can go. Nothing is
