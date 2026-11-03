@@ -68,6 +68,13 @@ describe('decodeTicket refuses another shape', () => {
     expect(() => decodeTicket(own, 'ticket_report')).toThrow(/rebuild/)
   })
 
+  it('refuses an inherited-looking key such as __proto__ inside a reason', () => {
+    const own = structuredClone(good)
+    own.waits[0].reason = JSON.parse('{"_tag":"OwnQuestion","question":"q","__proto__":{}}')
+    expect(() => decodeTicket(own, 'ticket_report')).toThrow(/rebuild/)
+    expect(() => decodeTicket(JSON.stringify(own), 'ticket_report')).toThrow(/rebuild/)
+  })
+
   it('refuses a field it does not know, null, and text that is not JSON', () => {
     expect(() => decodeTicket({ ...good, extra: 1 }, 'ticket_report')).toThrow(/rebuild/)
     expect(() => decodeTicket(null, 'ticket_report')).toThrow(/ticket_state.*rebuild/s)

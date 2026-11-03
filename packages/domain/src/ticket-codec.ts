@@ -182,10 +182,14 @@ function firstDifference(a: unknown, b: unknown, path: string): string | null {
     const x = a as Record<string, unknown>
     const y = b as Record<string, unknown>
     for (const key of new Set([...Object.keys(x), ...Object.keys(y)])) {
+      // Own properties only: `key in` and `x[key]` also see `__proto__`, `constructor` and the rest of
+      // `Object.prototype`, which would make a stored `"__proto__": {}` look equal to an absent field.
       // `undefined` is absent: JSON never holds it.
-      if (x[key] === undefined && y[key] === undefined) continue
-      if (!(key in x) || !(key in y) || x[key] === undefined || y[key] === undefined) return `${path}.${key}`
-      const d = firstDifference(x[key], y[key], `${path}.${key}`)
+      const xv = Object.hasOwn(x, key) ? x[key] : undefined
+      const yv = Object.hasOwn(y, key) ? y[key] : undefined
+      if (xv === undefined && yv === undefined) continue
+      if (xv === undefined || yv === undefined) return `${path}.${key}`
+      const d = firstDifference(xv, yv, `${path}.${key}`)
       if (d !== null) return d
     }
     return null
