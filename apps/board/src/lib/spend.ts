@@ -27,6 +27,7 @@
 import { fetchedNote } from '@lingtai/conductor'
 import { readLag, readSpend, type SpendRow } from '@lingtai/projector'
 
+import type { Granted } from './progress.ts'
 import { timed } from './timing.ts'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
@@ -268,4 +269,30 @@ export function spendChip(c: SpendCurrency): {
     tone: 'idle',
     title: `${c.lag} event(s) are not in spend yet — it catches up when something next appends with a projector, or ${repair}`,
   }
+}
+
+/**
+ * The rounds a person's grant paid for, billed apart from the automatic ones
+ * (#573): the `Action` rows that name a grant and a round, summed per
+ * `grant:round` — one null cost makes the total null, never `$0.00` — and in
+ * round order. Reported `costUsd` only, as the held line always read it.
+ */
+export function grantedOf(rows: readonly SpendRow[]): Granted {
+  const byKey = new Map<string, { round: number; waitId: string; costUsd: number | null }>()
+  for (const row of rows) {
+    if (row.purpose !== 'Action' || row.grant === null || row.round === null) continue
+    const key = `${row.grant}:${row.round}`
+    const before = byKey.get(key)
+    byKey.set(key, {
+      round: row.round,
+      waitId: row.grant,
+      costUsd:
+        before === undefined
+          ? row.costUsd
+          : before.costUsd === null || row.costUsd === null
+            ? null
+            : before.costUsd + row.costUsd,
+    })
+  }
+  return [...byKey.values()].sort((a, b) => a.round - b.round)
 }

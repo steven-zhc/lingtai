@@ -37,6 +37,7 @@ function row(over: Partial<SpendRow> = {}): SpendRow {
     usage: [],
     estimatedUsd: null,
     estimateFetched: null,
+    grant: null,
     kind: null,
     ...over,
   }

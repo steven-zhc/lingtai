@@ -8,7 +8,8 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * that is over and that nobody will act on was described more fully than the one
  * burning money.
  *
- * **Nothing new is written down for this.** `RunStarted` opens the agent phase
+ * **Nothing new is written down for this.** (The budget line is not this fold's:
+ * a run's rounds come from `RunState` and its grants from `spend`, #826.) `RunStarted` opens the agent phase
  * and `RunFinished` closes it, `StepsResolved` names all ten steps, and the
  * last `StepStarted` with no matching verdict is the step the run is at. The
  * recipe's timeout is the denominator, and it arrives already parsed as
@@ -194,27 +195,23 @@ export interface RunProgress {
   now: Phase | null
   /** All ten, in pass order. */
   steps: readonly StepProgress[]
-  /**
-   * What a bought round has spent against its ceiling, for a held item's
-   * budget line (`describeHeld`, `#415`).
-   *
-   * `spent` is the highest `round` a round opened or declined recorded — a
-   * decline's own round is "rounds already spent when this was decided", so
-   * it is read the same way an opened round's is. `of` is the last opened
-   * round's `of` that was above zero, or null where nothing on this stream
-   * named a ceiling — every event written before the field existed, and
-   * every run that never bought a round — in which case the recipe is this
-   * budget's only source for one.
-   */
-  rounds: { spent: number; of: number | null }
-  /**
-   * The rounds a person's grant paid for, each with the bill of its
-   * `implement` run (0118 §2, #573) — read off the `RunSpent` that names the
-   * grant (`for.grant`), never matched to a `WaitResolved` by round number.
-   * `costUsd` is null where any run of that round did not say what it cost
-   * (0110 §4). In round order; empty where nothing was granted.
-   */
-  granted: readonly { round: number; waitId: string; costUsd: number | null }[]
+}
+
+/**
+ * The rounds a person's grant paid for, each with the bill of its `implement`
+ * run (0118 §2, #573), in round order. `costUsd` is null where any run of that
+ * round did not say what it cost (0110 §4). Read off `spend` by `grantedOf`.
+ */
+export type Granted = readonly { round: number; waitId: string; costUsd: number | null }[]
+
+/**
+ * The highest opened round that a person's grant did not pay for: a granted
+ * round is a person's, not one of the automatic ones, so it is taken out by
+ * its number. 0 where none was opened.
+ */
+export function spentOf(roundsOpened: readonly number[], granted: Granted): number {
+  const grantedRounds = new Set(granted.map((g) => g.round))
+  return Math.max(0, ...roundsOpened.filter((r) => !grantedRounds.has(r)))
 }
 
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
@@ -396,11 +393,6 @@ export function foldProgress(
   let wallMs: number | null = null
   /** The round in flight, if the pass bought one and it has not come back. */
   let fixing: string | null = null
-  /** The highest round spent, and the last ceiling named above zero. See `RunProgress.rounds`. */
-  const roundsOpened: number[] = []
-  let roundsOf: number | null = null
-  /** Per granted round, keyed by wait and round: the fixer's bill. See `RunProgress.granted`. */
-  const grantedRounds = new Map<string, { round: number; waitId: string; costUsd: number | null }>()
 
   const close = (key: string, state: StepState) => {
     verdicts.set(key, state)
@@ -446,23 +438,6 @@ export function foldProgress(
       case 'RunFinished':
         clearAgentPhase()
         break
-
-      case 'RunSpent': {
-        const spentFor = data['for'] as { _tag?: string; round?: unknown; grant?: unknown } | undefined
-        if (spentFor?._tag !== 'Action' || typeof spentFor.grant !== 'string' || typeof spentFor.round !== 'number') {
-          break
-        }
-        const cost = typeof data['costUsd'] === 'number' ? data['costUsd'] : null
-        const key = `${spentFor.grant}:${spentFor.round}`
-        const before = grantedRounds.get(key)
-        grantedRounds.set(key, {
-          round: spentFor.round,
-          waitId: spentFor.grant,
-          costUsd:
-            before === undefined ? cost : before.costUsd === null || cost === null ? null : before.costUsd + cost,
-        })
-        break
-      }
 
       case 'StepsResolved': {
         const steps = (data['steps'] ?? []) as { step: string; actions: string[] }[]
@@ -570,28 +545,6 @@ export function foldProgress(
               break
             }
 
-            /**
-             * **The count only, since `#502` moved the `now`/`fixing` reading
-             * to `StepStarted` above.** `PassRouted` — the one event this
-             * fact comes off — is appended in a single batch after the
-             * pass's whole walk returns (`conduct.ts`), strictly after every
-             * `StepStarted`/`StepEnded` the round itself wrote: on a pass
-             * that bought a round and then landed, it is the stream's last
-             * event. Setting `now` from it said a merged ticket was still
-             * `fixing round 1`, with nothing after it in the stream to ever
-             * clear that. `roundsSpent` is not time-sensitive the same way —
-             * learning about a round late is still learning the true count.
-             *
-             * **The ceiling (`roundsOf`) is not on the event any more** (#502):
-             * `RouteOffer` never stored `policy.rounds`, only what it decided
-             * from it, so a total a caller wants has to come off the recipe —
-             * `roundsOf` stays null from this fold.
-             */
-            case 'RoundOpened': {
-              roundsOpened.push(fact.round)
-              break
-            }
-
             case 'RunEnded':
               clearAgentPhase()
               break
@@ -640,13 +593,7 @@ export function foldProgress(
     return { step, planned, state, actions }
   })
 
-  // A granted round is a person's, not one of the automatic ones: the
-  // `RunSpent` names its own round, so it is taken out of `spent` by that
-  // number on this one stream.
-  const granted = [...grantedRounds.values()].sort((a, b) => a.round - b.round)
-  const grantedNumbers = new Set(granted.map((g) => g.round))
-  const roundsSpent = Math.max(0, ...roundsOpened.filter((r) => !grantedNumbers.has(r)))
-  return { since: first.at.toISOString(), now, steps, rounds: { spent: roundsSpent, of: roundsOf }, granted }
+  return { since: first.at.toISOString(), now, steps }
 }
 
 /**
@@ -657,7 +604,7 @@ export function foldProgress(
  * **One function, so the card and the task page cannot word one hold's
  * budget two ways** — the argument `describeArm` and `describeWait` already
  * make, moved here rather than beside them because the ceilings this reads
- * come off `RunProgress`, not off `task_view`'s columns.
+ * come off `RunState` and `spend`, not off `task_view`'s columns.
  *
  * Both ceilings are the caller's to resolve — **the event where the log has
  * one, the recipe only where it does not** (`roundsOf`, `restartsOf`): the
@@ -689,7 +636,7 @@ export function describeHeld({
    * `implement` round the grant bought (0118 §7), not the whole lap, which
    * the cold reviewer also spends in.
    */
-  granted: RunProgress['granted']
+  granted: Granted
   /** The resolved rounds ceiling, already event-then-recipe. Zero means none; null means unreadable. */
   roundsOf: number | null
   /** How many approaches this ticket has abandoned so far. */

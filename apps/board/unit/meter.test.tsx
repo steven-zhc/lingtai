@@ -154,6 +154,7 @@ function spent(
     usage: [],
     estimatedUsd: null,
     estimateFetched: null,
+    grant: null,
     kind: null,
   }
 }

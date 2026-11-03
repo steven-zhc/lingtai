@@ -2,6 +2,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
 import {
   decideRoute,
   offerFor,
+  reduceRun,
   STEPS,
   type Action,
   type Envelope,
@@ -9,6 +10,7 @@ import {
   type Proposal,
   type Step,
 } from '@lingtai/domain'
+import type { SpendRow } from '@lingtai/projector'
 /**
  * What a running card says about *now*.
  *
@@ -25,7 +27,8 @@ import {
  */
 import { describe, expect, it } from 'vitest'
 
-import { AGENT, describeHeld, elapsed, foldProgress, type StepState } from '../src/lib/progress.ts'
+import { AGENT, describeHeld, elapsed, foldProgress, spentOf, type StepState } from '../src/lib/progress.ts'
+import { grantedOf } from '../src/lib/spend.ts'
 
 let seq = 0n
 
@@ -286,7 +289,7 @@ describe('rounds spent against the ceiling', () => {
       at('2026-09-04T17:34:01Z', 'PassRouted', roundOpened('proposed', '2 tests failed')),
     ]
 
-    expect(foldProgress(withRound, PLAN)?.rounds).toEqual({ spent: 1, of: null })
+    expect(spentOf(reduceRun(withRound).roundsOpened, [])).toBe(1)
   })
 
   it('stays at the round already spent when a later escalation buys no further round', () => {
@@ -304,11 +307,11 @@ describe('rounds spent against the ceiling', () => {
       }),
     ]
 
-    expect(foldProgress(declined, PLAN)?.rounds).toEqual({ spent: 1, of: null })
+    expect(spentOf(reduceRun(declined).roundsOpened, [])).toBe(1)
   })
 
   it('is zero and names no ceiling on a run that never bought a round', () => {
-    expect(foldProgress(timeline(), PLAN)?.rounds).toEqual({ spent: 0, of: null })
+    expect(spentOf(reduceRun(timeline()).roundsOpened, [])).toBe(0)
   })
 })
 
@@ -364,61 +367,69 @@ describe('human-granted rounds', () => {
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines' }
     return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
   }
-  const spent = (round: number, costUsd: number | null, grant?: string) =>
-    at('2026-09-04T17:50:00Z', 'RunSpent', {
-      for: { _tag: 'Action', step: 'implement', name: 'agent', round, ...(grant ? { grant } : {}) },
-      runtime: 'claude-code',
-      turns: 1,
-      durationMs: 1,
-      usage: [],
-      costUsd,
-    })
+  // What the `spend` projection holds for a `RunSpent` (#826): the grant is
+  // `spent_for.grant`, read into the row.
+  const spent = (round: number, costUsd: number | null, grant: string | null = null): SpendRow => ({
+    seq: '1',
+    at: new Date('2026-09-04T17:50:00Z'),
+    streamId: 'pass-59',
+    ticket: 'ticket-1',
+    project: 'lingtai',
+    pass: 'pass-59',
+    purpose: 'Action',
+    step: 'implement',
+    action: 'agent',
+    round,
+    runtime: 'claude-code',
+    turns: 1,
+    durationMs: 1,
+    costUsd,
+    usage: [],
+    estimatedUsd: null,
+    estimateFetched: null,
+    kind: null,
+    grant,
+  })
   const automatic = () => [
     ...timeline(),
     at('2026-09-04T17:34:01Z', 'PassRouted', opened(0)),
-    spent(1, 0.5),
     at('2026-09-04T17:40:01Z', 'PassRouted', opened(1)),
-    spent(2, 0.5),
   ]
+  const automaticRows = () => [spent(1, 0.5), spent(2, 0.5)]
 
   it('takes a granted round out of the automatic count and bills it on its own', () => {
     // Both histories: the granted lap opened a round (3) or wrote none.
     for (const withOpened of [true, false]) {
-      const events = [
-        ...automatic(),
-        spent(3, 1.416, 'wait-1'),
-        ...(withOpened ? [at('2026-09-04T17:55:00Z', 'PassRouted', opened(2))] : []),
-      ]
-      const progress = foldProgress(events, PLAN)
-      expect(progress?.rounds.spent).toBe(2)
-      expect(progress?.granted).toEqual([{ round: 3, waitId: 'wait-1', costUsd: 1.416 }])
-      expect(
-        describeHeld({
-          spent: progress!.rounds.spent,
-          granted: progress!.granted,
-          roundsOf: 2,
-          restarts: 0,
-          restartsOf: 1,
-        }),
-      ).toBe('2 of 2 rounds · round 3 granted, $1.42 · 1 restart left')
+      const events = [...automatic(), ...(withOpened ? [at('2026-09-04T17:55:00Z', 'PassRouted', opened(2))] : [])]
+      const granted = grantedOf([...automaticRows(), spent(3, 1.416, 'wait-1')])
+      const roundsSpent = spentOf(reduceRun(events).roundsOpened, granted)
+      expect(roundsSpent).toBe(2)
+      expect(granted).toEqual([{ round: 3, waitId: 'wait-1', costUsd: 1.416 }])
+      expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 0, restartsOf: 1 })).toBe(
+        '2 of 2 rounds · round 3 granted, $1.42 · 1 restart left',
+      )
     }
   })
 
   it('reads a granted round whose cost was not said as unknown, never $0.00', () => {
-    const progress = foldProgress([...automatic(), spent(3, null, 'wait-1')], PLAN)
-    expect(
-      describeHeld({
-        spent: progress!.rounds.spent,
-        granted: progress!.granted,
-        roundsOf: 2,
-        restarts: 1,
-        restartsOf: 1,
-      }),
-    ).toBe('2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left')
+    const granted = grantedOf([...automaticRows(), spent(3, null, 'wait-1')])
+    const roundsSpent = spentOf(reduceRun(automatic()).roundsOpened, granted)
+    expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 1, restartsOf: 1 })).toBe(
+      '2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left',
+    )
+  })
+
+  it("sums a grant's runs, and one null makes the total null", () => {
+    expect(grantedOf([spent(3, 1, 'wait-1'), spent(3, 0.5, 'wait-1')])).toEqual([
+      { round: 3, waitId: 'wait-1', costUsd: 1.5 },
+    ])
+    expect(grantedOf([spent(3, 1, 'wait-1'), spent(3, null, 'wait-1')])).toEqual([
+      { round: 3, waitId: 'wait-1', costUsd: null },
+    ])
   })
 
   it('has none where no RunSpent names a grant', () => {
-    expect(foldProgress(automatic(), PLAN)?.granted).toEqual([])
+    expect(grantedOf(automaticRows())).toEqual([])
   })
 })
 

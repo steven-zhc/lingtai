@@ -39,7 +39,6 @@ describe('waiting visual previews', () => {
     expect(task.ticket?.body).toContain('| **Problem** |')
     expect(task.standing.reason?._tag).toBe('ProposedEscalated')
     expect(task.runs[0]?.progress?.steps).toHaveLength(10)
-    expect(task.runs[0]?.progress?.rounds.spent).toBe(2)
     expect(task.runs[0]?.diff?.branch).toBe('agent/393')
     expect(task.held).toContain('2 of 2 rounds')
     expect(task.discussions[0]?.turns[0]?.answer?.text).toContain(available ? 'saved branch' : 'no published head')

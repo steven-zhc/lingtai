@@ -150,6 +150,11 @@ export interface RunState {
    * reached, 0 before either. Not `step.round`, which is any step's.
    */
   implementRound: number
+  /**
+   * Every round a `FixRound` route opened, in log order. Nothing removes one:
+   * which of them a person's grant paid for is `spend`'s to say.
+   */
+  roundsOpened: readonly number[]
 
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
@@ -177,6 +182,7 @@ export const emptyRun: RunState = {
   steps: {},
   step: null,
   implementRound: 0,
+  roundsOpened: [],
   receipt: null,
   version: 0,
   lastSeq: null,
@@ -423,7 +429,12 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       const d = event.data as PayloadOf<'PassRouted'>
       const next = routeNext(d.offer, d.reply, d.decision, { runId: d.runId })
       return next._tag === 'FixRound'
-        ? { ...state, ...at, implementRound: Math.max(state.implementRound, next.round) }
+        ? {
+            ...state,
+            ...at,
+            implementRound: Math.max(state.implementRound, next.round),
+            roundsOpened: [...state.roundsOpened, next.round],
+          }
         : { ...state, ...at }
     }
 

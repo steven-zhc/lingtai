@@ -38,7 +38,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { TriageResult } from '@lingtai/domain/wait'
 
 import type { BacklogEntry } from './backlog.ts'
-import type { SpendRow } from './spend.ts'
+import { grantOfFor, type SpendRow } from './spend.ts'
 import { CheckpointRewoundError, columnOf } from './store.ts'
 import type {
   BacklogQuery,
@@ -353,6 +353,7 @@ function toSpendRow(row: ProjectionRow): SpendRow {
     estimateFetched:
       row.estimate_fetched === null || row.estimate_fetched === undefined ? null : parseBool(row.estimate_fetched),
     kind: (row.kind as string | null) ?? null,
+    grant: grantOfFor(parseJson(row.spent_for)),
   }
 }
 

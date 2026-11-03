@@ -12,6 +12,7 @@ import {
   agentBranchOf,
   isPending,
   isRegistered,
+  reduceRun,
   waitWords,
 } from '@lingtai/domain'
 import {
@@ -59,7 +60,7 @@ import {
 } from '@lingtai/projector/task-view'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
-import { describeHeld, foldProgress, type RunProgress } from './progress.ts'
+import { describeHeld, foldProgress, spentOf, type Granted, type RunProgress } from './progress.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBills,
@@ -67,6 +68,7 @@ import {
   currentSpend,
   emptyBill,
   emptyBills,
+  grantedOf,
   withNoSpendFallback,
   type Bill,
   type Purpose,
@@ -659,6 +661,11 @@ export function toCard(
    * from `move` exactly as `savedHead: false` does on the task page.
    */
   fixHead: string | null = null,
+  /**
+   * The rounds `held` is worded from: spent off the run's state and granted off
+   * `spend` (#826). Null where the run has no progress, and `held` is null then.
+   */
+  rounds: { spent: number; granted: Granted } | null = null,
 ): BoardCard {
   const words =
     t.wait === null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
@@ -700,12 +707,12 @@ export function toCard(
     attempts: t.attempts,
     arm: describeArm(t, limits?.restarts ?? null),
     held:
-      progress === null
+      rounds === null
         ? null
         : describeHeld({
-            spent: progress.rounds.spent,
-            granted: progress.granted,
-            roundsOf: progress.rounds.of ?? limits?.rounds ?? null,
+            spent: rounds.spent,
+            granted: rounds.granted,
+            roundsOf: limits?.rounds ?? null,
             restarts: t.restarts,
             restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? null),
           }),
@@ -989,7 +996,11 @@ export async function queuedCards(
 async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
-): Promise<{ progress: Map<string, RunProgress>; fixHeads: Map<string, string> }> {
+): Promise<{
+  progress: Map<string, RunProgress>
+  fixHeads: Map<string, string>
+  roundsOpened: Map<string, readonly number[]>
+}> {
   const railed = railCandidates(tasks)
   const railedIds = new Set(railed.map((c) => c.task.taskId))
   // A waiting card past the rail cap still gets its one button (#647), so the
@@ -1014,23 +1025,27 @@ async function laneProgress(
         const events = await eventStore.read(task.runId as string)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        return [task.taskId, foldProgress(events, plans.get(task.project), over), headOf(task, events)] as const
+        const progress = foldProgress(events, plans.get(task.project), over)
+        // The rounds ride only where the rail does: a stream with no progress has no held line.
+        const opened = progress === null ? null : reduceRun(events).roundsOpened
+        return [task.taskId, progress, headOf(task, events), opened] as const
       } catch {
-        return [task.taskId, null, null] as const
+        return [task.taskId, null, null, null] as const
       }
     }),
     ...headOnly.map(async (task) => {
       try {
         const events = await eventStore.read(task.runId as string)
-        return [task.taskId, null, headOf(task, events)] as const
+        return [task.taskId, null, headOf(task, events), null] as const
       } catch {
-        return [task.taskId, null, null] as const
+        return [task.taskId, null, null, null] as const
       }
     }),
   ])
   return {
     progress: new Map(folded.flatMap(([id, p]) => (p === null ? [] : [[id, p] as const]))),
     fixHeads: new Map(folded.flatMap(([id, , head]) => (head === null ? [] : [[id, head] as const]))),
+    roundsOpened: new Map(folded.flatMap(([id, , , opened]) => (opened === null ? [] : [[id, opened] as const]))),
   }
 }
 
@@ -1141,7 +1156,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const { progress, fixHeads } = await laneProgress(tasks, queued.plans)
+  const { progress, fixHeads, roundsOpened } = await laneProgress(tasks, queued.plans)
   // Keyed by project, for `held`'s fallback when a run's own stream named no
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).
@@ -1162,6 +1177,8 @@ export async function loadBoard(project?: string): Promise<Board> {
     // spent rather than as unknown (0110 §7, `#498`'s review).
     const rowsForTicket = spendByTicket.get(t.taskId) ?? []
     const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
+    const opened = roundsOpened.get(t.taskId)
+    const granted = grantedOf(rowsForTicket.filter((row) => row.pass === t.runId))
     return toCard(
       t,
       t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
@@ -1175,6 +1192,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       bills.Answering,
       triageContextOf(triageDeclared === null ? null : triageDeclared.has(t.project), daemon),
       fixHeads.get(t.taskId) ?? null,
+      opened === undefined ? null : { spent: spentOf(opened, granted), granted },
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so
