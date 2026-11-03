@@ -145,7 +145,7 @@ export function bearing(
     return {
       tone: 'warn',
       label: said,
-      why: `${said} — rebuild first: ${rebuild}, then lingtai restart`,
+      why: `${said}${names.includes('task_view') ? ' — not taking work' : ''} — rebuild first: ${rebuild}, then lingtai restart`,
       title: also(`${detail} — ${beating(board)}`),
     }
   }

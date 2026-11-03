@@ -12,7 +12,14 @@ export {
   type LockPlace,
   type LockResult,
 } from './lock.ts'
-export { startDaemon, type Daemon, type DaemonOptions, type DaemonStart, type StopReason } from './daemon.ts'
+export {
+  startDaemon,
+  notTakingWork,
+  type Daemon,
+  type DaemonOptions,
+  type DaemonStart,
+  type StopReason,
+} from './daemon.ts'
 export {
   COMPLETION_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,

@@ -10,8 +10,9 @@ import { pausedSentence } from '../src/day-ceiling.ts'
 const source = readFileSync(new URL('../src/daemon.ts', import.meta.url), 'utf8')
 
 describe('the daemon asks the daily ceiling', () => {
-  it('in both paused callbacks, through the one shared function', () => {
-    expect(source.match(/\bpaused: \(\) => pausedSentence\(/g)).toHaveLength(2)
+  it('in both paused callbacks, through the one composed hook that asks the ceiling', () => {
+    expect(source.match(/\bpaused: claiming,/g)).toHaveLength(2)
+    expect(source.match(/\bpausedSentence\(/g)).toHaveLength(1)
   })
 
   it('and surfaces the ceiling sentence rather than a bare true', async () => {

@@ -8,7 +8,7 @@ import type { Projection, ProjectionRunner } from '@lingtai/projector'
 import { ProjectionShapeError } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { startDaemon } from '../src/daemon.ts'
+import { notTakingWork, startDaemon } from '../src/daemon.ts'
 
 const base = {
   predatesHold: async () => null,
@@ -94,27 +94,37 @@ describe('a stopped projection', () => {
     await started.daemon.stopped
   })
 
-  it('task_view still stops the daemon', async () => {
-    const { runnerFor, made } = fakes()
-    const started = await startDaemon({ ...base, projections: [projection('task_view')], runnerFor })
+  it('a stopped task_view leaves the daemon up', async () => {
+    const live = fakes()
+    const started = await startDaemon({ ...base, projections: [projection('task_view')], runnerFor: live.runnerFor })
     if (!started.ok) throw new Error('did not start')
-    made.get('task_view')!.fail(new Error('boom'))
-    expect(await started.daemon.stopped).toBe('projection-failed')
+    let settled = false
+    void started.daemon.stopped.then(() => (settled = true))
+    live.made.get('task_view')!.fail(new Error('boom'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(settled).toBe(false)
     expect(started.daemon.stoppedProjections.map((p) => p.name)).toEqual(['task_view'])
+    expect(notTakingWork(started.daemon.stoppedProjections)).toContain('not taking work')
+    started.daemon.stop()
+    await started.daemon.stopped
+
+    const atStart = fakes({ throwAtStart: ['task_view'] })
+    const again = await startDaemon({
+      ...base,
+      projections: [projection('task_view')],
+      runnerFor: atStart.runnerFor,
+    })
+    if (!again.ok) throw new Error('did not start')
+    expect(again.daemon.stoppedProjections.map((p) => p.name)).toEqual(['task_view'])
+    again.daemon.stop()
+    await again.daemon.stopped
   })
 
-  it('task_view failing at start throws out of startDaemon, releasing the lock once', async () => {
-    const { runnerFor } = fakes({ throwAtStart: ['task_view'] })
-    let released = 0
-    await expect(
-      startDaemon({
-        ...base,
-        acquire: async () => ({ ok: true as const, lock: { release: async () => void released++ } }),
-        projections: [projection('task_view')],
-        runnerFor,
-      }),
-    ).rejects.toThrow()
-    expect(released).toBe(1)
+  it('notTakingWork is null until task_view is on the list, and names an unread checkpoint', () => {
+    expect(notTakingWork([])).toBeNull()
+    expect(notTakingWork([{ name: 'spend', checkpoint: 1n, error: 'x' }])).toBeNull()
+    expect(notTakingWork([{ name: 'task_view', checkpoint: null, error: 'x' }])).toContain('an unread checkpoint')
+    expect(notTakingWork([{ name: 'task_view', checkpoint: 7n, error: 'x' }])).toContain('seq 7')
   })
 
   it('a shape drift at start still refuses', async () => {
