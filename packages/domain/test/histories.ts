@@ -926,6 +926,42 @@ const late_releasedWithoutReason = (() => {
   return stamp([...aClaim(t, r1), ...aRelease(t, r1, '')])
 })()
 
+/** #831: a person closed the ticket from a sign-off, and the close followed their move. */
+const late_closedByPerson = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9112))
+  const r1 = passStream('t9112-1')
+  const w = wait('9112-sign')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: r1 }, step: 'proposed', action: 'human', question: 'ship it?' },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Close' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+  ])
+})()
+
+/** #831 D6: the same close, on its own stream, then a claim `closed` absorbs. */
+const late_closedByPersonThenClaimed = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9113))
+  const r1 = passStream('t9113-1')
+  const r2 = passStream('t9113-2')
+  const w = wait('9113-sign')
+  return stamp([
+    ...aClaim(t, r1),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: r1 }, step: 'proposed', action: 'human', question: 'ship it?' },
+      w,
+    ),
+    ...aResolution(t, w, { _tag: 'Close' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    ...aClaim(t, r2),
+  ])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -950,6 +986,8 @@ export const lateHistories = {
     askedThenReleasedByPerson: late_askedThenReleasedByPerson,
     askedThenAnswered: late_askedThenAnswered,
     releasedWithoutReason: late_releasedWithoutReason,
+    closedByPerson: late_closedByPerson,
+    closedByPersonThenClaimed: late_closedByPersonThenClaimed,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,

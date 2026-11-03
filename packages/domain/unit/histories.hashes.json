@@ -53,5 +53,7 @@
   "chat.twoAsksTwoAnswers": "e950318694db99ff579ee5514cc18453fdf23f1b4d7478aeb87625a828353f72",
   "ticket.askedThenReleasedByPerson": "61ff0fc012466ee49c10db4b594c775a85fbe9a4cbaa683356ba58d25dab57ee",
   "ticket.askedThenAnswered": "7a5cf3089ffd413f7a84f01ef8bf491f29fbc3fa9a54a662a5cf15f5d4c7d938",
-  "ticket.releasedWithoutReason": "01022312c076a08c38082b992d8cbd98825a3c4159647557dae4ca2e75338b29"
+  "ticket.releasedWithoutReason": "01022312c076a08c38082b992d8cbd98825a3c4159647557dae4ca2e75338b29",
+  "ticket.closedByPerson": "331489ddb963e1706411bbc204ee3c1262fc16bd1546cf9a6ae0691f79ca2ca9",
+  "ticket.closedByPersonThenClaimed": "83b4204e7ffc5560b184f22cbf5d3d55150250bf5265d780752900a2673e0efc"
 }

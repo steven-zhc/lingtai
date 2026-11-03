@@ -6,7 +6,6 @@ import { readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   chatStream,
-  LIFECYCLE_EVENTS,
   reduceChat,
   reduceControl,
   reduceTicket,
@@ -810,65 +809,45 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
       })
     : null
   const raw = words?.diagnosis?.raw ?? null
-  const lastMove = [...own].reverse().find((e) => e.type === 'WaitResolved')
-  const moveIndex = lastMove === undefined ? -1 : own.indexOf(lastMove)
-  const move = lastMove?.data as { waitId: string; resolution: { _tag: string }; by: string; note: string } | undefined
-  const startedForMove = own
-    .slice(0, moveIndex)
-    .findLastIndex((e) => e.type === 'WaitStarted' && (e.data as { waitId: string }).waitId === move?.waitId)
-  const currentMove =
-    move !== undefined && startedForMove >= 0 && !own.slice(moveIndex + 1).some((e) => e.type === 'WaitStarted')
-  const outcome = own.slice(moveIndex + 1).find((e) => e.type === 'TicketClosed' || e.type === 'TicketReleased')
-  const latestLifecycle = [...own].reverse().find((e) => LIFECYCLE_EVENTS.has(e.type))
-  const closed =
-    outcome?.type === 'TicketClosed' &&
-    latestLifecycle === outcome &&
-    life.status === 'closed' &&
-    currentMove &&
-    move?.resolution._tag === 'Close'
+  // The last person's move and what followed it are the fold's (`TicketState.lastMove`), not a rescan.
+  const m = item.lastMove
+  const live = m !== null && m.current
+  const closed = live && m.then?.kind === 'closed' && life.status === 'closed' && m.resolution._tag === 'Close'
   const released =
-    outcome?.type === 'TicketReleased' &&
-    latestLifecycle === outcome &&
+    live &&
+    m.then?.kind === 'released' &&
     life.status === 'backlog' &&
-    currentMove &&
-    (move?.resolution._tag === 'Requeue' || move?.resolution._tag === 'EditBodyAndRequeue') &&
-    (outcome.data as { cause?: { _tag: string; waitId?: string } }).cause?._tag === 'ByPerson' &&
-    (outcome.data as { cause: { waitId: string } }).cause.waitId === move?.waitId
+    (m.resolution._tag === 'Requeue' || m.resolution._tag === 'EditBodyAndRequeue') &&
+    m.then.cause?._tag === 'ByPerson' &&
+    m.then.cause.waitId === m.waitId
   const requeued =
-    currentMove &&
-    latestLifecycle === lastMove &&
+    live &&
+    m.then === null &&
     life.status === 'backlog' &&
-    (move?.resolution._tag === 'Requeue' ||
-      move?.resolution._tag === 'EditBodyAndRequeue' ||
-      move?.resolution._tag === 'AnswerQuestion')
-  const continued =
-    currentMove &&
-    latestLifecycle === lastMove &&
-    life.status === 'approved' &&
-    move?.resolution._tag === 'GrantFixRound'
+    (m.resolution._tag === 'Requeue' ||
+      m.resolution._tag === 'EditBodyAndRequeue' ||
+      m.resolution._tag === 'AnswerQuestion')
+  const continued = live && m.then === null && life.status === 'approved' && m.resolution._tag === 'GrantFixRound'
   const body = item.github.last.body
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
     afterMove:
-      move !== undefined && (closed || released || requeued || continued)
+      m !== null && (closed || released || requeued || continued)
         ? {
-            resolution: move.resolution._tag,
-            by: move.by,
-            note: move.note,
+            resolution: m.resolution._tag,
+            by: m.by,
+            note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
               ? 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'The wait was resolved; a new pass starts from base.'
                 : released
-                  ? `${(outcome!.data as { reason: string }).reason} A new pass starts from base.`
-                  : (outcome!.data as { reason: string }).reason,
-            ...(continued
-              ? {
-                  ref: (move.resolution as { ref?: string }).ref,
-                  head: (move.resolution as { onSha?: string }).onSha,
-                }
+                  ? `${m.then?.reason ?? ''} A new pass starts from base.`
+                  : (m.then?.reason ?? ''),
+            ...(continued && m.resolution._tag === 'GrantFixRound'
+              ? { ref: m.resolution.ref, head: m.resolution.onSha }
               : {}),
           }
         : null,

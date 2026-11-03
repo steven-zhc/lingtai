@@ -463,4 +463,36 @@ describe('D4: a ticket knows what it is', () => {
     const s = reduceTicket(lateHistories.ticket.escalatedThenRequeued)
     expect(s.answers[0]!.question).toMatch(/^agent\/9108 is waiting on you\./)
   })
+
+  describe('lastMove (#831)', () => {
+    it('a move closed by its own close is current', () => {
+      const m = reduceTicket(lateHistories.ticket.closedByPerson).lastMove
+      expect(m?.current).toBe(true)
+      expect(m?.then?.kind).toBe('closed')
+    })
+
+    it('a move released by person is current', () => {
+      const m = reduceTicket(lateHistories.ticket.askedThenReleasedByPerson).lastMove
+      expect(m?.current).toBe(true)
+      expect(m?.then?.kind).toBe('released')
+      if (m?.then?.kind === 'released') expect(m.then.cause).toEqual({ _tag: 'ByPerson', waitId: m.waitId })
+    })
+
+    it('a continuation ends the move', () => {
+      expect(reduceTicket(histories.ticket.approvedAfterSignoff).lastMove?.current).toBe(false)
+    })
+
+    it('a grant then a second wait: the last move is the Close, still open', () => {
+      const m = reduceTicket(histories.ticket.waitsResolvedBeforeClose).lastMove
+      expect(m?.resolution._tag).toBe('Close')
+      expect(m?.current).toBe(true)
+      expect(m?.then).toBeNull()
+    })
+
+    it('D6: a claim after the close does not end the move', () => {
+      const s = reduceTicket(lateHistories.ticket.closedByPersonThenClaimed)
+      expect(s.lastMove?.current).toBe(true)
+      expect(s.lifecycle.status).toBe('closed')
+    })
+  })
 })
