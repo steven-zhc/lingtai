@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { foldRun, presentRun, type Claim } from '../src/lib/task.ts'
 
-const claim: Claim = { runId: 'run-1', at: '2026-08-01T00:00:00.000Z', repair: null, released: null }
+const claim: Claim = { runId: 'run-1', at: '2026-08-01T00:00:00.000Z', repair: false, released: null }
 const view = (events: readonly Envelope[]) => foldRun(claim, 1, events)
 const stepOf = (events: readonly Envelope[], prefix: string) =>
   view(events).steps.find((s) => s.step.startsWith(prefix))
