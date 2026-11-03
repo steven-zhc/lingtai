@@ -51,7 +51,6 @@ import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
 import type { Envelope, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   cardFactOf,
-  emptyTicket,
   encodeTicket,
   isTicketStream,
   parseTicketStream,
@@ -879,9 +878,9 @@ export interface TaskCard {
  * refusal below.
  *
  * Returns `null` for every state but `'waiting'`, whatever the columns hold:
- * `TicketDiscovered`, `RunStarted` and `RunProposedCompletion` move `state`
- * off `'waiting'` without touching these columns (design note §1), so a row
- * mid-run can carry a stale `wait_id`/`wait_reason` that this must not read.
+ * Since #834 the wait columns are read off the ticket reduce and clear with the
+ * lifecycle, so a stale pair is not expected; the check stays because the board
+ * must not draw a wait for a row that is not waiting.
  *
  * Throws, naming the task, on the one combination the fold can never write:
  * `state === 'waiting'` with no reason. `state` is only ever set to
