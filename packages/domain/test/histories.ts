@@ -719,33 +719,96 @@ function implementThenReviewed(): readonly Envelope[] {
   ])
 }
 
+const fixRoundRoutedH = fixRoundRouted()
+const stepEndedForAnotherH = stepEndedForAnother()
+const publishedCleanH = publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' })
+const publishedWithWipH = publishedRun(
+  'published-with-wip',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+)
+const wipRecordedH = publishedRun(
+  'wip-recorded',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+)
+const wipOnAnotherArmH = publishedRun(
+  'wip-on-another-arm',
+  { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
+  [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
+)
+const armOnlyH = publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' })
+const nothingCommittedH = publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null })
+const failedInsideStepH = failedInsideStep()
+const refusedThenFailedH = refusedThenFailed()
+const planResolvedH = planResolved()
+const laneWaitedH = laneWaited()
+const implementThenReviewedH = implementThenReviewed()
+
+/** #832 D9: what Lingtai wrote to GitHub — a waiting comment, labels, a body, an edit, two refusals. */
+function githubLedger(): readonly Envelope[] {
+  const t = makeStream(ticketStream(PROJECT, 9201))
+  const run = passStream('t9201-a')
+  const w1 = wait('ledger-1')
+  const at = { project: PROJECT, issue: '9201' }
+  return stamp([
+    ...aClaim(t, run),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: run }, step: 'merge', action: 'human', question: 'ship it?' },
+      w1,
+    ),
+    t('IssueUpdated', { ...at, change: 'comment', detail: '101', waitId: w1, question: 'ship it?' }),
+    t('IssueUpdated', { ...at, change: 'labels', detail: 'lingtai:waiting' }),
+    t('IssueUpdated', { ...at, change: 'body', detail: 'section written' }),
+    ...aResolution(t, w1, { _tag: 'EditBodyAndRequeue' }),
+    t('IssueUpdated', { ...at, change: 'comment-edited', detail: '101', waitId: w1 }),
+    t('IssueUpdateFailed', { ...at, change: 'labels', error: 'HTTP 502' }),
+    t('IssueUpdateFailed', { ...at, change: 'closed', error: 'HTTP 502' }),
+  ])
+}
+
+/** #832 D9: a body write, its wait resolved, and another wait started after it. */
+function bodyBeforeAnotherWait(): readonly Envelope[] {
+  const t = makeStream(ticketStream(PROJECT, 9202))
+  const run = passStream('t9202-a')
+  const w1 = wait('body-1')
+  const w2 = wait('body-2')
+  const at = { project: PROJECT, issue: '9202' }
+  const reason = (question: string) =>
+    ({ _tag: 'SignoffRequired', run: { runId: run }, step: 'merge', action: 'human', question }) as const
+  return stamp([
+    ...aClaim(t, run),
+    ...aWait(t, reason('first?'), w1),
+    t('IssueUpdated', { ...at, change: 'body', detail: 'section written' }),
+    ...aResolution(t, w1, { _tag: 'EditBodyAndRequeue' }),
+    t('TicketContinued', { runId: run, worker: 'conductor:1' }),
+    ...aWait(t, reason('second?'), w2),
+  ])
+}
+
+const githubLedgerH = githubLedger()
+const bodyBeforeAnotherWaitH = bodyBeforeAnotherWait()
+
 export const lateHistories = {
   run: {
-    fixRoundRouted: fixRoundRouted(),
-    stepEndedForAnother: stepEndedForAnother(),
-    publishedClean: publishedRun('published-clean', { outcome: 'published', headSha: 'sha-1' }),
-    publishedWithWip: publishedRun(
-      'published-with-wip',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
-    ),
-    wipRecorded: publishedRun(
-      'wip-recorded',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
-    ),
-    wipOnAnotherArm: publishedRun(
-      'wip-on-another-arm',
-      { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-      [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
-    ),
-    armOnly: publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' }),
-    nothingCommitted: publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null }),
-    failedInsideStep: failedInsideStep(),
-    refusedThenFailed: refusedThenFailed(),
-    planResolved: planResolved(),
-    laneWaited: laneWaited(),
-    implementThenReviewed: implementThenReviewed(),
+    fixRoundRouted: fixRoundRoutedH,
+    stepEndedForAnother: stepEndedForAnotherH,
+    publishedClean: publishedCleanH,
+    publishedWithWip: publishedWithWipH,
+    wipRecorded: wipRecordedH,
+    wipOnAnotherArm: wipOnAnotherArmH,
+    armOnly: armOnlyH,
+    nothingCommitted: nothingCommittedH,
+    failedInsideStep: failedInsideStepH,
+    refusedThenFailed: refusedThenFailedH,
+    planResolved: planResolvedH,
+    laneWaited: laneWaitedH,
+    implementThenReviewed: implementThenReviewedH,
+  },
+  ticket: {
+    githubLedger: githubLedgerH,
+    bodyBeforeAnotherWait: bodyBeforeAnotherWaitH,
   },
 } as const
 
@@ -787,6 +850,8 @@ export const COVERS = {
     'TicketClosed',
     'TicketLanded',
     'DispatchRefused',
+    'IssueUpdated',
+    'IssueUpdateFailed',
   ],
   control: [...CONTROL_FOLD_TYPES],
   chat: ['DiscussionAsked', 'DiscussionAnswered'],

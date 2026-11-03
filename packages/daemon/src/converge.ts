@@ -339,13 +339,16 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     const item = reduceTicket(events)
     const wanted = labelsFor(labelState(item.lifecycle.status))
 
-    // What the log last said it managed, per change. A failure with no later
-    // success is an outstanding claim; a success after it means somebody or
-    // something already got there.
-    const lastOutcome = new Map<string, string>()
+    // What the log last said it managed, per change, is `item.github.last`: a
+    // failure with no later success is an outstanding claim; a success after it
+    // means somebody or something already got there. A rewritten waiting
+    // comment (#750) is attempted once and never repaired, so it is no
+    // divergence and no reason to read the issue — excluded here, once.
+    const failed = (c: keyof typeof item.github.last) =>
+      c !== 'comment-edited' && item.github.last[c]?.outcome === 'failed'
     // And what it last said it *wrote*. An item that should carry no label but
     // was given one is drift the log can see on its own, without a request.
-    let lastWrote: readonly string[] = []
+    const lastWrote: readonly string[] = item.github.labels ?? []
     // And whether a `refs:` effect was ever resolved for this item, with what
     // the recipe asked of it. Read off `EndActionsResolved` rather than assumed
     // from the failure row, because `branch` is the recipe's decision and
@@ -357,21 +360,10 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
         for (const a of (e.data as PayloadOf<'EndActionsResolved'>).actions) {
           if ('refs' in a) sweep = { branch: a.branch }
         }
-        continue
-      }
-      if (e.type !== 'IssueUpdated' && e.type !== 'IssueUpdateFailed') continue
-      const d = e.data as { change?: string; detail?: string }
-      if (!d.change) continue
-      // A rewritten waiting comment (#750) is attempted once and never repaired,
-      // so it is no divergence and no reason to read the issue.
-      if (d.change === 'comment-edited') continue
-      lastOutcome.set(d.change, e.type)
-      if (d.change === 'labels' && e.type === 'IssueUpdated') {
-        lastWrote = d.detail ? d.detail.split(',').filter(Boolean) : []
       }
     }
 
-    const outstanding = [...lastOutcome].some(([, t]) => t === 'IssueUpdateFailed')
+    const outstanding = (Object.keys(item.github.last) as (keyof typeof item.github.last)[]).some(failed)
     // A label Lingtai put on and no longer wants.
     //
     // Without this the commonest drift there is was invisible: a released or
@@ -408,7 +400,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
       })
     }
 
-    if (lastOutcome.get('closed') === 'IssueUpdateFailed' && current.state === 'open') {
+    if (failed('closed') && current.state === 'open') {
       found.push({
         ticketId,
         project: parsed.project,
@@ -419,7 +411,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
       })
     }
 
-    if (lastOutcome.get('comment') === 'IssueUpdateFailed') {
+    if (failed('comment')) {
       found.push({
         ticketId,
         project: parsed.project,
@@ -445,7 +437,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     // deleted two arms and was refused the third leaves one row saying it
     // failed, and only the remote knows which two went — so the row is evidence
     // that something is owed and never the list of what.
-    if (sweep && lastOutcome.get('refs') === 'IssueUpdateFailed') {
+    if (sweep && failed('refs')) {
       const branch = agentBranch(issue)
       const arms = armPrefix(branch)
       // A read that is allowed to fail: this function repairs nothing, and a

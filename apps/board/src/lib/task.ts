@@ -890,15 +890,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     latestLifecycle === lastMove &&
     life.status === 'approved' &&
     move?.resolution._tag === 'GrantFixRound'
-  const bodyEvent = [...own]
-    .reverse()
-    .find(
-      (e) =>
-        (e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed') &&
-        (e.data as { change?: string }).change === 'body',
-    )
-  const bodyData = bodyEvent?.data as { change?: string; detail?: string; error?: string } | undefined
-  const lastWaitStarted = own.findLastIndex((e) => e.type === 'WaitStarted')
+  const body = item.github.last.body
 
   return {
     state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
@@ -925,14 +917,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
           }
         : null,
     bodyOutcome:
-      bodyData?.change === 'body' &&
-      bodyEvent !== undefined &&
-      lastWaitStarted >= 0 &&
-      own.indexOf(bodyEvent) > lastWaitStarted
-        ? {
-            result: bodyEvent.type === 'IssueUpdated' ? 'updated' : 'failed',
-            detail: bodyData.detail ?? bodyData.error ?? '',
-          }
+      body !== undefined && item.github.bodyAfterWait !== null && item.github.bodyAfterWait === item.github.lastWait
+        ? { result: body.outcome, detail: body.text }
         : null,
     triageStatus: null,
     since: since === null ? null : since.toISOString(),
