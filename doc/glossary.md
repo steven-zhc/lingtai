@@ -36,8 +36,13 @@ Lingtai is an event log. Everything else is what the log's events add up to.
 
 - **Event** (事件) — one row of the `events` table, appended and never changed
   (0100). Every event belongs to one **stream**.
-- **Stream** (流) — the events about one thing, in order. The id's prefix says
-  what the thing is (`packages/domain/src/streams.ts`).
+- **Stream** (流) — the events about one subject, in order. The id's prefix says
+  what the subject is (`packages/domain/src/streams.ts`). Subjects are kept apart on
+  purpose: a ticket, each attempt at it and each discussion about it are three
+  streams, linked by the ids their events carry (`TicketClaimed.runId`,
+  `RunStarted.ticketId`, `DiscussionHeld.chatId`), never one stream (the operator,
+  2026-11-03). A reducer reads its own stream only; an answer that needs two is a
+  projection's or a caller's join.
 - **Reduce** — the one rule that takes a stream's state and its next event and
   returns the state after it. Each kind of stream has exactly one, in
   `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
