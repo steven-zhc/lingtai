@@ -572,6 +572,7 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 17 | **Nothing else reduces a stream.** A committed list of the event-type branches left outside domain (joins, reactions, selects), and a test that fails on any branch not on it; `RunState.ticketId` readers; a named test per decision | U2 | all above | — |
 | 18 | **Documentation.** The reference and the operating guide, and an upgrade note per rebuild | — | all above | — |
 | 19 | **One word.** `applyX` → `reduceXEvent`, `Projection.apply` → `reduce`, and *fold* → *reduce* in names, comments and docs | — | last | — |
+| 20 | **The word is attempt** (D20). Ten tickets, #849–#858: domain, conductor and board/CLI names; package and app strings; the renamed documents with redirects; the docs, ADR bodies and living designs. Nothing the log or a projection stores is renamed | — | 19 | — |
 | — | Snapshots, with 0124's registry, codec and version table | last | all | not in 0.12 |
 
 R (17) and the S branches marked "leave" are left alone. That covers tell (apart from
