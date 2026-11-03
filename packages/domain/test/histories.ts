@@ -1025,6 +1025,20 @@ const late_waitThenLanded = (() => {
   ])
 })()
 
+/** #843: latest outcome wins, held order is kept, and a close does not absorb a held. */
+const late_discussionsHeld = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9117))
+  const r1 = passStream('t9117-1')
+  return stamp([
+    ...aClaim(t, r1),
+    t('DiscussionHeld', { chatId: 'c1', outcome: 'prompt', by: 'steven' }),
+    t('DiscussionHeld', { chatId: 'c2', outcome: 'none', by: 'steven' }),
+    t('DiscussionHeld', { chatId: 'c1', outcome: 'ticket', by: 'steven' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    t('DiscussionHeld', { chatId: 'c3', outcome: 'none', by: 'steven' }),
+  ])
+})()
+
 export const lateHistories = {
   run: {
     fixRoundRouted: late_fixRoundRouted,
@@ -1054,6 +1068,7 @@ export const lateHistories = {
     triagedTwice: late_triagedTwice,
     waitAfterClosed: late_waitAfterClosed,
     waitThenLanded: late_waitThenLanded,
+    discussionsHeld: late_discussionsHeld,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,
@@ -1105,6 +1120,7 @@ export const COVERS = {
     'WaitTriaged',
     'TicketSplit',
     'TicketLinked',
+    'DiscussionHeld',
     'TicketClosed',
     'TicketLanded',
     'DispatchRefused',
