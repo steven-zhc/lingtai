@@ -495,4 +495,14 @@ describe('D4: a ticket knows what it is', () => {
       expect(s.lifecycle.status).toBe('closed')
     })
   })
+
+  it('#843: discussions keep held order and latest outcome, and a close does not absorb one', () => {
+    const s = reduceTicket(lateHistories.ticket.discussionsHeld)
+    expect(s.discussions).toEqual([
+      { chatId: 'c1', outcome: 'ticket' },
+      { chatId: 'c2', outcome: 'none' },
+      { chatId: 'c3', outcome: 'none' },
+    ])
+    expect(s.lifecycle.status).toBe('closed')
+  })
 })

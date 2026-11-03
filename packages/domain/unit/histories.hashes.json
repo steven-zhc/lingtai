@@ -58,5 +58,6 @@
   "ticket.closedByPersonThenClaimed": "83b4204e7ffc5560b184f22cbf5d3d55150250bf5265d780752900a2673e0efc",
   "ticket.triagedTwice": "1bf0781f1ee1a9f636d73667eebb067b72fd5f1487dfce434744d305cb7528c7",
   "ticket.waitAfterClosed": "7e0762619635e71610aa5ba8327f631bbec84f887b5c89c322594331c582d76a",
-  "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645"
+  "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645",
+  "ticket.discussionsHeld": "cc9461458e33fab1fe5d3dc6068933cedae175e5fba5ae96061b39a41c90f4c9"
 }

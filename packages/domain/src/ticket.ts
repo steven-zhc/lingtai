@@ -32,6 +32,12 @@ export type AttemptEnding =
   | { readonly kind: 'released'; readonly reason: string }
   | { readonly kind: 'asked'; readonly reason: WaitReason }
 
+/** A chat held on a ticket, with how its latest `DiscussionHeld` ended (#843). */
+export interface TicketDiscussion {
+  readonly chatId: string
+  readonly outcome: PayloadOf<'DiscussionHeld'>['outcome']
+}
+
 /**
  * One wait, reduced once (#842). `waitsOf`, `triageFactsOf`, `designAsksOf`, the
  * CLI's triage and `editEndedWaits` all read this rather than scanning the stream.
@@ -358,6 +364,13 @@ export interface TicketState {
   /** Every wait, oldest first, with its triage, resolution and ending (#842). */
   waits: readonly TicketWait[]
 
+  /**
+   * Every chat held on this ticket, in the order each was first held, with its
+   * latest outcome (#843). Not a lifecycle fact, so a closed ticket keeps
+   * folding it too.
+   */
+  discussions: readonly TicketDiscussion[]
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number
   /** Global position of the last event applied. */
@@ -385,6 +398,7 @@ export const emptyTicket: TicketState = {
   answers: [],
   github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
   waits: [],
+  discussions: [],
   version: 0,
   lastSeq: null,
 }
@@ -700,6 +714,15 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
       const d = event.data as PayloadOf<'TicketLinked'>
       const already = state.links.some((l) => l.relation === d.relation && l.otherRef === d.otherRef)
       return { ...state, ...at, links: already ? state.links : [...state.links, d] }
+    }
+
+    case 'DiscussionHeld': {
+      const d = event.data as PayloadOf<'DiscussionHeld'>
+      const known = state.discussions.some((x) => x.chatId === d.chatId)
+      const discussions = known
+        ? state.discussions.map((x) => (x.chatId === d.chatId ? { chatId: x.chatId, outcome: d.outcome } : x))
+        : [...state.discussions, { chatId: d.chatId, outcome: d.outcome }]
+      return { ...state, ...at, discussions }
     }
 
     case 'TicketClosed': {
