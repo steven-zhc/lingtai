@@ -16,7 +16,9 @@
  *      or issue numbers. `pnpm test` fails for a type without one.
  *
  * Bump `SCHEMA_VER` for a type and add an upcaster rather than changing a
- * payload in place.
+ * payload in place. Adding an optional field is not changing one: it needs no
+ * bump and no upcaster, and a row written before it reads as the field absent
+ * (ADR 0100 §4).
  */
 import { z } from 'zod'
 
@@ -1368,6 +1370,10 @@ export const PassRouted = z.object({
 
 // --------------------------------------------------------------- control ----
 
+/** Whose pause a `ConductorPaused` is. */
+export const PauseCause = z.enum(['person', 'setup', 'account-limit', 'day-ceiling'])
+export type PauseCause = z.infer<typeof PauseCause>
+
 /**
  * What an operator told the conductor to do.
  *
@@ -1418,6 +1424,12 @@ export const ConductorPaused = z.object({
    * existed is read as not holding across a start, which is what it was.
    */
   holdsAcrossStarts: z.boolean().default(false),
+  /**
+   * Whose pause this is. Absent on every pause written before it existed
+   * (0100 §4), and read as null. Optional with no default, so that no stored
+   * or fixture row gains a key it did not have.
+   */
+  cause: PauseCause.optional(),
 })
 
 /** @summary The conductor was resumed, by a person or by itself when the daily spending limit was lifted. */

@@ -14,6 +14,7 @@
  * that appends to the stream still goes through the commands there.
  */
 import type { Envelope } from './envelope.ts'
+import { PauseCause } from './events.ts'
 import type { EventType } from './events.ts'
 
 /** One stream for the whole installation. Control is not per-project. */
@@ -81,6 +82,15 @@ export interface ControlState {
    * only by `ConductorResumed`, same as `paused` itself.
    */
   holdsAcrossStarts: boolean
+  /** Whose pause is standing. Null when none is, or when the pause predates `cause`. */
+  cause: PauseCause | null
+  /**
+   * The `until` of the last day-ceiling pause that a person resumed while it
+   * stood, or null. Cleared by the next day-ceiling pause, and by
+   * `evaluateControl` once `now` reaches it. Null too when that pause's
+   * `until` did not parse.
+   */
+  ceilingWaivedUntil: Date | null
   /**
    * Who asked it to stop and why, when somebody has.
    *
@@ -136,10 +146,162 @@ export const emptyControl: ControlState = {
   reason: null,
   until: null,
   holdsAcrossStarts: false,
+  cause: null,
+  ceilingWaivedUntil: null,
   shutdown: null,
   requested: [],
   continuing: [],
   discussions: [],
+}
+
+/**
+ * One event folded into the state. Pure, reads no clock, and never mutates its
+ * argument (0124 §2).
+ */
+export function applyControl(state: ControlState, e: Envelope): ControlState {
+  const d = (e.data ?? {}) as Record<string, unknown>
+  const str = (k: string): string | null => (typeof d[k] === 'string' ? (d[k] as string) : null)
+  switch (e.type) {
+    case 'ConductorPaused': {
+      // Absent on every pause written before 0031, and null on every pause a
+      // person makes. An unparseable one is the same answer as none: a pause
+      // nothing can prove ends holds until somebody lifts it.
+      const until = str('until')
+      const at = until === null ? Number.NaN : Date.parse(until)
+      // Absent, or a value outside the enum, is nobody's in particular (0100 §4).
+      const parsed = PauseCause.safeParse(d['cause'])
+      const cause = parsed.success ? parsed.data : null
+      return {
+        ...state,
+        paused: true,
+        by: str('by'),
+        reason: str('reason'),
+        until: Number.isNaN(at) ? null : new Date(at),
+        // Sticky: a person's pause landing on top of a setup pause must not
+        // make the setup pause forgettable.
+        holdsAcrossStarts: state.holdsAcrossStarts || d['holdsAcrossStarts'] === true,
+        cause,
+        ceilingWaivedUntil: cause === 'day-ceiling' ? null : state.ceilingWaivedUntil,
+      }
+    }
+    case 'ConductorShutdownRequested': {
+      const timeout = d['timeoutMs']
+      return {
+        ...state,
+        shutdown: {
+          by: str('by') ?? '',
+          reason: str('reason') ?? '',
+          timeoutMs: typeof timeout === 'number' ? timeout : null,
+          // Absent on every request written before `#159`, and those were all
+          // drains — so the absence reads as `false` rather than as unknown.
+          force: d['force'] === true,
+          version: e.version,
+        },
+      }
+    }
+    case 'ConductorShutdownWithdrawn': {
+      // The request named, or nothing. A withdrawal that lost a race to a
+      // newer request must leave that request standing — it is somebody
+      // else's, and lifting it is the one thing a restart may not do (0042).
+      // A pause is untouched either way, which is the whole difference
+      // between this and `ConductorResumed`.
+      if (state.shutdown === null || state.shutdown.version !== d['version']) return state
+      // A `handoff` on a withdrawal written before #167 is read as nothing.
+      // It named the commit a supervised restart checked, for the daemon the
+      // supervisor started to claim — and since #159 that daemon folds only
+      // what was appended after it started, so it never saw one (0048).
+      return { ...state, shutdown: null }
+    }
+    case 'ConductorResumed': {
+      // A person's resume of the ceiling's pause waives it until that pause's
+      // midnight. A resume by `lingtai` is the ceiling lifting its own pause.
+      const waived =
+        state.paused && state.cause === 'day-ceiling' && str('by') !== 'lingtai'
+          ? state.until
+          : state.ceilingWaivedUntil
+      return {
+        ...state,
+        paused: false,
+        by: null,
+        reason: null,
+        until: null,
+        holdsAcrossStarts: false,
+        cause: null,
+        ceilingWaivedUntil: waived,
+        // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
+        // lifts only the one request it names, and a person typing `lingtai
+        // resume` means all of it. The request is in the stream for ever, so a
+        // daemon started after it would find it waiting and stop again, and again.
+        shutdown: null,
+      }
+    }
+    case 'RunRequested':
+      return {
+        ...state,
+        requested: [
+          ...state.requested,
+          { project: str('project') ?? '', issue: str('issue') ?? '', by: str('by') ?? '' },
+        ],
+      }
+    case 'ContinueRequested':
+      return {
+        ...state,
+        continuing: [
+          ...state.continuing,
+          {
+            project: str('project') ?? '',
+            issue: str('issue') ?? '',
+            runId: str('runId') ?? '',
+            by: str('by') ?? '',
+          },
+        ],
+      }
+    case 'DiscussionRequested': {
+      const attempt = d['attempt']
+      return {
+        ...state,
+        discussions: [
+          ...state.discussions,
+          {
+            chatId: str('chatId') ?? '',
+            ticketId: str('ticketId') ?? '',
+            attempt: typeof attempt === 'number' ? attempt : null,
+            question: str('question') ?? '',
+            by: str('by') ?? '',
+          },
+        ],
+      }
+    }
+    default:
+      return state
+  }
+}
+
+/**
+ * What depends on the clock: the pause that ends by itself, ending, and a
+ * ceiling waiver that has run out. Nothing is appended when it does: an expiry
+ * that had to be written down would be a second thing that can be missed, and
+ * the event that set it already says everything a reader needs. Returns the
+ * state it was given when nothing lapses.
+ */
+export function evaluateControl(state: ControlState, now: Date): ControlState {
+  const t = now.getTime()
+  let next = state
+  if (next.paused && next.until !== null && next.until.getTime() <= t) {
+    next = {
+      ...next,
+      paused: false,
+      by: null,
+      reason: null,
+      until: null,
+      holdsAcrossStarts: false,
+      cause: null,
+    }
+  }
+  if (next.ceilingWaivedUntil !== null && next.ceilingWaivedUntil.getTime() <= t) {
+    next = { ...next, ceilingWaivedUntil: null }
+  }
+  return next
 }
 
 /**
@@ -149,112 +311,11 @@ export const emptyControl: ControlState = {
  *
  * `now` is a parameter because one of the answers depends on the clock — a
  * pause that carries an expiry is over when the expiry is past, and the fold is
- * where that is decided. It is decided here rather than by whoever pauses
- * because nothing else runs at the moment the limit lifts: the alternative to
- * reading it at fold time is a timer somebody has to still be holding.
+ * where that is decided (`evaluateControl`). It is decided here rather than by
+ * whoever pauses because nothing else runs at the moment the limit lifts: the
+ * alternative to reading it at fold time is a timer somebody has to still be
+ * holding.
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  const state: ControlState = { ...emptyControl, requested: [], continuing: [], discussions: [] }
-
-  for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>
-    const str = (k: string): string | null => (typeof d[k] === 'string' ? (d[k] as string) : null)
-    switch (e.type) {
-      case 'ConductorPaused': {
-        state.paused = true
-        state.by = str('by')
-        state.reason = str('reason')
-        // Absent on every pause written before 0031, and null on every pause a
-        // person makes. An unparseable one is the same answer as none: a pause
-        // nothing can prove ends holds until somebody lifts it.
-        const until = str('until')
-        const at = until === null ? Number.NaN : Date.parse(until)
-        state.until = Number.isNaN(at) ? null : new Date(at)
-        // Sticky, and `||=` is why: a person's pause landing on top of a setup
-        // pause must not make the setup pause forgettable.
-        state.holdsAcrossStarts ||= d['holdsAcrossStarts'] === true
-        break
-      }
-      case 'ConductorShutdownRequested': {
-        const timeout = d['timeoutMs']
-        state.shutdown = {
-          by: str('by') ?? '',
-          reason: str('reason') ?? '',
-          timeoutMs: typeof timeout === 'number' ? timeout : null,
-          // Absent on every request written before `#159`, and those were all
-          // drains — so the absence reads as `false` rather than as unknown.
-          force: d['force'] === true,
-          version: e.version,
-        }
-        break
-      }
-      case 'ConductorShutdownWithdrawn': {
-        // The request named, or nothing. A withdrawal that lost a race to a
-        // newer request must leave that request standing — it is somebody
-        // else's, and lifting it is the one thing a restart may not do (0042).
-        // A pause is untouched either way, which is the whole difference
-        // between this and `ConductorResumed`.
-        if (state.shutdown === null || state.shutdown.version !== d['version']) break
-        state.shutdown = null
-        // A `handoff` on a withdrawal written before #167 is read as nothing.
-        // It named the commit a supervised restart checked, for the daemon the
-        // supervisor started to claim — and since #159 that daemon folds only
-        // what was appended after it started, so it never saw one (0048).
-        break
-      }
-      case 'ConductorResumed':
-        state.paused = false
-        state.by = null
-        state.reason = null
-        state.until = null
-        state.holdsAcrossStarts = false
-        // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
-        // lifts only the one request it names, and a person typing `lingtai
-        // resume` means all of it. The request is in the stream for ever, so a
-        // daemon started after it would find it waiting and stop again, and again.
-        state.shutdown = null
-        break
-      case 'RunRequested':
-        state.requested.push({
-          project: str('project') ?? '',
-          issue: str('issue') ?? '',
-          by: str('by') ?? '',
-        })
-        break
-      case 'ContinueRequested':
-        state.continuing.push({
-          project: str('project') ?? '',
-          issue: str('issue') ?? '',
-          runId: str('runId') ?? '',
-          by: str('by') ?? '',
-        })
-        break
-      case 'DiscussionRequested': {
-        const attempt = d['attempt']
-        state.discussions.push({
-          chatId: str('chatId') ?? '',
-          ticketId: str('ticketId') ?? '',
-          attempt: typeof attempt === 'number' ? attempt : null,
-          question: str('question') ?? '',
-          by: str('by') ?? '',
-        })
-        break
-      }
-      default:
-        break
-    }
-  }
-
-  // The pause that ends by itself, ending. Nothing is appended when it does:
-  // an expiry that had to be written down would be a second thing that can be
-  // missed, and the event that set it already says everything a reader needs.
-  if (state.paused && state.until !== null && state.until.getTime() <= now.getTime()) {
-    state.paused = false
-    state.by = null
-    state.reason = null
-    state.until = null
-    state.holdsAcrossStarts = false
-  }
-
-  return state
+  return evaluateControl(events.reduce(applyControl, emptyControl), now)
 }

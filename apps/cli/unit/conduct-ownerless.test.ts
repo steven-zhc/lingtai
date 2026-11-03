@@ -38,6 +38,8 @@ const EMPTY_CONTROL: ControlState = {
   reason: null,
   until: null,
   holdsAcrossStarts: false,
+  cause: null,
+  ceilingWaivedUntil: null,
   shutdown: null,
   requested: [],
   continuing: [],
