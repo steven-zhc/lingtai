@@ -79,6 +79,9 @@ export type { StoppedProjection } from './store.ts'
 /** The one projection whose failure still stops the daemon; 17c (#841) removes that. */
 const STOPS_THE_DAEMON = 'task_view'
 
+/** How long start waits for a stopped projection's checkpoint before it goes undated. */
+const CHECKPOINT_WAIT_MS = 2000
+
 export type DaemonStart =
   | {
       ok: true
@@ -197,6 +200,10 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
   const recordStopped = (name: string, runner: () => ProjectionRunner, error: unknown): Promise<void> => {
     const existing = recording.get(name)
     if (existing) return existing
+    // Listed at once and undated: the checkpoint is a store read that can stall,
+    // and a failure is not to wait on a diagnostic. The read fills it in later.
+    const at = stoppedList.push({ name, checkpoint: null, error: String(error) }) - 1
+    tell(paint.fail(`${name} stopped: ${String(error)}`))
     const done = runner()
       .lag()
       .then(
@@ -204,11 +211,22 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         (): bigint | null => null,
       )
       .then((checkpoint) => {
-        stoppedList.push({ name, checkpoint, error: String(error) })
-        tell(paint.fail(`${name} stopped at ${checkpoint ?? 'an unread checkpoint'}: ${String(error)}`))
+        stoppedList[at] = { ...stoppedList[at]!, checkpoint }
       })
     recording.set(name, done)
     return done
+  }
+
+  /** At start, gives the checkpoint a moment to arrive for the first beat, and no longer. */
+  const dated = async (done: Promise<void>): Promise<void> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      done,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, CHECKPOINT_WAIT_MS)
+      }),
+    ])
+    clearTimeout(timer)
   }
 
   try {
@@ -224,7 +242,10 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         taskViewFailed = true
         // Before `returned`, the start path throws and owns the lock; a shutdown
         // here would release it a second time.
-        if (returned) void recorded.then(() => shutdown('projection-failed'))
+        if (returned) {
+          void recorded
+          shutdown('projection-failed')
+        }
       }
       runner = (options.runnerFor ?? ((p, e) => createProjectionRunner({ projection: p, onError: e })))(
         projection,
@@ -245,7 +266,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         // A handler error during catch-up, which is what a restart under the
         // supervisor meets first: stop that projection and bring the daemon up.
         if (!(err instanceof ProjectionShapeError) && runner.failure !== null && projection.name !== STOPS_THE_DAEMON) {
-          await recordStopped(projection.name, () => runner, runner.failure)
+          await dated(recordStopped(projection.name, () => runner, runner.failure))
           options.onRunner?.(projection, runner)
           continue
         }

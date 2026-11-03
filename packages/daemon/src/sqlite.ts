@@ -71,8 +71,15 @@ const SCHEMA = `
  */
 function widen(db: DatabaseSync): void {
   const columns = db.prepare('PRAGMA table_info(daemon_status)').all() as { name: string }[]
-  if (!columns.some((c) => c.name === 'stopped_projections'))
+  if (columns.some((c) => c.name === 'stopped_projections')) return
+  try {
     db.exec('ALTER TABLE daemon_status ADD COLUMN stopped_projections TEXT')
+  } catch (err) {
+    // Another process widened between the check and the write: the check and
+    // the ALTER are two statements, and only the ALTER is serialized.
+    const now = db.prepare('PRAGMA table_info(daemon_status)').all() as { name: string }[]
+    if (!now.some((c) => c.name === 'stopped_projections')) throw err
+  }
 }
 
 /** The clock, in the representation the column holds. SQLite's own, as `events.at` is. */
