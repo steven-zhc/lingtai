@@ -26,7 +26,15 @@
  * The ticket's kind as its run's claim carried it when the row was folded
  * (0123 §3), and not updated afterwards. A continuation written as a second
  * claim carries none and never clears it; a triage or discussion row takes the
- * ticket's latest non-null claim kind (`spend_kind`).
+ * ticket's `TicketState.kind` as of that `RunSpent`, folded by domain's
+ * `applyTicket` (D4) and stored in `spend_ticket`.
+ *
+ * **`spend_ticket` is a stored `TicketState`, and that has a price.** A change
+ * to `applyTicket`'s result shape makes `decodeTicket` refuse the stored rows
+ * until the table is rebuilt, so every such change carries `lingtai projection
+ * rebuild spend` in its runbook. It is the price of 0123 §6 — a projection
+ * never reads another projection's table — which is why this cannot borrow
+ * `ticket_report.ticket_state`.
  *
  * ## Filling `ticket`
  *
@@ -61,13 +69,21 @@
  * in reaction to its own `DiscussionRequested`.
  */
 import type { PayloadOf, Usage } from '@lingtai/domain'
-import { chatStream, isPassStream, isTicketStream, parseTicketStream } from '@lingtai/domain'
+import {
+  chatStream,
+  decodeTicket,
+  encodeTicket,
+  isPassStream,
+  isTicketStream,
+  parseTicketStream,
+} from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
 
 import { withProjectionStore } from './choose.ts'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
+import { reduceStoredTicket } from './ticket-row.ts'
 
 export const SPEND_TABLE = 'spend'
 
@@ -119,18 +135,19 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
         ticket    text not null,
         kind      text
       )`)
-    // The ticket's latest non-null claim kind, for the rows no claim links.
+    // The ticket's `TicketState`, folded by `applyTicket`: a triage or discussion row's kind.
     await ctx.query(`
-      create table if not exists spend_kind (
+      create table if not exists spend_ticket (
         ticket text primary key,
-        kind   text not null,
-        seq    bigint not null
+        state  jsonb not null
       )`)
   },
 
   async reset(ctx) {
     await ctx.query('drop table if exists spend')
     await ctx.query('drop table if exists spend_stream')
+    await ctx.query('drop table if exists spend_ticket')
+    // The table this projection kept before the ticket fold; a rebuild removes it.
     await ctx.query('drop table if exists spend_kind')
   },
 
@@ -152,9 +169,8 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
 
         // `TicketContinued` is a continuation by type (domain `claims.ts`) and folds
         // as the old form does: a claim with a null kind. The stream insert is
-        // idempotent per run and `spend_kind` moves only on a non-null kind, so
-        // the table decides, not the helper's `claimed` set (which a batch
-        // boundary or checkpoint would empty).
+        // idempotent per run. The ticket's own kind is not decided here: the claim
+        // reaches it through the ticket reduce after the switch.
         case 'TicketContinued':
         case 'TicketClaimed': {
           const d =
@@ -166,14 +182,6 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
              on conflict (stream_id) do update set kind = coalesce(spend_stream.kind, excluded.kind)`,
             [d.runId, event.streamId, d.kind],
           )
-          if (d.kind !== null) {
-            await ctx.query(
-              `insert into spend_kind (ticket, kind, seq) values ($1, $2, $3)
-               on conflict (ticket) do update set kind = excluded.kind, seq = excluded.seq
-               where excluded.seq > spend_kind.seq`,
-              [event.streamId, d.kind, seq],
-            )
-          }
           break
         }
 
@@ -208,10 +216,10 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
             }
           }
           if (fromTicket && ticket !== null) {
-            const [latest] = await ctx.query<{ kind: string }>('select kind from spend_kind where ticket = $1', [
+            const [latest] = await ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
               ticket,
             ])
-            kind = latest ? latest.kind : null
+            kind = latest ? decodeTicket(latest.state, SPEND_TABLE, ticket).kind : null
           }
           let estimate: { usd: number; fetched: boolean } | null = null
           if (d.costUsd === null) {
@@ -259,6 +267,22 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
 
         default:
           break
+      }
+
+      // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not.
+      // After the switch on purpose: a triage `RunSpent` reads the state as of the events before it.
+      if (isTicketStream(event.streamId)) {
+        const [row] = await ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
+          event.streamId,
+        ])
+        const reduced = reduceStoredTicket(row?.state, event, SPEND_TABLE)
+        if (reduced !== null) {
+          await ctx.query(
+            `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
+             on conflict (ticket) do update set state = excluded.state`,
+            [event.streamId, encodeTicket(reduced.after)],
+          )
+        }
       }
     }
   },

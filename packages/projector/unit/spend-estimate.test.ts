@@ -4,6 +4,7 @@
  * file is read and this stays unit under 0060 §1.
  */
 import type { Envelope, PayloadOf, Usage } from '@lingtai/domain'
+import { decodeTicket } from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -147,7 +148,12 @@ describe('spend folds TicketContinued as the old-form continuation (#684)', () =
       return await store.transact(async (ctx) => ({
         spend: spendKinds,
         stream: await ctx.query('select stream_id, ticket, kind from spend_stream order by stream_id'),
-        kind: await ctx.query('select ticket, kind, seq from spend_kind order by ticket'),
+        // The ticket's kind, as `spend_ticket`'s stored `TicketState` folds it (D4); kindless tickets left out.
+        kind: (
+          await ctx.query<{ ticket: string; state: unknown }>('select ticket, state from spend_ticket order by ticket')
+        )
+          .map((r) => ({ ticket: r.ticket, kind: decodeTicket(r.state, 'spend', r.ticket).kind }))
+          .filter((r) => r.kind !== null),
       }))
     } finally {
       await store.close()
