@@ -1,6 +1,6 @@
 import type { StepPlan } from '@lingtai/conductor/filter'
 /**
- * Where a run has got to *now*, folded from its own stream.
+ * Where a run has got to *now*, drawn from its `RunState` (`progressOf`).
  *
  * The card described what a run had accumulated and never where it was: at
  * 17:23 one read `1 passed · attempt 2` while the truth was "the agent finished
@@ -8,7 +8,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * that is over and that nobody will act on was described more fully than the one
  * burning money.
  *
- * **Nothing new is written down for this.** (The budget line is not this fold's:
+ * **Nothing new is written down for this.** (The budget line is not this draw's:
  * a run's rounds come from `RunState` and its grants from `spend`, #826.) `RunStarted` opens the agent phase
  * and `RunFinished` closes it, `StepsResolved` names all ten steps, and the
  * last `StepStarted` with no matching verdict is the step the run is at. The
@@ -32,7 +32,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { boardFactOf, STEPS, type BoardFact, type Envelope, type Step } from '@lingtai/domain'
+import { STEPS, type RunState, type Step } from '@lingtai/domain'
 
 /**
  * What a point has come to on *this* run.
@@ -256,16 +256,6 @@ export function elapsed(ms: number): string {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
-/** `StepEnded.ending` → the `StepState` it closes a point on. */
-const STEP_ENDING_STATE: Record<Extract<BoardFact, { _tag: 'StepEnded' }>['ending'], StepState> = {
-  Passed: 'passed',
-  Failed: 'failed',
-  NeverRan: 'never-ran',
-  DidNotFinish: 'did-not-finish',
-  Asked: 'asked',
-  Waived: 'waived',
-}
-
 /**
  * One point's state, from what the plan said and what the log reports.
  *
@@ -347,14 +337,17 @@ function stateOf(
 }
 
 /**
- * The fold. Events in seq order, as the store returns them.
+ * Where the run is, drawn from its `RunState` (#827). The board reads no events
+ * here: `RunState` holds the instants (`openedAt`, `agentStartedAt`, `askedAt`,
+ * `laneWaitedAt`, `step.since`) and the recorded plan (`resolved`); this picks
+ * the labels and budgets, which are the board's.
  *
- * Returns null for a stream with nothing on it — a run whose first event has
- * not landed has no progress to describe, and a card saying `0s` about one
- * would be inventing a start.
+ * Returns null for a state nothing has been folded into — a run whose first
+ * event has not landed has no progress to describe, and a card saying `0s`
+ * about one would be inventing a start.
  */
-export function foldProgress(
-  events: readonly Envelope[],
+export function progressOf(
+  state: RunState,
   plan: StepPlan = new Map(),
   /**
    * Whether this item **landed**. Not whether it is over.
@@ -362,219 +355,37 @@ export function foldProgress(
    * It cannot be read off the run's own stream: the merge lane appends
    * `IntegrationSucceeded` to its own stream and `TicketLanded` goes on the
    * work item's, so the caller is the only one holding the fact. Passing it is
-   * what turns *a point that recorded nothing* from `pending` into `never-ran`,
-   * and it is the whole of the difference between the two.
+   * what turns *a point that recorded nothing* from `pending` into `never-ran`.
    *
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
-   * because nothing should have run in them. This is anchored on
-   * `TicketLanded` for that reason — see `RailCandidate.over`, which is the
-   * caller holding the same line.
+   * because nothing should have run in them. See `RailCandidate.over`.
    */
   over = false,
 ): RunProgress | null {
-  const first = events[0]
-  if (!first) return null
-
-  /** `point:action` → where that action got to. */
-  const verdicts = new Map<string, StepState>()
-  let now: Phase | null = null
-  /** The plan as the log recorded it, once `StepsResolved` has landed. */
-  let resolved: Map<string, readonly string[]> | null = null
-  /**
-   * The wall clock this run's agents are launched under, as `RunStarted`
-   * recorded it applied.
-   *
-   * Kept because a round's own event does not carry it and the fixer is
-   * launched under the same `runtime.limits.wall` the implementer was — one
-   * recipe, read once, inside one pass (`conduct.ts`). Null for
-   * a v1 `RunStarted`, and null renders as no denominator.
-   */
-  let wallMs: number | null = null
-  /** The round in flight, if the pass bought one and it has not come back. */
-  let fixing: string | null = null
-
-  const close = (key: string, state: StepState) => {
-    verdicts.set(key, state)
-    // Only the phase this verdict is about. A verdict for something else means
-    // the log is out of order, and clearing on it would blank a live gate.
-    if (now?.label === key) now = null
-  }
-
-  // A `StepEnded` for `step`, read off the raw payload rather than a fact —
-  // see its one caller's own header on why. A closure, as `close` above is,
-  // rather than inline: TS narrows `now` to `never` on the second of two
-  // sequential `now?.label` reads inlined in the same block, the same
-  // control-flow limit `conduct.ts`'s own `wipNow` works around.
-  const clearRunningPlaceholder = (step: string) => {
-    verdicts.delete(`${step}:`)
-    if (now?.label === step) now = null
-    if (fixing !== null && now?.label === fixing) now = null
-  }
-
-  // The agent phase is over; the next one announces itself. Guarded on the
-  // label because a `proposed` gate can outlive the event that ended the
-  // agent, and clearing unconditionally would lose it. Shared by `RunFinished`
-  // (direct below) and the fact a `RunFailed` answers (`RunEnded`), which end
-  // the agent phase the same way.
-  // It also ends a wait for the merge lane: a pass that dies while queued
-  // writes no `StepEnded` for `merge`, and the run ending always comes.
-  const clearAgentPhase = () => {
-    if (now?.label === AGENT || now?.label === WAITING_FOR_LANE) now = null
-  }
-
-  for (const event of events) {
-    const data = (event.data ?? {}) as Record<string, unknown>
-    switch (event.type) {
-      case 'RunStarted': {
-        // The wall clock as *applied*, which is what the run will actually be
-        // killed at. Null for a v1 `RunStarted`, which recorded no limits (#88).
-        const limits = (data['invocation'] as { limits?: { wallMs?: number } } | null)?.limits
-        wallMs = limits?.wallMs ?? null
-        now = { label: AGENT, since: event.at.toISOString(), budgetMs: wallMs }
-        break
-      }
-
-      case 'RunFinished':
-        clearAgentPhase()
-        break
-
-      case 'StepsResolved': {
-        const steps = (data['steps'] ?? []) as { step: string; actions: string[] }[]
-        resolved = new Map(steps.map((p) => [p.step, p.actions]))
-        break
-      }
-
-      case 'MergeLaneWaited':
-        now = { label: WAITING_FOR_LANE, since: event.at.toISOString(), budgetMs: null }
-        break
-
-      // **No action to key the verdict by, or the budget by** (0120's own
-      // Consequences: the board loses which action of a step is running).
-      // `StepStarted` carries only `{step, round}` now, so `now` names the
-      // step alone — `stepOf` already reads a label's head rather than
-      // assuming `point:action` — and the running mark goes on `${step}:`,
-      // an empty action name `mine`'s own `k.startsWith('${step}:')` still
-      // matches, so the step-level state still reads `running` until its
-      // `StepEnded` closes an actual `step:action` key over it.
-      case 'StepStarted': {
-        const stepName = String(data['step'])
-        const round = Number(data['round'] ?? 0)
-        verdicts.set(`${stepName}:`, 'running')
-        // **A bought round announces itself here now, not off `PassRouted`**
-        // (`#502` moved what used to be `RoundOpened`'s own timing). `PassRouted`
-        // is appended in one batch after the whole pass's walk returns
-        // (`conduct.ts`'s own header on that append), so by the time this fold
-        // sees it the round it names has already run and ended — on a pass
-        // that went on to land, `PassRouted` is the stream's *last* event, after
-        // every step including `merge`'s own. Setting `now`/`fixing` from it
-        // left the card reading `fixing round 1` for ever on a ticket that had
-        // already merged. `round > 0` at `implement` is the live signal instead:
-        // it is true for exactly the span the round's own agent is running,
-        // the same span `RoundOpened` used to describe, and the `StepEnded` that
-        // closes this `StepStarted` already clears `fixing` the ordinary way
-        // (`clearRunningPlaceholder`, the `StepEnded` case below).
-        if (stepName === 'implement' && round > 0) {
-          fixing = `${FIXING} round ${String(round)}`
-          now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
-        } else {
-          now = { label: stepName, since: event.at.toISOString(), budgetMs: null }
-        }
-        break
-      }
-
-      default: {
-        // `StepStarted` carries no action any more (0120's own Consequences),
-        // so there is no `ActionRequested` fact left to pre-mark a point
-        // `pending` ahead of its own `StepStarted` — the case above this
-        // switch is the whole of that announcement now.
-
-        // **A `StepEnded` closes the placeholder even where it declared no
-        // actions at all.** `boardFactOf` answers `[]` for an outcome with an
-        // empty `actions` list, so the loop below never runs for a step a
-        // recipe leaves empty — and the bare `${step}:` key `StepStarted` set
-        // above would read `running` for ever on a ticket that has already
-        // landed. Read off the raw payload rather than a fact, since there is
-        // no fact for this case to be.
-        if (event.type === 'StepEnded') {
-          const step = (data['outcome'] as { step?: string } | undefined)?.step
-          if (step !== undefined) clearRunningPlaceholder(step)
-        }
-
-        for (const fact of boardFactOf(event)) {
-          switch (fact._tag) {
-            // One per action, because the action is run once (`#234`). `Asked`
-            // is not always the ending — a judge can send the asking step round
-            // again — but every other ending here is the pass's last word on
-            // this point. `Waived` closes here too since #502: a waived action
-            // is one more `StepEnded` outcome, not a fact of its own.
-            case 'StepEnded':
-              close(`${fact.step}:${fact.action}`, STEP_ENDING_STATE[fact.ending])
-              // The placeholder `StepStarted` set on `${step}:` (no action) —
-              // deleted rather than left behind, or `mine`'s own prefix match
-              // would keep reading `running` out of it for ever: `stateOf`
-              // checks `seen.includes('running')` ahead of every settled
-              // verdict, so a step that has actually ended would never read
-              // as anything else.
-              verdicts.delete(`${fact.step}:`)
-              // `now.label` is the bare step since `StepStarted` carries no
-              // action (0120's own Consequences) — so the running phase this
-              // `StepEnded` closes is matched by the step alone, not by this
-              // one action's own key.
-              if (now?.label === fact.step) now = null
-              // The round's own agent just reported — clear a `fixing` phase
-              // this `StepEnded` is the answer to, same guard `RunFinished`'s
-              // `clearAgentPhase` uses, for the ordinary path where the next
-              // `StepStarted` has not landed to clear it first.
-              if (fixing !== null && now?.label === fixing) now = null
-              break
-
-            case 'SignoffRequested': {
-              // A person is what this is waiting on, and a person has no
-              // timeout. The phase is still named, because "waiting, on the
-              // merge point" is the answer somebody opened the card for.
-              //
-              // **Nothing here ever resolves it** (`SignoffGranted`/
-              // `SignoffRevoked` are gone with `ApprovalGranted`/
-              // `ApprovalRevoked`, #502): continuing a signed-off run is
-              // #465's, not this ticket's, so a requested signoff stays
-              // `asked` on this fold until that lands.
-              const key = `${fact.step}:${fact.action}`
-              verdicts.set(key, 'asked')
-              now = { label: key, since: event.at.toISOString(), budgetMs: null }
-              break
-            }
-
-            case 'RunEnded':
-              clearAgentPhase()
-              break
-
-            default:
-              break
-          }
-        }
-      }
-    }
-  }
+  if (state.openedAt === null) return null
 
   const steps = STEPS.map((step) => {
     // The log first, the recipe second. `StepsResolved` is appended after the
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
-    const recorded = resolved?.get(step)
-    const planned = recorded ?? (plan.get(step) ?? []).map((a) => a.name)
-    const mine = [...verdicts]
-      .filter(([k]) => k.startsWith(`${step}:`))
-      .map(([k, v]) => [k.slice(step.length + 1), v] as const)
-    const state = stateOf(
+    const recorded = state.resolved?.steps.find((s) => s.step === step)
+    const planned = recorded?.actions ?? (plan.get(step) ?? []).map((a) => a.name)
+    const prefix = `${step}:`
+    const mine: (readonly [string, StepState])[] = Object.entries(state.steps)
+      .filter(([k]) => k.startsWith(prefix))
+      .map(([k, v]) => [k.slice(prefix.length), v.verdict] as const)
+    // The step in flight is drawn running on `${step}:` (an empty action name),
+    // after the keys an earlier round left — `extra` below names it.
+    if (state.step?.step === step) mine.push(['', 'running'])
+    const stepState = stateOf(
       step,
       planned,
       mine.map(([, v]) => v),
       // Landed, *and* against the plan the log says this run was given. A
-      // stream with no `StepsResolved` — one that died before it landed, one
-      // predating the event — falls back to today's recipe above, and today's
-      // recipe cannot accuse a run of skipping a point it was never given.
+      // stream with no `StepsResolved` falls back to today's recipe above, and
+      // today's recipe cannot accuse a run of skipping a point it was never given.
       over && recorded !== undefined,
     )
     const byAction = new Map(mine)
@@ -586,14 +397,54 @@ export function foldProgress(
     const actions = [...planned, ...extra].map((name) => ({
       name,
       // A point that ran nothing at all says so in every cell rather than
-      // leaving them reading as *not reached yet*, which is the distinction
-      // the point's own state was just made to carry.
-      state: byAction.get(name) ?? (state === 'never-ran' ? 'never-ran' : 'pending'),
+      // leaving them reading as *not reached yet*.
+      state: byAction.get(name) ?? (stepState === 'never-ran' ? 'never-ran' : 'pending'),
     }))
-    return { step, planned, state, actions }
+    return { step, planned, state: stepState, actions }
   })
 
-  return { since: first.at.toISOString(), now, steps }
+  return { since: state.openedAt.toISOString(), now: nowOf(state), steps }
+}
+
+/**
+ * The phase the run is in: of the phases that began, the one that began last,
+ * and among those that began at one instant the first live one in the order
+ * asked, lane, agent, step. **Null when that one is not live** — a phase that
+ * ended is not replaced by an older one that happens to still look live.
+ */
+function nowOf(state: RunState): Phase | null {
+  const wallMs = state.invocation?.limits?.wallMs ?? null
+  const status = state.lifecycle.status
+  const stepNow = state.step
+  const candidates: { began: Date | null; live: boolean; phase: Omit<Phase, 'since'> }[] = [
+    {
+      began: state.askedAt,
+      live: state.lifecycle.status === 'awaiting-approval',
+      phase: { label: state.lifecycle.status === 'awaiting-approval' ? state.lifecycle.step : '', budgetMs: null },
+    },
+    {
+      began: state.laneWaitedAt,
+      live: stepNow?.step === 'merge',
+      phase: { label: WAITING_FOR_LANE, budgetMs: null },
+    },
+    {
+      began: state.agentStartedAt,
+      live: status === 'running' || status === 'awaiting-input',
+      phase: { label: AGENT, budgetMs: wallMs },
+    },
+    {
+      began: stepNow?.since ?? null,
+      live: stepNow !== null,
+      phase:
+        stepNow !== null && stepNow.step === 'implement' && stepNow.round > 0
+          ? { label: `${FIXING} round ${String(stepNow.round)}`, budgetMs: wallMs }
+          : { label: stepNow?.step ?? '', budgetMs: null },
+    },
+  ]
+  const latest = Math.max(...candidates.map((c) => c.began?.getTime() ?? -Infinity))
+  if (latest === -Infinity) return null
+  const chosen = candidates.find((c) => c.began !== null && c.began.getTime() === latest && c.live)
+  return chosen === undefined || chosen.began === null ? null : { ...chosen.phase, since: chosen.began.toISOString() }
 }
 
 /**

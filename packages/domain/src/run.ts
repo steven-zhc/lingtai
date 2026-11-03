@@ -101,8 +101,6 @@ export interface RunState {
   model: string | null
   promptVersion: string | null
   baseSha: string | null
-  /** Hash of the recipe as read from `origin/<base>`, never from the agent's branch. */
-  configHash: string | null
   worktree: string | null
   /**
    * How the runtime was actually invoked: the command, the argv, the tier and
@@ -144,7 +142,20 @@ export interface RunState {
    * `RunFailed` do not touch it, so a run that died inside a step still says
    * which — whether the run is over is `lifecycle`'s to say.
    */
-  step: { step: Step; round: number } | null
+  step: { step: Step; round: number; since: Date } | null
+  /** The `at` of the first event folded, whatever its type. Set once. */
+  openedAt: Date | null
+  /** The `at` of the last `RunStarted`. */
+  agentStartedAt: Date | null
+  /** The `at` of the last `StepEnded` that set the lifecycle to awaiting-approval. Never cleared. */
+  askedAt: Date | null
+  /** The `at` of the last `MergeLaneWaited`. Never cleared. */
+  laneWaitedAt: Date | null
+  /** The last `StepsResolved`: the plan the run was given, with the hash of the recipe it came from. */
+  resolved: {
+    readonly configHash: string
+    readonly steps: readonly { readonly step: Step; readonly actions: readonly string[] }[]
+  } | null
   /**
    * The highest round an `implement` step started on or a `FixRound` route
    * reached, 0 before either. Not `step.round`, which is any step's.
@@ -181,7 +192,6 @@ export const emptyRun: RunState = {
   model: null,
   promptVersion: null,
   baseSha: null,
-  configHash: null,
   worktree: null,
   invocation: null,
   headSha: null,
@@ -194,6 +204,11 @@ export const emptyRun: RunState = {
   prompt: null,
   steps: {},
   step: null,
+  openedAt: null,
+  agentStartedAt: null,
+  askedAt: null,
+  laneWaitedAt: null,
+  resolved: null,
   implementRound: 0,
   roundsOpened: [],
   receipt: null,
@@ -346,7 +361,7 @@ function stepStateOf(key: string, action: Reached): StepState {
 }
 
 export function applyRun(state: RunState, event: Envelope): RunState {
-  const at = { version: event.version, lastSeq: event.seq }
+  const at = { version: event.version, lastSeq: event.seq, openedAt: state.openedAt ?? event.at }
 
   switch (event.type) {
     case 'RunStarted': {
@@ -360,9 +375,9 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         model: d.model,
         promptVersion: d.promptVersion,
         baseSha: d.baseSha,
-        configHash: d.configHash,
         worktree: d.worktree,
         invocation: d.invocation,
+        agentStartedAt: event.at,
       }
     }
 
@@ -437,7 +452,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        step: { step: d.step, round: d.round },
+        step: { step: d.step, round: d.round, since: event.at },
         implementRound: d.step === 'implement' ? Math.max(state.implementRound, d.round) : state.implementRound,
       }
     }
@@ -479,6 +494,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
           next = {
             ...next,
+            askedAt: event.at,
             lifecycle: {
               status: 'awaiting-approval',
               step: key,
@@ -491,6 +507,14 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       const ended = d.outcome.step
       return { ...next, ...at, step: state.step?.step === ended ? null : state.step }
     }
+
+    case 'StepsResolved': {
+      const d = event.data as PayloadOf<'StepsResolved'>
+      return { ...state, ...at, resolved: { configHash: d.configHash, steps: d.steps } }
+    }
+
+    case 'MergeLaneWaited':
+      return { ...state, ...at, laneWaitedAt: event.at }
 
     case 'RunRefsPublished':
       return { ...state, ...at, published: event.data as PayloadOf<'RunRefsPublished'> }

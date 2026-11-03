@@ -86,7 +86,7 @@ import {
   type WaitingNeighbour,
 } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
-import { describeHeld, elapsed, foldProgress, spentOf, type RunProgress } from './progress.ts'
+import { describeHeld, elapsed, progressOf, spentOf, type RunProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfRun, type RunRecipe } from './recipe.ts'
@@ -1273,7 +1273,7 @@ export function foldRun(
   attempt: number,
   run: readonly Envelope[],
   /**
-   * `foldProgress`'s two arguments, which only the caller can hold: the
+   * `progressOf`'s two arguments, which only the caller can hold: the
    * recipe's plan, for the bound on a gate in flight, and whether **this**
    * attempt is the one that landed — the whole difference between `pending`
    * and `never-ran`. Neither is on the run's own stream. See `loadTask`.
@@ -1442,7 +1442,7 @@ export function foldRun(
     steps: all,
     // The plan the conductor wrote down when this run started is read inside
     // the fold, and so are the states 0016 §4 needs kept apart.
-    progress: foldProgress(run, plan, over),
+    progress: progressOf(reduceRun(run), plan, over),
   }
 }
 
@@ -2041,7 +2041,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const landed = standing.state === 'landed'
   const runs = (
     last >= 0 && (landed || plan !== undefined)
-      ? folded.map((r, i) => (i === last ? { ...r, progress: foldProgress(streams[i] ?? [], plan, landed) } : r))
+      ? folded.map((r, i) =>
+          i === last ? { ...r, progress: progressOf(reduceRun(streams[i] ?? []), plan, landed) } : r,
+        )
       : folded
   ).map((r) => {
     const recipe = recipes.get(r.runId)

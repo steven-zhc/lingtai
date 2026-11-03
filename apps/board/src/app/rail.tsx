@@ -16,7 +16,7 @@ import type { PlanView } from '@/lib/queued'
  * so it printed `N pending` for the two states `progress.ts` exists to tell
  * apart. Lifted rather than copied, because a copy is the second fold again.
  *
- * Both read `foldProgress` and nothing else ([the-card.md](../../../../doc/design/the-card.md)).
+ * Both read `progressOf` and nothing else ([the-card.md](../../../../doc/design/the-card.md)).
  */
 /**
  * Where a point got to, as one class on one cell.
@@ -174,7 +174,7 @@ export function Segs({
  * **Only where nothing is in flight, and a bought round is in flight.** The
  * pipeline stops at the first refusal (0041 §4) and then, here, ordinarily buys
  * a round to answer it: `rounds: 3`, an agent patching the diff, and the card
- * still `running`. `foldProgress` names that phase for exactly this reason — a
+ * still `running`. `progressOf` names that phase for exactly this reason — a
  * refusal being answered is not a refusal waiting for a person, and this
  * function cannot tell them apart on its own.
  *
@@ -382,7 +382,7 @@ const UNREADABLE = 'The recipe could not be read, so what a run would do here is
 
 /**
  * The plan's steps drawn as a rail nothing has run on: every one `pending`, or
- * `skipped` where nothing is configured. Not `foldProgress` over an empty
+ * `skipped` where nothing is configured. Not `progressOf` over an empty
  * stream — that takes a `StepPlan`, and saying "nothing has happened" is not a
  * fold. A name that is not one of the ten has no segment (it still gets its
  * column and its cell), narrowed the way `stepOf` does it rather than cast.
