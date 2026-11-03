@@ -91,3 +91,22 @@ The states, one per kind of stream:
 | **IntegrationState** | `int-{project}-{base}`, one per base branch | The merge lane for one base branch: idle or attempting which ticket's head, and how many attempts. `packages/domain/src/integration.ts`. |
 | **ChatState** | `chat-…`, one per discussion | One discussion with an agent about a ticket: its asks and answers, and how many are answered. `packages/domain/src/chat.ts`. |
 | **Finding state** | `bkl-{project}-{key}`, one per finding | One reviewer finding sent to the backlog: proposed, accepted or declined. `packages/domain/src/backlog.ts`. |
+
+### In domain-driven-design terms
+
+Each stream is one aggregate, and every event on it is reduced into that
+aggregate's state. The boundary is drawn small: two things share a stream only
+when an invariant must hold across them atomically, and nothing in Lingtai needs
+a ticket and its attempts, or a ticket and its discussions, to change in one write.
+
+| DDD | Lingtai |
+|---|---|
+| aggregate type | a kind of stream: ticket, attempt, discussion, merge lane, project, control |
+| aggregate | one stream (`ticket-lingtai-829`, `pass-…`) |
+| aggregate state | `TicketState`, `RunState` (to be the attempt state), … |
+| apply / when | the reducer (`reduceTicketEvent` once renamed) |
+| command handler | the conductor, the CLI or the board: read the state, decide, `append(stream, expectedVersion, events)` |
+| consistency boundary | one stream's version: a write is atomic within one stream and nowhere else |
+| reference to another aggregate | an id on an event (`TicketClaimed.runId`, `RunStarted.ticketId`, `DiscussionHeld.chatId`) |
+| process manager | the conductor, which writes to several streams in order, and `reconcile`, which finishes or undoes what a crash left half done |
+| read model | a projection (`task_view`, `ticket_report`, `spend`, `finding_backlog`) |
