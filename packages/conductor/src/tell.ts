@@ -27,7 +27,7 @@ import { inSpan } from '@lingtai/actions/spans'
  * it structurally, and a test satisfies it with four functions and no
  * network — which is the whole point of a caller naming its own requirement.
  */
-import { parseTicketStream } from '@lingtai/domain'
+import { parseTicketStream, reduceTicket } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
@@ -430,7 +430,8 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
  * **The waiting comment, rewritten into its outcome once the wait is over**
  * (#750).
  *
- * Reads the stream once. A `comment` whose `IssueUpdated` carries a `waitId`
+ * Reads the stream once, the comments and their edits off the ticket's
+ * `github` ledger. A `comment` whose `IssueUpdated` carries a `waitId`
  * is edited when the log shows that wait over — a `TicketLanded` or
  * `TicketClosed` after its `WaitStarted`, or a `WaitResolved` for it — and no
  * `comment-edited` for the same wait was recorded yet. An attempt is recorded
@@ -457,8 +458,9 @@ export async function editEndedWaits(options: {
     const started = new Map<string, number>()
     const starts: number[] = []
     const resolved = new Map<string, PayloadOf<'WaitResolved'>>()
-    const edited = new Set<string>()
-    const posted: { waitId: string; commentId: number; question: string }[] = []
+    const ledger = reduceTicket(events).github
+    const edited = new Set<string>(ledger.edited)
+    const posted = ledger.comments
     const landed: { at: number; data: PayloadOf<'TicketLanded'> }[] = []
     const closed: { at: number; data: PayloadOf<'TicketClosed'> }[] = []
     events.forEach((e, at) => {
@@ -470,14 +472,6 @@ export async function editEndedWaits(options: {
         resolved.set(d.waitId, d)
       } else if (e.type === 'TicketLanded') landed.push({ at, data: e.data as PayloadOf<'TicketLanded'> })
       else if (e.type === 'TicketClosed') closed.push({ at, data: e.data as PayloadOf<'TicketClosed'> })
-      else if (e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed') {
-        const d = e.data as { change?: string; waitId?: string; detail?: string; question?: string }
-        if (d.waitId === undefined) return
-        if (d.change === 'comment-edited') edited.add(d.waitId)
-        else if (d.change === 'comment' && e.type === 'IssueUpdated' && /^\d+$/.test(d.detail ?? '')) {
-          posted.push({ waitId: d.waitId, commentId: Number(d.detail), question: d.question ?? '' })
-        }
-      }
     })
 
     for (const p of posted) {

@@ -113,6 +113,31 @@ export interface WorkItemLink {
   otherRef: string
 }
 
+type IssueChange = PayloadOf<'IssueUpdated'>['change']
+
+/** The last word Lingtai had from GitHub about one kind of write. */
+export interface GitHubWrite {
+  readonly outcome: 'updated' | 'failed'
+  /** `detail` of an `IssueUpdated`, `error` of an `IssueUpdateFailed`. */
+  readonly text: string
+}
+
+/** What Lingtai last wrote to GitHub about this issue (#832, D9). */
+export interface GitHubLedger {
+  /** The last word per change, `comment-edited` included. */
+  readonly last: Partial<Record<IssueChange, GitHubWrite>>
+  /** What the last `labels` write GitHub accepted set, or null if none did. */
+  readonly labels: readonly string[] | null
+  /** Every accepted waiting comment that names a wait and an all-digit comment id, in order. */
+  readonly comments: readonly { readonly waitId: WaitId; readonly commentId: number; readonly question: string }[]
+  /** Every wait whose comment an edit was attempted for, either outcome. */
+  readonly edited: readonly WaitId[]
+  /** The last `WaitStarted`'s wait id. */
+  readonly lastWait: WaitId | null
+  /** `lastWait` as it stood when the last `body` write was folded: the wait that write came after. */
+  readonly bodyAfterWait: WaitId | null
+}
+
 export interface TicketState {
   lifecycle: TicketLifecycle
 
@@ -190,6 +215,12 @@ export interface TicketState {
    */
   answers: readonly AnswerRecord[]
 
+  /**
+   * What Lingtai wrote to GitHub (`IssueUpdated`/`IssueUpdateFailed`). These
+   * are not lifecycle events, so they fold on a closed ticket too.
+   */
+  github: GitHubLedger
+
   /** Version of the last event applied — the `expectedVersion` for the next append. */
   version: number
   /** Global position of the last event applied. */
@@ -211,6 +242,7 @@ export const emptyTicket: TicketState = {
   restarts: [],
   pendingPrompt: null,
   answers: [],
+  github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
   version: 0,
   lastSeq: null,
 }
@@ -354,6 +386,44 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
           waitId: d.waitId,
           reason: d.reason,
           runId: 'run' in d.reason ? d.reason.run.runId : null,
+        },
+        github: { ...state.github, lastWait: d.waitId },
+      }
+    }
+
+    case 'IssueUpdated': {
+      const d = event.data as PayloadOf<'IssueUpdated'>
+      const g = state.github
+      const waitId = d.waitId as WaitId | undefined
+      return {
+        ...state,
+        ...at,
+        github: {
+          ...g,
+          last: { ...g.last, [d.change]: { outcome: 'updated', text: d.detail } },
+          labels: d.change === 'labels' ? (d.detail ? d.detail.split(',').filter(Boolean) : []) : g.labels,
+          comments:
+            d.change === 'comment' && waitId !== undefined && /^\d+$/.test(d.detail)
+              ? [...g.comments, { waitId, commentId: Number(d.detail), question: d.question ?? '' }]
+              : g.comments,
+          edited: d.change === 'comment-edited' && waitId !== undefined ? [...g.edited, waitId] : g.edited,
+          bodyAfterWait: d.change === 'body' ? g.lastWait : g.bodyAfterWait,
+        },
+      }
+    }
+
+    case 'IssueUpdateFailed': {
+      const d = event.data as PayloadOf<'IssueUpdateFailed'>
+      const g = state.github
+      const waitId = d.waitId as WaitId | undefined
+      return {
+        ...state,
+        ...at,
+        github: {
+          ...g,
+          last: { ...g.last, [d.change]: { outcome: 'failed', text: d.error } },
+          edited: d.change === 'comment-edited' && waitId !== undefined ? [...g.edited, waitId] : g.edited,
+          bodyAfterWait: d.change === 'body' ? g.lastWait : g.bodyAfterWait,
         },
       }
     }
