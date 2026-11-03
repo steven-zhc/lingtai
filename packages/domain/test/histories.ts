@@ -703,6 +703,22 @@ function laneWaited(): readonly Envelope[] {
   ])
 }
 
+/** #828 D2: `implement`'s commit is on the base, a later verdict is on `sha-1`, and the head then moves to `sha-2`. */
+function implementThenReviewed(): readonly Envelope[] {
+  const run = aRun(passStream('implement-then-reviewed'))
+  return stamp([
+    runStarted(run, runTicket),
+    ...run.aStepEnded(
+      outcome('implement', 0, [
+        act('commit', 'agent', 'base000', { _tag: 'Completed', head: 'sha-1', question: null }, 'agent'),
+      ]),
+    ),
+    run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-1', files: 1, insertions: 1, deletions: 0 }),
+    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', accepted, 'agent')])),
+    run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-2', files: 1, insertions: 2, deletions: 0 }),
+  ])
+}
+
 export const lateHistories = {
   run: {
     fixRoundRouted: fixRoundRouted(),
@@ -729,6 +745,7 @@ export const lateHistories = {
     refusedThenFailed: refusedThenFailed(),
     planResolved: planResolved(),
     laneWaited: laneWaited(),
+    implementThenReviewed: implementThenReviewed(),
   },
 } as const
 
