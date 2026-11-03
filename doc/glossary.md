@@ -50,6 +50,14 @@ Lingtai is an event log. Everything else is what the log's events add up to.
 - **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a
   projection or a caller's join.
+- **Head** and **base** — a pass works on its own branch. Its *base* is the commit
+  on the base branch it started from; its *head* is the newest commit the agent
+  has produced there (`RunState.headSha`, set by `RunProducedDiff` and
+  `RunProposedCompletion`).
+- **onSha** and **stale** — `onSha` is the fact: the commit a step's verdict was
+  made on (`StepState.onSha`). *Stale* is the judgement read from it: from `build` on,
+  a verdict whose `onSha` is not the head is stale (design D2). Say *stale*, never
+  *not current*; the board's `current: boolean` is renamed `stale` by #848.
 - **Projection** (投影) — a table built from the whole log in `seq` order, for
   questions across many streams (`task_view`, `ticket_report`, `spend`,
   `finding_backlog`). Where a row needs one stream's state, the projection stores
