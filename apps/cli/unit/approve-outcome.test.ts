@@ -174,6 +174,20 @@ describe('followApproval', () => {
     expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
   })
 
+  it('D4: held again names the branch with no TicketDiscovered on the stream', async () => {
+    const h = await world()
+    await h.append(
+      aWait(item, {
+        _tag: 'ProposedEscalated',
+        run: { runId: 'run-1' },
+        proposal: { _tag: 'VerifyRed', output: 'red' },
+        because: { _tag: 'NotAsked' },
+      }),
+    )
+    const r = await followApproval(target, h.w)
+    expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
+  })
+
   it('a read that rejects after Ctrl+C is not an unhandled rejection', async () => {
     const unhandled: unknown[] = []
     const on = (e: unknown): void => void unhandled.push(e)
