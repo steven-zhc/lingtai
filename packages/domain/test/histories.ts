@@ -1145,6 +1145,173 @@ export const lateHistories = {
   },
 } as const
 
+// ----------------------------------------------------------- late scenarios ----
+
+/**
+ * Scenarios added after `scenarios` (#844), so no locked `seq` above moves. Each is built here, after the
+ * last history in the file, and exported from `lateScenarios`: `scenarios` is locked, and a bundle placed
+ * before the histories above would shift every `seq` after it. Append only.
+ */
+const lateTicket = (n: number) => ticketStream(PROJECT, n)
+const askedQuestion = 'merge this?'
+const signoffEnded = (run: RunFixture, sha: string) =>
+  run.aStepEnded(
+    outcome('merge', 0, [
+      act('signoff', 'human', sha, { _tag: 'Completed', requested: { question: askedQuestion } }, 'human'),
+    ]),
+  )
+const verdictEnded = (run: RunFixture) =>
+  run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', accepted, 'agent')]))
+
+/** A signoff asked, approved, continued, then refused at the lane: the spent approval's sha is not offered again. */
+const late_staleSignoff = (() => {
+  const ticketId = lateTicket(9401)
+  const t = makeStream(ticketId)
+  const run = aRun(passStream('s9401-a'))
+  return bundle(ticketId, [
+    ...aClaim(t, run.runId),
+    runStarted(run, ticketId),
+    ...signoffEnded(run, 'sha-1'),
+    ...aWait(
+      t,
+      { _tag: 'SignoffRequired', run: { runId: run.runId }, step: 'merge', action: 'human', question: askedQuestion },
+      wait('9401-sign'),
+    ),
+    ...aResolution(t, wait('9401-sign'), { _tag: 'Approve', onSha: 'sha-1' }),
+    t('TicketContinued', { runId: run.runId, worker: 'conductor:1' }),
+    ...run.aStepEnded(
+      outcome('merge', 0, [
+        act('merge', 'land', 'sha-1', {
+          _tag: 'Completed',
+          integration: { _tag: 'Conflicted', paths: null, baseSha: null, headSha: null },
+        }),
+      ]),
+    ),
+    ...aWait(
+      t,
+      { _tag: 'MergeRefused', run: { runId: run.runId }, reason: 'dirty-base', raw: 'uncommitted changes' },
+      wait('9401-refused'),
+    ),
+  ])
+})()
+
+/** The first dispatch proposes completion, a review refuses, the router opens a fix round: `verifying`, then `running`. */
+const late_fixRoundAfterCompletion = (() => {
+  const ticketId = lateTicket(9402)
+  const t = makeStream(ticketId)
+  const run = aRun(passStream('s9402-a'))
+  const offer = {
+    proposal: { _tag: 'ReviewFindings' as const, findings: [] },
+    available: [
+      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
+    ],
+    unavailable: [],
+  }
+  return bundle(ticketId, [
+    ...aClaim(t, run.runId),
+    runStarted(run, ticketId),
+    run.event('RunProducedDiff', { branch: 'agent/9402', headSha: 'sha-1', files: 2, insertions: 5, deletions: 1 }),
+    run.event('RunFinished', { exitCode: 0, turns: 12, durationMs: 60_000 }),
+    run.event('RunProposedCompletion', { headSha: 'sha-1' }),
+    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')])),
+    ...aRoute(run, {
+      offer,
+      reply: { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines are wrong' },
+      decision: { _tag: 'Selected', candidate: 'fix-lines' },
+    }),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 1 }),
+    ...run.aStepEnded(
+      outcome('implement', 1, [
+        act('commit', 'fix', 'sha-2', { _tag: 'Completed', head: 'sha-2', question: null }, 'agent'),
+      ]),
+    ),
+    run.event('StepStarted', { runId: run.runId, step: 'build', round: 1 }),
+  ])
+})()
+
+/** A second claim: the card shows the new run's base and no head, files or turns until it produces its own. */
+const late_secondRun = (() => {
+  const ticketId = lateTicket(9403)
+  const t = makeStream(ticketId)
+  const r1 = aRun(passStream('s9403-a'))
+  const r2 = aRun(passStream('s9403-b'))
+  return bundle(ticketId, [
+    ...aClaim(t, r1.runId),
+    runStarted(r1, ticketId),
+    r1.event('RunProducedDiff', { branch: 'agent/9403', headSha: 'sha-1', files: 1, insertions: 4, deletions: 1 }),
+    r1.event('RunFinished', { exitCode: 0, turns: 9, durationMs: 30_000 }),
+    ...aRelease(t, r1.runId, 'the pass did not finish'),
+    ...aClaim(t, r2.runId),
+    r2.event('RunStarted', {
+      ticketId,
+      runtime: 'claude-code',
+      model: 'claude-opus-5',
+      promptVersion: 'ticket@3',
+      baseSha: 'base222',
+      configHash: 'cfg123',
+      worktree: '/tmp/wt/9403-b',
+      invocation: null,
+    }),
+  ])
+})()
+
+/** `lingtai ask` after a release: no run is the card's, so no verdict pills. */
+const late_askAfterRelease = (() => {
+  const ticketId = lateTicket(9404)
+  const t = makeStream(ticketId)
+  const run = aRun(passStream('s9404-a'))
+  return bundle(ticketId, [
+    ...aClaim(t, run.runId),
+    runStarted(run, ticketId),
+    ...verdictEnded(run),
+    ...aRelease(t, run.runId, 'the pass did not finish'),
+    ...aWait(t, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, wait('9404-ask')),
+  ])
+})()
+
+/** A close after a release leaves the run un-named. */
+const late_closeAfterRelease = (() => {
+  const ticketId = lateTicket(9405)
+  const t = makeStream(ticketId)
+  const run = aRun(passStream('s9405-a'))
+  return bundle(ticketId, [
+    ...aClaim(t, run.runId),
+    runStarted(run, ticketId),
+    ...verdictEnded(run),
+    ...aRelease(t, run.runId, 'the pass did not finish'),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+  ])
+})()
+
+/** A person requeues a run's wait: the resolution and the release are one append (`resolve-wait.ts`). */
+const late_requeueOfRunWait = (() => {
+  const ticketId = lateTicket(9406)
+  const t = makeStream(ticketId)
+  const run = aRun(passStream('s9406-a'))
+  const ask = wait('9406-ask')
+  return bundle(ticketId, [
+    ...aClaim(t, run.runId),
+    runStarted(run, ticketId),
+    ...aWait(
+      t,
+      { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', question: 'which approach?' },
+      ask,
+    ),
+    ...aResolution(t, ask, { _tag: 'Requeue' }),
+    ...aRelease(t, run.runId, 'Requeued by steven.', { _tag: 'ByPerson', waitId: ask }),
+  ])
+})()
+
+export const lateScenarios = {
+  staleSignoff: late_staleSignoff,
+  fixRoundAfterCompletion: late_fixRoundAfterCompletion,
+  secondRun: late_secondRun,
+  askAfterRelease: late_askAfterRelease,
+  closeAfterRelease: late_closeAfterRelease,
+  requeueOfRunWait: late_requeueOfRunWait,
+} as const
+
 /**
  * The event types each stream kind's histories must contain: every catalogue
  * `case` label of `applyRun` / `applyTicket` (the retired `TicketLinked`

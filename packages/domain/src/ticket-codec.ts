@@ -162,7 +162,7 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
 }
 
 /** The path of the first place two parsed JSON values differ, or `null` for none. Key order is not a difference. */
-function firstDifference(a: unknown, b: unknown, path: string): string | null {
+export function firstDifference(a: unknown, b: unknown, path: string): string | null {
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return path
     for (let i = 0; i < a.length; i++) {

@@ -9,8 +9,19 @@
  * exactly one value: `ticket-pin-dispatch`'s `updated_seq`, 28 -> 27, because a
  * `DispatchRefused` on a blocked ticket moves no derived column and so leaves the
  * card's age alone ("an event that moves no derived column does not move it").
- * The `ticket` column itself is not in the pin: it grows with `TicketState`. If
- * this test goes red now, the fold changed — inspect the changed values rather
+ * The `ticket` column itself is not in the pin: it grows with `TicketState`.
+ *
+ * **#844 regenerated it once more**, when the run columns became `rowOf(ticket, run)`. It moved one
+ * value: `ticket-pin-continued`'s `verdicts`, `{"pass-pin-continued:merge:human":"asked"}` -> `{}`, because
+ * the row names the restart's new run and a card holds the named run's steps only (`readTasks` already
+ * showed none of the old run's). The other rules #844 changes have no fixture here — they are the
+ * `lateScenarios` in `task-view-run.test.ts`: a new run starts with no head, files or turns (and no base
+ * between its claim and its `RunStarted`); `awaiting_sha` holds only while a signoff is asked on this
+ * attempt; a signoff's `StepEnded` reads `running` until its `WaitStarted`. The `run_id` rows did not
+ * change, which is the check that the ticket's rule and the old per-event writes agree. The `run` column
+ * of `task_view_run` is not in the pin either.
+ *
+ * If this test goes red now, the fold changed — inspect the changed values rather
  * than regenerating the pin, and name the rule that explains each row.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
@@ -479,6 +490,58 @@ const continuedRestartRunId = 'pass-pin-continued-restart'
 events.push(...aClaim(continuedStream, continuedRestartRunId))
 const afterContinuedRestart = events.length
 
+// ---- rows 29-31: what a release does to the run the card names (#844) ----
+// Added before #844 changed `src`, and snapshotted on the code as it was, so each row shows today's answer.
+const verdictAfterRelease = (stream: ReturnType<typeof makeStream>, run: ReturnType<typeof aRun>): Envelope[] => [
+  ...aClaim(stream, run.runId),
+  ...run.aStepEnded(
+    outcomeOf('review', 0, [
+      {
+        plugin: 'agent',
+        name: 'reviewer',
+        onSha: SHA,
+        evidence: 'looks right',
+        yields: 'verdict',
+        result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+      },
+    ]),
+  ),
+  ...aRelease(stream, run.runId, 'the pass did not finish'),
+]
+
+// `lingtai ask` after a release: no run is the card's.
+const askAfterReleaseStream = makeStream('ticket-pin-askafterrelease')
+const askAfterReleaseRun = aRun('pass-pin-askafterrelease')
+events.push(...verdictAfterRelease(askAfterReleaseStream, askAfterReleaseRun))
+events.push(...aWait(askAfterReleaseStream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }))
+
+// A close after a release.
+const closeAfterReleaseStream = makeStream('ticket-pin-closeafterrelease')
+const closeAfterReleaseRun = aRun('pass-pin-closeafterrelease')
+events.push(...verdictAfterRelease(closeAfterReleaseStream, closeAfterReleaseRun))
+events.push(closeAfterReleaseStream('TicketClosed', { by: 'steven', reason: 'not wanted' }))
+
+// A person requeues a run's wait: `resolve-wait.ts` appends the resolution and the release in one append.
+const requeueOfRunWaitStream = makeStream('ticket-pin-requeueofrunwait')
+const requeueOfRunWaitRun = aRun('pass-pin-requeueofrunwait')
+const requeueOfRunWaitId = aWaitId()
+events.push(...aClaim(requeueOfRunWaitStream, requeueOfRunWaitRun.runId))
+events.push(
+  ...aWait(
+    requeueOfRunWaitStream,
+    { _tag: 'AgentQuestion', run: aRunRef(requeueOfRunWaitRun.runId), step: 'implement', question: 'which approach?' },
+    requeueOfRunWaitId,
+  ),
+)
+const whileRequeueWaits = events.length
+events.push(...aResolution(requeueOfRunWaitStream, requeueOfRunWaitId, { _tag: 'Requeue' }))
+events.push(
+  ...aRelease(requeueOfRunWaitStream, requeueOfRunWaitRun.runId, 'Requeued by steven.', {
+    _tag: 'ByPerson',
+    waitId: requeueOfRunWaitId,
+  }),
+)
+
 function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow | undefined {
   return rows.find((r) => r.task_id === taskId)
 }
@@ -492,7 +555,8 @@ async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Proje
     return await store.transact(async (ctx) => ({
       // Every column but `ticket`: the stored reduce grows with `TicketState`, and a new field must not churn this pin (#834).
       tasks: (await ctx.query('select * from task_view order by task_id')).map(({ ticket: _ticket, ...row }) => row),
-      runs: await ctx.query('select * from task_view_run order by run_id'),
+      // The stored run reduce is left out for the same reason (#844).
+      runs: (await ctx.query('select * from task_view_run order by run_id')).map(({ run: _run, ...row }) => row),
     }))
   } finally {
     db.close()
@@ -622,5 +686,17 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
       note: 'crash: crashed partway through',
       verdicts: JSON.stringify({ 'pass-pin-didnotfinish:implement:write the change': 'did-not-finish' }),
     })
+  })
+
+  it('clears the run a release ended, and keeps it while a wait on that run stands (#844)', async () => {
+    const { tasks } = await fold(events.length)
+    expect(taskOf(tasks, 'ticket-pin-askafterrelease')).toMatchObject({ run_id: null })
+    expect(taskOf(tasks, 'ticket-pin-closeafterrelease')).toMatchObject({ run_id: null })
+
+    const waiting = await fold(whileRequeueWaits)
+    expect(taskOf(waiting.tasks, 'ticket-pin-requeueofrunwait')).toMatchObject({
+      run_id: 'pass-pin-requeueofrunwait',
+    })
+    expect(taskOf(tasks, 'ticket-pin-requeueofrunwait')).toMatchObject({ run_id: null })
   })
 })

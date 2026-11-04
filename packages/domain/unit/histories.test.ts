@@ -28,7 +28,7 @@ import {
   reduceRun,
   reduceTicket,
 } from '../src/index.ts'
-import { COVERS, NOW, histories, lateHistories, scenarios } from '../test/histories.ts'
+import { COVERS, NOW, histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
 import hashes from './histories.hashes.json'
 
 const src = (file: string) => fileURLToPath(new URL(`../src/${file}`, import.meta.url))
@@ -66,7 +66,7 @@ const singles = [...Object.entries(histories), ...Object.entries(lateHistories)]
   })),
 )
 
-const everyBundle = Object.entries(scenarios).map(([name, s]) => ({
+const everyBundle = Object.entries({ ...scenarios, ...lateScenarios }).map(([name, s]) => ({
   name: `scenario.${name}`,
   s,
   events: [...s.ticket, ...s.runs.flat(), ...(s.integration ?? [])].sort((a, b) => (a.seq < b.seq ? -1 : 1)),
