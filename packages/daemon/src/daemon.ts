@@ -31,8 +31,10 @@
  * One of those failures is knowable on the way up: a projection whose table no
  * longer has the columns its DDL declares will throw on the first event that
  * needs one, and `start()` compares the two before it follows. So a drifted
- * shape is a daemon that refuses with the remedy in the message, rather than one
- * that runs until the wrong event arrives (#90).
+ * shape stops that projection alone, with the remedy in the message, and the
+ * daemon comes up and keeps the conductor lock with the rest (0100 §13, #839);
+ * a rebuild is refused while it runs, so shut it down first. It is not left to
+ * run until the wrong event arrives (#90).
  */
 import { paint } from '@lingtai/env/colour'
 import { type LogPredatesHoldError, logPredatesHold, processLog } from '@lingtai/event-store'
