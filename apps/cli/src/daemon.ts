@@ -31,7 +31,7 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT } from '@lingtai/env'
+import { BOARD_PORT, boardOrigin } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
 import { parseDuration } from '@lingtai/recipe'
@@ -134,10 +134,10 @@ export function boardOptions(): ServiceOptions['board'] {
       },
     }
   }
-  const { port } = asked
+  const { port, reach } = asked
   return {
-    url: `http://127.0.0.1:${port}`,
-    answering: () => boardAt(port),
+    url: boardOrigin(reach, port),
+    answering: () => boardAt(port, reach),
     missing: boardMissing,
     // The key `lingtai board start` takes, read without taking it — so a board
     // in a terminal is not a job the supervisor respawns every thirty seconds.

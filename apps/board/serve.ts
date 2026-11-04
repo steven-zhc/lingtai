@@ -12,17 +12,21 @@
  * the board came up on 17820 while every card link, `lingtai board status` and
  * the service's board leg named the port they had asked for.
  *
+ * The address is `board.host` likewise (0111 §2): every address by default.
+ *
  * A port that is not a port number is refused by name, as it is everywhere the
  * board is the subject: the sentence and not the stack, and nothing is served
  * on a number nobody chose.
  */
 import { spawnSync } from 'node:child_process'
 
-import { boardPort, machineOtlpEndpoint } from '@lingtai/env'
+import { boardHost, boardPort, machineOtlpEndpoint } from '@lingtai/env'
 
 let port: number
+let host: string
 try {
   port = boardPort()
+  host = boardHost()
   // Refused here, naming the key, rather than at the first render (#775).
   machineOtlpEndpoint()
 } catch (err) {
@@ -34,7 +38,7 @@ const mode = process.argv[2] === 'start' ? ['start'] : ['dev', '--turbopack']
 // `next` off the PATH pnpm gives a script — the same binary the literal
 // command ran, invoked with the port this repository decides rather than one
 // written in the file that invokes it.
-const r = spawnSync('next', [...mode, '-p', String(port)], { stdio: 'inherit' })
+const r = spawnSync('next', [...mode, '-p', String(port), '-H', host], { stdio: 'inherit' })
 if (r.error) {
   console.error(r.error.message)
   process.exit(1)

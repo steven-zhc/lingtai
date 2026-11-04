@@ -362,17 +362,19 @@ const BOARD_USAGE = 'lingtai board start|stop|restart|status [--port <n>] [--dir
 async function liveBoardRunner(request: BoardRequest): Promise<number> {
   const { boardCommand, builtBoardDir, boardStatusJson, readBoardStatus } = await import('./board.ts')
   const { liveBoardWorld } = await import('./board-world.ts')
-  const { boardPort } = await import('@lingtai/env')
+  const { boardHost, boardPort } = await import('@lingtai/env')
   // `--port` is this run's; without it the machine file's, and without that
   // 17820 (#187). A file that does not parse is refused by name here rather
   // than serving on a port nobody chose.
   let port: number
+  let host: string
   try {
     port = request.port ?? boardPort()
+    host = boardHost()
   } catch (err) {
     return failed('board', request.json, err)
   }
-  const world = liveBoardWorld()
+  const world = liveBoardWorld(host)
   if (request.verb === 'status' && request.json) {
     printJson('board status', boardStatusJson(await readBoardStatus({ port }, world)))
     return 0

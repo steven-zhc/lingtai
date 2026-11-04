@@ -142,8 +142,14 @@ describe("the board's port, where the board is not the subject", () => {
   }
 
   it("is the file's where the file names one, and the default where nothing does", () => {
-    expect(boardPortOrWhy({ LINGTAI_HOME: home('board:\n  port: 18080\n') })).toEqual({ port: 18080 })
-    expect(boardPortOrWhy({ LINGTAI_HOME: home('runtime:\n  agent: claude-code\n') })).toEqual({ port: 17820 })
+    expect(boardPortOrWhy({ LINGTAI_HOME: home('board:\n  port: 18080\n') })).toEqual({
+      port: 18080,
+      reach: '127.0.0.1',
+    })
+    expect(boardPortOrWhy({ LINGTAI_HOME: home('runtime:\n  agent: claude-code\n') })).toEqual({
+      port: 17820,
+      reach: '127.0.0.1',
+    })
   })
 
   it('is a reason and never a throw, so a typo in a UI setting does not hold up a drain', () => {

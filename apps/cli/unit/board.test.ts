@@ -45,6 +45,7 @@ function world(
   let keeperAsks = 0
   const w: BoardWorld = {
     host: '127.0.0.1',
+    reach: '127.0.0.1',
     hostname: 'mac',
     home: { path: '/Users/x/lingtai-trial/a', shown: '~/lingtai-trial/a' },
     notSetUp: () => false,
@@ -107,6 +108,13 @@ describe('lingtai board start', () => {
     expect(w.out.join('\n')).toContain(`board on ${URL}`)
     expect(w.out.join('\n')).toContain('ctrl-c stops it')
     expect(w.held()).toBe(`board on ${PORT} pid 500 on mac`)
+  })
+
+  it('links to loopback when the board serves every address', async () => {
+    const w = world({ host: '0.0.0.0', reach: '127.0.0.1' })
+    expect(await w.go('start')).toBe(0)
+    expect(w.out.join('\n')).toContain(`board on ${URL}`)
+    expect(w.out.join('\n')).not.toContain('0.0.0.0')
   })
 
   it('names the home it serves on the line with its URL', async () => {

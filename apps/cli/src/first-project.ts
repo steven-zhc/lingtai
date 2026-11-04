@@ -57,7 +57,7 @@ import {
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
-import { boardPort, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
+import { boardHost, boardPort, boardReachHost, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
 import { createAppReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector'
 import {
@@ -1105,7 +1105,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
         writeGithubAuth(liveMachineText(), join(home, 'config.yml'), kind)
       },
       app: checkApp,
-      boardUrl: () => boardAt(boardPort()),
+      boardUrl: () => boardAt(boardPort(), boardReachHost(boardHost())),
       waitForApp: (boardUrl) => waitForApp({ log: options.log, ...appWait }, boardUrl, { waitMs: APP_WAIT_MS }),
       picker: livePicker,
       add: (opts: AddOptions, log) => add(opts, log),
