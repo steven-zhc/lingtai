@@ -57,7 +57,7 @@ function stepLine(step: string, word: string, text: string): string {
 /**
  * `${branch} into ${base}`, or just `${branch}` where `base` is not known.
  *
- * `cardFactOf`/`boardFactOf`/`ticket.ts` each call `waitWords` off one event
+ * `task-view.ts`/`boardFactOf`/`ticket.ts` each call `waitWords` off one event
  * (or, for `ticket.ts`, off an
  * aggregate with no run stream to read), and none of the three has a
  * projection of the recipe's own `base` —

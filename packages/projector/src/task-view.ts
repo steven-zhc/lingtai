@@ -50,9 +50,9 @@
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
 import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
+  agentBranchOf,
   applyRun,
   applyTicket,
-  cardFactOf,
   decodeRun,
   decodeTicket,
   emptyRun,
@@ -62,7 +62,6 @@ import {
   isPassStream,
   isTicketStream,
   parseTicketStream,
-  waitBranchOf,
   waitWords,
   WaitId,
 } from '@lingtai/domain'
@@ -254,14 +253,6 @@ export const taskViewProjection: Projection = {
     for (const event of events) {
       if (isTicketStream(event.streamId)) await applyTicketEvent(cache, event)
       else if (isPassStream(event.streamId)) await applyRunEvent(cache, event)
-      else if (event.type === 'IntegrationRefused' || event.type === 'IntegrationSucceeded') {
-        // The lane's outcome is a note on the card. A block does not always follow, so `state` is the reduce's alone.
-        const d = event.data as PayloadOf<'IntegrationRefused'> & PayloadOf<'IntegrationSucceeded'>
-        const entry = await cache.task(d.ticketId)
-        if (entry.where !== 'row') continue
-        entry.note = event.type === 'IntegrationRefused' ? `${d.reason}: ${d.detail}` : d.mergeCommit
-        touch(entry, event)
-      }
     }
     await cache.flush()
   },
@@ -361,39 +352,53 @@ const MAKES_THE_ROW: ReadonlySet<string> = new Set([
   'WaitStarted',
 ])
 
-/** The card's line for an event, or null when the event writes none. `value: null` clears it. */
-function noteOf(event: Envelope, after: TicketState, lifecycleMoved: boolean): { value: string | null } | null {
-  switch (event.type) {
-    case 'TicketClaimed':
-    case 'TicketContinued':
-      return { value: null }
-    case 'TicketReleased':
-      return { value: (event.data as PayloadOf<'TicketReleased'>).reason }
-    case 'TicketClosed':
-      return { value: (event.data as PayloadOf<'TicketClosed'>).reason }
-    case 'TicketLanded':
-      return { value: (event.data as PayloadOf<'TicketLanded'>).mergeCommit }
-    case 'DispatchRefused': {
-      if (after.lifecycle.status === 'blocked') return null
-      const d = event.data as PayloadOf<'DispatchRefused'>
-      return { value: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}` }
-    }
-    case 'WaitStarted': {
-      const d = event.data as PayloadOf<'WaitStarted'>
-      return { value: waitWords(d.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line }
-    }
-    case 'WaitResolved': {
-      const d = event.data as PayloadOf<'WaitResolved'>
-      // Close leaves the wait standing (D5), so the question stays the card's line.
-      if (d.resolution._tag === 'Close' || !lifecycleMoved) return null
-      if (d.resolution._tag === 'Approve') return { value: 'approved — continues once a conductor is free' }
-      if (d.resolution._tag === 'GrantFixRound')
-        return { value: 'fix round granted — continues once a conductor is free' }
-      return { value: null }
-    }
-    default:
-      return null
+/** A note a transition writes. `{ value: null }` clears the card's line; `null` is no transition. */
+export type Note = { value: string | null } | null
+
+/**
+ * The card's line for what a ticket event did, read off the state before and after its reduce (#845): the
+ * last transition wins, as the last writer did. The first rule that matches answers.
+ */
+export function ticketNoteOf(before: TicketState, after: TicketState): Note {
+  // A claim's ending becoming a release gives its reason, whatever the lifecycle did: a person's Requeue is
+  // `WaitResolved` (blocked → backlog) and then a release on the backlog it already left.
+  for (let i = 0; i < after.claims.length; i++) {
+    const ended = after.claims[i]!.ended
+    if (ended?.kind !== 'released') continue
+    if (JSON.stringify(before.claims[i]?.ended ?? null) !== JSON.stringify(ended)) return { value: ended.reason }
   }
+  if (JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)) {
+    const l = after.lifecycle
+    switch (l.status) {
+      case 'blocked':
+        return {
+          value: waitWords(l.reason, {
+            branch: after.externalRef === null ? '' : agentBranchOf(after.externalRef),
+            base: '',
+            findings: [],
+          }).line,
+        }
+      case 'closed':
+        return { value: l.reason }
+      case 'landed':
+        return { value: l.mergeCommit }
+      case 'approved':
+        return {
+          value:
+            l.grantRef === undefined
+              ? 'approved — continues once a conductor is free'
+              : 'fix round granted — continues once a conductor is free',
+        }
+      case 'claimed':
+      case 'backlog':
+        return { value: null }
+    }
+  }
+  if (after.dispatchRefusals.length > before.dispatchRefusals.length && after.lifecycle.status !== 'blocked') {
+    const d = after.dispatchRefusals.at(-1)!
+    return { value: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}` }
+  }
+  return null
 }
 
 /** The run's columns, a pure function of the ticket's reduce and the latest run's (#844). */
@@ -631,21 +636,22 @@ class Cache {
   }
 }
 
-/** The card's line a run event writes, or null. The note stays per event until #845. */
-function runNoteOf(event: Envelope): string | null {
-  if (event.type === 'RunAwaitingInput') return (event.data as PayloadOf<'RunAwaitingInput'>).prompt
-  let note: string | null = null
-  for (const fact of cardFactOf(event)) {
-    // A signoff request is the question on the card. Granted and revoked are `WaitResolved{Approve}` now (#502).
-    if (fact._tag === 'Verdict' && fact.approval?._tag === 'Requested') note = fact.approval.question
-    // `of` is gone with `FixRequested` (#502): the round is named without a denominator.
-    else if (fact._tag === 'RoundOpened')
-      note =
-        fact.findings > 0 ? `fixing round ${fact.round}: ${fact.findings} finding(s)` : `fixing round ${fact.round}`
-    // Always followed by a `WaitStarted` or a release back to `queued`: the note for the moment before either.
-    else if (fact._tag === 'RunEnded') note = `${fact.kind}: ${fact.detail}`
+/** The card's line for what a run event did, read off the run's state before and after its reduce (#845). */
+export function runNoteOf(before: RunState, after: RunState): string | null {
+  if (JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)) {
+    const l = after.lifecycle
+    if (l.status === 'awaiting-input') return l.prompt
+    if (l.status === 'awaiting-approval') return l.question
   }
-  return note
+  if (after.roundsOpened.length > before.roundsOpened.length) {
+    const round = after.roundsOpened.at(-1)!
+    const proposal = after.route?.offer.proposal
+    const findings = proposal?._tag === 'ReviewFindings' ? proposal.findings.length : 0
+    return findings > 0 ? `fixing round ${round}: ${findings} finding(s)` : `fixing round ${round}`
+  }
+  if (after.failure !== null && JSON.stringify(before.failure) !== JSON.stringify(after.failure))
+    return `${after.failure.kind}: ${after.failure.detail}`
+  return null
 }
 
 function touch(entry: TaskEntry, event: Envelope): void {
@@ -668,12 +674,14 @@ async function applyRunEvent(cache: Cache, event: Envelope): Promise<void> {
   const task = entry.taskId === null ? null : await cache.task(entry.taskId)
   const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
 
+  const runBefore = entry.run
   entry.run = applyRun(entry.run, event)
   entry.dirty = true
 
   if (task === null || entry.taskId === null || task.where !== 'row') return
   const now = cache.columns(entry.taskId, task)
-  const note = runNoteOf(event)
+  // Only the ticket's latest run speaks for the card.
+  const note = task.ticket.runs.at(-1) === runId ? runNoteOf(runBefore, entry.run) : null
   if (note !== null) task.note = note
   if (note !== null || JSON.stringify(was) !== JSON.stringify(now)) touch(task, event)
 }
@@ -698,8 +706,7 @@ async function applyTicketEvent(cache: Cache, event: Envelope): Promise<void> {
   }
 
   const now = cache.columnsOf(taskId, after)
-  const lifecycleMoved = JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)
-  const note = noteOf(event, after, lifecycleMoved)
+  const note = ticketNoteOf(before, after)
   if (entry.where !== 'row') {
     // The event that makes the row: it moves out of staging, whole, and the card's age starts here.
     entry.wasStaged = entry.where === 'staged'
@@ -708,13 +715,7 @@ async function applyTicketEvent(cache: Cache, event: Envelope): Promise<void> {
     touch(entry, event)
     return
   }
-  // A release lands on a backlog ticket when a WaitResolved already moved it there: the lifecycle and every
-  // derived column are unchanged, and the release still gives the card its reason.
-  const releases = event.type === 'TicketReleased' && after.lifecycle.status === 'backlog'
-  const touched =
-    JSON.stringify(was) !== JSON.stringify(now) ||
-    releases ||
-    (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
+  const touched = JSON.stringify(was) !== JSON.stringify(now) || note !== null
   if (!touched) return
   if (note !== null) entry.note = note.value
   touch(entry, event)

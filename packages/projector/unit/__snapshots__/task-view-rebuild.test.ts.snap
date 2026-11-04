@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`task_view rebuilds through cardFactOf exactly as it did through the direct matches > produces the same final rows for every Hold kind and every rerouted event > final task_view rows 1`] = `
+exports[`task_view rebuilds through the stored states exactly as it did through the direct matches > produces the same final rows for every Hold kind and every rerouted event > final task_view rows 1`] = `
 [
   {
     "answer": null,
@@ -977,7 +977,7 @@ exports[`task_view rebuilds through cardFactOf exactly as it did through the dir
 ]
 `;
 
-exports[`task_view rebuilds through cardFactOf exactly as it did through the direct matches > produces the same final rows for every Hold kind and every rerouted event > final task_view_run rows 1`] = `
+exports[`task_view rebuilds through the stored states exactly as it did through the direct matches > produces the same final rows for every Hold kind and every rerouted event > final task_view_run rows 1`] = `
 [
   {
     "run_id": "pass-pin-approval",

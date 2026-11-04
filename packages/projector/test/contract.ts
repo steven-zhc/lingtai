@@ -177,8 +177,8 @@ const runAwaitingInput = (prompt: string) => ({
 
 /**
  * `RunFailed{kind, detail}` — still in `EVENTS`, still appended by the
- * conductor and still folded into the card's note (`read-model.ts`'s
- * `cardFactOf`), so built through `aRunFailure` rather than the wire shape
+ * conductor and still folded into the card's note (`task-view.ts`'s
+ * `runNoteOf`), so built through `aRunFailure` rather than the wire shape
  * directly (#480).
  */
 const runFailed = (

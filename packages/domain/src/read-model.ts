@@ -11,7 +11,7 @@
  * slice: it filters by `type` and keys by `runId`/`streamId`, which is also
  * what the projections see, since they fold in global `seq` order too.
  */
-import { isReached, type Action, type Reached, type StepOutcome, type WaitId } from './action.ts'
+import { isReached, type Reached, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import type { PassNext } from './pass-next.ts'
@@ -123,112 +123,6 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
   return events.filter((e) => e.type === 'TicketReleased').map((e) => (e.data as PayloadOf<'TicketReleased'>).cause)
 }
 
-// -------------------------------------------------------------- cardFactOf ----
-
-/** What an action's own result does to a card's `awaiting_sha`/`note`, beside the verdict itself. */
-export type ApprovalEffect = { readonly _tag: 'Requested'; readonly question: string; readonly onSha: string } | null
-
-function approvalEffectOf(action: Action): ApprovalEffect {
-  if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
-    return { _tag: 'Requested', question: action.result.requested.question, onSha: action.onSha }
-  }
-  return null
-}
-
-/**
- * What `task_view` folds that is not simply replayed from the writer's own
- * structure — the one place left that turns a raw event into the sentence a
- * card shows. `cardFactOf` answers `[]` for any type it does not own, which
- * a fold reads as "no fact, no write" rather than a gap. One `StepEnded` may
- * answer several `Verdict`s, one per action it declared (`NotReached`
- * excluded) — a step with two checks writes two cells.
- */
-export type CardFact =
-  | { readonly _tag: 'Verdict'; readonly key: string; readonly verdict: StepVerdict; readonly approval: ApprovalEffect }
-  | { readonly _tag: 'RoundOpened'; readonly round: number; readonly findings: number; readonly action: string }
-  | {
-      readonly _tag: 'WaitStarted'
-      readonly waitId: WaitId
-      readonly reason: WaitReason
-    }
-  | { readonly _tag: 'WaitResolved'; readonly by: string; readonly note: string; readonly resolution: Resolution }
-  | { readonly _tag: 'TriageStarted'; readonly waitId: WaitId; readonly attempt: number }
-  | {
-      readonly _tag: 'WaitTriaged'
-      readonly waitId: WaitId
-      readonly attempt: number
-      readonly headSha: string
-      readonly result: TriageResult
-    }
-  | { readonly _tag: 'RunEnded'; readonly kind: string; readonly detail: string }
-
-/** `cardFactOf`'s one entry point — see the section header for what it does and does not answer. */
-export function cardFactOf(event: Envelope): CardFact[] {
-  switch (event.type) {
-    case 'StepEnded': {
-      const d = event.data as PayloadOf<'StepEnded'>
-      return d.outcome.actions.filter(isReached).map((action) => ({
-        _tag: 'Verdict' as const,
-        key: `${d.outcome.step}:${action.name}`,
-        verdict: verdictOf(action),
-        approval: approvalEffectOf(action),
-      }))
-    }
-
-    case 'PassRouted': {
-      const d = event.data as PayloadOf<'PassRouted'>
-      const next = routeNext(d.offer, d.reply, d.decision, { runId: d.runId })
-      const facts: CardFact[] = []
-      if (next._tag === 'FixRound') {
-        const findings = d.offer.proposal._tag === 'ReviewFindings' ? d.offer.proposal.findings.length : 0
-        facts.push({ _tag: 'RoundOpened', round: next.round, findings, action: '' })
-      }
-      // **No `Restarted` fact here** (`#502` had one): `PassRouted` is the
-      // decision, not the restart — `conduct.ts`'s own `armIsUp` guard can
-      // still let the pass fall through to `failed` with the arm unpublished,
-      // and `ticket.ts` counts a restart only off `TicketReleased{cause:
-      // Restart}`, the event that guard gates. A second counter here, driven
-      // by the decision alone, is the one `task_view.restarts` and
-      // `work-item.restarts` could then disagree about.
-      return facts
-    }
-
-    case 'WaitStarted': {
-      const d = event.data as PayloadOf<'WaitStarted'>
-      return [
-        {
-          _tag: 'WaitStarted',
-          waitId: d.waitId,
-          reason: d.reason,
-        },
-      ]
-    }
-
-    case 'WaitResolved': {
-      const d = event.data as PayloadOf<'WaitResolved'>
-      return [{ _tag: 'WaitResolved', by: d.by, note: d.note, resolution: d.resolution }]
-    }
-
-    case 'TriageStarted': {
-      const d = event.data as PayloadOf<'TriageStarted'>
-      return [{ _tag: 'TriageStarted', waitId: d.waitId, attempt: d.attempt }]
-    }
-
-    case 'WaitTriaged': {
-      const d = event.data as PayloadOf<'WaitTriaged'>
-      return [{ _tag: 'WaitTriaged', waitId: d.waitId, attempt: d.attempt, headSha: d.headSha, result: d.result }]
-    }
-
-    case 'RunFailed': {
-      const d = event.data as PayloadOf<'RunFailed'>
-      return [{ _tag: 'RunEnded', kind: d.kind, detail: d.detail }]
-    }
-
-    default:
-      return []
-  }
-}
-
 // -------------------------------------------------------- findingsRaisedOf ----
 
 /**
@@ -268,8 +162,8 @@ export function findingsRaisedOf(event: Envelope): FindingsRaised[] {
 /**
  * What the board's history, progress strip and task fold read off one event
  * at a time — never `stepOutcomesOf`/`routesOf`/`waitsOf`/`releaseCauseOf`,
- * for `findingsRaisedOf`'s own reasons above, and never `cardFactOf`: that
- * fact answers for `task_view` and the two can disagree about one event.
+ * for `findingsRaisedOf`'s own reasons above, and never `task_view`'s `RunState`
+ * reduce: that answers for `task_view` and the two can disagree about one event.
  *
  * **The board loses which action of a step is running** (0120's own
  * Consequences): `StepStarted` carries no action any more, so there is no

@@ -28,10 +28,9 @@ const FIXTURES: WaitFixture[] = []
 
 /**
  * **What turns on `task_view.awaiting_sha` since #502.** `ApprovalRequested`
- * is gone — a card's Approve sha is read off `cardFactOf`'s `Verdict` fact
- * now, through the `signoff` action a `StepEnded` carries whenever one is
- * live (`task-view.ts`'s `fact.approval.onSha`, `read-model.ts`'s
- * `approvalEffectOf`). This builds exactly that `StepEnded`, standing in for
+ * is gone — a card's Approve sha is read off the run's
+ * `RunState` now (#844), through the `signoff` action a `StepEnded` carries whenever one is
+ * live (`task-view.ts`'s `rowOf`). This builds exactly that `StepEnded`, standing in for
  * whatever declared the signoff (a `human:` action, or the router's own
  * floor) so this fixture file does not have to change shape, only the event
  * it is fed.
@@ -107,8 +106,8 @@ add('NothingProduced', 'nothingproduced', (item) => [
  * **`branch` is back; `base` still is not.** `waitWords(reason, pass)`
  * composes `"${branch} into ${base} is waiting on you"` from a `pass`
  * argument — `WaitReason` itself carries neither, on purpose (0118 §1:
- * "branch/base live on the pass, not the wait") — and `cardFactOf`/
- * `boardFactOf` (`read-model.ts`), the only callers between the stored event
+ * "branch/base live on the pass, not the wait") — and `boardFactOf`
+ * (`read-model.ts`) and `task-view.ts`'s `ticketNoteOf`, the only callers between the stored event
  * and this card, now supply `branch` off the ticket id's own issue number
  * (`agentBranchOf`, deterministic — `streams.ts`). `base` is still not
  * tracked by any projection, so `waitWords`'s own `subjectOf` drops the

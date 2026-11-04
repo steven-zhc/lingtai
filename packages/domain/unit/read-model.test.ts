@@ -11,7 +11,6 @@ import type { Action, StepOutcome } from '../src/index.ts'
 import {
   designAsksOf,
   boardFactOf,
-  cardFactOf,
   findingsRaisedOf,
   releaseCauseOf,
   routesOf,
@@ -212,36 +211,6 @@ describe('releaseCauseOf', () => {
   it('answers null where the release names none', () => {
     const item = makeStream('ticket-1')
     expect(releaseCauseOf(aRelease(item, 'pass-1'))).toEqual([null])
-  })
-})
-
-describe('cardFactOf', () => {
-  it('answers one Verdict per action a StepEnded declares, NotReached excluded', () => {
-    const run = aRun('pass-1')
-    const outcome: StepOutcome = {
-      step: 'build',
-      round: 0,
-      actions: [
-        verdict('tsc', 'sha-a', true),
-        verdict('test', 'sha-a', false),
-        { ...verdict('lint', 'sha-a', true), result: { _tag: 'NotReached' } } as Action,
-      ],
-    }
-    const events = run.aStepEnded(outcome)
-    const facts = events.flatMap(cardFactOf)
-
-    expect(facts).toEqual([
-      { _tag: 'Verdict', key: 'build:tsc', verdict: 'passed', approval: null },
-      { _tag: 'Verdict', key: 'build:test', verdict: 'failed', approval: null },
-    ])
-  })
-
-  it('answers WaitStarted with the card line waitWords composes', () => {
-    const item = makeStream('ticket-1')
-    const waitId = aWaitId()
-    const reason = { _tag: 'OwnQuestion' as const, question: 'which base?', by: 'steven' }
-    const facts = aWait(item, reason, waitId).flatMap(cardFactOf)
-    expect(facts).toEqual([{ _tag: 'WaitStarted', waitId, reason }])
   })
 })
 
