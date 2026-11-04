@@ -479,6 +479,58 @@ const continuedRestartRunId = 'pass-pin-continued-restart'
 events.push(...aClaim(continuedStream, continuedRestartRunId))
 const afterContinuedRestart = events.length
 
+// ---- rows 29-31: what a release does to the run the card names (#844) ----
+// Added before #844 changed `src`, and snapshotted on the code as it was, so each row shows today's answer.
+const verdictAfterRelease = (stream: ReturnType<typeof makeStream>, run: ReturnType<typeof aRun>): Envelope[] => [
+  ...aClaim(stream, run.runId),
+  ...run.aStepEnded(
+    outcomeOf('review', 0, [
+      {
+        plugin: 'agent',
+        name: 'reviewer',
+        onSha: SHA,
+        evidence: 'looks right',
+        yields: 'verdict',
+        result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+      },
+    ]),
+  ),
+  ...aRelease(stream, run.runId, 'the pass did not finish'),
+]
+
+// `lingtai ask` after a release: no run is the card's.
+const askAfterReleaseStream = makeStream('ticket-pin-askafterrelease')
+const askAfterReleaseRun = aRun('pass-pin-askafterrelease')
+events.push(...verdictAfterRelease(askAfterReleaseStream, askAfterReleaseRun))
+events.push(...aWait(askAfterReleaseStream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }))
+
+// A close after a release.
+const closeAfterReleaseStream = makeStream('ticket-pin-closeafterrelease')
+const closeAfterReleaseRun = aRun('pass-pin-closeafterrelease')
+events.push(...verdictAfterRelease(closeAfterReleaseStream, closeAfterReleaseRun))
+events.push(closeAfterReleaseStream('TicketClosed', { by: 'steven', reason: 'not wanted' }))
+
+// A person requeues a run's wait: `resolve-wait.ts` appends the resolution and the release in one append.
+const requeueOfRunWaitStream = makeStream('ticket-pin-requeueofrunwait')
+const requeueOfRunWaitRun = aRun('pass-pin-requeueofrunwait')
+const requeueOfRunWaitId = aWaitId()
+events.push(...aClaim(requeueOfRunWaitStream, requeueOfRunWaitRun.runId))
+events.push(
+  ...aWait(
+    requeueOfRunWaitStream,
+    { _tag: 'AgentQuestion', run: aRunRef(requeueOfRunWaitRun.runId), step: 'implement', question: 'which approach?' },
+    requeueOfRunWaitId,
+  ),
+)
+const whileRequeueWaits = events.length
+events.push(...aResolution(requeueOfRunWaitStream, requeueOfRunWaitId, { _tag: 'Requeue' }))
+events.push(
+  ...aRelease(requeueOfRunWaitStream, requeueOfRunWaitRun.runId, 'Requeued by steven.', {
+    _tag: 'ByPerson',
+    waitId: requeueOfRunWaitId,
+  }),
+)
+
 function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow | undefined {
   return rows.find((r) => r.task_id === taskId)
 }
@@ -622,5 +674,17 @@ describe('task_view rebuilds through cardFactOf exactly as it did through the di
       note: 'crash: crashed partway through',
       verdicts: JSON.stringify({ 'pass-pin-didnotfinish:implement:write the change': 'did-not-finish' }),
     })
+  })
+
+  it('clears the run a release ended, and keeps it while a wait on that run stands (#844)', async () => {
+    const { tasks } = await fold(events.length)
+    expect(taskOf(tasks, 'ticket-pin-askafterrelease')).toMatchObject({ run_id: null })
+    expect(taskOf(tasks, 'ticket-pin-closeafterrelease')).toMatchObject({ run_id: null })
+
+    const waiting = await fold(whileRequeueWaits)
+    expect(taskOf(waiting.tasks, 'ticket-pin-requeueofrunwait')).toMatchObject({
+      run_id: 'pass-pin-requeueofrunwait',
+    })
+    expect(taskOf(tasks, 'ticket-pin-requeueofrunwait')).toMatchObject({ run_id: null })
   })
 })
