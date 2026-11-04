@@ -42,14 +42,14 @@ import {
 import {
   CONTROL_STREAM,
   type ReleaseCause,
-  type RunState,
+  type AttemptState,
   type RuntimeId,
   type Step,
   type ToAppend,
-  passIdOf,
-  passStream,
+  attemptIdOf,
+  attemptStream,
   reduceControl,
-  reduceRun,
+  reduceAttempt,
   reduceTicket,
   stepOutcomesOf,
   waitsOf,
@@ -63,7 +63,7 @@ import {
   standingFor,
   waivedActionsAt,
   type KeptAt,
-  type RunRef,
+  type AttemptRef,
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
@@ -651,7 +651,7 @@ function detailOf(ending: PassOver['stopped']): string {
  * `runPass`'s, and this is the caller the pass was written to be called by.
  */
 /** A grant buys the next implement visit after every round already recorded on this run. */
-export function continuationRound(run: RunState, granted: boolean): number {
+export function continuationRound(run: AttemptState, granted: boolean): number {
   return granted ? run.implementRound + 1 : run.implementRound
 }
 
@@ -1093,7 +1093,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
-      const runState = reduceRun(runEvents)
+      const runState = reduceAttempt(runEvents)
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
@@ -1173,7 +1173,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const runId =
       options.continuing !== undefined && continuation !== null
         ? options.continuing.runId
-        : passStream(crypto.randomUUID())
+        : attemptStream(crypto.randomUUID())
     /**
      * **Where the pass works, known before it starts.**
      *
@@ -1981,11 +1981,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const kept = await commitWipExceptPlanted(
           gitAsked,
           recipe.env.plantAt,
-          // `runId` is always `passStream`'s (its one constructor, above),
-          // which `WIP_COMMIT_PREFIX` already carries — `passIdOf` strips it
+          // `runId` is always `attemptStream`'s (its one constructor, above),
+          // which `WIP_COMMIT_PREFIX` already carries — `attemptIdOf` strips it
           // back off here so the message reads `wip: run-<uuid> stopped by …`
           // rather than doubling it.
-          `${WIP_COMMIT_PREFIX}${passIdOf(runId)} stopped by ${stoppedBy}`,
+          `${WIP_COMMIT_PREFIX}${attemptIdOf(runId)} stopped by ${stoppedBy}`,
         )
         if ('failed' in kept) {
           wipFailure = `the dirty tree was not kept — ${kept.failed}`
@@ -2168,7 +2168,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
             // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
-            // `approve()`/`waive()` through `RunState.headSha`, and a WIP with
+            // `approve()`/`waive()` through `AttemptState.headSha`, and a WIP with
             // no commit of the agent's own has nothing there to record.
             if (branchHead !== null) await recordDiff(branch, branchHead)
             // `noteKept` is asked for again too, and for the same reason as
@@ -4394,7 +4394,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * second call then publishes (out of scope here, same as `unpushed`
        * itself already is).
        */
-      const runRef: RunRef = {
+      const runRef: AttemptRef = {
         runId,
         ...(notPushed === null
           ? {}
@@ -4606,7 +4606,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * through `nextOf`'s `Propose` like every other fall-short** — and the
          * two shapes above already cover three of the four steps it can
          * happen at (`AnswerUnreadable` is legal at `design`, `review`,
-         * `proposed` and `merge`, `pass-next.ts:316`, 0120 §2's table).
+         * `proposed` and `merge`, `attempt-next.ts:316`, 0120 §2's table).
          * `review`'s is special-cased `passed` by `endingOf` (a reviewer's
          * `failed` is findings, not a refusal), so `routeProposal`'s `reported`
          * is `null` and it lands on `stopped === null`, the first shape.
@@ -4659,7 +4659,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * fallback (`run.headSha`) — which lets the click through once a
          * person has already found the control — but nothing upstream of
          * that ever turns the control on: `task_view.awaiting_sha` and
-         * `StandingView.awaitingSha` are written off the run's `RunState`
+         * `StandingView.awaitingSha` are written off the run's `AttemptState`
          * (`task-view.ts`'s `rowOf`) and `boardFactOf`'s `SignoffRequested`, both of
          * which need a `signoff`-yield action with a live `requested` on
          * some `StepEnded`, and the router sending a pass here is not one —

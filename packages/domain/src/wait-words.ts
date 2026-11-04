@@ -11,8 +11,8 @@
  * `WaitReason`'s twelve tags (thirteen counting `ProposedEscalated`'s own
  * proposal) rather than onto `Hold`'s ten.
  *
- * **Not everything that `Hold` carried survives.** `RunRef.repairOf` (the
- * pre-#143 repair-purchase bookkeeping) has no field on 0118's `RunRef`, so
+ * **Not everything that `Hold` carried survives.** `AttemptRef.repairOf` (the
+ * pre-#143 repair-purchase bookkeeping) has no field on 0118's `AttemptRef`, so
  * the `done: "a repair for ... produced this diff"` sentence it fed is gone
  * too — accepted, the same way a few other small differences from before
  * 0118 already were (see the retained note below on 400-character clipping).
@@ -21,7 +21,7 @@ import { diagnoseRefusal } from './attribution.ts'
 import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
 import type { Proposal } from './proposal.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
-import type { EscalationBecause, RunRef, WaitReason } from './wait.ts'
+import type { EscalationBecause, AttemptRef, WaitReason } from './wait.ts'
 
 /**
  * The sentence a wait prints and the facts needed to describe the hold.
@@ -45,7 +45,7 @@ const APPROVE_EVERY_STEP_PASSED: BlockRecommendation = {
   why: 'every step passed on this diff; approving merges what this run produced',
 }
 
-function unpushedSuffix(run: RunRef): string {
+function unpushedSuffix(run: AttemptRef): string {
   return run.unpushed === undefined ? '' : ` (and ${run.unpushed.branch} was not pushed: ${run.unpushed.said})`
 }
 
@@ -83,7 +83,7 @@ function said(detail: string, n = 300): string {
 
 function judgement(
   question: string,
-  run: RunRef,
+  run: AttemptRef,
   raw: string | null,
   recommendation: BlockRecommendation | null = null,
 ): WaitWords {
@@ -95,7 +95,7 @@ function judgement(
   }
 }
 
-function acknowledgement(question: string, run: RunRef, raw: string | null): WaitWords {
+function acknowledgement(question: string, run: AttemptRef, raw: string | null): WaitWords {
   return {
     line: question,
     short: null,
@@ -105,7 +105,7 @@ function acknowledgement(question: string, run: RunRef, raw: string | null): Wai
 }
 
 function mergeRefusedColumns(
-  run: RunRef,
+  run: AttemptRef,
   reason: RefusalReason,
   raw: string,
   pass: { branch: string; base: string },
@@ -136,7 +136,7 @@ function baseMovedText(proposal: { paths: readonly string[] | null; fromSha: str
   return `the base changed ${paths} since the branch was reviewed${range}`
 }
 
-function budgetExhaustedColumns(run: RunRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): WaitWords {
+function budgetExhaustedColumns(run: AttemptRef, cause: 'out-of-turns' | 'out-of-usd', detail: string): WaitWords {
   const question = `${cause}: ${detail}`
   const what =
     cause === 'out-of-usd'
@@ -205,7 +205,7 @@ function reviewFindingsOwnText(proposal: { findings: readonly Finding[] }): stri
 function routedRefusalColumns(
   reason: 'conflict' | 'verify-failed',
   raw: string,
-  run: RunRef,
+  run: AttemptRef,
   pass: { branch: string; base: string },
   question: string,
 ): WaitWords {
@@ -224,7 +224,7 @@ function routedRefusalColumns(
 }
 
 function escalatedColumns(
-  run: RunRef,
+  run: AttemptRef,
   proposal: Proposal,
   because: EscalationBecause,
   pass: { branch: string; base: string; findings: readonly Finding[] },

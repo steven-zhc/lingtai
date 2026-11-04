@@ -48,18 +48,18 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
+import type { Envelope, AttemptState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   agentBranchOf,
-  reduceRunEvent,
+  reduceAttemptEvent,
   reduceTicketEvent,
   decodeRun,
   decodeTicket,
-  emptyRun,
+  emptyAttempt,
   emptyTicket,
   encodeRun,
   encodeTicket,
-  isPassStream,
+  isAttemptStream,
   isTicketStream,
   parseTicketStream,
   waitWords,
@@ -225,7 +225,7 @@ export const taskViewProjection: Projection = {
       create table if not exists task_view_run (
         run_id  text primary key,
         task_id text,
-        -- The run reduce (reduceRunEvent) as encodeRun writes it (#844).
+        -- The run reduce (reduceAttemptEvent) as encodeRun writes it (#844).
         run     jsonb not null
       )`)
 
@@ -252,7 +252,7 @@ export const taskViewProjection: Projection = {
     const cache = new Cache(ctx)
     for (const event of events) {
       if (isTicketStream(event.streamId)) await projectTicketEvent(cache, event)
-      else if (isPassStream(event.streamId)) await projectRunEvent(cache, event)
+      else if (isAttemptStream(event.streamId)) await projectRunEvent(cache, event)
     }
     await cache.flush()
   },
@@ -422,7 +422,7 @@ export interface RunColumns {
  * no fix round since (`RunProposedCompletion` is appended by the first dispatch only, and `RoundOpened`
  * puts the pass back to `running` for good).
  */
-export function rowOf(ticket: TicketState, run: RunState | null): RunColumns {
+export function rowOf(ticket: TicketState, run: AttemptState | null): RunColumns {
   const runId = ticket.runs.at(-1) ?? null
   const l = ticket.lifecycle
   const verifying =
@@ -475,7 +475,7 @@ interface TaskEntry {
 
 interface RunEntry {
   taskId: string | null
-  run: RunState
+  run: AttemptState
   dirty: boolean
 }
 
@@ -534,7 +534,7 @@ class Cache {
     return entry
   }
 
-  /** The run's entry, created from `emptyRun` when it has no row (`create`) or left absent (`peek`). */
+  /** The run's entry, created from `emptyAttempt` when it has no row (`create`) or left absent (`peek`). */
   run(runId: string, create: true): Promise<RunEntry>
   run(runId: string, create: false): Promise<RunEntry | undefined>
   async run(runId: string, create: boolean): Promise<RunEntry | undefined> {
@@ -553,7 +553,7 @@ class Cache {
       this.missing.add(runId)
     }
     if (!create) return undefined
-    const entry = { taskId: null, run: emptyRun, dirty: true }
+    const entry = { taskId: null, run: emptyAttempt, dirty: true }
     this.runs.set(runId, entry)
     return entry
   }
@@ -637,7 +637,7 @@ class Cache {
 }
 
 /** The card's line for what a run event did, read off the run's state before and after its reduce (#845). */
-export function runNoteOf(before: RunState, after: RunState): string | null {
+export function runNoteOf(before: AttemptState, after: AttemptState): string | null {
   if (JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)) {
     const l = after.lifecycle
     if (l.status === 'awaiting-input') return l.prompt
@@ -675,7 +675,7 @@ async function projectRunEvent(cache: Cache, event: Envelope): Promise<void> {
   const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
 
   const runBefore = entry.run
-  entry.run = reduceRunEvent(entry.run, event)
+  entry.run = reduceAttemptEvent(entry.run, event)
   entry.dirty = true
 
   if (task === null || entry.taskId === null || task.where !== 'row') return

@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, AttemptEnding, Envelope, Finding, RunState } from '@lingtai/domain'
+import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
 import { headOf, reduceTicket, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -218,7 +218,7 @@ export function armFor(
  * list holds a dispatching work action. A recipe whose `implement:` is a
  * bare `run:` action — a script that commits directly, with no agent
  * dispatch at all — never reaches `firstDispatch`, so `RunStarted` is never
- * appended and `reduceRun(runEvents).baseSha` stays `null` for the whole of
+ * appended and `reduceAttempt(runEvents).baseSha` stays `null` for the whole of
  * the run, including once it reaches a wait that offers `Approve`.
  *
  * `admit`'s own `StepEnded` carries the same value under a different name:
@@ -274,11 +274,11 @@ function movedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
 }
 
 /**
- * What one earlier run produced and what refused it, read off its `RunState`:
+ * What one earlier run produced and what refused it, read off its `AttemptState`:
  * `refusal`, `failure` and `step` are kept there for this. Precedence: the last
  * refusal, then the run's own failure, then the step it died inside.
  */
-export function attemptOutcome(state: RunState, budget: PromptBudget): AttemptOutcome {
+export function attemptOutcome(state: AttemptState, budget: PromptBudget): AttemptOutcome {
   const { refusal, failure, step } = state
   const evidence: AttemptOutcome['evidence'] =
     refusal !== null

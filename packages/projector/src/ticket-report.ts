@@ -45,7 +45,7 @@ import {
   decodeTicket,
   emptyTicket,
   encodeTicket,
-  isPassStream,
+  isAttemptStream,
   isTicketStream,
   parseTicketStream,
 } from '@lingtai/domain'
@@ -443,7 +443,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         case 'RunSpent': {
           const d = event.data as PayloadOf<'RunSpent'>
           ticket = await ticketOf(ctx, event.streamId)
-          const onPass = isPassStream(event.streamId)
+          const onPass = isAttemptStream(event.streamId)
           let estimate: { usd: number } | null = null
           if (d.costUsd === null) {
             snapshot ??= ports.snapshot()
@@ -480,7 +480,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
       if (onTicketStream) ticket = event.streamId
 
       // Anything else on a pass stream is a sign of life for the interval that opened it.
-      if (change === null && !onTicketStream && isPassStream(event.streamId)) {
+      if (change === null && !onTicketStream && isAttemptStream(event.streamId)) {
         ticket = await ticketOf(ctx, event.streamId)
         if (ticket !== null) {
           const { s, stored } = await load(ctx, ticket)
@@ -501,7 +501,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
       } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
       change?.(s, after)
       // A pass-stream event is also a sign of life, whatever else it did.
-      if (isPassStream(event.streamId)) signOfLife(s, event, event.streamId)
+      if (isAttemptStream(event.streamId)) signOfLife(s, event, event.streamId)
       await save(ctx, s)
     }
   },

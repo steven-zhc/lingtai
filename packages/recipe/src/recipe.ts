@@ -1405,7 +1405,7 @@ export const judgePlugin = definePlugin('judge', {
    * at `end` is resolved rather than run — and that is why opening the key is not
    * `#61`: the cell resolves *and* something calls it.
    *
-   * **Nowhere else, and the reason is `nextOf`** (`packages/domain/src/pass-next.ts`,
+   * **Nowhere else, and the reason is `nextOf`** (`packages/domain/src/attempt-next.ts`,
    * `#467`). A refusal at `build`, `review` or `merge` that falls to `nextOf`'s
    * `Propose` cell *travels* to `proposed` carrying its reason; the judge is
    * asked once, there, about wherever the pass got to. A

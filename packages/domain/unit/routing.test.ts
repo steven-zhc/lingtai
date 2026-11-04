@@ -8,7 +8,7 @@
  */
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import type { Spent } from '../src/pass-next.ts'
+import type { Spent } from '../src/attempt-next.ts'
 import type { Proposal } from '../src/proposal.ts'
 import type { ExcludedCandidate } from '../src/route.ts'
 import {
@@ -23,9 +23,9 @@ import {
   type RoutingPolicy,
 } from '../src/routing.ts'
 import { Finding } from '../src/vocabulary.ts'
-import type { EscalationBecause, RunRef } from '../src/wait.ts'
+import type { EscalationBecause, AttemptRef } from '../src/wait.ts'
 
-const run: RunRef = { runId: 'pass-1' }
+const run: AttemptRef = { runId: 'pass-1' }
 const policy: RoutingPolicy = { rounds: 2, restarts: 1 }
 
 function finding(overrides: Partial<Finding> = {}): Finding {

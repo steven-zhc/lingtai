@@ -16,7 +16,7 @@ import { agentBranchOf, integrationStream, waitWords } from '@lingtai/domain'
  * be a row. Deleting it would make the projection depend on when it last ran.
  */
 import type { JudgeReply, RouteDecision, RouteOffer, ToAppend } from '@lingtai/domain'
-import { aResolution, aRoute, aRun, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aResolution, aRoute, anAttempt, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { directPostgresUrl } from '@lingtai/env'
 import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
@@ -148,7 +148,7 @@ function passed(
   action: string,
   onSha: string,
 ): ToAppend[] {
-  return aRun(runId)
+  return anAttempt(runId)
     .aStepEnded({
       step,
       round: 0,
@@ -217,7 +217,7 @@ async function seed(): Promise<void> {
       data: { branch: 'agent/3', headSha: 'sha-a', files: 3, insertions: 40, deletions: 2 },
     },
     { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-a' } },
-    ...aRun(run(3))
+    ...anAttempt(run(3))
       .aStepEnded({
         step: 'proposed',
         round: 0,
@@ -281,7 +281,7 @@ async function seed(): Promise<void> {
   // 8 — a person's word, twice: a red build waived, and the merge approved.
   await append(wi(8), [discovered(8, 'overridden by a person'), claimed(8)])
   {
-    const run8 = aRun(run(8))
+    const run8 = anAttempt(run(8))
     await append(run(8), [
       started(8),
       { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-8' } },
@@ -339,7 +339,7 @@ async function seed(): Promise<void> {
   //     one — that distinction has no `WaitReason` left to carry it.
   await append(wi(9), [discovered(9, 'approved, then conflicted'), claimedWith(attempt(9, 'a'))])
   {
-    const run9a = aRun(attempt(9, 'a'))
+    const run9a = anAttempt(attempt(9, 'a'))
     await append(attempt(9, 'a'), [
       started(9),
       { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-9a' } },
@@ -411,7 +411,7 @@ async function seed(): Promise<void> {
       data: { branch: 'agent/10', headSha: 'sha-10a', files: 1, insertions: 2, deletions: 0 },
     },
     { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-10a' } },
-    ...aRun(run(10))
+    ...anAttempt(run(10))
       .aStepEnded({
         step: 'merge',
         round: 0,
@@ -510,7 +510,7 @@ async function seed(): Promise<void> {
   //      projection is a reducer and may not read the recipe the ceiling is in.
   await append(wi(13), [discovered(13, 'patching, round one'), claimed(13)])
   {
-    const run13 = aRun(run(13))
+    const run13 = anAttempt(run(13))
     await append(run(13), [
       started(13),
       { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-13' } },
@@ -557,7 +557,7 @@ async function seed(): Promise<void> {
   //      carrying which arm it is now on — the thing `attempts` cannot say.
   await append(wi(14), [discovered(14, 'started over once'), claimed(14)])
   {
-    const run14 = aRun(run(14))
+    const run14 = anAttempt(run(14))
     await append(run(14), [
       started(14),
       { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-14' } },
@@ -580,7 +580,7 @@ async function seed(): Promise<void> {
     ])
     // `PassRestarted` is gone (#502): a restart decision writes `PassRouted`
     // on the run's own stream alone, and `restarts`/`restarts_of` — the
-    // denominator is gone with it — comes off that (`RunState.route`). The release that follows is
+    // denominator is gone with it — comes off that (`AttemptState.route`). The release that follows is
     // its own event, with its own reason and an explicit `cause` naming the
     // arm, rather than `aRoute` inferring one.
     await append(

@@ -629,7 +629,7 @@ describe('when the agent meets the wall', () => {
 
       // Nothing was ever this claim's own commit, so there is no
       // `RunProducedDiff` at all — `RunKeptUncommitted` is the whole account.
-      // `approve()`/`waive()` read the former through `RunState.headSha`, and
+      // `approve()`/`waive()` read the former through `AttemptState.headSha`, and
       // a WIP with no commit of the agent's own must never be offered there.
       expect(run.some((e) => e.type === 'RunProducedDiff')).toBe(false)
 

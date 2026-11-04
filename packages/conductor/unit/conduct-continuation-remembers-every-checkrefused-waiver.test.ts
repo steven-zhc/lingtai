@@ -10,7 +10,7 @@
  * which yields `signoff` … and never consults `runOutcomes`."*
  *
  * Two `watch:` actions with `then: fail` both yield `verdict`, so a refusal
- * routes through `pass-next.ts`'s `checkRefused` and — with no judge
+ * routes through `attempt-next.ts`'s `checkRefused` and — with no judge
  * declared — the router escalates by default as
  * `ProposedEscalated{CheckRefused}`, the proposal that used to carry no
  * action name of its own. Before #465's fix, `continuationOf` re-derived one

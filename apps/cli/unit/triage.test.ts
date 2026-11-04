@@ -1,6 +1,6 @@
 import { createRuntime, type Runtime, type RunOutcome, type RunRequest } from '@lingtai/agent'
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
-import { aRunRef, aWaitId } from '@lingtai/domain/test/events'
+import { anAttemptRef, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { TRIAGE_ANSWER_JSON_SCHEMA, type WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
@@ -21,13 +21,19 @@ const TRIAGE = Triage.parse({})
 const OWN_QUESTION: WaitReason = { _tag: 'OwnQuestion', question: 'approve or requeue?', by: 'human:steven' }
 
 function reasonOn(runId: string): WaitReason {
-  return { _tag: 'SignoffRequired', run: aRunRef(runId), step: 'merge', action: 'human:land', question: 'land it?' }
+  return {
+    _tag: 'SignoffRequired',
+    run: anAttemptRef(runId),
+    step: 'merge',
+    action: 'human:land',
+    question: 'land it?',
+  }
 }
 
 function conflictReason(baseSha: string | null, headSha: string | null): WaitReason {
   return {
     _tag: 'ProposedEscalated',
-    run: aRunRef('run-conflict'),
+    run: anAttemptRef('run-conflict'),
     proposal: { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha, headSha },
     because: { _tag: 'NotAsked' },
   }

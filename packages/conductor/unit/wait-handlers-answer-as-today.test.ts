@@ -24,7 +24,7 @@
  * through a type name, so `#464`'s event-shape change leaves this file alone.
  */
 import { type Action, type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
-import { aClaim, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
@@ -144,7 +144,12 @@ describe('answer', () => {
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-6'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-6'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-6'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     const result = await answerUnlocked({ project: PROJECT, issue: 6, answer: 'yes', by: 'human:steven', store })
@@ -232,7 +237,12 @@ describe('requeue', () => {
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-12'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-12'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-12'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     const result = await requeueHolding({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId)
@@ -256,7 +266,12 @@ describe('requeue', () => {
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-13'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-13'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-13'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     await requeueHolding({ by: 'human:steven', note: '   ' }, store, ticketId)
@@ -282,7 +297,12 @@ describe('requeue', () => {
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-14'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-14'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-14'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
     const waitA = waitsOf(await store.read(ticketId)).at(-1)!.waitId
 
@@ -294,7 +314,7 @@ describe('requeue', () => {
       ...aClaim(item, 'pass-14-b'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-14-b'),
+        run: anAttemptRef('pass-14-b'),
         step: 'merge',
         action: 'human:land',
         question: 'land it?',
@@ -337,7 +357,7 @@ describe('approve', () => {
       ...aClaim(item, 'pass-21'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-21'),
+        run: anAttemptRef('pass-21'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -354,7 +374,7 @@ describe('approve', () => {
   it('refuses when the item is not blocked (requeued after the request)', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 22)
-    const run = aRun('pass-22')
+    const run = anAttempt('pass-22')
     await seed(store, ticketId, aClaim(makeStream(ticketId), 'pass-22'))
     await seed(store, 'pass-22', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
 
@@ -369,12 +389,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 23)
     const item = makeStream(ticketId)
-    const run = aRun('pass-23')
+    const run = anAttempt('pass-23')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-23'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-23'),
+        run: anAttemptRef('pass-23'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -393,12 +413,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 24)
     const item = makeStream(ticketId)
-    const run = aRun('pass-24')
+    const run = anAttempt('pass-24')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-24'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-24'),
+        run: anAttemptRef('pass-24'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -420,12 +440,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 25)
     const item = makeStream(ticketId)
-    const run = aRun('pass-25')
+    const run = anAttempt('pass-25')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-25'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-25'),
+        run: anAttemptRef('pass-25'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -444,12 +464,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 26)
     const item = makeStream(ticketId)
-    const run = aRun('pass-26')
+    const run = anAttempt('pass-26')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-26'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-26'),
+        run: anAttemptRef('pass-26'),
         step: 'merge',
         action: 'unfixed',
         question: 'land it?',
@@ -481,12 +501,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 27)
     const item = makeStream(ticketId)
-    const run = aRun('pass-27')
+    const run = anAttempt('pass-27')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-27'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-27'),
+        run: anAttemptRef('pass-27'),
         step: 'merge',
         action: 'unfixed',
         question: 'land it?',
@@ -506,7 +526,7 @@ describe('approve', () => {
     await seed(store, ticketId, [
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-27'),
+        run: anAttemptRef('pass-27'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge too?',
@@ -544,12 +564,12 @@ describe('approve', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 30)
     const item = makeStream(ticketId)
-    const run = aRun('pass-30')
+    const run = anAttempt('pass-30')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-30'),
       ...aWait(item, {
         _tag: 'ProposedEscalated',
-        run: aRunRef('pass-30'),
+        run: anAttemptRef('pass-30'),
         proposal: { _tag: 'BuildRed', output: 'tsc failed' },
         because: { _tag: 'NotAsked' },
       }),

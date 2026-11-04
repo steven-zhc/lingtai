@@ -8,10 +8,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  type PassObservation,
+  type TurnObservation,
   isPending,
   isRegistered,
-  passTransition,
+  turnTransition,
   reduceProject,
   refusalText,
 } from '../src/project.ts'
@@ -33,16 +33,16 @@ function project() {
       fromSha: 's',
     }),
   ]
-  const pass = (seen: PassObservation) => {
-    const next = passTransition(reduceProject(events), seen)
+  const pass = (seen: TurnObservation) => {
+    const next = turnTransition(reduceProject(events), seen)
     if (next) events.push(event(next.type as 'ProjectRefused', next.data as never))
     return next?.type ?? null
   }
   return { events, pass, types: () => events.map((e) => e.type) }
 }
 
-const refused = (codeSha = OLD, detail = REFUSAL): PassObservation => ({ refused: true, detail, ref: 'main', codeSha })
-const worked = (codeSha = NEW): PassObservation => ({ refused: false, ref: 'main', codeSha })
+const refused = (codeSha = OLD, detail = REFUSAL): TurnObservation => ({ refused: true, detail, ref: 'main', codeSha })
+const worked = (codeSha = NEW): TurnObservation => ({ refused: false, ref: 'main', codeSha })
 
 describe("a pass's refusal, on the project stream", () => {
   it('is appended once, however many sweeps meet it', () => {
@@ -82,7 +82,7 @@ describe("a pass's refusal, on the project stream", () => {
     const p = project()
     p.pass(refused(OLD))
     expect(p.pass(refused(NEW))).toBe('ProjectRefused')
-    expect(p.pass({ ...refused(NEW), ref: 'develop' } as PassObservation)).toBe('ProjectRefused')
+    expect(p.pass({ ...refused(NEW), ref: 'develop' } as TurnObservation)).toBe('ProjectRefused')
     expect(p.pass(refused(NEW, 'something else entirely'))).toBe('ProjectRefused')
     expect(reduceProject(p.events).refused?.detail).toBe('something else entirely')
   })

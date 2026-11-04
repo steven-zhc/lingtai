@@ -153,7 +153,7 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
  * A `merge:` action that stands in for the lane itself — `kind`/`yields:
  * 'merge'`, same as `createMergeAction` would build. `nextOf` reads a
  * `merge` visit's deciding action by its `yields` alone (`#467`,
- * `pass-next.ts:84-99`), and throws *merge cleared without an Integrated
+ * `attempt-next.ts:84-99`), and throws *merge cleared without an Integrated
  * action* for anything declared at `merge` that answers `canned`'s generic
  * `verdict` shape instead — a check before the lane is realistically
  * `canned`, but the lane answering `PASSED` here is what a real `merge:`
@@ -231,7 +231,7 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
       // agent or kept-run there — `headOf` only reads a head off that yield
       // (`#469`), and `answering` is what puts one on the result. `merge`'s is
       // the lane's own yield since `#467`: `nextOf` throws on a `merge` whose
-      // deciding action is not `yields: 'merge'` (`pass-next.ts:111-113`), so
+      // deciding action is not `yields: 'merge'` (`attempt-next.ts:111-113`), so
       // a generic `verdict` check here would misreport every lap that reaches
       // `merge` as a crash rather than a landing.
       kind: step === 'implement' ? 'agent' : step === 'merge' ? 'merge' : 'run',
@@ -2131,7 +2131,7 @@ describe('a visit is judged against the head the walk has reached', () => {
   /**
    * **`onSha` is *the commit this verdict is about, and the only thing that
    * makes it stale*** (`ActionContext`), and `stepsOn()`
-   * (`packages/domain/src/run.ts`) shows a step only where its `onSha` is the
+   * (`packages/domain/src/attempt.ts`) shows a step only where its `onSha` is the
    * item's head. So a pass that judged the base while the agent's commit was the
    * head would pay for `build`, `review` and `proposed` and show none of them —
    * a card with no build and no review, beside a `PassResult` saying all ten

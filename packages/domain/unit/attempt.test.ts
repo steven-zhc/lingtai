@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
-import { emptyRun, filesOf, stepsOn, reduceRun } from '../src/index.ts'
+import { emptyAttempt, filesOf, stepsOn, reduceAttempt } from '../src/index.ts'
 import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
@@ -25,14 +25,14 @@ function verdictAction(name: string, onSha: string, result: Action['result'], ev
   return { plugin: 'run', name, onSha, evidence, yields: 'verdict', result } as Action
 }
 
-describe('reduceRun', () => {
+describe('reduceAttempt', () => {
   it('is pending until it starts', () => {
-    expect(reduceRun([])).toEqual(emptyRun)
+    expect(reduceAttempt([])).toEqual(emptyAttempt)
   })
 
   it("records the run's provenance, including the recipe it was bound to", () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([e('RunStarted', started)])
+    const s = reduceAttempt([e('RunStarted', started)])
 
     expect(s.lifecycle.status).toBe('running')
     expect(s.promptVersion).toBe('ticket@3')
@@ -48,7 +48,7 @@ describe('reduceRun', () => {
    */
   it('carries the prompt itself, and still counts them', () => {
     const e = makeStream('pass-01JY')
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' }),
     ])
@@ -60,7 +60,7 @@ describe('reduceRun', () => {
   it('says nothing about the text of a prompt recorded before it was kept', () => {
     const e = makeStream('pass-01JZ')
     // A v1 `RunPrompted`, upcast: the length survived, the document did not.
-    const s = reduceRun([e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: null })])
+    const s = reduceAttempt([e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: null })])
 
     expect(s.prompts).toBe(1)
     expect(s.prompt).toBeNull()
@@ -72,7 +72,7 @@ describe('reduceRun', () => {
    */
   it('records compaction as a metric, not as noise', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunContextExhausted', { turn: 41 }),
       e('RunContextExhausted', { turn: 88 }),
@@ -86,12 +86,12 @@ describe('reduceRun', () => {
     const e = makeStream('pass-01JX')
     const waiting = [e('RunStarted', started), e('RunAwaitingInput', { prompt: 'Which base?' })]
 
-    expect(reduceRun(waiting).lifecycle).toEqual({
+    expect(reduceAttempt(waiting).lifecycle).toEqual({
       status: 'awaiting-input',
       prompt: 'Which base?',
     })
 
-    const moved = reduceRun([
+    const moved = reduceAttempt([
       ...waiting,
       e('RunProducedDiff', {
         branch: 'agent/117',
@@ -139,7 +139,7 @@ describe('reduceRun', () => {
         ),
       ],
     }
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
@@ -180,7 +180,7 @@ describe('reduceRun', () => {
         ),
       ],
     }
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
@@ -236,14 +236,14 @@ describe('reduceRun', () => {
       e('StepEnded', { runId: 'pass-01JX', outcome: mergeOutcome }),
     ]
 
-    const before = reduceRun(approved)
+    const before = reduceAttempt(approved)
     expect(
       stepsOn(before)
         .map((g) => g.step)
         .sort(),
     ).toEqual(['merge:human', 'proposed:build'])
 
-    const after = reduceRun([...approved, e('RunProposedCompletion', { headSha: 'sha-b' })])
+    const after = reduceAttempt([...approved, e('RunProposedCompletion', { headSha: 'sha-b' })])
     expect(after.headSha).toBe('sha-b')
     // The verdicts are still on the record — they were made, and about what —
     // but none of them is about the diff now on the table.
@@ -258,7 +258,7 @@ describe('reduceRun', () => {
       round: 0,
       actions: [verdictAction('review', 'sha-a', { _tag: 'Waived', waitId: 'wait-1' as WaitId })],
     }
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepStarted', { runId: 'pass-01JX', step: 'proposed', round: 0 }),
@@ -284,7 +284,7 @@ describe('reduceRun', () => {
         } as Action,
       ],
     }
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunProposedCompletion', { headSha: 'sha-a' }),
       e('StepStarted', { runId: 'pass-01JX', step: 'merge', round: 0 }),
@@ -301,7 +301,10 @@ describe('reduceRun', () => {
 
   it('keeps the receipt — turns and duration, no dollar figure (0110 §9)', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([e('RunStarted', started), e('RunFinished', { exitCode: 0, turns: 63, durationMs: 4_210_000 })])
+    const s = reduceAttempt([
+      e('RunStarted', started),
+      e('RunFinished', { exitCode: 0, turns: 63, durationMs: 4_210_000 }),
+    ])
 
     expect(s.receipt).toEqual({ exitCode: 0, turns: 63, durationMs: 4_210_000 })
     expect(s.lifecycle.status).toBe('finished')
@@ -309,7 +312,7 @@ describe('reduceRun', () => {
 
   it('records a failure with its kind', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([
+    const s = reduceAttempt([
       e('RunStarted', started),
       e('RunFailed', { kind: 'timeout' as const, detail: '2h wall clock' }),
     ])
@@ -319,27 +322,27 @@ describe('reduceRun', () => {
 
   it('ignores an event type it has never heard of', () => {
     const e = makeStream('pass-01JX')
-    const s = reduceRun([e('RunStarted', started), unknownEvent('pass-01JX', 2)])
+    const s = reduceAttempt([e('RunStarted', started), unknownEvent('pass-01JX', 2)])
 
     expect(s.lifecycle.status).toBe('running')
     expect(s.version).toBe(2)
   })
 })
 
-describe('RunState.step and implementRound (#822)', () => {
+describe('AttemptState.step and implementRound (#822)', () => {
   const at = (runId = 'r') => makeStream(runId)
 
   it('StepStarted sets step, and its own StepEnded clears it', () => {
     const event = at()
     const begun = [event('StepStarted', { runId: 'r', step: 'build', round: 2 })]
-    expect(reduceRun(begun).step).toEqual(expect.objectContaining({ step: 'build', round: 2 }))
+    expect(reduceAttempt(begun).step).toEqual(expect.objectContaining({ step: 'build', round: 2 }))
     const ended = [...begun, event('StepEnded', { runId: 'r', outcome: { step: 'build', round: 2, actions: [] } })]
-    expect(reduceRun(ended).step).toBeNull()
+    expect(reduceAttempt(ended).step).toBeNull()
   })
 
   it('RunFailed leaves step', () => {
     const event = at()
-    const state = reduceRun([
+    const state = reduceAttempt([
       event('StepStarted', { runId: 'r', step: 'review', round: 0 }),
       event('RunFailed', { kind: 'timeout', detail: 'wall' }),
     ])
@@ -348,31 +351,31 @@ describe('RunState.step and implementRound (#822)', () => {
 
   it('a non-implement start does not raise implementRound', () => {
     const event = at()
-    const state = reduceRun([event('StepStarted', { runId: 'r', step: 'review', round: 3 })])
+    const state = reduceAttempt([event('StepStarted', { runId: 'r', step: 'review', round: 3 })])
     expect(state.implementRound).toBe(0)
   })
 
   it('D12: a StepEnded for another step leaves step', () => {
-    const state = reduceRun(lateHistories.run.stepEndedForAnother)
+    const state = reduceAttempt(lateHistories.run.stepEndedForAnother)
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
   })
 
   it('a FixRound route raises implementRound', () => {
-    const state = reduceRun(lateHistories.run.fixRoundRouted)
+    const state = reduceAttempt(lateHistories.run.fixRoundRouted)
     expect(state.implementRound).toBe(1)
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 1 }))
   })
 
   it('a FixRound route is a round opened', () => {
-    expect(reduceRun(lateHistories.run.fixRoundRouted).roundsOpened).toEqual([1])
+    expect(reduceAttempt(lateHistories.run.fixRoundRouted).roundsOpened).toEqual([1])
   })
 
   it('D3: a failure stays a failure', () => {
-    expect(reduceRun(histories.run.failedThenFinished).failure).toMatchObject({ kind: 'crash' })
+    expect(reduceAttempt(histories.run.failedThenFinished).failure).toMatchObject({ kind: 'crash' })
   })
 
   it('a failure inside a step is the failure', () => {
-    const state = reduceRun(lateHistories.run.failedInsideStep)
+    const state = reduceAttempt(lateHistories.run.failedInsideStep)
     expect(state.failure).toMatchObject({ kind: 'out-of-turns' })
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
     expect(state.receipt?.turns).toBe(30)
@@ -380,14 +383,14 @@ describe('RunState.step and implementRound (#822)', () => {
   })
 
   it('the last refusal is kept', () => {
-    expect(reduceRun(histories.run.fixRoundThenLanded).refusal?.key).toBe('review:cold')
+    expect(reduceAttempt(histories.run.fixRoundThenLanded).refusal?.key).toBe('review:cold')
   })
 
   it('route is the last PassRouted payload, whatever its next', () => {
     const history = lateHistories.run.fixRoundRouted
     const routed = history.findLast((e) => e.type === 'PassRouted')!
-    expect(reduceRun(history).route).toEqual(routed.data)
-    expect(reduceRun(history.filter((e) => e.type !== 'PassRouted')).route).toBeNull()
+    expect(reduceAttempt(history).route).toEqual(routed.data)
+    expect(reduceAttempt(history.filter((e) => e.type !== 'PassRouted')).route).toBeNull()
   })
 
   it('route is set when the route is not a FixRound too', () => {
@@ -401,19 +404,19 @@ describe('RunState.step and implementRound (#822)', () => {
         decision: { _tag: 'Selected', candidate: 'hand-to-person' },
       },
     }
-    const state = reduceRun(history.map((e) => (e === routed ? (handed as typeof e) : e)))
+    const state = reduceAttempt(history.map((e) => (e === routed ? (handed as typeof e) : e)))
     expect(state.route).toEqual(handed.data)
     expect(state.roundsOpened).toEqual([])
   })
 })
 
-describe('RunState instants and the recorded plan (#827)', () => {
+describe('AttemptState instants and the recorded plan (#827)', () => {
   const last = <T>(xs: readonly T[], type: string) =>
     [...xs].reverse().find((e) => (e as { type: string }).type === type) as { at: Date }
 
   it('step.since is the last StepStarted, agentStartedAt the RunStarted, openedAt the first event', () => {
     const events = lateHistories.run.fixRoundRouted
-    const state = reduceRun(events)
+    const state = reduceAttempt(events)
     expect(state.step?.since).toEqual(last(events, 'StepStarted').at)
     expect(state.agentStartedAt).toEqual(events.find((e) => e.type === 'RunStarted')!.at)
     expect(state.openedAt).toEqual(events[0]!.at)
@@ -421,18 +424,18 @@ describe('RunState instants and the recorded plan (#827)', () => {
 
   it('D10: laneWaitedAt is the MergeLaneWaited at', () => {
     const events = lateHistories.run.laneWaited
-    expect(reduceRun(events).laneWaitedAt).toEqual(events.find((e) => e.type === 'MergeLaneWaited')!.at)
+    expect(reduceAttempt(events).laneWaitedAt).toEqual(events.find((e) => e.type === 'MergeLaneWaited')!.at)
   })
 
   it('askedAt is the signoff StepEnded at, and stays after the lifecycle moves on', () => {
     const events = histories.run.signoffRequestedThenLifecycle
-    const state = reduceRun(events)
+    const state = reduceAttempt(events)
     expect(state.askedAt).toEqual(events.find((e) => e.type === 'StepEnded')!.at)
     expect(state.lifecycle.status).not.toBe('awaiting-approval')
   })
 
   it('D10: resolved holds the hash and the ten steps', () => {
-    const state = reduceRun(lateHistories.run.planResolved)
+    const state = reduceAttempt(lateHistories.run.planResolved)
     expect(state.resolved?.configHash).toBe('cfg-plan')
     expect(state.resolved?.steps).toHaveLength(10)
   })
@@ -441,7 +444,7 @@ describe('RunState instants and the recorded plan (#827)', () => {
 describe('filesOf and promptMeta (#828)', () => {
   it('filesOf gives each path once, in first-touch order, with its last op', () => {
     const e = makeStream('run-files')
-    const state = reduceRun([
+    const state = reduceAttempt([
       e('RunTouchedFile', { path: 'a.ts', op: 'write' }),
       e('RunTouchedFile', { path: 'b.ts', op: 'edit' }),
       e('RunTouchedFile', { path: 'a.ts', op: 'delete' }),
@@ -454,8 +457,8 @@ describe('filesOf and promptMeta (#828)', () => {
 
   it('promptMeta matches the last RunPrompted', () => {
     const e = makeStream('run-prompt-meta')
-    expect(reduceRun([]).promptMeta).toBeNull()
-    const state = reduceRun([
+    expect(reduceAttempt([]).promptMeta).toBeNull()
+    const state = reduceAttempt([
       e('RunPrompted', { promptVersion: 'ticket@1', bytes: 5, prompt: 'one' }),
       e('RunPrompted', { promptVersion: 'ticket@2', bytes: 9, prompt: 'two' }),
     ])

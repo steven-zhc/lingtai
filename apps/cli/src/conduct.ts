@@ -42,7 +42,7 @@ import {
   waitsFor,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
-import { type ControlState, type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
+import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -682,7 +682,7 @@ export interface Where {
   /**
    * The project was looked at without refusing: records the recovery now, while
    * the rest of the work — a run, up to `runtime.limits.wall` — is still ahead.
-   * Idempotent, since `passTransition` appends nothing once nothing is on record.
+   * Idempotent, since `turnTransition` appends nothing once nothing is on record.
    */
   looked: () => Promise<void>
 }
@@ -756,7 +756,7 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       say(`${name}: ${(err as Error).message}`)
       // **And on the log** (#148): this line was the whole record for hours
       // while a daemon too old for its recipe refused every sweep. Appended on
-      // the transition only — `passTransition` compares with what the stream
+      // the transition only — `turnTransition` compares with what the stream
       // already holds, so the next identical sweep appends nothing.
       //
       // **Only before the project was looked at.** A throw after `looked()` —
@@ -777,13 +777,13 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
 }
 
 /**
- * Append what `passTransition` decides, if anything. Never throws: a record that
+ * Append what `turnTransition` decides, if anything. Never throws: a record that
  * could not be written must not become the refusal of every project after this
  * one, and the next pass re-reads the stream and decides again.
  */
 async function record(
   project: ProjectState,
-  seen: Parameters<typeof passTransition>[1],
+  seen: Parameters<typeof turnTransition>[1],
   options: { store: EventStore; log: (line: string) => void },
 ): Promise<void> {
   const { store, log } = options
@@ -792,7 +792,7 @@ async function record(
     // Re-read rather than trusting the state the pass began with: a run can
     // last an hour, and what matters is what the stream holds now.
     const current = reduceProject(await store.read(projectStream(name)))
-    const next = passTransition(current, seen)
+    const next = turnTransition(current, seen)
     if (next) await store.append(projectStream(name), current.version, [next])
   } catch (err) {
     log(`${name}: could not record the pass on the log — ${(err as Error).message}`)

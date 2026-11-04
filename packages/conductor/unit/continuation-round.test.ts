@@ -1,4 +1,4 @@
-import { reduceRun } from '@lingtai/domain'
+import { reduceAttempt } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
@@ -11,8 +11,8 @@ describe('continuation round accounting', () => {
 
     // Round 1 was human granted; the resumed pass automatically routed to
     // round 2. A second grant must dispatch and bill round 3, not round 4.
-    expect(continuationRound(reduceRun(run), true)).toBe(3)
-    expect(continuationRound(reduceRun(run), false)).toBe(2)
-    expect(continuationRound(reduceRun(run.slice(0, 1)), true)).toBe(1)
+    expect(continuationRound(reduceAttempt(run), true)).toBe(3)
+    expect(continuationRound(reduceAttempt(run), false)).toBe(2)
+    expect(continuationRound(reduceAttempt(run.slice(0, 1)), true)).toBe(1)
   })
 })

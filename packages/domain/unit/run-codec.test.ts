@@ -1,12 +1,12 @@
 /**
- * `RunState`'s codec (0124 §1, #844): the state after every prefix of every run
+ * `AttemptState`'s codec (0124 §1, #844): the state after every prefix of every run
  * history survives storage as text (SQLite) and as a parsed value (Postgres
  * `jsonb`), and a value of another shape is refused by name.
  */
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
-import { reduceRunEvent, decodeRun, emptyRun, encodeRun } from '../src/index.ts'
+import { reduceAttemptEvent, decodeRun, emptyAttempt, encodeRun } from '../src/index.ts'
 import { histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
 
 const streams: [string, readonly Envelope[]][] = [
@@ -21,10 +21,10 @@ describe('decodeRun(encodeRun(s))', () => {
   let largest = 0
   for (const [name, events] of streams) {
     it(`is s after every prefix of ${name}`, () => {
-      let s = emptyRun
+      let s = emptyAttempt
       expect(decodeRun(encodeRun(s), 'task_view')).toStrictEqual(s)
       for (const event of events) {
-        s = reduceRunEvent(s, event)
+        s = reduceAttemptEvent(s, event)
         const encoded = encodeRun(s)
         largest = Math.max(largest, Buffer.byteLength(encoded))
         expect(decodeRun(encoded, 'task_view')).toStrictEqual(s)
@@ -34,21 +34,21 @@ describe('decodeRun(encodeRun(s))', () => {
   }
 
   it('keeps lastSeq a bigint and holds it as a string', () => {
-    const s = streams[0]![1].reduce(reduceRunEvent, emptyRun)
+    const s = streams[0]![1].reduce(reduceAttemptEvent, emptyAttempt)
     expect(typeof s.lastSeq).toBe('bigint')
     expect(typeof JSON.parse(encodeRun(s)).lastSeq).toBe('string')
   })
 
   it('records the largest encoded state across the fixtures', () => {
     // So the cost of storing the whole state is on record (#844): printed, not asserted.
-    console.info(`largest encoded RunState across the fixtures: ${largest} bytes`)
+    console.info(`largest encoded AttemptState across the fixtures: ${largest} bytes`)
     expect(largest).toBeGreaterThan(0)
   })
 })
 
 describe('decodeRun keeps a finding’s optional fields', () => {
   it('round-trips class and reachableBecause on a step finding', () => {
-    const base = streams.flatMap(([, e]) => e).reduce(reduceRunEvent, emptyRun)
+    const base = streams.flatMap(([, e]) => e).reduce(reduceAttemptEvent, emptyAttempt)
     const finding = { file: 'a.ts', line: 3, claim: 'c', failureScenario: 'f', severity: 'major' as const }
     const s = {
       ...base,
@@ -69,7 +69,7 @@ describe('decodeRun keeps a finding’s optional fields', () => {
 })
 
 describe('decodeRun refuses another shape', () => {
-  const good = JSON.parse(encodeRun(streams.flatMap(([, e]) => e).reduce(reduceRunEvent, emptyRun)))
+  const good = JSON.parse(encodeRun(streams.flatMap(([, e]) => e).reduce(reduceAttemptEvent, emptyAttempt)))
 
   it('names the run and the rebuild when a field is missing', () => {
     const { steps: _steps, ...rest } = good

@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 
 import { reduceTicket, splitProgressOf, ticketStream } from '@lingtai/domain'
-import { aClaim, aWait, aWaitId, aRun, aRunRef } from '@lingtai/domain/test/events'
+import { aClaim, aWait, aWaitId, anAttempt, anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Issue, LinkedIssue } from '@lingtai/github'
@@ -124,11 +124,11 @@ async function setup(body = PARENT_BODY) {
   const store = createMemoryEventStore()
   const ticketId = ticketStream(PROJECT, PARENT)
   const item = makeStream(ticketId)
-  const run = aRun('pass-601')
+  const run = anAttempt('pass-601')
   const waitId = aWaitId()
   await store.append(ticketId, 0, [
     ...aClaim(item, run.runId),
-    ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
+    ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
   ])
   const gh = new FakeGitHub(body)
   // `go()` submits the plan; `go(undefined)` is the board's Retry, which sends none.

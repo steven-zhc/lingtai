@@ -26,7 +26,7 @@ import {
   CONTROL_STREAM,
   chatStream,
   integrationStream,
-  passStream,
+  attemptStream,
   STEPS,
   ticketStream,
 } from '../src/index.ts'
@@ -36,11 +36,11 @@ import {
   aRoute,
   aRelease,
   aResolution,
-  aRun,
+  anAttempt,
   aRunFailure,
   aSplit,
   aWait,
-  type RunFixture,
+  type AttemptFixture,
 } from './events.ts'
 import { makeStream } from './support.ts'
 
@@ -88,7 +88,7 @@ const refused = {
   },
 }
 
-function runStarted(run: RunFixture, ticket: string): Envelope {
+function runStarted(run: AttemptFixture, ticket: string): Envelope {
   return run.event('RunStarted', {
     ticketId: ticket,
     runtime: 'claude-code',
@@ -106,7 +106,7 @@ function runStarted(run: RunFixture, ticket: string): Envelope {
 const runTicket = ticketStream(PROJECT, 9001)
 
 function landedFirstTry(): readonly Envelope[] {
-  const run = aRun(passStream('landed-first-try'))
+  const run = anAttempt(attemptStream('landed-first-try'))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' }),
@@ -126,7 +126,7 @@ function landedFirstTry(): readonly Envelope[] {
 }
 
 function fixRoundThenLanded(): readonly Envelope[] {
-  const run = aRun(passStream('fix-round'))
+  const run = anAttempt(attemptStream('fix-round'))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-1', files: 1, insertions: 4, deletions: 1 }),
@@ -143,7 +143,7 @@ function fixRoundThenLanded(): readonly Envelope[] {
 }
 
 function askedThenResumed(): readonly Envelope[] {
-  const run = aRun(passStream('asked'))
+  const run = anAttempt(attemptStream('asked'))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunAwaitingInput', { prompt: 'which of the two?' }),
@@ -154,7 +154,7 @@ function askedThenResumed(): readonly Envelope[] {
 
 /** D1: a `commit` action `Completed` with `question: null` and `head: null` — nothing committed, and it still clears. */
 function commitCompletedNoHead(): readonly Envelope[] {
-  const run = aRun(passStream('commit-no-head'))
+  const run = anAttempt(attemptStream('commit-no-head'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(
@@ -167,7 +167,7 @@ function commitCompletedNoHead(): readonly Envelope[] {
 
 /** D1: a `worktree` action `NotDone`. */
 function worktreeNotDone(): readonly Envelope[] {
-  const run = aRun(passStream('worktree-not-done'))
+  const run = anAttempt(attemptStream('worktree-not-done'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(outcome('prepared', 0, [act('worktree', 'cut', 'base000', { _tag: 'NotDone' }, 'file')])),
@@ -176,7 +176,7 @@ function worktreeNotDone(): readonly Envelope[] {
 
 /** D1: a `design` action `AnswerUnreadable`. */
 function designAnswerUnreadable(): readonly Envelope[] {
-  const run = aRun(passStream('design-unreadable'))
+  const run = anAttempt(attemptStream('design-unreadable'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(
@@ -189,7 +189,7 @@ function designAnswerUnreadable(): readonly Envelope[] {
 
 /** D1: a step whose later action is `NotReached` because an earlier one refused. */
 function laterActionNotReached(): readonly Envelope[] {
-  const run = aRun(passStream('later-not-reached'))
+  const run = anAttempt(attemptStream('later-not-reached'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(
@@ -203,7 +203,7 @@ function laterActionNotReached(): readonly Envelope[] {
 
 /** D3: a signoff `Completed` with `requested` (awaiting approval), then a later lifecycle event of the run. */
 function signoffRequestedThenLifecycle(): readonly Envelope[] {
-  const run = aRun(passStream('signoff-then-lifecycle'))
+  const run = anAttempt(attemptStream('signoff-then-lifecycle'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(
@@ -218,7 +218,7 @@ function signoffRequestedThenLifecycle(): readonly Envelope[] {
 
 /** D3: a `RunFailed` followed by a `RunFinished`. */
 function failedThenFinished(): readonly Envelope[] {
-  const run = aRun(passStream('failed-then-finished'))
+  const run = anAttempt(attemptStream('failed-then-finished'))
   return stamp([
     runStarted(run, runTicket),
     ...aRunFailure(run, 'crash', 'the agent exited 1'),
@@ -228,7 +228,7 @@ function failedThenFinished(): readonly Envelope[] {
 
 /** D2: a verdict whose `onSha` is an older head than a later `RunProducedDiff`'s. */
 function verdictOnOlderHead(): readonly Envelope[] {
-  const run = aRun(passStream('verdict-older-head'))
+  const run = anAttempt(attemptStream('verdict-older-head'))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-old', files: 1, insertions: 1, deletions: 0 }),
@@ -250,9 +250,9 @@ function claimedReleasedClaimedLanded(): readonly Envelope[] {
       kind: 'bug',
       labels: ['bug'],
     }),
-    ...aClaim(t, passStream('t9101-a')),
-    ...aRelease(t, passStream('t9101-a'), 'restart', { _tag: 'Restart', restart: 1 }),
-    ...aClaim(t, passStream('t9101-b')),
+    ...aClaim(t, attemptStream('t9101-a')),
+    ...aRelease(t, attemptStream('t9101-a'), 'restart', { _tag: 'Restart', restart: 1 }),
+    ...aClaim(t, attemptStream('t9101-b')),
     ...aLanding(t, 'merge-9101', BASE),
   ])
 }
@@ -261,9 +261,9 @@ function claimedReleasedClaimedLanded(): readonly Envelope[] {
 function continuedUnclaimedRun(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9102))
   return stamp([
-    ...aClaim(t, passStream('t9102-a')),
-    t('TicketContinued', { runId: passStream('t9102-ghost'), worker: 'conductor:1' }),
-    t('TicketContinued', { runId: passStream('t9102-a'), worker: 'conductor:1' }),
+    ...aClaim(t, attemptStream('t9102-a')),
+    t('TicketContinued', { runId: attemptStream('t9102-ghost'), worker: 'conductor:1' }),
+    t('TicketContinued', { runId: attemptStream('t9102-a'), worker: 'conductor:1' }),
   ])
 }
 
@@ -271,16 +271,16 @@ function continuedUnclaimedRun(): readonly Envelope[] {
 function claimedAfterClosed(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9103))
   return stamp([
-    ...aClaim(t, passStream('t9103-a')),
+    ...aClaim(t, attemptStream('t9103-a')),
     t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
-    ...aClaim(t, passStream('t9103-b')),
+    ...aClaim(t, attemptStream('t9103-b')),
   ])
 }
 
 /** D5: waits resolved by `GrantFixRound` and by `Close`, before any `TicketClosed`. */
 function waitsResolvedBeforeClose(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9104))
-  const run = passStream('t9104-a')
+  const run = attemptStream('t9104-a')
   const check = wait('9104-check')
   const sign = wait('9104-sign')
   return stamp([
@@ -303,7 +303,7 @@ function waitsResolvedBeforeClose(): readonly Envelope[] {
 
 function approvedAfterSignoff(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9105))
-  const run = passStream('t9105-a')
+  const run = attemptStream('t9105-a')
   const sign = wait('9105-sign')
   return stamp([
     ...aClaim(t, run),
@@ -320,7 +320,7 @@ function approvedAfterSignoff(): readonly Envelope[] {
 
 function everyTicketEvent(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9106))
-  const run = passStream('t9106-a')
+  const run = attemptStream('t9106-a')
   const ask = wait('9106-ask')
   const split = wait('9106-split')
   return stamp([
@@ -385,7 +385,7 @@ function requestsQueued(): readonly Envelope[] {
   const c = makeStream(CONTROL_STREAM)
   return stamp([
     c('RunRequested', { project: PROJECT, issue: '9001', by: 'steven' }),
-    c('ContinueRequested', { project: PROJECT, issue: '9001', runId: passStream('asked'), by: 'steven' }),
+    c('ContinueRequested', { project: PROJECT, issue: '9001', runId: attemptStream('asked'), by: 'steven' }),
     c('DiscussionRequested', {
       chatId: chatStream('9001-1'),
       ticketId: runTicket,
@@ -500,7 +500,7 @@ function integratedWithoutLanding(): Scenario {
   const ticketId = ticketStream(PROJECT, 9301)
   const integrationId = integrationStream(PROJECT, BASE)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9301-a'))
+  const run = anAttempt(attemptStream('s9301-a'))
   const i = makeStream(integrationId)
   return bundle(
     ticketId,
@@ -534,7 +534,7 @@ function integratedWithoutLanding(): Scenario {
 function answerAfterRunNote(): Scenario {
   const ticketId = ticketStream(PROJECT, 9302)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9302-a'))
+  const run = anAttempt(attemptStream('s9302-a'))
   const ask = wait('9302-ask')
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
@@ -555,7 +555,7 @@ function landedWithRun(): Scenario {
   const ticketId = ticketStream(PROJECT, 9303)
   const integrationId = integrationStream(PROJECT, BASE)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9303-a'))
+  const run = anAttempt(attemptStream('s9303-a'))
   const i = makeStream(integrationId)
   return bundle(
     ticketId,
@@ -589,7 +589,7 @@ export const scenarios = {
  * Histories added after `scenarios` (#822), so no locked `seq` above moves. Same rule: append only.
  */
 function fixRoundRouted(): readonly Envelope[] {
-  const run = aRun(passStream('fix-round-routed'))
+  const run = anAttempt(attemptStream('fix-round-routed'))
   const offer = {
     proposal: { _tag: 'BuildRed' as const, output: 'review refused' },
     available: [
@@ -615,7 +615,7 @@ function fixRoundRouted(): readonly Envelope[] {
 
 /** D12: a `StepEnded` for a step other than the one entered leaves the step. */
 function stepEndedForAnother(): readonly Envelope[] {
-  const run = aRun(passStream('step-ended-for-another'))
+  const run = anAttempt(attemptStream('step-ended-for-another'))
   return stamp([
     runStarted(run, runTicket),
     run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
@@ -625,7 +625,7 @@ function stepEndedForAnother(): readonly Envelope[] {
 
 /** A ceiling stop inside a step: `RunFinished` then `RunFailed`, as one append (#825). */
 function failedInsideStep(): readonly Envelope[] {
-  const run = aRun(passStream('failed-inside-step'))
+  const run = anAttempt(attemptStream('failed-inside-step'))
   return stamp([
     runStarted(run, runTicket),
     run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
@@ -636,7 +636,7 @@ function failedInsideStep(): readonly Envelope[] {
 
 /** A refused review, then the run crashes in the fix round (#825). */
 function refusedThenFailed(): readonly Envelope[] {
-  const run = aRun(passStream('refused-then-failed'))
+  const run = anAttempt(attemptStream('refused-then-failed'))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunProducedDiff', { branch: 'agent/9001', headSha: 'sha-1', files: 1, insertions: 4, deletions: 1 }),
@@ -660,7 +660,7 @@ function publishedRun(
   row: Published,
   kept: readonly { arm: string; sha: string }[] = [],
 ): readonly Envelope[] {
-  const run = aRun(passStream(name))
+  const run = anAttempt(attemptStream(name))
   return stamp([
     runStarted(run, runTicket),
     run.event('RunRefsPublished', { branch: 'agent/9', arm: 'agent/9-attempt-1', detail: name, ...row }),
@@ -679,7 +679,7 @@ function publishedRun(
 
 /** #827: a run, then the plan it was given — all ten steps. */
 function planResolved(): readonly Envelope[] {
-  const run = aRun(passStream('plan-resolved'))
+  const run = anAttempt(attemptStream('plan-resolved'))
   return stamp([
     runStarted(run, runTicket),
     run.event('StepsResolved', {
@@ -692,7 +692,7 @@ function planResolved(): readonly Envelope[] {
 
 /** #827: a pass waits for the merge lane inside `merge`, then merge ends. */
 function laneWaited(): readonly Envelope[] {
-  const run = aRun(passStream('lane-waited'))
+  const run = anAttempt(attemptStream('lane-waited'))
   return stamp([
     runStarted(run, runTicket),
     run.event('StepStarted', { runId: run.runId, step: 'merge', round: 0 }),
@@ -706,7 +706,7 @@ function laneWaited(): readonly Envelope[] {
 
 /** #828 D2: `implement`'s commit is on the base, a later verdict is on `sha-1`, and the head then moves to `sha-2`. */
 function implementThenReviewed(): readonly Envelope[] {
-  const run = aRun(passStream('implement-then-reviewed'))
+  const run = anAttempt(attemptStream('implement-then-reviewed'))
   return stamp([
     runStarted(run, runTicket),
     ...run.aStepEnded(
@@ -750,8 +750,8 @@ const late_implementThenReviewed = implementThenReviewed()
 const late_titledByClaims = (() => {
   const t = makeStream(ticketStream(PROJECT, 9107))
   const claim = (r: string, title: string | null, kind: string | null) =>
-    t('TicketClaimed', { runId: passStream(r), worker: 'conductor:1', title, kind })
-  const released = (r: string) => t('TicketReleased', { runId: passStream(r), reason: 'failed', cause: null })
+    t('TicketClaimed', { runId: attemptStream(r), worker: 'conductor:1', title, kind })
+  const released = (r: string) => t('TicketReleased', { runId: attemptStream(r), reason: 'failed', cause: null })
   return stamp([
     claim('t9107-1', 'first', 'bug'),
     released('t9107-1'),
@@ -764,7 +764,7 @@ const late_titledByClaims = (() => {
 /** D4: an escalated proposal answered with a requeue — the answer's question names the branch. */
 const late_escalatedThenRequeued = (() => {
   const t = makeStream(ticketStream(PROJECT, 9108))
-  const r1 = passStream('t9108-1')
+  const r1 = attemptStream('t9108-1')
   const w = wait('9108-escalated')
   return stamp([
     ...aClaim(t, r1),
@@ -785,7 +785,7 @@ const late_escalatedThenRequeued = (() => {
 /** #832 D9: what Lingtai wrote to GitHub — a waiting comment, labels, a body, an edit, two refusals. */
 function githubLedger(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9201))
-  const run = passStream('t9201-a')
+  const run = attemptStream('t9201-a')
   const w1 = wait('ledger-1')
   const at = { project: PROJECT, issue: '9201' }
   return stamp([
@@ -808,7 +808,7 @@ function githubLedger(): readonly Envelope[] {
 /** #832 D9: a body write, its wait resolved, and another wait started after it. */
 function bodyBeforeAnotherWait(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9202))
-  const run = passStream('t9202-a')
+  const run = attemptStream('t9202-a')
   const w1 = wait('body-1')
   const w2 = wait('body-2')
   const at = { project: PROJECT, issue: '9202' }
@@ -894,7 +894,7 @@ const late_twoAsksTwoAnswers = (() => {
 /** #829 D13: an attempt that asked, was requeued by a person, and so was released in the same append. */
 const late_askedThenReleasedByPerson = (() => {
   const t = makeStream(ticketStream(PROJECT, 9109))
-  const r1 = passStream('t9109-1')
+  const r1 = attemptStream('t9109-1')
   const w = wait('9109-check')
   return stamp([
     ...aClaim(t, r1),
@@ -911,7 +911,7 @@ const late_askedThenReleasedByPerson = (() => {
 /** #829 D13: an attempt that asked and was answered, which returns the ticket to the backlog with no release. */
 const late_askedThenAnswered = (() => {
   const t = makeStream(ticketStream(PROJECT, 9110))
-  const r1 = passStream('t9110-1')
+  const r1 = attemptStream('t9110-1')
   const w = wait('9110-ask')
   return stamp([
     ...aClaim(t, r1),
@@ -923,14 +923,14 @@ const late_askedThenAnswered = (() => {
 /** #829 D13: a release whose reason is empty stays empty. */
 const late_releasedWithoutReason = (() => {
   const t = makeStream(ticketStream(PROJECT, 9111))
-  const r1 = passStream('t9111-1')
+  const r1 = attemptStream('t9111-1')
   return stamp([...aClaim(t, r1), ...aRelease(t, r1, '')])
 })()
 
 /** #831: a person closed the ticket from a sign-off, and the close followed their move. */
 const late_closedByPerson = (() => {
   const t = makeStream(ticketStream(PROJECT, 9112))
-  const r1 = passStream('t9112-1')
+  const r1 = attemptStream('t9112-1')
   const w = wait('9112-sign')
   return stamp([
     ...aClaim(t, r1),
@@ -947,8 +947,8 @@ const late_closedByPerson = (() => {
 /** #831 D6: the same close, on its own stream, then a claim `closed` absorbs. */
 const late_closedByPersonThenClaimed = (() => {
   const t = makeStream(ticketStream(PROJECT, 9113))
-  const r1 = passStream('t9113-1')
-  const r2 = passStream('t9113-2')
+  const r1 = attemptStream('t9113-1')
+  const r2 = attemptStream('t9113-2')
   const w = wait('9113-sign')
   return stamp([
     ...aClaim(t, r1),
@@ -966,7 +966,7 @@ const late_closedByPersonThenClaimed = (() => {
 /** #842: two triage attempts, a late result for the first, a duplicate result, and a second resolution. */
 const late_triagedTwice = (() => {
   const t = makeStream(ticketStream(PROJECT, 9114))
-  const r1 = passStream('t9114-1')
+  const r1 = attemptStream('t9114-1')
   const w = wait('9114-crash')
   const agent = { _tag: 'Agent', runtime: 'claude-code', model: 'sonnet' } as const
   const failed = (why: string) => ({ _tag: 'TriageFailed', why }) as const
@@ -990,7 +990,7 @@ const late_triagedTwice = (() => {
 /** #842: a wait begun after the ticket closed is still a wait. */
 const late_waitAfterClosed = (() => {
   const t = makeStream(ticketStream(PROJECT, 9115))
-  const r1 = passStream('t9115-1')
+  const r1 = attemptStream('t9115-1')
   return stamp([
     ...aClaim(t, r1),
     t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
@@ -1005,7 +1005,7 @@ const late_waitAfterClosed = (() => {
 /** #842: two approved waits, then a landing, which belongs to the second. */
 const late_waitThenLanded = (() => {
   const t = makeStream(ticketStream(PROJECT, 9116))
-  const r1 = passStream('t9116-1')
+  const r1 = attemptStream('t9116-1')
   const w1 = wait('9116-one')
   const w2 = wait('9116-two')
   const reason = {
@@ -1029,7 +1029,7 @@ const late_waitThenLanded = (() => {
 /** #843: latest outcome wins, held order is kept, and a close does not absorb a held. */
 const late_discussionsHeld = (() => {
   const t = makeStream(ticketStream(PROJECT, 9117))
-  const r1 = passStream('t9117-1')
+  const r1 = attemptStream('t9117-1')
   return stamp([
     ...aClaim(t, r1),
     t('DiscussionHeld', { chatId: 'c1', outcome: 'prompt', by: 'steven' }),
@@ -1043,8 +1043,8 @@ const late_discussionsHeld = (() => {
 /** #835: a kinded claim, a release, a kindless claim, then a triage `RunSpent` — spend reads `bug`. */
 const late_kindThenTriage = (() => {
   const t = makeStream(ticketStream(PROJECT, 9118))
-  const r1 = passStream('t9118-1')
-  const r2 = passStream('t9118-2')
+  const r1 = attemptStream('t9118-1')
+  const r2 = attemptStream('t9118-2')
   return stamp([
     t('TicketClaimed', { runId: r1, worker: 'conductor:1', title: null, kind: 'bug' }),
     ...aRelease(t, r1),
@@ -1063,8 +1063,8 @@ const late_kindThenTriage = (() => {
 /** #835: a kinded claim after a close is absorbed by the ticket reduce, so a triage `RunSpent` reads `bug`. */
 const late_kindedClaimAfterClosed = (() => {
   const t = makeStream(ticketStream(PROJECT, 9119))
-  const r1 = passStream('t9119-1')
-  const r2 = passStream('t9119-2')
+  const r1 = attemptStream('t9119-1')
+  const r2 = attemptStream('t9119-2')
   return stamp([
     t('TicketClaimed', { runId: r1, worker: 'conductor:1', title: null, kind: 'bug' }),
     t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
@@ -1154,20 +1154,20 @@ export const lateHistories = {
  */
 const lateTicket = (n: number) => ticketStream(PROJECT, n)
 const askedQuestion = 'merge this?'
-const signoffEnded = (run: RunFixture, sha: string) =>
+const signoffEnded = (run: AttemptFixture, sha: string) =>
   run.aStepEnded(
     outcome('merge', 0, [
       act('signoff', 'human', sha, { _tag: 'Completed', requested: { question: askedQuestion } }, 'human'),
     ]),
   )
-const verdictEnded = (run: RunFixture) =>
+const verdictEnded = (run: AttemptFixture) =>
   run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', accepted, 'agent')]))
 
 /** A signoff asked, approved, continued, then refused at the lane: the spent approval's sha is not offered again. */
 const late_staleSignoff = (() => {
   const ticketId = lateTicket(9401)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9401-a'))
+  const run = anAttempt(attemptStream('s9401-a'))
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
     runStarted(run, ticketId),
@@ -1199,7 +1199,7 @@ const late_staleSignoff = (() => {
 const late_fixRoundAfterCompletion = (() => {
   const ticketId = lateTicket(9402)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9402-a'))
+  const run = anAttempt(attemptStream('s9402-a'))
   const offer = {
     proposal: { _tag: 'ReviewFindings' as const, findings: [] },
     available: [
@@ -1234,8 +1234,8 @@ const late_fixRoundAfterCompletion = (() => {
 const late_secondRun = (() => {
   const ticketId = lateTicket(9403)
   const t = makeStream(ticketId)
-  const r1 = aRun(passStream('s9403-a'))
-  const r2 = aRun(passStream('s9403-b'))
+  const r1 = anAttempt(attemptStream('s9403-a'))
+  const r2 = anAttempt(attemptStream('s9403-b'))
   return bundle(ticketId, [
     ...aClaim(t, r1.runId),
     runStarted(r1, ticketId),
@@ -1260,7 +1260,7 @@ const late_secondRun = (() => {
 const late_askAfterRelease = (() => {
   const ticketId = lateTicket(9404)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9404-a'))
+  const run = anAttempt(attemptStream('s9404-a'))
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
     runStarted(run, ticketId),
@@ -1274,7 +1274,7 @@ const late_askAfterRelease = (() => {
 const late_closeAfterRelease = (() => {
   const ticketId = lateTicket(9405)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9405-a'))
+  const run = anAttempt(attemptStream('s9405-a'))
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
     runStarted(run, ticketId),
@@ -1288,7 +1288,7 @@ const late_closeAfterRelease = (() => {
 const late_requeueOfRunWait = (() => {
   const ticketId = lateTicket(9406)
   const t = makeStream(ticketId)
-  const run = aRun(passStream('s9406-a'))
+  const run = anAttempt(attemptStream('s9406-a'))
   const ask = wait('9406-ask')
   return bundle(ticketId, [
     ...aClaim(t, run.runId),
@@ -1314,7 +1314,7 @@ export const lateScenarios = {
 
 /**
  * The event types each stream kind's histories must contain: every catalogue
- * `case` label of `reduceRunEvent` / `reduceTicketEvent` (the retired `TicketLinked`
+ * `case` label of `reduceAttemptEvent` / `reduceTicketEvent` (the retired `TicketLinked`
  * included), exactly `CONTROL_FOLD_TYPES`, and the chat and finding streams'
  * own types. Types reached only through board or projector helpers are not here.
  */

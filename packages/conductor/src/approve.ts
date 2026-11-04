@@ -1,4 +1,4 @@
-import { reduceRun, reduceTicket, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
+import { reduceAttempt, reduceTicket, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -214,7 +214,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   }
 
   const runEvents = await store.read(runId)
-  const run = reduceRun(runEvents)
+  const run = reduceAttempt(runEvents)
 
   /**
    * **The sha an approval is about.** `run.lifecycle.onSha` for a declared

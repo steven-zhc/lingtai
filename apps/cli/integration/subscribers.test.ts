@@ -17,7 +17,7 @@ import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
  */
-import { aRun, anOutcome, aWait } from '@lingtai/domain/test/events'
+import { anAttempt, anOutcome, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -70,7 +70,7 @@ beforeAll(async () => {
     runId,
     1,
     toAppend(
-      aRun(runId).aStepEnded(
+      anAttempt(runId).aStepEnded(
         anOutcome('merge', 0, [
           {
             plugin: 'human',

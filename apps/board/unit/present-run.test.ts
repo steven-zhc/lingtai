@@ -1,9 +1,9 @@
 import type { TicketClaim } from '@lingtai/domain'
 /**
- * `presentRun` draws an attempt from `RunState` (#828). Each test is named for
+ * `presentRun` draws an attempt from `AttemptState` (#828). Each test is named for
  * the decision of `doc/design/one-fold-per-stream.md` it holds.
  */
-import { reduceRun, type Envelope } from '@lingtai/domain'
+import { reduceAttempt, type Envelope } from '@lingtai/domain'
 import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -40,13 +40,13 @@ describe('presentRun', () => {
 
   it('draws the same view from a state as from the events', () => {
     const events = histories.run.verdictOnOlderHead
-    const state = reduceRun(events)
+    const state = reduceAttempt(events)
     expect(presentRun(state, claim, 1, null)).toEqual({ ...view(events), progress: null })
   })
 
   it('keeps the prompt version and bytes of the last RunPrompted', () => {
     const e = makeStream('run-prompt')
-    const state = reduceRun([e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'hello' })])
+    const state = reduceAttempt([e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'hello' })])
     expect(presentRun(state, claim, 1, null).prompt).toEqual({ version: 'ticket@3', bytes: 12, text: 'hello' })
   })
 })

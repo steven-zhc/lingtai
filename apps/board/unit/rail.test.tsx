@@ -31,7 +31,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
 import {
   decideRoute,
   offerFor,
-  reduceRun,
+  reduceAttempt,
   STEPS,
   type Action,
   type Envelope,
@@ -410,7 +410,9 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
  * where there is no progress, so no held line either.
  */
 const roundsFor = (events: Envelope[], progress: RunProgress | null) =>
-  progress === null ? null : { spent: spentOf(reduceRun(events).roundsOpened, grantedOf([])), granted: grantedOf([]) }
+  progress === null
+    ? null
+    : { spent: spentOf(reduceAttempt(events).roundsOpened, grantedOf([])), granted: grantedOf([]) }
 
 const card = (
   t: Partial<TaskCard>,
@@ -420,7 +422,7 @@ const card = (
   limits: { rounds: number; restarts: number } | null = null,
 ) => {
   const merged = task(t)
-  const progress = progressOf(reduceRun(events), plan, over)
+  const progress = progressOf(reduceAttempt(events), plan, over)
   return toCard(
     merged,
     null,
@@ -457,7 +459,7 @@ const render = (
 const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
   const one = task(t)
   const [candidate] = railCandidates([one])
-  const progress = candidate ? progressOf(reduceRun(events), plan, candidate.over) : null
+  const progress = candidate ? progressOf(reduceAttempt(events), plan, candidate.over) : null
   return toCard(one, null, progress, null, null, undefined, undefined, undefined, null, roundsFor(events, progress))
 }
 
@@ -1036,12 +1038,12 @@ describe('the eight states', () => {
    * was over.
    */
   it('reaches the card from the run doctor fails on', () => {
-    const over = progressOf(reduceRun(landedPastMerge()), MERGE_PLAN, true)
+    const over = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, true)
     expect(over?.steps.find((p) => p.step === 'merge')?.state).toBe('never-ran')
 
     // And never on a run still in flight, where a point not reached yet is the
     // ordinary case and painting it red would put the fail colour everywhere.
-    const live = progressOf(reduceRun(landedPastMerge()), MERGE_PLAN, false)
+    const live = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, false)
     expect(live?.steps.find((p) => p.step === 'merge')?.state).toBe('pending')
   })
 })
@@ -1105,7 +1107,7 @@ describe('the hatch, and what may not draw it', () => {
    * recipe the run never saw cannot accuse it of skipping a step.
    */
   it('never draws it from a plan the log did not record', () => {
-    const over = progressOf(reduceRun(noPlanRecorded()), PLAN, true)
+    const over = progressOf(reduceAttempt(noPlanRecorded()), PLAN, true)
 
     expect(over?.steps.map((p) => p.state)).toEqual([
       'skipped',
@@ -1288,7 +1290,7 @@ describe('the plan reduced into the rail (#781)', () => {
     tier: 'guarded',
   })
   const none = () => {
-    const p = progressOf(reduceRun([resolved(PLAN)]), PLAN, false)
+    const p = progressOf(reduceAttempt([resolved(PLAN)]), PLAN, false)
     if (p === null) throw new Error('a resolved plan reduces to progress')
     return p
   }

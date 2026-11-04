@@ -1,5 +1,5 @@
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
-import { aRunRef } from '@lingtai/domain/test/events'
+import { anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError } from '@lingtai/event-store'
@@ -20,11 +20,11 @@ import {
 const triage = Triage.parse({})
 const old = new Date('2026-08-31T10:00:00Z')
 const startedAt = new Date('2026-08-31T11:00:00Z')
-const reason: WaitReason = { _tag: 'NothingProduced', run: aRunRef('run-one'), said: null }
+const reason: WaitReason = { _tag: 'NothingProduced', run: anAttemptRef('run-one'), said: null }
 const own: WaitReason = { _tag: 'OwnQuestion', question: 'what now?', by: 'steven' }
 const signoff: WaitReason = {
   _tag: 'SignoffRequired',
-  run: aRunRef('run-one'),
+  run: anAttemptRef('run-one'),
   step: 'merge',
   action: 'human:land',
   question: 'land it?',

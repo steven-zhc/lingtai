@@ -21,7 +21,14 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
-import { agentBranchOf, reduceRun, savedHeadOf, waitWords, type ProjectState, type SavedHead } from '@lingtai/domain'
+import {
+  agentBranchOf,
+  reduceAttempt,
+  savedHeadOf,
+  waitWords,
+  type ProjectState,
+  type SavedHead,
+} from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
@@ -199,7 +206,7 @@ async function hasSavedHead(
   clientFor: ClientFor = githubClientFor,
 ): Promise<SavedHeadReading> {
   try {
-    return await readingOf(savedHeadOf(reduceRun(await eventStore.read(runId))), project, clientFor)
+    return await readingOf(savedHeadOf(reduceAttempt(await eventStore.read(runId))), project, clientFor)
   } catch (e) {
     return { unreadable: e instanceof Error ? e.message : String(e) }
   }
@@ -226,11 +233,11 @@ export interface StatusRun {
 }
 
 /**
- * The step a run is inside: `RunState.step` off its reduced stream (D12). A failed read throws — it
+ * The step a run is inside: `AttemptState.step` off its reduced stream (D12). A failed read throws — it
  * is not "no step".
  */
 async function lastStep(runId: string): Promise<StatusRun['step']> {
-  return reduceRun(await eventStore.read(runId)).step
+  return reduceAttempt(await eventStore.read(runId)).step
 }
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */

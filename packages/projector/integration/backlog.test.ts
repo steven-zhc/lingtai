@@ -7,7 +7,7 @@
  */
 import type { Envelope, Finding, ToAppend } from '@lingtai/domain'
 import { backlogStream, findingKey } from '@lingtai/domain'
-import { aRun } from '@lingtai/domain/test/events'
+import { anAttempt } from '@lingtai/domain/test/events'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -36,14 +36,14 @@ const minor = (claim: string, line: number): Finding => ({
 const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, data: e.data })
 
 /**
- * A verdict, built through `aRun(…).aStepEnded` rather than the wire shape
+ * A verdict, built through `anAttempt(…).aStepEnded` rather than the wire shape
  * directly — 0120 retires `StepPassed`/`StepFailed`, so this goes through the
  * builder (#481). `RunStarted` stays hand-written: it is unchanged by 0120's
  * appendix.
  */
 async function attempt(n: number, a: number, findings: Finding[], verdict: 'accepted' | 'refused' = 'accepted') {
   const runId = run(n, a)
-  const verdictEvents = aRun(runId)
+  const verdictEvents = anAttempt(runId)
     .aStepEnded({
       step: 'proposed',
       round: 0,

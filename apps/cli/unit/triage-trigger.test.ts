@@ -1,5 +1,5 @@
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
-import { aRunRef } from '@lingtai/domain/test/events'
+import { anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { Triage } from '@lingtai/recipe'
@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { enqueueTriage, onWaitStarted, type TriageTriggerPorts } from '../src/triage.ts'
 
 const triage = Triage.parse({})
-const run = aRunRef('pass-a')
+const run = anAttemptRef('pass-a')
 const judgement: WaitReason = { _tag: 'NothingProduced', run, said: null }
 const failure: WaitReason = { _tag: 'AgentCrashed', run, step: 'build', cause: 'crash', detail: 'oops' }
 const own: WaitReason = { _tag: 'OwnQuestion', question: 'what now?', by: 'steven' }

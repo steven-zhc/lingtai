@@ -6,12 +6,12 @@
  * depends on imports `events.ts` back.
  *
  * **Not in `route.ts`, even though that file's header once promised it.**
- * `routeNext` returns `PassNext`, so this file imports `pass-next.ts`; and
- * `pass-next.ts` imports `wait.ts`, which imports `route.ts` at load time to
+ * `routeNext` returns `AttemptNext`, so this file imports `attempt-next.ts`; and
+ * `attempt-next.ts` imports `wait.ts`, which imports `route.ts` at load time to
  * build `EscalationBecause` (`wait.ts:102`). A `route.ts` that imported this
  * file back would close that ESM cycle. So `route.ts` stays a leaf.
  *
- * `offerFor`'s `CandidateNext` reuses `pass-next.ts`'s own `FixRound` and
+ * `offerFor`'s `CandidateNext` reuses `attempt-next.ts`'s own `FixRound` and
  * `Restart` schemas rather than declaring second copies of them — see that
  * file's header for why they are exported.
  *
@@ -20,11 +20,11 @@
  */
 import { z } from 'zod'
 
-import { FixRound, MergeBase, type PassNext, Restart, type Spent } from './pass-next.ts'
+import { FixRound, MergeBase, type AttemptNext, Restart, type Spent } from './attempt-next.ts'
 import { Proposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { STEPS, type Step } from './vocabulary.ts'
-import { RunRef } from './wait.ts'
+import { AttemptRef } from './wait.ts'
 
 /**
  * The two ceilings a recipe resolves to, as totals rather than what is left
@@ -54,7 +54,7 @@ export const CONFLICT_ROUNDS_LIMIT = 2
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */
 const HandToPerson = z.object({ _tag: z.literal('HandToPerson') })
 
-/** A candidate's own next, before a person or a judge chose one — `pass-next.ts`'s `FixRound` whole, or its `Restart` wrapped in the `Requeued` a judge's pick becomes. */
+/** A candidate's own next, before a person or a judge chose one — `attempt-next.ts`'s `FixRound` whole, or its `Restart` wrapped in the `Requeued` a judge's pick becomes. */
 const CandidateNext = z.discriminatedUnion('_tag', [
   FixRound,
   MergeBase,
@@ -94,7 +94,7 @@ export type RouteDecision = z.infer<typeof RouteDecision>
  * A `RouteOffer`/`JudgeReply`/`RouteDecision` triple `routeNext` was handed
  * that cannot occur under `decideRoute`'s own table — thrown rather than
  * silently coerced, following `ImpossibleOutcomeError`'s precedent
- * (`pass-next.ts:33`, which follows `upcast.ts:189`). Replay calls `routeNext`
+ * (`attempt-next.ts:33`, which follows `upcast.ts:189`). Replay calls `routeNext`
  * on triples already on the log (0120 §5), so a corrupt one should fail
  * loudly rather than guess.
  */
@@ -288,16 +288,16 @@ export function decideRoute(offer: RouteOffer, reply: JudgeReply): RouteDecision
  *
  * Takes a fourth argument, `run`, that §3's own sketch leaves out: both
  * `AgentQuestion` and `ProposedEscalated` (`wait.ts`) require one, the same
- * way `nextOf` does (`pass-next.ts:77`). Filling in a field the sketch elided
+ * way `nextOf` does (`attempt-next.ts:77`). Filling in a field the sketch elided
  * is not a different decision, so it needs no ADR of its own.
  *
- * `HandToPerson` never escapes this function — every `PassNext` it returns
+ * `HandToPerson` never escapes this function — every `AttemptNext` it returns
  * is `FixRound`, `MergeBase`, `Requeued` or `WaitOnPerson`, never `nextOf`'s own
  * `Advance`, `Propose` or `Landed` — and an unjudged `InputNeeded` (a
  * `NotAsked` reply, never an unreadable or unknown one) is the only case that
  * reaches `AgentQuestion` rather than `ProposedEscalated`.
  */
-export function routeNext(offer: RouteOffer, reply: JudgeReply, decision: RouteDecision, run: RunRef): PassNext {
+export function routeNext(offer: RouteOffer, reply: JudgeReply, decision: RouteDecision, run: AttemptRef): AttemptNext {
   if (decision._tag === 'Selected') {
     if (reply._tag !== 'Selected') {
       throw new ImpossibleRouteError(

@@ -12,12 +12,12 @@
  * what the projections see, since they reduce in global `seq` order too.
  */
 import { isReached, type Reached, type StepOutcome, type WaitId } from './action.ts'
+import type { AttemptNext } from './attempt-next.ts'
+import { verdictOf, type StepVerdict } from './attempt.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
-import type { PassNext } from './pass-next.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
-import { verdictOf, type StepVerdict } from './run.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import { reduceTicket } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
@@ -60,7 +60,7 @@ export type RoutedPass = {
   readonly runId: string
   readonly from: Step
   readonly decision: RouteDecision
-  readonly next: PassNext
+  readonly next: AttemptNext
 }
 
 /** Every `PassRouted` on the slice, with `routeNext`'s own answer replayed from the stored offer, reply and decision. */
@@ -162,7 +162,7 @@ export function findingsRaisedOf(event: Envelope): FindingsRaised[] {
 /**
  * What the board's history, progress strip and task reduce read off one event
  * at a time — never `stepOutcomesOf`/`routesOf`/`waitsOf`/`releaseCauseOf`,
- * for `findingsRaisedOf`'s own reasons above, and never `task_view`'s `RunState`
+ * for `findingsRaisedOf`'s own reasons above, and never `task_view`'s `AttemptState`
  * reduce: that answers for `task_view` and the two can disagree about one event.
  *
  * **The board loses which action of a step is running** (0120's own

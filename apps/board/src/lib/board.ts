@@ -12,7 +12,7 @@ import {
   agentBranchOf,
   isPending,
   isRegistered,
-  reduceRun,
+  reduceAttempt,
   waitWords,
 } from '@lingtai/domain'
 import {
@@ -1025,7 +1025,7 @@ async function laneProgress(
         const events = await eventStore.read(task.runId as string)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        const state = reduceRun(events)
+        const state = reduceAttempt(events)
         const progress = progressOf(state, plans.get(task.project), over)
         // The rounds ride only where the rail does: a stream with no progress has no held line.
         const opened = progress === null ? null : state.roundsOpened

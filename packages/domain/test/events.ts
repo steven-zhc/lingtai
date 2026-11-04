@@ -16,7 +16,7 @@ import type {
   WaitId,
 } from '../src/index.ts'
 import { routeNext, STEPS, type RouteOffer, type JudgeReply, type RouteDecision } from '../src/index.ts'
-import type { RunRef } from '../src/wait.ts'
+import type { AttemptRef } from '../src/wait.ts'
 import type { Resolution, TriageResult, WaitReason } from '../src/wait.ts'
 import { makeStream } from './support.ts'
 
@@ -28,7 +28,7 @@ export function aWaitId(): WaitId {
 }
 
 /** One run's own stream. */
-export interface RunFixture {
+export interface AttemptFixture {
   readonly runId: string
   /** The run's own `makeStream` appender, for a builder that writes directly onto it (`aRoute`, a seeded `TicketClaimed`'s run). */
   readonly event: ReturnType<typeof makeStream>
@@ -39,7 +39,7 @@ export interface RunFixture {
 }
 
 /** One run, for `aStepEnded` and `aRoute` to write onto. */
-export function aRun(runId: string): RunFixture {
+export function anAttempt(runId: string): AttemptFixture {
   const event = makeStream(runId)
   const ended: StepOutcome[] = []
 
@@ -123,7 +123,7 @@ export function aTriaged(
  * decision also appends `TicketReleased{cause: Restart}` on the item stream.
  */
 export function aRoute(
-  run: RunFixture,
+  run: AttemptFixture,
   route: {
     offer: RouteOffer
     reply: JudgeReply
@@ -150,7 +150,7 @@ export function aRelease(
 }
 
 /** `RunFailed{kind, detail}` — the event the conductor appends when a run stops without reaching an outcome. */
-export function aRunFailure(run: RunFixture, kind: RunFailureKind, detail: string): Envelope[] {
+export function aRunFailure(run: AttemptFixture, kind: RunFailureKind, detail: string): Envelope[] {
   return [run.event('RunFailed', { kind, detail })]
 }
 
@@ -181,8 +181,8 @@ export function anIntegrationRefusal(
   ]
 }
 
-/** A bare `RunRef` — `{runId}` — for a `WaitReason` that needs one and nothing more; not an appender, `aRun` is what opens a stream. */
-export function aRunRef(runId: string): RunRef {
+/** A bare `AttemptRef` — `{runId}` — for a `WaitReason` that needs one and nothing more; not an appender, `anAttempt` is what opens a stream. */
+export function anAttemptRef(runId: string): AttemptRef {
   return { runId }
 }
 

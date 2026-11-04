@@ -1,10 +1,10 @@
 /**
- * A `RunState`, stored and read back (0124 §1, #844).
+ * A `AttemptState`, stored and read back (0124 §1, #844).
  *
  * The run twin of `ticket-codec.ts`, with the same rules (#833): `bigint` is a
  * string (`lastSeq`), a `Date` an ISO string, absent and `null` stay apart, and
  * a value of another shape is refused by name rather than filled from
- * `emptyRun`. The payload copies inside the state are the event schemas
+ * `emptyAttempt`. The payload copies inside the state are the event schemas
  * themselves, so a shape is defined once. No registry, no version.
  *
  * The first projection to store a run's state is `task_view`, so this lands
@@ -13,6 +13,7 @@
  */
 import { z } from 'zod'
 
+import type { AttemptState } from './attempt.ts'
 import {
   Finding,
   Invocation,
@@ -24,7 +25,6 @@ import {
   RuntimeId,
   Step,
 } from './events.ts'
-import type { RunState } from './run.ts'
 import { firstDifference } from './ticket-codec.ts'
 
 const IsoDate = z.iso.datetime().transform((s) => new Date(s))
@@ -106,21 +106,21 @@ const StoredRun = z.strictObject({
   lastSeq: Seq.transform((s) => BigInt(s)).nullable(),
 })
 
-/** Thrown for a stored state that is not a `RunState` of today's shape. */
+/** Thrown for a stored state that is not a `AttemptState` of today's shape. */
 export class RunCodecError extends Error {
   override readonly name = 'RunCodecError'
 }
 
 /** 0124 §1's codec for this reduce. `bigint` as a string, `Date` as ISO, absent and `null` kept apart. */
-export function encodeRun(state: RunState): string {
+export function encodeRun(state: AttemptState): string {
   return JSON.stringify(state, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))
 }
 
 /**
- * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `RunState`.
+ * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `AttemptState`.
  * Throws, naming the run and `lingtai projection rebuild <projection>`, on any other shape.
  */
-export function decodeRun(stored: unknown, projection: string, runId?: string): RunState {
+export function decodeRun(stored: unknown, projection: string, runId?: string): AttemptState {
   const refuse = (what: string): never => {
     throw new RunCodecError(
       `${projection}${runId === undefined ? '' : ` ${runId}`}: the stored run state is not today's shape (${what}); ` +
@@ -140,7 +140,7 @@ export function decodeRun(stored: unknown, projection: string, runId?: string): 
     const issue = parsed.error.issues[0]!
     return refuse(`${issue.path.length === 0 ? 'run_state' : issue.path.join('.')}: ${issue.message}`)
   }
-  const state = parsed.data as RunState
+  const state = parsed.data as AttemptState
   const differs = firstDifference(value, JSON.parse(encodeRun(state)), 'run_state')
   if (differs !== null) return refuse(`${differs}: not part of today's shape`)
   return state

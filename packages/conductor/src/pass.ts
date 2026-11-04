@@ -106,7 +106,7 @@ import {
   STEPS,
   type JudgeReply,
   baseRedText,
-  type PassNext,
+  type AttemptNext,
   type PayloadOf,
   type Proposal,
   type RouteDecision,
@@ -115,7 +115,7 @@ import {
   type StepOutcome,
   type WaitId,
 } from '@lingtai/domain'
-import type { RunRef } from '@lingtai/domain/wait'
+import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 
 import type { TerminalOutcome } from './end-step.ts'
@@ -241,7 +241,7 @@ function after(step: Step): Step | null {
  * about the judgement.
  *
  * `onSha` is *the commit this verdict is about, and the only thing that makes it
- * stale* (`ActionContext`), and `stepsOn()` (`packages/domain/src/run.ts`) shows
+ * stale* (`ActionContext`), and `stepsOn()` (`packages/domain/src/attempt.ts`) shows
  * a verdict only where it equals the item's head. So a pass that judged `A`
  * while the tree stood at `B` has paid for every verdict and can show none of
  * them. The workflow cannot work the value out — it runs no git — and the caller
@@ -1022,7 +1022,7 @@ export interface RouteTaken {
 export type Ceiling = 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds'
 
 /**
- * **The pass's own terminal, 0120 §6's seam** — the three `PassNext` tags that
+ * **The pass's own terminal, 0120 §6's seam** — the three `AttemptNext` tags that
  * actually end a walk, named here rather than inline so `conduct.ts` and
  * `runPass` read one type for it.
  *
@@ -1032,7 +1032,7 @@ export type Ceiling = 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds'
  * off its `StepReached` directly, and never `end`'s own ending, which cannot
  * change what already happened.
  */
-export type PassEnd = Extract<PassNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
+export type PassEnd = Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
 
 /**
  * **What `runPass` hands back** — the terminal, the evidence it is worded
@@ -1551,11 +1551,11 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     // asking it cannot throw by construction. `claim` is never `at` here (it
     // ran before this walk started, through `claimStep`), and a `merge` whose
     // plugins never reached a deciding action (`decidingAction === null`) is
-    // the one case `nextOf`'s own doc says throws (`pass-next.ts:111-113`) —
+    // the one case `nextOf`'s own doc says throws (`attempt-next.ts:111-113`) —
     // excluded here rather than caught, so an empty `merge:` list keeps
     // today's ending too.
     const outcome = reached.outcome
-    let next: PassNext | null = null
+    let next: AttemptNext | null = null
     if (outcome !== undefined && decidingAction(outcome) !== null) {
       try {
         next = nextOf(outcome, { runId: options.context.runId })
@@ -1705,7 +1705,7 @@ export async function claimStep(options: PassOptions): Promise<StepReached> {
  * `end.reason` wherever `PassOver.unanswered` says this function built the
  * answer rather than `nextOf`.
  */
-function unansweredEnd(step: Step, run: RunRef, ending: StepReport): PassEnd {
+function unansweredEnd(step: Step, run: AttemptRef, ending: StepReport): PassEnd {
   if (ending.ending === 'never-ran') {
     return { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } }
   }

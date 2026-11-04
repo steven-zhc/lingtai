@@ -57,17 +57,17 @@ export const KeptAt = z.discriminatedUnion('_tag', [
 export type KeptAt = z.infer<typeof KeptAt>
 
 /**
- * A run a wait belongs to, 0118 §1's own — not the old `Hold`'s `RunRef`, which
+ * An attempt a wait belongs to, 0118 §1's own — not the old `Hold`'s `RunRef`, which
  * also carries `repairOf` for `waitWords`' pre-#143 repair machinery, a
  * field this model has no place for. `unpushed` sits here, rather than on
  * `WaitReason` itself, so it can sit beside any wait with a run and cannot
  * sit beside an `OwnQuestion`.
  */
-export const RunRef = z.object({
+export const AttemptRef = z.object({
   runId: z.string(),
   unpushed: z.object({ branch: z.string(), said: z.string(), keptAt: KeptAt.optional() }).optional(),
 })
-export type RunRef = z.infer<typeof RunRef>
+export type AttemptRef = z.infer<typeof AttemptRef>
 
 /** A person's own question, through `lingtai ask`, before any run claimed the item. No `run`: there is nothing to attach one to. */
 const OwnQuestion = z.object({ _tag: z.literal('OwnQuestion'), question: z.string(), by: z.string() })
@@ -75,7 +75,7 @@ const OwnQuestion = z.object({ _tag: z.literal('OwnQuestion'), question: z.strin
 /** A step stopped to ask, mid-run. */
 const AgentQuestion = z.object({
   _tag: z.literal('AgentQuestion'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step.extract(['design', 'implement']),
   question: z.string(),
 })
@@ -83,17 +83,17 @@ const AgentQuestion = z.object({
 /** A declared `human:` or an injected `--no-merge`, with every step green. */
 const SignoffRequired = z.object({
   _tag: z.literal('SignoffRequired'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step.extract(['proposed', 'merge']),
   action: z.string(),
   question: z.string(),
 })
 
 /** A fix round's `implement` changed nothing — the fixer disagrees with the reviewer. */
-const FixerDisagrees = z.object({ _tag: z.literal('FixerDisagrees'), run: RunRef, said: z.string().nullable() })
+const FixerDisagrees = z.object({ _tag: z.literal('FixerDisagrees'), run: AttemptRef, said: z.string().nullable() })
 
 /** A first dispatch's `implement` changed nothing — there is only the ticket to argue with. */
-const NothingProduced = z.object({ _tag: z.literal('NothingProduced'), run: RunRef, said: z.string().nullable() })
+const NothingProduced = z.object({ _tag: z.literal('NothingProduced'), run: AttemptRef, said: z.string().nullable() })
 
 /** The router handed the pass to a person with no reason tied to a route candidate (0120 §3's `HandToPerson`). */
 const JudgeHandedOver = z.object({ _tag: z.literal('JudgeHandedOver'), why: z.string() })
@@ -124,7 +124,7 @@ export type EscalationBecause = z.infer<typeof EscalationBecause>
 /** `proposed`'s router sent the pass to a person, carrying the proposal it was offered and why. */
 const ProposedEscalated = z.object({
   _tag: z.literal('ProposedEscalated'),
-  run: RunRef,
+  run: AttemptRef,
   proposal: Proposal,
   because: EscalationBecause,
 })
@@ -132,7 +132,7 @@ const ProposedEscalated = z.object({
 /** A check declared at `proposed` or before the lane at `merge` that refused. */
 const CheckRefused = z.object({
   _tag: z.literal('CheckRefused'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step.extract(['proposed', 'merge']),
   action: z.string(),
   evidence: z.string(),
@@ -142,7 +142,7 @@ const CheckRefused = z.object({
 /** The merge lane refused for a reason that is neither a conflict nor a red re-verify (those route through `proposed` as a `Proposal`). */
 const MergeRefused = z.object({
   _tag: z.literal('MergeRefused'),
-  run: RunRef,
+  run: AttemptRef,
   // `.exclude` rather than a hand-written list: a reason `RefusalReason` gains
   // tomorrow fails this at the type level rather than slipping past.
   reason: RefusalReason.exclude(['conflict', 'verify-failed', 'base-moved']),
@@ -155,7 +155,7 @@ const MergeRefused = z.object({
 /** A turn or dollar ceiling. */
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
-  run: RunRef,
+  run: AttemptRef,
   // The same two values `proposal.ts` extracts from `RUN_FAILURE_KINDS`, written out
   // rather than imported: a leaf here cannot import that file
   // (see this file's own header) without closing the ESM cycle it avoids.
@@ -166,7 +166,7 @@ const BudgetExhausted = z.object({
 /** A `prepared` step refused before any agent ran — a check, a file not kept, a tree not cut. */
 const SetupRefused = z.object({
   _tag: z.literal('SetupRefused'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step,
   action: z.string(),
   why: z.string(),
@@ -175,7 +175,7 @@ const SetupRefused = z.object({
 /** The agent answered, and the machine could not read it. */
 const AnswerUnreadable = z.object({
   _tag: z.literal('AnswerUnreadable'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step.extract(['design', 'review', 'proposed', 'merge']),
   action: z.string(),
   raw: z.string(),
@@ -206,13 +206,13 @@ const StandingReason = z.discriminatedUnion('_tag', [
  * outside `runPass` (0120 §6), and the walk itself — `nextOf` throwing, or a
  * body answering something other than `passed` with no deciding action to
  * read — can stop at `admit`, `prepared` or `build` too, none of which an
- * *agent's own* `Interrupted` could ever name (`pass-next.ts:309`'s guard is
+ * *agent's own* `Interrupted` could ever name (`attempt-next.ts:309`'s guard is
  * narrower, and stays narrower: it is still about what an agent's outcome may
  * claim, not about where the shell itself may stop).
  */
 const AgentCrashed = z.object({
   _tag: z.literal('AgentCrashed'),
-  run: RunRef,
+  run: AttemptRef,
   step: Step.extract(['admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge']),
   cause: z.enum(RUN_FAILURE_KINDS).extract(['crash', 'timeout', 'aborted']),
   detail: z.string(),

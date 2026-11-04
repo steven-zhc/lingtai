@@ -1,5 +1,5 @@
 /**
- * A run stream's subject is `reduceRun(events).ticketId` (#846): the resolver
+ * A run stream's subject is `reduceAttempt(events).ticketId` (#846): the resolver
  * has no `RunStarted` loop of its own. Over the memory store, which the store
  * contract holds to the real one.
  */
@@ -29,7 +29,7 @@ const started = {
 /** An event that names no ticket in its payload, as `StepEnded` and the rest do. */
 const later = (streamId: string) => ({ streamId, type: 'RunAwaitingInput', data: {} }) as unknown as Envelope
 
-describe('runSubject reads the run stream through reduceRun (#846)', () => {
+describe('runSubject reads the run stream through reduceAttempt (#846)', () => {
   it('names the ticket of a run stream that holds a RunStarted', async () => {
     const store = createMemoryEventStore()
     const runId = `pass-${crypto.randomUUID()}`

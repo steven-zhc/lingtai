@@ -7,7 +7,7 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * `StepEnded` since #502.
  *
  * **`eventOf` reads `plugin`, and `nextOf` (`@lingtai/domain`'s
- * `pass-next.ts`) reads it in exactly one place.** One of 0120's result tags
+ * `attempt-next.ts`) reads it in exactly one place.** One of 0120's result tags
  * is given one shape for two unlike real endings, because the *next step*
  * for both is the same thing: a `commit`'s `Completed{head: null, question:
  * null}` is a kept `run:` that found nothing to commit (`StepPassed`) from
@@ -15,7 +15,7 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * (`StepDidNotFinish`) from another. `nextOf` is right to ignore `plugin`
  * here — the pass goes the same place either way — and `eventOf` has no
  * choice, because the event it is reproducing is not one `nextOf` ever has to
- * pick between. `lastCommitEvidence` (`pass-next.ts:366`) is the one place
+ * pick between. `lastCommitEvidence` (`attempt-next.ts:366`) is the one place
  * `nextOf` reads `plugin` too, skipping a kept `run:`'s own evidence so the
  * fixer's own words are never overwritten by "nothing to commit" standing in
  * for them — a forward-direction use, and not one that needs the backward

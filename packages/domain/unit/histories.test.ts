@@ -25,7 +25,7 @@ import {
   reduceChat,
   reduceControl,
   reduceFinding,
-  reduceRun,
+  reduceAttempt,
   reduceTicket,
 } from '../src/index.ts'
 import { COVERS, NOW, histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
@@ -83,9 +83,9 @@ describe('coverage', () => {
     })
   }
 
-  it('COVERS holds every catalogue case label of reduceRunEvent, reduceTicketEvent, reduceControlEvent, reduceChatEvent and reduceFindingEvent', () => {
+  it('COVERS holds every catalogue case label of reduceAttemptEvent, reduceTicketEvent, reduceControlEvent, reduceChatEvent and reduceFindingEvent', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
-    expect(missing(caseLabels('run.ts', 'reduceRunEvent'), COVERS.run)).toEqual([])
+    expect(missing(caseLabels('attempt.ts', 'reduceAttemptEvent'), COVERS.run)).toEqual([])
     expect(missing(caseLabels('ticket.ts', 'reduceTicketEvent'), COVERS.ticket)).toEqual([])
     expect(missing(caseLabels('control.ts', 'reduceControlEvent'), COVERS.control)).toEqual([])
     expect(missing(caseLabels('chat.ts', 'reduceChatEvent'), COVERS.chat)).toEqual([])
@@ -98,7 +98,7 @@ describe('coverage', () => {
 })
 
 describe('the histories reduce', () => {
-  for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceRun(h.events))
+  for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceAttempt(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
   for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
   for (const h of singles.filter((s) => s.kind === 'finding' && s.name !== 'declinedThenAccepted')) {

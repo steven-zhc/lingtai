@@ -9,7 +9,7 @@ disagree, the code is right and this is corrected.
 
 | | Continues the saved branch | Cuts a new branch from the base |
 |---|---|---|
-| **The machine** | **fix round** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRound` (`packages/domain/src/pass-next.ts`). Bounded by `runtime.limits.rounds`. | **restart** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: Restart}` as a `PassNext`, `TicketReleased{cause: Restart}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.restarts`. |
+| **The machine** | **fix round** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRound` (`packages/domain/src/attempt-next.ts`). Bounded by `runtime.limits.rounds`. | **restart** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: Restart}` as a `AttemptNext`, `TicketReleased{cause: Restart}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.restarts`. |
 | **A person** | **GrantFixRound** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Continue fixing current work*; CLI: `lingtai grant-fix-round` (`apps/cli/src/grant-fix-round.ts`).<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **Requeue** (重新排队) — `TicketReleased{cause: ByPerson}`; spends no restart, because only `cause: Restart` is counted. Board: *Start over from base*; CLI: `lingtai requeue` (`apps/cli/src/requeue.ts`).<br>**EditBodyAndRequeue** — write into the body, then requeue. Board: *Add to the ticket and start over*; CLI: `lingtai requeue --into-body`. |
 
 - **Continuation** (续跑) is the umbrella for every move a person makes in the
@@ -47,7 +47,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   returns the state after it. Each kind of stream has exactly one, in
   `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
   board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
-  Code: `reduceRunEvent(state, event)` reduces one event and `reduceRun(events)`
+  Code: `reduceAttemptEvent(state, event)` reduces one event and `reduceAttempt(events)`
   a whole stream from the start, and likewise for every stream. Say
   *reduce* for the act and **reducer** for the rule (the run reducer); the older
   words *fold* and *apply* mean the same thing.
@@ -67,7 +67,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   fallback timer starts, as against one an event wakes.
 - **Head** and **base** — an attempt works on its own branch. Its *base* is the commit
   on the base branch it started from; its *head* is the newest commit the agent
-  has produced there (`RunState.headSha`, set by `RunProducedDiff` and
+  has produced there (`AttemptState.headSha`, set by `RunProducedDiff` and
   `RunProposedCompletion`).
 - **onSha** and **stale** — `onSha` is the fact: the commit a step's verdict was
   made on (`StepState.onSha`). *Stale* is the judgement read from it: from `build` on,
@@ -83,7 +83,7 @@ The states, one per kind of stream:
 
 | State | Stream | What it is |
 |---|---|---|
-| **RunState** (to be renamed the attempt state) | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/run.ts`. |
+| **AttemptState** | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/attempt.ts`. |
 | **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its passes: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
 | **ControlState** | `ctl-conductor`, one per machine | Whether the conductor may take work: paused or not, by whom, why and until when, and a standing request to drain. What depends on the clock (a pause that lifts at `until`) is evaluated by the reader. `packages/domain/src/control.ts`. |
 | **ProjectState** | `prj-{project}`, one per repository | What Lingtai was told about a repository: its owner, base branch, the recipe hash last resolved, and a refusal nothing has recovered from yet. `packages/domain/src/project.ts`. |
@@ -102,7 +102,7 @@ a ticket and its attempts, or a ticket and its discussions, to change in one wri
 |---|---|
 | aggregate type | a kind of stream: ticket, attempt, discussion, merge lane, project, control |
 | aggregate | one stream (`ticket-lingtai-829`, `pass-…`) |
-| aggregate state | `TicketState`, `RunState` (to be the attempt state), … |
+| aggregate state | `TicketState`, `AttemptState`, … |
 | apply / when | the reducer (`reduceTicketEvent`) |
 | command handler | the conductor, the CLI or the board: read the state, decide, `append(stream, expectedVersion, events)` |
 | consistency boundary | one stream's version: a write is atomic within one stream and nowhere else |

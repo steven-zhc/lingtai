@@ -65,7 +65,7 @@ export interface StepState {
   reason: string | null
 }
 
-export type RunLifecycle =
+export type AttemptLifecycle =
   | { status: 'pending' }
   /** The worktree is being made workable. No agent has started. */
   | { status: 'running' }
@@ -91,10 +91,10 @@ export type RunLifecycle =
       detail: string
     }
 
-export type RunStatus = RunLifecycle['status']
+export type AttemptStatus = AttemptLifecycle['status']
 
-export interface RunState {
-  lifecycle: RunLifecycle
+export interface AttemptState {
+  lifecycle: AttemptLifecycle
 
   ticketId: string | null
   runtime: RuntimeId | null
@@ -190,7 +190,7 @@ export interface RunState {
   lastSeq: bigint | null
 }
 
-export const emptyRun: RunState = {
+export const emptyAttempt: AttemptState = {
   lifecycle: { status: 'pending' },
   ticketId: null,
   runtime: null,
@@ -232,7 +232,7 @@ export const emptyRun: RunState = {
  * counting here without anything having to revoke it. That is the whole reason
  * `onSha` is on the event.
  */
-export function stepsOn(state: RunState): StepState[] {
+export function stepsOn(state: AttemptState): StepState[] {
   if (state.headSha === null) return []
   return Object.values(state.steps).filter((g) => g.onSha === state.headSha)
 }
@@ -241,19 +241,19 @@ export function stepsOn(state: RunState): StepState[] {
  * The files the agent touched: each path once, at the position of its first
  * touch, with the op of its last.
  */
-export function filesOf(state: RunState): { path: string; op: 'edit' | 'write' | 'delete' }[] {
+export function filesOf(state: AttemptState): { path: string; op: 'edit' | 'write' | 'delete' }[] {
   const files = new Map<string, { path: string; op: 'edit' | 'write' | 'delete' }>()
   for (const t of state.touched) files.set(t.path, { path: t.path, op: t.op })
   return [...files.values()]
 }
 
-function withStep(state: RunState, step: StepState): Readonly<Record<string, StepState>> {
+function withStep(state: AttemptState, step: StepState): Readonly<Record<string, StepState>> {
   return { ...state.steps, [step.step]: step }
 }
 
 /**
  * The one ladder: a reached action read as the `StepVerdict` every surface
- * shows — `RunState.steps`, `task_view`'s cards and the board. An exhaustive
+ * shows — `AttemptState.steps`, `task_view`'s cards and the board. An exhaustive
  * switch over `yields` × `result._tag`, with no default and no fallback; a
  * `NotReached` action has no verdict and cannot be passed (`isReached`).
  */
@@ -376,7 +376,7 @@ function stepStateOf(key: string, action: Reached): StepState {
   }
 }
 
-export function reduceRunEvent(state: RunState, event: Envelope): RunState {
+export function reduceAttemptEvent(state: AttemptState, event: Envelope): AttemptState {
   const at = { version: event.version, lastSeq: event.seq, openedAt: state.openedAt ?? event.at }
 
   switch (event.type) {
@@ -565,7 +565,7 @@ export type SavedHead =
  * The rules, in the order the grant checks them: a WIP head first, then a
  * diverged branch, then no head at all. A row without `branchCarries` is carried.
  */
-export function savedHeadOf(state: RunState): SavedHead {
+export function savedHeadOf(state: AttemptState): SavedHead {
   const saved = state.published
   if (saved === null) return { _tag: 'NoSavedHead' }
   // A WIP commit on the arm does not taint the clean head already published on
@@ -586,6 +586,6 @@ export function savedHeadOf(state: RunState): SavedHead {
   return { _tag: 'Saved', head: saved.headSha, ref: saved.branch }
 }
 
-export function reduceRun(events: readonly Envelope[]): RunState {
-  return events.reduce(reduceRunEvent, emptyRun)
+export function reduceAttempt(events: readonly Envelope[]): AttemptState {
+  return events.reduce(reduceAttemptEvent, emptyAttempt)
 }

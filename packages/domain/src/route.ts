@@ -2,7 +2,7 @@
  * 0120 §3's escalation half: why `proposed`'s router could not pick a
  * candidate, exported as `RouteEscalation`. The rest of §3 — `RouteOffer`,
  * `JudgeReply`, `RouteDecision`, `offerFor`, `decideRoute`, `routeNext` — is
- * built in `routing.ts` (#460), which imports `pass-next.ts` and so cannot be
+ * built in `routing.ts` (#460), which imports `attempt-next.ts` and so cannot be
  * imported back from here: this file stays a leaf, holding only
  * `CandidateId`, `ExcludedCandidate` and the four-variant union `wait.ts`'s
  * `EscalationBecause` and `routing.ts`'s `RouteDecision` both need.

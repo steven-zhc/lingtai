@@ -223,7 +223,7 @@ export function fromOf(proposal: Proposal): Step {
 
 /**
  * **What the merge lane's own refusal becomes — one mapping, two callers**
- * (`#502`). `pass-next.ts`'s `mergeCompletedRefused` reads it off a live
+ * (`#502`). `attempt-next.ts`'s `mergeCompletedRefused` reads it off a live
  * `Integration` result; `approve.ts`'s own re-attempt after an approval reads
  * it off `IntegrateResult` instead, never off the log — both land here so a
  * conflict is classified the same way whichever one ran the lane.

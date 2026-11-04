@@ -2,7 +2,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
 import {
   decideRoute,
   offerFor,
-  reduceRun,
+  reduceAttempt,
   STEPS,
   type Action,
   type Envelope,
@@ -112,7 +112,7 @@ const stateOf = (steps: readonly { step: string; state: StepState }[], step: str
 
 describe('where a run has got to', () => {
   it('names the point it is at, with no per-action budget to show', () => {
-    const progress = progressOf(reduceRun(timeline()), PLAN)
+    const progress = progressOf(reduceAttempt(timeline()), PLAN)
 
     // **Since `#502`**: `StepStarted` carries no action, so `now.label` is
     // the bare step — `stepOf` already reads a label's head rather than
@@ -126,12 +126,12 @@ describe('where a run has got to', () => {
   it("measures elapsed from the run's first event, not from the agent's", () => {
     // The prepare gates run before `RunStarted`; a run that has spent six
     // minutes installing has spent six minutes.
-    expect(progressOf(reduceRun(timeline()), PLAN)?.since).toBe('2026-09-04T17:12:20.000Z')
+    expect(progressOf(reduceAttempt(timeline()), PLAN)?.since).toBe('2026-09-04T17:12:20.000Z')
   })
 
   it('is at the agent, against the wall clock as applied, while the agent runs', () => {
     const upToAgent = timeline().slice(0, 4)
-    const progress = progressOf(reduceRun(upToAgent), PLAN)
+    const progress = progressOf(reduceAttempt(upToAgent), PLAN)
 
     expect(progress?.now?.label).toBe(AGENT)
     expect(progress?.now?.since).toBe('2026-09-04T17:12:30.000Z')
@@ -146,7 +146,7 @@ describe('where a run has got to', () => {
    */
   it('says so when the agent has finished and no point has started', () => {
     const between = timeline().slice(0, 6)
-    expect(progressOf(reduceRun(between), PLAN)?.now).toBeNull()
+    expect(progressOf(reduceAttempt(between), PLAN)?.now).toBeNull()
   })
 
   /**
@@ -155,7 +155,7 @@ describe('where a run has got to', () => {
    * the only other way a point can be silent.
    */
   it('shows all ten steps, and which are done', () => {
-    const steps = progressOf(reduceRun(timeline()), PLAN)?.steps ?? []
+    const steps = progressOf(reduceAttempt(timeline()), PLAN)?.steps ?? []
 
     expect(steps.map((p) => p.step)).toEqual([...STEPS])
     expect(stateOf(steps, 'admit')).toBe('skipped')
@@ -173,7 +173,7 @@ describe('where a run has got to', () => {
    */
   it('names a configured point before StepsResolved has landed', () => {
     const first = timeline().slice(0, 2)
-    const steps = progressOf(reduceRun(first), PLAN)?.steps ?? []
+    const steps = progressOf(reduceAttempt(first), PLAN)?.steps ?? []
 
     expect(stateOf(steps, 'proposed')).toBe('pending')
     expect(steps.find((p) => p.step === 'proposed')?.planned).toEqual(['build'])
@@ -185,7 +185,7 @@ describe('where a run has got to', () => {
       ...timeline(),
       at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
     ]
-    const progress = progressOf(reduceRun(failed), PLAN)
+    const progress = progressOf(reduceAttempt(failed), PLAN)
 
     expect(stateOf(progress?.steps ?? [], 'proposed')).toBe('failed')
     // The verdict ended the phase; nothing is executing.
@@ -210,7 +210,7 @@ describe('where a run has got to', () => {
       result: { _tag: 'Completed', head: null, question: 'the ticket names two `base` values — which did you mean?' },
     }
     const asked = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [askedAction]))]
-    expect(stateOf(progressOf(reduceRun(asked), PLAN)?.steps ?? [], 'proposed')).toBe('asked')
+    expect(stateOf(progressOf(reduceAttempt(asked), PLAN)?.steps ?? [], 'proposed')).toBe('asked')
 
     const crashedAction: Action = {
       plugin: 'agent',
@@ -221,7 +221,7 @@ describe('where a run has got to', () => {
       result: { _tag: 'Interrupted', cause: 'out-of-turns' },
     }
     const crashed = [...timeline(), at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [crashedAction]))]
-    expect(stateOf(progressOf(reduceRun(crashed), PLAN)?.steps ?? [], 'proposed')).toBe('did-not-finish')
+    expect(stateOf(progressOf(reduceAttempt(crashed), PLAN)?.steps ?? [], 'proposed')).toBe('did-not-finish')
   })
 
   /**
@@ -241,14 +241,14 @@ describe('where a run has got to', () => {
       result: { _tag: 'Completed', requested: { question: 'land this?' } },
     }
     const held = [...timeline().slice(0, 6), at('2026-09-04T17:21:00Z', 'StepEnded', ended('merge', [signoffAction]))]
-    const progress = progressOf(reduceRun(held), PLAN)
+    const progress = progressOf(reduceAttempt(held), PLAN)
 
     expect(progress?.now?.label).toBe('merge:read it')
     expect(progress?.now?.budgetMs).toBeNull()
   })
 
   it('has nothing to say about a run with no events', () => {
-    expect(progressOf(reduceRun([]), PLAN)).toBeNull()
+    expect(progressOf(reduceAttempt([]), PLAN)).toBeNull()
   })
 
   /**
@@ -256,7 +256,7 @@ describe('where a run has got to', () => {
    * the same rule the Queued column follows when GitHub will not answer (#76).
    */
   it('still says where a run is when no recipe could be read', () => {
-    const progress = progressOf(reduceRun(timeline()))
+    const progress = progressOf(reduceAttempt(timeline()))
 
     expect(progress?.now?.label).toBe('proposed')
     expect(progress?.now?.budgetMs).toBeNull()
@@ -291,7 +291,7 @@ describe('rounds spent against the ceiling', () => {
       at('2026-09-04T17:34:01Z', 'PassRouted', roundOpened('proposed', '2 tests failed')),
     ]
 
-    expect(spentOf(reduceRun(withRound).roundsOpened, [])).toBe(1)
+    expect(spentOf(reduceAttempt(withRound).roundsOpened, [])).toBe(1)
   })
 
   it('stays at the round already spent when a later escalation buys no further round', () => {
@@ -309,11 +309,11 @@ describe('rounds spent against the ceiling', () => {
       }),
     ]
 
-    expect(spentOf(reduceRun(declined).roundsOpened, [])).toBe(1)
+    expect(spentOf(reduceAttempt(declined).roundsOpened, [])).toBe(1)
   })
 
   it('is zero and names no ceiling on a run that never bought a round', () => {
-    expect(spentOf(reduceRun(timeline()).roundsOpened, [])).toBe(0)
+    expect(spentOf(reduceAttempt(timeline()).roundsOpened, [])).toBe(0)
   })
 })
 
@@ -404,7 +404,7 @@ describe('human-granted rounds', () => {
     for (const withOpened of [true, false]) {
       const events = [...automatic(), ...(withOpened ? [at('2026-09-04T17:55:00Z', 'PassRouted', opened(2))] : [])]
       const granted = grantedOf([...automaticRows(), spent(3, 1.416, 'wait-1')])
-      const roundsSpent = spentOf(reduceRun(events).roundsOpened, granted)
+      const roundsSpent = spentOf(reduceAttempt(events).roundsOpened, granted)
       expect(roundsSpent).toBe(2)
       expect(granted).toEqual([{ round: 3, waitId: 'wait-1', costUsd: 1.416 }])
       expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 0, restartsOf: 1 })).toBe(
@@ -415,7 +415,7 @@ describe('human-granted rounds', () => {
 
   it('reads a granted round whose cost was not said as unknown, never $0.00', () => {
     const granted = grantedOf([...automaticRows(), spent(3, null, 'wait-1')])
-    const roundsSpent = spentOf(reduceRun(automatic()).roundsOpened, granted)
+    const roundsSpent = spentOf(reduceAttempt(automatic()).roundsOpened, granted)
     expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 1, restartsOf: 1 })).toBe(
       '2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left',
     )
@@ -452,7 +452,7 @@ describe('the stopwatch', () => {
   })
 })
 
-/** `now`, drawn from `RunState`'s instants (#827). */
+/** `now`, drawn from `AttemptState`'s instants (#827). */
 describe('progressOf: now', () => {
   const T = (n: number) => new Date(Date.UTC(2026, 8, 4, 12, 0, n))
   const runStarted = (e: ReturnType<typeof makeStream>, at: Date) =>
@@ -474,7 +474,7 @@ describe('progressOf: now', () => {
     e('StepStarted', { runId: 'r', step, round }, { at })
   const finished = (e: ReturnType<typeof makeStream>, at: Date) =>
     e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }, { at })
-  const nowOf = (events: readonly Envelope[]) => progressOf(reduceRun(events))?.now
+  const nowOf = (events: readonly Envelope[]) => progressOf(reduceAttempt(events))?.now
 
   it('D10: the lane wait ends with merge', () => {
     const events = lateHistories.run.laneWaited
@@ -502,7 +502,7 @@ describe('progressOf: now', () => {
   })
 
   it('an asked signoff reads its key from askedAt', () => {
-    const asked = progressOf(reduceRun(signoffAsked(T(7))))
+    const asked = progressOf(reduceAttempt(signoffAsked(T(7))))
     expect(asked?.now).toEqual({ label: 'merge:read it', since: T(7).toISOString(), budgetMs: null })
   })
 

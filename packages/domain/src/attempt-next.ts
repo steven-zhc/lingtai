@@ -1,5 +1,5 @@
 /**
- * 0120 §4's `PassNext`, `RequeueCause`, `Spent`, `nextOf` and `spentAfter`.
+ * 0120 §4's `AttemptNext`, `RequeueCause`, `Spent`, `nextOf` and `spentAfter`.
  *
  * `nextOf` reads the deciding action (`decidingAction`, `action.ts`) by step
  * and yield, never by plugin, and never returns `FixRound` — only a route
@@ -12,7 +12,7 @@
  *
  * **`Landed` is already exported from the root** (`integration.ts:37`), so
  * this file's own `Landed` variant schema stays unexported, like every other
- * variant here — except `FixRound` and `Restart`, exported beside `PassNext`
+ * variant here — except `FixRound` and `Restart`, exported beside `AttemptNext`
  * and `RequeueCause` so `routing.ts` (#460) can build its `CandidateNext`
  * from the same two schemas rather than declaring second copies: a
  * `FixRound` offer reuses this file's `FixRound` outright, and a `restart`
@@ -23,7 +23,7 @@ import { z } from 'zod'
 import { Action, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
 import { mergeRefusalProposal, Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
-import { RunRef, WaitReason } from './wait.ts'
+import { AttemptRef, WaitReason } from './wait.ts'
 
 /**
  * A `StepOutcome` that cannot occur under 0120 §1's legality table plus the
@@ -88,7 +88,7 @@ export const MergeBase = z.object({
 export type MergeBase = z.infer<typeof MergeBase>
 
 /** 0120 §4's next move, with what it spends. */
-export const PassNext = z.discriminatedUnion('_tag', [
+export const AttemptNext = z.discriminatedUnion('_tag', [
   Advance,
   Propose,
   FixRound,
@@ -97,7 +97,7 @@ export const PassNext = z.discriminatedUnion('_tag', [
   WaitOnPerson,
   Landed,
 ])
-export type PassNext = z.infer<typeof PassNext>
+export type AttemptNext = z.infer<typeof AttemptNext>
 
 /**
  * Rounds spent this pass, restarts spent on the work item (0120 §4), and the
@@ -106,13 +106,13 @@ export type PassNext = z.infer<typeof PassNext>
  */
 export type Spent = { rounds: number; restarts: number; baseMerges?: number; conflictRounds?: number }
 
-type NextOfResult = Extract<PassNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
+type NextOfResult = Extract<AttemptNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
 
 /**
  * What `nextOf` answers after a step ends — never `FixRound`: a step that
  * falls short proposes, and only a route (0120 §3) spends a round.
  */
-export function nextOf(outcome: StepOutcome, run: RunRef): NextOfResult {
+export function nextOf(outcome: StepOutcome, run: AttemptRef): NextOfResult {
   const step = outcome.step
   if (step === 'claim' || step === 'end') {
     throw new ImpossibleOutcomeError(step, 'none', 'claim and end run outside runPass (0120 §6)')
@@ -152,7 +152,7 @@ export function nextOf(outcome: StepOutcome, run: RunRef): NextOfResult {
 type OfYields<Y extends Action['yields']> = Extract<Action, { yields: Y }>
 
 /** The deciding action did not clear: §2's `Propose` cells, or §4's terminal for everything else. No `default` — a new `yields` must be given a case here. */
-function fellShortAs(step: Step, action: Action, run: RunRef): NextOfResult {
+function fellShortAs(step: Step, action: Action, run: AttemptRef): NextOfResult {
   switch (action.yields) {
     case 'verdict':
       return verdictFellShort(step, action, run)
@@ -172,7 +172,7 @@ function fellShortAs(step: Step, action: Action, run: RunRef): NextOfResult {
 }
 
 /** No `default` — a new `verdict` result `_tag` must be given a cell here. */
-function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: RunRef): NextOfResult {
+function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
       return verdictRefusedAs(step, action.name, action.evidence, action.result.assessment.findings)
@@ -189,7 +189,7 @@ function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: RunRef):
 }
 
 /** No `default` — a new `signoff` result `_tag` must be given a cell here. */
-function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: RunRef): NextOfResult {
+function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
       return signoffRequired(step, action.name, action.result.requested!.question, run)
@@ -202,7 +202,7 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: RunRef):
 }
 
 /** No `default` — a new `commit` result `_tag` must be given a cell here. */
-function commitFellShort(step: Step, action: OfYields<'commit'>, run: RunRef): NextOfResult {
+function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
     case 'Completed':
       return {
@@ -222,7 +222,7 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: RunRef): N
 }
 
 /** No `default` — a new `design` result `_tag` must be given a cell here. */
-function designFellShort(step: Step, action: OfYields<'design'>, run: RunRef): NextOfResult {
+function designFellShort(step: Step, action: OfYields<'design'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
     case 'Drafted':
       throw new ImpossibleOutcomeError(step, action.yields, 'Drafted always clears')
@@ -338,7 +338,7 @@ function interruptedAs(
   step: Step,
   cause: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
   detail: string,
-  run: RunRef,
+  run: AttemptRef,
 ): NextOfResult {
   if (cause === 'out-of-turns' || cause === 'out-of-usd') {
     return {
@@ -370,7 +370,7 @@ function checkRefused(step: Step, actionName: string, evidence: string): NextOfR
   return { _tag: 'Propose', proposal: { _tag: 'CheckRefused', from: step, output: evidence, action: actionName } }
 }
 
-function signoffRequired(step: Step, actionName: string, question: string, run: RunRef): NextOfResult {
+function signoffRequired(step: Step, actionName: string, question: string, run: AttemptRef): NextOfResult {
   if (step !== 'proposed' && step !== 'merge') {
     throw new ImpossibleOutcomeError(step, 'signoff', `SignoffRequired cannot happen at ${step}`)
   }
@@ -400,13 +400,13 @@ function lastCommitEvidence(outcome: StepOutcome): string | null {
 }
 
 /**
- * What a `PassNext` spends, applied without a second judgement (0120 §4):
+ * What a `AttemptNext` spends, applied without a second judgement (0120 §4):
  * `FixRound` sets this pass's rounds (a conflict round sets `conflictRounds`
  * and leaves `rounds` alone, #653), a `Restart` sets the item's restarts
  * and resets rounds to 0, and everything else — including
  * `Requeued{NeverStarted}` — leaves `spent` unchanged.
  */
-export function spentAfter(spent: Spent, next: PassNext): Spent {
+export function spentAfter(spent: Spent, next: AttemptNext): Spent {
   switch (next._tag) {
     case 'FixRound':
       return next.conflict === undefined

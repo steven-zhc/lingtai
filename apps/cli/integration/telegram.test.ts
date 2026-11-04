@@ -141,7 +141,7 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}, token =
 
 let issue = 0
 /** A work item and a run for it, opened the way `conduct.ts` opens one. */
-async function aRun() {
+async function anAttempt() {
   issue += 1
   const wi = ticketStream(PROJECT, issue)
   const runId = `pass-${crypto.randomUUID()}`
@@ -184,7 +184,7 @@ describe('the telegram subscriber this repository declares', () => {
   it('delivers a run-stream event and a work-item event, each with a link to its card', async () => {
     const api = await botApi()
     await started(api.port)
-    const run = await aRun()
+    const run = await anAttempt()
 
     await failed(run.runId, 'session limit')
     await until(() => api.received.find((r) => r.text.includes('run failed')))
@@ -226,7 +226,7 @@ describe('the telegram subscriber this repository declares', () => {
         run: `env > ${join(dir, 'env.part')} && mv ${join(dir, 'env.part')} ${join(dir, 'env.txt')}`,
         env: [...shipped.env, 'TELEGRAM_API_ROOT', 'TELEGRAM_DAEMON_ONLY'],
       })
-      const run = await aRun()
+      const run = await anAttempt()
 
       await failed(run.runId, 'x')
       const seen = await until(() => readFile(join(dir, 'env.txt'), 'utf8').catch(() => undefined))
@@ -257,7 +257,7 @@ describe('the telegram subscriber this repository declares', () => {
     const before = (await failures()).length
     const { file } = await started(api.port, {}, false)
 
-    const first = await aRun()
+    const first = await anAttempt()
     await failed(first.runId, 'before the token')
     const [missing] = await until(async () => {
       const f = (await failures()).slice(before)
@@ -266,7 +266,7 @@ describe('the telegram subscriber this repository declares', () => {
     expect(missing?.reason).toContain('TELEGRAM_BOT_TOKEN not set')
 
     await writeFile(file, envLines(api.port))
-    const second = await aRun()
+    const second = await anAttempt()
     await failed(second.runId, 'after the token')
     await until(() => api.received.find((r) => r.text.includes('after the token')))
     expect((await failures()).slice(before)).toHaveLength(1)
@@ -275,7 +275,7 @@ describe('the telegram subscriber this repository declares', () => {
   it('records an unreachable Telegram as PluginFailed, and delivers the next event once it is back', async () => {
     const port = await freePort()
     await started(port)
-    const first = await aRun()
+    const first = await anAttempt()
 
     await failed(first.runId, 'while unreachable')
     const [failure] = await until(async () => {
@@ -287,7 +287,7 @@ describe('the telegram subscriber this repository declares', () => {
     expect(failure?.reason).not.toContain(TOKEN)
 
     const api = await botApi(port)
-    const second = await aRun()
+    const second = await anAttempt()
     await failed(second.runId, 'after it came back')
     await until(() => api.received.find((r) => r.text.includes('after it came back')))
   })
@@ -305,13 +305,13 @@ describe('the telegram subscriber this repository declares', () => {
     const before = (await failures()).length
     await started(api.port, { run: `${shipped.run} <&0 & echo $! > ${pidFile}; wait $!` })
 
-    const first = await aRun()
+    const first = await anAttempt()
     await failed(first.runId, 'kill me')
     await until(() => api.received.find((r) => r.text.includes('kill me')))
     process.kill(Number((await readFile(pidFile, 'utf8')).trim()), 'SIGKILL')
 
     await until(async () => ((await failures()).length > before ? true : undefined))
-    const second = await aRun()
+    const second = await anAttempt()
     await failed(second.runId, 'still followed')
     await until(() => api.received.find((r) => r.text.includes('still followed')))
   })

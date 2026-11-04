@@ -15,7 +15,7 @@
  * round bought* for a reason `offerFor` knows nothing about: `merge` affords
  * `implement` and buys nothing by default all the same, because no built-in
  * `judge:` ever selects a `check-refused` (`BUILT_IN_FOR['check-refused'] ===
- * null`, `checkRefused` in `pass-next.ts`) — a recipe that declares one for it
+ * null`, `checkRefused` in `attempt-next.ts`) — a recipe that declares one for it
  * does buy the round `offerFor` was already offering. What this refuses is the
  * other direction — a row promising a round at a step the offer has nothing to
  * give at all — which is the one that costs money whatever a recipe declares.
