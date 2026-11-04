@@ -4,7 +4,7 @@
 
 A project's recipe is `~/.lingtai/<project>/recipe.yml`, on the operator's
 machine and never in the managed repository. It is `version: 2`, and its heart
-is `steps:` — the ten step names in pass order, each a list of plugins written
+is `steps:` — the ten step names in attempt order, each a list of plugins written
 Ansible-style with the plugin name as the key. A setting is written once, on the
 step that uses it, and every field is validated when the recipe resolves, before
 anything is claimed; the one templated field is judged again when it expands.
@@ -33,7 +33,7 @@ in the source.
    repository for it, so a `.lingtai/config.yaml` committed there is an ordinary
    file that changes nothing. Onboarding a repository commits nothing to it. The
    file is outside every worktree, so no agent can reach it. The file is read on
-   every resolve, so an edit reaches the next pass without a restart.
+   every resolve, so an edit reaches the next attempt without a restart.
 
 2. **The file shape is `version: 2` and `steps:`.** The top-level keys are
    `version`, `extends`, `repo`, `source`, `env`, `steps`, `discuss`,
@@ -41,7 +41,7 @@ in the source.
    `version` other than 2. `extends:` names a preset (`presets.ts`) that fills
    whatever the file omits. The ten steps are
    `claim · admit · prepared · design · implement · build · review · proposed · merge · end`,
-   and the order in the file is the order of the pass.
+   and the order in the file is the order of the attempt.
 
 3. **A step is a plain list of plugins, and the plugin is the key.** Each entry
    has exactly one plugin key (`run:`, `agent:`, `worktree:`, `queue:`,
@@ -76,7 +76,7 @@ in the source.
 
 6. **`runtime.limits` is the ceiling, stated once; a dispatch may only narrow
    it.** `turns` (default 300) and `wall` (default `2h`) bound one agent run.
-   `rounds` (default 2) bounds how many times a pass sends the work back, and
+   `rounds` (default 2) bounds how many times an attempt sends the work back, and
    `restarts` (default 0) bounds how many times a ticket starts over. `usd`
    (`#370`) bounds one agent run in dollars and has **no default** — absent
    means no dollar ceiling, reported as such rather than assumed unbounded or
@@ -87,7 +87,7 @@ in the source.
    `turns` or `wall` is refused at resolve, and so is `rounds` or `restarts`
    inside a dispatch. `discuss:` carries its own
    `agent`, `model`, `prompt` and `limits` (defaults 40 turns, `5m`), because a
-   discussion spends money outside any pass, and that `limits` carries no `usd`
+   discussion spends money outside any attempt, and that `limits` carries no `usd`
    either.
 
 7. **The machine file, `~/.lingtai/config.yml`, holds the machine's facts.**
@@ -97,7 +97,7 @@ in the source.
    about how a project's work is run is in it.** Which runtime runs is the
    recipe's: `agent:` on a step, and `runtime.agent` beside `steps:` for the
    steps that name none (`#372`); whose tickets a project takes is
-   `queue.assignee` or the v1 `runtime.assignee` (`#373`); what a pass may spend
+   `queue.assignee` or the v1 `runtime.assignee` (`#373`); what an attempt may spend
    is `runtime.limits` (`#375`). `packages/recipe/src/local.ts` refuses a
    machine file that writes `steps:`, `runtime:` or `projects:`, naming the
    recipe, rather than silently dropping a key nothing reads. When the recipe
@@ -105,7 +105,7 @@ in the source.
    in, or none, Lingtai refuses rather than picking one
    (`resolveAgent`). Whether a runtime is installed and signed in is checked,
    never written down. Every `agent:` the recipe names must be signed in on
-   this machine, or the pass is refused before the claim (`agentRefusal`).
+   this machine, or the attempt is refused before the claim (`agentRefusal`).
 
 8. **The backoff is `queue:`'s `backoff`: a positive duration, `1h` by default,
    and flat.** After a failed attempt, the ticket stays out of the queue until
@@ -181,13 +181,13 @@ in the source.
 
 
 15. **A local project lands in its own checkout.** `add --local <dir>` writes
-    `repo.remote` as the checkout itself, so nothing a pass makes leaves the
+    `repo.remote` as the checkout itself, so nothing an attempt makes leaves the
     machine, and `repo.base` as `lingtai-base`, made from the branch checked
     out there when it does not exist. The mirror is fetched from the checkout,
-    each pass works on `agent/<n>` in its own worktree, and the land pushes
+    each attempt works on `agent/<n>` in its own worktree, and the land pushes
     `lingtai-base` and `agent/<n>` back to the checkout; the person's own branch
     and working tree are never touched, and `lingtai-base` does not follow them:
-    nothing merges into it but a pass, and a person merges it onward when they
+    nothing merges into it but an attempt, and a person merges it onward when they
     choose. Git refuses a push to the branch checked out in a non-bare
     repository, so the land first checks that `lingtai-base` is not the one
     checked out, and holds for a person if it is. Landing on the checkout's
@@ -203,7 +203,7 @@ in the source.
   as well would put two representations on one event that could disagree.
 - The log is permanent, so the recipe schema must never carry a secret value;
   `noLog` and the names-only `env:` are what guarantee that.
-- A refused recipe stops every pass for the project (`stage: "recipe"`).
+- A refused recipe stops every attempt for the project (`stage: "recipe"`).
 - A failed ticket costs at most about one agent run per backoff window, with no
   limit on how many windows it runs. A cap on the number of attempts is a
   separate ceiling and is not decided here.

@@ -18,7 +18,7 @@ the dated snapshot behind it. A reader then sums stored columns.
 
 ## Context
 
-One pass may dispatch two runtimes, and only Claude Code reports dollars. Codex
+One attempt may dispatch two runtimes, and only Claude Code reports dollars. Codex
 reports token usage and no price. A step with no recorded spend shows on the
 board as costing nothing, which reports unknown cost as free. A single summed
 token count also cannot be priced: cache reads cost about 0.1× fresh input and
@@ -184,8 +184,8 @@ about something else are the three whose spend is not recorded.
    display time.
 
 8. **`RunSpent` is appended to the stream its run belongs to, and carries no
-   ticket id.** A run inside a pass (implement, a fix round, the reviewer, the
-   designer, the judge) is on the pass stream, whose `RunStarted` names its
+   ticket id.** A run inside an attempt (implement, a fix round, the reviewer, the
+   designer, the judge) is on the attempt stream, whose `RunStarted` names its
    ticket once. Triage is on the ticket stream. A discussion is on its
    `chat-…` stream, whose `DiscussionRequested` names its ticket. There is no
    transaction id: the stream already says whose history the run belongs to.
@@ -200,7 +200,7 @@ about something else are the three whose spend is not recorded.
      | { _tag: 'Discussion' }
    ```
 
-   An action's spend is the `RunSpent` on its pass stream with the same
+   An action's spend is the `RunSpent` on its attempt stream with the same
    `step`, `name` and `round`, so an action carries no reference to its spend
    and there is no call id: `step`, `name` and `round` find it, which holds
    while an action's `name` is unique within its step. A wait that a ceiling
@@ -229,11 +229,11 @@ about something else are the three whose spend is not recorded.
     `RunSpent` and changes no other event.
 
 11. **The `spend` projection holds one row per `RunSpent`**: `seq`, `at`,
-    `ticket`, `pass` (null off a pass stream), `for` with its `step`, `action`
+    `ticket`, `pass` (null off an attempt stream), `for` with its `step`, `action`
     and `round`, `runtime`, `turns`, `duration_ms`, `cost_usd` and `usage`
     (jsonb), the estimate of decision 5 (`estimated_usd` and
     `estimate_fetched`), and `kind`, the ticket's kind as its run's claim
-    carried it when the row was reduced (0123 §3). The reducer fills `ticket` from the pass stream's `RunStarted`, the
+    carried it when the row was reduced (0123 §3). The reducer fills `ticket` from the attempt stream's `RunStarted`, the
     ticket stream itself, or the discussion's `DiscussionRequested`, each of
     which it has read by then. A card's total, `/spend`'s rows and the task
     page's list of calls are all queries over it. It is a row per run, not a
@@ -243,7 +243,7 @@ about something else are the three whose spend is not recorded.
 12. **Ceilings are the runtime's, and read nothing on the log.**
     `runtime.limits.usd` bounds one run and is enforced by the runtime
     (`--max-budget-usd`) on its own count, as `turns` and `wall` are. Lingtai
-    enforces no dollar ceiling per pass or per ticket. Its one ceiling of its own
+    enforces no dollar ceiling per attempt or per ticket. Its one ceiling of its own
     is the daily one, which pauses taking new work and kills nothing
     ([0122](0122-several-passes-share-one-conductor.md) §5).
 

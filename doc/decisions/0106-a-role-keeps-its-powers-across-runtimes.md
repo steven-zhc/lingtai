@@ -7,7 +7,7 @@ Lingtai drives two coding-agent CLIs, Claude Code and Codex, behind one
 implementer, the cold reviewer, the judge and the discussion assistant are
 different roles with different powers, and switching a role to another
 runtime changes how those powers are enforced, never what they are. Every paid
-call has the same shape (which runtime, `model`, `prompt`, `limits`). The pass's
+call has the same shape (which runtime, `model`, `prompt`, `limits`). The attempt's
 ceiling is written once at `runtime.limits`, and a step may only narrow it.
 A requirement that the chosen runtime cannot meet is refused by name before
 anything is spent. Lingtai never downgrades it silently and never falls back to
@@ -56,10 +56,10 @@ on that path is paid for thousands of times per run.
 
 4. **Containment is Lingtai's job, and a tier is never downgraded.**
    `runtime.tier` is `open`, `guarded` (the default) or `sandboxed`, and applies
-   to the whole pass. `guarded` means the runtime stops the run when the
+   to the whole attempt. `guarded` means the runtime stops the run when the
    `UserPromptSubmit` hook refuses (`canFailClosed`). `sandboxed` adds a
    filesystem boundary that the runtime enforces itself. `meetsTier` checks
-   both conditions. Before the claim, the conductor asks every runtime the pass
+   both conditions. Before the claim, the conductor asks every runtime the attempt
    will dispatch whether it meets the tier. If one cannot, the conductor appends
    `DispatchRefused` naming the runtime and what it lacks. The real boundaries
    are the filtered environment, the disposable worktree and, where one exists,
@@ -72,7 +72,7 @@ on that path is paid for thousands of times per run.
 
    | Role | Recipe key | May do |
    |---|---|---|
-   | implementer | `agent:` at `implement` (default `runtime.agent`) | read, edit, run commands and tests, and commit in the pass's worktree |
+   | implementer | `agent:` at `implement` (default `runtime.agent`) | read, edit, run commands and tests, and commit in the attempt's worktree |
    | fixer | the `implement` entry's runtime | the implementer's powers, in the same worktree, with the refusal's evidence in a fresh session |
    | designer | `agent:` at `design` | write the design document, or decline to |
    | cold reviewer | `agent:` at `review` (and `merge` for re-verification) | read the ticket, the diff and the tree, run checks, report findings; a fresh session per round, keyed on the commit, never the implementer's |
@@ -104,7 +104,7 @@ on that path is paid for thousands of times per run.
    step that names none; where the recipe writes no `runtime.agent`, the one
    runtime signed in is used, and with several or none the recipe is refused
    rather than one picked (`resolveAgent`, `#372`). An `agent:` or runtime `judge:` on a step dispatches on that runtime.
-   `agentRefusal` in `packages/conductor/src/conduct.ts` refuses a pass before
+   `agentRefusal` in `packages/conductor/src/conduct.ts` refuses an attempt before
    the claim if a named runtime is one that nothing on this machine is signed in
    to. Lingtai never falls back to another runtime, whether the cause is
    unavailability or exhausted quota.
@@ -118,7 +118,7 @@ on that path is paid for thousands of times per run.
    not `prompt`, because its question is fixed by `judgePrompt`. A built-in
    judge takes neither. **`limits` here is a `strictObject` of `turns` and
    `wall` only — `usd` has no key inside a dispatch's `limits:` (`#370`)**:
-   every call a pass makes gets the one dollar ceiling `runtime.limits.usd`
+   every call an attempt makes gets the one dollar ceiling `runtime.limits.usd`
    states, unchanged, because nothing here lets a step narrow it the way it
    can narrow `turns` and `wall`.
 
@@ -137,12 +137,12 @@ on that path is paid for thousands of times per run.
    `rounds` or `restarts` inside a dispatch, each refused by name with its own
    reason. `usd` bounds one run too, the same as `turns` and `wall`, but the
    dispatch schema has no key for it at all, so writing it there is refused as
-   an unrecognized key rather than by a reasoned name. `passCeiling` reports
-   the pass's worst case in dollars by multiplying `usd` by the rounds and
-   restarts a pass may buy, the same way it multiplies `wall` — a derived
+   an unrecognized key rather than by a reasoned name. `attemptCeiling` reports
+   the attempt's worst case in dollars by multiplying `usd` by the rounds and
+   restarts an attempt may buy, the same way it multiplies `wall` — a derived
    figure, not what the field itself bounds. `lingtai status` computes the
-   pass's worst case, in dollars where one is declared, from these values.
-   `discuss.limits` runs outside any pass, so it has its own defaults (40
+   attempt's worst case, in dollars where one is declared, from these values.
+   `discuss.limits` runs outside any attempt, so it has its own defaults (40
    turns, `5m`, via `callFor`) and carries no dollar ceiling at all.
 
 10. **A limit the runtime cannot enforce is reported, not pretended.** Codex
@@ -200,7 +200,7 @@ on that path is paid for thousands of times per run.
 - **An independent review checkout.** The reviewer is meant to run in its own
   disposable worktree at the exact commit under review, so that its checks
   cannot change the work it is judging. Today the cold reviewer runs in the
-  pass's development worktree (`context.cwd` in `packages/actions/src/agent-action.ts`).
+  attempt's development worktree (`context.cwd` in `packages/actions/src/agent-action.ts`).
   Only its session is separate.
 - **A `prompt:` on `judge:`** is deliberately left open, and **per-step
   `tier`** is not offered.

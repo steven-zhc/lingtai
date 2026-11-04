@@ -9,9 +9,9 @@ packages that touch the world in the middle, `conductor` above them, and the hos
 (`daemon`, the CLI, the board) on top. The conductor reaches git and the agent
 through two ports that a host provides. **Every backend function that does IO is
 an Effect**: the store, the projector, GitHub, git, the agent, the actions, the
-pass, the daemon's loop and the CLI's commands. That is one model for acquiring
+attempt, the daemon's loop and the CLI's commands. That is one model for acquiring
 and releasing resources, one for typed failure, and one for tracing — an Effect
-span is an OpenTelemetry span, so a pass is a trace without a second set of
+span is an OpenTelemetry span, so an attempt is a trace without a second set of
 instrumentation. Pure logic — the event catalogue and its reduces, the recipe's
 parsing and validation — stays plain functions that Effect code calls. The board
 stays `async` and runs Effect at its edge. The only file that is not ordinary
@@ -83,7 +83,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
      `projector` (the checkpoints and the reducers into projection tables), `github`,
      `repo` (mirror, worktree, branch, push, integrate), `agent` (starting a
      runtime and the hook socket), and `telegram`, an example subscriber.
-   - **Decisions:** `conductor` (claim, the pass, routing, close).
+   - **Decisions:** `conductor` (claim, the attempt, routing, close).
    - **Hosts:** `daemon` (lock, beacon, control stream, reconcile, the work loop),
      `apps/cli`, `apps/board` (Next), `apps/site`, and `apps/release` (packaging).
    - **The hook:** `@lingtai/hook`, a compiled binary that is placed in the
@@ -95,8 +95,8 @@ turn limit, so every idiom it adopts is paid for again on every run.
    `packages/conductor/src/live.ts` is the one file that names the real
    implementations (`livePorts()`), and `conduct.ts` imports only types from
    `repo` and `agent`. The event store and the GitHub client are passed in as
-   values. A whole pass can therefore run against fakes with no database, no git
-   and no socket. `packages/conductor/unit/conduct-a-whole-pass.test.ts` is the
+   values. A whole attempt can therefore run against fakes with no database, no git
+   and no socket. `packages/conductor/unit/conduct-a-whole-attempt.test.ts` is the
    test that says the seam holds.
 
 6. **Effect wherever there is IO.** `Context.Tag` names a
@@ -173,7 +173,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
   and the line between them is IO, not which package a function happens to be in.
 - Agents write this code, so every ticket on the backend is an Effect ticket. That
   is a cost paid on every run, and it is accepted.
-- A pass is a trace: every Effect operation with a span is a child of the step
+- An attempt is a trace: every Effect operation with a span is a child of the step
   that ran it, and nothing is instrumented twice.
 - If a build step ever becomes necessary, rule 2 is the decision to revisit, and the
   `.ts` specifiers are what has to change.

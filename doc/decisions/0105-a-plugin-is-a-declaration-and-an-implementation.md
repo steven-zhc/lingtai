@@ -94,7 +94,7 @@ event should carry, and the log is replayed on every projection rebuild.
    notifier stopped. *The taxonomy is a command, and whether the core waits.*
 
 8. **A large answer is the thing plus a locator.** An action that makes
-   something large returns both: the thing for whatever in the pass needs it,
+   something large returns both: the thing for whatever in the attempt needs it,
    and a locator string for the log. `evidence` stays a sentence a person reads
    on a card, and every `agent:` action's evidence is clipped to the same
    60-line / 8,000-byte bound as a command's.
@@ -106,12 +106,12 @@ event should carry, and the log is replayed on every projection rebuild.
    own port from the conductor (`keep` and `read` today, `readWhatAFileKept` in
    `packages/conductor/src/file-port.ts`), never a branch inside a shared one.
    `packages/conductor/unit/a-locator-the-core-did-not-write.test.ts` carries a
-   URL locator through the pass byte for byte to hold this.
+   URL locator through the attempt byte for byte to hold this.
 
 10. **Where an answer lands is a plugin per destination, not a field.** `file:`
     at `design` (`packages/actions/src/file-action.ts`) writes the document the
     step's drafter produced to a path in the worktree, commits it so it survives
-    the pass, and answers with that path as the locator. The path is relative
+    the attempt, and answers with that path as the locator. The path is relative
     with no `..`; `{{issue}}` is its one placeholder, expanded per ticket, and the
     escape check runs twice — on the written string at resolve, on the expansion
     at run time. A second destination is a second plugin with its own fields,
@@ -123,7 +123,7 @@ event should carry, and the log is replayed on every projection rebuild.
     dispatch brief. Three facts stay distinct: the key absent (nothing drafted),
     `document: ""` (the agent said none is needed), and a document with a
     locator. A locator is read only off the result its own document came from.
-    The document the pass carries is the source of truth; an `implement` plugin
+    The document the attempt carries is the source of truth; an `implement` plugin
     that resolves a locator itself owns any disagreement. `file-brief:`
     (`packages/actions/src/file-brief-action.ts`) is that plugin: it reads a
     `file:` locator back and briefs the actions after it with what it read, and
@@ -137,7 +137,7 @@ event should carry, and the log is replayed on every projection rebuild.
 13. **A destination fails in one of three ways.** A configuration error (bad
     path, missing field) is refused when the recipe resolves, before any money.
     A destination that could not be written or read at run time is a
-    `did-not-finish` — `design` and `implement` may not refuse — so the pass ends
+    `did-not-finish` — `design` and `implement` may not refuse — so the attempt ends
     blocked and waits for a person; it is not retried on the backoff. A step
     whose agent asks a question instead ends `asked` and reaches `proposed`,
     where a judge may offer that step again at the cost of a round; no
@@ -150,7 +150,7 @@ event should carry, and the log is replayed on every projection rebuild.
   declaration come from outside the tree without moving the trust boundary.
 - A first-party plugin that throws is Lingtai's bug; once a third party's can,
   a card must say whose failure it is.
-- Two copies of one design exist (the pass's and the destination's) and nothing
+- Two copies of one design exist (the attempt's and the destination's) and nothing
   notices when they differ; that is accepted.
 - A destination costs a page under `doc/plugins/`, a column in
   `step-matrix.test.ts`, and one port in `conduct.ts`. A recipe with no

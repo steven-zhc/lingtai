@@ -1,4 +1,4 @@
-# 0058 — 灵台是一条开发流水线，一趟 pass 有十步
+# 0058 — 灵台是一条开发流水线，一次尝试有十步
 
 **状态** **提议中（proposed）** · 2026-09-22 · **本仓库第一份不是 `accepted` 的
 ADR**，这是有意的：§2 与它所服务的那个人来回改了三稿，而§尚未决定里那一条仍然
@@ -54,7 +54,7 @@ gate point —— 并把名字与折叠的当前标签相符的那一段点亮�
 
 **rail 画不出的那些站，正是时间的去处。** 据
 [012](../../experiments/012-where-the-turns-go.md)：一次实现 run 是 44–67 turns，
-一个修复轮 31 turns，加起来基本就是一趟 pass 的全部，而那些 gate 不过是三条命令。
+一个修复轮 31 turns，加起来基本就是一次尝试的全部，而那些 gate 不过是三条命令。
 
 ### 流水线的大部分早已在日志上
 
@@ -148,12 +148,12 @@ recipe 得到的就是它。一个项目要改某一步，就在那一步上换�
 8   proposed     ─ 会拒绝 · 唯一做路由的一步
 9   merge        ─ 会拒绝
 10  end          ─ 每一种结局都会跑到它，且不能拒绝
-    waiting      ─ 不是一步：一趟 pass 等人来推时停在这里
+    waiting      ─ 不是一步：一次尝试等人来推时停在这里
 ```
 
 **三步可以拒绝，而每一次拒绝都走向 `proposed`。** 这正是那些环路有界的原因：
 每一条都要穿过那次工作流判断，而上限就住在那里。今天这些上限是 `run-once.ts`
-里的 `buyRound` 和 `passCeiling`，谁也看不见。
+里的 `buyRound` 和 `attemptCeiling`，谁也看不见。
 
 **`review` 不再做裁决，是这里证据最硬的一处改动。** 今天一次 review 的裁决
 *就是*决定 —— 所以一个崩掉的 reviewer 照样买走一轮修复：**14 天里 10% 的
@@ -199,7 +199,7 @@ flowchart TB
   MG -->|"a conflict the agent resolved<br/>is a new diff"| BU
 
   PO -->|"the lines are wrong · the build is red<br/>the base changed<br/>× rounds — the same worktree"| IM
-  PO -->|"the approach is wrong<br/>× restarts — a fresh pass"| CL
+  PO -->|"the approach is wrong<br/>× restarts — a fresh attempt"| CL
   PO -->|"every ceiling spent · a conflict<br/>the agent could not resolve"| WA
   AD -->|"the requirement is not clear"| WA
   DS -->|"the design needs you"| WA
@@ -221,7 +221,7 @@ agent 解掉的冲突，是 review 通过之后才写下的代码，所以它得
 **三个六边形是可以拒绝的三步，而它们都到达同一个地方。** 这是值得守住的性质：
 `proposed` 是唯一做路由的一步，所以图里的每一个环都穿过那次工作流判断，
 **没有一个环是无界的**。这也是日志最终得以完整的原因 —— `proposed` 不只在
-回头的路上跑，顺流而下时也跑，所以一趟一路顺畅的 pass 同样留下一条"它确实顺畅"
+回头的路上跑，顺流而下时也跑，所以一次一路顺畅的尝试同样留下一条"它确实顺畅"
 的决定记录。
 
 **没有任何东西直接拒绝到 `waiting`。** 一次冲突、一次红构建，都是关于这次改动的
@@ -345,7 +345,7 @@ points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).len
 
 ## 后果
 
-**rail 的对齐不必等这一切建成。** 十步里八步已经在日志上，所以把一趟 pass
+**rail 的对齐不必等这一切建成。** 十步里八步已经在日志上，所以把一次尝试
 如实画出来不需要改 schema，也不需要 0015 出任何力。这件事本身值得先做，
 而且它是对 §3 那套命名的一次检验：如果 `implement` 或 `proposed` 印在卡片上
 读着不对，在 recipe 用上这个词之前发现要便宜得多。
