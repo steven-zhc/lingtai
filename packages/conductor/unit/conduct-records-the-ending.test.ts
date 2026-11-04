@@ -4,10 +4,10 @@
  * store: *one transaction, so the outcome and its resolution cannot come apart*
  * (`end-step.ts`).
  *
- * Under the ten steps that rule is a claim about two files. `runPass` runs `end`
+ * Under the ten steps that rule is a claim about two files. `runAttempt` runs `end`
  * after the walk and before `conduct.ts` writes `TicketLanded` or
  * `WaitStarted`, so the caller has to *hold* what the step resolved and
- * append it beside the ending — which is what `PassPorts.recordEnd` means by
+ * append it beside the ending — which is what `AttemptPorts.recordEnd` means by
  * *batching is the caller's because the ending is the caller's*. A port that
  * appended on the spot reversed the order instead, and the window it opened is
  * the expensive kind rather than a tidiness argument:
@@ -27,7 +27,7 @@
  * a block that was never recorded.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
- * process, no socket, no network. The fixtures are `test/one-pass.ts`.
+ * process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
@@ -42,7 +42,7 @@ import {
   project,
   quotaRuntime,
   runtime,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 /** `RECIPE`, with one `end` action that fires on the outcome named. */
 const closingOn = (when: 'landed' | 'blocked' | 'failed') =>

@@ -19,8 +19,8 @@ import { Context, Exit, Layer, Option, Tracer } from 'effect'
  * Effect spans are parented from the Effect side, and an api span started inside
  * a promise an Effect fiber is running finds its parent through `context`,
  * below: the fiber makes its current span the active OpenTelemetry one for as
- * long as it runs an operation, which is how `Effect.promise(() => runPass(…))`
- * reaches `runPass` with the run span already active.
+ * long as it runs an operation, which is how `Effect.promise(() => runAttempt(…))`
+ * reaches `runAttempt` with the run span already active.
  */
 export const ATTRIBUTES: ReadonlySet<string> = new Set(['lingtai.ticket', 'lingtai.round', 'lingtai.index'])
 

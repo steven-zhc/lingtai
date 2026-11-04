@@ -827,7 +827,7 @@ export interface CodexClosed {
  * wall never emits `turn.completed`, so every account-wide refusal was a `crash`
  * — `did-not-finish`, the item back on the queue, the next ticket claimed, a
  * worktree cut, the same wall met again, all the way through the queue, which is
- * the run 0041 and `pass-steps.ts`'s *"about the account rather than about the
+ * the run 0041 and `attempt-steps.ts`'s *"about the account rather than about the
  * diff"* exist to prevent. And the one case that *did* reach `never-started` was
  * a `turn.completed` with nothing billed — our own hook refusing the prompt,
  * which is about this diff's wiring and not about the account, so it paused the

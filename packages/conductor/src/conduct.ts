@@ -72,19 +72,19 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
  *
- * `runPass` in [`pass.ts`](pass.ts) walks the ten steps and applies the outcome
- * rules; `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) is the ten bodies. This
+ * `runAttempt` in [`run-attempt.ts`](run-attempt.ts) walks the ten steps and applies the outcome
+ * rules; `bodiesFor` in [`attempt-steps.ts`](attempt-steps.ts) is the ten bodies. This
  * file is what they were written to be called by: it resolves the recipe and the
- * environment, builds a live `PassPorts` out of `Repo`, `AgentHost`, the GitHub
+ * environment, builds a live `AttemptPorts` out of `Repo`, `AgentHost`, the GitHub
  * client and the store, hands the pass its `actionsAt` and its `emit`, and
  * **writes down the ending** — which is the one thing the pass deliberately does
  * not do ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
- * §2b, and `pass-steps.ts`'s *What the pass does not write*).
+ * §2b, and `attempt-steps.ts`'s *What the pass does not write*).
  *
  * It replaces the engine `#256` deleted, which ran five gate points around the
  * same wiring in 3479 lines. That file is **the old engine** wherever the
  * comments below need it: named, never cited, because it is not there to read. Nothing about the *stored* vocabulary changed in that swap:
- * `pass.ts` and `pass-steps.ts` append no event type of their own, so every
+ * `run-attempt.ts` and `attempt-steps.ts` append no event type of their own, so every
  * event below is one the log already carried, appended from the same place in
  * the order — the caller's.
  *
@@ -108,8 +108,8 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  * ## What the ports are, and what they are not
  *
  * Seven closures, and every one of them **wraps rather than reimplements**, which
- * is the `#226` rule `pass-steps.ts` is held to from the other side. Four are
- * `PassPorts` methods; `take`, `cut` and `land` are a plugin's deps, reached
+ * is the `#226` rule `attempt-steps.ts` is held to from the other side. Four are
+ * `AttemptPorts` methods; `take`, `cut` and `land` are a plugin's deps, reached
  * through `stepDeps` rather than through the pass (`#269`, `#268`, `#270`):
  *
  * ```
@@ -122,7 +122,7 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  * recordEnd held for the ending's append       what `end` resolved, never alone
  * ```
  *
- * Beside those, `item` and `onStream` — two `PassPorts` methods that read what
+ * Beside those, `item` and `onStream` — two `AttemptPorts` methods that read what
  * `take` left in this closure rather than doing anything, for `cutTree`'s reason:
  * the closure that holds a fact is the one that can hand it back (`#269`).
  *
@@ -160,12 +160,12 @@ import { type EventStore, eventStore } from '@lingtai/event-store'
  *
  * ## Where the worktree's path comes from, and why it is not a fourth moving field
  *
- * `pass-steps.ts` left this open — *what does not travel is the worktree's path
+ * `attempt-steps.ts` left this open — *what does not travel is the worktree's path
  * into `ActionContext.cwd`* — and the answer is that it does not have to travel.
  * `worktreePath(home, project, runId)` is a pure function of three things this
  * file knows **before** the pass starts, and `provisionWorktree` cuts at exactly
  * that path. So `context.cwd` is the caller's for the whole pass, as
- * `PassOptions.context` says it is, and the skeleton keeps its three moving
+ * `AttemptOptions.context` says it is, and the skeleton keeps its three moving
  * fields.
  *
  * `context.onSha` starts empty, and that is honest rather than a placeholder:
@@ -204,6 +204,15 @@ import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
+import {
+  type Brief,
+  type Claimed,
+  type Judged,
+  type Judging,
+  type AttemptPorts,
+  type Worked,
+  bodiesFor,
+} from './attempt-steps.ts'
 import { armFor, diffBaseShaOf, landedOnBaseOf, priorAttempts } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
@@ -219,26 +228,6 @@ import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restore
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { metTheAccountWall, type NeverStarted, standDown } from './never-started.ts'
-import {
-  type Brief,
-  type Claimed,
-  type Judged,
-  type Judging,
-  type PassPorts,
-  type Worked,
-  bodiesFor,
-} from './pass-steps.ts'
-import {
-  type Ceilings,
-  type PassEnd,
-  type PassEvent,
-  type PassOver,
-  type StepReached,
-  type StepReport,
-  claimStep,
-  outcomeOf,
-  runPass,
-} from './pass.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipe } from './projects.ts'
 import { signedInHere } from './projects.ts'
@@ -246,6 +235,17 @@ import { signedInHere } from './projects.ts'
 // here any more.
 import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
 import { restartReason } from './restart.ts'
+import {
+  type Ceilings,
+  type AttemptEnd,
+  type AttemptEvent,
+  type AttemptOver,
+  type StepReached,
+  type StepReport,
+  claimStep,
+  outcomeOf,
+  runAttempt,
+} from './run-attempt.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
@@ -425,7 +425,7 @@ export function agentRefusal(
  * Either way the two call sites below pass `owner ?? ''` rather than this
  * type growing a branch of its own.
  */
-export type PassClient = Tickets &
+export type TurnClient = Tickets &
   RefChannel & {
     readonly owner: string | null
     readonly repo: string
@@ -435,7 +435,7 @@ export interface RunOnceOptions {
   /** The lane landings queue on — the process's own unless a test shares one between passes. */
   lane?: LandingLane
   project: ProjectState
-  client: PassClient
+  client: TurnClient
   /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
   runtime: Runtime
@@ -493,16 +493,16 @@ export interface RunOnceOptions {
   merge?: boolean
   log?: (line: string) => void
   /**
-   * **An observer, called with the `PassOver` the moment `runPass` returns
+   * **An observer, called with the `AttemptOver` the moment `runAttempt` returns
    * it** (`#466`). It branches on nothing and the pass does not wait for it —
-   * the one caller today is `test/one-pass.ts`'s `once()`, which checks
+   * the one caller today is `test/one-attempt.ts`'s `once()`, which checks
    * `adapters.ts`'s `eventOf` against the run stream `conduct.ts` itself is
    * about to write from the very same `pass.steps`, so a mismatch there is an
    * adapter bug by #461's own rule rather than a reason for this seam to exist
    * for production use. A throw from it is caught and noted on `runLog`
    * rather than skipping the ending below.
    */
-  onPass?: (pass: PassOver) => void
+  onPass?: (pass: AttemptOver) => void
   /**
    * **Resume a held run from its own wait, rather than start a fresh one**
    * (#465, 0120 §6) — set only by `conductWork`'s own continuation branch
@@ -523,10 +523,10 @@ export interface RunOnceOptions {
  * visits that ran an action and how each ended, and what the pass spent.
  * Built from facts the pass already holds; nothing here is written to the log.
  */
-export type PassSummary = {
+export type AttemptSummary = {
   ref: string
   title: string
-  /** Visits that ran at least one action, or were declared — the ones `passLine` does not print as `skipped`. */
+  /** Visits that ran at least one action, or were declared — the ones `attemptLine` does not print as `skipped`. */
   ran: readonly { step: string; ending: string }[]
   /** Dollars of every `RunSpent` the pass appended; `unknown` counts the runs that reported none. */
   cost: { usd: number; unknown: number }
@@ -535,20 +535,20 @@ export type PassSummary = {
 }
 
 export type RunOnceResult =
-  | { ok: true; ticketId: string; runId: string; mergeCommit: string; summary?: PassSummary }
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string; summary?: AttemptSummary }
   /**
    * Reached the merge and stopped, because a person asked it to. Deliberately
    * not `ok: false` with a stage — nothing refused, and calling it a failure
    * would be the kind of convenient fiction the log exists to prevent.
    */
-  | { ok: 'held'; ticketId: string; runId: string; headSha: string; step: string; summary?: PassSummary }
+  | { ok: 'held'; ticketId: string; runId: string; headSha: string; step: string; summary?: AttemptSummary }
   | {
       ok: false
       ticketId: string | null
       runId: string | null
       stage: string
       detail: string
-      summary?: PassSummary
+      summary?: AttemptSummary
     }
 
 /** A defect's own words. Wanted by the publish and by the release above it. */
@@ -587,7 +587,7 @@ function runBinary(
  * always has empty `results` (its list is effects), so the recipe's own list
  * is what tells a declared `end` from an empty one.
  */
-export function passLine(
+export function attemptLine(
   steps: readonly StepReached[],
   declared: Readonly<Record<string, readonly unknown[] | undefined>>,
 ): string {
@@ -600,11 +600,11 @@ function wasSkipped(v: StepReached, declared: Readonly<Record<string, readonly u
   return v.ending.ending === 'passed' && v.results.length === 0 && (declared[v.step] ?? []).length === 0
 }
 
-/** The visits a person is shown: `passLine`'s own test, so the two cannot disagree. */
+/** The visits a person is shown: `attemptLine`'s own test, so the two cannot disagree. */
 function ranVisits(
   steps: readonly StepReached[],
   declared: Readonly<Record<string, readonly unknown[] | undefined>>,
-): PassSummary['ran'] {
+): AttemptSummary['ran'] {
   // A routing decision is the router's, not an action that ran or refused.
   return steps
     .filter((v) => v.ending.ending !== 'routed' && !wasSkipped(v, declared))
@@ -627,15 +627,15 @@ function headReached(steps: readonly StepReached[]): string {
  *
  * `StepReport` includes `passed`, which carries no `at` — and a `null` `at` is
  * the step's *own* work having refused rather than a declared action, which
- * `pass-steps.ts` says at each of the bodies that set it.
+ * `attempt-steps.ts` says at each of the bodies that set it.
  */
-function whatRefused(stopped: PassOver['stopped']): string | null {
+function whatRefused(stopped: AttemptOver['stopped']): string | null {
   if (stopped === null) return null
   return 'at' in stopped.ending ? stopped.ending.at : null
 }
 
 /** What a step said when it did not pass, in the words a person reads (0043). */
-function detailOf(ending: PassOver['stopped']): string {
+function detailOf(ending: AttemptOver['stopped']): string {
   if (ending === null) return ''
   const said = ending.ending
   if ('detail' in said) return said.detail
@@ -643,12 +643,12 @@ function detailOf(ending: PassOver['stopped']): string {
 }
 
 /**
- * One work item, claim through merge, on `pass.ts`.
+ * One work item, claim through merge, on `run-attempt.ts`.
  *
  * The name is unchanged because what it names is unchanged — *one pass* — and
  * `schedule.ts`, `apps/cli`'s `run` and `tally.ts` all hold it. What changed is
  * everything under it: the five gate points are ten steps, the sequence is
- * `runPass`'s, and this is the caller the pass was written to be called by.
+ * `runAttempt`'s, and this is the caller the pass was written to be called by.
  */
 /** A grant buys the next implement visit after every round already recorded on this run. */
 export function continuationRound(run: AttemptState, granted: boolean): number {
@@ -672,7 +672,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * An append at whatever version the stream is at, and nothing else.
      *
      * A promise rather than an `Effect`, because the ports below are plain
-     * promises (`pass-steps.ts`'s *Why plain promises*) and this is what they
+     * promises (`attempt-steps.ts`'s *Why plain promises*) and this is what they
      * append with. **For the callers that answer a refused append themselves**
      * — the account of the publish, the diff's counts, the release's record of
      * what `end` resolved — each of which has already decided that losing its
@@ -690,10 +690,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * A store that will not append is a defect and not a refusal this function
      * can make on anyone's behalf: the handler at the bottom is where defects
      * are answered for. That was true of every append while the old engine made
-     * them, and the swap to `pass.ts` quietly made it false for the ones made
+     * them, and the swap to `run-attempt.ts` quietly made it false for the ones made
      * from inside the walk — `emit`'s verdicts, `dispatch`'s `RunStarted`, a
      * round's `PassRouted`. `runStep` catches whatever a step throws and
-     * reports it as that step having *did-not-finish: threw* (`pass.ts`), so a
+     * reports it as that step having *did-not-finish: threw* (`run-attempt.ts`), so a
      * dropped Postgres connection — the disconnect CLAUDE.md documents against
      * `#157` — came back as `blocked` with `needs: "acknowledgement"` and a
      * diagnosis naming the step, parking the item on *Waiting on you* over a
@@ -1281,7 +1281,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     /**
      * **What `end` resolved, held until the append that makes its outcome true.**
      *
-     * `recordEnd` sets this and appends nothing, which is `PassPorts.recordEnd`
+     * `recordEnd` sets this and appends nothing, which is `AttemptPorts.recordEnd`
      * read the way it states itself — *batching is the caller's because the
      * ending is the caller's*. It used to append on the spot, and that put the
      * resolution on the item's stream **before** the `TicketLanded` or
@@ -1496,7 +1496,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * so null here is the pass's own bookkeeping gone wrong and not something
        * that happened to a diff: `runStep` catches the throw and reports the
        * visit as its own `did-not-finish`, which is what `madeBy` in
-       * `pass-steps.ts` does for the two facts that still travel in its closure.
+       * `attempt-steps.ts` does for the two facts that still travel in its closure.
        */
       const cutTree = (): Worktree => {
         if (worktree === null) {
@@ -1935,7 +1935,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * null` guard below is what stops it trying twice anyway.
        *
        * **No step of this pass ever sees this commit.** `publishWhatIsCommitted`
-       * is called only after `runPass` has returned (inline, and again from the
+       * is called only after `runAttempt` has returned (inline, and again from the
        * finalizer registered after the worktree's own) — `build`, `review` and
        * the merge lane have already run or been skipped by the time this does.
        * `integrate.ts`'s own guard is the other half, for a *later* pass that
@@ -2290,7 +2290,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       // ---- the ports ---------------------------------------------------------
       // Eight methods, and every one of them wraps rather than reimplements —
-      // `pass-steps.ts`'s own rule, read from this side.
+      // `attempt-steps.ts`'s own rule, read from this side.
 
       /**
        * `claim` — whether this machine may take the item, and taking it.
@@ -2312,7 +2312,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // set no item, and it was exactly those that would let `end` resolve onto
         // the item the pass before had landed. It is here rather than in `claim`'s
         // body because the action runs *before* the body: a reset written there
-        // would wipe what this had just taken (`pass-steps.ts`).
+        // would wipe what this had just taken (`attempt-steps.ts`).
         took = null
         onStream = null
         // The four values off the action and never off `recipe` here, so that the
@@ -2764,7 +2764,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           }
         }
-        // Held to the offer by `judged` in `pass-steps.ts` and never here — a
+        // Held to the offer by `judged` in `attempt-steps.ts` and never here — a
         // destination the set did not contain is refused by name there, with the
         // ceiling that took it away, which is the one place that knows both.
         return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` }
@@ -2811,7 +2811,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * **Not an append of its own, and that is the contract rather than a
        * shortcut.** `resolveEndActions`'s own doc is *one transaction, so the
-       * outcome and its resolution cannot come apart*, and `PassPorts.recordEnd`
+       * outcome and its resolution cannot come apart*, and `AttemptPorts.recordEnd`
        * says whose transaction it is: *batching is the caller's because the ending
        * is the caller's*. The pass runs `end` before this file writes
        * `TicketLanded` or `WaitStarted`, so an append here is the resolution
@@ -2962,7 +2962,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       /**
        * **Whether the command `build` refused fails on the base too** (#744, 0108 §13) — the port
-       * `runPass` asks before a `BuildRed` buys a round. `unknown` is `notRed` with the reason
+       * `runAttempt` asks before a `BuildRed` buys a round. `unknown` is `notRed` with the reason
        * noted: a base that could not be checked never holds a pass.
        *
        * Aborted when this pass's scope closes, so a drain waits for the check the way it waits
@@ -3191,7 +3191,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       /**
        * What a declared plugin needs in order to run — the things only a caller
-       * with a machine under it can build (`PassOptions.actionsAt`).
+       * with a machine under it can build (`AttemptOptions.actionsAt`).
        *
        * A reviewer, the diff's file list, an environment resolver, the cut and the
        * lane. This is `stepDeps` under its old name: turning a declared list into a
@@ -3491,7 +3491,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * lands**, which is the same sentence the old order was saying. `--no-merge`
        * is what catches getting it backwards, and it does: with nothing declared
        * the list is the hold and then the lane, and the integrator is never
-       * reached (`conduct-a-whole-pass.test.ts`).
+       * reached (`conduct-a-whole-attempt.test.ts`).
        *
        * Found by `kind` rather than by position, because a recipe may declare its
        * own `merge:` with checks written **before** the lane — and a `--no-merge`
@@ -3510,14 +3510,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /**
        * Every event the pipeline produces, in order, before the next action
        * starts — and since `#502` the `StepStarted`/`StepEnded` pair
-       * `runStep` writes around it (`PassEvent`).
+       * `runStep` writes around it (`AttemptEvent`).
        *
        * On the run's own stream, which is where every verdict has always gone. The
        * pipeline does not touch the store and neither does the pass, for the reason
        * `PipelineOptions` gives — *an action that ran but whose verdict was never
        * recorded is the failure this design exists to remove.*
        */
-      const emit = async (event: PassEvent): Promise<void> => {
+      const emit = async (event: AttemptEvent): Promise<void> => {
         // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
         if (event.type === 'RunSpent') {
           const costUsd = (event.data as { costUsd?: number | null }).costUsd
@@ -3601,7 +3601,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
         // The action's own bound where it declared one (`#314`). A fix round is
         // this same `implement` entry again, so a narrowed `implement` bounds the
-        // rounds too — which is what makes `passCeiling`'s *then N round(s)*
+        // rounds too — which is what makes `attemptCeiling`'s *then N round(s)*
         // arithmetic true of the narrowed figure rather than of the ceiling.
         const spend = spendFor(spec.limits)
         const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
@@ -3981,7 +3981,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               name: spec.name,
               round,
               // The lap a person's grant paid for is capped at one round
-              // (`runPass`'s `roundLimit`), so this is that round.
+              // (`runAttempt`'s `roundLimit`), so this is that round.
               ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
             },
             dispatched.capabilities.id,
@@ -4050,7 +4050,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * are already facts somebody else made: the ticket is what `claim`'s
        * `queue:` action took and this closure is holding, and the design and the
        * *why again* are reduces over the visit list that `runStep` puts on the
-       * context (`designOn`, `sentBackTo` in `pass.ts`). Nothing is remembered
+       * context (`designOn`, `sentBackTo` in `run-attempt.ts`). Nothing is remembered
        * twice.
        *
        * **`again` is still what decides which of the two dispatches runs**, and
@@ -4092,7 +4092,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // back by the bodies that need it, exactly as `cutTree` is (`#268`). Both are
       // synchronous, because there is nothing to await — the pass's own `claim`
       // step has already run the action that filled them.
-      const ports: PassPorts = {
+      const ports: AttemptPorts = {
         onStream: () => onStream,
         readEnd,
         recordEnd,
@@ -4136,7 +4136,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * **`claim` took nothing, so there is no item here to write on** — and
        * this is the one ending that must reach none of the three below.
        *
-       * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
+       * `claim` cannot refuse (0058 §2, `attempt-steps.ts`): its three declines are
        * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`.
        * Left to fall through, a blocked branch appends a `signoff`'s request to a
        * run stream with no `RunStarted`, appends `WaitStarted` to
@@ -4187,7 +4187,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       const pass = yield* Effect.promise(() =>
-        runPass({
+        runAttempt({
           recipe,
           context: passContext,
           emit,
@@ -4219,8 +4219,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // not a record (its own header), so a throw here is noted and the
       // ending below still gets written.
       try {
-        // The claim's own visit put back at the front — `runPass` no longer
-        // carries it (`#463`), and `test/one-pass.ts`'s `once()` checks every
+        // The claim's own visit put back at the front — `runAttempt` no longer
+        // carries it (`#463`), and `test/one-attempt.ts`'s `once()` checks every
         // visit's own outcome against the run stream, claim's included.
         options.onPass?.({ ...pass, steps: [claimed, ...pass.steps] })
       } catch (err) {
@@ -4232,7 +4232,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * change, however the walk reported it.**
        *
        * `runStep` catches whatever a step throws and reports *did-not-finish:
-       * threw* (`pass.ts`), which is right for a body that failed and wrong for
+       * threw* (`run-attempt.ts`), which is right for a body that failed and wrong for
        * the store underneath it: the ending below would read that as `blocked`,
        * park the item on *Waiting on you* over a dropped connection and ask a
        * person to acknowledge a diagnosis naming a step that did its work. So
@@ -4250,9 +4250,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         return yield* Effect.die(unappended)
       }
 
-      log(passLine(pass.steps, recipe.steps))
+      log(attemptLine(pass.steps, recipe.steps))
       const tookNow = (): Claimed | null => took
-      const summaryOf = (wait?: WaitReason): PassSummary => ({
+      const summaryOf = (wait?: WaitReason): AttemptSummary => ({
         ref: tookNow()?.ticket.ref ?? String(options.issue),
         title: tookNow()?.ticket.title ?? '',
         ran: ranVisits(pass.steps, recipe.steps),
@@ -4353,7 +4353,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * `headSha` cannot answer that, and the gap is not small. `headReached` is
        * the last `head` a *visit* reported and `admit` reports the base sha so that
-       * the head the pass is judged against always has a value (`pass-steps.ts`),
+       * the head the pass is judged against always has a value (`attempt-steps.ts`),
        * so it is the commit the worktree was **cut** at on every ending whose step
        * moved the tree without reporting it. Binding a request to that asks a
        * person to merge `agent/<n>@<base>` while origin holds this pass's actual
@@ -4408,7 +4408,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * **`pass.unanswered` is the split, not `pass.end._tag`** (`#463`):
        * `end` is forced to a `WaitOnPerson` even where this file never
-       * classified the stop (`unansweredEnd` in `pass.ts`), and that
+       * classified the stop (`unansweredEnd` in `run-attempt.ts`), and that
        * manufactured `AgentCrashed` is not the richer sentence `stopped`
        * already carries — but both branches now reach the same `WaitOnPerson`
        * shape, so there is nothing left for this file to rebuild: the old hold translators
@@ -4426,7 +4426,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // it, but `pass.end` is always one here. `OwnQuestion` is excluded by
         // hand: it carries no `run` at all, and nothing a pass ends with is
         // ever that variant — only `ask.ts`'s pre-claim question is.
-        const reason = (pass.end as Extract<PassEnd, { _tag: 'WaitOnPerson' }>).reason as Exclude<
+        const reason = (pass.end as Extract<AttemptEnd, { _tag: 'WaitOnPerson' }>).reason as Exclude<
           WaitReason,
           { _tag: 'OwnQuestion' }
         >

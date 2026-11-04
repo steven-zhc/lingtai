@@ -1,7 +1,7 @@
 /**
  * **What a check says on the commit a pass was cut at** (#743, 0108 §13) — the
  * port the guard in #744 asks before a `build` refusal buys a round.
- * `conduct.ts` builds one per store and `runPass` asks it through `baseIsRed`.
+ * `conduct.ts` builds one per store and `runAttempt` asks it through `baseIsRed`.
  *
  * It answers from the log when a `BaseChecked` for this commit and this
  * command is already on `int-<project>-<base>`, and otherwise cuts a throwaway

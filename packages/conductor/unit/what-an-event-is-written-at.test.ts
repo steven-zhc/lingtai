@@ -8,13 +8,13 @@
  * **Which step was active** is reduced from the log alone, with no change to
  * production code: envelopes of every stream sorted by `seq` (one counter in
  * `memoryStore`), the step starting at `claim` and moving at each `StepStarted`.
- * `claim`, `end` and routing visits write no `StepStarted` (`pass.ts:1388`), and
+ * `claim`, `end` and routing visits write no `StepStarted` (`run-attempt.ts:1388`), and
  * `conduct.ts` appends `PassRouted`, the held `StepEnded` and `WaitStarted` after
- * `runPass` returns. **So the window is strict while a step is open** — between
+ * `runAttempt` returns. **So the window is strict while a step is open** — between
  * its `StepStarted` and its `StepEnded` an envelope is allowed at that step and
  * no other, so `RunStarted` declared only at `end` is caught — **and loose once
  * it has closed**: only `end`, since what is appended after a step closes is the
- * ending, written by `conduct.ts` once `runPass` returns, **and `proposed` alone for an agent judge's
+ * ending, written by `conduct.ts` once `runAttempt` returns, **and `proposed` alone for an agent judge's
  * `RunSpent`**, which `routeProposal` appends after `review` has closed. So `WaitStarted`
  * declared at `review` is caught, and so is `TicketLanded` declared at
  * `proposed`. **The cost:** a type declared at `end` is checked loosely after a
@@ -23,7 +23,7 @@
  *
  * **No row here is a `build` refusal that buys a round**: only `runPlugin`
  * serves `build`, and `run:` spawns a real process (`actions/src/command.ts:43`),
- * which is integration under 0060 §1. Row 2 of `what-a-pass-writes-today.test.ts`
+ * which is integration under 0060 §1. Row 2 of `what-an-attempt-writes-today.test.ts`
  * (refusal at `review`, a judge, an `implement` round, green) is the stand-in
  * for a refusal that buys a round.
  */
@@ -42,7 +42,7 @@ import {
   refusingRuntime,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 interface Misplaced {
   readonly type: string

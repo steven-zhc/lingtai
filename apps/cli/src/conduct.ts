@@ -27,14 +27,14 @@ import {
   currentRecipe,
   declinedBeforeWork,
   loadProjects,
-  passClientOf,
+  ticketedClientOf,
   readFixFiles,
   runOnce,
   runQueue,
   runnableNow,
   selectRunnable,
   ticketsFor,
-  type PassClient,
+  type TurnClient,
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
@@ -183,7 +183,7 @@ export interface ConductWorkOptions {
 /** What a run hands `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
 interface CommonPassOptions {
   project: ProjectState
-  client: PassClient
+  client: TurnClient
   runtime: Runtime
   token?: TokenSource
   merge?: boolean
@@ -273,7 +273,7 @@ export function conductWork(
 
       common = {
         project,
-        client: passClientOf(client, tickets),
+        client: ticketedClientOf(client, tickets),
         // **The runtime the recipe named** (`#313`).
         runtime: createRuntime(resolved.recipe.runtime.agent),
         // A function, not a snapshot: an installation token lasts an hour and a
@@ -530,7 +530,7 @@ export function conductWork(
  * because there is an App, or because every registered project is
  * owner-less already.
  */
-export function projectsForPass(
+export function projectsForTurn(
   registered: readonly ProjectState[],
   canReach: boolean,
   outcome: PassOutcome,
@@ -576,7 +576,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
   const control = await readControl()
 
   const registered = await loadProjects()
-  const projects = projectsForPass(registered, hasGitHubAuth(), outcome)
+  const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)
 
   // Whether a look awaits its pass must not depend on which project is visited
   // first, so with a ceiling and several projects each recipe is asked once up front.

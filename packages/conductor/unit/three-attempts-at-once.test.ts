@@ -30,7 +30,7 @@ import {
   runtime as fakeRuntime,
   streams,
   withPorts,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 const client0 = fakeGitHub([], RECIPE)
 

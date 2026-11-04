@@ -968,7 +968,7 @@ export function diagnoseDisagreement(input: {
    * treat a refusal two agents have been round twice as one nothing has argued
    * with. But `rounds` cannot say which: it is **one counter for the whole
    * pass**, spent by whichever point refused (*one ceiling, so one counter* —
-   * `Ceilings` in `pass.ts`), so `rounds: 2` is as easily *`build` refused, a round fixed
+   * `Ceilings` in `run-attempt.ts`), so `rounds: 2` is as easily *`build` refused, a round fixed
    * it, then `review` refused the result* — where this reviewer has read
    * exactly one diff. Counting that as two credits this reviewer with a refusal
    * of a diff it never saw, which is the same overstatement one field over.
@@ -1100,7 +1100,7 @@ export function diagnoseDisagreement(input: {
         //
         // Byte for byte the sentence it has always been wherever the reviewer
         // did refuse more than one diff, which is the ordinary shape and the one
-        // `unit/conduct-a-whole-pass.test.ts`'s end-to-end pass produces: the
+        // `unit/conduct-a-whole-attempt.test.ts`'s end-to-end pass produces: the
         // common case must
         // not get worse to fix the others.
         return input.refusals <= 1

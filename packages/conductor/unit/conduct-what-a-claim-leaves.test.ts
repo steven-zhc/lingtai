@@ -34,7 +34,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { nextPrompt } from '../src/prompt.ts'
-import { PROJECT, fakeGitHub, fakePorts, memoryStore, once, project, runtime, streams } from '../test/one-pass.ts'
+import { PROJECT, fakeGitHub, fakePorts, memoryStore, once, project, runtime, streams } from '../test/one-attempt.ts'
 
 describe('when the agent meets the wall', () => {
   const atTheWall: Runtime = {
@@ -133,7 +133,7 @@ describe('when the agent meets the wall', () => {
           : inner(args, o)
     }
     // Full args for `update-ref`/`for-each-ref` (`#421`) — the base fake only
-    // logs a verb (`one-pass.ts:755-759`), and these tests check the ref name
+    // logs a verb (`one-attempt.ts:755-759`), and these tests check the ref name
     // and the sha it was written at.
     const beforeKeptRefs = ports.repo.git
     ports.repo.git = (args, o) =>
@@ -270,7 +270,7 @@ describe('when the agent meets the wall', () => {
    * **`headSha` could not have told them apart either**, which is worth keeping:
    * `headReached` is the last `head` a *visit* reported, `admit` reports the base
    * sha so the head the pass is judged against always has a value
-   * (`pass-steps.ts`), and this ending reports none — so it is the base sha in
+   * (`attempt-steps.ts`), and this ending reports none — so it is the base sha in
    * both arms, including the one where origin is holding two commits at another.
    * A request bound to it would have been refused as `stale` by `approve()`
    * (`#92`) while the board drew the item `awaitingApproval` at a sha nothing is

@@ -133,7 +133,7 @@ describe("what a project's recipe says today", () => {
     expect(html).toContain(
       'claim 0 · admit 0 · prepared 0 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0',
     )
-    // `passCeiling`'s sentence, which is what `lingtai status` prints.
+    // `attemptCeiling`'s sentence, which is what `lingtai status` prints.
     expect(html).toContain('150 turns')
   })
 

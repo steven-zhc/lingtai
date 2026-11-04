@@ -10,7 +10,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { type RefChannel, tellGitHubAbout } from '../src/tell.ts'
-import { passClientOf } from '../src/ticket-store.ts'
+import { ticketedClientOf } from '../src/ticket-store.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
 const ticketId = 'ticket-p-1'
@@ -220,7 +220,7 @@ describe('passClientOf', () => {
         throw new Error('reached GitHub')
       },
     } as never
-    await passClientOf(client, tickets).editComment(1, id, 'new')
+    await ticketedClientOf(client, tickets).editComment(1, id, 'new')
     expect(tickets.commentBodies(1)).toEqual(['new'])
   })
 })

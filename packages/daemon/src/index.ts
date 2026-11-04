@@ -25,7 +25,7 @@ export {
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
   type EventSubscriber,
-  type PassReason,
+  type TurnReason,
   type WorkLoop,
   type WorkLoopOptions,
 } from './work-loop.ts'

@@ -241,7 +241,7 @@ export function diffBaseShaOf(runEvents: readonly Envelope[]): string | null {
  * seen it yet** (#594) — `null` once a review has run after it, or when the
  * refusal was never merged (a person was reached instead of `merge-base`).
  *
- * A continuation is a fresh `runPass`, so the in-memory record of the merge is
+ * A continuation is a fresh `runAttempt`, so the in-memory record of the merge is
  * gone; the log keeps both halves: the lane's `BaseMoved` outcome (paths and
  * fork point) and the `MergeBase` route that merged `toSha`.
  */

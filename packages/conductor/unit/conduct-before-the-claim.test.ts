@@ -4,11 +4,11 @@
  *
  * It is the surviving half of the old engine's fakes test, which `#256` deleted
  * along with the engine it was written for. Every claim in that file about the
- * *pass* is now `unit/pass.test.ts`'s and `unit/pass-steps.test.ts`'s, where it is
+ * *pass* is now `unit/run-attempt.test.ts`'s and `unit/attempt-steps.test.ts`'s, where it is
  * asserted against the loop that makes the decision rather than against a
  * five-gate-point wrapper around it. **What has no home there is this**: the
  * recipe, the environment and the runtime are resolved by `conduct.ts` before
- * `runPass` is called at all, and they are the refusals that must cost nothing.
+ * `runAttempt` is called at all, and they are the refusals that must cost nothing.
  *
  * So the shape of every test below is one sentence — *it stopped, nothing was
  * claimed, and nothing was acquired* — and `did` being empty is the assertion
@@ -16,7 +16,7 @@
  * here as a test rather than as an intention.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
- * process, no socket, no disk. The fixtures are `test/one-pass.ts`.
+ * process, no socket, no disk. The fixtures are `test/one-attempt.ts`.
  */
 import { waitWords, type PayloadOf } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
@@ -35,7 +35,7 @@ import {
   project,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 /**
  * **A refused dispatch pauses the conductor, rather than asking a person once
@@ -317,7 +317,7 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
    * A second runtime at a step is dispatched; what is refused is one *nothing
    * here is signed in to*, which is this — `signedIn` answers `[]`, so `codex`
    * is a name for a thing this machine cannot run, and the claim is not taken.
-   * The dispatching half is `conduct-a-whole-pass.test.ts`'s *a step's `agent:`
+   * The dispatching half is `conduct-a-whole-attempt.test.ts`'s *a step's `agent:`
    * naming the other runtime is dispatched*.
    */
   it("refuses before the claim when a step's agent: names a runtime nothing is signed in to", async () => {

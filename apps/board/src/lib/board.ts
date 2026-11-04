@@ -1,5 +1,5 @@
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
-import { passCeiling } from '@lingtai/conductor/filter'
+import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe, loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
@@ -314,7 +314,7 @@ export interface BoardCard {
  * it explains instead: what answering refusals spent, and the standing
  * permission that let it (#84).
  *
- * **`summary` is `passCeiling`'s sentence and not the board's own**
+ * **`summary` is `attemptCeiling`'s sentence and not the board's own**
  * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
  * Three places say what a pass costs — here, `lingtai add` and the drain — and
  * the last time two of them were written separately one of them was wrong for a
@@ -336,7 +336,7 @@ export interface PassLimitsView {
    * surface — a sentence that is true of a number it is not made of.
    */
   restarts: number
-  /** `passCeiling`'s sentence, for the chip's title. */
+  /** `attemptCeiling`'s sentence, for the chip's title. */
   summary: string
 }
 
@@ -886,7 +886,7 @@ export async function queuedCards(
       project: filter.project,
       rounds: filter.limits.rounds,
       restarts: filter.limits.restarts,
-      summary: passCeiling(filter.limits),
+      summary: attemptCeiling(filter.limits),
     })
     backoffMs.set(filter.project, filter.backoffMs)
     plans.set(filter.project, filter.plan)

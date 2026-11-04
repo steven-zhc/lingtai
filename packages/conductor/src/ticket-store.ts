@@ -274,7 +274,7 @@ export async function ticketsFor(
 }
 
 /**
- * `passClientOf`'s return type: every member of `GitHubClient` except the
+ * `ticketedClientOf`'s return type: every member of `GitHubClient` except the
  * eight `Tickets` verbs, which come from `Tickets` instead.
  *
  * **Not `GitHubClient` itself.** `dbTickets` answers a label's `color` and
@@ -285,7 +285,7 @@ export async function ticketsFor(
  * them from `Tickets` alone is how both sides of that disagreement get to be
  * right (#383).
  *
- * **Wider than the old `PassClient`-shaped return on purpose.** `runOnce`,
+ * **Wider than the old `TurnClient`-shaped return on purpose.** `runOnce`,
  * `runQueue` and `runnableNow` only ever asked for `Tickets`, `RefChannel` and
  * `owner`/`repo`, which is what this returned before #383. The sites #383
  * moved off building their own `GitHubClient` — `close()`, `approve()`, the
@@ -310,7 +310,7 @@ export type TicketedClient = Omit<GitHubClient, keyof Tickets> & Tickets
  * Those still go to GitHub for a project that is on GitHub; only the ticket
  * verbs move.
  */
-export function passClientOf(client: GitHubClient, tickets: Tickets): TicketedClient {
+export function ticketedClientOf(client: GitHubClient, tickets: Tickets): TicketedClient {
   if ((tickets as unknown) === (client as unknown)) return client
   return {
     ...client,

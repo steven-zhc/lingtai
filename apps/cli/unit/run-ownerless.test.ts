@@ -74,7 +74,7 @@ steps:
       prompt: go
 `
 
-/** The eight `Tickets` verbs, each a distinct function so identity survives the spread into `PassClient`. */
+/** The eight `Tickets` verbs, each a distinct function so identity survives the spread into `TurnClient`. */
 const FAKE_DB_TICKETS: Tickets = {
   listOpenIssues: notReached,
   listIssuesSince: notReached,

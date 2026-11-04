@@ -33,14 +33,14 @@ import {
   currentRecipe,
   loadProject,
   ownerlessClient,
-  passClientOf,
-  passCeiling,
+  ticketedClientOf,
+  attemptCeiling,
   Repo,
   runOnce,
   runQueue,
-  tallyPass,
+  tallyTurn,
   ticketsFor,
-  type PassClient,
+  type TurnClient,
   type RunOnceResult,
   type Tickets,
 } from '@lingtai/conductor'
@@ -211,7 +211,7 @@ export function statedBeforeDispatch(recipe: Recipe): string[] {
   const lines = [
     `runtime: ${named.join(', ')} — lingtai holds no key of its own, so this pass spends on whatever account ` +
       `${named.length === 1 ? 'that runtime is' : 'those runtimes are'} signed in to on this machine`,
-    `a pass ${passCeiling({
+    `a pass ${attemptCeiling({
       ...limitsFor(recipe, 'implement'),
       wallMs: parseDuration(limitsFor(recipe, 'implement').wall),
       // `implement`'s own runs, which is the whole of what the sentence counts
@@ -267,7 +267,7 @@ export interface RunWorld {
   readPrompt: (path: string) => Promise<string>
   runOnce: typeof runOnce
   runQueue: typeof runQueue
-  tallyPass: typeof tallyPass
+  tallyPass: typeof tallyTurn
   lock: Layer.Layer<ConductorLock, ConductorBusy | LockUnreadable>
   projector: Layer.Layer<Projector>
   ports: Layer.Layer<Repo | AgentHost>
@@ -285,7 +285,7 @@ export function liveRunWorld(options: RunOptions, log: (line: string) => void): 
     readPrompt: (path) => readFile(path, 'utf8'),
     runOnce,
     runQueue,
-    tallyPass,
+    tallyPass: tallyTurn,
     lock: ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }),
     projector: ProjectorLive(log),
     ports: tracedPorts,
@@ -295,7 +295,7 @@ export function liveRunWorld(options: RunOptions, log: (line: string) => void): 
 /** What `run()` passes to `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
 interface CommonPassOptions {
   project: ProjectState
-  client: PassClient
+  client: TurnClient
   runtime: Runtime
   token?: TokenSource
   merge?: boolean
@@ -456,7 +456,7 @@ export async function run(
 
         common = {
           project,
-          // `passClientOf` is not used: it spreads a `GitHubClient`, and
+          // `ticketedClientOf` is not used: it spreads a `GitHubClient`, and
           // there isn't one on this path. The refs go to `git` against
           // `remote` rather than GitHub, with no token (0062 §4, `tell.ts`'s
           // "a channel that silently cannot delete").
@@ -479,7 +479,7 @@ export async function run(
         for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
         // Where this project's tickets actually live — the client itself for
-        // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`
+        // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `ticketedClientOf`
         // reduces that choice back into one object so `runOnce` and `runQueue`
         // keep taking one client; the refs, `fileAt`, the branch and the token
         // still go to GitHub either way.
@@ -490,7 +490,7 @@ export async function run(
 
         common = {
           project,
-          client: passClientOf(owned, tickets),
+          client: ticketedClientOf(owned, tickets),
           // The runtime the recipe named, not the one this file used to hardcode.
           runtime: createRuntime(resolved.recipe.runtime.agent),
           // Both managed repositories are private. Without this every git command in
@@ -604,7 +604,7 @@ export async function run(
 
         // Read back, not counted up. An item this pass held and somebody approved
         // while the pass carried on has landed, and the log says so — see
-        // `tallyPass`. Counting the merges this process performed printed
+        // `tallyTurn`. Counting the merges this process performed printed
         // `0 landed` over a merge that had happened, and exited 1 on the count.
         const { landed, held, stopped } = yield* Effect.tryPromise({
           try: () => world.tallyPass(outcome.ran),

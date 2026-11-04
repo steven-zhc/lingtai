@@ -1,7 +1,7 @@
 /**
  * The pass, read against the decision rather than against a diff.
  *
- * `pass.ts` is wired to nothing (`#253`), so this file is the whole of what says
+ * `run-attempt.ts` is wired to nothing (`#253`), so this file is the whole of what says
  * it works — which is the arrangement the ticket asked for: *a reviewer reads it
  * against the ADR, which is the one reading a cold reviewer is good at.* So each
  * `describe` below is a sentence from
@@ -9,7 +9,7 @@
  * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md), and each
  * `it` is the half of it a test can check.
  *
- * Nothing here leaves the system: the two seams `runPass` takes — the ten bodies
+ * Nothing here leaves the system: the two seams `runAttempt` takes — the ten bodies
  * and how a declared list becomes runnable actions — are both replaced, so no
  * process is spawned, no agent is paid and no person is asked. That is why this
  * is in `unit/` and why the `build` point runs it (0060 §1).
@@ -28,18 +28,18 @@ import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
   NO_DESIGN,
-  PASS,
+  ATTEMPT,
   REFUSING_STEPS,
   outcomeOf,
-  runPass,
-  type PassEvent,
-  type PassOptions,
+  runAttempt,
+  type AttemptEvent,
+  type AttemptOptions,
   type StepBodies,
   type StepBody,
   type StepEnding,
   type StepReached,
   type StepWork,
-} from '../src/pass.ts'
+} from '../src/run-attempt.ts'
 
 // --------------------------------------------------------------- fixtures ----
 
@@ -98,7 +98,7 @@ const drafted = (name: string, result: ActionResult): Action => ({
 })
 
 /** A recipe with only the ten steps on it, resolved by the real schema. */
-const recipeWith = (steps: Record<string, unknown>): PassOptions['recipe'] => ({
+const recipeWith = (steps: Record<string, unknown>): AttemptOptions['recipe'] => ({
   steps: StepMap.parse(steps),
 })
 
@@ -117,12 +117,12 @@ interface Handed {
  * plus whichever of them a test wants to answer differently.
  *
  * **Every one of them, `proposed` included, simply passes by default** since
- * `#462`: routing is `runPass`'s own loop now (`routeProposal`, through
+ * `#462`: routing is `runAttempt`'s own loop now (`routeProposal`, through
  * `proposed-route.ts`), off `nextOf`'s `Propose` rather than off this body's
  * answer, so `proposed`'s body is only ever called on the spine visit — on
  * the way through, or after a route has already landed the walk back on a
  * step. A test that wants a particular destination chosen declares a
- * `judge:` on `PassOptions` instead of overriding this body.
+ * `judge:` on `AttemptOptions` instead of overriding this body.
  *
  * `seen` is what makes *a configured step is never skipped* checkable: it is
  * appended to once per visit, in order.
@@ -197,7 +197,7 @@ function undeclaredDefault(step: Step): Action[] {
 /** Every action the loop handed the pipeline, by visit. */
 function watchingActions(at: Record<string, readonly Action[]> = {}) {
   const ran: { step: Step; actions: readonly string[] }[] = []
-  const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+  const actionsAt: AttemptOptions['actionsAt'] = (step, actions) => {
     const built = at[step] ?? (actions.length > 0 ? actions.map((a) => defaultFor(step, a)) : undeclaredDefault(step))
     ran.push({ step, actions: built.map((a) => a.name) })
     return built
@@ -224,7 +224,7 @@ interface Judged {
 function judging(answering: (step: Step, lap: number) => ActionResult = () => PASSED) {
   const judged: Judged[] = []
   const laps = new Map<Step, number>()
-  const actionsAt: PassOptions['actionsAt'] = (step) => [
+  const actionsAt: AttemptOptions['actionsAt'] = (step) => [
     {
       name: 'check',
       // `implement`'s own check is a commit-yielding one, same as a real
@@ -252,8 +252,8 @@ function judging(answering: (step: Step, lap: number) => ActionResult = () => PA
   return { actionsAt, judged }
 }
 
-const events: () => { emit: PassOptions['emit']; seen: PassEvent[] } = () => {
-  const seen: PassEvent[] = []
+const events: () => { emit: AttemptOptions['emit']; seen: AttemptEvent[] } = () => {
+  const seen: AttemptEvent[] = []
   return { emit: (event) => void seen.push(event), seen }
 }
 
@@ -282,8 +282,8 @@ const asked =
 
 describe('the ten steps are the vocabulary, and here they are data', () => {
   it('is ten, in the order the pass reaches them', () => {
-    expect(PASS.map((s) => s.step)).toEqual([...STEPS])
-    expect(PASS).toHaveLength(10)
+    expect(ATTEMPT.map((s) => s.step)).toEqual([...STEPS])
+    expect(ATTEMPT).toHaveLength(10)
   })
 
   /**
@@ -292,19 +292,19 @@ describe('the ten steps are the vocabulary, and here they are data', () => {
    * failure where they disagree cannot happen.
    */
   it('lets exactly prepared, build, proposed and merge refuse', () => {
-    expect(PASS.filter((s) => s.refuses).map((s) => s.step)).toEqual(['prepared', 'build', 'proposed', 'merge'])
+    expect(ATTEMPT.filter((s) => s.refuses).map((s) => s.step)).toEqual(['prepared', 'build', 'proposed', 'merge'])
     expect([...REFUSING_STEPS]).toEqual(['prepared', 'build', 'proposed', 'merge'])
   })
 
   /** 0058 §3: `proposed` is the only step that routes. */
   it('lets proposed alone route', () => {
-    expect(PASS.filter((s) => s.routes).map((s) => s.step)).toEqual(['proposed'])
+    expect(ATTEMPT.filter((s) => s.routes).map((s) => s.step)).toEqual(['proposed'])
   })
 
   /** `end`'s three kinds run for effect and never reach the `Action` interface. */
   it('says end alone runs effects rather than verdicts', () => {
-    expect(PASS.filter((s) => s.plugins === 'effects').map((s) => s.step)).toEqual(['end'])
-    expect(PASS.find((s) => s.step === 'end')?.refuses).toBe(false)
+    expect(ATTEMPT.filter((s) => s.plugins === 'effects').map((s) => s.step)).toEqual(['end'])
+    expect(ATTEMPT.find((s) => s.step === 'end')?.refuses).toBe(false)
   })
 })
 
@@ -323,7 +323,7 @@ describe('the file may omit a step; the resolved recipe may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
@@ -347,7 +347,7 @@ describe('a step that was configured is never skipped', () => {
   /**
    * `#61`'s failure, which is what the ticket's *watch out* is about: four of
    * `end`'s six cells were declarable, drawn, and silently dropped by a
-   * `continue`. There is no `continue` past a step in `pass.ts`, and this is
+   * `continue`. There is no `continue` past a step in `run-attempt.ts`, and this is
    * what fails if one arrives.
    */
   it('hands every declared action to the step it was declared at', async () => {
@@ -366,10 +366,10 @@ describe('a step that was configured is never skipped', () => {
     const { actionsAt, ran } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
-    // The eight steps `runPass` itself hands to `actionsAt` — `claim` ran
+    // The eight steps `runAttempt` itself hands to `actionsAt` — `claim` ran
     // before this walk started (`claimStep`) — each with what it declared,
     // except `admit` and `implement`: this recipe declares nothing at
     // either, so each gets the fixture's own stand-in for `defaultsAt`'s cut
@@ -420,7 +420,7 @@ describe('a step that was configured is never skipped', () => {
     })
     const { emit, seen } = events()
 
-    await runPass({ recipe, context, emit, bodies, actionsAt })
+    await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(entered).toBe(1)
     // **Only one action ever ran**, which is what this test is about — not
@@ -485,13 +485,13 @@ describe('four steps may refuse, and the other six may not', () => {
    * nothing meant.
    *
    * The assertion throws, and the loop reports the throw as the step's ending
-   * rather than letting it out — because an exception escaping `runPass` takes
+   * rather than letting it out — because an exception escaping `runAttempt` takes
    * `end` with it, and an item whose pass vanished carries no terminal outcome
    * at all. The words are on `detail`, where a person reads them.
    */
   it("reports a body's refusal at a step that may not refuse, and still reaches end", async () => {
     // `admit`, not `claim`: `claim` runs before this walk starts now (`#463`,
-    // `claimStep`), so it is no longer one of the steps `runPass` can be
+    // `claimStep`), so it is no longer one of the steps `runAttempt` can be
     // handed a misbehaving body for — `admit` makes the same point and stays
     // inside the walk this file is testing.
     const { bodies, seen } = watching({
@@ -500,7 +500,7 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toMatchObject({
       step: 'admit',
@@ -525,7 +525,7 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toMatchObject({
       step: 'merge',
@@ -578,7 +578,7 @@ describe('four steps may refuse, and the other six may not', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toEqual({
       step: 'implement',
@@ -614,7 +614,7 @@ describe('four steps may refuse, and the other six may not', () => {
    */
   it('reads the same verdict at `review` as findings and not a verdict', async () => {
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 1,
       claim: 'a blocker',
       failureScenario: 'it does the wrong thing',
@@ -622,16 +622,18 @@ describe('four steps may refuse, and the other six may not', () => {
     }
     const { bodies } = watching()
     const { actionsAt } = watchingActions({
-      review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker in pass.ts', findings: [finding] })],
+      review: [
+        canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker in run-attempt.ts', findings: [finding] }),
+      ],
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     const reviewed = result.steps.find((s) => s.step === 'review')
     expect(reviewed?.ending).toEqual({ ending: 'passed' })
     expect(reviewed?.results).toEqual([
-      { action: 'cold reviewer', verdict: 'failed', evidence: 'a blocker in pass.ts', findings: [finding] },
+      { action: 'cold reviewer', verdict: 'failed', evidence: 'a blocker in run-attempt.ts', findings: [finding] },
     ])
     // Nothing refused, so nothing stopped the pass. `review`'s own `StepFailed`
     // reaches `nextOf` as a `Propose{ReviewFindings}` right there (0120 §2),
@@ -648,17 +650,17 @@ describe('four steps may refuse, and the other six may not', () => {
   it('reads the same verdict at one of the four as a refusal', async () => {
     const { bodies } = watching()
     const { actionsAt } = watchingActions({
-      build: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker in pass.ts', findings: [] })],
+      build: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker in run-attempt.ts', findings: [] })],
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped?.ending).toEqual({
       ending: 'refused',
       because: 'action-refused',
       at: 'cold reviewer',
-      detail: 'a blocker in pass.ts',
+      detail: 'a blocker in run-attempt.ts',
     })
   })
 
@@ -669,7 +671,7 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stopped).toEqual({
       step: 'prepared',
@@ -705,7 +707,7 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.steps.map((s) => s.step)).toContain('proposed')
     expect(result.routes).toMatchObject([{ from: 'prepared', to: 'waiting' }])
@@ -727,7 +729,7 @@ describe('a refusal reports what the action that refused said', () => {
    * without anybody noticing. `actionsAt` now refuses two actions of one name
    * within a step when the recipe resolves (0110 §9, `#499`), so the
    * ambiguous recipe this block used to build to prove the point can no
-   * longer reach `recipeWith`, let alone `runPass`.
+   * longer reach `recipeWith`, let alone `runAttempt`.
    */
   it('refuses a recipe naming the same action twice in one step', () => {
     expect(() =>
@@ -763,7 +765,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     // What happened arrived intact (0058 §3c) — the step, what refused, and
     // why — read off `steps` itself, since routing no longer calls
@@ -809,7 +811,7 @@ describe('every step that does not pass arrives at proposed', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -863,7 +865,7 @@ describe('every step that does not pass arrives at proposed', () => {
     /** What each `design` dispatch was told about why it is running. */
     const told: (ActionContext['again'] | undefined)[] = []
     let lap = 0
-    const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
       step !== 'design'
         ? actions.length > 0
           ? actions.map((a) => defaultFor(step, a))
@@ -895,7 +897,7 @@ describe('every step that does not pass arrives at proposed', () => {
     const { bodies } = watching()
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({ design: [{ name: 'draft', agent: 'claude-code', prompt: 'shape' }] }),
       context,
       emit,
@@ -975,7 +977,7 @@ describe('every step that does not pass arrives at proposed', () => {
         merge: [lands('land it')],
       })
       const { emit } = events()
-      const result = await runPass({
+      const result = await runAttempt({
         recipe: declaring(results.map((_, i) => `draft ${i}`)),
         context,
         emit,
@@ -1037,7 +1039,7 @@ describe('every step that does not pass arrives at proposed', () => {
      * other one.** One action makes both (0066 §3), so a pass that paired the
      * last locator anybody said with the last document anybody wrote would be
      * pointing `implement` at a copy of something else — and it would be this
-     * file deciding which document a location belongs to, which is `pass.ts`
+     * file deciding which document a location belongs to, which is `run-attempt.ts`
      * understanding locators one step before 0066 §4 says it must not.
      */
     it('ignores a locator from an action that wrote no document', async () => {
@@ -1092,7 +1094,7 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runPass({
+      const result = await runAttempt({
         recipe: declaring(['draft']),
         context,
         emit,
@@ -1133,7 +1135,7 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+      const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
       expect(seen[0]).toEqual(NO_DESIGN)
       expect(seen[0]?.locator).toBeUndefined()
@@ -1161,7 +1163,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     // `build` refused before the spine ever reached `proposed`'s own
     // inspection, so the declared `human:` action was never built and nobody
@@ -1209,7 +1211,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1237,7 +1239,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1269,7 +1271,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
@@ -1288,7 +1290,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1306,7 +1308,7 @@ describe('every step that does not pass arrives at proposed', () => {
    */
   it("does not run proposed's own declared human: for a fix round that changed nothing", async () => {
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 1,
       claim: 'a blocker',
       failureScenario: 'it does the wrong thing',
@@ -1322,7 +1324,7 @@ describe('every step that does not pass arrives at proposed', () => {
     // made `routeProposal` run `proposed`'s body directly would show up here
     // exactly as it would in the other six.
     const ran: { step: Step; actions: readonly string[] }[] = []
-    const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) => {
       const built =
         step === 'review'
           ? [
@@ -1340,7 +1342,7 @@ describe('every step that does not pass arrives at proposed', () => {
     }
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -1384,7 +1386,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
@@ -1415,7 +1417,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1443,7 +1445,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -1491,7 +1493,7 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runPass({
+      const result = await runAttempt({
         recipe,
         context,
         emit,
@@ -1515,7 +1517,7 @@ describe('every step that does not pass arrives at proposed', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -1550,7 +1552,7 @@ describe('a granted fix round', () => {
       build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
     })
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
       context,
       emit,
@@ -1590,7 +1592,7 @@ describe('a granted fix round', () => {
       build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
     })
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
       context,
       emit,
@@ -1607,7 +1609,7 @@ describe('a granted fix round', () => {
 
   describe('a review that refuses with a criterion and restarts left (#570)', () => {
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 1,
       claim: 'a blocker',
       failureScenario: 'it does the wrong thing',
@@ -1623,7 +1625,7 @@ describe('a granted fix round', () => {
       let asked = 0
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runPass({
+      const result = await runAttempt({
         recipe: recipeWith({}),
         context,
         emit,
@@ -1649,7 +1651,7 @@ describe('a granted fix round', () => {
     it('keeps the recipe restarts on a continuation from an approval without a grant', async () => {
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runPass({
+      const result = await runAttempt({
         recipe: recipeWith({}),
         context,
         emit,
@@ -1666,7 +1668,7 @@ describe('a granted fix round', () => {
     it('still restarts an ungranted pass with the same proposal', async () => {
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runPass({
+      const result = await runAttempt({
         recipe: recipeWith({}),
         context,
         emit,
@@ -1693,7 +1695,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
    */
   it('sends a change back to implement on the findings of a review that refused', async () => {
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 1,
       claim: 'a blocker',
       failureScenario: 'it does the wrong thing',
@@ -1701,7 +1703,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
     }
     const { bodies } = watching()
     let reviews = 0
-    const actionsAt: PassOptions['actionsAt'] = (step) =>
+    const actionsAt: AttemptOptions['actionsAt'] = (step) =>
       step === 'review'
         ? [
             canned('cold reviewer', {
@@ -1719,7 +1721,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
             : []
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -1768,7 +1770,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, actionsAt })
 
     expect(result.routes).toEqual([])
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
@@ -1780,12 +1782,12 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
   it('walks the spine again from where the judge sent it', async () => {
     let refusals = 0
     // Injected through `actionsAt` rather than declared in the recipe, because
-    // what this exercises is the caller's seam: `runPass` is handed a list and
+    // what this exercises is the caller's seam: `runAttempt` is handed a list and
     // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
     // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({})
     const { bodies } = watching()
-    const actionsAt: PassOptions['actionsAt'] = (step) =>
+    const actionsAt: AttemptOptions['actionsAt'] = (step) =>
       step === 'build'
         ? [
             canned(
@@ -1799,7 +1801,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
           : []
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -1851,7 +1853,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
    */
   it('stops buying rounds once the ceiling is spent', async () => {
     // Injected through `actionsAt` rather than declared in the recipe, because
-    // what this exercises is the caller's seam: `runPass` is handed a list and
+    // what this exercises is the caller's seam: `runAttempt` is handed a list and
     // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
     // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({})
@@ -1863,7 +1865,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -1898,7 +1900,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     const { emit } = events()
     let dispatched = 0
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -1927,7 +1929,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     // offered for: *the approach is wrong*, which only `findings` can say
     // (0039 §2) — `offerFor` offers `restart` for `ReviewFindings` alone.
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 1,
       claim: 'a blocker',
       failureScenario: 'it does the wrong thing',
@@ -1939,7 +1941,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -1965,7 +1967,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
 
   // A restart being on no offer when the item has none left is `offerFor`'s
   // own claim, proved directly against it in `domain/unit/routing.test.ts` —
-  // there is no longer a `runPass` scenario this duplicates rather than
+  // there is no longer a `runAttempt` scenario this duplicates rather than
   // restates.
 })
 
@@ -1989,7 +1991,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -2012,7 +2014,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -2039,7 +2041,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     const recipe = recipeWith({})
     const { bodies } = watching()
     const watchCalls: string[] = []
-    const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) => {
       if (step === 'implement') return [committedSomething('write the fix')]
       if (step !== 'merge') return actions.length > 0 ? [canned('check', PASSED)] : []
       return [
@@ -2059,7 +2061,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     }
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -2100,7 +2102,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe,
       context,
       emit,
@@ -2147,7 +2149,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt, judged } = judging((step) => (step === 'implement' ? { ...PASSED, head: 'b2b2b2b' } : PASSED))
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(judged.map((j) => [j.step, j.onSha])).toEqual([
@@ -2174,7 +2176,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt, judged } = judging()
     const { emit } = events()
 
-    await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(judged.every((j) => j.onSha === 'abc1234def')).toBe(true)
   })
@@ -2195,7 +2197,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -2210,7 +2212,7 @@ describe('a visit is judged against the head the walk has reached', () => {
   })
 
   /**
-   * **`headFrom`'s own rule, since `#390`** (`pass.ts:1840`): *the last action
+   * **`headFrom`'s own rule, since `#390`** (`run-attempt.ts:1840`): *the last action
    * result that has a head wins*, which is what lets `implement: [agent, run]`
    * carry two head-producing kinds without a uniqueness rule anywhere else.
    * Nothing before this exercised the function with more than one head-bearing
@@ -2223,7 +2225,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'c3c3c3c' })
@@ -2238,7 +2240,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'b2b2b2b' })
@@ -2246,10 +2248,10 @@ describe('a visit is judged against the head the walk has reached', () => {
   })
 
   /**
-   * `pass.ts:1622-1627`'s own rule: *a body that reports a head of its own
+   * `run-attempt.ts:1622-1627`'s own rule: *a body that reports a head of its own
    * wins*. Nothing else here conflicts the two, since `#469` made every
    * `implement` action carry its own head — this is the one test where the
-   * action and the body disagree, so the spread order at `pass.ts:1717`
+   * action and the body disagree, so the spread order at `run-attempt.ts:1717`
    * stays load-bearing rather than coincidentally unreachable.
    */
   it("lets a body's own head win over what its own actions left", async () => {
@@ -2257,7 +2259,7 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt } = watchingActions({ implement: [committedSomething('write the change', 'actionreported')] })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({
@@ -2286,7 +2288,7 @@ describe('a visit is judged in the round the pass is in', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -2323,7 +2325,7 @@ describe('a visit is judged in the round the pass is in', () => {
 
 describe('the round a pass buys is bought on something', () => {
   const finding: ActionFinding = {
-    file: 'packages/conductor/src/pass.ts',
+    file: 'packages/conductor/src/run-attempt.ts',
     line: 1,
     claim: 'the reviewer is never told what it refused last time',
     failureScenario: 'the fix round re-reviews from scratch and the criterion is lost',
@@ -2355,7 +2357,7 @@ describe('the round a pass buys is bought on something', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -2390,7 +2392,7 @@ describe('the round a pass buys is bought on something', () => {
     })
     const { emit } = events()
 
-    await runPass({
+    await runAttempt({
       recipe: recipeWith({}),
       context,
       emit,
@@ -2418,7 +2420,7 @@ describe('a body can read what the steps before it said', () => {
    */
   it('hands a later step the verdicts and findings of the earlier ones', async () => {
     const finding: ActionFinding = {
-      file: 'packages/conductor/src/pass.ts',
+      file: 'packages/conductor/src/run-attempt.ts',
       line: 257,
       claim: 'the router has nothing to route on',
       failureScenario: '`proposed` is asked to decide and is handed no verdict',
@@ -2439,7 +2441,7 @@ describe('a body can read what the steps before it said', () => {
     })
     const { emit } = events()
 
-    await runPass({ recipe, context, emit, bodies, actionsAt })
+    await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(atProposed.map((s) => s.step)).toEqual(['admit', 'prepared', 'design', 'implement', 'build', 'review'])
     expect(atProposed.find((s) => s.step === 'prepared')?.results).toEqual([
@@ -2456,7 +2458,7 @@ describe('a body can read what the steps before it said', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.steps.find((s) => s.step === 'prepared')?.results).toEqual([
       { action: 'install', verdict: 'failed', evidence: 'exited 1', findings: [] },
@@ -2483,7 +2485,7 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stopped?.ending).toEqual({
       ending: 'did-not-finish',
@@ -2506,7 +2508,7 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
@@ -2524,7 +2526,7 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(result.stopped?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
   })
@@ -2539,7 +2541,7 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
     expect(seen.at(-1)?.step).toBe('end')
     expect(result.steps.at(-1)?.step).toBe('end')
@@ -2554,7 +2556,7 @@ describe('end runs on every ending and cannot refuse', () => {
       })
       const { emit } = events()
 
-      const result = await runPass({ recipe, context, emit, bodies, actionsAt })
+      const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
 
       expect(seen.at(-1)?.step).toBe('end')
       expect(result.steps.map((s) => s.step).filter((s) => s === 'end')).toEqual(['end'])
@@ -2578,7 +2580,7 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toEqual({
       step: 'implement',
@@ -2596,13 +2598,13 @@ describe('end runs on every ending and cannot refuse', () => {
   /** And a list that could not even be built is the same ending, not a crash. */
   it('runs after an actionsAt that threw', async () => {
     const { bodies, seen } = watching()
-    const actionsAt: PassOptions['actionsAt'] = (step) => {
+    const actionsAt: AttemptOptions['actionsAt'] = (step) => {
       if (step === 'prepared') throw new Error('no plugin named `instal`')
       return []
     }
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.stopped).toMatchObject({
       step: 'prepared',
@@ -2628,7 +2630,7 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(seen.filter((s) => s.step === 'end')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'end')).toHaveLength(1)
@@ -2657,7 +2659,7 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     // What the body was told and what a caller reads back are one answer.
     expect(seen.at(-1)).toMatchObject({ step: 'end', outcome: 'landed' })
@@ -2687,7 +2689,7 @@ describe('end is told which of the four endings it is running for', () => {
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
-    await runPass({ recipe: recipeWith(steps), context, emit, bodies, actionsAt })
+    await runAttempt({ recipe: recipeWith(steps), context, emit, bodies, actionsAt })
     return seen.filter((s) => s.step === 'end').at(-1)?.outcome
   }
 
@@ -2718,7 +2720,7 @@ describe('end is told which of the four endings it is running for', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(seen.filter((s) => s.outcome !== null).map((s) => s.step)).toEqual(['end'])
   })
@@ -2743,7 +2745,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runPass({ recipe: recipeWith({}), context, emit, actionsAt })
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, actionsAt })
 
     expect(result.stopped).toBeNull()
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
@@ -2766,7 +2768,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, actionsAt })
 
     expect(result.steps.map((s) => s.step)).toEqual([
       'admit',
@@ -2796,7 +2798,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runPass({ recipe, context, emit, actionsAt })
+    const result = await runAttempt({ recipe, context, emit, actionsAt })
 
     // Reported as the step's ending rather than thrown out of the pass, which
     // is the same rule one turn on: a pass that vanished must not look like
@@ -2834,26 +2836,26 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
    * guards now is the thing that replaced that: the pass has **one** caller, and
    * a second one would be a second engine. The old engine is gone, and the way
    * that stays true is that this fails the day another source file reaches for
-   * `runPass`.
+   * `runAttempt`.
    *
-   * **`pass-steps.ts` is still allowed to import `pass.ts`**, because it is
+   * **`attempt-steps.ts` is still allowed to import `run-attempt.ts`**, because it is
    * filling in that file's own contract — and nothing but `conduct.ts` may import
    * either. The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading
    * a comment is a failing test.
    *
    * **An `import type` is not a caller** (`#277`). The rule is about the engine —
-   * a second file that can call `runPass`, or build the bodies, or reach a port —
+   * a second file that can call `runAttempt`, or build the bodies, or reach a port —
    * and a type is none of those: it is erased before anything runs.
    * `judge-agent.ts` builds the prompt a runtime judge is given and reads its
    * answer, so it wants to say *a `Destination`* and *a `Judging`* in its own
    * signatures, and saying them a second time in its own file is the divergence
    * this rule exists to prevent rather than an instance of it. So the match is on
    * a **value** import, which is every import that is not `import type` — and
-   * `import { type Ceilings, runPass }` is one, because that file can call.
+   * `import { type Ceilings, runAttempt }` is one, because that file can call.
    *
    * **And on a value `export … from`, which is how it can happen without an
    * `import` at all.** Narrowing to the `import` token let
-   * `export { runPass } from "./pass.ts"` through, and a re-export is worse than
+   * `export { runAttempt } from "./run-attempt.ts"` through, and a re-export is worse than
    * a caller: `index.ts` re-exports eighteen modules, so one line there makes the
    * engine public API of `@lingtai/conductor` and every package that depends on it
    * a possible second caller — the exact thing this guards, arriving through the
@@ -2861,14 +2863,14 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
    * like `import type` and is allowed for the same reason.
    */
   it.each([
-    { module: 'pass.ts', allowed: ['pass-steps.ts', 'conduct.ts'] },
+    { module: 'run-attempt.ts', allowed: ['attempt-steps.ts', 'conduct.ts'] },
     // `hold-of.ts` calls `directionOf` (#452) — reading the same direction the
     // router already computed, never a second routing decision, so this is
-    // not the second engine the rule above is against. `pass.ts` is allowed
+    // not the second engine the rule above is against. `run-attempt.ts` is allowed
     // since `#462`: `whatArrived` and the `Judging`/`Judged` types are what
     // the shell builds a judge's brief from, off the visit a body reported —
     // reading the arrival, never deciding a second route.
-    { module: 'pass-steps.ts', allowed: ['conduct.ts', 'hold-of.ts', 'pass.ts'] },
+    { module: 'attempt-steps.ts', allowed: ['conduct.ts', 'hold-of.ts', 'run-attempt.ts'] },
   ])('$module is imported only by $allowed', ({ module, allowed }) => {
     const src = fileURLToPath(new URL('../src', import.meta.url))
     // The span is kept inside one statement by refusing to cross the next
@@ -2894,9 +2896,9 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
     // nothing. These six say which shapes it reads.
     const spec = `"./${module}"`
     for (const reaching of [
-      `import { runPass } from ${spec};`,
-      `import { type Ceilings, runPass } from ${spec};`,
-      `export { runPass } from ${spec};`,
+      `import { runAttempt } from ${spec};`,
+      `import { type Ceilings, runAttempt } from ${spec};`,
+      `export { runAttempt } from ${spec};`,
       `export * from ${spec};`,
     ]) {
       expect(reaches.test(reaching), `should be an offender: ${reaching}`).toBe(true)
@@ -2910,8 +2912,8 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
   it('is imported by `conduct.ts`', () => {
     const src = fileURLToPath(new URL('../src/conduct.ts', import.meta.url))
     const wiring = readFileSync(src, 'utf8')
-    expect(wiring).toMatch(/from ["']\.\/pass\.ts["']/)
-    expect(wiring).toMatch(/from ["']\.\/pass-steps\.ts["']/)
-    expect(wiring).toContain('runPass({')
+    expect(wiring).toMatch(/from ["']\.\/run-attempt\.ts["']/)
+    expect(wiring).toMatch(/from ["']\.\/attempt-steps\.ts["']/)
+    expect(wiring).toContain('runAttempt({')
   })
 })

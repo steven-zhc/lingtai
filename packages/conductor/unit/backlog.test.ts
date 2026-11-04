@@ -18,8 +18,8 @@ import { describe, expect, it } from 'vitest'
 
 import { acceptFinding, declineFinding, proposalFor } from '../src/backlog.ts'
 import { dbTickets } from '../src/db-tickets.ts'
-import { githubTicketStore, keyMarker, passClientOf, type TicketStore } from '../src/ticket-store.ts'
-import { fakeGitHub as fullFakeGitHub } from '../test/one-pass.ts'
+import { githubTicketStore, keyMarker, ticketedClientOf, type TicketStore } from '../src/ticket-store.ts'
+import { fakeGitHub as fullFakeGitHub } from '../test/one-attempt.ts'
 
 const entry: BacklogEntry = {
   key: '0123456789ab',
@@ -416,7 +416,7 @@ describe('acceptFinding', () => {
   /**
    * **A `db` project's accept writes to `dbTickets`, never to GitHub** (`#383`).
    * `client` here is what `projectClient` hands every site this ticket moved
-   * — `passClientOf` over a `db` project's `dbTickets` — so this is the same
+   * — `ticketedClientOf` over a `db` project's `dbTickets` — so this is the same
    * shape `apps/cli/src/backlog.ts` and the board's `acceptBacklogFinding` now
    * pass to `githubTicketStore`.
    */
@@ -442,7 +442,7 @@ describe('acceptFinding', () => {
     }
     const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
     const tickets = dbTickets(sql, 'lingtai')
-    const client = passClientOf({ ...github, ...wrapped } as GitHubClient, tickets)
+    const client = ticketedClientOf({ ...github, ...wrapped } as GitHubClient, tickets)
 
     const log = fakeLog()
     const r = await accept(log, githubTicketStore(client), { kind: 'tech-debt' })

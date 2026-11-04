@@ -92,7 +92,7 @@ describe('the work loop', () => {
     let inFlight = 0
     let overlapped = false
     let release: () => void = () => {}
-    const firstPass = new Promise<void>((r) => (release = r))
+    const firstTurn = new Promise<void>((r) => (release = r))
 
     let n = 0
     const loop = createWorkLoop({
@@ -101,7 +101,7 @@ describe('the work loop', () => {
         inFlight += 1
         if (inFlight > 1) overlapped = true
         // Hold the first pass open while the events land.
-        if (n === 1) await firstPass
+        if (n === 1) await firstTurn
         inFlight -= 1
       },
     })

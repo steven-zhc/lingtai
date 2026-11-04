@@ -2,7 +2,7 @@ import { SpanStatusCode, context, createContextKey, trace } from '@opentelemetry
 
 /**
  * The step and action spans of a pass (#791), made through `@opentelemetry/api`
- * because `runPass` and `runActionPipeline` are still promises. 0101 §6 wants
+ * because `runAttempt` and `runActionPipeline` are still promises. 0101 §6 wants
  * `Effect.withSpan` here, and #790's later children replace this file's callers
  * as they move those functions, keeping the span names.
  *

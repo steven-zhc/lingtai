@@ -95,7 +95,7 @@ describe('keeping the document the step made', () => {
 
   /**
    * **A commit moves the tree, and the action is what says so.** `head` is
-   * `LeftTheTreeAt`'s one seam (`pass.ts`), so a keep that committed reports the
+   * `LeftTheTreeAt`'s one seam (`run-attempt.ts`), so a keep that committed reports the
    * commit and `onSha` advances onto the note — otherwise every verdict after
    * `design` would be about a commit that is not the one the steps are reading.
    */

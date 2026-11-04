@@ -121,7 +121,7 @@ export const COMPLETION_EVENTS = [
   'QueueChanged',
 ] as const
 
-export type PassReason = 'startup' | 'completion' | 'sweep'
+export type TurnReason = 'startup' | 'completion' | 'sweep'
 
 /**
  * How often to look at GitHub without being told to.
@@ -177,7 +177,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: PassReason, started?: (pass: Promise<boolean | void>) => void) => Promise<void>
+  pass: (reason: TurnReason, started?: (pass: Promise<boolean | void>) => void) => Promise<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -482,7 +482,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     }
   }
 
-  function pump(reason: PassReason): Promise<void> {
+  function pump(reason: TurnReason): Promise<void> {
     if (running) {
       // A pass is in flight. Remember to go round again rather than starting a
       // second one into the same queue.
@@ -499,7 +499,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     return pass
   }
 
-  async function drain(reason: PassReason): Promise<void> {
+  async function drain(reason: TurnReason): Promise<void> {
     try {
       do {
         again = false

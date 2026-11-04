@@ -21,7 +21,7 @@
  *
  * **Pure, and nothing here imports a client or the environment.** The page
  * runs this in the browser as the dials move, so the one sentence it computes
- * — what a pass may spend — is `passCeiling`'s own, from `ceiling.ts`, and not
+ * — what a pass may spend — is `attemptCeiling`'s own, from `ceiling.ts`, and not
  * copy written for the page.
  *
  * **No money, anywhere.** A new repository has no cost history, so a figure
@@ -38,7 +38,7 @@ import type { StepAction, Recipe, RecipeChange } from '@lingtai/recipe'
 import { UNBOUNDED, formatTurns, parseDuration, type TurnLimit } from '@lingtai/recipe/duration'
 import { baseOf, ceilingOf, excludeOf, kindsOf, submodulesOf } from '@lingtai/recipe/settings'
 
-import { passCeiling } from './ceiling.ts'
+import { attemptCeiling } from './ceiling.ts'
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = 'onboard' | 'update'
@@ -556,7 +556,7 @@ export function settledDecisions(state: WizardState): DecisionId[] {
   return DECISIONS.map((d) => d.id).filter((id) => state.settled.includes(id) && id !== open)
 }
 
-/** `passCeiling`'s sentence for these dials, or why the dials do not make one. */
+/** `attemptCeiling`'s sentence for these dials, or why the dials do not make one. */
 export function limitsSentence(limits: Limits): { ok: true; sentence: string } | { ok: false; refusal: string } {
   let wallMs: number
   try {
@@ -575,7 +575,7 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
       }
     }
   }
-  return { ok: true, sentence: passCeiling({ ...limits, wallMs }) }
+  return { ok: true, sentence: attemptCeiling({ ...limits, wallMs }) }
 }
 
 /** Whether any check is ticked — what the `CHECKING_STEPS` will run between them. */

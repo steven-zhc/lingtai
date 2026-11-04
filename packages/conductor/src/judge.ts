@@ -58,11 +58,11 @@
  * missing while `JudgeName` had no runtime in it.
  *
  * What is still ahead of its callers is `askJudge`, and it is one function rather
- * than the file: the seam it is, `judged` in `pass-steps.ts` is again in the
+ * than the file: the seam it is, `judged` in `attempt-steps.ts` is again in the
  * pass's own vocabulary, because `stepsOnOffer` is `onOffer`'s rule in *this*
  * file's until T5 makes the two `Destination`s one. Both hold an answer to the
  * set it was offered and neither obeys one outside it, and
- * `pass-steps.test.ts`'s *the mechanical answer is `judge.ts`'s, cell for cell*
+ * `attempt-steps.test.ts`'s *the mechanical answer is `judge.ts`'s, cell for cell*
  * is what makes a divergence between them a failing test rather than a surprise.
  *
  * What is here early is the half that had to exist before the wiring could be
@@ -94,8 +94,8 @@ import { isBuiltInJudge, type BuiltInJudge, type JudgeWhen, type StepAction } fr
  * *which step*: the name comes back for the caller to apply, so the rule that
  * `same-worktree` is — back to `implement` where that is on offer, a person where
  * it is not — stays in the one place the pass already reads it
- * (`MECHANICALLY` in `pass-steps.ts`, held to `BUILT_IN` above cell for cell by
- * `pass-steps.test.ts`). A second copy of it here would be the divergence that
+ * (`MECHANICALLY` in `attempt-steps.ts`, held to `BUILT_IN` above cell for cell by
+ * `attempt-steps.test.ts`). A second copy of it here would be the divergence that
  * test exists to catch, written on purpose.
  *
  * `named` is the entry's `name:`, so a refusal or a card can say which line of
@@ -115,7 +115,7 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
           // **The dispatch's own half, carried on `Declared` and not on
           // `Judging`** (`#314`, 0070 §3). What a judge is *asked* is the offer
           // and the reason; what it *costs* is the recipe's, and
-          // `pass-steps.ts`'s key-set assertion on a brief is what keeps the two
+          // `attempt-steps.ts`'s key-set assertion on a brief is what keeps the two
           // from being confused — a price is not part of the question.
           ...(action.model === undefined ? {} : { model: action.model }),
           ...(action.limits === undefined ? {} : { limits: action.limits }),
@@ -143,7 +143,7 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
  *
  * **Neither member carries a destination**, and that is unchanged: this function
  * answers *which judge*, and the rule a built-in's name stands for stays in the
- * one place the pass already applies it (`MECHANICALLY` in `pass-steps.ts`).
+ * one place the pass already applies it (`MECHANICALLY` in `attempt-steps.ts`).
  */
 export type Declared =
   | { readonly built: BuiltInJudge; readonly named: string }

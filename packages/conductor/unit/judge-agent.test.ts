@@ -12,7 +12,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * become a crash with no verdict.
  *
  * **What is deliberately not asserted is that the answer is on offer.** Holding
- * one to the set is `judged`'s in `pass-steps.ts`, where the offer and the
+ * one to the set is `judged`'s in `attempt-steps.ts`, where the offer and the
  * ceilings are, and it is asserted there; a second copy of that rule here would
  * be the divergence the single reader exists to prevent.
  *
@@ -20,8 +20,8 @@ import type { ActionFinding } from '@lingtai/actions'
  */
 import { describe, expect, it } from 'vitest'
 
+import type { Judging } from '../src/attempt-steps.ts'
 import { chosenIn, judgePrompt } from '../src/judge-agent.ts'
-import type { Judging } from '../src/pass-steps.ts'
 
 const BLOCKER: ActionFinding = {
   file: 'packages/conductor/src/conduct.ts',

@@ -118,7 +118,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
               is here rather than on the bar because it changes about once a
               quarter.
 
-              The sentence is `passCeiling`'s, the one `lingtai add` prints and
+              The sentence is `attemptCeiling`'s, the one `lingtai add` prints and
               the drain says (0039 §3), so the page cannot word a recipe
               differently from the CLI. */}
           {limits.length === 0 ? (

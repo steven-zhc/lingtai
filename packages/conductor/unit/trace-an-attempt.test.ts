@@ -1,6 +1,6 @@
 /**
  * **A pass is one OTLP trace** (#791) — run, steps and actions as spans, against
- * the same fakes `conduct-a-whole-pass.test.ts` uses and an in-memory exporter.
+ * the same fakes `conduct-a-whole-attempt.test.ts` uses and an in-memory exporter.
  *
  * Unit by 0060 §1: nothing here opens a socket. The exporter is injected into
  * `installTracing`, so the provider, the batch processor, the context manager and
@@ -25,7 +25,7 @@ import {
   refusingRuntime,
   reviewerThatCrashes,
   runtime,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv

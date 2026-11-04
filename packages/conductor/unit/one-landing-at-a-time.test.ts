@@ -23,7 +23,7 @@ import {
   project,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 

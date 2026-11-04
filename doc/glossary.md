@@ -15,7 +15,7 @@ disagree, the code is right and this is corrected.
 - **Continuation** (续跑) is the umbrella for every move a person makes in the
   left column: the conductor calls `runPass({ from: … })`, which still starts
   at `admit` and runs `prepared`, then jumps to the step the move resumes at
-  rather than walking the steps between (`packages/conductor/src/pass.ts`;
+  rather than walking the steps between (`packages/conductor/src/run-attempt.ts`;
   scheduled by `requestContinuation` in
   `packages/conductor/src/resolve-wait.ts`). The machine's fix round is not
   one: it stays inside the same `runPass` loop. Neither move in the right

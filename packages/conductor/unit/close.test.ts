@@ -20,8 +20,8 @@ import { describe, expect, it } from 'vitest'
 
 import { close, closeHolding, type CloseOptions } from '../src/close.ts'
 import { dbTickets } from '../src/db-tickets.ts'
-import { passClientOf } from '../src/ticket-store.ts'
-import { fakeGitHub as fullFakeGitHub } from '../test/one-pass.ts'
+import { ticketedClientOf } from '../src/ticket-store.ts'
+import { fakeGitHub as fullFakeGitHub } from '../test/one-attempt.ts'
 
 /** `close()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
 const closeUnlocked = (o: CloseOptions) =>
@@ -282,7 +282,7 @@ describe('closing a blocked item', () => {
 
 /**
  * `close()` narrowed to `IssueChannel & RefChannel` so `client` can be a
- * `db` project's `TicketedClient` (`passClientOf`, #383) rather than a raw
+ * `db` project's `TicketedClient` (`ticketedClientOf`, #383) rather than a raw
  * `GitHubClient` — the same client every CLI and board call site now gets
  * from `projectClient`.
  */
@@ -320,7 +320,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
     const tickets = dbTickets(sql, 'lingtai')
     const opened = await tickets.createIssue({ title: 'a ticket', body: 'fix it', labels: ['bug'] })
-    const client = passClientOf(github, tickets)
+    const client = ticketedClientOf(github, tickets)
 
     const events: Envelope[] = []
     const outcome = await closeUnlocked({

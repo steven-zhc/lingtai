@@ -6,7 +6,7 @@ import { resolveRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { conductProjects, conductWork, projectsForPass, type ConductWorld, type PassOutcome } from '../src/conduct.ts'
+import { conductProjects, conductWork, projectsForTurn, type ConductWorld, type PassOutcome } from '../src/conduct.ts'
 
 /**
  * A pass's per-project work, for a project with no owner beside a GitHub one
@@ -211,7 +211,7 @@ describe('conductWork, with no GitHub App on this machine', () => {
       },
     }
 
-    // Not `conductorPass`'s filtering itself — `projectsForPass`, below, is
+    // Not `conductorPass`'s filtering itself — `projectsForTurn`, below, is
     // what proves that — only that `conductWork`'s no-owner branch does not
     // care whether an outer `'*'` refusal is already on `outcome`, the shape
     // `conductorPass` now hands it in.
@@ -248,7 +248,7 @@ describe('conductWork, with no GitHub App on this machine', () => {
 describe('projectsForPass', () => {
   it('hands every registered project through, and refuses nothing, when there is an App', () => {
     const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
-    const projects = projectsForPass([LOCAL_PROJECT, GH_PROJECT], true, outcome)
+    const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], true, outcome)
     expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
     expect(outcome.refused).toEqual([])
   })
@@ -256,21 +256,21 @@ describe('projectsForPass', () => {
   it('keeps GitHub projects and refuses nothing under gh, where the machine can reach GitHub', () => {
     // `conductorPass` hands `hasGitHubAuth()`, which is true on `gh` with no App at all.
     const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
-    const projects = projectsForPass([LOCAL_PROJECT, GH_PROJECT], hasGitHubAuth({ LINGTAI_GITHUB_AUTH: 'gh' }), outcome)
+    const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], hasGitHubAuth({ LINGTAI_GITHUB_AUTH: 'gh' }), outcome)
     expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
     expect(outcome.refused).toEqual([])
   })
 
   it('drops every GitHub project and pushes one `*` refusal, with no App', () => {
     const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
-    const projects = projectsForPass([LOCAL_PROJECT, GH_PROJECT], false, outcome)
+    const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], false, outcome)
     expect(projects).toEqual([LOCAL_PROJECT])
     expect(outcome.refused).toEqual([{ project: '*', detail: 'no GitHub App configured' }])
   })
 
   it('pushes no refusal when every registered project is already owner-less', () => {
     const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
-    const projects = projectsForPass([LOCAL_PROJECT], false, outcome)
+    const projects = projectsForTurn([LOCAL_PROJECT], false, outcome)
     expect(projects).toEqual([LOCAL_PROJECT])
     expect(outcome.refused).toEqual([])
   })

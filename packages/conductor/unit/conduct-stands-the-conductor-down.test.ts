@@ -48,7 +48,7 @@ import {
   reviewerThatCrashes,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 /**
  * The hour a stored instant reads on `zone`'s own wall clock.
@@ -221,7 +221,7 @@ describe('when a run never starts', () => {
  *
  * Neither could be asserted anywhere after `#256` deleted
  * the old engine's two test files: `reviewerAtTheWall`
- * and `reviewerThatCrashes` survived in `test/one-pass.ts` carrying these two
+ * and `reviewerThatCrashes` survived in `test/one-attempt.ts` carrying these two
  * citations and no test imported either, so the sentence a person is woken by at
  * 2am was guarded by nothing. `quotaRuntime` above cannot make the claim — it is
  * the *run's* own wall, which is `{of: "run"}` and the one branch that was

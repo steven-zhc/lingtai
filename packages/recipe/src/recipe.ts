@@ -138,18 +138,18 @@ export const runPlugin = definePlugin('run', {
    * `conductor/unit/step-matrix.test.ts` walks every cell to hold.
    *
    * **`build` is open since 2026-09-27, and it was one key.** Nothing else
-   * stood in the way: `runPass` resolves `actionsAt(step, actions)` at all ten
+   * stood in the way: `runAttempt` resolves `actionsAt(step, actions)` at all ten
    * and runs them through `runActionPipeline` *before* the body
-   * (`conductor/src/pass.ts:1443`), and `pass.ts:166` makes every step but
+   * (`conductor/src/run-attempt.ts:1443`), and `run-attempt.ts:166` makes every step but
    * `end` a `"verdicts"` step. `prepared` is the proof rather than the
    * argument — its body is `async () => ({ ending: "passed" })`, character for
    * character what `build`'s is, and a failing `pnpm install` refuses there all
-   * the same, because `pass.ts:1460` returns the pipeline's ending and never
+   * the same, because `run-attempt.ts:1460` returns the pipeline's ending and never
    * reaches the body.
    *
    * **`review` is deliberately not opened beside it.** `build` is in
    * `REFUSING_STEPS` and `review` is not — *`review` returns findings and
-   * judges nothing* (0058 §3b, `pass.ts:109`) — so a command that fails at
+   * judges nothing* (0058 §3b, `run-attempt.ts:109`) — so a command that fails at
    * `review` has nowhere to put the failure until `proposed` has a judge to
    * read it. That judge is `judgePlugin.at.proposed`, open since `#274`, which
    * is where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
@@ -168,7 +168,7 @@ export const runPlugin = definePlugin('run', {
    *
    * **The command's own exit code cannot refuse, and that is `implement`'s own
    * rule and not a weaker one written for this key.** `implement` is not one of
-   * `REFUSING_STEPS` (`pass.ts:108`), so a command that exits non-zero here has
+   * `REFUSING_STEPS` (`run-attempt.ts:108`), so a command that exits non-zero here has
    * nowhere to put a refusal the way `build`'s copy of the same command does.
    * The wrapper never turns that exit code into a `failed` verdict: a command
    * that fails leaves the worktree put back to the agent's own `HEAD`, the step
@@ -366,8 +366,8 @@ export const agentPlugin = definePlugin('agent', {
    * re-reading a recipe first.
    */
   /**
-   * **`review` since 2026-09-27, and `pass.ts` was already written for it.**
-   * `pass.ts:1589` reads `if (spec.step === "review") return { ending:
+   * **`review` since 2026-09-27, and `run-attempt.ts` was already written for it.**
+   * `run-attempt.ts:1589` reads `if (spec.step === "review") return { ending:
    * "passed" }` — a reviewer's `failed` is its findings and not a verdict about
    * the step (0058 §3b), so they ride out on `results` and `proposed` reads them
    * to decide there is a `findings` direction to judge at all. Declaring the
@@ -1335,7 +1335,7 @@ export type JudgeName = z.infer<typeof JudgeName>
 
 /**
  * **Which step is next when something refuses** — a name for the decision
- * `onOffer` and `Ceilings` make in `packages/conductor/src/pass.ts`, which no
+ * `onOffer` and `Ceilings` make in `packages/conductor/src/run-attempt.ts`, which no
  * recipe can see, name or replace today (0061 §3).
  *
  * **One entry per `when:`, and that is the schema rather than a convention.**
@@ -2116,7 +2116,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (step === 'review') {
     return (
-      '`review` returns findings and judges nothing (0058 §3b) — `pass.ts` makes its ending `passed` ' +
+      '`review` returns findings and judges nothing (0058 §3b) — `run-attempt.ts` makes its ending `passed` ' +
       'whatever the action said, so a verdict declared here is one the step throws away, and `agent:` ' +
       'is the only plugin that answers with findings rather than with a verdict. A command that decides ' +
       "whether the diff stands is a `run:` at `build`; a glob over it or a hold on it is `proposed`'s"
@@ -2586,7 +2586,7 @@ function actionsAt(step: Step) {
        * 0065 §6 *decides* the empty list will mean that, and that part of §6 is
        * unbuilt: `StepMap` resolves `[]` and an omitted key to the same value, so
        * at the seam `merge: []` takes the default lane and **merges**
-       * (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-pass.test.ts`'s *lands
+       * (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-attempt.test.ts`'s *lands
        * onto main with `merge: []`*), which is what this repository runs on.
        * Either reading refuses a rule demanding a non-empty list: today it would
        * refuse this machine's own recipe, and after §6 it would refuse the
@@ -3266,7 +3266,7 @@ export const Recipe = z
        * block. On 2026-09-10 the drain told an operator it would wait at most one
        * `wall`, which the fix loop had already made false — a sentence in one file
        * chasing a number kept in another. Four numbers in one place cannot drift
-       * apart like that, and `passCeiling` is the one function that multiplies
+       * apart like that, and `attemptCeiling` is the one function that multiplies
        * them, so nothing else writes the product down.
        */
       limits: z

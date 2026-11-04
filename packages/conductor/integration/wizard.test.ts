@@ -23,7 +23,7 @@ import { passedOver } from '../src/discover.ts'
 import { selectRunnable } from '../src/queue.ts'
 import {
   HOLD_LABEL,
-  firstPass,
+  firstTurn,
   holdAll,
   holdLabel,
   nothingReadsIt,
@@ -232,7 +232,7 @@ describe('the queue preview', () => {
    */
   it("is selectRunnable's answer, in selectRunnable's order", async () => {
     const project = fresh()
-    const pass = await firstPass({ client: readOnlyClient(project), recipe })
+    const pass = await firstTurn({ client: readOnlyClient(project), recipe })
 
     expect(pass.taking.map((r) => r.issue)).toEqual(['398', '412', '4100', '7'])
     expect(
@@ -247,7 +247,7 @@ describe('the queue preview', () => {
 
   /** `passedOver`'s sentence, character for character, and not a second phrasing. */
   it("counts what it passed over in discover.ts's own words", async () => {
-    const pass = await firstPass({ client: readOnlyClient(fresh()), recipe })
+    const pass = await firstTurn({ client: readOnlyClient(fresh()), recipe })
 
     expect(pass.passedOver).toBe(
       passedOver([
@@ -262,7 +262,7 @@ describe('the queue preview', () => {
 
   /** Nothing passed over is no clause, rather than "0 passed over". */
   it('says only the count when the recipe takes everything', async () => {
-    const pass = await firstPass({
+    const pass = await firstTurn({
       client: readOnlyClient(fresh(), [issue({ number: 1, labels: ['bug'] })]),
       recipe,
     })
@@ -283,7 +283,7 @@ describe('abandoning the wizard', () => {
     const github = readOnlyClient(project)
     const home = await machine()
 
-    const pass = await firstPass({ client: github, recipe })
+    const pass = await firstTurn({ client: github, recipe })
     expect(pass.taking.length).toBe(4)
     const validated = await validateProposal(recipe, SAID)
     expect(validated.ok).toBe(true)
@@ -317,7 +317,7 @@ describe('abandoning the wizard', () => {
   it('does not hold anything the operator did not press Hold all for', async () => {
     const project = fresh()
     const github = readOnlyClient(project)
-    const pass = await firstPass({ client: github, recipe })
+    const pass = await firstTurn({ client: github, recipe })
 
     const attempted = await holdAll({
       client: github,
@@ -345,7 +345,7 @@ describe('the managed repository', () => {
     const github = readOnlyClient(project)
     const home = await machine()
 
-    await firstPass({ client: github, recipe })
+    await firstTurn({ client: github, recipe })
     const started = await startOnboarding({ client: github, recipe, said: SAID, by: 'human:tester', store, home })
 
     expect(started).toEqual({ ok: true, path: recipePath(project, home) })
@@ -617,7 +617,7 @@ describe('Hold all', () => {
   it('adds the hold to exactly the issues the screen listed, and touches no other label', async () => {
     const project = fresh()
     const { client: github, labelled } = recordingClient(project)
-    const pass = await firstPass({ client: github, recipe })
+    const pass = await firstTurn({ client: github, recipe })
 
     const held = await holdAll({
       client: github,

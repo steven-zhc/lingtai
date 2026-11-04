@@ -8,7 +8,7 @@
  * fifth field on its result: `head`. Every other kind is handed `onSha` and says
  * yes or no about it; this one is where `onSha` gets a value at all, because
  * `admit` is where the tree is cut (`LeftTheTreeAt` in
- * `packages/conductor/src/pass.ts`).
+ * `packages/conductor/src/run-attempt.ts`).
  *
  * **It wraps and does not reimplement.** The cut itself is
  * `provisionWorktree`'s, in `packages/repo/src/worktree.ts`, and the caller

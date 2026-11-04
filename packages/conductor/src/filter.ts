@@ -33,14 +33,20 @@ import {
   type StepBound,
 } from '@lingtai/recipe/settings'
 
-import { passCeiling } from './ceiling.ts'
+import { attemptCeiling } from './ceiling.ts'
 import type { TicketSource } from './discover.ts'
 import { currentRecipe } from './projects.ts'
-import { passClientOf, ticketsFor, type Tickets, type TicketedClient, type TicketsForOptions } from './ticket-store.ts'
+import {
+  ticketedClientOf,
+  ticketsFor,
+  type Tickets,
+  type TicketedClient,
+  type TicketsForOptions,
+} from './ticket-store.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
 // imported it from here still does.
-export { passCeiling }
+export { attemptCeiling }
 
 /**
  * One thing the recipe configures at a point, and what bounds it.
@@ -283,7 +289,7 @@ export async function projectClient(
   const client = await clientFor(state)
   const resolved = await recipeFor(state, client)
   const tickets = await ticketsFor(state, resolved.recipe, client, options.tickets)
-  return { client: passClientOf(client, tickets), resolved }
+  return { client: ticketedClientOf(client, tickets), resolved }
 }
 
 /**
@@ -435,7 +441,7 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2). **The product, not the
     // three numbers**, because the product is what an operator is deciding about (0039 §3).
-    ['a pass', passCeiling(filter.limits)],
+    ['a pass', attemptCeiling(filter.limits)],
     // In the recipe's own words, for the same reason: the backoff decides when
     // this project spends money again (#95).
     ['retries', `after ${backoffOf(filter.recipe)}, unless a repair is pending`],

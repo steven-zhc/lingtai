@@ -934,7 +934,7 @@ export function buildDesignPrompt(
    * The other half of 0058 §3c's sentence: a judge may answer a design's question
    * with *that step again*, and a design agent handed the round with no memory of
    * asking would ask it again — one round bought, the same question, and a person
-   * at the end of it anyway. `sentBackTo` in `packages/conductor/src/pass.ts` is
+   * at the end of it anyway. `sentBackTo` in `packages/conductor/src/run-attempt.ts` is
    * what computes it, off this pass's own visits.
    */
   again: SentBack | null = null,
@@ -1178,7 +1178,7 @@ export function parseDraft(text: string | null): Drafted {
  * decision removes rather than one it may add. `actionsFromRecipe` is where the
  * step picks between them.
  *
- * **Five answers** (`pass-steps.ts` before `#265`). A document — including the
+ * **Five answers** (`attempt-steps.ts` before `#265`). A document — including the
  * empty one, which is `passed` and not a skip. A runtime that never started,
  * which is about the account and stands the conductor down (0031 §3). One that
  * started and left no receipt, which buys no round and stands the pass down
@@ -1210,7 +1210,7 @@ export function parseDraft(text: string | null): Drafted {
  * There is no sixth: a design is not a judgement about a diff, there being no
  * diff, so `design` is not one of `REFUSING_STEPS` — which is why the `failed`
  * this returns for an unreadable answer arrives at the step as a `did-not-finish`
- * (`endingOf` in `pass.ts`) and buys nothing, exactly as `#279` wants.
+ * (`endingOf` in `run-attempt.ts`) and buys nothing, exactly as `#279` wants.
  */
 export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {
@@ -1292,7 +1292,7 @@ function draftAnswer(outcome: RunOutcome): ActionResult {
      * bare way, and what the turns cost is on the run log.
      *
      * **And the draft rides with it, under a rule, where the agent wrote one**
-     * (`#294`, the fix round). `WroteTheDesign` in `pass.ts` is *only on a
+     * (`#294`, the fix round). `WroteTheDesign` in `run-attempt.ts` is *only on a
      * pass* and `StepDidNotFinish` carries one field, so `evidence` is the one
      * channel a question's draft can reach both a person and the log through —
      * and a design note that reached neither would be in nothing but the run

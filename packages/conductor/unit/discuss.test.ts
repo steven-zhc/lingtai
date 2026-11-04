@@ -29,9 +29,9 @@ import {
   type Answered,
   type DiscussionEvidence,
 } from '../src/discuss.ts'
-import { passClientOf } from '../src/ticket-store.ts'
+import { ticketedClientOf } from '../src/ticket-store.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
-import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-pass.ts'
+import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-attempt.ts'
 
 const EVIDENCE: DiscussionEvidence = {
   ticketId: 'ticket-lingtai-89',
@@ -248,7 +248,7 @@ describe('the ticket, appended to', () => {
 
 /**
  * `ticket.github` is `IssueChannel`, and a `db` project's `TicketedClient`
- * (`passClientOf`, #383) satisfies it the same way the board's `concludeChat`
+ * (`ticketedClientOf`, #383) satisfies it the same way the board's `concludeChat`
  * now hands it one — `IssueChannel` is a subset of `TicketedClient`.
  */
 describe('concludeDiscussion', () => {
@@ -265,7 +265,7 @@ describe('concludeDiscussion', () => {
     const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
     const tickets = dbTickets(sql, 'lingtai')
     const opened = await tickets.createIssue({ title: 't', body: 'the original ticket.', labels: ['bug'] })
-    const client = passClientOf(wrapped, tickets)
+    const client = ticketedClientOf(wrapped, tickets)
 
     const store = memoryStore()
     const result = await concludeDiscussion({

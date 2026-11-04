@@ -497,8 +497,8 @@ export interface Runners {
 
 const liveRunners: Runners = {
   async run(request) {
-    const { run: runPass } = await import('./run.ts')
-    return runPass(request)
+    const { run: runAttempt } = await import('./run.ts')
+    return runAttempt(request)
   },
   async attach(request) {
     const { attach } = await import('./attach.ts')

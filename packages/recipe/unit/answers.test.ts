@@ -1,7 +1,7 @@
 /**
  * `landingChanges`, `roundsChange`, `wallChange` and `budgetChange` (#399) —
  * the pure half of `apps/cli/src/landing.ts`'s writes, turning an answer into
- * `RecipeChange[]`. `packages/conductor/unit/conduct-a-whole-pass.test.ts`
+ * `RecipeChange[]`. `packages/conductor/unit/conduct-a-whole-attempt.test.ts`
  * imports the same builder to pin that what it writes actually holds or
  * lands a pass; this file is about the shape of the change set alone.
  */

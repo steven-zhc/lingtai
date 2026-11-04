@@ -239,7 +239,7 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
       }
 
       // **Silent where there was nothing to keep**, which is the rule on
-      // `designFrom` in `packages/conductor/src/pass.ts` read from this side: an
+      // `designFrom` in `packages/conductor/src/run-attempt.ts` read from this side: an
       // empty document is *the drafter answered that this change needs none*
       // (0058 §3), and a file written for it would be an empty file in the diff
       // and a locator pointing at nothing anybody wants. No `document` and no

@@ -13,14 +13,14 @@ import { dirname } from 'node:path'
  * would not be enough here, and it does not have to be: `selectRunnable` is
  * *what GitHub offers* minus *what `task_view` says*, and a repository that has
  * never run **has no `task_view` rows** — so the first pass is exactly
- * derivable from the kinds and exclude just chosen. `firstPass` below is
+ * derivable from the kinds and exclude just chosen. `firstTurn` below is
  * `lingtai status` for a project that does not exist yet.
  *
  * **It calls `selectRunnable` and `passedOver` rather than reimplementing
  * them.** The number on this screen and the number `lingtai status` prints an
  * hour later are a promise to the operator, and the only thing that keeps a
  * promise like that is a shared function — the argument `backingOff` and
- * `passCeiling` are already here for (#100).
+ * `attemptCeiling` are already here for (#100).
  *
  * Then `startOnboarding`: validate, write the recipe on this machine, append
  * `ProjectOnboardingStarted`. **It is the only write the wizard makes of its
@@ -59,7 +59,7 @@ import { passedOver, runnableNow } from './discover.ts'
 import { type Runnable, selectRunnable } from './queue.ts'
 import { CHECKING_STEPS, nothingChecks } from './wizard-page.ts'
 
-export interface FirstPassOptions {
+export interface FirstTurnOptions {
   client: GitHubClient
   /** The recipe the wizard just built — not one read from a branch; there is none yet. */
   recipe: Recipe
@@ -68,7 +68,7 @@ export interface FirstPassOptions {
 }
 
 /** What pressing the button starts, and what it will leave alone. */
-export interface FirstPass {
+export interface FirstTurn {
   /** `selectRunnable`'s answer, in the order the conductor will claim them. */
   taking: Runnable[]
   /** `discover.ts`'s own sentence, word for word, or null when nothing was passed over. */
@@ -93,7 +93,7 @@ export interface FirstPass {
  * `prj-…` are keyed by, so it is taken off the client rather than passed in
  * beside it.
  */
-export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
+export async function firstTurn(options: FirstTurnOptions): Promise<FirstTurn> {
   const { client, recipe } = options
   const offered = await runnableNow({ client, queue: queueOf(recipe) })
   const taking = await selectRunnable({
@@ -166,7 +166,7 @@ export function holdLabel(recipe: Recipe): string | null {
 
 export interface HoldAllOptions {
   client: GitHubClient
-  /** Exactly the issues the screen listed — `FirstPass.taking`'s `issue`s. */
+  /** Exactly the issues the screen listed — `FirstTurn.taking`'s `issue`s. */
   issues: readonly string[]
   /** `holdLabel`'s answer. */
   label: string

@@ -126,7 +126,7 @@ import { describe, expect, it } from 'vitest'
 import { decideBacklog } from '../src/backlog.ts'
 import { resolveEndActions } from '../src/end-step.ts'
 import { BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
-import { NOT_BUILT_YET } from '../src/pass.ts'
+import { NOT_BUILT_YET } from '../src/run-attempt.ts'
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
@@ -206,7 +206,7 @@ const KINDS = PLUGINS.map((plugin) => plugin.key)
  * run — **and since `#256` it is one object at all ten steps.**
  *
  * `conduct.ts`'s `actionsAt` is a single `(step, actions)` seam, which is the
- * shape `PassOptions.actionsAt` asks for, so there is no per-step deps table in
+ * shape `AttemptOptions.actionsAt` asks for, so there is no per-step deps table in
  * the conductor for this to be a copy of any more. What keeps a step from
  * building a kind it must not is `whyNoKindAt`, asked by `actionsFromRecipe`
  * itself and by the schema — the two doors the matrix below is about. `DEPS`
@@ -241,7 +241,7 @@ const DEPS: Record<'prepared' | 'proposed' | 'merge', ActionDeps> = {
  * whole of what `#256` changed here. `HAS_A_CALL_SITE` was `["prepared",
  * "proposed", "merge", "end"]` — the four points the old engine built a pipeline
  * at — and every cell at the other six was false because nothing asked. The pass
- * asks at all ten: `runPass` calls `options.actionsAt(step, actions)` for every
+ * asks at all ten: `runAttempt` calls `options.actionsAt(step, actions)` for every
  * step whose plugins are verdicts, and `end` by its resolver.
  *
  * So the class of drift that list guarded — *the matrix goes on refusing a step
@@ -1196,7 +1196,7 @@ describe('every step × kind cell runs or refuses', () => {
    * Between them they pinned four literal call sites and the per-step deps each
    * was handed; there is one call site now, it names its step with a *variable*,
    * and it hands the same deps everywhere — `conduct.ts`'s `actionsAt`, which is
-   * the seam `PassOptions.actionsAt` asks for.
+   * the seam `AttemptOptions.actionsAt` asks for.
    *
    * What that buys is the thing the old pair could only approximate: the code
    * runs whatever the schema accepts, at every step, so the plugins' own `at`
@@ -1207,7 +1207,7 @@ describe('every step × kind cell runs or refuses', () => {
    *
    * Recursive over `src/`, because "the module the call site is in today" is
    * exactly the assumption this exists to stop being made — and **over the code
-   * rather than over the bytes**: `pass.ts`'s own doc comment names
+   * rather than over the bytes**: `run-attempt.ts`'s own doc comment names
    * `actionsFromRecipe("end", …)` to say the `end` step is not one, and a count
    * that read comments would read that sentence as a second call site.
    */
@@ -1236,12 +1236,12 @@ describe('every step × kind cell runs or refuses', () => {
     expect(end, '`end` has no `resolveEndActions` to carry its effects out').toBe(true)
   })
 
-  /** And the call is the pass's seam, handed to `runPass` rather than called directly. */
+  /** And the call is the pass's seam, handed to `runAttempt` rather than called directly. */
   it('hands that call to the pass as `actionsAt`', async () => {
     const wiring = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
     expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/)
     expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/)
-    expect(wiring).toMatch(/runPass\(\{[\s\S]*actionsAt,/)
+    expect(wiring).toMatch(/runAttempt\(\{[\s\S]*actionsAt,/)
   })
 })
 

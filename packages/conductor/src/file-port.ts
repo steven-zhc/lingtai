@@ -8,7 +8,7 @@
  *
  * 0066 §4 says the locator is a string the core never parses, and the port is
  * **the core's only contact with one**. `unit/a-locator-the-core-did-not-write.test.ts`
- * carries a URL locator through `runPass` and asserts it byte-for-byte at both
+ * carries a URL locator through `runAttempt` and asserts it byte-for-byte at both
  * ends — but that test replaces `actionsAt` and all ten bodies, so the port
  * layer is outside its module graph entirely, and a port taught to classify a
  * locator by shape left the whole file green. That is the hole this module

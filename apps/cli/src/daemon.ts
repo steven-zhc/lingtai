@@ -444,7 +444,7 @@ export async function daemonCommand(
             // phrase, and the two collided into "each with its own the recipe's
             // runtime.limits — by default, up to 3 agent runs".
             //
-            // It says the product now, because `passCeiling` computes one and
+            // It says the product now, because `attemptCeiling` computes one and
             // there is no longer anything to approximate: the multiple *is* the
             // number, and asking the reader to multiply was only ever the cost of
             // not having it.
@@ -619,12 +619,12 @@ export async function daemonCommand(
         // A routine pass, in the accent — structure, not a verdict. What the
         // pass *decided* is coloured line by line above this; this one only
         // says the loop went round.
-        const passLine = (refused: boolean): string =>
+        const attemptLine = (refused: boolean): string =>
           paint.accent(
             `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
               (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
           )
-        if (verbose) console.log(passLine(true))
+        if (verbose) console.log(attemptLine(true))
         // A refusal is not trace: a quiet start must still say why nothing was taken.
         else if (outcome.refused.length > 0) {
           console.log(

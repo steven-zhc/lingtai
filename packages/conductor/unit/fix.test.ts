@@ -688,7 +688,7 @@ describe('the headline says what stopped the pass', () => {
    *
    * **And the counter that says so cannot be `rounds`**, which is the whole of
    * the last row here. The pass keeps *one ceiling, so one counter*
-   * (`Ceilings` in `pass.ts`):
+   * (`Ceilings` in `run-attempt.ts`):
    * `rounds` is spent by whichever point refused, so it is as easily *`build`
    * refused A, round 1 fixed it, `review` refused B* — where this reviewer has
    * read exactly one diff and the card would credit it with refusing a diff it
@@ -751,7 +751,7 @@ describe('the headline says what stopped the pass', () => {
   /**
    * **And the ceiling only earns that sentence where this reviewer is what spent
    * it.** One ceiling means one counter and every point spends it (`Ceilings` in
-   * `pass.ts`), so with `proposed: [build, review]` and a ceiling of 3: `build` refuses A,
+   * `run-attempt.ts`), so with `proposed: [build, review]` and a ceiling of 3: `build` refuses A,
    * three rounds answer it, and `review` refuses the last diff. `decideFix`
    * returns `spent` at `rounds: 3` with this reviewer having refused **once**,
    * and nothing was ever bought to answer it — so *two agents disagreed* and
@@ -980,7 +980,7 @@ describe('the headline says what stopped the pass', () => {
      * same evidence.
      *
      * **`rounds` cannot be that count, and the last row is why.** There is one
-     * ceiling and so one counter (`Ceilings` in `pass.ts`), spent by whichever point
+     * ceiling and so one counter (`Ceilings` in `run-attempt.ts`), spent by whichever point
      * refused: *`review` refuses A; round 1 commits B; `build` refuses B; round
      * 2's fixer is killed* is `rounds: 2` with `build` having refused **once**.
      * A headline reading *`build` ran 2 times in all, on 2 different diffs, and
