@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import { STREAM_ID_PATTERN, StreamId } from '../src/envelope.ts'
+import { ATTEMPT_STREAM_PREFIX } from '../src/streams.ts'
 
 describe('STREAM_ID_PATTERN', () => {
   it('is built to the same source as the literal it replaced', () => {
     expect(STREAM_ID_PATTERN.source).toBe('^(ticket|pass|int|prj|ctl|chat|ext|bkl)-[\\w.-]+$')
+  })
+
+  it('keeps the attempt stream prefix value', () => {
+    expect(ATTEMPT_STREAM_PREFIX).toBe('pass-')
   })
 })
 

@@ -7,7 +7,7 @@
  * in between.
  *
  * **Still a subpath, `@lingtai/domain/wait`, and not in `index.ts`.** The
- * collisions that put it here — the old `Hold`-shaped `AttemptRef` and
+ * collisions that put it here — the old `Hold`-shaped `RunRef` and
  * `triage.ts`'s old `Failed`/`Advised`-shaped `TriageResult`/`TriageStatus` —
  * are gone with those two files, so nothing would collide at the root today.
  * Left as a subpath anyway: nine call sites already import it that way, and
@@ -57,7 +57,7 @@ export const KeptAt = z.discriminatedUnion('_tag', [
 export type KeptAt = z.infer<typeof KeptAt>
 
 /**
- * A run a wait belongs to, 0118 §1's own — not the old `Hold`'s `AttemptRef`, which
+ * An attempt a wait belongs to, 0118 §1's own — not the old `Hold`'s `RunRef`, which
  * also carries `repairOf` for `waitWords`' pre-#143 repair machinery, a
  * field this model has no place for. `unpushed` sits here, rather than on
  * `WaitReason` itself, so it can sit beside any wait with a run and cannot
@@ -206,7 +206,7 @@ const StandingReason = z.discriminatedUnion('_tag', [
  * outside `runPass` (0120 §6), and the walk itself — `nextOf` throwing, or a
  * body answering something other than `passed` with no deciding action to
  * read — can stop at `admit`, `prepared` or `build` too, none of which an
- * *agent's own* `Interrupted` could ever name (`pass-next.ts:309`'s guard is
+ * *agent's own* `Interrupted` could ever name (`attempt-next.ts:309`'s guard is
  * narrower, and stays narrower: it is still about what an agent's outcome may
  * claim, not about where the shell itself may stop).
  */

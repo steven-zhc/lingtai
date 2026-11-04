@@ -241,7 +241,7 @@ function after(step: Step): Step | null {
  * about the judgement.
  *
  * `onSha` is *the commit this verdict is about, and the only thing that makes it
- * stale* (`ActionContext`), and `stepsOn()` (`packages/domain/src/run.ts`) shows
+ * stale* (`ActionContext`), and `stepsOn()` (`packages/domain/src/attempt.ts`) shows
  * a verdict only where it equals the item's head. So a pass that judged `A`
  * while the tree stood at `B` has paid for every verdict and can show none of
  * them. The workflow cannot work the value out — it runs no git — and the caller
@@ -1551,7 +1551,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
     // asking it cannot throw by construction. `claim` is never `at` here (it
     // ran before this walk started, through `claimStep`), and a `merge` whose
     // plugins never reached a deciding action (`decidingAction === null`) is
-    // the one case `nextOf`'s own doc says throws (`pass-next.ts:111-113`) —
+    // the one case `nextOf`'s own doc says throws (`attempt-next.ts:111-113`) —
     // excluded here rather than caught, so an empty `merge:` list keeps
     // today's ending too.
     const outcome = reached.outcome

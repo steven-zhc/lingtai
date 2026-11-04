@@ -242,7 +242,7 @@ export const TicketContinued = z.object({
  * reduced from the work item's own `TicketReleased.cause` rather than
  * re-derived from whatever else sits beside it on the stream.
  *
- * `Restart` and `NeverStarted` are `pass-next.ts`'s own `RequeueCause`
+ * `Restart` and `NeverStarted` are `attempt-next.ts`'s own `RequeueCause`
  * variants, spread in rather than redeclared, so the two schemas cannot say
  * two different things about one tag.
  */
@@ -1084,7 +1084,7 @@ export const StepStarted = z.object({
  * tests hold rather than a comment** (`#237`). Five places used to spell the
  * three names out and none of them linked here: `parseFindings` and
  * `verdictFor` in `packages/actions/src/agent-action.ts`, `severest`, and the
- * `StepFinding` and `ActionFinding` interfaces in `packages/domain/src/run.ts`
+ * `StepFinding` and `ActionFinding` interfaces in `packages/domain/src/attempt.ts`
  * and `packages/actions/src/action.ts`. Each reads this array, or the `Severity` it
  * yields, so a fourth severity added here reaches all of them at once —
  * `packages/actions/unit/agent-action.test.ts` and

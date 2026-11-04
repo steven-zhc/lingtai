@@ -4606,7 +4606,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * through `nextOf`'s `Propose` like every other fall-short** — and the
          * two shapes above already cover three of the four steps it can
          * happen at (`AnswerUnreadable` is legal at `design`, `review`,
-         * `proposed` and `merge`, `pass-next.ts:316`, 0120 §2's table).
+         * `proposed` and `merge`, `attempt-next.ts:316`, 0120 §2's table).
          * `review`'s is special-cased `passed` by `endingOf` (a reviewer's
          * `failed` is findings, not a refusal), so `routeProposal`'s `reported`
          * is `null` and it lands on `stopped === null`, the first shape.
