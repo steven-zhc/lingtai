@@ -14,7 +14,14 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { CONTROL_FOLD_TYPES, reduceControlEvent, emptyControl, evaluateControl, reduceControl } from '../src/control.ts'
+import {
+  CONTROL_FOLD_TYPES,
+  reduceControlEvent,
+  emptyControl,
+  evaluateControl,
+  reduceControl,
+  scopeControl,
+} from '../src/control.ts'
 import type { Envelope } from '../src/envelope.ts'
 import { Actor } from '../src/envelope.ts'
 import { type EventType, SCHEMA_VER } from '../src/events.ts'
@@ -328,6 +335,7 @@ describe('a withdrawal written with a handoff, before #167', () => {
       'discussions',
       'holdsAcrossStarts',
       'paused',
+      'pausedAt',
       'reason',
       'requested',
       'shutdown',
@@ -472,5 +480,46 @@ describe('the control reduce in two halves (#836)', () => {
     expect(paused({}).cause).toBeNull()
     expect(paused({ cause: 'not-a-cause' }).cause).toBeNull()
     expect(paused({ cause: 'setup' }).cause).toBe('setup')
+  })
+})
+
+describe('pausedAt and scopeControl (#874)', () => {
+  const pause = (until: string | null = null) => ({
+    type: 'ConductorPaused',
+    data: { by: 'steven', reason: 'r', until },
+  })
+  const ask = { type: 'ConductorShutdownRequested', data: { by: 'steven', reason: 'x', timeoutMs: null } }
+
+  it('is the version of the standing pause, and clears on resume and on expiry', () => {
+    const at = new Date('2026-01-01T00:00:00Z')
+    expect(reduceControl(log([ask, pause()]), at).pausedAt).toBe(2)
+    expect(reduceControl(log([pause(), { type: 'ConductorResumed', data: { by: 'steven' } }]), at).pausedAt).toBeNull()
+    const timed = log([pause('2026-01-01T01:00:00Z')])
+    expect(reduceControl(timed, at).pausedAt).toBe(1)
+    expect(reduceControl(timed, new Date('2026-01-01T02:00:00Z')).pausedAt).toBeNull()
+  })
+
+  it('is the identity at since 0', () => {
+    const state = reduceControl(log([pause(), ask]), NOW)
+    expect(scopeControl(state, 0)).toBe(state)
+  })
+
+  it('clears a pause at the watermark and keeps one after it', () => {
+    const state = reduceControl(log([pause()]), NOW)
+    expect(scopeControl(state, 1)).toMatchObject({ paused: false, pausedAt: null, by: null, reason: null })
+    expect(scopeControl(state, 0).paused).toBe(true)
+  })
+
+  it('keeps a pause that holds across starts, below the watermark', () => {
+    const holding = { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'r', holdsAcrossStarts: true } }
+    const state = reduceControl(log([holding]), NOW)
+    expect(scopeControl(state, 5).paused).toBe(true)
+  })
+
+  it('clears a shutdown below the watermark while keeping a pause above it', () => {
+    const state = reduceControl(log([ask, pause()]), NOW)
+    const scoped = scopeControl(state, 1)
+    expect(scoped.shutdown).toBeNull()
+    expect(scoped.paused).toBe(true)
   })
 })

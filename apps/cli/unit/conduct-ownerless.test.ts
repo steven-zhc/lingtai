@@ -41,6 +41,7 @@ const EMPTY_CONTROL: ControlState = {
   cause: null,
   ceilingWaivedUntil: null,
   shutdown: null,
+  pausedAt: null,
   requested: [],
   continuing: [],
   discussions: [],

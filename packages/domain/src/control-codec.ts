@@ -31,6 +31,7 @@ const StoredControl = z.strictObject({
       version: z.number(),
     })
     .nullable(),
+  pausedAt: z.number().nullable(),
   requested: z.array(z.strictObject({ project: z.string(), issue: z.string(), by: z.string() })),
   continuing: z.array(z.strictObject({ project: z.string(), issue: z.string(), runId: z.string(), by: z.string() })),
   discussions: z.array(

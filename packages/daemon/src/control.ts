@@ -5,9 +5,9 @@ import {
   type ControlState,
   controlReducer,
   evaluateControl,
+  scopeControl,
   type ShutdownRequest,
   parsePayload,
-  reduceControl,
 } from '@lingtai/domain'
 /**
  * Telling the conductor what to do, and knowing whether it is listening.
@@ -125,11 +125,12 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * the same setup, so the new daemon must meet the same pause rather than take
  * work until it refuses the same ticket again. `holdsAcrossStarts` marks
  * exactly that pause (and only that one; `standDownConductor`'s does not carry
- * it). The scoped reduce is read first, as every other signal is; only when it is
- * not already paused is the whole stream reduced too, and only a holding,
- * marked pause there changes the answer — a person's own pause written before
- * the watermark is still invisible here, which is 0102 §3 doing what it has
- * always done.
+ * it). The answer is the whole-stream state, read through the snapshot, scoped
+ * by version (`scopeControl`): a pause is kept when it came after `since` or
+ * holds across starts, a shutdown when its own version is after `since`.
+ * `requested`, `continuing`, `discussions`, `holdsAcrossStarts`,
+ * `ceilingWaivedUntil` and `pausedAt` are the whole stream's values; no caller
+ * with `since > 0` reads them (#874).
  */
 export async function readControl(
   store?: EventStore,
@@ -139,25 +140,18 @@ export async function readControl(
   const events = store ?? eventStore
   // The default snapshots belong to the default store's log; a store passed in has none of its own.
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
-  if (since <= 0) {
-    // Rethrown as the store's own error: `runPromise` would wrap it in a `FiberFailure`.
-    const read = await Effect.runPromise(
-      Effect.either(
-        readThroughSnapshot(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
-          snapshots,
-          writer: cache.writer,
-        }),
-      ),
-    )
-    if (Either.isLeft(read)) throw read.left
-    return evaluateControl(read.right, new Date())
-  }
-  const all = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)
-  const scoped = reduceControl(all.filter((e) => e.version > since))
-  if (scoped.paused) return scoped
-  const whole = reduceControl(all)
-  if (!whole.paused || !whole.holdsAcrossStarts) return scoped
-  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
+  // Rethrown as the store's own error: `runPromise` would wrap it in a `FiberFailure`.
+  const read = await Effect.runPromise(
+    Effect.either(
+      readThroughSnapshot(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
+        snapshots,
+        writer: cache.writer,
+      }),
+    ),
+  )
+  if (Either.isLeft(read)) throw read.left
+  const whole = evaluateControl(read.right, new Date())
+  return since <= 0 ? whole : scopeControl(whole, since)
 }
 
 /**

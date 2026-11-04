@@ -106,6 +106,13 @@ export interface ControlState {
    * nor the exit it is asking for.
    */
   shutdown: ShutdownRequest | null
+  /**
+   * The version of the `ConductorPaused` that is standing, or null when none is.
+   * Set with `paused`, cleared wherever `paused` becomes false — resume and
+   * expiry. It is what lets `scopeControl` ask whether the pause came after a
+   * watermark (#874).
+   */
+  pausedAt: number | null
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[]
   /**
@@ -151,6 +158,7 @@ export const emptyControl: ControlState = {
   cause: null,
   ceilingWaivedUntil: null,
   shutdown: null,
+  pausedAt: null,
   requested: [],
   continuing: [],
   discussions: [],
@@ -176,6 +184,7 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
       return {
         ...state,
         paused: true,
+        pausedAt: e.version,
         by: str('by'),
         reason: str('reason'),
         until: Number.isNaN(at) ? null : new Date(at),
@@ -224,6 +233,7 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
       return {
         ...state,
         paused: false,
+        pausedAt: null,
         by: null,
         reason: null,
         until: null,
@@ -293,6 +303,7 @@ export function evaluateControl(state: ControlState, now: Date): ControlState {
     next = {
       ...next,
       paused: false,
+      pausedAt: null,
       by: null,
       reason: null,
       until: null,
@@ -303,6 +314,25 @@ export function evaluateControl(state: ControlState, now: Date): ControlState {
   if (next.ceilingWaivedUntil !== null && next.ceilingWaivedUntil.getTime() <= t) {
     next = { ...next, ceilingWaivedUntil: null }
   }
+  return next
+}
+
+/**
+ * The whole-stream state, scoped to what a daemon started at `since` is told
+ * (#159, #405, #874). A pause is kept when it was appended after `since` or
+ * holds across starts; a shutdown request when its own version is after `since`.
+ * Pure. Returns its argument when nothing is cleared, so `since <= 0` is the
+ * identity (versions start at 1). Evaluate for the clock before scoping.
+ */
+export function scopeControl(state: ControlState, since: number): ControlState {
+  const keepPause = !state.paused || state.holdsAcrossStarts || (state.pausedAt !== null && state.pausedAt > since)
+  const keepShutdown = state.shutdown === null || state.shutdown.version > since
+  if (keepPause && keepShutdown) return state
+  let next = state
+  if (!keepPause) {
+    next = { ...next, paused: false, pausedAt: null, by: null, reason: null, until: null, cause: null }
+  }
+  if (!keepShutdown) next = { ...next, shutdown: null }
   return next
 }
 
@@ -328,7 +358,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 1,
+  version: 2,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

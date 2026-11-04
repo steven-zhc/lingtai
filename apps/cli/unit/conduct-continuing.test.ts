@@ -61,6 +61,7 @@ function controlWith(continuing: ControlState['continuing']): ControlState {
     cause: null,
     ceilingWaivedUntil: null,
     shutdown: null,
+    pausedAt: null,
     requested: [],
     continuing,
     discussions: [],
