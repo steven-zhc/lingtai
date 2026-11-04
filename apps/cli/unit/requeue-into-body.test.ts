@@ -27,7 +27,7 @@ async function blocked(store: EventStore, issue: number) {
 }
 
 const loadProject = async () => ({ owner: 'steven' }) as ProjectState
-const withProjector = async <T>(_log: (line: string) => void, work: () => Promise<T>) => work()
+const conductorNote = async () => null
 
 describe('requeue command', () => {
   it('--into-body writes the section and resolves EditBodyAndRequeue', async () => {
@@ -43,7 +43,7 @@ describe('requeue command', () => {
         store,
         client: tickets,
         loadProject,
-        withProjector,
+        conductorNote,
         editBodyAndRequeue: (options) => editBodyAndRequeueHolding(options, store, ticketId),
       },
     )
@@ -64,7 +64,7 @@ describe('requeue command', () => {
     const code = await requeueCommand(
       { project: 'lingtai', issue: 2, note: 'try again', by: 'human:test' },
       (line) => lines.push(line),
-      { store, loadProject, withProjector, requeue: (options) => requeueHolding(options, store, ticketId) },
+      { store, loadProject, conductorNote, requeue: (options) => requeueHolding(options, store, ticketId) },
     )
     expect(code).toBe(0)
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('backlog')

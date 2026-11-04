@@ -6,7 +6,7 @@ import { reduceTicket, ticketStream } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 
-import { withProjector } from './projector.ts'
+import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
@@ -28,7 +28,7 @@ export async function grantFixRoundVerdict(
     }
     client = (await projectClient(project)).client
   }
-  return withProjector(progress, async (): Promise<Answered> => {
+  const append = async (): Promise<Answered> => {
     const ticketId = ticketStream(options.project, options.issue)
     const item = reduceTicket(await eventStore.read(ticketId))
     if (
@@ -59,7 +59,10 @@ export async function grantFixRoundVerdict(
         ...(result.unscheduled ? { extra: { unscheduled: result.unscheduled } } : {}),
       },
     }
-  })
+  }
+  const answered = await append()
+  if (answered.code === 0) await noteConductor(progress)
+  return answered
 }
 
 export async function grantFixRoundCommand(

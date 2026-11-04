@@ -29,7 +29,7 @@ import { projectClient } from '@lingtai/conductor/filter'
 import { reduceTicket, ticketStream } from '@lingtai/domain'
 import { eventStore, type EventStore } from '@lingtai/event-store'
 
-import { withProjector } from './projector.ts'
+import { type ConductorNote, noteConductor } from './conductor-note.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface RequeueCommandOptions {
@@ -49,7 +49,8 @@ type RequeueDeps = {
   loadProject?: typeof loadProject
   client?: IssueChannel
   store?: EventStore
-  withProjector?: typeof withProjector
+  /** The line that says no conductor will fold this. Replaceable so a test needs no lock file. */
+  conductorNote?: ConductorNote
   editBodyAndRequeue?: typeof editBodyAndRequeue
   requeue?: typeof requeue
 }
@@ -67,9 +68,9 @@ export async function requeueVerdict(
     return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
-  // Moves a card off the lane the board exists for, so it follows the log while
-  // it works — the same reason `lingtai approve` does. See `withProjector`.
-  return (deps.withProjector ?? withProjector)(progress, async (): Promise<Answered> => {
+  // Holds no projector (0100 §13): the conductor lock's holder folds this onto
+  // the board, and the note after the append says when none is up.
+  const append = async (): Promise<Answered> => {
     const by = options.by ?? `human:${userInfo().username}`
     if (options.intoBody !== undefined) {
       const { client } = deps.client ? { client: deps.client } : await projectClient(project)
@@ -103,7 +104,10 @@ export async function requeueVerdict(
       ...(deps.store ? { store: deps.store } : {}),
     })
     return fromOutcome(outcome)
-  })
+  }
+  const answered = await append()
+  if (answered.code === 0) await noteConductor(progress, deps.conductorNote)
+  return answered
 }
 
 export async function requeueCommand(

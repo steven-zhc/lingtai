@@ -16,7 +16,7 @@ import {
   type ProjectionLag,
 } from '@lingtai/projector'
 
-import { holdLiveSpend } from './projector.ts'
+import { holdLiveSpend } from './live-spend.ts'
 
 /** Every `model:` a recipe names, with the runtime beside it (its own `agent:`, else `runtime.agent`). */
 export function modelsInRecipe(recipe: unknown): { model: string; runtime: string }[] {

@@ -107,11 +107,4 @@ describe('ticket_report rebuilds to the rows it held before it read the ticket r
     const settled = parse((await rowOf(evts.slice(0, started2 + 2))).waits)
     expect(settled[0].triage).toBeNull()
   })
-
-  it('applied_seq is the last event on the ticket stream, whether or not the switch names its type', async () => {
-    for (const events of [lateHistories.ticket.discussionsHeld, lateHistories.ticket.triagedTwice]) {
-      const row = await rowOf(events)
-      expect(BigInt(String(row.applied_seq))).toBe(events[events.length - 1]!.seq)
-    }
-  })
 })

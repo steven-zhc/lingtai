@@ -125,6 +125,10 @@ describe('a stopped projection', () => {
     expect(notTakingWork([{ name: 'spend', checkpoint: 1n, error: 'x' }])).toBeNull()
     expect(notTakingWork([{ name: 'task_view', checkpoint: null, error: 'x' }])).toContain('an unread checkpoint')
     expect(notTakingWork([{ name: 'task_view', checkpoint: 7n, error: 'x' }])).toContain('seq 7')
+    // The rebuild refuses while a daemon holds the lock (0100 §13), so the remedy shuts down first.
+    expect(notTakingWork([{ name: 'task_view', checkpoint: 7n, error: 'x' }])).toMatch(
+      /lingtai shutdown.*lingtai projection rebuild task_view.*lingtai start/,
+    )
   })
 
   it('a shape drift at start still refuses', async () => {

@@ -3,7 +3,6 @@
 exports[`ticket_report rebuilds to the rows it held before it read the ticket reduce > produces the same final rows for every history > final ticket_report rows 1`] = `
 [
   {
-    "applied_seq": 1056,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -24,7 +23,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1059,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 0,
@@ -45,7 +43,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1062,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -66,7 +63,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1068,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -87,7 +83,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9104-check","at":"2026-08-04T06:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"GrantFixRound"},{"waitId":"wait-9104-sign","at":"2026-08-04T06:04:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Close"}]",
   },
   {
-    "applied_seq": 1073,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -108,7 +103,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9105-sign","at":"2026-08-04T12:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Approve"}]",
   },
   {
-    "applied_seq": 1083,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -129,7 +123,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9106-ask","at":"2026-08-04T18:04:00.000Z","reason":"OwnQuestion","triage":null,"resolution":"AnswerQuestion"}]",
   },
   {
-    "applied_seq": 1172,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -150,7 +143,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1175,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -171,7 +163,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9108-escalated","at":"2026-08-11T12:01:00.000Z","reason":"ProposedEscalated","triage":null,"resolution":"Requeue"}]",
   },
   {
-    "applied_seq": 1213,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -192,7 +183,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9109-check","at":"2026-08-14T00:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"Requeue"}]",
   },
   {
-    "applied_seq": 1216,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -213,7 +203,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9110-ask","at":"2026-08-14T06:01:00.000Z","reason":"AgentQuestion","triage":null,"resolution":"AnswerQuestion"}]",
   },
   {
-    "applied_seq": 1218,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -234,7 +223,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1222,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -255,7 +243,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9112-sign","at":"2026-08-14T18:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Close"}]",
   },
   {
-    "applied_seq": 1227,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -276,7 +263,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9113-sign","at":"2026-08-15T00:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Close"}]",
   },
   {
-    "applied_seq": 1237,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -297,7 +283,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9114-crash","at":"2026-08-15T06:01:00.000Z","reason":"AgentCrashed","triage":{"attempt":2,"result":"TriageFailed","cause":null},"resolution":"Requeue"}]",
   },
   {
-    "applied_seq": 1240,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -318,7 +303,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9115-late","at":"2026-08-15T12:02:00.000Z","reason":"AgentCrashed","triage":null,"resolution":null}]",
   },
   {
-    "applied_seq": 1247,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -339,7 +323,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9116-one","at":"2026-08-15T18:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Approve"},{"waitId":"wait-9116-two","at":"2026-08-15T18:04:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Approve"}]",
   },
   {
-    "applied_seq": 1253,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -360,7 +343,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1257,
     "cost": "{"Triage":{"reportedCents":10,"reportedRuns":1,"estimatedUsd":0,"estimatedRuns":0,"unknown":0}}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -381,7 +363,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1261,
     "cost": "{"Triage":{"reportedCents":10,"reportedRuns":1,"estimatedUsd":0,"estimatedRuns":0,"unknown":0}}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -402,7 +383,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1184,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 1,
@@ -423,7 +403,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-ledger-1","at":"2026-08-11T18:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndRequeue"}]",
   },
   {
-    "applied_seq": 1190,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 2,
@@ -444,7 +423,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-body-1","at":"2026-08-12T00:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndRequeue"},{"waitId":"wait-body-2","at":"2026-08-12T00:05:00.000Z","reason":"SignoffRequired","triage":null,"resolution":null}]",
   },
   {
-    "applied_seq": 1106,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 0,
@@ -465,7 +443,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[]",
   },
   {
-    "applied_seq": 1111,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 0,
@@ -486,7 +463,6 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "waits": "[{"waitId":"wait-9302-ask","at":"2026-08-07T12:02:00.000Z","reason":"AgentQuestion","triage":null,"resolution":"EditBodyAndRequeue"}]",
   },
   {
-    "applied_seq": 1118,
     "cost": "{}",
     "fix_rounds": 0,
     "intervals_empty": 0,

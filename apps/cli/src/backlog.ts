@@ -17,17 +17,11 @@ import { userInfo } from 'node:os'
 import { acceptFinding, declineFinding, githubTicketStore, loadProject } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubAuth } from '@lingtai/env'
-import {
-  type BacklogEntry,
-  backlogProjection,
-  createProjectionRunner,
-  readBacklog,
-  readTasks,
-} from '@lingtai/projector'
+import { type BacklogEntry, readBacklog, readLag, readTasks } from '@lingtai/projector'
 import { kindsOf } from '@lingtai/recipe/settings'
 
+import { noteConductor } from './conductor-note.ts'
 import { section } from './output.ts'
-import { withProjector } from './projector.ts'
 
 const USAGE = `lingtai backlog [project] [--all]
 lingtai backlog accept <project> <key> --kind <kind> [--unheld]
@@ -120,25 +114,27 @@ export interface BacklogListing {
   project: string | null
   all: boolean
   entries: ListedEntry[]
-  /** Present only when the catch-up threw: the listing may be older than the log. */
+  /** Present only when `finding_backlog` is behind the log, or its lag could not be read: the listing may be older than the log. */
   behind?: string
 }
 
 /** Reads the listing; the rendering and the document below are pure over it. */
-export async function readBacklogListing(options: BacklogListOptions = {}): Promise<BacklogListing> {
+export async function readBacklogListing(
+  options: BacklogListOptions = {},
+  deps: { readLag?: typeof readLag } = {},
+): Promise<BacklogListing> {
   const { project } = options
   const all = options.all === true
   let behind: string | undefined
-  // Folded to the head before it is read, so the listing is current whether or
-  // not a daemon is running. Reading and not appending, so there is nothing to
-  // follow afterwards.
-  const runner = createProjectionRunner({ projection: backlogProjection })
+  // Lag first, rows second (as the board's `currentSpend` does): a conductor
+  // that folds between the two makes the rows newer than the lag that certifies
+  // them, where the other order would certify stale rows as current. This reads
+  // and never folds — the conductor lock's holder is the only writer (0100 §13).
   try {
-    await runner.start()
+    const { lag } = await (deps.readLag ?? readLag)('finding_backlog')
+    if (Number(lag) > 0) behind = `finding_backlog is ${lag} behind`
   } catch (err) {
-    behind = (err as Error).message
-  } finally {
-    await runner.close().catch(() => {})
+    behind = `finding_backlog's lag could not be read: ${(err as Error).message}`
   }
 
   // An accepted entry whose issue is not recorded is listed with the open ones:
@@ -168,7 +164,7 @@ export async function readBacklogListing(options: BacklogListOptions = {}): Prom
 export function renderBacklog(listing: BacklogListing): string[] {
   const lines: string[] = []
   // A fact the old listing opened with; it stays a line of its own, ahead of the sections.
-  if (listing.behind !== undefined) lines.push(`the backlog could not catch up, and may be behind: ${listing.behind}`)
+  if (listing.behind !== undefined) lines.push(`the backlog may be behind: ${listing.behind}`)
   if (listing.entries.length === 0) {
     lines.push(listing.all ? 'the backlog is empty' : 'nothing open in the backlog')
     return lines
@@ -190,7 +186,7 @@ export function renderBacklog(listing: BacklogListing): string[] {
   return lines
 }
 
-/** The `--json` body. `behind` is there only when the catch-up threw, never `null`. */
+/** The `--json` body. `behind` is there only when the lag is over 0 or unreadable, never `null`. */
 export function backlogJson(listing: BacklogListing): Record<string, unknown> {
   return {
     project: listing.project,
@@ -221,6 +217,32 @@ export interface BacklogDecision {
   reason?: string | undefined
 }
 
+/**
+ * Says the conductor's answer, and what the CLI knows that the conductor does
+ * not. A finding raised moments ago may not be folded yet, and `readEntry`
+ * reads the row (`packages/conductor/src/backlog.ts`), so *no backlog entry*
+ * can mean *not folded*: when `finding_backlog` is behind, say so. Matched on
+ * the sentence because the conductor gives no reason code, and its wording is
+ * not this ticket's to change.
+ */
+async function finish(
+  r: { ok: boolean; detail: string },
+  log: (line: string) => void,
+  lagOf: typeof readLag = readLag,
+): Promise<number> {
+  log(r.detail)
+  if (!r.ok && r.detail.startsWith('no backlog entry ')) {
+    try {
+      const { lag } = await lagOf('finding_backlog')
+      if (Number(lag) > 0) log(`finding_backlog is ${lag} behind; it folds when a conductor runs`)
+    } catch {
+      // A refusal that already explains itself does not grow a second failure.
+    }
+  }
+  if (r.ok) await noteConductor(log)
+  return r.ok ? 0 : 1
+}
+
 /** `accept` and `decline`, once they have been parsed — by `split` here or by `@effect/cli` in `cli.ts`. */
 export async function decideFinding(decision: BacklogDecision, log = console.log): Promise<number> {
   const { verb, project, key } = decision
@@ -236,11 +258,8 @@ export async function decideFinding(decision: BacklogDecision, log = console.log
       log('lingtai backlog decline needs --reason <why> — a decline nobody can explain gets asked again')
       return 2
     }
-    return withProjector(log, async () => {
-      const r = await declineFinding({ project, key, by, reason })
-      log(r.detail)
-      return r.ok ? 0 : 1
-    })
+    const r = await declineFinding({ project, key, by, reason })
+    return finish(r, log)
   }
 
   // No --kind is refused by `acceptFinding` when the entry is open, and not
@@ -262,19 +281,16 @@ export async function decideFinding(decision: BacklogDecision, log = console.log
   // project's own ticket verbs (`projectClient`, #383), so `githubTicketStore`
   // writes the finding wherever this project's tickets actually live.
   const { client, resolved } = await projectClient(state)
-  return withProjector(log, async () => {
-    const r = await acceptFinding({
-      project,
-      key,
-      by,
-      kind,
-      kinds: kindsOf(resolved.recipe),
-      labels: decision.unheld ? [] : [HOLD],
-      tickets: githubTicketStore(client),
-    })
-    log(r.detail)
-    return r.ok ? 0 : 1
+  const r = await acceptFinding({
+    project,
+    key,
+    by,
+    kind,
+    kinds: kindsOf(resolved.recipe),
+    labels: decision.unheld ? [] : [HOLD],
+    tickets: githubTicketStore(client),
   })
+  return finish(r, log)
 }
 
 export const BACKLOG_USAGE = USAGE

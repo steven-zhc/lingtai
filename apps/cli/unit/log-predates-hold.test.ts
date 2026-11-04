@@ -3,7 +3,7 @@ import type { Runtime } from '@lingtai/agent'
  * #451 (and #491). One guard, `logPredatesHold`, and four callers refuse
  * through it rather than letting a parse stack come out of whichever one
  * folds the log first: daemon start, `lingtai doctor`, `lingtai projection
- * rebuild`, and `withProjector` (#491).
+ * rebuild` (#491's `withProjector` is gone with 0100 §13).
  *
  * **Since #502's switch, there is no payload-shape special case** —
  * `WorkItemBlocked` is not a type this build's catalogue carries at all, so
@@ -21,8 +21,7 @@ import type { Projection, ProjectionRunner } from '@lingtai/projector'
 import { describe, expect, it, vi } from 'vitest'
 
 import { type DoctorReach, runDoctor } from '../src/doctor.ts'
-import { rebuildProjection } from '../src/projection.ts'
-import { withProjector } from '../src/projector.ts'
+import { rebuildProjection, rebuildUnderLock } from '../src/projection.ts'
 
 /** A pre-switch step verdict, in the per-action shape `action.ts` no longer writes. */
 const PRE_SWITCH_STEP = { step: 'build', action: 'pnpm test', runId: 'pass-1', onSha: 'a'.repeat(40) }
@@ -260,60 +259,130 @@ describe('lingtai projection rebuild refuses through the guard (#451)', () => {
   })
 })
 
-/**
- * `#491`: `withProjector` folds the whole log too — `taskViewProjection`'s
- * checkpoint starts at 0, same as a fresh `rebuild` — but it was the one
- * caller #451 missed. Without the guard, a runner whose catch-up read hits a
- * pre-switch `StepRequested` throws from inside `subscribe()`'s connection
- * loop, which cannot tell that failure from a dropped socket: it backs off
- * and retries the identical read forever, so `requeueCommand` (and `approve`,
- * `ask`, `end`, `backlog`, `close`, all of which share this function) hangs
- * until something outside the process kills it rather than failing.
- */
-describe('withProjector refuses through the guard (#491)', () => {
-  it('logs the refusal and still runs work, without ever building a runner', async () => {
+describe('lingtai projection rebuild takes the conductor lock (0100 §13)', () => {
+  const fakeRunner = () => {
+    const rebuild = vi.fn(async () => {})
+    const runnerFor = vi.fn(() => ({
+      rebuild,
+      lag: async () => ({ name: 'task_view', lastSeq: 0n, headSeq: 0n, lag: 0n, updatedAt: null }),
+      close: async () => {},
+    })) as unknown as () => ProjectionRunner
+    return { rebuild, runnerFor }
+  }
+
+  it('is refused, naming the holder, and never builds a runner, while another process holds the lock', async () => {
+    const store = createMemoryEventStore()
+    const { rebuild, runnerFor } = fakeRunner()
+    const error = vi.fn()
+    const acquire = vi.fn(async () => ({ ok: false as const, holder: 'lingtai daemon (pid 1 on h)' }))
+
+    const code = await rebuildUnderLock({
+      name: 'ticket_report',
+      queries: store,
+      runnerFor,
+      error,
+      log: vi.fn(),
+      acquire,
+    })
+
+    expect(code).toBe(1)
+    expect(runnerFor).not.toHaveBeenCalled()
+    expect(rebuild).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('lingtai daemon (pid 1 on h)'))
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('lingtai shutdown'))
+  })
+
+  it('does not say "null" when the holder recorded no name', async () => {
+    const { runnerFor } = fakeRunner()
+    const error = vi.fn()
+
+    await rebuildUnderLock({
+      name: 'spend',
+      queries: createMemoryEventStore(),
+      runnerFor,
+      error,
+      acquire: async () => ({ ok: false, holder: null }),
+    })
+
+    expect(error).toHaveBeenCalledWith(expect.not.stringContaining('null'))
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('another process holds the conductor lock'))
+  })
+
+  it('refuses and touches nothing when the lock cannot be asked about', async () => {
+    const { rebuild, runnerFor } = fakeRunner()
+    const error = vi.fn()
+
+    const code = await rebuildUnderLock({
+      name: 'task_view',
+      queries: createMemoryEventStore(),
+      runnerFor,
+      error,
+      acquire: async () => {
+        throw new Error('EACCES')
+      },
+    })
+
+    expect(code).toBe(1)
+    expect(rebuild).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('could not take the conductor lock (EACCES)'))
+  })
+
+  it('rebuilds while it holds the lock and releases it after', async () => {
+    const { rebuild, runnerFor } = fakeRunner()
+    const release = vi.fn(async () => {})
+    const acquire = vi.fn(async () => ({ ok: true as const, lock: { release } }))
+
+    const code = await rebuildUnderLock({
+      name: 'task_view',
+      queries: createMemoryEventStore(),
+      runnerFor,
+      log: vi.fn(),
+      acquire,
+    })
+
+    expect(code).toBe(0)
+    expect(acquire).toHaveBeenCalledWith(expect.objectContaining({ name: 'lingtai projection rebuild' }))
+    expect(rebuild).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the lock when the rebuild throws', async () => {
+    const release = vi.fn(async () => {})
+    const runnerFor = vi.fn(() => ({
+      rebuild: async () => {
+        throw new Error('replay failed')
+      },
+      close: async () => {},
+    })) as unknown as () => ProjectionRunner
+
+    await expect(
+      rebuildUnderLock({
+        name: 'task_view',
+        queries: createMemoryEventStore(),
+        runnerFor,
+        acquire: async () => ({ ok: true, lock: { release } }),
+      }),
+    ).rejects.toThrow('replay failed')
+
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the lock when the guard refuses after it was taken', async () => {
     const store = createMemoryEventStore()
     store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
-    const log = vi.fn()
-    const runnerFor = vi.fn(() => {
-      throw new Error('a runner must not be built once the guard has refused')
+    const release = vi.fn(async () => {})
+
+    const code = await rebuildUnderLock({
+      name: 'task_view',
+      queries: store,
+      runnerFor: () => {
+        throw new Error('must not build')
+      },
+      error: vi.fn(),
+      acquire: async () => ({ ok: true, lock: { release } }),
     })
 
-    const result = await withProjector(log, async () => 'worked', {
-      predatesHold: () => logPredatesHold(store),
-      runnerFor,
-    })
-
-    expect(result).toBe('worked')
-    expect(runnerFor).not.toHaveBeenCalled()
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('the board will not follow this run'))
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('reset it'))
-  })
-})
-
-/**
- * `#491`: `predatesHold` reaches the store the same way `runner.start()`
- * does, so a dropped connection there must be reported and never fatal too
- * — "A projector that will not start is reported and never fatal" above
- * covers the guard, not just the runner it gates.
- */
-describe('a predatesHold that throws is reported, not fatal (#491)', () => {
-  it('still runs work, with the runner built the normal way', async () => {
-    const log = vi.fn()
-    const fakeRunner = {
-      start: vi.fn(async () => {}),
-      close: vi.fn(async () => {}),
-      failure: null,
-    } as unknown as ProjectionRunner
-    const runnerFor = vi.fn(() => fakeRunner)
-
-    const result = await withProjector(log, async () => 'worked', {
-      predatesHold: () => Promise.reject(new Error('connection terminated unexpectedly')),
-      runnerFor,
-    })
-
-    expect(result).toBe('worked')
-    expect(runnerFor).toHaveBeenCalled()
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('connection terminated unexpectedly'))
+    expect(code).toBe(1)
+    expect(release).toHaveBeenCalledTimes(1)
   })
 })

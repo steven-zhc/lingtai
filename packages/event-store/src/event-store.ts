@@ -274,8 +274,8 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
 
 /**
  * The first reason this build cannot fold the whole log, or `null` (#451,
- * `#490`). Daemon start, `lingtai doctor`, `lingtai projection rebuild` and
- * `withProjector` (#491) each call this before they fold the whole log, so a
+ * `#490`). Daemon start, `lingtai doctor`, `lingtai projection rebuild`
+ * each call this before they fold the whole log, so a
  * person is told what is wrong instead of watching a parse stack come out of
  * whichever one ran first — `decodeRow`'s own catch above throws the same
  * error for anything that folds the log without asking first.
@@ -289,9 +289,8 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
  * column are no longer in this build's catalogue at all.
  *
  * Returned rather than thrown: doctor wants a row it can show as a failing
- * check, daemon start wants a result arm, rebuild wants an exit code, and
- * `withProjector` wants a line it can log without the call ever being fatal
- * — none of the four wants a `try`/`catch` of their own for this.
+ * check, daemon start wants a result arm, rebuild wants an exit code
+ * — none of the three wants a `try`/`catch` of their own for this.
  */
 export async function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
   const counts = await queries.typeCounts()

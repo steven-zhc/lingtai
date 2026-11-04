@@ -21,7 +21,7 @@ describe('spendRebuildHold', () => {
 describe('holdLiveSpend (#680)', () => {
   it('stops a spend runner the daemon registered and starts it again, and ignores other projections', async () => {
     const { spendProjection } = await import('@lingtai/projector')
-    const { holdLiveSpend, trackLiveSpend } = await import('../src/projector.ts')
+    const { holdLiveSpend, trackLiveSpend } = await import('../src/live-spend.ts')
     const calls: string[] = []
     const runner = (name: string) =>
       ({

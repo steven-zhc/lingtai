@@ -88,7 +88,7 @@ export function notTakingWork(stopped: readonly StoppedProjection[]): string | n
   const entry = stopped.find((s) => s.name === WORK_PROJECTION)
   if (!entry) return null
   const at = entry.checkpoint === null ? 'an unread checkpoint' : `seq ${entry.checkpoint}`
-  return `${WORK_PROJECTION} stopped at ${at} — not taking work until it is rebuilt: \`lingtai projection rebuild ${WORK_PROJECTION}\`, then \`lingtai restart\``
+  return `${WORK_PROJECTION} stopped at ${at} — not taking work until it is rebuilt: \`lingtai shutdown\`, then \`lingtai projection rebuild ${WORK_PROJECTION}\`, then \`lingtai start\``
 }
 
 /** How long start waits for a stopped projection's checkpoint before it goes undated. */
