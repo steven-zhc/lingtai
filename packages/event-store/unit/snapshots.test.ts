@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { createSqliteLog, openSqliteLog } from '../src/sqlite.ts'
+import { createSqlSnapshotStore } from '../src/snapshots.ts'
+import { createSqliteLog, createSqliteTicketSql, openSqliteLog } from '../src/sqlite.ts'
 import { createMemoryEventStore, createMemorySnapshotStore } from '../test/memory.ts'
 import { describeSnapshotContract } from '../test/snapshot-contract.ts'
 import { discovered } from '../test/support.ts'
@@ -68,5 +69,32 @@ describe('sqlite: a stale writer and a row that cannot be read', () => {
       )
       await expect(log.snapshots.latest(key)).rejects.toThrow(new RegExp(`${col}.*not an integer`))
     }
+  })
+})
+
+describe('sqlite: a put whose insert selected nothing', () => {
+  it('is refused, not kept, though the epoch reads as current afterwards', async () => {
+    const db = openSqliteLog(':memory:')
+    const log = createSqliteLog({ db, path: ':memory:' })
+    await log.store.append('ticket-a', 0, [discovered('t')])
+    const real = createSqliteTicketSql(db)
+    // The INSERT selects nothing (the log was emptied at that instant); by the
+    // time the epoch is read again it is back, so only the row can say 'kept'.
+    const store = createSqlSnapshotStore({
+      ...real,
+      query: async (text, params) => (text.includes('INSERT INTO stream_snapshots') ? [] : real.query(text, params)),
+    })
+    const epoch = (await store.epoch()) as string
+    const snap = {
+      streamId: 's',
+      reducer: 'control',
+      reducerVersion: 1,
+      streamVersion: 1,
+      lastSeq: 1n,
+      epoch,
+      state: '{}',
+    }
+    await expect(store.put(snap)).rejects.toThrow(/epoch/)
+    expect(await store.latest(snap)).toBeNull()
   })
 })
