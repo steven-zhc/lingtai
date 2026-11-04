@@ -301,7 +301,7 @@ branches of `integrate()` — is a pure function here.
 **Running shape.** The conductor is a launchd daemon; on restart it rebuilds
 state from the log, reconciles against reality (worktrees, branches, live
 processes) and records the difference as `Reconciled`. No `caffeinate` patch. The
-board is localhost, unauthenticated, single user. Postgres is separate from every
+board serves every address unless `board.host` says otherwise, unauthenticated, single user. Postgres is separate from every
 managed project.
 
 ---
@@ -318,7 +318,7 @@ multi-project — **not for scale**. So:
 - **No sagas or process managers.** The scheduler is a loop over the `queue` projection.
 - **No general workflow engine.** Gates are one ordered list per project. Branching waits for a second project that needs it.
 - **No configuration UI.** YAML plus `lingtai doctor`. Configuration changes when a project is onboarded, not daily.
-- **No auth, no multi-user.** It runs on one machine.
+- **No auth, no multi-user.** The board can be reached from the network unless `board.host` keeps it to this machine ([operating](operating.md#the-address)), and it is single-user.
 - **No work-item DAG.** The agent filing follow-up issues is the manual version and it is sufficient — but `TicketLinked` leaves the door open.
 
 **The two things worth over-building** are the event schema and the configuration

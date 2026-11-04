@@ -159,7 +159,9 @@ lingtai board
 ```
 
 The Board opens at the URL printed by the command (normally
-`http://127.0.0.1:17820`). This terminal stays open too; `Ctrl+C` stops each
+`http://127.0.0.1:17820`). The Board has no login and listens on every
+address, so it can also be opened from another device at this machine's address;
+`board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to this machine. This terminal stays open too; `Ctrl+C` stops each
 foreground process. Use the Board for Step 4, or open a third terminal for its
 CLI commands. The installed binary does not yet support `lingtai service`
 for background startup.

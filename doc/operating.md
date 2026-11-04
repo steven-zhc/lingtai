@@ -40,7 +40,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 | | Lifetime | Why there |
 |---|---|---|
-| `config.yml` | Persistent | **This machine's own configuration** — `database.store` and `database.url`, `github.*`, `board.port`, and nothing about how a project's work is run: the runtime, the assignee and the limits are each recipe's (`#372`, `#373`, `#375`). With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
+| `config.yml` | Persistent | **This machine's own configuration** — `database.store` and `database.url`, `github.*`, `board.port`, `board.host`, and nothing about how a project's work is run: the runtime, the assignee and the limits are each recipe's (`#372`, `#373`, `#375`). With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
 | `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
@@ -1261,6 +1261,38 @@ package's `src` and fails if any mention of the number, or of the
 Higher is not safer: macOS hands out `49152–65535` as ephemeral ports and Linux
 `32768–60999`, so a default in either range would collide at random,
 intermittently, and mostly not at all — harder to find than a fixed clash.
+
+#### The address
+
+`0.0.0.0` — **every address, so the board can be opened from another device,
+and there is no authentication** ([0111](decisions/0111-the-board-is-a-local-app.md)
+§2). `board.host` in `~/.lingtai/config.yml` overrides it, and so does an
+exported `LINGTAI_BOARD_HOST`, which wins over the file. `127.0.0.1` keeps the
+board to this machine:
+
+```yaml
+board:
+  host: 127.0.0.1
+```
+
+**It must be an unscoped IP literal**; the board does not start on anything
+else, and each refusal says to unset the variable or remove the line to get
+`0.0.0.0`:
+
+- a hostname, or a zoned address such as `fe80::1%en0`, is refused and the
+  message quotes the value;
+- an exported `LINGTAI_BOARD_HOST=''` is refused as empty, not treated as unset;
+- an unreadable `config.yml` is refused too, and never falls back to the default.
+
+**Links and probes** go to `127.0.0.1` when the board serves `0.0.0.0`, to `::1`
+when it serves `::`, and to the address itself for any other. An IPv6 address is
+shown in brackets in the URL.
+
+**The override reaches `pnpm --filter @lingtai/board dev` too**, which serves the
+same address as `board start`. That script asks for the address like everything
+else (`apps/board/serve.ts`).
+
+It is read when the board starts: changing it is a restart of the board.
 
 ### Keep it running
 
