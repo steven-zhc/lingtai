@@ -606,10 +606,14 @@ async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promis
   const derivedChanged = JSON.stringify(was) !== JSON.stringify(now)
   const lifecycleMoved = JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)
   const note = noteOf(event, after, lifecycleMoved)
-  const touched = derivedChanged || (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
+  // A release lands on a backlog ticket when a WaitResolved already moved it there: the lifecycle and every
+  // derived column are unchanged, and the release still ends the run and gives the card its reason.
+  const releases = event.type === 'TicketReleased' && after.lifecycle.status === 'backlog'
+  const touched =
+    derivedChanged || releases || (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
   const isClaim = event.type === 'TicketClaimed' || event.type === 'TicketContinued'
   const runId = isClaim && after.lifecycle.status === 'claimed' ? after.lifecycle.runId : null
-  const clearsRun = event.type === 'TicketReleased' && lifecycleMoved
+  const clearsRun = releases
 
   const params: unknown[] = []
   const p = (value: unknown, cast: string): string => {

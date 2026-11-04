@@ -1,7 +1,7 @@
 /**
  * `task_view` reads its one-stream columns off the ticket reduce (#834): each
  * cell where it used to disagree with `applyTicket` (D5, D6) over the histories
- * #798 built for it, the `verifying` overlay, and the at-least-once delivery.
+ * #798 built for it, the `verifying` overlay, and the rows a ticket event may make.
  *
  * `createSqliteProjectionStore(openSqliteProjections(':memory:'))` — the real
  * fold path, touching no file, so unit under 0060 §1. Every history below is
@@ -14,24 +14,11 @@ import { aClaim } from '@lingtai/domain/test/events'
 import { histories, lateHistories, scenarios } from '@lingtai/domain/test/histories'
 import type { Scenario } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
 import type { ProjectionContext, ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
-
-// A spy on the reduce, so a replay can be shown to skip it (the skip is made before `applyTicket`).
-const spy = vi.hoisted(() => ({ calls: 0 }))
-vi.mock('@lingtai/domain', async (original) => {
-  const m = await original<typeof import('@lingtai/domain')>()
-  return {
-    ...m,
-    applyTicket: (...args: Parameters<typeof m.applyTicket>) => {
-      spy.calls += 1
-      return m.applyTicket(...args)
-    },
-  }
-})
 
 /** A scenario's streams, merged by `seq` as a log would hand them over. */
 const mergeBySeq = (s: Scenario): Envelope[] =>
@@ -108,6 +95,13 @@ describe('task_view reads state and answer off the ticket reduce', () => {
     expect(row.triage_attempt).toBe(2)
     expect(parsed(row.triage_result)).toMatchObject({ _tag: 'TriageFailed', why: 'second' })
     expect(row.triage_head_sha).toBe('head-2')
+  })
+
+  it('a release after the requeue still gives the card its reason and ends the run', async () => {
+    const h = lateHistories.ticket.askedThenReleasedByPerson
+    const row = await rowAfter(h)
+    expect(row).toMatchObject({ state: 'queued', note: 'Requeued by steven.', run_id: null })
+    expect(row.updated_seq).toBe(Number(h.at(-1)!.seq))
   })
 
   it('D6: a claim after a close changes nothing', async () => {
