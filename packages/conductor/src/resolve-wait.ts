@@ -304,7 +304,10 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
 
   let resolution = options.resolution
   if (resolution._tag === 'GrantFixRound') {
-    const saved = await savedHead(store, ticketId, block.runId, { snapshots: options.snapshots, writer: options.writer })
+    const saved = await savedHead(store, ticketId, block.runId, {
+      snapshots: options.snapshots,
+      writer: options.writer,
+    })
     if (!saved.ok) return saved
     const { head, ref } = saved
     if (resolution.onSha && matchHead(resolution.onSha, head) !== 'match') {

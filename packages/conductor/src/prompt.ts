@@ -121,7 +121,9 @@ export function nextPrompt(input: {
   const previous = attempts[attempts.length - 1]
   if (previous && input.lastRun !== null) {
     previous.outcome = attemptOutcome(
-      Array.isArray(input.lastRun) ? reduceAttempt(input.lastRun as readonly Envelope[]) : (input.lastRun as AttemptState),
+      Array.isArray(input.lastRun)
+        ? reduceAttempt(input.lastRun as readonly Envelope[])
+        : (input.lastRun as AttemptState),
       input.budget,
     )
   }

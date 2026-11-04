@@ -102,7 +102,8 @@ describe('coverage', () => {
 })
 
 describe('the histories reduce', () => {
-  for (const h of singles.filter((s) => s.kind === 'attempt')) it(`attempt.${h.name}`, () => void reduceAttempt(h.events))
+  for (const h of singles.filter((s) => s.kind === 'attempt'))
+    it(`attempt.${h.name}`, () => void reduceAttempt(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
   for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
   for (const h of singles.filter((s) => s.kind === 'finding' && s.name !== 'declinedThenAccepted')) {
