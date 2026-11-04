@@ -1,4 +1,4 @@
-import { parsePayload, reduceTicket, type ReleaseCause } from '@lingtai/domain'
+import { parsePayload, ticketReducer, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -23,11 +23,12 @@ import { parsePayload, reduceTicket, type ReleaseCause } from '@lingtai/domain'
  * (`daemon/reconcile.ts`). Liveness is the lock, which the kernel maintains;
  * exclusion is the constraint. Neither is a number.
  */
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore, eventStore, type SnapshotReadOptions } from '@lingtai/event-store'
 
+import { readState } from './snapshot-state.ts'
 import type { Tickets } from './ticket-store.ts'
 
-export interface ClaimOptions {
+export interface ClaimOptions extends SnapshotReadOptions {
   runId: string
   /**
    * Who holds it — host and pid.
@@ -114,8 +115,7 @@ export async function claimTicket(ticketId: string, options: ClaimOptions): Prom
   const store = options.store ?? eventStore
   const worker = options.worker ?? conductorWorker()
 
-  const events = await store.read(ticketId)
-  const state = reduceTicket(events)
+  const state = await readState(store, ticketReducer, ticketId, 'all', options)
 
   if (state.lifecycle.status === 'claimed') {
     // Held is held. There is no expiry to fall through to, so the only way past
@@ -209,13 +209,12 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
 export async function continueTicket(
   ticketId: string,
   runId: string,
-  options: { worker?: string; store?: EventStore } = {},
+  options: { worker?: string; store?: EventStore } & SnapshotReadOptions = {},
 ): Promise<ContinueResult> {
   const store = options.store ?? eventStore
   const worker = options.worker ?? conductorWorker()
 
-  const events = await store.read(ticketId)
-  const state = reduceTicket(events)
+  const state = await readState(store, ticketReducer, ticketId, 'all', options)
 
   if (state.lifecycle.status !== 'approved') {
     return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } }
@@ -253,9 +252,9 @@ export async function releaseTicket(
   reason: string,
   store: EventStore = eventStore,
   cause: ReleaseCause | null = null,
+  options: SnapshotReadOptions = {},
 ): Promise<void> {
-  const events = await store.read(ticketId)
-  const state = reduceTicket(events)
+  const state = await readState(store, ticketReducer, ticketId, 'all', options)
   await store.append(ticketId, state.version, [
     {
       type: 'TicketReleased',

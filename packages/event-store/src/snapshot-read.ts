@@ -8,6 +8,9 @@
  * it was handed; with none it reduces the whole stream from `reducer.initial`.
  * Which caller gets which snapshots is the caller's decision.
  *
+ * With `'all'` in place of a type list it reads every event (`store.read`): a reducer whose `version` and
+ * `lastSeq` follow the stream's head must not be fed a filtered tail.
+ *
  * A failed `latest` or `decode` is logged once and reduces from version 1. Only
  * a failed event read reaches the error channel, as the store's own rejection.
  *
@@ -35,17 +38,17 @@ function sayOnce(reducer: string, kind: 'latest' | 'decode', e: unknown): void {
 const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
 
 export function readThroughSnapshot<S>(
-  store: Pick<EventStore, 'readTypes'>,
+  store: Pick<EventStore, 'readTypes' | 'read'>,
   reducer: Reducer<S>,
   streamId: string,
-  types: readonly EventType[],
+  types: readonly EventType[] | 'all',
   options: SnapshotReadOptions = {},
 ): Effect.Effect<S, unknown> {
   const { snapshots, writer } = options
+  const readFrom = (from?: number): Promise<Envelope[]> =>
+    types === 'all' ? store.read(streamId, from) : store.readTypes(streamId, types, from)
   if (snapshots === undefined) {
-    return attempt(() => store.readTypes(streamId, types)).pipe(
-      Effect.map((all) => reduceFrom(reducer, reducer.initial, all)),
-    )
+    return attempt(() => readFrom()).pipe(Effect.map((all) => reduceFrom(reducer, reducer.initial, all)))
   }
   return Effect.gen(function* () {
     const key = { streamId, reducer: reducer.name, reducerVersion: reducer.version }
@@ -67,7 +70,7 @@ export function readThroughSnapshot<S>(
         sayOnce(reducer.name, 'decode', e)
       }
     }
-    let tail: Envelope[] = yield* attempt(() => store.readTypes(streamId, types, start + 1))
+    let tail: Envelope[] = yield* attempt(() => readFrom(start + 1))
     if (row !== null && start > 0) {
       // The anchor was checked before the tail was read; a reset in between would pair the old
       // state with the new log's events. Ask again: only an anchor still holding vouches for the tail.
@@ -75,7 +78,7 @@ export function readThroughSnapshot<S>(
       if (again === null || again.streamVersion !== row.streamVersion || again.lastSeq !== row.lastSeq) {
         state = reducer.initial
         from = 0
-        tail = yield* attempt(() => store.readTypes(streamId, types))
+        tail = yield* attempt(() => readFrom())
       }
     }
     const reduced = reduceFrom(reducer, state, tail)

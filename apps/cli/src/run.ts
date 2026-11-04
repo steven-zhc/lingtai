@@ -48,7 +48,7 @@ import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { readControl } from '@lingtai/daemon'
 import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
-import { eventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import {
   boundsBesides,
@@ -514,7 +514,11 @@ export async function run(
       })
       const isOwed = (row: ControlState['continuing'][number]) =>
         Effect.tryPromise({
-          try: () => stillOwed(options.store ?? eventStore, options.project, row),
+          try: () =>
+            stillOwed(options.store ?? eventStore, options.project, row, {
+              // No writer: a short command reads snapshots and never writes them (0124 §5).
+              snapshots: options.store === undefined ? theLog.snapshots : undefined,
+            }),
           catch: (err) =>
             refuse(`could not read #${row.issue} to see whether it is owed a continuation: ${(err as Error).message}`),
         })

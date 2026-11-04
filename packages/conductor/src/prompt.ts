@@ -23,7 +23,7 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceAttempt, reduceTicket, type Envelope } from '@lingtai/domain'
+import { reduceAttempt, reduceTicket, type Envelope, type TicketState } from '@lingtai/domain'
 import type { StepAction } from '@lingtai/recipe'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -33,6 +33,7 @@ import {
   attemptOutcome,
   humanBrief,
   priorAttempts,
+  priorAttemptsFromState,
   promptVersionFor,
   type PromptBudget,
 } from './attempts.ts'
@@ -100,7 +101,7 @@ export function nextPrompt(input: {
   base: string
   budget: PromptBudget
   /** The work item's own events, before the claim this prompt is for. */
-  item: readonly Envelope[]
+  item: readonly Envelope[] | { readonly state: TicketState; readonly streamId: string | null }
   /** The previous attempt's stream, or null when there is no previous attempt. */
   lastRun: readonly Envelope[] | null
   /**
@@ -109,8 +110,10 @@ export function nextPrompt(input: {
    */
   arms?: ArmsOnOrigin | null
 }): NextPrompt {
-  const attempts = priorAttempts(input.item)
-  const state = reduceTicket(input.item)
+  const held = 'state' in input.item ? input.item : null
+  const state = held !== null ? held.state : reduceTicket(input.item as readonly Envelope[])
+  const attempts =
+    held !== null ? priorAttemptsFromState(state, held.streamId) : priorAttempts(input.item as readonly Envelope[])
   const edit = state.pendingPrompt
 
   const previous = attempts[attempts.length - 1]

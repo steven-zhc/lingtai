@@ -45,7 +45,7 @@ import { readControl } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log as theLog } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
@@ -181,6 +181,8 @@ export interface ConductWorkOptions {
    * already carries. Injectable so a test does not need a real store.
    */
   store?: EventStore
+  /** The daemon's snapshot writer, handed on to every ticket read of the pass (0124 §5, #876). */
+  snapshotWriter?: Pick<SnapshotWriter, 'offer'>
 }
 
 /** What a run hands `runOnce`/`runQueue` beside `prompt`, `recipe` and `issue`/`max`. */
@@ -196,6 +198,7 @@ interface CommonPassOptions {
   log: (line: string) => void
   /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`, `#355`). */
   remote?: string
+  snapshotWriter?: Pick<SnapshotWriter, 'offer'>
 }
 
 /**
@@ -214,6 +217,8 @@ export function conductWork(
   world: ConductWorld = liveConductWorld(),
 ): (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'> {
   const store = options.store ?? eventStore
+  // The default log's snapshots belong to the default store; a store passed in has none of its own.
+  const stillOwedSnapshots = options.store === undefined ? theLog.snapshots : undefined
   return async (project, where) => {
     const name = project.project!
     // Failures and sentences a person needs go to `tell`; absent, where they always went.
@@ -258,6 +263,7 @@ export function conductWork(
         promptVersion: `ticket@${options.prompt.length}`,
         remote,
         ...(options.merge === undefined ? {} : { merge: options.merge }),
+        ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
         log: options.log,
       }
     } else {
@@ -286,6 +292,7 @@ export function conductWork(
         prompt: options.prompt,
         promptVersion: `ticket@${options.prompt.length}`,
         ...(options.merge === undefined ? {} : { merge: options.merge }),
+        ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
         log: options.log,
       }
     }
@@ -403,7 +410,8 @@ export function conductWork(
         Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
       )
         continue
-      if (!(await stillOwed(store, name, c))) continue
+      if (!(await stillOwed(store, name, c, { snapshots: stillOwedSnapshots, writer: options.snapshotWriter })))
+        continue
       options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
       if (detached) {
         // Not a reason to stop looking: one that is declined at claim, or that has to
@@ -606,6 +614,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
       ...(options.tell ? { tell: options.tell } : {}),
       ...(options.many ? { many: true } : {}),
       ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
+      ...(options.controlWriter ? { snapshotWriter: options.controlWriter } : {}),
     }),
   })
 }

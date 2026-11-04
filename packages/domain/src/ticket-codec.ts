@@ -15,7 +15,8 @@ import { z } from 'zod'
 
 import { WaitId } from './action.ts'
 import { DiscussionHeld, DispatchRefused, IssueUpdated, ReleaseCause, SplitChild, TriageStartedBy } from './events.ts'
-import type { TicketState } from './ticket.ts'
+import type { Reducer } from './reducer.ts'
+import { emptyTicket, reduceTicketEvent, type TicketState } from './ticket.ts'
 import { Resolution, TriageResult, WaitReason } from './wait.ts'
 
 const IsoDate = z.iso.datetime().transform((s) => new Date(s))
@@ -127,38 +128,56 @@ export function encodeTicket(state: TicketState): string {
   return JSON.stringify(state, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))
 }
 
-/**
- * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `TicketState`.
- * Throws, naming the field and `lingtai projection rebuild <projection>`, on any other shape.
- * `subject` is what the value was stored for (a ticket's stream id), where the caller has one.
- */
-export function decodeTicket(stored: unknown, projection: string, subject?: string): TicketState {
-  const refuse = (what: string): never => {
-    throw new TicketCodecError(
-      `${projection}${subject === undefined ? '' : ` ${subject}`}: the stored ticket state is not today's shape (${what}); ` +
-        `run \`lingtai projection rebuild ${projection}\``,
-    )
-  }
+/** The parse behind both decoders: the state, or what is wrong with the stored value. */
+function parseStored(stored: unknown): { ok: true; state: TicketState } | { ok: false; what: string } {
   let value = stored
   if (typeof stored === 'string') {
     try {
       value = JSON.parse(stored)
     } catch {
-      return refuse('not JSON')
+      return { ok: false, what: 'not JSON' }
     }
   }
   const parsed = StoredTicket.safeParse(value)
   if (!parsed.success) {
     const issue = parsed.error.issues[0]!
-    return refuse(`${issue.path.length === 0 ? 'ticket_state' : issue.path.join('.')}: ${issue.message}`)
+    return { ok: false, what: `${issue.path.length === 0 ? 'ticket_state' : issue.path.join('.')}: ${issue.message}` }
   }
   // The reused event schemas are not strict, so a field of another shape inside a reason or a payload copy
   // is stripped by the parse above. Whatever the parse dropped or filled, the stored value no longer equals
   // the state's own encoding, and that is another shape.
   const state = parsed.data as TicketState
   const differs = firstDifference(value, JSON.parse(encodeTicket(state)), 'ticket_state')
-  if (differs !== null) return refuse(`${differs}: not part of today's shape`)
-  return state
+  if (differs !== null) return { ok: false, what: `${differs}: not part of today's shape` }
+  return { ok: true, state }
+}
+
+/**
+ * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `TicketState`.
+ * Throws, naming the field and `lingtai projection rebuild <projection>`, on any other shape.
+ * `subject` is what the value was stored for (a ticket's stream id), where the caller has one.
+ */
+export function decodeTicket(stored: unknown, projection: string, subject?: string): TicketState {
+  const r = parseStored(stored)
+  if (r.ok) return r.state
+  throw new TicketCodecError(
+    `${projection}${subject === undefined ? '' : ` ${subject}`}: the stored ticket state is not today's shape (${r.what}); ` +
+      `run \`lingtai projection rebuild ${projection}\``,
+  )
+}
+
+/** The ticket reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
+export const ticketReducer: Reducer<TicketState> = {
+  name: 'ticket',
+  version: 1,
+  initial: emptyTicket,
+  reduceEvent: reduceTicketEvent,
+  encode: encodeTicket,
+  decode: (stored) => {
+    const r = parseStored(stored)
+    if (r.ok) return r.state
+    throw new TicketCodecError(`ticket snapshot: the stored state is not today's shape (${r.what})`)
+  },
 }
 
 /** The path of the first place two parsed JSON values differ, or `null` for none. Key order is not a difference. */

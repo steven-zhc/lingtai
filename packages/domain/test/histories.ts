@@ -1398,4 +1398,37 @@ const late_everyControlEvent = stamp(
   })(),
 )
 
-export const reducerFixtures = { control: { everyControlEvent: late_everyControlEvent } } as const
+/**
+ * The ticket reducer's fixture (#876): one event of each type it handles, taken from the ticket histories above
+ * in the order they first appear, on one stream. `histories.ticket.everyTicketEvent` is not this — it holds
+ * fewer types, and a frozen history cannot be added to.
+ */
+const late_everyTicketTypeOnOneStream = stamp(
+  (() => {
+    const seen = new Set<string>()
+    const picked: Envelope[] = []
+    for (const e of [...Object.values(histories.ticket), ...Object.values(lateHistories.ticket)].flat()) {
+      if (seen.has(e.type)) continue
+      seen.add(e.type)
+      picked.push(e)
+    }
+    // Order matters: `closed` is absorbing, so `TicketClosed` goes last or every event after it is a no-op, and
+    // `TicketContinued` follows the `WaitResolved` that approves the run it continues (not a ghost run).
+    const started = picked.find((e) => e.type === 'WaitStarted')
+    const approvedRun = (started!.data as { reason: { run: { runId: string } } }).reason.run.runId
+    const rest = picked.filter((e) => e.type !== 'TicketClosed' && e.type !== 'TicketContinued')
+    const continued = picked
+      .filter((e) => e.type === 'TicketContinued')
+      .map((e) => ({ ...e, data: { ...(e.data as object), runId: approvedRun } }) as Envelope)
+    const closed = picked.filter((e) => e.type === 'TicketClosed')
+    const at = rest.findIndex((e) => e.type === 'WaitResolved') + 1
+    const ordered = [...rest.slice(0, at), ...continued, ...rest.slice(at), ...closed]
+    const streamId = ticketStream(PROJECT, 9002)
+    return ordered.map((e, i) => ({ ...e, streamId, version: i + 1 }))
+  })(),
+)
+
+export const reducerFixtures = {
+  control: { everyControlEvent: late_everyControlEvent },
+  ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
+} as const

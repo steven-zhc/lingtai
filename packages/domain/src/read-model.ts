@@ -19,7 +19,7 @@ import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import { fromOf } from './proposal.ts'
 import { routeNext, type RouteDecision } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
-import { reduceTicket } from './ticket.ts'
+import { reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import { waitWords } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
@@ -34,7 +34,12 @@ import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.t
  * that needs a `WaitStarted`'s branch (#443).
  */
 export function waitBranchOf(event: Envelope): string {
-  const parsed = parseTicketStream(event.streamId)
+  return waitBranchOfStream(event.streamId)
+}
+
+/** `waitBranchOf` for a reader that holds the ticket's stream id and no event (a snapshot read, #876). */
+export function waitBranchOfStream(streamId: string): string {
+  const parsed = parseTicketStream(streamId)
   return parsed === null ? '' : agentBranchOf(parsed.issue)
 }
 
@@ -85,7 +90,12 @@ export type WaitFold = { readonly waitId: WaitId; readonly reason: WaitReason; r
 
 /** Every wait on the slice, with the resolution naming its `waitId`, if any — a read of `reduceTicket(events).waits`. */
 export function waitsOf(events: readonly Envelope[]): WaitFold[] {
-  return reduceTicket(events).waits.map((w) => ({
+  return waitsFromState(reduceTicket(events))
+}
+
+/** `waitsOf` over a state already reduced. */
+export function waitsFromState(state: TicketState): WaitFold[] {
+  return state.waits.map((w) => ({
     waitId: w.waitId,
     reason: w.reason,
     resolution: w.resolution?.resolution ?? null,
@@ -94,7 +104,12 @@ export function waitsOf(events: readonly Envelope[]): WaitFold[] {
 
 /** How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`). */
 export function designAsksOf(events: readonly Envelope[]): number {
-  return waitsOf(events).filter((w) => w.reason._tag === 'AgentQuestion' && w.reason.step === 'design').length
+  return designAsksFromState(reduceTicket(events))
+}
+
+/** `designAsksOf` over a state already reduced. */
+export function designAsksFromState(state: TicketState): number {
+  return waitsFromState(state).filter((w) => w.reason._tag === 'AgentQuestion' && w.reason.step === 'design').length
 }
 
 // ----------------------------------------------------------- triageFactsOf ----
@@ -108,7 +123,12 @@ export function designAsksOf(events: readonly Envelope[]): number {
  * `waitId` with no `TriageStarted` at all, is never read.
  */
 export function triageFactsOf(events: readonly Envelope[], waitId: WaitId): TriageFacts {
-  const wait = reduceTicket(events).waits.findLast((w) => w.waitId === waitId)
+  return triageFactsFromState(reduceTicket(events), waitId)
+}
+
+/** `triageFactsOf` over a state already reduced. */
+export function triageFactsFromState(state: TicketState, waitId: WaitId): TriageFacts {
+  const wait = state.waits.findLast((w) => w.waitId === waitId)
   const started = wait?.triage.started ?? null
   return {
     started: started === null ? null : { attempt: started.attempt, at: started.at },

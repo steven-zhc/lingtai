@@ -38,7 +38,15 @@ import { createHash } from 'node:crypto'
  * without also deciding it.
  */
 import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
-import { headOf, reduceTicket, routesOf, stepOutcomesOf, waitBranchOf, waitWords } from '@lingtai/domain'
+import {
+  headOf,
+  reduceTicket,
+  routesOf,
+  stepOutcomesOf,
+  type TicketState,
+  waitBranchOfStream,
+  waitWords,
+} from '@lingtai/domain'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import { armBranch } from './branches.ts'
@@ -160,8 +168,13 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
   // `waitWords` needs the branch the card's own `question` was composed with —
   // the default `pass` would open every `ProposedEscalated`/`AnswerUnreadable`
   // sentence on no subject. It reads the stream id, which is one per ticket.
-  const branch = itemEvents.length === 0 ? '' : waitBranchOf(itemEvents[0]!)
-  return reduceTicket(itemEvents).claims.map((c, i) => ({
+  return priorAttemptsFromState(reduceTicket(itemEvents), itemEvents[0]?.streamId ?? null)
+}
+
+/** `priorAttempts` over a state already reduced; `streamId` is the ticket's, `null` for a stream with no events. */
+export function priorAttemptsFromState(state: TicketState, streamId: string | null): PriorAttempt[] {
+  const branch = streamId === null ? '' : waitBranchOfStream(streamId)
+  return state.claims.map((c, i) => ({
     n: i + 1,
     runId: c.runId,
     ended: endedWords(c.ended, branch),
@@ -202,7 +215,19 @@ export function armFor(
   nextAttempt: number,
 ): string {
   if (continuingRunId === null) return armBranch(branch, nextAttempt)
-  const held = priorAttempts(before).find((a) => a.runId === continuingRunId)
+  return armForState(reduceTicket(before), before[0]?.streamId ?? null, branch, continuingRunId, nextAttempt)
+}
+
+/** `armFor` over a state already reduced. */
+export function armForState(
+  state: TicketState,
+  streamId: string | null,
+  branch: string,
+  continuingRunId: string | null,
+  nextAttempt: number,
+): string {
+  if (continuingRunId === null) return armBranch(branch, nextAttempt)
+  const held = priorAttemptsFromState(state, streamId).find((a) => a.runId === continuingRunId)
   if (held === undefined) {
     throw new Error(`armFor: ${continuingRunId} is continuing but has no claim on ${branch}'s own item stream`)
   }

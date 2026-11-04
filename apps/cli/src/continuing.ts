@@ -1,5 +1,6 @@
-import { type ControlState, reduceTicket, ticketStream } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store'
+import { readState } from '@lingtai/conductor'
+import { type ControlState, ticketReducer, ticketStream } from '@lingtai/domain'
+import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
 
 /**
  * Whether this `control.continuing` row is still owed a continuation in
@@ -11,6 +12,9 @@ import type { EventStore } from '@lingtai/event-store'
  * second copy of the rule — one that dropped the status and run check would
  * continue a ticket twice.
  *
+ * The ticket is read through a snapshot where the caller has one (0124, #876): the list above only grows, and
+ * this is asked of every row on every pass.
+ *
  * The reducer defaults an absent `runId` or `issue` to `''`; `Number('')` is `0`,
  * which would read a stream nobody owns, so such a row is not owed.
  */
@@ -18,10 +22,11 @@ export async function stillOwed(
   store: EventStore,
   project: string,
   row: ControlState['continuing'][number],
+  snapshots: SnapshotReadOptions = {},
 ): Promise<boolean> {
   if (row.project !== project) return false
   const issue = Number(row.issue)
   if (row.runId === '' || !Number.isInteger(issue) || issue <= 0) return false
-  const ticket = reduceTicket(await store.read(ticketStream(project, issue)))
+  const ticket = await readState(store, ticketReducer, ticketStream(project, issue), 'all', snapshots)
   return ticket.lifecycle.status === 'approved' && ticket.lifecycle.runId === row.runId
 }
