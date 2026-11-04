@@ -875,13 +875,13 @@ export interface Configured {
  * - **`unanswered`** — the log would not say, so `minted` is unknown rather
  *   than no.
  * - **`unreadable`** — `config.yml` would not say, so `configured` is unknown
- *   rather than no. **Never folded into `unanswered`**: that one sends the
+ *   rather than no. **Never reduced into `unanswered`**: that one sends the
  *   operator to an unreachable log, and this is a file they can fix.
  *
  * **`minted` was `configured` once, and it was wrong.** `GitHubAppCreated` is
  * appended the moment the conversion returns — before the key file and before
  * `config.yml`, deliberately, so that a write that fails leaves a record behind
- * it. Folding it into *configured* therefore reported exactly the creations
+ * it. Reducing it into *configured* therefore reported exactly the creations
  * that did not finish as configured ones, with no key on this machine behind
  * them.
  *

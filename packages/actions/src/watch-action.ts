@@ -66,7 +66,7 @@ export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps):
      * produces `needs-approval` — only `passed` or `failed` — and 0120's
      * `SignoffAction` union has no arm for a real refusal, only
      * `Completed | Waived | NotReached`: an `actionOf` that kept this
-     * `'signoff'` would have to fold a tamper-watch refusal into the same
+     * `'signoff'` would have to reduce a tamper-watch refusal into the same
      * shape a genuine approval request takes, which is the one thing the
      * watch exists to keep from being waved through. Yielding `'verdict'`
      * instead reads a `fail` match as a refused check (`StepFailed`,

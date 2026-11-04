@@ -480,7 +480,7 @@ describe('declineFinding', () => {
  * The `backlog:` plugin declares no `dedup:` because there is nothing to
  * configure: `findingKey` is an FNV-1a over the ticket, the step, the action,
  * the file and the normalised claim — **no `runId`, no round, no sha, no
- * line** — and the fold writes `on conflict (project, key) do nothing`
+ * line** — and the reducer writes `on conflict (project, key) do nothing`
  * (`packages/projector/src/backlog.ts`). A second mechanism would be a second
  * answer to a question that already has one.
  *
@@ -506,7 +506,7 @@ describe('findingKey across rounds', () => {
     // the assertion. None of the three reaches the key, which is the property.
     const round2 = { ...round1, runId: 'pass-b', onSha: 'beefbeefbeef', line: 412 }
     expect(findingKey(round2)).toBe(findingKey(round1))
-    // And whitespace and case in the claim are folded, which is what makes a
+    // And whitespace and case in the claim are reduced, which is what makes a
     // re-review that re-wraps its own sentence land on the entry it already has.
     expect(findingKey({ ...round1, claim: 'the bar is written twice' })).toBe(findingKey(round1))
   })

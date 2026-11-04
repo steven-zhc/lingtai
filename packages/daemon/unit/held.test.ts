@@ -1,7 +1,7 @@
 /**
  * #510: an approved item is not a pass in flight. `WaitResolved{Approve}`
- * used to fold to `state: 'running'` in `task_view`
- * (`@lingtai/projector/task-view`), the same state a live claim folds to, so
+ * used to reduce to `state: 'running'` in `task_view`
+ * (`@lingtai/projector/task-view`), the same state a live claim reduces to, so
  * `inFlight()` read an approval nothing was holding as a conductor still
  * working it — the drain banner, `lingtai doctor` and the board's draining
  * chip all say so from this one function. `state: 'approved'` is its own

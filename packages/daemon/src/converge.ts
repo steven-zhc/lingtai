@@ -197,8 +197,8 @@ export async function clientsForProjects(
 
 /**
  * `RecipeInvalidError` puts one problem per line, which reads well in a
- * thrown message and badly folded into one. `@lingtai/conductor/filter` does
- * the same fold for the same reason, in a function of the same name it does
+ * thrown message and badly reduced into one. `@lingtai/conductor/filter` does
+ * the same reduce for the same reason, in a function of the same name it does
  * not export.
  */
 function oneLine(message: string): string {
@@ -262,7 +262,7 @@ export interface ConvergeOptions {
    *
    * As `reconcile`'s: `store` is the log this reads and appends through, and
    * this answers the one question about the log that `EventStore` does not —
-   * *which streams are worth folding*. Given without `store`, the log read is
+   * *which streams are worth reducing*. Given without `store`, the log read is
    * the one this carries — see `logOf`.
    */
   daemonStore?: DaemonStore
@@ -288,7 +288,7 @@ export interface ConvergeOptions {
  *
  * `store` when a caller named one, and otherwise the log the injected
  * `daemonStore` carries, never the process-wide one. `candidates()` returns
- * stream ids from whichever store it was given, and folding those ids out of a
+ * stream ids from whichever store it was given, and reducing those ids out of a
  * different log answers *no drift* rather than failing — see `reconcile.ts`'s
  * `logOf`, which is the same rule for the same reason.
  */
@@ -300,7 +300,7 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
   return new Set(
     await store.streams({
       prefixes: [`${TICKET_STREAM_PREFIX}%`],
-      // A continuation is claim-shaped (`claimShapeOf`); `reduceTicket` folds it.
+      // A continuation is claim-shaped (`claimShapeOf`); `reduceTicket` reduces it.
       types: ['TicketClaimed', 'TicketContinued', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
     }),
   )

@@ -405,7 +405,7 @@ export function renderTicketForm(form: TicketFormFields, instructions: readonly 
  * **Emptiness is not this function's refusal.** An empty title parses fine —
  * `form.title === ''` — because the caller compares the parsed form against
  * the ticket's unedited form to decide "no change" before it decides "no
- * title": folding the empty-title case in here would make that comparison
+ * title": reducing the empty-title case in here would make that comparison
  * collapse two different saves (same blank title, different body) into one,
  * discarding whichever body the first comparison looked at. The other ways
  * this returns `ok: false` are the title slot reading as an instruction or a labels

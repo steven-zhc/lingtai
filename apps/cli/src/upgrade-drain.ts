@@ -9,7 +9,7 @@
  * is true:
  *
  * - **Nothing holds the lock.** The daemon finished and let go. Nothing is left
- *   to wait for, but the request still stands in the fold, and the board,
+ *   to wait for, but the request still stands in the reducer, and the board,
  *   `lingtai status` and every refusal that asks whether somebody wants this
  *   system stopped would go on saying yes — so it is withdrawn once the shim
  *   has moved.

@@ -1,12 +1,12 @@
 /**
- * Fixed event histories every fold of the one-fold epic (#797) is run over
+ * Fixed event histories every reducer of the one-reduce epic (#797) is run over
  * (#798, plan `doc/design/one-fold-per-stream.md` §3 T0a, §4, §5).
  *
  * **Append only.** `seq` is assigned here, from this module's own counter, in the
  * order the histories are built below, and `histories.hashes.json` hashes it. A
  * history added *after* the existing ones changes nothing; one inserted *before*
  * them shifts every later `seq` and fails the lock. A history is never edited: a
- * later fold change that needs a new cell adds a new named history.
+ * later reduce change that needs a new cell adds a new named history.
  *
  * **Nothing here reads a clock or a counter that is not this module's.**
  * `makeStream`'s `seq` is module-global (`support.ts`) and its `at` is one default
@@ -16,7 +16,7 @@
  * wait ids are literals, and every time-shaped payload value is a literal offset
  * from `NOW`.
  *
- * **`NOW` is what every fold that reads the clock is folded against**
+ * **`NOW` is what every reduce that reads the clock is reduced against**
  * (`reduceControl(events, NOW)`), later than every `at` in this module.
  */
 import type { Action, Envelope, EventType, StepOutcome, WaitId } from '../src/index.ts'
@@ -44,7 +44,7 @@ import {
 } from './events.ts'
 import { makeStream } from './support.ts'
 
-/** The instant clock-reading folds are folded at. After every `at` below. */
+/** The instant clock-reading reduces are reduced at. After every `at` below. */
 export const NOW = new Date('2026-09-01T00:00:00.000Z')
 
 const PROJECT = 'lingtai'
@@ -338,7 +338,7 @@ function everyTicketEvent(): readonly Envelope[] {
     ...aWait(t, { _tag: 'OwnQuestion', question: 'which one?', by: 'steven' }, ask),
     ...aResolution(t, ask, { _tag: 'AnswerQuestion', choice: 'the first' }),
     ...aSplit(t, split, [161, 162]),
-    // Retired, and still a case of `applyTicket`.
+    // Retired, and still a case of `reduceTicketEvent`.
     t('TicketLinked', { relation: 'follows-up', otherRef: '9001' }),
     ...aRelease(t, run, 'the pass did not finish', null),
     t('TicketClosed', { by: 'steven', reason: 'done elsewhere' }),
@@ -1060,7 +1060,7 @@ const late_kindThenTriage = (() => {
   ])
 })()
 
-/** #835: a kinded claim after a close is absorbed by the ticket fold, so a triage `RunSpent` reads `bug`. */
+/** #835: a kinded claim after a close is absorbed by the ticket reduce, so a triage `RunSpent` reads `bug`. */
 const late_kindedClaimAfterClosed = (() => {
   const t = makeStream(ticketStream(PROJECT, 9119))
   const r1 = passStream('t9119-1')
@@ -1314,7 +1314,7 @@ export const lateScenarios = {
 
 /**
  * The event types each stream kind's histories must contain: every catalogue
- * `case` label of `applyRun` / `applyTicket` (the retired `TicketLinked`
+ * `case` label of `reduceRunEvent` / `reduceTicketEvent` (the retired `TicketLinked`
  * included), exactly `CONTROL_FOLD_TYPES`, and the chat and finding streams'
  * own types. Types reached only through board or projector helpers are not here.
  */

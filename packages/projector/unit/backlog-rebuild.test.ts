@@ -1,5 +1,5 @@
 /**
- * The pin for #481: `finding_backlog` rebuilds to the same rows once the fold
+ * The pin for #481: `finding_backlog` rebuilds to the same rows once the reducer
  * dispatches `StepPassed` through `findingsRaisedOf` as it did while it
  * matched that event type directly.
  *
@@ -9,11 +9,11 @@
  * this file into a tautology rather than a pin. **Regenerated once, for #860:**
  * the rows lost one key, `last_seq` (#838's replay guard, gone with the second
  * runner), and nothing else in them changed. If this test goes red, the
- * fold changed — fix `backlog.ts`/`read-model.ts`, never the snapshot.
+ * reduce changed — fix `backlog.ts`/`read-model.ts`, never the snapshot.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
- * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
- * so it is unit under 0060 §1. **Nothing in `pnpm test` folds `finding_backlog`
+ * the real reduce path, skipping WAL, touching no file and reading no `$HOME`,
+ * so it is unit under 0060 §1. **Nothing in `pnpm test` reduces `finding_backlog`
  * today**: the backlog case in `test/contract.ts:691` runs only through
  * `integration/sqlite.test.ts` and `integration/projection.test.ts`, and
  * `integration/backlog.test.ts` is Postgres-only. This file is the only check
@@ -331,12 +331,12 @@ function rowFor(rows: readonly ProjectionRow[], taskId: string, claim: string): 
   return rows.find((r) => r.task_id === taskId && r.claim === claim)
 }
 
-async function fold(evts: readonly Envelope[]): Promise<{ backlog: ProjectionRow[]; runs: ProjectionRow[] }> {
+async function reduce(evts: readonly Envelope[]): Promise<{ backlog: ProjectionRow[]; runs: ProjectionRow[] }> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => backlogProjection.create(ctx))
-    await store.transact((ctx) => backlogProjection.apply(evts, ctx))
+    await store.transact((ctx) => backlogProjection.reduce(evts, ctx))
     return await store.transact(async (ctx) => ({
       backlog: await ctx.query('select * from finding_backlog order by project, key'),
       runs: await ctx.query('select * from finding_backlog_run order by run_id'),
@@ -346,13 +346,13 @@ async function fold(evts: readonly Envelope[]): Promise<{ backlog: ProjectionRow
   }
 }
 
-async function foldInTwoBatches(mid: number): Promise<{ backlog: ProjectionRow[]; runs: ProjectionRow[] }> {
+async function projectInTwoBatches(mid: number): Promise<{ backlog: ProjectionRow[]; runs: ProjectionRow[] }> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => backlogProjection.create(ctx))
-    await store.transact((ctx) => backlogProjection.apply(events.slice(0, mid), ctx))
-    await store.transact((ctx) => backlogProjection.apply(events.slice(mid), ctx))
+    await store.transact((ctx) => backlogProjection.reduce(events.slice(0, mid), ctx))
+    await store.transact((ctx) => backlogProjection.reduce(events.slice(mid), ctx))
     return await store.transact(async (ctx) => ({
       backlog: await ctx.query('select * from finding_backlog order by project, key'),
       runs: await ctx.query('select * from finding_backlog_run order by run_id'),
@@ -363,26 +363,26 @@ async function foldInTwoBatches(mid: number): Promise<{ backlog: ProjectionRow[]
 }
 
 describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did through the direct StepPassed match', () => {
-  it('produces the same final rows for every case the fold handles', async () => {
-    const { backlog, runs } = await fold(events)
+  it('produces the same final rows for every case the reducer handles', async () => {
+    const { backlog, runs } = await reduce(events)
     expect(backlog).toMatchSnapshot('final finding_backlog rows')
     expect(runs).toMatchSnapshot('final finding_backlog_run rows')
   })
 
   it('raises the minors a passing gate found, and filters the major out', async () => {
-    const { backlog } = await fold(events.slice(0, afterCase1))
+    const { backlog } = await reduce(events.slice(0, afterCase1))
     const rows = rowsFor(backlog, wi(1))
     expect(rows).toHaveLength(2)
     expect(rows.map((r) => r.claim).sort()).toEqual(['the error message is vague', 'the name shadows an import'])
   })
 
   it('writes no row and makes no lookup for a passing verdict with no minors', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     expect(rowsFor(backlog, wi(2))).toEqual([])
   })
 
   it("keeps each action's own findings apart within one outcome's single StepEnded", async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const first = rowFor(backlog, wi(3), 'finding from the first action')
     const second = rowFor(backlog, wi(3), 'finding from the second action')
     expect(first).toMatchObject({ action: 'first-reviewer' })
@@ -396,72 +396,72 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
   })
 
   it("does not file a failing gate's minors", async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     expect(rowsFor(backlog, wi(4))).toEqual([])
   })
 
   it('keeps the first sighting — run, line, sha and seq — when a later attempt repeats the claim', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const row = rowFor(backlog, wi(5), 'duplicate finding')
     expect(row).toMatchObject({ run_id: run5a.runId, line: 10, on_sha: 'sha-5a' })
   })
 
   it('drops a StepPassed on a run nothing started', async () => {
-    const { backlog, runs } = await fold(events)
+    const { backlog, runs } = await reduce(events)
     expect(rowsFor(backlog, wi(6))).toEqual([])
     expect(runs.find((r) => r.run_id === run6.runId)).toBeUndefined()
   })
 
   it('records the run-to-task link even when the task id cannot be parsed, but files nothing', async () => {
-    const { backlog, runs } = await fold(events)
+    const { backlog, runs } = await reduce(events)
     expect(backlog.filter((r) => r.claim === 'an unparseable work item')).toEqual([])
     expect(runs.find((r) => r.run_id === run7.runId)).toMatchObject({ task_id: 'noprojectissue' })
   })
 
   it('keeps the first RunStarted for a run, dropping a duplicate', async () => {
-    const { runs } = await fold(events)
+    const { runs } = await reduce(events)
     expect(runs.find((r) => r.run_id === run8.runId)).toMatchObject({ task_id: wi(8) })
   })
 
   it('keeps a declined entry declined when the same claim is raised again', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const row = backlog.find((r) => r.key === declinedKey)
     expect(row).toMatchObject({ status: 'declined', reason: 'style', run_id: run9a.runId })
   })
 
   it('records an accepted, proposed entry', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const row = backlog.find((r) => r.key === acceptedKey)
     expect(row).toMatchObject({ status: 'accepted', kind: 'bug', proposed_ref: '212', proposed_url: 'https://x/212' })
   })
 
   it('leaves proposed_ref null on an accepted entry nothing has opened yet', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const row = backlog.find((r) => r.key === acceptedOnlyKey)
     expect(row).toMatchObject({ status: 'accepted', proposed_ref: null })
   })
 
   it('makes no row and does not throw for a decision on a key nothing raised', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     expect(backlog.find((r) => r.key === 'no-such-key')).toBeUndefined()
   })
 
   it('files a StepPassed with no StepsResolved ahead of it on the run', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     const row = backlog.find((r) => r.claim === 'no StepsResolved ahead of this one')
     expect(row).toMatchObject({ task_id: wi(10), run_id: 'pass-pin-10' })
   })
 
-  it('folds in two batches split between a RunStarted and its own StepPassed the same as one batch', async () => {
-    const whole = await fold(events)
-    const split = await foldInTwoBatches(afterCase1RunStarted)
+  it('reduces in two batches split between a RunStarted and its own StepPassed the same as one batch', async () => {
+    const whole = await reduce(events)
+    const split = await projectInTwoBatches(afterCase1RunStarted)
     expect(split).toEqual(whole)
   })
 
   /** #499: nothing reads `RunSpent` yet, and `finding_backlog` must not start now. */
   it('leaves finding_backlog unchanged by a RunSpent on the stream', async () => {
-    const baseline = await fold(events)
-    const withSpent = await fold([
+    const baseline = await reduce(events)
+    const withSpent = await reduce([
       ...events,
       run1.event('RunSpent', {
         for: { _tag: 'Action', step: 'proposed', name: 'review', round: 0 },
@@ -475,15 +475,15 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     expect(withSpent).toEqual(baseline)
   })
 
-  it('folds the same rows in batches of 1, of 3 and all at once', async () => {
-    const whole = await fold(events)
+  it('reduces the same rows in batches of 1, of 3 and all at once', async () => {
+    const whole = await reduce(events)
     for (const size of [1, 3]) {
       const db = openSqliteProjections(':memory:')
       try {
         const store = createSqliteProjectionStore(db)
         await store.transact((ctx) => backlogProjection.create(ctx))
         for (let i = 0; i < events.length; i += size) {
-          await store.transact((ctx) => backlogProjection.apply(events.slice(i, i + size), ctx))
+          await store.transact((ctx) => backlogProjection.reduce(events.slice(i, i + size), ctx))
         }
         const backlog = await store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
         expect(backlog, `batches of ${size}`).toEqual(whole.backlog)
@@ -498,14 +498,14 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     try {
       const store = createSqliteProjectionStore(db)
       await store.transact((ctx) => backlogProjection.create(ctx))
-      await store.transact((ctx) => backlogProjection.apply(events, ctx))
+      await store.transact((ctx) => backlogProjection.reduce(events, ctx))
       const later = acceptedStream('FindingDeclined', {
         project: PROJECT,
         key: acceptedKey,
         by: 'human:t',
         reason: 'changed my mind',
       })
-      await expect(store.transact((ctx) => backlogProjection.apply([later], ctx))).rejects.toThrow(
+      await expect(store.transact((ctx) => backlogProjection.reduce([later], ctx))).rejects.toThrow(
         backlogStream(PROJECT, acceptedKey),
       )
       const [row] = await store.transact((ctx) =>
@@ -518,7 +518,7 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
   })
 
   it('writes decision columns that equal what reduceFinding says of each decision stream', async () => {
-    const { backlog } = await fold(events)
+    const { backlog } = await reduce(events)
     for (const key of [declinedKey, acceptedKey, acceptedOnlyKey]) {
       const stream = events.filter((e) => e.streamId === backlogStream(PROJECT, key))
       const state = reduceFinding(stream)

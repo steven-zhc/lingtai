@@ -45,7 +45,7 @@ repository into **the team's** Lingtai, not *mine*.
 
 ## Where an onboarded project actually lives
 
-There is no projects table. A project is two lines of SQL and a fold:
+There is no projects table. A project is two lines of SQL and a reducer:
 
 ```sql
 select distinct stream_id from events where stream_id like 'prj-%'

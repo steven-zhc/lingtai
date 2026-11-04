@@ -3,7 +3,7 @@
  * that are not the loop: what the control stream says, and what recovery does
  * about a process.
  *
- * The fold is tested against a stub store rather than the real log, because
+ * The reducer is tested against a stub store rather than the real log, because
  * `ctl-conductor` is one stream for the whole installation — appending a
  * shutdown request to the test database would leave every later test reading a
  * conductor that has been told to stop.
@@ -23,7 +23,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { readControl, recordStart, requestShutdownUnlessStanding, withdrawShutdown } from '../src/control.ts'
 import { killWorker } from '../src/reconcile.ts'
 
-/** Just enough of a store to fold. `readControl` reads one stream and nothing else. */
+/** Just enough of a store to reduce. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
   const envelopes = events.map(
     (e, i) =>
@@ -80,7 +80,7 @@ function alive(pid: number): boolean {
   }
 }
 
-describe('the control stream, folded', () => {
+describe('the control stream, reduced', () => {
   it('holds a shutdown request beside the pause, not instead of it', async () => {
     const state = await readControl(
       storeOf([
@@ -275,7 +275,7 @@ describe('withdrawing a drain', () => {
 
   /**
    * The race on the other side: the restart read no request, and a second
-   * person's landed before the restart's append. Appended over it, the fold
+   * person's landed before the restart's append. Appended over it, the reducer
    * would show only the restart's — and withdrawing that by version would lift
    * ops's with no event withdrawing it.
    */
@@ -379,7 +379,7 @@ describe('a signal belongs to the daemon it was sent to', () => {
     expect(state.paused).toBe(false)
   })
 
-  it('folds the whole stream for a reader that passes nothing', async () => {
+  it('reduces the whole stream for a reader that passes nothing', async () => {
     // The board, `doctor` and `status` ask *what is standing now*, not *what am
     // I being told*, so they keep the unscoped read.
     const state = await readControl(storeOf([shutdown]))

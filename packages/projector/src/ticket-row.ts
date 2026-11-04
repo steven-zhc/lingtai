@@ -4,7 +4,7 @@
  * `spend` next.
  */
 import type { Envelope, TicketState } from '@lingtai/domain'
-import { applyTicket, decodeTicket, emptyTicket } from '@lingtai/domain'
+import { reduceTicketEvent, decodeTicket, emptyTicket } from '@lingtai/domain'
 
 /**
  * The stored state, or `emptyTicket` for none (`undefined`: no row yet), reduced
@@ -20,5 +20,5 @@ export function reduceStoredTicket(
   projection: string,
 ): { before: TicketState; after: TicketState } {
   const before = stored === undefined ? emptyTicket : decodeTicket(stored, projection, event.streamId)
-  return { before, after: applyTicket(before, event) }
+  return { before, after: reduceTicketEvent(before, event) }
 }

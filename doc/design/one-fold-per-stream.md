@@ -1,25 +1,25 @@
-# One fold per stream, in `@lingtai/domain`: map and path
+# One reduce per stream, in `@lingtai/domain`: map and path
 
 This is the plan for [0101](../decisions/0101-typescript-packages-effect-unbuilt.md) §4,
-*a stream's fold exists once, here*, and for
+*a stream's reducer exists once, here*, and for
 [0124](../decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md), which says the same
-thing: *"the fold exists once, in `@lingtai/domain`"*, and *"where a projection folds
-one stream's part of a row, it calls the same domain `apply`"*.
+thing: *"the reducer exists once, in `@lingtai/domain`"*, and *"where a projection reduces
+one stream's part of a row, it calls the same domain `reduceEvent`"*.
 
 The survey is read-only. It was made on 2026-10-31 at `690dbbbb` and re-checked at
 `4fa71683`, which is after #796 landed. #796 added one line near the top of
 `apps/board/src/lib/task.ts` and so moved every later line in that file by one. For
-that file this document therefore names **functions** (`foldRun`, `claimsOf`,
-`standingOf`, `ticketFieldsOf`, `foldChat`, `outcomeOf`). Every other line number is
+that file this document therefore names **functions** (`presentRunEvents`, `claimsOf`,
+`standingOf`, `ticketFieldsOf`, `presentChat`, `outcomeOf`). Every other line number is
 as of `4fa71683`. A ticket cut from this plan re-checks every line it cites against
 the code as it is on that day.
 
 **#796 has landed** (`d3ebd1a7`). It added `CONTROL_FOLD_TYPES`
 (`packages/domain/src/control.ts:31`), the event types `reduceControl` reads, and
 `EventStore.readTypes` (`packages/event-store/src/event-store.ts:359`), so a reader
-that only folds asks the store for just those types. Any control-fold change here
-(R7, R8) keeps that list in step with what `applyControl` reads.
-`unit/control.test.ts` fails on a type that is folded but not listed.
+that only reduces asks the store for just those types. Any control-reduce change here
+(R7, R8) keeps that list in step with what `reduceControlEvent` reads.
+`unit/control.test.ts` fails on a type that is reduced but not listed.
 
 ## Where this ends: the architecture
 
@@ -33,11 +33,11 @@ flowchart TB
   W["Writers<br/>daemon · CLI · board actions"] -->|append| LOG
   LOG[("events — the only truth<br/>append-only; an event never changes:<br/>a payload only gains optional fields,<br/>anything else is a new type")]
 
-  subgraph DOMAIN["@lingtai/domain — one fold per stream"]
-    F["control · ticket · run · project ·<br/>integration · chat · finding<br/>{ name, version, initial, apply, encode, decode }"]
+  subgraph DOMAIN["@lingtai/domain — one reduce per stream"]
+    F["control · ticket · run · project ·<br/>integration · chat · finding<br/>{ name, version, initial, reduceEvent, encode, decode }"]
   end
 
-  SNAP[("snapshots — a cache, safe to delete<br/>key: stream, fold name, fold version<br/>holds: stream version, last seq, log epoch")]
+  SNAP[("snapshots — a cache, safe to delete<br/>key: stream, reduce name, reduce version<br/>holds: stream version, last seq, log epoch")]
   PROJ[("projections — across streams<br/>task_view · spend · ticket_report · backlog")]
 
   LOG -->|"one stream, from a version"| F
@@ -46,22 +46,22 @@ flowchart TB
   LOG -->|"global log, by seq"| PROJ
   PROJ -->|"a row's one-stream part calls apply"| F
 
-  F -->|"state = snapshot + ≤4 events, folded"| R["Readers<br/>conductor · daemon · CLI · board"]
+  F -->|"state = snapshot + ≤4 events, reduced"| R["Readers<br/>conductor · daemon · CLI · board"]
   PROJ -->|"queries across tickets<br/>(the queue: every queued ticket)"| R
-  R --> B["board: present(state, what is not on the stream)<br/>— never a second fold"]
+  R --> B["board: present(state, what is not on the stream)<br/>— never a second reduce"]
 ```
 
 ### Reading a stream's state
 
 ```mermaid
 flowchart TB
-  A["reader wants a stream's state"] --> S{"latest snapshot for<br/>(stream, fold, version)?"}
+  A["reader wants a stream's state"] --> S{"latest snapshot for<br/>(stream, reduce, version)?"}
   S -->|none| FULL["read the stream from version 1"]
-  S -->|found| V{"fold version current<br/>and log epoch the same?"}
+  S -->|found| V{"reduce version current<br/>and log epoch the same?"}
   V -->|no: void| FULL
   V -->|yes| TAIL["read the stream from the snapshot's version"]
-  TAIL --> FOLD["decode the snapshot, fold the tail with apply"]
-  FULL --> FOLD0["fold every event with apply"]
+  TAIL --> FOLD["decode the snapshot, reduce the tail with reduceEvent"]
+  FULL --> FOLD0["reduce every event with reduceEvent"]
   FOLD --> NOW["evaluate what depends on now<br/>(a pause that lifts at until)"]
   FOLD0 --> NOW
   NOW --> OUT["the state — the same answer either way"]
@@ -74,36 +74,36 @@ flowchart TB
 sequenceDiagram
   participant P as daemon or board
   participant L as events
-  participant D as domain fold
+  participant D as domain reduce
   participant S as snapshots
   P->>L: append(stream, expectedVersion, events)
   L-->>P: committed (version n)
   Note over P: crossed a commit point?<br/>floor(old/5) ≠ floor(n/5)
-  P--)D: fold (not awaited)
+  P--)D: reduce (not awaited)
   D->>L: read the tail since the latest snapshot
   D->>S: upsert only if this version is higher
-  Note over P,S: a failed write is logged once and forgotten:<br/>the next reader folds a few more events
+  Note over P,S: a failed write is logged once and forgotten:<br/>the next reader reduces a few more events
 ```
 
-### When a fold changes
+### When a reducer changes
 
 ```mermaid
 flowchart TB
-  C["a change to a fold"] --> Q{"does any history<br/>fold to a different state?"}
+  C["a change to a reducer"] --> Q{"does any history<br/>reduce to a different state?"}
   Q -->|"no: a refactor"| K["version unchanged;<br/>the hash table proves the result is the same;<br/>snapshots stay valid"]
-  Q -->|"yes: a new state field, a bug fix, a rule"| U["raise the fold's version;<br/>add a version → hash row;<br/>a named assertion per changed cell"]
-  U --> X["old snapshots are void:<br/>the next read folds from version 1"]
+  Q -->|"yes: a new state field, a bug fix, a rule"| U["raise the reducer's version;<br/>add a version → hash row;<br/>a named assertion per changed cell"]
+  U --> X["old snapshots are void:<br/>the next read reduces from version 1"]
   U --> RB["a projection that stores the state:<br/>lingtai projection rebuild on deploy"]
 ```
 
-The state is always what the current fold makes of the whole stream. It never
+The state is always what the current reduce makes of the whole stream. It never
 depends on when a snapshot happened to be written.
 
 ### Where the code runs
 
 Backend code that does IO is an Effect (0101 §6); `Effect.runPromise` runs only at a
 host's edge. An Effect span is an OpenTelemetry span, so a pass is one trace (#791).
-The fold itself is pure and stays in `domain`, outside Effect. Order: #797 (this
+The reducer itself is pure and stays in `domain`, outside Effect. Order: #797 (this
 plan, with 0124's snapshots last), then #790's projector, `pass.ts` and daemon rows.
 
 ## 0. The count
@@ -118,12 +118,12 @@ first pattern misses. They are listed in §1.9 and are not part of the 138.
 
 | Class | Branches | Where |
 |---|---:|---|
-| **F**: a stream fold that duplicates a domain reducer | **48** | run 26, ticket 14, control 4, chat 4 (chat has no domain reducer) |
-| **P**: a projection fold | **46** | task-view 20, ticket-report 16, spend 6, backlog 4 |
+| **F**: a stream reduce that duplicates a domain reducer | **48** | run 26, ticket 14, control 4, chat 4 (chat has no domain reducer) |
+| **P**: a projection reduce | **46** | task-view 20, ticket-report 16, spend 6, backlog 4 |
 | **R**: a reaction, trigger or renderer | **17** | tell 7, extension 5, work-loop 3, markdown 1, conduct 1 |
 | **S**: a select or lookup | **27** | spread over 14 files |
 
-None of the 48 F branches folds a **project** or **integration** stream.
+None of the 48 F branches reduces a **project** or **integration** stream.
 `reduceProject` and `reduceIntegration` have no rival copy anywhere. The integration
 events outside domain are all P (`task-view.ts:480`, `:496`; `ticket-report.ts:467-469`).
 
@@ -137,7 +137,7 @@ Callers outside domain:
 - `reduceTicket` has 19 callers (files).
 - `reduceRun` has **2**: `resolve-wait.ts:509` and `approve.ts:217`. `attempts.ts`
   only mentions it in comments (264, 322) and does not call it.
-- `applyTicket` has 1: the board's `standingOf`.
+- `reduceTicketEvent` has 1: the board's `standingOf`.
 - `reduceControl` has 5.
 - `reduceProject` has 4.
 - `reduceIntegration` has 1.
@@ -150,7 +150,7 @@ disagree.
 - The other is `read-model.ts:158` `verdictOf`. `cardFactOf` and `boardFactOf` use it,
   and through them so do the board and task_view.
 
-The board's folds already call domain, but they call the *second* ladder. §2.1 lists the
+The board's reduces already call domain, but they call the *second* ladder. §2.1 lists the
 cells that differ, and decision D1 settles them.
 
 ---
@@ -161,16 +161,16 @@ cells that differ, and decision D1 settles them.
 
 | Function | What | Class | Reducer |
 |---|---|---|---|
-| `standingOf` | calls `applyTicket` itself; `since` is the `at` of the last `LIFECYCLE_MOVES` event | F, already on domain | ticket |
+| `standingOf` | calls `reduceTicketEvent` itself; `since` is the `at` of the last `LIFECYCLE_MOVES` event | F, already on domain | ticket |
 | `standingOf`'s after-move block | the last `WaitResolved`, its `WaitStarted`, whether a later `WaitStarted` exists, the `TicketClosed`/`TicketReleased` after it, and whether that is the latest lifecycle move | **F** (7) | ticket |
 | `bodyOutcome` | the last `IssueUpdated`/`IssueUpdateFailed{change:'body'}` after the last `WaitStarted` | **S** (4) | ticket, through the ledger (D9, R9) |
-| `foldChat` (+1 `!==`) | the asks and answers on a `chat-` stream | **F** (1) | chat (D7, R9b) |
+| `presentChat` (+1 `!==`) | the asks and answers on a `chat-` stream | **F** (1) | chat (D7, R9b) |
 | `claimsOf` | the claims (deduped through `claimShapeOf`), plus the release reason per run | **F** (1) | ticket |
-| `foldRun` (9 cases + the `BoardFact` tag) | one run's state | **F** (10) | run |
+| `presentRunEvents` (9 cases + the `BoardFact` tag) | one run's state | **F** (10) | run |
 | history grouping | `RunStarted.ticketId` → branch, used to label history groups | **S** (1) | run (`ticketId`) |
 | `ticketFieldsOf` | title/kind/labels from `TicketDiscovered` **or `TicketClaimed`**; the latest non-null wins | **F** (2) | ticket |
 
-**`foldRun` against `reduceRun`**, field by field:
+**`presentRunEvents` against `reduceRun`**, field by field:
 
 | Field | Domain has | Board does differently |
 |---|---|---|
@@ -184,7 +184,7 @@ cells that differ, and decision D1 settles them.
 | verdicts | `steps`, via `stepStateOf` | via `boardFactOf` → `verdictOf` + `STEP_ENDING_STATE`. The ladders differ (§2.1, D1) |
 | signoff requested | lifecycle `awaiting-approval`, overwritten by any later lifecycle event (run.ts:396-406) | `awaitingSha` is set and never cleared, and the step state is `'pending'` (the `SignoffRequested` case) |
 | failure | lifecycle `failed`, where the **last event wins** | `failure` is sticky. `outcomeOf` is worst-first: failure > finished > released > running > claimed. See D3 |
-| `current` (stale verdict) | `stepsOn` (run.ts:183) compares `action.onSha` to `headSha` | **Dead code.** The loop after the `switch` in `foldRun` looks for an event whose top-level `data.step === g.step && data.onSha`. `g.step` is `step:action`, `StepStarted` carries `{runId, step, round}` (events.ts:999-1004), and `StepEnded` carries `onSha` only per action. Nothing matches, so `current` is always `true`, and no board test asserts `current: false` on a step. See D2 |
+| `current` (stale verdict) | `stepsOn` (run.ts:183) compares `action.onSha` to `headSha` | **Dead code.** The loop after the `switch` in `presentRunEvents` looks for an event whose top-level `data.step === g.step && data.onSha`. `g.step` is `step:action`, `StepStarted` carries `{runId, step, round}` (events.ts:999-1004), and `StepEnded` carries `onSha` only per action. Nothing matches, so `current` is always `true`, and no board test asserts `current: false` on a step. See D2 |
 | `released` | not a run fact | `claim.released`, joined from the ticket stream. It stays a caller join |
 
 ### 1.2 `apps/board/src/lib/progress.ts` `foldProgress` (359): 8 branches, all F (run)
@@ -217,7 +217,7 @@ and the `now`/budget phase are presentation. See D10.
 - `app/api/webhook/route.ts:67`: **S**, a delivery-id idempotency check on the queue
   stream. Leave it.
 - `history.ts` names no event in a branch. It renders per event through `boardFactOf`
-  (31). It is not a fold and is out of scope.
+  (31). It is not a reducer and is out of scope.
 
 ### 1.4 `packages/projector`: 46 branches, all P
 
@@ -233,7 +233,7 @@ and the `now`/budget phase are presentation. See D10.
 - the card-fact cases `WaitStarted` 568, `TriageStarted` 597, `WaitTriaged` 610 and
   `WaitResolved` 621
 
-Those can come from `applyTicket` plus `triageFactsOf`.
+Those can come from `reduceTicketEvent` plus `triageFactsOf`.
 
 Genuinely cross-stream:
 
@@ -294,7 +294,7 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
 **`backlog.ts` (4).**
 
 - The `RunStarted` link (131).
-- `FindingAccepted`/`Proposed`/`Declined` (141-162) fold one `backlog-` stream's
+- `FindingAccepted`/`Proposed`/`Declined` (141-162) reduce one `backlog-` stream's
   status, and no domain reducer exists for it.
 - Raised findings already come from domain `findingsRaisedOf`.
 
@@ -309,7 +309,7 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
   - `attemptOutcome` 328: **F** run. It reads `RunProducedDiff` 338,
     `RunKeptUncommitted` 344, `RunFinished` 350, `RunFailed` 356, `StepStarted` 374
     and `StepEnded` 381. Its own header (320-326) says it avoids `reduceRun` because
-    that fold keeps neither the *last refusal* nor a step that started and never
+    that reduce keeps neither the *last refusal* nor a step that started and never
     ended. Those are the fields to add.
 - **`day-ceiling.ts` (4).** **F** control.
   - `liftOwnPause` 173-175: is the current pause the ceiling's? That is
@@ -345,7 +345,7 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
 - **`status.ts` (2).**
   - 202 is **S**, the last `RunRefsPublished`.
   - `lastStep` 232-240 is **S**: the last `StepStarted` unless a `StepEnded` follows
-    it. That is the same "current step" that `foldRun`, `foldProgress` and
+    it. That is the same "current step" that `presentRunEvents`, `foldProgress` and
     `attemptOutcome` each rebuild.
 - **`triage.ts` (6).**
   - 172 is **S**, a `TriageStarted` envelope at an attempt, beside `triageFactsOf`.
@@ -373,7 +373,7 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
 
 | Location | Class | Action |
 |---|---|---|
-| task.ts `foldChat` | F chat | |
+| task.ts `presentChat` | F chat | |
 | task.ts, `DiscussionHeld` → `chatIdsFor` | S | |
 | cli/status.ts:237 | S | |
 | cli/subscribers.ts:95 | S | becomes `RunState.ticketId` |
@@ -391,7 +391,7 @@ The only per-stream part is "the ticket's latest non-null kind", which becomes
 ## 2. What domain needs first
 
 These are additions, except where a decision (§5) changes a meaning. Each lands in its
-final shape in the §3 ticket that first needs it (D15); no fold carries a version
+final shape in the §3 ticket that first needs it (D15); no reduce carries a version
 until the snapshots do (0124 §1).
 
 ### 2.1 The verdict ladder (D1, R0)
@@ -429,7 +429,7 @@ too (P3's rebuild).
 
 1. `step: { step, round, since: Date } | null`. `StepStarted` sets it. A `StepEnded`
    for that step clears it, and so does any `StepEnded` if `lingtai status`'s rule
-   (status.ts:236) is kept. Used by `foldRun`, `foldProgress` 485, `attemptOutcome`
+   (status.ts:236) is kept. Used by `presentRunEvents`, `foldProgress` 485, `attemptOutcome`
    374 and `lastStep` 232.
 2. `implementRound: number`, the highest `StepStarted{implement}.round` and fix round seen (named apart from `step.round`, any step's round). Used
    by `continuationRound` (conduct.ts:654-665) and `foldProgress` 590.
@@ -437,7 +437,7 @@ too (P3's rebuild).
    added whole by ticket 6b, which first reads `steps` (`foldProgress` 467); ticket 5
    reads `configHash` (#190). The unread `RunState.configHash` from `RunStarted` goes
    with it.
-4. `promptMeta: { version, bytes } | null` from `RunPrompted`. Used by `foldRun`.
+4. `promptMeta: { version, bytes } | null` from `RunPrompted`. Used by `presentRunEvents`.
 5. `published: PayloadOf<'RunRefsPublished'> | null`, the last one, with
    `savedHeadOf(state): SavedHead` (ticket 3a): the one rule for a clean pushed head a
    fix round can continue from, in the conductor's order, read by `resolve-wait.ts`,
@@ -448,7 +448,7 @@ too (P3's rebuild).
 8. `refusal: { key, evidence, findings } | null`, the last refused verdict. Used by
    `attemptOutcome`, where today it is `attemptFactOf` at attempts.ts:384-391.
 9. `failure: { kind, detail } | null`. It is sticky and independent of `lifecycle`
-   (D3). Used by `foldRun`'s `outcomeOf` and `attemptOutcome` 356.
+   (D3). Used by `presentRunEvents`'s `outcomeOf` and `attemptOutcome` 356.
 9a. `produced: PayloadOf<'RunProducedDiff'> | null`, the last one (ticket 4). It
    replaces `branch` and `diff`, so the fact is held once (the operator, 2026-11-02).
 10. `laneWaitedAt: Date | null` from `MergeLaneWaited`. Used by `foldProgress` 473.
@@ -460,17 +460,17 @@ too (P3's rebuild).
 
 ### 2.3 `TicketState` (ticket.ts)
 
-1. `title`/`kind` from `TicketClaimed`, latest non-null wins (D4). Today `applyTicket`
+1. `title`/`kind` from `TicketClaimed`, latest non-null wins (D4). Today `reduceTicketEvent`
    takes them only from `TicketDiscovered` (254-266), and **no `src/` file appends
    `TicketDiscovered`**: a search for `type: 'TicketDiscovered'` finds no appender,
-   only the folds and `packages/domain/scripts/events.ts`'s probe. So
+   only the reducers and `packages/domain/scripts/events.ts`'s probe. So
    `reduceTicket(...).title`, `.kind`, `.labels`, `.project`, `.source` and
    `.externalRef` are null on every current ticket. That nulls more than the card:
    domain words an answer's question with `agentBranchOf(state.externalRef)`
    (ticket.ts:407-411), so the branch in that sentence is `''` today.
    - **`project` and `externalRef` are derived from the stream id**
      (`parseTicketStream`, which task_view already uses at `task-view.ts:739`), in
-     `applyTicket` on the first event of the stream. This is recommended over carrying
+     `reduceTicketEvent` on the first event of the stream. This is recommended over carrying
      them on `TicketClaimed`, because the stream id is on every event already, needs no
      event change, and gives an old log the same answer as a new one.
    - `labels` stays null: `TicketClaimed` has no `labels` (events.ts:188-213), and
@@ -498,13 +498,13 @@ changes it.
 
 ### 2.4 `ControlState` (control.ts)
 
-1. The 0124 §2 split: a fold with no `now`, plus `evaluateControl(state, now)` for the
+1. The 0124 §2 split: a reducer with no `now`, plus `evaluateControl(state, now)` for the
    `until` lapse (the block at the end of `reduceControl`). Today `reduceControl` builds
-   its state in a loop and has no `apply`, so it becomes `applyControl` first. It
+   its state in a loop and has no `reduceEvent`, so it becomes `reduceControlEvent` first. It
    still reads only `CONTROL_FOLD_TYPES` (#796).
 2. A ceiling cause (D8): an optional typed `cause` on `ConductorPaused`.
    `ConductorPaused` is already in `CONTROL_FOLD_TYPES`, so the list does not change.
-   If R8 makes the fold read any new type, that type goes into the list in the same
+   If R8 makes the reducer read any new type, that type goes into the list in the same
    diff.
 
 ### 2.5 New: `ChatState` (`chat-` stream, D7)
@@ -512,10 +512,10 @@ changes it.
 `{ attempt, turns: {question, by, at, reading, answer|null}[], answered: number }`. No
 `costUsd`: `DiscussionAnswered` has carried none since #502, so only a field no log
 can fill would hold it (D16).
-It replaces the board's `foldChat`, `turnsOf` (conductor/discuss.ts:750), `outstanding`
+It replaces the board's `presentChat`, `turnsOf` (conductor/discuss.ts:750), `outstanding`
 (775) and the count at cli/discuss.ts:462.
 
-### 2.6 New: a backlog-finding fold (D7)
+### 2.6 New: a backlog-finding reduce (D7)
 
 This is one `backlog-` stream's status from `FindingProposed`/`Accepted`/`Declined`. It
 replaces backlog.ts:141-162 and conductor/backlog.ts:177, :184 and :344.
@@ -527,18 +527,18 @@ replaces backlog.ts:141-162 and conductor/backlog.ts:177, :184 and :344.
 ## 3. Tickets, in order
 
 **Rewritten 2026-11-02, on the operator's principle: no intermediate state.** Each
-fold reaches its final shape, the one §5 decides, directly. The plan this replaces
-first reproduced today's behaviour (legacy copies, characterization pins, a fold
+reduce reaches its final shape, the one §5 decides, directly. The plan this replaces
+first reproduced today's behaviour (legacy copies, characterization pins, a reducer
 registered at "version 1 = today"), then changed it one cell at a time, with a
 version bump each. That was scaffolding, and all of it would have had to be taken
 down again. Nothing is stored that a version could invalidate until snapshots
 exist, so the registry, the codec and the version table land with the snapshot
 store (0124 §1 as edited on 2026-11-02).
 
-**Each ticket is a vertical slice.** It adds one piece of a domain fold in its
+**Each ticket is a vertical slice.** It adds one piece of a domain reduce in its
 final shape, moves **every** reader of that piece onto it, and deletes the code it
 replaces in the same diff. No ticket leaves a domain field nobody reads, a
-projection column nobody reads, or a copy of an old fold. A slice too large for one
+projection column nobody reads, or a copy of an old reduce. A slice too large for one
 pass is split along the state it adds, never into "add it" then "use it".
 
 The *covers* column names the rows of the old table (R/C/P, still used by §2 and
@@ -554,18 +554,18 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 4 | **How a run ended.** `RunState.failure` (sticky, D3) and `refusal`. `attempts.ts`'s `attemptOutcome` becomes a function of `RunState`, reading these with ticket 2's `step` and ticket 3a's `kept`. `produced` replaces `branch` and `diff` | R3, C4 | 1, 2, 3a | the evidence precedence stays: last refusal, then `RunFailed`, then the unfinished step |
 | 6a | **The held budget line.** `RunState.roundsOpened`, `SpendRow.grant` (the existing `spent_for` column, no rebuild) and `spentOf`; `RunProgress` loses `rounds` and `granted` | R3, C10 | 2 | — |
 | 6b | **The board's progress.** `resolved`, `laneWaitedAt` and the instants (D10), and `foldProgress` becomes `progressOf(state, plan, over)` over `RunState`. The lane wait ends at `merge`'s `StepEnded` | R1, C10 | 4, 6a | the `now` rules (a `StepEnded` clears only its own label; `RunFinished` clears only the agent or the lane) become a pure function of state |
-| 5 | **The board's run.** `RunState.resolved` and `promptMeta`, and `filesOf(state)`; `foldRun` becomes `reduceRun` plus a `present(state)` that draws `RunView`. Stale verdicts show (D2), and `awaitingSha` clears with the lifecycle (D3) | C9a–c | 3a, 4, 6b | user-visible: §6's stale verdicts, `asked`, cleared signoff |
+| 5 | **The board's run.** `RunState.resolved` and `promptMeta`, and `filesOf(state)`; `presentRunEvents` becomes `reduceRun` plus a `present(state)` that draws `RunView`. Stale verdicts show (D2), and `awaitingSha` clears with the lifecycle (D3) | C9a–c | 3a, 4, 6b | user-visible: §6's stale verdicts, `asked`, cleared signoff |
 | 7 | **A ticket's attempts.** `TicketState.claims`, each with a typed `ended` (D13), `lastAttemptAt` and `since` (D11). `priorAttempts`, the board's `claimsOf` and `backoffOf` read them, and the board's dead `repair` field goes (D16) | R4, C5, C6 | — | the board shows an attempt that ended by asking a person |
 | 8 | **What a ticket is.** `title`/`kind` from `TicketClaimed`, and `project`/`externalRef` from the stream id (D4). The board's `ticketFieldsOf` reads them | R6, C7 | — | domain's answer question names the agent branch again (§2.3) |
 | 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
 | 10 | **What Lingtai wrote to GitHub.** The ledger on `TicketState` (D9). The board's `bodyOutcome`, `converge.ts` and `tell.ts`'s comment half read it | R9, C13 | — | — |
 | 11w | **One writer per projection** (D18). Only the conductor-lock holder runs projection runners; `withProjector` and the CLI's own runners go, a command that shows its own write waits for the checkpoint, and the per-row `seq` guards go | D18 | — | the board lags while no conductor is up; 0100 §13 |
-| 11 | **task_view is the ticket fold.** The row stores its ticket's `TicketState` (12's codec), and `state` and `answer` come from it, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 12 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
-| 12 | **ticket_report is the ticket fold.** It lands the ticket fold's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims, waits and `kind` come from it. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10, 7b, 7c (the state's final shape) | rebuild, runbook |
+| 11 | **task_view is the ticket reduce.** The row stores its ticket's `TicketState` (12's codec), and `state` and `answer` come from it, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 12 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
+| 12 | **ticket_report is the ticket reduce.** It lands the ticket reduce's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims, waits and `kind` come from it. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10, 7b, 7c (the state's final shape) | rebuild, runbook |
 | 13 | **spend's kind.** `spend_kind` from a stored `TicketState.kind` | P1 | 12 | rebuild, runbook |
-| 14 | **The control fold.** `applyControl` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains an optional typed `cause`, with no `schemaVer` bump and no upcaster (D8, 0100 §4). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `applyControl` reads |
-| 15 | **The chat fold.** `reduceChat` (D14). The board's `foldChat`, `turnsOf`, `outstanding` and the CLI's count read it | R9b, C11 | — | an orphan answer no longer counts as answering anything |
-| 16 | **The finding fold.** Domain's backlog-finding fold; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
+| 14 | **The control reduce.** `reduceControlEvent` plus `evaluateControl(state, now)` (0124 §2). `ConductorPaused` gains an optional typed `cause`, with no `schemaVer` bump and no upcaster (D8, 0100 §4). `day-ceiling.ts` reads `ControlState` | R7, R8, C12 | — | `CONTROL_FOLD_TYPES` stays in step with what `reduceControlEvent` reads |
+| 15 | **The chat reduce.** `reduceChat` (D14). The board's `presentChat`, `turnsOf`, `outstanding` and the CLI's count read it | R9b, C11 | — | an orphan answer no longer counts as answering anything |
+| 16 | **The finding reduce.** Domain's backlog-finding reduce; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
 | 7b | **A ticket's waits.** `TicketState.waits` (§2.3 item 7); every reader of a wait moves onto it | U3 | — | — |
 | 7c | **A ticket's discussions.** `TicketState.discussions`; the board's `chatIdsFor` | U1 | — | — |
 | 11r-a | **task_view's run half is the run reduce.** Each pass's `RunState` is stored (a run codec) and a pure `rowOf(ticket, run)` derives the run columns | P3 (run) | 11 | rebuild, runbook; a new claim shows no head |
@@ -650,7 +650,7 @@ scrubbed and cited by issue number, not seq.
   (`pass.ts:1967`), so comparing those would mark every run (the operator, 2026-11-02).
 - **D3. A failure stays a failure; a requested signoff is cleared** by a later lifecycle
   event. `RunFailed` is not undone by a later `RunFinished`; `awaitingSha` is cleared.
-- **D4. Title and kind come from `TicketClaimed`** in `applyTicket`, latest non-null
+- **D4. Title and kind come from `TicketClaimed`** in `reduceTicketEvent`, latest non-null
   wins. `project` and `externalRef` come from the stream id. `labels` stays null.
 - **D5. task_view takes domain's ticket state** in every case where they disagree:
   - a fix round granted is `approved`;
@@ -666,12 +666,12 @@ scrubbed and cited by issue number, not seq.
   (P2, which deletes the reopen at 372-375). The conductor never appends such a claim:
   `claimTicket` refuses anything that is not `backlog` (`claim.ts:127`). So the cell
   exists only in an old log.
-- **D7. Domain gains `reduceChat` (R9b) and a backlog-finding fold (R9c).** P4 is
+- **D7. Domain gains `reduceChat` (R9b) and a backlog-finding reduce (R9c).** P4 is
   required.
 - **D8. `ConductorPaused` gains an optional typed `cause`** (`person`, `setup`,
   `account-limit`, `day-ceiling`). The day ceiling's pause is recognised by it alone,
-  and the fold never reads the reason. Per 0100 §4 it is an optional field: no
-  `schemaVer` bump and no upcaster, so an event written before it folds to no cause,
+  and the reducer never reads the reason. Per 0100 §4 it is an optional field: no
+  `schemaVer` bump and no upcaster, so an event written before it reduces to no cause,
   which is never the ceiling's (the operator, 2026-11-03). The cost is a ceiling
   pause written on the deploy day, which lifts at midnight. `CONTROL_FOLD_TYPES`
   stays in step.
@@ -697,13 +697,13 @@ scrubbed and cited by issue number, not seq.
   turns are answered than requests were made. Never "some ask has no answer": a crash
   between ask and answer leaves that ask unanswered for ever, and a loop on it buys a
   paid discussion every time round. `outstanding`'s count goes.
-- **D15. No intermediate state** (2026-11-02). A fold reaches its §5 shape directly,
+- **D15. No intermediate state** (2026-11-02). A reducer reaches its §5 shape directly,
   in vertical slices (§3); there are no legacy copies, characterization pins or
   version bumps on the way, and 0124's registry lands with the snapshots.
 - **D16. Old logs are never branched on** (2026-11-02). A new payload field is
   optional and absent on older events (0100 §4, 0124 §4); the upcasters that exist
   stay, and none is added. A sequence the conductor can no
-  longer write, like a claim after a close, is absorbed by the fold's own rule
+  longer write, like a claim after a close, is absorbed by the reducer's own rule
   (`closed` is terminal, D6). A field only an old log could fill, like the board's
   `Claim.repair`, is deleted. The log is not reset.
 - **D17. One implementation, projections included** (the operator, 2026-11-03). The
@@ -727,7 +727,7 @@ scrubbed and cited by issue number, not seq.
   it so and removes the `seq` guards #833 and #838 added.
 - **D19. The word is *reduce*** (the operator, 2026-11-03; `doc/glossary.md`).
   `reduceRunEvent(state, event)` for one event, `reduceRun(events)` for a stream. This
-  document says *fold* where it was written before; ticket 19 renames it.
+  document says *reduce* where it was written before; ticket 19 renames it.
 - **D20. The word is *attempt*** (the operator, 2026-11-03; `doc/glossary.md`). One
   try at changing a ticket, one `pass-…` stream, is an *attempt*; *run* means one
   agent invocation inside it; *pass* is retired. The log's own names (`pass-`,

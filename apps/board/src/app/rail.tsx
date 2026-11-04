@@ -12,9 +12,9 @@ import type { PlanView } from '@/lib/queued'
  * `Rail`, its landed rows draw `Segs` bare, and the task page draws both: the
  * rail at rank 2 of a running item, and the segments under every attempt in
  * the record (#189). They were the board's alone, and the task page listed the
- * points off `task.ts`'s own fold — which had no `running` and no `never-ran`,
+ * points off `task.ts`'s own reduce — which had no `running` and no `never-ran`,
  * so it printed `N pending` for the two states `progress.ts` exists to tell
- * apart. Lifted rather than copied, because a copy is the second fold again.
+ * apart. Lifted rather than copied, because a copy is the second reduce again.
  *
  * Both read `progressOf` and nothing else ([the-card.md](../../../../doc/design/the-card.md)).
  */
@@ -240,7 +240,7 @@ export function Rail({
   progress: RunProgress | null
   /**
    * Whether the run is in flight — the lane's word, as it is for the elapsed
-   * pill above, and never the rail's. A fold cannot answer it: a pass stopped
+   * pill above, and never the rail's. A reducer cannot answer it: a pass stopped
    * by the merge lane's refusal has a run stream that simply ends, which is
    * indistinguishable here from one a second between two points.
    */
@@ -267,7 +267,7 @@ export function Rail({
    */
   line?: boolean
   /**
-   * What the next pass would do at each step, folded into the rail (#781).
+   * What the next pass would do at each step, reduced into the rail (#781).
    *
    * **`undefined` and `null` are different answers.** Undefined is the card and
    * every page that is not queued: nothing is drawn that was not drawn before.
@@ -357,7 +357,7 @@ export function Rail({
       ) : (
         /* The fourth reading, and the one the run's own stream cannot name.
            Nothing is in flight and nothing on this stream refused, and the pass
-           is stopped anyway — so what stopped it happened somewhere this fold
+           is stopped anyway — so what stopped it happened somewhere this reduce
            does not read. `IntegrationRefused` is the ordinary one: it goes to
            the merge lane's stream, `task_view` turns it into the note below,
            and the rail above it is a run that passed every step it reached.
@@ -384,7 +384,7 @@ const UNREADABLE = 'The recipe could not be read, so what a run would do here is
  * The plan's steps drawn as a rail nothing has run on: every one `pending`, or
  * `skipped` where nothing is configured. Not `progressOf` over an empty
  * stream — that takes a `StepPlan`, and saying "nothing has happened" is not a
- * fold. A name that is not one of the ten has no segment (it still gets its
+ * reduce. A name that is not one of the ten has no segment (it still gets its
  * column and its cell), narrowed the way `stepOf` does it rather than cast.
  */
 function plannedSegments(plan: PlanView | null): StepProgress[] {

@@ -5,7 +5,7 @@
  * `pnpm test` is the `build` gate and runs the unit project only: a claim about
  * this diff has to be reachable inside a pass, and the integration half takes 803
  * seconds. So everything except `spawn` lives in an exported pure function and is
- * asserted here — the receipt fold against fixture JSONL, the argv through
+ * asserted here — the receipt reduce against fixture JSONL, the argv through
  * `invocation()`, and the hook translation against the file `renderSettings`
  * actually writes.
  *
@@ -123,7 +123,7 @@ const closed = (exitCode: number | null, stderr = '', stdoutTail = '') => ({
   stdoutTail,
 })
 
-describe('the receipt, as a fold over the stream', () => {
+describe('the receipt, as a reducer over the stream', () => {
   it('reads the session id off thread.started, because nothing supplies one', () => {
     // `sessionIdFor`'s derive-from-the-run-id trick is deliberately not reused:
     // `codex exec` takes no `--session-id`, and a computable UUID naming no
@@ -472,7 +472,7 @@ describe('what a closed run is', () => {
 })
 
 /**
- * **The fold is over the stream and not over a window of it** — the one thing
+ * **The reducer is over the stream and not over a window of it** — the one thing
  * `run()` got wrong, and the reason `codexAccount` exists.
  *
  * `run()` kept the last `RECEIPT_TAIL_CHARS` of stdout and read the receipt off
@@ -526,11 +526,11 @@ describe('the receipt, over a stream longer than any window', () => {
     expect(tailed.sessionId).toBe('')
   })
 
-  it('folds a line that arrived in pieces, and never half of one', () => {
+  it('reduces a line that arrived in pieces, and never half of one', () => {
     const account = codexAccount()
     const line = JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'split' } })
     account.chunk(line.slice(0, 20))
-    // Half an object is a fragment of a fact and is not folded yet.
+    // Half an object is a fragment of a fact and is not reduced yet.
     expect(account.receipt.turns).toBe(0)
     account.chunk(`${line.slice(20)}\n`)
     expect(account.receipt.turns).toBe(1)
@@ -542,7 +542,7 @@ describe('the receipt, over a stream longer than any window', () => {
    * a `turn.completed` with no trailing newline is a receipt, and dropping it
    * would answer `crash` for a run that finished.
    */
-  it('folds an unterminated final line at end(), and not before', () => {
+  it('reduces an unterminated final line at end(), and not before', () => {
     const account = codexAccount()
     account.chunk(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 2 } }))
     expect(account.receipt.completed).toBe(false)
@@ -551,7 +551,7 @@ describe('the receipt, over a stream longer than any window', () => {
     expect(account.receipt.billedTokens).toBe(9)
   })
 
-  it('agrees with codexOutcome line for line, so one fold is tested twice', () => {
+  it('agrees with codexOutcome line for line, so one reduce is tested twice', () => {
     const account = codexAccount()
     account.chunk(clean().join('\n'))
     account.end()

@@ -222,7 +222,7 @@ export interface Asked {
  * **It moved to `@lingtai/actions` in `#266`, and is re-exported here.** The
  * step it is written for is a plugin now — `createWorkAction` reads it off
  * `ActionContext.again` — so it has to be a name that package can see, and
- * `pass.ts` is where the fold that computes it lives (`sentBackTo`).
+ * `pass.ts` is where the reducer that computes it lives (`sentBackTo`).
  */
 export type { SentBack }
 
@@ -444,7 +444,7 @@ export type Judged =
   /**
    * **The judge answered, and the machine could not read it** (`#462`,
    * 0120 §3's `UnreadableReply`) — `chosenIn`'s `null`, carried here rather
-   * than folded into `held(...)`'s `next: 'waiting'` the way every other
+   * than reduced into `held(...)`'s `next: 'waiting'` the way every other
    * unreadable answer still is. `named` is the entry's `name:`, for the same
    * reason every other answer here carries it; `raw` is the judge's own
    * words, whole, for the person who ends up reading them.

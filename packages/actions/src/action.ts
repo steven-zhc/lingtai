@@ -52,8 +52,8 @@ import { inSpan } from './spans.ts'
  *
  * A `watch` action that sees a migration in the diff, and a `human` one, both end
  * the same way: nothing is wrong, and nothing may proceed until a person says
- * so. Folding that into `failed` would put "the build is broken" on a card
- * whose build is fine, and folding it into `passed` would merge it.
+ * so. Reducing that into `failed` would put "the build is broken" on a card
+ * whose build is fine, and reducing it into `passed` would merge it.
  *
  * **`never-ran` is a fourth outcome, and it is not a verdict at all.**
  *
@@ -873,7 +873,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
       // Spread for `head`'s reason a third time, and here *absent* is the whole
       // value: a reviewer that did not classify its refusal and one that said
-      // `lines` must never fold into the same row, because the only thing this
+      // `lines` must never reduce into the same row, because the only thing this
       // field is for is being counted (`#293`).
       ...(result.about === undefined ? {} : { about: result.about }),
       // Spread for `head`'s reason once more, and here the absence is the one

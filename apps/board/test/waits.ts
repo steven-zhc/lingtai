@@ -2,7 +2,7 @@
  * One fixture per `WaitReason` tag (0118 §1, `@lingtai/domain/wait`), shared
  * between the card's own pin (`unit/waiting-card.test.tsx`, #482) and the
  * task page's moves-by-wait pin (`unit/moves-by-wait.test.tsx`, #442) — the
- * same events, read by two different folds. Moved out of
+ * same events, read by two different reduces. Moved out of
  * `waiting-card.test.tsx` rather than copied, so a change to one pin's wait
  * can never silently diverge from what the other asserts about it.
  *
@@ -115,7 +115,7 @@ add('NothingProduced', 'nothingproduced', (item) => [
  * fixture's `name` after the last `-` stands in for the issue number
  * (`ticket-pin-proposedescalated-buildred` → `agent/buildred`, never
  * `agent/473` — that literal is only ever the `question` string fed to
- * `approvalRequested`, a separate input this fold never reads).
+ * `approvalRequested`, a separate input this reduce never reads).
  */
 add('ProposedEscalated', 'proposedescalated-buildred', (item) => [
   ...aClaim(item, 'pass-pin-pe-buildred'),

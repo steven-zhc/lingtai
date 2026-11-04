@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
-import { applyRun, decodeRun, emptyRun, encodeRun } from '../src/index.ts'
+import { reduceRunEvent, decodeRun, emptyRun, encodeRun } from '../src/index.ts'
 import { histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
 
 const streams: [string, readonly Envelope[]][] = [
@@ -24,7 +24,7 @@ describe('decodeRun(encodeRun(s))', () => {
       let s = emptyRun
       expect(decodeRun(encodeRun(s), 'task_view')).toStrictEqual(s)
       for (const event of events) {
-        s = applyRun(s, event)
+        s = reduceRunEvent(s, event)
         const encoded = encodeRun(s)
         largest = Math.max(largest, Buffer.byteLength(encoded))
         expect(decodeRun(encoded, 'task_view')).toStrictEqual(s)
@@ -34,7 +34,7 @@ describe('decodeRun(encodeRun(s))', () => {
   }
 
   it('keeps lastSeq a bigint and holds it as a string', () => {
-    const s = streams[0]![1].reduce(applyRun, emptyRun)
+    const s = streams[0]![1].reduce(reduceRunEvent, emptyRun)
     expect(typeof s.lastSeq).toBe('bigint')
     expect(typeof JSON.parse(encodeRun(s)).lastSeq).toBe('string')
   })
@@ -48,7 +48,7 @@ describe('decodeRun(encodeRun(s))', () => {
 
 describe('decodeRun keeps a finding’s optional fields', () => {
   it('round-trips class and reachableBecause on a step finding', () => {
-    const base = streams.flatMap(([, e]) => e).reduce(applyRun, emptyRun)
+    const base = streams.flatMap(([, e]) => e).reduce(reduceRunEvent, emptyRun)
     const finding = { file: 'a.ts', line: 3, claim: 'c', failureScenario: 'f', severity: 'major' as const }
     const s = {
       ...base,
@@ -69,7 +69,7 @@ describe('decodeRun keeps a finding’s optional fields', () => {
 })
 
 describe('decodeRun refuses another shape', () => {
-  const good = JSON.parse(encodeRun(streams.flatMap(([, e]) => e).reduce(applyRun, emptyRun)))
+  const good = JSON.parse(encodeRun(streams.flatMap(([, e]) => e).reduce(reduceRunEvent, emptyRun)))
 
   it('names the run and the rebuild when a field is missing', () => {
     const { steps: _steps, ...rest } = good

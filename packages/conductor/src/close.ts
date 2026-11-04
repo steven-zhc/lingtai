@@ -28,7 +28,7 @@ export interface CloseOptions {
   recipe?: () => Promise<ResolvedRecipe>
   /**
    * The wait the caller was shown, when closing a blocked item — checked
-   * against the one currently open rather than trusted from the fold
+   * against the one currently open rather than trusted from the reducer
    * (#465). Omitted (`undefined`) by the CLI, which keeps the old fallback
    * to whatever is open. `null` is the board's own value for a card that
    * rendered no wait at all — a queued card's Close (#508) — and refuses a
@@ -49,7 +49,7 @@ export interface CloseOptions {
  * Ending a ticket nobody is going to do (#151).
  *
  * A lifecycle had two ends before this: `landed`, and `blocked` forever.
- * Closing was `gh issue close` by hand, which appends nothing — so the fold
+ * Closing was `gh issue close` by hand, which appends nothing — so the reducer
  * went on saying `backlog`, the board went on drawing the card under *Queued*,
  * and the only lever left was `requeue`, which says the item is going to be
  * worked again. Five cards sat like that on 2026-09-14, four of them against
@@ -58,7 +58,7 @@ export interface CloseOptions {
  * **This is an append, not a delete.** Nothing is removed and a replay reaches
  * the same place; what changes is that the item now has an end. The queue then
  * passes over it *because the log says it is over* — `queue.ts` subtracts every
- * row the fold does not call `backlog` — rather than because GitHub stopped
+ * row the reducer does not call `backlog` — rather than because GitHub stopped
  * listing it, which is the offer side and an accident of it.
  *
  * **From any state but a terminal.** A blocked item, a queued one, even one a
@@ -82,8 +82,8 @@ export interface CloseOptions {
  * point defined as firing on every outcome is 0016 §4's shape exactly: the
  * point was configured, the log said so, and it silently did not run.
  *
- * So the resolution is folded into the same append as the outcome, as
- * `approve` folds `landed` — one transaction, so a crash cannot leave a
+ * So the resolution is reduced into the same append as the outcome, as
+ * `approve` reduces `landed` — one transaction, so a crash cannot leave a
  * terminal with no record of what its point decided. `labelsFor("closed")` is
  * empty and `converge` writes the difference, so the labels an earlier block
  * left behind come off on their own; the recipe's own actions run after, and

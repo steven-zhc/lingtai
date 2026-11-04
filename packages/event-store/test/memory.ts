@@ -98,8 +98,8 @@ export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfTy
  * writing to stream ids of its own, and a fake handed out as a singleton would
  * quietly give one test the events of the one before it.
  *
- * `now` is injectable for the same reason the projector's is (0027): a fold that
- * reads a clock is not a fold, and a test that asserts on `at` should not have
+ * `now` is injectable for the same reason the projector's is (0027): a reducer that
+ * reads a clock is not a reducer, and a test that asserts on `at` should not have
  * to wait.
  */
 /** A row as the store holds it, before `decodeRow` upcasts and validates it on the way out. */

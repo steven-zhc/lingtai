@@ -225,7 +225,7 @@ export const TicketClaimed = z.object({
  * ([0109](../../../doc/decisions/0109-the-core-takes-a-ticket.md) §5).
  *
  * Before this event the conductor appended a second `TicketClaimed` naming the
- * run already claimed, and every fold had to notice that. The rule is
+ * run already claimed, and every reduce had to notice that. The rule is
  * structural and reads no text: a `TicketClaimed` whose `runId` an earlier
  * `TicketClaimed` on the same stream carries is read as a continuation, and
  * `claimShapeOf` (`claims.ts`) is the one place that says so.
@@ -239,7 +239,7 @@ export const TicketContinued = z.object({
 
 /**
  * Why a work item was released back to the queue — 0120 §5's four causes,
- * folded from the work item's own `TicketReleased.cause` rather than
+ * reduced from the work item's own `TicketReleased.cause` rather than
  * re-derived from whatever else sits beside it on the stream.
  *
  * `Restart` and `NeverStarted` are `pass-next.ts`'s own `RequeueCause`
@@ -327,7 +327,7 @@ export const WaitStarted = z.strictObject({
 
 /**
  * A person answered the wait. `note` **is** the answer — `lingtai answer`'s
- * choice, or `lingtai requeue`'s why — and the fold keeps it (#147): a record
+ * choice, or `lingtai requeue`'s why — and the reducer keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
  *
  * `resolution` is 0118 §1's own `Resolution`, so which move a person
@@ -459,7 +459,7 @@ export const WAIT_EVENTS = ['WaitStarted', 'WaitResolved'] as const
  * for ever, appended never: `RETIRED` below, refused by `store.append`. Its
  * writer went in `3958bb09` (#450's rename) and nothing replaced it.
  *
- * The fold in `ticket.ts` and the label in `apps/board/src/lib/history.ts` stay,
+ * The reducer in `ticket.ts` and the label in `apps/board/src/lib/history.ts` stay,
  * because [0019](../../../doc/decisions-archive/0019-a-second-reset.md) says a
  * type the log may still hold must stay readable: a read that drops rows makes
  * every later append fail its concurrency check.
@@ -479,7 +479,7 @@ export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string()
  * first one that is not an outcome of work (#151).
  *
  * Before it, a lifecycle had two ends: `landed`, and `blocked` forever. Closing
- * a ticket was `gh issue close` by hand, which appends nothing, so the fold went
+ * a ticket was `gh issue close` by hand, which appends nothing, so the reducer went
  * on saying `backlog` and the board went on offering the card as *Queued* — an
  * item nobody would ever claim, sitting where things that are going to be worked
  * sit. `ticket-lingtai-32` sat there for two days.
@@ -540,7 +540,7 @@ export const Invocation = z.object({
    * additive (`#370`) — absent on every event written before it, and absent
    * on one written after when the recipe declared no dollar ceiling. This is
    * the bound the recipe *stated*, never a computed price: 0110 §5 forbids
-   * folding money, not naming a ceiling someone wrote down. `turns` is
+   * reducing money, not naming a ceiling someone wrote down. `turns` is
    * additive the same way (#547): every event already on the log carries a
    * number, and one written for `turns: unbounded` carries none.
    */
@@ -647,7 +647,7 @@ export const RunProducedDiff = z.object({
  * One type rather than four, and appended on **every** outcome including the
  * ones that are not failures: what the incident needed was not a record of
  * pushes but the answer to *did this happen at all*, and only an event that is
- * always there answers that. Since #468 and #652 a grant decides on it: `run.ts` folds
+ * always there answers that. Since #468 and #652 a grant decides on it: `run.ts` reduces
  * the last one into `RunState.published`, and `savedHeadOf` says whether it left
  * a clean head a fix round can continue from.
  *
@@ -903,7 +903,7 @@ export type SpentFor = z.infer<typeof SpentFor>
  * the runtime did not say. Neither field ever defaults to zero (0110 §4's
  * `.default(0)` is the bug this schema exists to refuse).
  *
- * `spend` (`#497`) is the one fold that reads this (0110 §13, §11).
+ * `spend` (`#497`) is the one reduce that reads this (0110 §13, §11).
  * `task_view` and `finding_backlog` must keep treating a stream that carries
  * one exactly as they treat one that does not.
  *
@@ -1253,7 +1253,7 @@ export const FindingAccepted = z.object({
  * does not name.
  *
  * The finding itself is not repeated: it is on the `StepEnded` the backlog
- * folded, and `key` is how the two are joined.
+ * reduced, and `key` is how the two are joined.
  *
  * @summary The ticket that an accepted finding asked for now exists in the ticket store.
  */
@@ -1402,7 +1402,7 @@ export const ConductorPaused = z.object({
    *
    * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5: a run
    * that never started is an account-wide condition with a *time* attached, and
-   * the alternative to folding that time is what happened — the limit lifted at
+   * the alternative to reducing that time is what happened — the limit lifted at
    * 23:00 and the queue was still idle at 23:12, waiting out a guess. A
    * person's pause carries no expiry and must not start carrying one: the whole
    * point of it is that it holds until they say otherwise.
@@ -1541,7 +1541,7 @@ export const ConductorStarted = z.object({
    *
    * It named the `ConductorShutdownWithdrawn` a supervisor's start answered,
    * when a `lingtai restart` handed its start to launchd or systemd (0042 §8).
-   * Since #159 a daemon folds only what was appended after it started, so the
+   * Since #159 a daemon reduces only what was appended after it started, so the
    * daemon the supervisor started never read the handoff it was to answer, and
    * recorded itself as `daemon` with null here. [0048](../../../doc/decisions-archive/0048-a-signal-is-aimed-at-one-daemon.md)
    * deleted the handoff; the restart now compares this event's `sha` with the
@@ -1562,7 +1562,7 @@ export const ConductorStarted = z.object({
  * and resumed whatever request stood, so a drain a second person asked for
  * during the wait was lifted too.
  *
- * `version` is that request's position on `ctl-conductor`. The fold lifts the
+ * `version` is that request's position on `ctl-conductor`. The reducer lifts the
  * standing request only when it is at that version, so a withdrawal that lost a
  * race to a newer request is a no-op in the log rather than an overruling of it.
  *
@@ -1941,7 +1941,7 @@ export const PromptEdited = z.object({
  * A repository is on its way in: recorded, visible, and not yet conducted.
  *
  * **The stream's first event, and the only thing pending is** (`#163`). There
- * is no projects table and no `pending` column: a project is the fold of
+ * is no projects table and no `pending` column: a project is the reducer of
  * `prj-{project}`, and `isRegistered` is `project !== null && configHash !==
  * null`. `configHash` arrives with `ProjectConfigured`, which is appended only
  * after a recipe has been read — so *this repository has a recipe* was already
@@ -2119,7 +2119,7 @@ export const Reconciled = z.object({
  * **It says an App was minted, and never that one is configured.** It is
  * appended the moment the conversion returns — before the key file and the env
  * file — so that a write which fails still leaves a record of the App it failed
- * for. Folded into *configured*, it would report exactly those failures as
+ * for. Reduced into *configured*, it would report exactly those failures as
  * finished Apps. What is configured is what the environment and the env files
  * say, and `hasGitHubApp()` reads those files per call, so nothing needs a
  * restart to see a written App. This event names an App of ours on GitHub whose

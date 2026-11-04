@@ -1,6 +1,6 @@
 /**
  * What the `/report` page reads and how it reads it ([0123](../../../../doc/decisions/0123-the-report-counts-what-the-log-holds.md)
- * §7, #689): the URL → the report's inputs, the two folds brought to the head,
+ * §7, #689): the URL → the report's inputs, the two reduces brought to the head,
  * the chip that says whether they were, and the pure geometry the charts draw
  * from. The figures themselves are `@lingtai/conductor/report`'s — this file
  * computes none of them, so the page and `lingtai report` cannot disagree.
@@ -259,7 +259,7 @@ export function kindSeries(kinds: readonly (string | null)[]): {
   }
 }
 
-/** Spend by purpose: four series, with Triage and Discussion folded into one to keep to four colours. */
+/** Spend by purpose: four series, with Triage and Discussion reduced into one to keep to four colours. */
 export const PURPOSE_SERIES: Series[] = [
   { key: 'Work', name: 'work', colour: SLOTS[0]! },
   { key: 'Answering', name: 'answering refusals', colour: SLOTS[1]! },

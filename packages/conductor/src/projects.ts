@@ -4,7 +4,7 @@ import { runnableEnv } from '@lingtai/agent-env'
  * The registered projects, read from the log.
  *
  * There is no `projects` table: a handful of projects, each with a handful of
- * events, is a stream to fold rather than a projection to maintain. If that ever
+ * events, is a stream to reduce rather than a projection to maintain. If that ever
  * stops being true it becomes one, which costs a truncate and a replay.
  */
 import { PROJECT_STREAM_PREFIX, projectStream } from '@lingtai/domain'
@@ -49,7 +49,7 @@ export async function loadProject(project: string, store?: EventStore): Promise<
 }
 
 /**
- * Every project stream folded, registered or not.
+ * Every project stream reduced, registered or not.
  *
  * The board needs both halves and must not read the log twice to get them
  * (#163); everything that conducts wants `loadProjects` below and nothing else.

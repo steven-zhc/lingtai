@@ -207,7 +207,7 @@ describe('the telegram subscriber this repository declares', () => {
   /**
    * This process is the daemon, so what it has exported is the daemon's
    * environment: a different token, and a declared name the file does not hold.
-   * Were either to reach the subscriber — folded into the resolver, spread into
+   * Were either to reach the subscriber — reduced into the resolver, spread into
    * the spawn — the token seen would be the wrong one or the extra name would
    * be there, whichever layer won.
    */

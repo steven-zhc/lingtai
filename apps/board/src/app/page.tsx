@@ -6,7 +6,7 @@ import { inWords } from '@lingtai/conductor/queue'
 import { readControl } from '@lingtai/daemon/control'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
-// so `projects.tsx` stays a fold over its arguments (#216).
+// so `projects.tsx` stays a reducer over its arguments (#216).
 import { hasGitHubAuth, storeChoice } from '@lingtai/env'
 import Link from 'next/link'
 import { Fragment } from 'react'
@@ -43,7 +43,7 @@ import { Rail, Segs } from './rail.tsx'
  * used to carry the gate evidence, the findings and the diff too, and it grew
  * heavy for a structural reason: the projection made all of it available, and
  * what is available gets rendered. Since 0012 the list reads one table and the
- * detail is folded from the event stream on demand, which makes a card's
+ * detail is reduced from the event stream on demand, which makes a card's
  * contents a decision instead of a consequence.
  *
  * A waiting card carries the rail, one cause line and, when triage advised, the
@@ -54,7 +54,7 @@ import { Rail, Segs } from './rail.tsx'
  * and was the heaviest thing on the page while one waiting card took about a
  * twelfth of the ink; the bar led with `11 items`, a sum of four columns that
  * mean different things and that nobody acts on (#81). So history is one line
- * per item and folds away past the most recent few, the room that frees goes to
+ * per item and reduces away past the most recent few, the room that frees goes to
  * the lanes where something is happening, and the bar ends on the one number an
  * operator acts on in the next minute: how many need a person.
  * None of that changes what a card *means* — that is #78 and #79.
@@ -263,7 +263,7 @@ export function Card({
 
             **The lane decides this and not the rail.** Until #170 only a
             running card had `progress`, so the two tests were the same one;
-            Waiting folds now, and a card stopped on a person would have read
+            Waiting reduces now, and a card stopped on a person would have read
             `running 13h58m` about a run that was refused and is not in flight
             — a plausible number, which is the worst kind. It is the lane's own
             word here for the same reason it is everywhere else in this
@@ -294,7 +294,7 @@ export function Card({
 
             Where there is no rail they stay, unchanged, and are the whole of
             what the card says about its gates — a card in a lane that does not
-            fold, a run whose stream would not read, a row the Landed lane keeps
+            reduce, a run whose stream would not read, a row the Landed lane keeps
             collapsed. Green is a gate that ran and went green; a waiver and an
             approval are a person's word standing in for one, so they carry the
             held colour and their own word. */}
@@ -315,7 +315,7 @@ export function Card({
           </>
         ) : null}
         {/* Apart from the work's cost, deliberately. Answering a refusal is
-            default-on and spends an agent without being asked again, so folding
+            default-on and spends an agent without being asked again, so reducing
             it into the number beside it would make it an invisible bill (#84).
 
             It says *answering* rather than *repair* since 0039 §3: the column
@@ -387,7 +387,7 @@ export function Card({
 
           The lane's own word goes with it, for the reason the elapsed pill
           above takes it: *this run is in flight* is a fact about the column and
-          not one the fold can reach. */}
+          not one the reducer can reach. */}
       {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} held={card.held} /> : null}
 
       {card.note ? <p className="question">{codeSpans(card.note)}</p> : null}
@@ -396,7 +396,7 @@ export function Card({
       {/* And on a queued card, where it is the only move there is. The state
           this was written for is the item nothing is asking about: five sat in
           Queued that GitHub had closed hours earlier, because `gh issue close`
-          appends nothing and the fold went on calling them `backlog`. */}
+          appends nothing and the reducer went on calling them `backlog`. */}
       {card.column === 'queued' ? (
         <div className="btnrow">
           <Close project={card.project} issue={Number(card.ref)} waitId={null} />
@@ -600,7 +600,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
   // `today` follows `loadBoard` and is not in the `Promise.all`: `loadBoard`'s
-  // `currentSpend` folds the spend projection to the head, and `readDayReading`
+  // `currentSpend` reduces the spend projection to the head, and `readDayReading`
   // reads that projection without refreshing it, so run beside it the day's
   // total could be read before today's `RunSpent` events were projected.
   const [
@@ -620,9 +620,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   )
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
-  // folded cleanly — a chip is not free, and this is the ordinary case — and
+  // reduced cleanly — a chip is not free, and this is the ordinary case — and
   // a sentence when it did not, because a card reading `unknown (1 run)`
-  // after a failed fold is indistinguishable from a ticket that predates
+  // after a failed reduce is indistinguishable from a ticket that predates
   // `RunSpent` without one (`#498`'s review).
   const spendCurrency = spendChip(spend.currency)
   // What the *cards* say, not what is registered: a card can outlive its
@@ -729,7 +729,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               action in it when either is not. Never amber — that is the
               headline's, below. */}
           <Health />
-          {/* Nothing while `spend` folded cleanly; the sentence when it did
+          {/* Nothing while `spend` reduced cleanly; the sentence when it did
               not. Draws nothing in the ordinary case, the same reason
               `Paused` and `Draining` cost the quiet row nothing. */}
           {spendCurrency.current ? null : (

@@ -3,7 +3,7 @@
  *
  * Vocabulary, in the package that holds vocabulary. Both of these were in
  * `conductor` and both are needed by things that must not depend on it: the
- * projector folds `ticket-…` streams into cards, and the board renders the
+ * projector reduces `ticket-…` streams into cards, and the board renders the
  * states. A shared word does not belong to whoever happened to say it first.
  *
  * Neither of these decides anything, which is why they can live here: `domain`

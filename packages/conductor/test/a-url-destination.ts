@@ -178,7 +178,7 @@ const DECLARED = {
  * from `file:` on purpose.** The real plugin's card says *wrote a 2.4 kB design
  * to `doc/design/x.md`*, because a person reads the card for the location. Here
  * the locator is kept off `evidence` so that finding it in an emitted event
- * means the **core** put it there — which is what makes *nothing the board folds
+ * means the **core** put it there — which is what makes *nothing the board reduces
  * has parsed it* a fact a test can check rather than a claim about a sentence a
  * plugin chose.
  */
@@ -279,7 +279,7 @@ export interface Visit {
   readonly ending: StepEnding
 }
 
-/** One emitted event, flattened to what a fold off the log would see. */
+/** One emitted event, flattened to what a reducer off the log would see. */
 export interface Emitted {
   readonly type: PassEvent['type']
   readonly payload: string

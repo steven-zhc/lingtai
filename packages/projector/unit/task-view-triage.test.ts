@@ -22,7 +22,7 @@ async function inspect(events: Envelope[]) {
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.apply(events, ctx))
+    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
     const rows = await store.transact((ctx) => ctx.query('select * from task_view'))
     const cards = await store.tasks({ retentionDays: 2 })
     return { row: rows[0], card: cards[0] }
@@ -37,7 +37,7 @@ function empty(row: Record<string, unknown> | undefined) {
 }
 
 describe('task_view current-wait triage', () => {
-  it('folds the latest started attempt and its whole result, matching triageFactsOf', async () => {
+  it('reduces the latest started attempt and its whole result, matching triageFactsOf', async () => {
     const stream = makeStream('ticket-triage-facts')
     const waitId = aWaitId()
     const other = aWaitId()

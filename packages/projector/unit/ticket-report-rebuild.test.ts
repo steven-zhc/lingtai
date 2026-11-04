@@ -1,6 +1,6 @@
 /**
  * The pin for #833: `ticket_report` rebuilds to the same rows once its facts
- * come from `applyTicket`'s state, except in the cells the ticket names (D4, D6,
+ * come from `reduceTicketEvent`'s state, except in the cells the ticket names (D4, D6,
  * the waits rule, a continuation of a run nobody claimed).
  *
  * **Generated from today's code, and never regenerated after the `src`
@@ -28,13 +28,13 @@ const all: Envelope[] = [
   ...Object.values(scenarios).flatMap((s) => [...s.ticket, ...s.runs.flat(), ...(s.integration ?? [])]),
 ].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
 
-async function foldAll(batches: readonly (readonly Envelope[])[], withState: boolean): Promise<ProjectionRow[]> {
+async function projectAll(batches: readonly (readonly Envelope[])[], withState: boolean): Promise<ProjectionRow[]> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     const projection = ticketReportProjectionWith({ snapshot: () => [] })
     await store.transact((ctx) => projection.create(ctx))
-    for (const batch of batches) await store.transact((ctx) => projection.apply(batch, ctx))
+    for (const batch of batches) await store.transact((ctx) => projection.reduce(batch, ctx))
     const rows = await store.transact((ctx) => ctx.query('select * from ticket_report order by ticket'))
     return withState ? rows : rows.map(({ ticket_state: _state, ...rest }) => rest)
   } finally {
@@ -42,27 +42,27 @@ async function foldAll(batches: readonly (readonly Envelope[])[], withState: boo
   }
 }
 
-const fold = (batches: readonly (readonly Envelope[])[]) => foldAll(batches, false)
+const reduce = (batches: readonly (readonly Envelope[])[]) => projectAll(batches, false)
 
 const parse = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v)
 
 /** The one row a single history makes, with its stored state. */
 async function rowOf(events: readonly Envelope[]): Promise<ProjectionRow> {
-  const [row] = await foldAll([events], true)
+  const [row] = await projectAll([events], true)
   return row!
 }
 
 describe('ticket_report rebuilds to the rows it held before it read the ticket reduce', () => {
   it('produces the same final rows for every history', async () => {
-    expect(await fold([all])).toMatchSnapshot('final ticket_report rows')
+    expect(await reduce([all])).toMatchSnapshot('final ticket_report rows')
   })
 
   it('gives the same rows in batches of 1, 3 and all', async () => {
-    const whole = await fold([all])
+    const whole = await reduce([all])
     const chunks = (n: number) =>
       Array.from({ length: Math.ceil(all.length / n) }, (_, i) => all.slice(i * n, i * n + n))
-    expect(await fold(chunks(1))).toEqual(whole)
-    expect(await fold(chunks(3))).toEqual(whole)
+    expect(await reduce(chunks(1))).toEqual(whole)
+    expect(await reduce(chunks(3))).toEqual(whole)
   })
 
   it('D6: a claim after a close reopens nothing', async () => {

@@ -191,7 +191,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
 
   /**
    * **The gate `#464` could silently drop.** `approveHolding`'s #150 guard
-   * reads `item.lifecycle.status !== 'blocked'` off the fold — if a
+   * reads `item.lifecycle.status !== 'blocked'` off the reducer — if a
    * `Requeue` resolution stopped leaving a requeued item off `blocked`,
    * this would start passing where it must refuse, and `lingtai approve`
    * would merge a held diff onto an item a new run has already claimed. So

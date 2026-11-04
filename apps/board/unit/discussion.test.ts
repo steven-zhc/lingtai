@@ -2,18 +2,18 @@ import type { Envelope } from '@lingtai/domain'
 /**
  * What the page says about a conversation, settled by envelopes.
  *
- * Two of these are `#105`'s own bar rather than ordinary fold tests. The meter
+ * Two of these are `#105`'s own bar rather than ordinary reduce tests. The meter
  * has to be a number a person can see, or *"the person is the limit"* is a
  * limit that cannot see what it is limiting
  * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §4); and the
  * sentence about a branch that was not there has to survive an answer that
- * forgot to mention it, which is why it is folded off the **ask** and not off
+ * forgot to mention it, which is why it is reduced off the **ask** and not off
  * the answer.
  */
 import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { chatIdsFor, foldChat, totalsOf, type DiscussionView } from '../src/lib/task.ts'
+import { chatIdsFor, presentChat, totalsOf, type DiscussionView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -43,9 +43,9 @@ const ASKED = {
   ],
 }
 
-describe('one conversation, folded', () => {
+describe('one conversation, reduced', () => {
   it('pairs each question with its answer (D16: no per-conversation cost)', () => {
-    const chat = foldChat(
+    const chat = presentChat(
       'chat-1',
       [
         e('chat-1', 'DiscussionAsked', ASKED),
@@ -77,13 +77,13 @@ describe('one conversation, folded', () => {
    * it cannot make the page forget it either.
    */
   it("keeps Lingtai's own sentence about a branch that was not there", () => {
-    const chat = foldChat('chat-1', [e('chat-1', 'DiscussionAsked', ASKED)], null)
+    const chat = presentChat('chat-1', [e('chat-1', 'DiscussionAsked', ASKED)], null)
     expect(chat.turns[0]?.reading.join(' ')).toContain('attempt 2 left no branch')
   })
 
   /** D16: a failed turn is still an answered one — it is not `waiting`. */
-  it('folds a failed turn as answered, with its failure', () => {
-    const chat = foldChat(
+  it('reduces a failed turn as answered, with its failure', () => {
+    const chat = presentChat(
       'chat-1',
       [
         e('chat-1', 'DiscussionAsked', ASKED),
@@ -148,7 +148,7 @@ describe('the ledger', () => {
   /**
    * `2 attempts + 3 discussions · $14.10`, as the design's example reads it.
    * Beside the attempts' money rather than inside it, for the reason `#84`
-   * keeps a repair's spend apart: they come out of one budget, and folding two
+   * keeps a repair's spend apart: they come out of one budget, and reducing two
    * figures into one misstates both. The money is `spend`'s now (`#498`),
    * never `DiscussionView.costUsd` — `totalsOf`'s third argument.
    */

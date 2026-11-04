@@ -30,7 +30,7 @@ import { loadDiff } from './actions.ts'
 export interface StepEvidence {
   step: string
   state: string
-  current: boolean
+  stale: boolean
   evidence: string | null
   findings: {
     file: string
@@ -110,7 +110,7 @@ export function Evidence({ steps }: { steps: StepEvidence[] }) {
             </span>
             <span className="gsum">
               {g.findings.length > 0 ? `${g.findings.length} finding${g.findings.length === 1 ? '' : 's'}` : g.state}
-              {g.current ? '' : ' · about an earlier commit'}
+              {g.stale ? ' · about an earlier commit' : ''}
             </span>
           </summary>
           {g.findings.length > 0 ? <Findings findings={g.findings} /> : null}

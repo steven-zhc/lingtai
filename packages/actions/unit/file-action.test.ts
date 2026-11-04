@@ -139,7 +139,7 @@ describe('keeping the document the step made', () => {
   /**
    * **A destination that was handed no design at all did not finish**, and it is
    * a different fact from the one above: *nobody drafted* and *the drafter
-   * answered none was needed* are two things, and folding them would make a
+   * answered none was needed* are two things, and reducing them would make a
    * `file:` with nothing before it look like a step that had nothing to do.
    *
    * The recipe cannot reach this — `actionsAt` refuses a `file:` at entry 0 — so

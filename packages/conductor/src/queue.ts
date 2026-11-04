@@ -4,11 +4,11 @@
  * **The subtraction, in one place.** GitHub says what it is offering
  * (`runnableNow`), the log says what Lingtai is already doing (`task_view`),
  * and this returns the difference. Neither side is stored: the offer is asked
- * for at the moment it is needed, and the log's side is a fold and nothing
+ * for at the moment it is needed, and the log's side is a reducer and nothing
  * else ([0022](../../../doc/decisions-archive/0022-the-seams.md), `#65`).
  *
  * It reads the projector's view and decides — which is why it is here and not
- * there. A projection folds; it does not choose what to run next.
+ * there. A projection reduces; it does not choose what to run next.
  */
 import { ticketStream } from '@lingtai/domain'
 import { readTasks } from '@lingtai/projector'
@@ -66,7 +66,7 @@ export interface RunnableOptions {
  * The subtraction, in one place: GitHub says what it is offering, the log says
  * what Lingtai is already doing, and this returns the difference. Neither side
  * is stored — the offer is asked for at the moment it is needed, and the log's
- * side is this table, which is now nothing but a fold.
+ * side is this table, which is now nothing but a reducer.
  */
 export async function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
   const kinds = options.kinds.length > 0 ? [...options.kinds] : ['bug']

@@ -5,7 +5,7 @@
  *
  * An append reaches Postgres, the trigger notifies, `/api/stream` forwards it,
  * and this asks Next to re-render the route. That last step is deliberate: the
- * board is a *projection*, and folding events into client state here would be a
+ * board is a *projection*, and reducing events into client state here would be a
  * second reducer that can disagree with the first one. Re-reading is cheaper
  * than being subtly wrong.
  *
@@ -47,7 +47,7 @@
  * `the-bar.md`: a chip is not free, and two boxes for one question — *is the
  * system doing what the code says?* — is two things to learn to read. The
  * currency arrives as a prop because it is git's answer and belongs on a render
- * rather than on the health tick; the fold that weighs the two is `bearing.ts`,
+ * rather than on the health tick; the reducer that weighs the two is `bearing.ts`,
  * and it keeps whichever is not the headline in the title.
  *
  * **It answers whether you are current, never whether anything will move.**
@@ -55,7 +55,7 @@
  * `current` — correctly — for four days in which the conductor was paused and
  * nothing was ever going to run. That fact has its own chip next door
  * (`paused.tsx`), because it is its own fact, it is absent when there is
- * nothing to say, and folding it in would make one dot carry two answers.
+ * nothing to say, and reducing it in would make one dot carry two answers.
  *
  * Several tabs each get their own stream, and all of them update. Nothing here
  * coordinates them, because nothing has to: each one is reading the same
@@ -94,7 +94,7 @@ import type { Health } from '@/lib/health'
  * an event arrived.
  *
  * **It bounds the rate and not the cost**, which is the distinction #112 turned
- * on: a render is a fold of the log plus a question to GitHub per project, and
+ * on: a render is a reducer of the log plus a question to GitHub per project, and
  * four of those a second is four of those a second. Two things below bound the
  * cost instead — a render already in flight is never joined by a second, and a
  * board nobody is looking at does not render at all — and this window keeps
@@ -271,7 +271,7 @@ export function warning(socket: 'connecting' | 'open' | 'trouble', health: Healt
  * Green and silent is the ordinary case there too, and the currency of the
  * daemon's code is the board's to say, so this is `bearing` with no code and
  * nothing unless it warns: the stream down, the projection unreadable, or a log
- * nobody is folding.
+ * nobody is reducing.
  */
 export function Following() {
   const followed = useContext(Followed)

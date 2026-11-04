@@ -118,7 +118,7 @@ item lives for weeks, so one stream would make every read expensive.
 
 **Nothing serialises that lane.** Two integrations against one base overlap on
 purpose, and git's ref update decides which lands by rejecting the second push.
-So the Integration fold cannot answer *is anything merging right now* — it keeps
+So the Integration reduce cannot answer *is anything merging right now* — it keeps
 one `lifecycle`, which the first terminal returns to `idle` while another merge
 may still be in flight, and which names whichever attempted last while two are
 (`packages/domain/src/integration.ts`, `laneIsBusy`).

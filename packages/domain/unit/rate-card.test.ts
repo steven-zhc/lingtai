@@ -161,11 +161,11 @@ describe('doc/rate-card.md', () => {
   })
 
   /**
-   * Only the `spend` fold prices, and stores the estimate (0110 §5, #679); every
-   * other fold may not read this file. Reading every file's source, not grepping
+   * Only the `spend` reduce prices, and stores the estimate (0110 §5, #679); every
+   * other reduce may not read this file. Reading every file's source, not grepping
    * the package, so a mention inside a comment is caught the same as an import.
    */
-  it('is never read by the projector outside the spend fold — task-view.ts included', async () => {
+  it('is never read by the projector outside the spend reduce — task-view.ts included', async () => {
     const { readdir } = await import('node:fs/promises')
     const dir = `${root}packages/projector/src`
     const pricing = ['spend.ts', 'ticket-report.ts', 'rate-snapshot.ts']

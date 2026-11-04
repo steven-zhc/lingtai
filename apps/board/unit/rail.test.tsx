@@ -10,7 +10,7 @@
  * the colour meant anything.
  *
  * What is asserted here is the part a screenshot cannot settle: that all ten
- * steps are drawn in every lane that folds, that the three states which look
+ * steps are drawn in every lane that reduces, that the three states which look
  * empty are told apart by something other than lightness, that the step name
  * is said once, and that the row stayed the unit — six objects, not thirteen.
  *
@@ -289,7 +289,7 @@ function refusedAtPrepared(): Envelope[] {
  * A run that recorded no plan at all: `RunStarted`, `RunFinished`, nothing else.
  *
  * A run that died before `StepsResolved` was appended, or one predating the
- * event. The fold falls back to the recipe being read *now*, which is exactly
+ * event. The reducer falls back to the recipe being read *now*, which is exactly
  * the case the doctor's `planned` CTE cannot see, because it selects from
  * `StepsResolved` rows.
  */
@@ -620,7 +620,7 @@ describe('a running card', () => {
    *
    * **A third, running cell since #502.** A step in flight carries no action
    * of its own any more — `StepStarted{step,round}` marks the running flag on
-   * the bare step key `${step}:`, which the fold reads back as one more
+   * the bare step key `${step}:`, which the reducer reads back as one more
    * unnamed action beside the two the plan actually names
    * (`progress.ts`'s own header: *the board loses which action of a step is
    * running*). Neither `build` nor `review` can be told apart from the other
@@ -648,7 +648,7 @@ describe('a running card', () => {
   })
 })
 
-// --- all ten, in every lane that folds -------------------------------------
+// --- all ten, in every lane that reduces -------------------------------------
 
 describe('all ten steps, in every lane', () => {
   /**
@@ -692,7 +692,7 @@ describe('all ten steps, in every lane', () => {
 // --- a card stopped on a person --------------------------------------------
 
 /**
- * The Waiting lane folds since #170, and a fold is not a run in flight. What is
+ * The Waiting lane reduces since #170, and a reducer is not a run in flight. What is
  * asserted here is that the rail keeps its own reading while the waiting card
  * sheds its metadata pills. The sentence under the bar still agrees with its
  * segment above it.
@@ -744,7 +744,7 @@ describe('a card stopped on a person', () => {
   /**
    * **A refusal that is not on this stream.** Every gate passed, the run's
    * stream ends at the last verdict, and the pass is stopped anyway: the merge
-   * lane refused the integration on `int-lingtai-main`, which this fold does
+   * lane refused the integration on `int-lingtai-main`, which this reduce does
    * not read. Nothing in flight and nothing refused here is *also* what a run
    * one second between two points looks like, so the lane settles it — and
    * `between points`, whose title says the agent has just finished and
@@ -782,7 +782,7 @@ describe('a card stopped on a person', () => {
  * refusal and then buys a round: an agent patching the diff, minutes at a time,
  * on a card `task_view` keeps `running`.
  *
- * The fold had nothing in flight for the whole of that agent's run, so the card
+ * The reducer had nothing in flight for the whole of that agent's run, so the card
  * read `build refused` under a hover saying nothing was running and a person
  * was being waited on — both false, while money was being spent. The round is a
  * phase now, which is what the fixture above this stops short of.
@@ -1032,7 +1032,7 @@ describe('the eight states', () => {
   /**
    * The same comparison `lingtai doctor` makes, made where a person is already
    * looking. It failed on #49, #53 and #55 for months; the board drew `merge`
-   * as `skipped`-coloured silence, because the fold had no way to know the pass
+   * as `skipped`-coloured silence, because the reducer had no way to know the pass
    * was over.
    */
   it('reaches the card from the run doctor fails on', () => {
@@ -1131,27 +1131,27 @@ describe('which cards draw a rail', () => {
    * stream per card on a route that re-renders on every append (`live.tsx`).
    * *It is small* is not a bound; `WAITING_RAILS` is.
    */
-  it('bounds the Waiting fold, however long the lane is', () => {
+  it('bounds the Waiting reduce, however long the lane is', () => {
     const lane = Array.from({ length: 45 }, (_, i) =>
       task({ taskId: `ticket-${i}`, runId: `pass-${i}`, state: 'waiting' }),
     )
 
-    const folded = railCandidates(lane)
-    expect(folded).toHaveLength(WAITING_RAILS)
+    const reduced = railCandidates(lane)
+    expect(reduced).toHaveLength(WAITING_RAILS)
     // The head of the lane, in the order `readTasks` gives it — oldest wait
     // first, which is what to do next.
-    expect(folded.map((c) => c.task.taskId)).toEqual(lane.slice(0, WAITING_RAILS).map((t) => t.taskId))
+    expect(reduced.map((c) => c.task.taskId)).toEqual(lane.slice(0, WAITING_RAILS).map((t) => t.taskId))
   })
 
   /**
    * `Landed` opens the newest `LANDED_OPEN` rows of *all* its cards and
    * collapses the rest, and a ticket closed on GitHub before any run was
    * claimed has no `runId` and a fresh `updatedAt` — so it occupies an open row
-   * without folding. Filtering `runId` before the slice rather than after would
+   * without reducing. Filtering `runId` before the slice rather than after would
    * fill that place from the fourth-newest card, drawing a rail on a row inside
    * the `older` disclosure.
    */
-  it('folds the Landed rows the lane draws open, and no others', () => {
+  it('reduces the Landed rows the lane draws open, and no others', () => {
     const row = (taskId: string, runId: string | null, state: TaskCard['state'], hour: number) =>
       task({ taskId, runId, state, updatedAt: new Date(`2026-09-16T0${hour}:00:00Z`) })
     const rows = [
@@ -1162,8 +1162,8 @@ describe('which cards draw a rail', () => {
     ]
     expect(rows).toHaveLength(LANDED_OPEN + 1)
 
-    const folded = railCandidates(rows)
-    expect(folded.map((c) => c.task.taskId)).toEqual(['landed-b', 'closed-c'])
+    const reduced = railCandidates(rows)
+    expect(reduced.map((c) => c.task.taskId)).toEqual(['landed-b', 'closed-c'])
   })
 })
 
@@ -1282,14 +1282,14 @@ describe('the palette', () => {
   })
 })
 
-describe('the plan folded into the rail (#781)', () => {
+describe('the plan reduced into the rail (#781)', () => {
   const view = planOf(PLAN, {
     limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
     tier: 'guarded',
   })
   const none = () => {
     const p = progressOf(reduceRun([resolved(PLAN)]), PLAN, false)
-    if (p === null) throw new Error('a resolved plan folds to progress')
+    if (p === null) throw new Error('a resolved plan reduces to progress')
     return p
   }
 

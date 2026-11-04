@@ -26,7 +26,7 @@ import { Coords, RawEvidence, Standing, framed } from '../../standing.tsx'
 /**
  * One task, in full.
  *
- * Everything here is folded from the event stream when the page is opened —
+ * Everything here is reduced from the event stream when the page is opened —
  * nothing on this page is maintained in a table ([0012]). That is the trade the
  * card makes: the list stays cheap and scannable, and the detail is as rich as
  * it needs to be because it costs a read that happens rarely.
@@ -226,7 +226,7 @@ export function Attempt({
    * and reads nothing.
    *
    * **`Latch` and not an `open` attribute**, because this one is derived from
-   * the fold and the board re-renders on every append: written as an attribute
+   * the reducer and the board re-renders on every append: written as an attribute
    * it would open when the run started and then *close under the person reading
    * it* the moment the run finished, which is the one second they were there
    * for. Opening is a signal, closing is the reader's — see `latch.tsx`.
@@ -299,7 +299,7 @@ export function Attempt({
           to do with each other and used to sit in one list.
 
           **The card's segments, and no longer a list of its own** (#189). The
-          list was a set of equal rows off a fold with no `running` and no
+          list was a set of equal rows off a reducer with no `running` and no
           `never-ran`, so it printed `N pending` for both — and its comment
           named the second as the one worth seeing. Labelled, with nothing lit:
           where a run in flight is *now* is rank 2's to say, and this is the
@@ -760,7 +760,7 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
 }
 
 /**
- * The page, given what `loadTask` folded. Apart from the route so a test can
+ * The page, given what `loadTask` reduced. Apart from the route so a test can
  * render the whole arrangement without a database (#152).
  */
 function WaitingNav({ waiting }: { waiting: TaskDetail['waiting'] }) {
@@ -793,7 +793,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
   const ref = Number(task.ticket?.ref)
   const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null
   // Every attempt's `costUsd` and `totals` below are off `spend` — this page's
-  // own fold, not the board's. Silent while it folded cleanly, the same `#498`
+  // own reduce, not the board's. Silent while it reduced cleanly, the same `#498`
   // posture every other reading on this bar takes; the sentence only when it
   // did not, because `unknown (1 run)` otherwise reads exactly like a ticket
   // that predates `RunSpent` (`#498`'s review).
@@ -858,7 +858,7 @@ export function TaskBody({ task, now }: { task: TaskDetail; now?: number }) {
           issue={issueNumber}
           queued={task.queued}
           // The attempt the state names, which for a running item is the run
-          // in flight — the one `loadTask` folded with the recipe's bounds.
+          // in flight — the one `loadTask` reduced with the recipe's bounds.
           progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
           // The same budget line the board's card draws under its own rail —
           // `loadTask`'s, so the two cannot word one ticket's hold two ways.

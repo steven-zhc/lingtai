@@ -1,12 +1,12 @@
 /**
- * What the conductor has been told to do, folded.
+ * What the conductor has been told to do, reduced.
  *
- * Vocabulary and a fold, in the package that holds both — for the reason
+ * Vocabulary and a reducer, in the package that holds both — for the reason
  * `streams.ts` gives about itself: this was in `daemon`, and it is needed by
  * something that must not depend on `daemon`. `conductor` is what discovers
  * that an account cannot start a run at all
  * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3), and
- * `daemon` already depends on `conductor`. A second copy of the fold in the
+ * `daemon` already depends on `conductor`. A second copy of the reducer in the
  * package that needed it would be two answers to "is the conductor paused".
  *
  * The I/O stays where it was: `@lingtai/daemon`'s `readControl` reads
@@ -23,8 +23,8 @@ export const CONTROL_STREAM = 'ctl-conductor'
 /**
  * The event types `reduceControl` reads — every other type on the control
  * stream falls through it, `Reconciled` among them, which is most of the
- * stream's bytes (#796). A reader that only folds asks the store for these
- * (`EventStore.readTypes`). A type added to the fold and not here would be
+ * stream's bytes (#796). A reader that only reduces asks the store for these
+ * (`EventStore.readTypes`). A type added to the reducer and not here would be
  * silently dropped, and `unit/control.test.ts` fails on it.
  *
  * **Never a basis for a stream's version**: the list is shorter than the stream.
@@ -71,7 +71,7 @@ export interface ControlState {
    * When this pause lifts by itself, or null.
    *
    * Non-null only while such a pause is actually holding: once the instant has
-   * passed the fold reports the conductor as unpaused, which is what makes the
+   * passed the reducer reports the conductor as unpaused, which is what makes the
    * resume automatic rather than something a person has to remember (0031 §5).
    */
   until: Date | null
@@ -122,9 +122,9 @@ export interface ControlState {
    *
    * Not filtered here, and that is deliberate. A request is satisfied when
    * `chat-<id>` carries an answer for it, which is a fact on a different stream
-   * than this fold reads; asking the chat stream is the daemon's job, and it is
+   * than this reduce reads; asking the chat stream is the daemon's job, and it is
    * the same shape as `requested`, which is satisfied by the item ceasing to be
-   * queued. Keeping the decision out of this fold is what stops the control
+   * queued. Keeping the decision out of this reduce is what stops the control
    * stream growing a second state machine
    * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6).
    */
@@ -155,10 +155,10 @@ export const emptyControl: ControlState = {
 }
 
 /**
- * One event folded into the state. Pure, reads no clock, and never mutates its
+ * One event reduced into the state. Pure, reads no clock, and never mutates its
  * argument (0124 §2).
  */
-export function applyControl(state: ControlState, e: Envelope): ControlState {
+export function reduceControlEvent(state: ControlState, e: Envelope): ControlState {
   const d = (e.data ?? {}) as Record<string, unknown>
   const str = (k: string): string | null => (typeof d[k] === 'string' ? (d[k] as string) : null)
   switch (e.type) {
@@ -208,7 +208,7 @@ export function applyControl(state: ControlState, e: Envelope): ControlState {
       if (state.shutdown === null || state.shutdown.version !== d['version']) return state
       // A `handoff` on a withdrawal written before #167 is read as nothing.
       // It named the commit a supervised restart checked, for the daemon the
-      // supervisor started to claim — and since #159 that daemon folds only
+      // supervisor started to claim — and since #159 that daemon reduces only
       // what was appended after it started, so it never saw one (0048).
       return { ...state, shutdown: null }
     }
@@ -310,12 +310,12 @@ export function evaluateControl(state: ControlState, now: Date): ControlState {
  * Reads only `CONTROL_FOLD_TYPES`; a caller that has a choice reads just those.
  *
  * `now` is a parameter because one of the answers depends on the clock — a
- * pause that carries an expiry is over when the expiry is past, and the fold is
+ * pause that carries an expiry is over when the expiry is past, and the reducer is
  * where that is decided (`evaluateControl`). It is decided here rather than by
  * whoever pauses because nothing else runs at the moment the limit lifts: the
- * alternative to reading it at fold time is a timer somebody has to still be
+ * alternative to reading it at reduce time is a timer somebody has to still be
  * holding.
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  return evaluateControl(events.reduce(applyControl, emptyControl), now)
+  return evaluateControl(events.reduce(reduceControlEvent, emptyControl), now)
 }

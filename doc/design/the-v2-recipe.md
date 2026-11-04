@@ -184,10 +184,10 @@ steps:
              invariant would survive a second implementation written by somebody
              who had not read the first.
 
-          4. **A projection that is not a pure fold.** A reducer may read the
+          4. **A projection that is not a pure reduce.** A reducer may read the
              event and nothing else — no clock, no network, no environment.
              Anything time-dependent makes `lingtai projection rebuild` disagree
-             with the live fold, and the two disagreeing silently is the failure.
+             with the live reduce, and the two disagreeing silently is the failure.
 
           5. **A required field added to a shared type, with a hand-written
              literal missed.** `#89`'s first attempt added a field to

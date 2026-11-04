@@ -315,7 +315,7 @@ export function conductWork(
     // — the lifecycle stays `approved` and the row stays live. So this walks
     // **every** live row for the project, in order, filtered the same way as
     // before — the first for this project whose ticket is **still**
-    // `approved` on this run, read fresh rather than trusted from the fold —
+    // `approved` on this run, read fresh rather than trusted from the reducer —
     // and only a `runOnce` that actually claimed something ends the pass.
     // One that declined at claim is logged and passed over, same as any other
     // `notClaimed`, and the walk continues to the next row.

@@ -67,7 +67,7 @@ const ended = (step: Step, actions: Action[], round = 0) => ({ runId: 'pass-59',
 /**
  * This repository's own recipe, as `stepPlan` reduces it — every point present
  * and every duration already a number. That reduction has its own test in
- * `packages/conductor/unit/filter.test.ts`; this one is about what the fold
+ * `packages/conductor/unit/filter.test.ts`; this one is about what the reducer
  * does with the answer.
  */
 const PLAN: StepPlan = new Map([
@@ -195,7 +195,7 @@ describe('where a run has got to', () => {
   /**
    * **A question and a crash are two states on this rail** (`#296`, 0058 §3c).
    *
-   * They were one — both `did-not-finish`, told apart by a `because` this fold
+   * They were one — both `did-not-finish`, told apart by a `because` this reduce
    * never sees — so a step waiting for an answer drew the hatch that means
    * *Lingtai's bug*. What a person does about the two is opposite: one is *look at
    * this, it broke* and the other is *answer this*.
@@ -271,7 +271,7 @@ describe('where a run has got to', () => {
  * (`#502`) — a round is bought by `PassRouted{decision: Selected{candidate:
  * 'fix-lines'}}`, read through `boardFactOf`'s own `RoundOpened` fact.
  *
- * **The ceiling (`of`) is gone from this fold too** (0110-adjacent, `#502`):
+ * **The ceiling (`of`) is gone from this reduce too** (0110-adjacent, `#502`):
  * `RouteOffer` never stored `policy.rounds`, only what it decided from it, so
  * there is nothing on the event for `roundsOf` to read — it stays `null`,
  * same as a caller with no recipe to fall back on.

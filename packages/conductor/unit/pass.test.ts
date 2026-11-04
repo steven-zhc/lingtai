@@ -851,7 +851,7 @@ describe('every step that does not pass arrives at proposed', () => {
    * answers `design` buys an agent, and an agent dispatched with no memory of
    * asking reads the same ticket, finds the same gap and asks the same thing: one
    * round spent and a person at the end of it anyway. So the question travels —
-   * `sentBackTo` folds it off this pass's own visits and the pipeline puts it on
+   * `sentBackTo` reduces it off this pass's own visits and the pipeline puts it on
    * the context, where `createDraftAction` reads it into the prompt.
    *
    * The asking is an **action** rather than a body, because that is where it comes

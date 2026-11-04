@@ -177,7 +177,7 @@ when your action *runs* and the same typo costs a whole pass: the ticket is
 claimed, a worktree is cut, the design agent is paid, and then the pass ends
 `blocked` — which takes the item **off the queue** and onto *Waiting on you*,
 where nothing brings it back. `outcomeOf` reads a `did-not-finish` as `blocked`,
-`conduct.ts` appends `WorkItemBlocked`, `task_view` folds that to
+`conduct.ts` appends `WorkItemBlocked`, `task_view` reduces that to
 `state: "waiting"`, and `selectRunnable` drops any row that is not `queued`
 *before* it consults the backoff (`queue.ts`). So a run-time-checked `path:` is
 not retried every hour — it is worse than that: one claim, one worktree, one

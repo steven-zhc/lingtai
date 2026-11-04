@@ -1,5 +1,5 @@
 import type { TicketClaim } from '@lingtai/domain'
-/** Deterministic presentation data, folded from local wait events. */
+/** Deterministic presentation data, reduced from local wait events. */
 import {
   decideRoute,
   offerFor,
@@ -20,7 +20,15 @@ import { taskViewProjection } from '@lingtai/projector/task-view'
 import { toCard } from '@/lib/board'
 import { describeHeld, spentOf } from '@/lib/progress'
 import { grantedOf } from '@/lib/spend'
-import { foldChat, foldRun, savedFixWork, standingOf, totalsOf, type StandingView, type TaskDetail } from '@/lib/task'
+import {
+  presentChat,
+  presentRunEvents,
+  savedFixWork,
+  standingOf,
+  totalsOf,
+  type StandingView,
+  type TaskDetail,
+} from '@/lib/task'
 
 import { WAIT_FIXTURES } from './waits.ts'
 
@@ -282,7 +290,7 @@ const advisedSplit = (): TriageResult => {
       {
         key: 'writer',
         title: 'Write rows from the projector',
-        body: 'Fold events into the table.',
+        body: 'Reduce events into the table.',
         kind: 'feature',
       },
       { key: 'reader', title: 'Read the table on the board', body: 'Draw it.', kind: 'feature' },
@@ -387,7 +395,7 @@ export async function preview(name: CaseName) {
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((context) => taskViewProjection.create(context))
-    await store.transact((context) => taskViewProjection.apply(fixture.events, context))
+    await store.transact((context) => taskViewProjection.reduce(fixture.events, context))
     row = (await store.tasks({ retentionDays: 2 })).find((item) => item.taskId === fixture.taskId)
   } finally {
     db.close()
@@ -432,10 +440,10 @@ export async function preview(name: CaseName) {
   }
   const chats = [...runs.entries()].filter(([id]) => id.startsWith('chat-'))
   for (const [id] of chats) runs.delete(id)
-  const discussions = chats.map(([id, events]) => foldChat(id, events, null))
+  const discussions = chats.map(([id, events]) => presentChat(id, events, null))
   const foldedRuns = [...runs.entries()].map(([runId, events], index) => {
     const claim: TicketClaim = { runId, at: events[0]?.at ?? new Date(0), ended: null }
-    return foldRun(claim, index + 1, events)
+    return presentRunEvents(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
   const previewStanding: StandingView = { ...standing }

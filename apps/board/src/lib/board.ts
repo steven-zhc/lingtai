@@ -29,7 +29,7 @@ import type { SpendRow } from '@lingtai/projector'
  *
  * The table is the answer for everything Lingtai has touched. **Queued is the
  * exception**, and it is not an inconsistency: an issue nobody has run has no
- * events, so there is nothing to fold — being queued is a fact about GitHub,
+ * events, so there is nothing to reduce — being queued is a fact about GitHub,
  * not about the log. It used to be cached in `task_view` by a writer that was
  * not the projection, which is how a queue change reached nobody (#56) and how
  * two entry points came to disagree about refreshing it (#57);
@@ -78,7 +78,7 @@ import { timed } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
 
 /**
- * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
+ * Four, not five. `verifying` reduces into `running` (ADR 0016 §8).
  *
  * From an operator's seat "the agent is working" and "the build is running" are
  * the same fact — the machine is busy and you are not needed — so two lanes for
@@ -139,7 +139,7 @@ export interface BoardCard {
    * Counts, not verdicts, and only from the run this card names — the verdicts
    * themselves are on the task's own page. Waived and approved are separate
    * from passed because they are a person's word standing in for a gate's, and
-   * folding them together made an override read as a green build (#78).
+   * reducing them together made an override read as a green build (#78).
    */
   passed: number
   failed: number
@@ -157,7 +157,7 @@ export interface BoardCard {
   note: string | null
   /** `waitWords`' short name for the wait — `ready to land` for a hold for approval; null for every other wait. */
   short: string | null
-  /** `split into #12, #13` on a parent a split wrote children for (#600); its own line, never folded into `note`. */
+  /** `split into #12, #13` on a parent a split wrote children for (#600); its own line, never reduced into `note`. */
   split: string | null
   /** Current wait's advised cause and summary, or null when advice is unavailable or stale. */
   cause: (CausePresentation & { summary: string }) | null
@@ -292,7 +292,7 @@ export interface BoardCard {
    * describes something over and the accumulated numbers are the whole truth
    * about it (#79). They are not: *a point that was configured and did not run*
    * is not a number, and it is the one state 0016 §4 calls Lingtai's bug
-   * (#170). Folded from the run's own stream rather than held in `task_view` —
+   * (#170). Reduced from the run's own stream rather than held in `task_view` —
    * see `progress.ts` for why that does not make the list expensive.
    */
   progress: RunProgress | null
@@ -452,7 +452,7 @@ export interface BoardColumn {
 }
 
 /**
- * How many landed items stay open before the rest fold away.
+ * How many landed items stay open before the rest reduce away.
  *
  * Landed is the lane that needs the least attention and it was the heaviest
  * thing on the page: six full cards of finished work against one waiting card
@@ -470,13 +470,13 @@ export const LANDED_OPEN = 3
  * stream each on a route that re-renders on every append. The Waiting lane is
  * not that lane and the `COLUMNS` entry below says so in its own words — it
  * exists "because it is where the queue actually stalls: 45 items and growing"
- * — so folding it whole would put forty-five concurrent stream reads on every
+ * — so reducing it whole would put forty-five concurrent stream reads on every
  * render, which is the cost `#112` was about.
  *
  * A cap and not a prediction: with Running holding a card per conductor and
  * Landed opening three, a render reads under a dozen streams whatever the lane
  * holds. `readTasks` orders Waiting oldest-first *because* that is what to do
- * next, so the cards that fold are the ones being worked through; the rest keep
+ * next, so the cards that reduce are the ones being worked through; the rest keep
  * their counters, which is what every card had before `#170`.
  */
 export const WAITING_RAILS = 6
@@ -827,10 +827,10 @@ export async function queuedCards(
   /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
   notes: QueueProblem[]
   limits: PassLimitsView[]
-  /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
+  /** `source.backoff` per project, for the held cards `loadBoard` reduces from the log. */
   backoffMs: Map<string, number>
   /**
-   * The recipe's gates per project, for the running cards `loadBoard` folds.
+   * The recipe's gates per project, for the running cards `loadBoard` reduces.
    * Gathered here for the reason `backoffMs` is: this loop already resolved
    * every recipe, and reading one twice is how a render gets expensive.
    */
@@ -872,7 +872,7 @@ export async function queuedCards(
   // the same hand: this loop simply did not get it.
   const asked = await Promise.all(projects.map((p) => ask(p)))
 
-  // The fold stays in project order, and the ordering rules stay exactly what
+  // The reducer stays in project order, and the ordering rules stay exactly what
   // they were — `kindOrder`'s first mention, the bar's project order, which
   // problem is listed first. Concurrency is about when the questions are asked,
   // never about what the answers mean.
@@ -977,8 +977,8 @@ export async function queuedCards(
  * a point that was *configured and did not run* is invisible in them, which is
  * the one state 0016 §4 calls Lingtai's bug, and `lingtai doctor` has been
  * failing on three of this repository's own items while the board said nothing
- * (#170). So Waiting folds too — it is the lane asking for a person — and the
- * Landed lane folds the rows it draws open.
+ * (#170). So Waiting reduces too — it is the lane asking for a person — and the
+ * Landed lane reduces the rows it draws open.
  *
  * **And every one of the three is bounded.** `progress.ts`'s trade is that only
  * a lane holding a handful of cards may read a stream each, on a route that
@@ -1005,7 +1005,7 @@ async function laneProgress(
   const railedIds = new Set(railed.map((c) => c.task.taskId))
   // A waiting card past the rail cap still gets its one button (#647), so the
   // saved head is read for it too — but only where `GrantFixRound` can be
-  // recommended: triage advised it, or a small conflict swaps it in (#652). No rail is folded.
+  // recommended: triage advised it, or a small conflict swaps it in (#652). No rail is reduced.
   const headOnly = tasks.filter(
     (t) =>
       t.runId !== null &&
@@ -1019,7 +1019,7 @@ async function laneProgress(
     const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)
     return saved !== null && 'head' in saved ? saved.head : null
   }
-  const folded = await Promise.all([
+  const reduced = await Promise.all([
     ...railed.map(async ({ task, over }) => {
       try {
         const events = await eventStore.read(task.runId as string)
@@ -1044,9 +1044,9 @@ async function laneProgress(
     }),
   ])
   return {
-    progress: new Map(folded.flatMap(([id, p]) => (p === null ? [] : [[id, p] as const]))),
-    fixHeads: new Map(folded.flatMap(([id, , head]) => (head === null ? [] : [[id, head] as const]))),
-    roundsOpened: new Map(folded.flatMap(([id, , , opened]) => (opened === null ? [] : [[id, opened] as const]))),
+    progress: new Map(reduced.flatMap(([id, p]) => (p === null ? [] : [[id, p] as const]))),
+    fixHeads: new Map(reduced.flatMap(([id, , head]) => (head === null ? [] : [[id, head] as const]))),
+    roundsOpened: new Map(reduced.flatMap(([id, , , opened]) => (opened === null ? [] : [[id, opened] as const]))),
   }
 }
 
@@ -1072,14 +1072,14 @@ export interface RailCandidate {
  * Which cards draw a rail, in the order their lane draws them.
  *
  * Pure, and split from the read above, because both things it decides are
- * claims a test can hold and neither is visible in a folded stream: **how many
+ * claims a test can hold and neither is visible in a reduced stream: **how many
  * streams one render may read**, and **which cards may be called landed**.
  *
  * **The head of each lane, as that lane renders it.** `Landed` opens
  * `LANDED_OPEN` rows of `toColumns`'s newest-first order and collapses the
  * rest, so the same sort and the same count are taken here — and `runId` is
  * filtered *after* the slice, not before, or a ticket closed on GitHub before
- * any run was claimed would push the fold onto a row inside the `older`
+ * any run was claimed would push the reducer onto a row inside the `older`
  * disclosure. Waiting is `readTasks`'s oldest-first order, which is what to do
  * next, so its head is the head of the work.
  */
@@ -1123,7 +1123,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   const { registered, pending } = splitRegister(all ?? [])
   const names = registered.map((p) => p.project).filter((p): p is string => p !== null)
 
-  // Before the fold, because the fold needs what it learned: a card the backoff
+  // Before the reducer, because the reducer needs what it learned: a card the backoff
   // is holding is a card the log wrote, and how long it is held for is in the
   // recipe this just read (0028).
   //
@@ -1132,7 +1132,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // this board — never a read per card, and never the whole table — and
   // `currentSpend` reads the table and reports its lag, the way `task_view` is
   // read: the board holds no projector, and the conductor lock's holder
-  // follows `spend` (0100 §13; #786, reversing #498's fold).
+  // follows `spend` (0100 §13; #786, reversing #498's reducer).
   const [queued, spend, daemon, triageDeclared] = await Promise.all([
     timed('board.queue', () => queuedCards(registered.filter((p) => project === undefined || p.project === project))),
     // Not measured, so not claimed: a skipped read has no lag to report, and
@@ -1174,7 +1174,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   const now = Date.now()
   const fromLog = tasks.map((t) => {
     // A ticket whose runs predate `RunSpent` contributes not one row here —
-    // `billOf` would fold it to five empty bills, which reads as nothing
+    // `billOf` would reduce it to five empty bills, which reads as nothing
     // spent rather than as unknown (0110 §7, `#498`'s review).
     const rowsForTicket = spendByTicket.get(t.taskId) ?? []
     const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
@@ -1301,7 +1301,7 @@ export function filterOptions(registered: readonly string[], onBoard: readonly s
  * to make, and this only reads it back off the card.
  *
  * `problems` land on Queued, the one column that is a question put to GitHub
- * rather than a fold of the log, and therefore the one that can fail to be
+ * rather than a reducer of the log, and therefore the one that can fail to be
  * answered.
  */
 export interface WaitingNeighbour {
@@ -1343,7 +1343,7 @@ export function toColumns(
       // Landed only. `readTasks` orders the other lanes deliberately — waiting
       // by how long it has waited, the rest by ticket number — and none of that
       // is this function's to undo. Landed is the one lane whose question is
-      // *what just happened*, and it is also the one that folds away past the
+      // *what just happened*, and it is also the one that reduces away past the
       // most recent few (#81): "the most recent" is only a sentence the order
       // can make true.
       cards: c.id === 'landed' ? mine.sort(newestFirst) : mine,
@@ -1531,7 +1531,7 @@ export interface LedgerRow {
  * showing", not a window over the log — and a row's project is the *card's*
  * `project`, never `row.project`: a card can outlive the project that made it.
  *
- * **One fold, and the total is the sum of the rows as printed.** `billOf`
+ * **One reduce, and the total is the sum of the rows as printed.** `billOf`
  * rounds each row to the cent once; grouping the rows by ticket first and
  * summing the cards' own bills, rather than grouping by project directly,
  * changes nothing about what gets summed — a row is still rounded exactly

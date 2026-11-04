@@ -1,6 +1,6 @@
 /**
  * The rate card, compiled — what prices a `spend` row that reported no dollars
- * of its own, at the moment of reading and never in a fold
+ * of its own, at the moment of reading and never in a reducer
  * ([0110](../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
  * §5–6, 0122 §5).
  *
@@ -143,7 +143,7 @@ export function estimateRow(
 /**
  * One usage entry's price, or why it has none. The one body `estimateRow` and
  * `unpricedReason` both walk, so the reason cannot be computed another way than
- * the fold priced the row.
+ * the reducer priced the row.
  */
 function priceEntry(
   entry: Usage[number],
@@ -172,14 +172,14 @@ export const NO_USAGE_REASON = 'no usage reported'
 /** What `unpricedReason` says for a run whose usage carried tokens and no model: they were reported, nothing prices them. */
 export const NO_MODEL_REASON = 'no model recorded'
 
-/** What `unpricedReason` says when every entry is priced now but the stored estimate is null: the fold's snapshot was older. */
+/** What `unpricedReason` says when every entry is priced now but the stored estimate is null: the reducer's snapshot was older. */
 export const REPRICED_REASON = 'priced since, rebuild pending'
 
 /**
  * Why `estimateRow` is null for a row: the first model with no price in force,
  * or `NO_USAGE_REASON`. Explains a row already known to be unknown and never
  * decides that (the stored estimate does). If no entry fails now the snapshot
- * changed after the fold, and which model the fold lacked a price for is not
+ * changed after the reducer, and which model the reducer lacked a price for is not
  * recoverable, so no model is named: `REPRICED_REASON`, which a rebuild clears.
  */
 export function unpricedReason(

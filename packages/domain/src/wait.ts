@@ -11,7 +11,7 @@
  * `triage.ts`'s old `Failed`/`Advised`-shaped `TriageResult`/`TriageStatus` —
  * are gone with those two files, so nothing would collide at the root today.
  * Left as a subpath anyway: nine call sites already import it that way, and
- * folding it into `index.ts` is a rename with no behaviour to show for it.
+ * reducing it into `index.ts` is a rename with no behaviour to show for it.
  *
  * **Every variant schema stays unexported.** Only the unions, their inferred
  * types and the two functions are exported, so nothing this file declares
@@ -549,7 +549,7 @@ export function continuationOf(
  * approval resolves one wait and, read alone through {@link continuationOf},
  * names only the one action *that* wait was about — so a continuation that
  * waived only the wait it was answering let the other action run again
- * unwaived, and it refused again the same way, forever. Folding over every
+ * unwaived, and it refused again the same way, forever. Reducing over every
  * wait this item has ever recorded for the run being continued, rather than
  * the single wait named by the lifecycle's own `waitId`, is what remembers
  * both.
@@ -878,7 +878,7 @@ export type TriageResult = z.infer<typeof TriageResult>
  * Derived on read and never stored (0118 §1, §10): four of these six —
  * `NotDeclared`/`Queued`, which turn on whether triage is declared, and
  * `Running`/`Interrupted`, which turn on when the daemon doing the triage
- * last started — depend on the recipe and the running daemon, which a fold
+ * last started — depend on the recipe and the running daemon, which a reducer
  * never reads. Plain TypeScript rather than zod: a schema would let
  * something parse a `TriageStatus` off the log, and nothing should — those
  * four cases cannot be recovered from the log alone. Update that count when

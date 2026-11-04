@@ -195,7 +195,7 @@ fixes the bounds and the endings that router works inside.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
-  `verdictFor` and in the backlog fold. Wiring it means handing one value to both.
+  `verdictFor` and in the backlog reduce. Wiring it means handing one value to both.
 
 ---
 *Replaces archived 0025, 0031, 0038, 0039, 0040, 0041, 0057 in [decisions-archive](../decisions-archive/).*

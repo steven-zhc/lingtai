@@ -106,7 +106,7 @@ and the dollar ceiling lands before any N > 1.
    unbounded.
    - The day is the machine's local calendar day. Spend is the sum of today's
      `spend` rows; a row whose `costUsd` is null is priced from the rate card at
-     the moment of reading, never in a fold
+     the moment of reading, never in a reducer
      ([0110](0110-tokens-on-the-event-money-at-display.md) §5–6), and a row that
      cannot be priced is named as unknown and never counted as zero.
    - It is checked where the pause is already asked before each claim
@@ -116,7 +116,7 @@ and the dollar ceiling lands before any N > 1.
      ([0108](0108-a-refusal-buys-a-round.md) §11). It needs no
      `holdsAcrossStarts`: a restarted daemon recomputes and pauses again at its
      first check. **The pause says it is the ceiling's in a typed field**, an
-     optional `cause` on `ConductorPaused`, and the control fold reads that
+     optional `cause` on `ConductorPaused`, and the control reduce reads that
      field — never a prefix of the reason, which is words for a person — to know
      which pause the ceiling owns and which waiver lifts it
      ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md) §4: an event only

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
  *
  * Made once per process and kept on `globalThis`: a module-level `randomUUID()`
  * is re-run by Next's dev HMR, and the page's own running write would then read
- * as interrupted. `splitCard` (which writes it) and `loadTask` (which folds it)
+ * as interrupted. `splitCard` (which writes it) and `loadTask` (which reduces it)
  * must read this same value.
  */
 const KEY = Symbol.for('lingtai.board.splitInstance')

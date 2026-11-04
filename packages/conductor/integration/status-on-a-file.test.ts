@@ -6,7 +6,7 @@
  * which was `new pg.Client({ connectionString: postgresUrl() })` — so on the
  * machine [#179](https://github.com/steven-zhc/lingtai/issues/179) exists for,
  * the answer to *what is runnable* was a connection error before a line of the
- * command ran. #179's eighth pass named it in review and nothing in the fold's
+ * command ran. #179's eighth pass named it in review and nothing in the reducer's
  * hand-written list of what-needs-Postgres mentioned it, which is the defect
  * [0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md) §1
  * is about: a set maintained by memory rather than by a type.

@@ -68,14 +68,14 @@ describe("the approved card's continue button", () => {
     expect(approved.ok).toBe(true)
 
     // What `standing.tsx` hands `ScheduleContinuation` — the fields it reads
-    // off the same fold the approved card rendered.
+    // off the same reduce the approved card rendered.
     const standing = standingOf(await store.read(ticketId), [])
     expect(standing.state).toBe('approved')
     expect(standing.waitId).toBe(waitA)
     expect(standing.approvedSha).toBe(SHA)
 
     // The continuation stops at a *new* wait before the click lands —
-    // `WaitStarted`'s own fold moves the lifecycle straight back to
+    // `WaitStarted`'s own reduce moves the lifecycle straight back to
     // `blocked` (`ticket.ts`), on a different wait.
     await seed(store, ticketId, [
       ...aWait(item, {

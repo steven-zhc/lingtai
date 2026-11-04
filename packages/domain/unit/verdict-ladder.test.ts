@@ -1,6 +1,6 @@
 /**
  * D1 (`doc/design/one-fold-per-stream.md` §5): one verdict ladder. Each cell is
- * folded over the fixed histories (#798) through both readers — `RunState.steps`
+ * reduced over the fixed histories (#798) through both readers — `RunState.steps`
  * (which is what task_view's `rowOf` reads since #844) and `boardFactOf` — and they must give one word.
  */
 import { describe, expect, it } from 'vitest'

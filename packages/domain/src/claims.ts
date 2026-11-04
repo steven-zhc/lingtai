@@ -7,7 +7,7 @@
  * of one. The rule is structural: it never reads `title` or `kind`, because a
  * first claim made without the queue entry to hand has both null too.
  *
- * Written per event, for the fold that holds one event at a time (`applyTicket`).
+ * Written per event, for the reducer that holds one event at a time (`reduceTicketEvent`).
  */
 import type { Envelope } from './envelope.ts'
 import type { PayloadOf } from './events.ts'

@@ -657,7 +657,7 @@ function answerOf(appended: ToAppend[]): Record<string, unknown> {
   return answer.data as Record<string, unknown>
 }
 
-/** Enough of an `EventStore` for a fold that only reads and appends one stream. */
+/** Enough of an `EventStore` for a reducer that only reads and appends one stream. */
 function fakeStore() {
   const appended: ToAppend[] = []
   return {

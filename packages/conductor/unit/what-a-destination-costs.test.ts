@@ -16,7 +16,7 @@
  * to run time costs a whole pass — the claim, the worktree, the design agent —
  * and then ends `blocked`, which puts the item on *Waiting on you* and leaves it
  * there. It is **not** retried on the recipe's backoff, which is what 0066 §6
- * said until `#299` corrected it there: a block folds to `state: "waiting"` and
+ * said until `#299` corrected it there: a block reduces to `state: "waiting"` and
  * `selectRunnable` drops
  * any row that is not `queued` before it consults the backoff at all
  * (`queue.ts`, and `integration/queue.test.ts`'s *passes over an item asked a
@@ -227,7 +227,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       expect(visited(result)).toEqual(['admit', 'prepared', 'design', 'proposed', 'end'])
       // **`blocked` and never `failed`**, which is the whole of what the next
       // pass does about it: `failed` releases the claim and the backoff offers
-      // the item again, where `blocked` folds to `state: "waiting"` and
+      // the item again, where `blocked` reduces to `state: "waiting"` and
       // `selectRunnable` drops any row that is not `queued` before it looks at
       // the backoff (`queue.ts`). So this row waits for a person and is not
       // retried, however cheap the failure was — the line `#299` corrected at

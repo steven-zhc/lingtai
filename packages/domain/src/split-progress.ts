@@ -1,5 +1,5 @@
 /**
- * What a split write has done and whether it is still going (#608), folded off
+ * What a split write has done and whether it is still going (#608), reduced off
  * the parent's stream: `SplitStarted`, one `SplitChildWritten` or
  * `SplitLinkWritten` per read-back write, then `TicketSplit` or `SplitFailed`.
  *

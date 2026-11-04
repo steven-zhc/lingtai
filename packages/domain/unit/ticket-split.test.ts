@@ -44,14 +44,14 @@ describe('TicketSplit', () => {
   })
 })
 
-describe('the fold of a TicketSplit', () => {
-  const fold = (...splits: { waitId: string; numbers: number[] }[]) => {
+describe('the reducer of a TicketSplit', () => {
+  const reduce = (...splits: { waitId: string; numbers: number[] }[]) => {
     const stream = makeStream('ticket-lingtai-1')
     return reduceTicket(splits.flatMap((s) => aSplit(stream, s.waitId as WaitId, s.numbers)))
   }
 
   it('sets split from the event and leaves the lifecycle alone', () => {
-    const state = fold({ waitId: WAIT, numbers: [161, 162] })
+    const state = reduce({ waitId: WAIT, numbers: [161, 162] })
     expect(state.split?.waitId).toBe(WAIT)
     expect(state.split?.children.map((c) => c.number)).toEqual([161, 162])
     expect(state.lifecycle.status).toBe('backlog')
@@ -59,7 +59,7 @@ describe('the fold of a TicketSplit', () => {
 
   it('is null before any split, and a second split replaces the first', () => {
     expect(reduceTicket([]).split).toBeNull()
-    const state = fold({ waitId: WAIT, numbers: [161] }, { waitId: WAIT, numbers: [170, 171] })
+    const state = reduce({ waitId: WAIT, numbers: [161] }, { waitId: WAIT, numbers: [170, 171] })
     expect(state.split?.children.map((c) => c.number)).toEqual([170, 171])
   })
 })

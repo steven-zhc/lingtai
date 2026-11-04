@@ -31,7 +31,7 @@ describe('addUsage', () => {
     expect(addUsage(a, b)).toEqual([{ model: 'claude-sonnet-5', tokens: { fresh: 15, output: 2 } }])
   })
 
-  it('keeps a differently-keyed entry as a second line rather than folding it in', () => {
+  it('keeps a differently-keyed entry as a second line rather than reducing it in', () => {
     const a = [{ model: 'claude-sonnet-5', tokens: { fresh: 10 } }]
     const b = [{ model: 'claude-opus-5', tokens: { fresh: 1 } }]
     expect(addUsage(a, b)).toHaveLength(2)

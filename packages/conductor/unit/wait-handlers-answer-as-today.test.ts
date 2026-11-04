@@ -169,7 +169,7 @@ describe('answer', () => {
     expect(result.detail).toContain('which design?')
   })
 
-  it('answers, and the fold keeps the answer with no run', async () => {
+  it('answers, and the reducer keeps the answer with no run', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 8)
     await ask({ project: PROJECT, issue: 8, question: 'which design?', by: 'human:steven', store })
@@ -497,7 +497,7 @@ describe('approve', () => {
 
     // The card's own approval, then a continuation that stops at a *new*
     // wait — the item moves from `approved` straight back to `blocked`
-    // (`WaitStarted`'s own fold), on a different wait and a different sha.
+    // (`WaitStarted`'s own reduce), on a different wait and a different sha.
     const first = await approveHolding(
       { project: PROJECT, issue: 27, by: 'human:steven', waitId: waitA, client: fakeClient(SHA), store },
       ticketId,

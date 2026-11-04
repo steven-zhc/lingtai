@@ -2,7 +2,7 @@ import type { Runtime } from '@lingtai/agent'
 /**
  * #451 (and #491). One guard, `logPredatesHold`, and four callers refuse
  * through it rather than letting a parse stack come out of whichever one
- * folds the log first: daemon start, `lingtai doctor`, `lingtai projection
+ * reduces the log first: daemon start, `lingtai doctor`, `lingtai projection
  * rebuild` (#491's `withProjector` is gone with 0100 §13).
  *
  * **Since #502's switch, there is no payload-shape special case** —

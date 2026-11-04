@@ -377,8 +377,8 @@ describe('the four sentences between asking and the answer', () => {
  * a round trip and then a re-render away, and a button that shows nothing in
  * between is a button pressed twice.
  */
-describe('the question, echoed until the fold has it', () => {
-  it('shows the words while the fold has no more turns than when they were sent', () => {
+describe('the question, echoed until the reducer has it', () => {
+  it('shows the words while the reducer has no more turns than when they were sent', () => {
     expect(echoing([], null)).toBeNull()
     expect(echoing([], { question: 'why?', turns: 0 })).toBe('why?')
     // A follow-up to a chat with one turn: still one turn, still echoed.
@@ -401,7 +401,7 @@ describe('the question, echoed until the fold has it', () => {
     expect(asking).toContain('asking…')
     const sent = renderToStaticMarkup(<Echoed question="is requeue safe?" busy={false} />)
     expect(sent).toContain('on the log')
-    // Never a trace: nothing is being followed for a turn the fold does not hold.
+    // Never a trace: nothing is being followed for a turn the reducer does not hold.
     expect(sent).not.toContain('data-trace')
   })
 
@@ -442,7 +442,7 @@ describe('the pane, once the page has stopped following the log', () => {
 /**
  * `Enter` asks, `Shift+Enter` is a newline (#173) — and **`Enter` while
  * `asking…` asks nothing**. That is the case that costs money: until the ask
- * returns the fold has no conversation, so `open` is null and a second
+ * returns the reducer has no conversation, so `open` is null and a second
  * `askDiscussion` goes without a `chatId` — a second discussion, and a second
  * agent paid for. No DOM here, so the handler is asserted on what it is handed.
  */
@@ -498,7 +498,7 @@ describe('the keys in the input box', () => {
 /**
  * The pair's height is the room under the moves, not the viewport (#173). A row
  * a whole viewport tall sat under the bar, the state and the moves, so at
- * 1440×900 the input was below the fold and scrolling to it took Approve off the
+ * 1440×900 the input was below the reducer and scrolling to it took Approve off the
  * top. No layout engine here, so the arithmetic the stylesheet does is done on
  * the numbers it is handed.
  */
@@ -621,7 +621,7 @@ describe("the pair's height", () => {
   })
 
   it('puts the moves and the input on one screen wherever the old 24rem pair did', () => {
-    // Heads of several hundred pixels in a 900px window: the pair ends above the fold.
+    // Heads of several hundred pixels in a 900px window: the pair ends above the reducer.
     for (const top of [300, 420, 516]) expect(top + row(900, top)).toBeLessThanOrEqual(900)
     // The floor is the old height, so where it engages 24rem did not fit either.
     for (let top = 0; top < 900; top += 4) {

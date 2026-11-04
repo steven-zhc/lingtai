@@ -21,7 +21,7 @@
  * reason, where on `/api/stream` honouring it is the thing that has to be right.
  *
  * **It never says how the run went.** The log is a trace and not a record
- * (§8); the ledger row this sits inside already carries the outcome, folded
+ * (§8); the ledger row this sits inside already carries the outcome, reduced
  * from `events`. What the `end` frame reports is that the writer let go.
  */
 import { stat } from 'node:fs/promises'

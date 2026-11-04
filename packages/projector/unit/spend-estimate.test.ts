@@ -29,7 +29,7 @@ const spent = (
 const claim = (stream: ReturnType<typeof makeStream>, runId: string, kind: string | null): Envelope =>
   stream('TicketClaimed', { runId, worker: 'local:1', title: null, kind })
 
-async function fold(events: Envelope[], snapshot: RateRow[] = SNAPSHOT, calls = { n: 0 }) {
+async function reduce(events: Envelope[], snapshot: RateRow[] = SNAPSHOT, calls = { n: 0 }) {
   const db = openSqliteProjections(':memory:')
   const store = createSqliteProjectionStore(db)
   try {
@@ -40,37 +40,37 @@ async function fold(events: Envelope[], snapshot: RateRow[] = SNAPSHOT, calls = 
       },
     })
     await store.transact((ctx) => projection.create(ctx))
-    await store.transact((ctx) => projection.apply(events, ctx))
+    await store.transact((ctx) => projection.reduce(events, ctx))
     return await store.spend({})
   } finally {
     await store.close()
   }
 }
 
-describe('spend stores the estimate when it folds the run', () => {
+describe('spend stores the estimate when it reduces the run', () => {
   it('prices a Codex run from a snapshot row and leaves cost_usd null', async () => {
-    const [row] = await fold([spent(makeStream('pass-pin-a'))])
+    const [row] = await reduce([spent(makeStream('pass-pin-a'))])
     expect(row).toMatchObject({ costUsd: null, estimateFetched: true })
     expect(row?.estimatedUsd).toBeGreaterThan(0)
   })
 
   it('stores a reported cost and leaves the estimate null', async () => {
-    const [row] = await fold([spent(makeStream('pass-pin-b'), { costUsd: 0.5, runtime: 'claude-code' })])
+    const [row] = await reduce([spent(makeStream('pass-pin-b'), { costUsd: 0.5, runtime: 'claude-code' })])
     expect(row).toMatchObject({ costUsd: 0.5, estimatedUsd: null, estimateFetched: null })
   })
 
   it('stores both null for a run nothing can price, never 0', async () => {
-    const [row] = await fold([spent(makeStream('pass-pin-c'), { usage: [] })])
+    const [row] = await reduce([spent(makeStream('pass-pin-c'), { usage: [] })])
     expect(row).toMatchObject({ costUsd: null, estimatedUsd: null, estimateFetched: null })
   })
 
   it('reads the snapshot once per batch, and not at all when every run reported a cost', async () => {
     const calls = { n: 0 }
     const s = makeStream('pass-pin-d')
-    await fold([spent(s), spent(s), spent(s)], SNAPSHOT, calls)
+    await reduce([spent(s), spent(s), spent(s)], SNAPSHOT, calls)
     expect(calls.n).toBe(1)
     const none = { n: 0 }
-    await fold([spent(makeStream('pass-pin-e'), { costUsd: 1 })], SNAPSHOT, none)
+    await reduce([spent(makeStream('pass-pin-e'), { costUsd: 1 })], SNAPSHOT, none)
     expect(none.n).toBe(0)
   })
 })
@@ -86,7 +86,7 @@ describe('spend carries the ticket kind its claim carried', () => {
       spent(run),
       spent(makeStream(wi(1)), {}, { _tag: 'Triage', waitId: 'w' as never }),
     ]
-    const rows = await fold(events)
+    const rows = await reduce(events)
     expect(rows.map((r) => r.kind)).toEqual(['bug', 'bug', 'bug'])
   })
 
@@ -99,21 +99,21 @@ describe('spend carries the ticket kind its claim carried', () => {
       spent(makeStream('pass-pin-k3')),
       spent(makeStream(wi(2)), {}, { _tag: 'Triage', waitId: 'w' as never }),
     ]
-    expect((await fold(events)).map((r) => r.kind)).toEqual(['bug', 'feature', 'feature'])
+    expect((await reduce(events)).map((r) => r.kind)).toEqual(['bug', 'feature', 'feature'])
   })
 
   it('leaves an unlinked run unclassified', async () => {
-    expect((await fold([spent(makeStream('pass-pin-orphan'))]))[0]?.kind).toBeNull()
+    expect((await reduce([spent(makeStream('pass-pin-orphan'))]))[0]?.kind).toBeNull()
   })
 
   it('keeps a run claimed with kind null unclassified, though the ticket was claimed as bug before', async () => {
     const t = makeStream(wi(3))
     const events = [claim(t, 'pass-pin-n1', 'bug'), claim(t, 'pass-pin-n2', null), spent(makeStream('pass-pin-n2'))]
-    expect((await fold(events))[0]?.kind).toBeNull()
+    expect((await reduce(events))[0]?.kind).toBeNull()
   })
 })
 
-describe('spend folds TicketContinued as the old-form continuation (#684)', () => {
+describe('spend reduces TicketContinued as the old-form continuation (#684)', () => {
   const continuation = (stream: ReturnType<typeof makeStream>, runId: string): Envelope =>
     stream('TicketContinued', { runId, worker: 'local:1' })
 
@@ -123,12 +123,12 @@ describe('spend folds TicketContinued as the old-form continuation (#684)', () =
     try {
       const projection = spendProjectionWith({ snapshot: () => SNAPSHOT })
       await store.transact((ctx) => projection.create(ctx))
-      await store.transact((ctx) => projection.apply(events, ctx))
+      await store.transact((ctx) => projection.reduce(events, ctx))
       const spendKinds = (await store.spend({})).map((r) => r.kind)
       return await store.transact(async (ctx) => ({
         spend: spendKinds,
         stream: await ctx.query('select stream_id, ticket, kind from spend_stream order by stream_id'),
-        // The ticket's kind, as `spend_ticket`'s stored `TicketState` folds it (D4); kindless tickets left out.
+        // The ticket's kind, as `spend_ticket`'s stored `TicketState` reduces it (D4); kindless tickets left out.
         kind: (
           await ctx.query<{ ticket: string; state: unknown }>('select ticket, state from spend_ticket order by ticket')
         )

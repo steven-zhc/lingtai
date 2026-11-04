@@ -201,7 +201,7 @@ export interface StepSpec {
 /**
  * The ten steps, in the order the pass reaches them.
  *
- * Folded over `STEPS` rather than written out, for the reason that tuple is
+ * Reduced over `STEPS` rather than written out, for the reason that tuple is
  * exported at all: *each place writing its own list is how one of them ends up
  * missing a step and nobody notices* (`events.ts`). So the order here is the
  * enum's, and a step added to the vocabulary appears in the loop without an
@@ -343,7 +343,7 @@ export interface StepRefused extends LeftTheTreeAt {
  * Nothing is wrong and nothing may proceed until a person says so.
  *
  * Not a refusal: a `human:` action asking a question has judged nothing, and
- * folding it into `failed` would put *the build is broken* on a card whose
+ * reducing it into `failed` would put *the build is broken* on a card whose
  * build is fine (`action.ts`, `needs-approval`). Which steps can reach it is
  * the `human:` plugin's `at` — `proposed` alone since `#270` — and not
  * this type's, which is why `held` is not restricted to the four the way
@@ -1931,7 +1931,7 @@ async function runStepBody(
          * **The two facts a plugin cannot read off `onSha`** (`#266`).
          *
          * `design` is what the step before this one drafted and `again` is why
-         * this step is being run a second time, and both are folds over the visit
+         * this step is being run a second time, and both are reduces over the visit
          * list — which the pipeline has no way to see. They are added here rather
          * than in `contextFor` because one of them is per-step: *sent back to
          * `implement`* and *sent back to `build`* are different answers on the

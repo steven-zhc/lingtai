@@ -12,7 +12,7 @@ an Effect**: the store, the projector, GitHub, git, the agent, the actions, the
 pass, the daemon's loop and the CLI's commands. That is one model for acquiring
 and releasing resources, one for typed failure, and one for tracing — an Effect
 span is an OpenTelemetry span, so a pass is a trace without a second set of
-instrumentation. Pure logic — the event catalogue and its folds, the recipe's
+instrumentation. Pure logic — the event catalogue and its reduces, the recipe's
 parsing and validation — stays plain functions that Effect code calls. The board
 stays `async` and runs Effect at its edge. The only file that is not ordinary
 TypeScript on Node is the hook, a compiled single-file binary.
@@ -63,14 +63,14 @@ turn limit, so every idiom it adopts is paid for again on every run.
 
 4. **The packages, by layer.** A package depends only on packages below it.
    - **Vocabulary:** `domain` (the event catalogue, reducers, upcasting, the
-     control fold). It imports only `zod`. **A stream's fold exists once, here.**
+     control reduce). It imports only `zod`. **A stream's reducer exists once, here.**
      Every other package that needs a stream's state — the conductor, the
      daemon, the CLI, the projector's per-stream part, and the board — calls the
-     domain fold and never folds the same events itself; the board *presents* a
+     domain reduce and never reduces the same events itself; the board *presents* a
      domain state (`present(state, …)`) and joins in what is not on the stream,
      such as the recipe's plan. A branch on an event type outside `domain` is a
-     reaction (a subscriber, a notification) or a lookup, never a second fold.
-     The snapshot of a fold ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md))
+     reaction (a subscriber, a notification) or a lookup, never a second reduce.
+     The snapshot of a reducer ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md))
      is only correct because there is one.
    - **Plain logic and its loaders:** `recipe` (load, validate, resolve), `actions` (running a
      declared action and proving it ran — IO, so Effect under rule 6), `agent-env` (what an agent may see),
@@ -80,7 +80,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
      party's subscriber can import it.
    - **Touches the world:** `event-store` (append, read, subscribe from any seq;
      Postgres and SQLite implementations plus `@lingtai/event-store/memory`),
-     `projector` (the checkpoints and the folds into projection tables), `github`,
+     `projector` (the checkpoints and the reducers into projection tables), `github`,
      `repo` (mirror, worktree, branch, push, integrate), `agent` (starting a
      runtime and the hook socket), and `telegram`, an example subscriber.
    - **Decisions:** `conductor` (claim, the pass, routing, close).

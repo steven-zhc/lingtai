@@ -125,7 +125,7 @@ describe('reduceIntegration', () => {
     expect(laneIsBusy(s)).toBe(false)
   })
 
-  /** What the loser is told now: git refused the push, and the fold counts it. */
+  /** What the loser is told now: git refused the push, and the reducer counts it. */
   it('counts a rejected push as the refusal it is', () => {
     const e = makeStream(LANE)
     const s = reduceIntegration([
@@ -145,7 +145,7 @@ describe('reduceIntegration', () => {
   /**
    * **What `laneIsBusy` cannot say**, pinned so that nobody builds a chip on it.
    *
-   * Two integrations against one base overlap by design since #194. The fold
+   * Two integrations against one base overlap by design since #194. The reducer
    * keeps one `lifecycle`, so the first terminal sets it `idle` with the other
    * merge still in flight, and while both are open it names whichever attempted
    * last. A caller reading this as *is anything merging right now* is told no

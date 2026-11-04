@@ -136,7 +136,7 @@ describe('the approval a refusal reaches a person with', () => {
    * own refusal once the conductor's signoff lands beside it.**
    *
    * Before `#503` the signoff was named plainly `judge`, inside the same
-   * `${step}:${name}` key `run.steps` folds every action into (`run.ts`) —
+   * `${step}:${name}` key `run.steps` reduces every action into (`run.ts`) —
    * so this recipe's own `proposed:judge` refusal was overwritten by the
    * signoff, `run.lifecycle.step` became `'proposed:judge'`, and
    * `refusingOn` excluded it as "the signoff this approval is itself
@@ -166,16 +166,16 @@ describe('the approval a refusal reaches a person with', () => {
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    const folded = reduceRun(run)
+    const reduced = reduceRun(run)
 
-    expect(folded.steps['proposed:judge']).toMatchObject({ verdict: 'failed', onSha: folded.headSha })
-    expect(folded.steps['proposed:conductor:judge']).toMatchObject({ onSha: folded.headSha })
-    expect(folded.lifecycle).toMatchObject({ status: 'awaiting-approval', step: 'proposed:conductor:judge' })
+    expect(reduced.steps['proposed:judge']).toMatchObject({ verdict: 'failed', onSha: reduced.headSha })
+    expect(reduced.steps['proposed:conductor:judge']).toMatchObject({ onSha: reduced.headSha })
+    expect(reduced.lifecycle).toMatchObject({ status: 'awaiting-approval', step: 'proposed:conductor:judge' })
 
     // The regression itself: on the old naming this returned `[]`, because
     // the signoff overwrote `proposed:judge` and then excluded itself as the
     // signoff being answered — so Approve demanded no reason for a check
     // that was, in fact, still refusing.
-    expect(refusingOn(folded, folded.headSha!)).toEqual(['proposed:judge'])
+    expect(refusingOn(reduced, reduced.headSha!)).toEqual(['proposed:judge'])
   })
 })

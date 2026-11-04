@@ -153,7 +153,7 @@ function toCard(row: pg.QueryResultRow): TaskCard {
  * A `finding_backlog` row → a backlog entry. Unchanged from `readBacklog`.
  *
  * **The column and the field are both `step` since `#247`, and before it they
- * were not.** The column follows the payload field it folds, and while that
+ * were not.** The column follows the payload field it reduces, and while that
  * field was spelled `gate` the column was too: `#250` renamed the read with the
  * field and left `gate text not null` standing, so every entry came back with
  * `step: undefined` and nothing said so — `pg.QueryResultRow`'s index signature

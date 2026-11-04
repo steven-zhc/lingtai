@@ -25,7 +25,7 @@ describe('the daemon lock', () => {
         throw new Error('no')
       },
       async reset() {},
-      async apply() {},
+      async reduce() {},
     }
 
     await expect(startDaemon({ projections: [broken], lockKey: k })).rejects.toThrow()

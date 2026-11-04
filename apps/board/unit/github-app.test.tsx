@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The wizard's first screen, as markup (#169).
  *
- * The fold — *is creation offered, and what is written* — is asserted in
- * `packages/conductor/integration/create-app.test.ts`. What is here is the half a fold
+ * The reducer — *is creation offered, and what is written* — is asserted in
+ * `packages/conductor/integration/create-app.test.ts`. What is here is the half a reducer
  * cannot catch, which is #101's rule: a page that offers the button anyway, or
  * one that renders a key, is a page whose data was right.
  *
@@ -190,7 +190,7 @@ describe('an App minted here whose credentials never landed', () => {
 })
 
 /**
- * The half of this a fold cannot catch: the data said *unknown*, and what
+ * The half of this a reducer cannot catch: the data said *unknown*, and what
  * matters is that the markup does not read as *nothing is configured*.
  */
 describe('a log that would not answer', () => {

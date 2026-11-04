@@ -151,7 +151,7 @@ export function stateInk(state: string): (text: string) => string {
     // `--pass`: the board's Landed lane.
     case 'landed':
       return paint.pass
-    // `--accent`: the board's `a-run`. `verifying` and `approved` fold into it
+    // `--accent`: the board's `a-run`. `verifying` and `approved` reduce into it
     // here exactly as they do in the listing — from an operator's seat an
     // approval Lingtai has not yet taken up is the same fact as a run.
     case 'running':

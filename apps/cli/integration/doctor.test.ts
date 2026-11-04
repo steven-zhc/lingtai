@@ -195,7 +195,7 @@ describe('lingtai doctor — environment', () => {
  * (#179, [0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * `lingtai init` finishes on a SQLite answer now, and that machine works —
- * `packages/daemon/integration/the-written-choice.test.ts` appends, folds `task_view`,
+ * `packages/daemon/integration/the-written-choice.test.ts` appends, reduces `task_view`,
  * renders the cards and beats the beacon on one in a process where opening a
  * socket throws. Doctor then called it broken: `environment` was pushed
  * whatever the store was, found no `LINGTAI_DATABASE_URL` and no
@@ -487,7 +487,7 @@ describe('lingtai doctor — the declared environment', () => {
  *
  * The row is checked directly rather than through `runDoctor`, because reaching
  * it there needs an App, a registered project and a recipe over the network —
- * and what is worth pinning is the fold, not the fetch. `declaredExtensions`
+ * and what is worth pinning is the reducer, not the fetch. `declaredExtensions`
  * runs against a real resolved recipe so that the union in the schema and the
  * reading of it here cannot drift.
  */
@@ -869,7 +869,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
    * Phase 0's exit criterion, as an assertion: *`lingtai doctor` is green*.
    *
    * **On one machine, and it is this test's** (`#242`). The database is the test
-   * one and `$HOME` was the operator's, so the rows that fold projects read
+   * one and `$HOME` was the operator's, so the rows that reduce projects read
    * *which* projects from a log every other integration file appends to and
    * *what governs each one* from `~/.lingtai/<project>/recipe.yml`, where a
    * throwaway `esctest…` project's recipe has never existed. Four such projects
@@ -900,7 +900,7 @@ steps:
     // is told which projects it is about, and the log is left as it was.
     //
     // **Spread from `emptyProject` rather than cast.** A cast over three keys
-    // leaves `refused` `undefined`, which is not a state the fold can produce —
+    // leaves `refused` `undefined`, which is not a state the reducer can produce —
     // `refused !== null` then reads as *refusing* and the refusals row throws on
     // `codeSha`. A field added to `ProjectState` later stays covered here.
     const load = async () => [{ ...emptyProject, project: OWN, owner: 'me', base: 'main' }]
@@ -954,7 +954,7 @@ steps:
       expect(find(report.results, 'projections: lag').status).toBe('ok')
       expect(find(report.results, 'projections: shape').status).toBe('ok')
 
-      // Up and current are two facts, and folding them into one is the whole of
+      // Up and current are two facts, and reducing them into one is the whole of
       // #98: a daemon beat happily for thirty-nine minutes while holding code
       // that could not produce the event the log had been fixed to record, and
       // `up, last beat 2s ago` was the only thing anything said about it. Both

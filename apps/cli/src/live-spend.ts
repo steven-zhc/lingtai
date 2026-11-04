@@ -34,7 +34,7 @@ let standingDown: Promise<void> | null = null
 /**
  * Stops every live `spend` runner in this process and returns what starts them
  * again: a rebuild rewinds the checkpoint they share, and a runner that commits
- * meanwhile would carry it past events the replay has not folded. A runner
+ * meanwhile would carry it past events the replay has not reduced. A runner
  * still starting is waited for first, and one that starts during the hold waits
  * for `resume` (`startLive`).
  */

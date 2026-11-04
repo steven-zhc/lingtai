@@ -74,7 +74,7 @@ export interface RestartInput {
   }
   /** `runtime.limits.restarts`. Zero is the default and is today's behaviour. */
   restarts: number
-  /** The work item, folded. Carries the bound: `restarts`. */
+  /** The work item, reduced. Carries the bound: `restarts`. */
   item: TicketState
   /**
    * What else on this pass is asking for a person, named, or null.

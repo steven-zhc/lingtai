@@ -4,7 +4,7 @@
  *
  * **Unknown cost is not free** (#198). A `spend` row whose `costUsd` is null —
  * every Codex run, and a Claude Code run that was killed — carries the estimate
- * the `spend` fold stored when it priced the run's usage at its own day's rate
+ * the `spend` reduce stored when it priced the run's usage at its own day's rate
  * (#645, #679, 0122 §5) and is counted as an *estimate*;
  * one nothing could price is *unknown*, and the ceiling cannot see it. A
  * reported figure is never repriced, and the estimate is never printed as part
@@ -134,7 +134,7 @@ const CEILING_REASON = 'daily ceiling reached — '
  * A pause that is the ceiling's own and still holds while today is under the
  * figure — the figure was raised or removed — is lifted here, because the
  * callers ask this before the control stream's pause and so lift it before it is
- * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which the fold does not
+ * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which the reducer does not
  * count as a person's waiver. Any other pause is left alone.
  */
 async function liftOwnPause(store: EventStore, now: Date): Promise<void> {

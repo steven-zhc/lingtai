@@ -65,13 +65,13 @@ import type { ProposedRef, ProposedTicket, TicketStore } from './ticket-store.ts
  * the `backlog:` plugin. **The bar today is written twice, and this lifts out
  * both.** `verdictFor` in `packages/actions/src/agent-action.ts` is the half that
  * *refuses* — a hard-coded blocker-or-major, which is `refuses` below —
- * and the literal `minor` in the fold (`packages/projector/src/backlog.ts`) is
+ * and the literal `minor` in the reducer (`packages/projector/src/backlog.ts`) is
  * the half that *files*, which is `filed`. One comparison in two packages that
  * cannot see each other, and neither of which a recipe can name.
  *
  * So **whoever wires `backlog:` has to hand its value to both**. Replace the
- * fold's literal alone and a `major` still fails at `verdictFor`, the step still
- * ends refused, the fold never sees the finding — and a recipe that said a
+ * reduce's literal alone and a `major` still fails at `verdictFor`, the step still
+ * ends refused, the reducer never sees the finding — and a recipe that said a
  * major costs nothing has bought a fix round while reading as honoured. That
  * trap is in `CALLED_DIRECTLY.backlog` (`packages/recipe/src/recipe.ts`) too,
  * because the refusal is what somebody about to wire it actually reads.
@@ -91,11 +91,11 @@ import type { ProposedRef, ProposedTicket, TicketStore } from './ticket-store.ts
  * in round 2 is the same entry already: `findingKey`
  * (`packages/domain/src/backlog.ts`) is over the ticket, the step, the action,
  * the file and the normalised claim, with no run, round or sha in it, and the
- * fold writes `on conflict (project, key) do nothing`. A second mechanism here
+ * reduce writes `on conflict (project, key) do nothing`. A second mechanism here
  * would be a second answer to a question that has one.
  *
  * A decision and no I/O, for `fix.ts`'s reason: a rule about what a severity
- * costs that lives inside an `if` in a fold is a rule nobody can check.
+ * costs that lives inside an `if` in a reducer is a rule nobody can check.
  */
 export interface BacklogOutcome {
   /** At or below the bar: filed for a person, and buying nothing. */
@@ -185,7 +185,7 @@ async function readEntry(
   const entry = await read(options.project, options.key)
   if (!entry) return `no backlog entry ${options.key} in ${options.project}`
   const events = options.events ?? eventStore
-  // The log settles it, not the projection: a decision a moment old may not be folded yet.
+  // The log settles it, not the projection: a decision a moment old may not be reduced yet.
   const stream = reduceFinding(await events.read(backlogStream(options.project, options.key)))
   return { entry, stream, events }
 }

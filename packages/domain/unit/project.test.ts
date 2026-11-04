@@ -1,5 +1,5 @@
 /**
- * The project fold's refusal, and what a pass appends from it (#148).
+ * The project reduce's refusal, and what a pass appends from it (#148).
  *
  * A sweep runs on a loop, so what is worth pinning is what is **not** appended:
  * the same refusal seen again says nothing new. And what must not be needed is
@@ -21,7 +21,7 @@ const REFUSAL = 'lingtai: .lingtai/config.yaml on main is not valid:\n  env: Unr
 const OLD = 'cc6e856'.padEnd(40, '0')
 const NEW = 'be9fd26'.padEnd(40, '0')
 
-/** A configured project, and a pass that appends what it decides and folds again. */
+/** A configured project, and a pass that appends what it decides and reduces again. */
 function project() {
   const event = makeStream('prj-lingtai')
   const events = [
@@ -75,7 +75,7 @@ describe("a pass's refusal, on the project stream", () => {
 
   /**
    * The same text from a restarted process is a different fact: it says the
-   * recipe is broken, where the first said the process might be old. Folding
+   * recipe is broken, where the first said the process might be old. Reducing
    * them together erases the distinction the event carries its commit to make.
    */
   it('treats the same message from another commit, or another ref, as a new refusal', () => {
@@ -170,7 +170,7 @@ describe('a repository on its way in', () => {
     expect(isPending(state)).toBe(true)
   })
 
-  it('becomes live through ProjectConfigured, and stops being pending in the same fold', () => {
+  it('becomes live through ProjectConfigured, and stops being pending in the same reduce', () => {
     const { event, events } = started()
     events.push(
       event('ProjectConfigured', {

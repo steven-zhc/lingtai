@@ -165,7 +165,7 @@ describe('the session-mode connection that goes with a choice', () => {
    * `config.yml` would otherwise answer for a machine that has been pointed
    * somewhere else. The store opens on NEW and the `LISTEN` registers on OLD, where
    * nothing is ever appended — every subscriber drains once at connect and is
-   * never nudged again, `task_view` stops folding, the board renders stale
+   * never nudged again, `task_view` stops reducing, the board renders stale
    * cards, and nothing errors. It is the split-log failure 0056 exists to
    * remove.
    */

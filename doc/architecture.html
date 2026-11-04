@@ -436,7 +436,7 @@
 
             <rect x="460" y="174" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
             <text x="474" y="189" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">projector</text>
-            <text x="474" y="203" fill="currentColor" opacity=".65">the fold, and the checkpoint in the same transaction</text>
+            <text x="474" y="203" fill="currentColor" opacity=".65">the reducer, and the checkpoint in the same transaction</text>
 
             <rect x="460" y="216" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
             <text x="474" y="231" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">github</text>
@@ -982,7 +982,7 @@
         </thead>
         <tbody>
           <tr><td class="k">events</td><td>every fact about what Lingtai did</td><td class="who">conductor, board, CLI, agent</td><td class="who">no — it is the source</td></tr>
-          <tr><td class="k">checkpoints</td><td>how far the projection has read</td><td class="who">the projector, in the fold's own transaction</td><td class="who">yes</td></tr>
+          <tr><td class="k">checkpoints</td><td>how far the projection has read</td><td class="who">the projector, in the reducer's own transaction</td><td class="who">yes</td></tr>
           <tr><td class="k">task_view</td><td>the board's cards</td><td class="who">the projector, and nothing else</td><td class="who">yes — <code>lingtai projection rebuild task_view</code></td></tr>
           <tr><td class="k">daemon_status</td><td>the heartbeat</td><td class="who">the daemon</td><td class="who">deliberately outside the log</td></tr>
           <tr><td class="k">~/.lingtai/repos</td><td>a bare mirror per project</td><td class="who">worktree provisioning</td><td class="who">yes — re-clone</td></tr>

@@ -64,9 +64,9 @@ import type { RefusalReason, RunFailureKind } from './vocabulary.ts'
  *   `person`      not a failure. A hold somebody meant: a pending migration is
  *                 applied by a human who has looked at it.
  *
- * The third exists so the second stays honest. Folding a migration hold into
+ * The third exists so the second stays honest. Reducing a migration hold into
  * `lingtai` would say Lingtai is broken when it is working exactly as designed,
- * and folding it into `repository` would blame a deliberate safeguard.
+ * and reducing it into `repository` would blame a deliberate safeguard.
  *
  * **None of the three buys anything.** They differ in what the card says, which
  * is `#84`'s "never left with no path forward" — and since `#143` that is the

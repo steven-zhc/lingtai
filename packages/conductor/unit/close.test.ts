@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { applyTicket, reduceTicket, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
+import { reduceTicketEvent, reduceTicket, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
 import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -67,7 +67,7 @@ describe('a closed work item', () => {
 
   /**
    * The whole of why the queue passes over it. `queue.ts` subtracts every row
-   * the fold does not call `backlog`, so this one property is what makes a
+   * the reducer does not call `backlog`, so this one property is what makes a
    * closed item unclaimable — with no label, no GitHub round trip and no change
    * to the queue at all.
    */
@@ -87,7 +87,7 @@ describe('a closed work item', () => {
    * longer the intent.
    */
   it('is not lifted by an unblock arriving after it', () => {
-    const state = applyTicket(
+    const state = reduceTicketEvent(
       reduceTicket([closed]),
       event(3, 'WorkItemUnblocked', { by: 'human:steven', note: 'changed my mind' }),
     )
@@ -97,7 +97,10 @@ describe('a closed work item', () => {
 
   /** And a claim after it does not either: the ticket is over, not free. */
   it('is not lifted by a claim arriving after it', () => {
-    const state = applyTicket(reduceTicket([closed]), event(4, 'TicketClaimed', { runId: 'pass-2', worker: 'daemon' }))
+    const state = reduceTicketEvent(
+      reduceTicket([closed]),
+      event(4, 'TicketClaimed', { runId: 'pass-2', worker: 'daemon' }),
+    )
 
     expect(state.lifecycle.status).toBe('closed')
   })

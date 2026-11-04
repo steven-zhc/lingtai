@@ -66,7 +66,7 @@ export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed'
  * The event the `end` point resolves to, or nothing.
  *
  * Pure, and takes the work item's stream rather than a store, so a caller can
- * fold it into the very append that records the outcome:
+ * reduce it into the very append that records the outcome:
  *
  * ```ts
  * const item = await store.read(ticketId);

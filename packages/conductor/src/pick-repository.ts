@@ -20,7 +20,7 @@
  *
  * **Nothing is written.** Every call here goes through `AppReader`, whose only
  * method is `GET`, and nothing touches the event store: the registered
- * projects are handed in, already folded, so that they can be *shown* as
+ * projects are handed in, already reduced, so that they can be *shown* as
  * registered rather than offered twice. Abandon this screen and there is
  * nothing to clean up, which is #160's rule.
  *
@@ -133,7 +133,7 @@ function onboardedAs(
 /** Every repository the App can see, installation by installation. */
 export async function listRepositories(options: {
   reader: AppReader
-  /** Every project stream folded — registered and pending alike (`loadAllProjects`). */
+  /** Every project stream reduced — registered and pending alike (`loadAllProjects`). */
   projects: readonly ProjectState[]
   /** `offerCreation().installUrl` — the App's own install page, or null. */
   installUrl: string | null

@@ -3,7 +3,7 @@ import type { SpendRow } from '@lingtai/projector'
 /**
  * The attempt is the unit, and the page can say what each one cost.
  *
- * The folds are pure and exported for exactly this: `task.ts` reaches the
+ * The reducers are pure and exported for exactly this: `task.ts` reaches the
  * database and GitHub, and *what the page says about a run* is settled by
  * envelopes and nothing else — the same split `history.ts` makes one level
  * down.
@@ -16,7 +16,7 @@ import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { backoffOf } from '../src/lib/queued.ts'
-import { foldRun, groupHistory, heldRunOf, standingOf, totalsOf, type RunView } from '../src/lib/task.ts'
+import { presentRunEvents, groupHistory, heldRunOf, standingOf, totalsOf, type RunView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -67,11 +67,11 @@ describe('one attempt', () => {
   /**
    * `#102`'s own finding — `RunFinished` carries `turns` and `durationMs` on
    * every run — minus the money: `costUsd` moved to `spend` (`#498`, 0110
-   * §13), so this fold carries no bill of its own. `loadTask` fills `costUsd`
+   * §13), so this reduce carries no bill of its own. `loadTask` fills `costUsd`
    * in from `spend`, the way it fills in `recipe`.
    */
   it('carries the turns and duration the log has always recorded', () => {
-    const run = foldRun(CLAIM, 1, [
+    const run = presentRunEvents(CLAIM, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40), runtime: 'claude-code' }),
       e(RUN_1, 'RunPrompted', { promptVersion: 'ticket@1924', bytes: 4593, prompt: 'do the thing' }),
       e(RUN_1, 'RunFinished', { exitCode: 0, turns: 92, durationMs: 1_405_000, costUsd: 8.4 }),
@@ -84,7 +84,7 @@ describe('one attempt', () => {
   })
 
   it("holds its own verdicts, so two attempts' gates are never one list", () => {
-    const one = foldRun(CLAIM, 1, [
+    const one = presentRunEvents(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
       e(RUN_1, 'StepEnded', {
         runId: RUN_1,
@@ -104,7 +104,7 @@ describe('one attempt', () => {
         },
       }),
     ])
-    const two = foldRun({ ...CLAIM, runId: RUN_2 }, 2, [
+    const two = presentRunEvents({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: 'c'.repeat(40) }),
       e(RUN_2, 'StepEnded', {
         runId: RUN_2,
@@ -133,13 +133,13 @@ describe('one attempt', () => {
    * The gate that stopped the run has to appear on the page written for it.
    *
    * `StepNeverRan` calls its text `detail` rather than `evidence`, because it is
-   * evidence about the account and never about the diff (#133). This fold read
+   * evidence about the account and never about the diff (#133). This reduce read
    * `evidence` only, so the never-ran gate arrived with `evidence: null` — and
    * `Evidence` shows only gates that said something, so the one gate a person
    * opening the page is looking for was the one gate not on it.
    */
   it("shows a never-ran gate's words, which it files under a different name", () => {
-    const run = foldRun(CLAIM, 1, [
+    const run = presentRunEvents(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
       e(RUN_1, 'StepEnded', {
         runId: RUN_1,
@@ -167,7 +167,7 @@ describe('one attempt', () => {
   })
 
   it('says a run was released rather than leaving it reading as still running', () => {
-    const run = foldRun({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
+    const run = presentRunEvents({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
     ])
 
@@ -175,11 +175,11 @@ describe('one attempt', () => {
   })
 
   it('says a claim whose stream is empty is that, and not a run in flight', () => {
-    expect(foldRun(CLAIM, 1, []).outcome.state).toBe('claimed')
+    expect(presentRunEvents(CLAIM, 1, []).outcome.state).toBe('claimed')
   })
 
   it('names a failure by its kind, and leaves the whole of it to the history', () => {
-    const run = foldRun(CLAIM, 1, [
+    const run = presentRunEvents(CLAIM, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
       e(RUN_1, 'RunFailed', { kind: 'never-started', detail: 'a long message from the runtime' }),
     ])
@@ -188,7 +188,7 @@ describe('one attempt', () => {
   })
 
   it('lists a file once, however many times the agent touched it', () => {
-    const run = foldRun(CLAIM, 1, [
+    const run = presentRunEvents(CLAIM, 1, [
       e(RUN_1, 'RunTouchedFile', { path: 'src/task.ts', op: 'write' }),
       e(RUN_1, 'RunTouchedFile', { path: 'src/task.ts', op: 'edit' }),
       e(RUN_1, 'RunTouchedFile', { path: 'src/page.tsx', op: 'edit' }),
@@ -201,9 +201,11 @@ describe('one attempt', () => {
   })
 
   it('still shows all ten steps, including the ones nothing was configured at', () => {
-    const run = foldRun(CLAIM, 1, [e(RUN_1, 'StepsResolved', { steps: [{ step: 'proposed', actions: ['build'] }] })])
+    const run = presentRunEvents(CLAIM, 1, [
+      e(RUN_1, 'StepsResolved', { steps: [{ step: 'proposed', actions: ['build'] }] }),
+    ])
 
-    // `progress.ts`'s fold, which is the one the rail reads (#189).
+    // `progress.ts`'s reduce, which is the one the rail reads (#189).
     expect(run.progress?.steps).toHaveLength(10)
     expect(run.progress?.steps.filter((p) => p.state === 'skipped')).toHaveLength(9)
   })
@@ -211,7 +213,7 @@ describe('one attempt', () => {
 
 describe('the totals', () => {
   function run(over: Partial<RunView>): RunView {
-    return { ...foldRun(CLAIM, 1, []), ...over }
+    return { ...presentRunEvents(CLAIM, 1, []), ...over }
   }
 
   /** `round: 0` is Work, `round` at 1 or above is Answering (0039 §3). */
@@ -270,7 +272,7 @@ describe('the totals', () => {
 
   /**
    * `ticket-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
-   * returns `[]`, so `billOf([])` used to fold to five empty bills and the
+   * returns `[]`, so `billOf([])` used to reduce to five empty bills and the
    * Attempts label said nothing at all — "nothing spent" rather than
    * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
    * run, credited to Work.
@@ -324,7 +326,7 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
   }
   const withAt = (env: Envelope, when: string): Envelope => ({ ...env, at: at(when) })
 
-  const runsOf = (own: Envelope[]): RunView[] => reduceTicket(own).claims.map((c, i) => foldRun(c, i + 1, []))
+  const runsOf = (own: Envelope[]): RunView[] => reduceTicket(own).claims.map((c, i) => presentRunEvents(c, i + 1, []))
 
   /** The same stream twice: only the last event differs in type and payload. */
   function streams(): { old: Envelope[]; next: Envelope[] } {
@@ -408,7 +410,7 @@ describe('an attempt asked (#829)', () => {
   function drawn(own: Envelope[], run: Envelope[]) {
     const t = reduceTicket(own)
     const held = t.claims[0]!.runId === heldRunOf(t.lifecycle)
-    return foldRun(t.claims[0]!, 1, run, { held }).outcome
+    return presentRunEvents(t.claims[0]!, 1, run, { held }).outcome
   }
 
   it('finished then held at signoff reads asked; after approve-and-continue it reads by its run again', () => {

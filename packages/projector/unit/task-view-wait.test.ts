@@ -25,7 +25,7 @@ async function withFold<T>(events: Envelope[], use: (store: ProjectionStore) => 
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.apply(events, ctx))
+    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
     return await use(store)
   } finally {
     db.close()

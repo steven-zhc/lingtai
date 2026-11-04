@@ -11,7 +11,7 @@
  */
 import { keyValues, section } from './output.ts'
 
-/** The supervisor's answer, or why it could not be asked; never folded into "not loaded". */
+/** The supervisor's answer, or why it could not be asked; never reduced into "not loaded". */
 export type SupervisorAnswer = { lines: readonly string[] } | { unread: string }
 
 export interface JobStatus {

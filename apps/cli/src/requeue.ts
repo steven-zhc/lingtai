@@ -49,7 +49,7 @@ type RequeueDeps = {
   loadProject?: typeof loadProject
   client?: IssueChannel
   store?: EventStore
-  /** The line that says no conductor will fold this. Replaceable so a test needs no lock file. */
+  /** The line that says no conductor will reduce this. Replaceable so a test needs no lock file. */
   conductorNote?: ConductorNote
   editBodyAndRequeue?: typeof editBodyAndRequeue
   requeue?: typeof requeue
@@ -68,7 +68,7 @@ export async function requeueVerdict(
     return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
-  // Holds no projector (0100 §13): the conductor lock's holder folds this onto
+  // Holds no projector (0100 §13): the conductor lock's holder reduces this onto
   // the board, and the note after the append says when none is up.
   const append = async (): Promise<Answered> => {
     const by = options.by ?? `human:${userInfo().username}`

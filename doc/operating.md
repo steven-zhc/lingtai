@@ -1367,7 +1367,7 @@ daemon started and recorded it through all of that. `service start` exits on
 the board alone, with its own number rather than the daemon's, so `lingtai
 restart` reads the record back, runs the `#167` checks on the daemon that
 started and prints *restarted … — the commit that was checked* — then says the
-board is what did not come up, and where to start it alone. Folded into one
+board is what did not come up, and where to start it alone. Reduced into one
 number it returned there instead: no confirmation, no checks, exit 1 over a
 daemon that is up and claiming tickets, and an operator told to drain a healthy
 one and wait out another pass for the same answer.
@@ -1556,7 +1556,7 @@ The board's bar says the same thing on its health dot. That used to be its own
 chip beside a second one for whether the projection is current, and they are one
 indicator now (#134): both answer *is the system doing what the code says?*, and
 two boxes for one question is two things to learn to read on a row that is
-glanced at. Neither fact is folded away — whichever is wrong is the sentence
+glanced at. Neither fact is reduced away — whichever is wrong is the sentence
 beside the dot, and the other is on hover. A board can still be perfectly
 current, taking work, and driven by code you replaced an hour ago; the dot goes
 red and says which.
@@ -1586,7 +1586,7 @@ moved the card, and approving over a gate that still refuses now waives it, with
 the reason Approve asks for.
 
 Everything else is one click away. The card's title opens `/task/<id>`, which
-folds that task's event stream on demand: each gate's verdict with its evidence,
+reduces that task's event stream on demand: each gate's verdict with its evidence,
 the reviewer's findings with their failure scenarios, the guard trips, and the
 raw history with every actor. The task's own part is not maintained in a table —
 a detail view is read rarely, by one person, about one task. Two things beside it
@@ -1652,11 +1652,11 @@ pnpm lingtai answer lingtai --issue 51 "the second — refuse at the hook"
 
 `ask` appends `WorkItemBlocked` with `runId: null` and refuses an item a run
 holds or one already asking; nothing is claimed and no worktree is cut, and the
-queue passes over it because the fold says blocked. `lingtai status` prints the
+queue passes over it because the reducer says blocked. `lingtai status` prints the
 question rather than counting it. A question asked by mistake is withdrawn with
 `lingtai requeue ... --note "<why>"`, which writes the unblock `withdrawn` so no
 attempt is told it. `answer` refuses a block a run is holding —
-that is `approve` or `requeue` — and its choice is kept by the fold and carried
+that is `approve` or `requeue` — and its choice is kept by the reducer and carried
 into every later attempt's prompt, so nobody edits the issue body to reach the
 agent.
 
@@ -1766,9 +1766,9 @@ each linking to its task page ([0123](decisions/0123-the-report-counts-what-the-
   ticket's cost, whenever it ran. They are not meant to match. Money is always a
   reported figure, `~$x est.` and `n unknown` — an unknown run is never `$0.00`.
 - **The chip on its bar** says whether `ticket_report` and `spend` are at the
-  head: each render folds both first, and `current` means neither is behind.
-  `ticket_report behind 3` means events arrived after the page folded it, and
-  reloading folds them. A failed fold names its repair, `lingtai projection
+  head: each render reduces both first, and `current` means neither is behind.
+  `ticket_report behind 3` means events arrived after the page reduced it, and
+  reloading reduces them. A failed reduce names its repair, `lingtai projection
   rebuild ticket_report` or `lingtai projection rebuild spend`. A read that
   fails outright puts one sentence where the panels were; the bar stays.
 
@@ -1962,7 +1962,7 @@ for the retired names, and fix them by hand — `lingtai doctor`'s
 do.
 
 **Note every backlog decision too — a reset empties `finding_backlog` the
-same way.** `finding_backlog` is a fold of this same log (#137): a decline is
+same way.** `finding_backlog` is a reducer of this same log (#137): a decline is
 recorded there precisely so the next pass does not ask again, and an
 accepted-but-unopened entry lives there too. The reset forgets both, and this
 section's own *After* step rebuilds the projection to nothing. For every
@@ -1976,14 +1976,14 @@ and keep what it prints — every accepted and declined finding, and the reason
 given for each decline. Nothing here restores a decision inside
 `finding_backlog` itself; what the note buys is a quick read of the reason
 without restoring anything. The archive the next step makes holds the same
-findings underneath it, in the `events` that projection folds from, and can
+findings underneath it, in the `events` that projection reduces from, and can
 be read back by restoring and querying it the way the Check step below
 restores and queries the rest of the dump — slower than this note, not
 impossible. Either way, a finding raised again after the reset is declined
 on the same grounds rather than relitigated from zero.
 
 **Note the spend total too — a reset empties `spend` the same way.**
-`spendProjection` is a fold of `RunSpent` and nothing else
+`spendProjection` is a reducer of `RunSpent` and nothing else
 (`packages/projector/src/spend.ts:1-12`, 0110 §11), and this section's own
 *After* step rebuilds it against the emptied log, so every run's recorded
 cost is gone once that step runs, unless it is noted first:
@@ -2005,7 +2005,7 @@ repository.** 007 and 010 are committed as verbatim transcripts — 106 events
 from three runs, and 56 from three more — each read by hand first and found
 to hold nothing that should not be, back when the old database being the
 only copy left no other way to keep it. 013 and 014 committed no event
-content at all to vet: 013 is a fold of counts read from a live database
+content at all to vet: 013 is a reducer of counts read from a live database
 that stayed queryable, not a transcript — at 13,481 events *"a transcript
 was not an option"* and *"this one transcribes nothing"* (013:5,14) — and
 014 carries no numbers because the agent writing it could not reach the log
@@ -2106,7 +2106,7 @@ psql <same, database name swapped for lingtai_reset_check> -c "select count(*), 
 ```
 
 **Held work items, against both copies**, the same SQL either way. This is an
-approximation rather than a fold through `@lingtai/domain`'s catalogue — plain
+approximation rather than a reducer through `@lingtai/domain`'s catalogue — plain
 SQL is the point, since nothing here should need the application's own code to
 decode a row. **Rank every event that can end a hold on the item's own
 stream against `WorkItemBlocked`, never the latest row of any type**:
@@ -2212,7 +2212,7 @@ signal to the watermark a daemon takes at its own start
 (`packages/daemon/src/control.ts:116-123`), and a person's `lingtai pause`
 never sets `holdsAcrossStarts` — only the conductor's own refusal-pause does
 (`:104-114`). So a pause appended before a daemon's first start is invisible
-to that daemon: it folds the empty, unpaused log it actually sees and claims
+to that daemon: it reduces the empty, unpaused log it actually sees and claims
 the top queued ticket. **It is no better off against a daemon that is
 already running from before the reset, on this host or another sharing the
 same log.** `controlWatermark` is read once, at that daemon's own start
@@ -2302,14 +2302,14 @@ recipes and the environment files are all untouched.
   on a freshly reset machine until each one is added back by name, even though
   every project's recipe is still sitting on disk, untouched, exactly where it
   was.
-- **What was decided about a minor finding.** `finding_backlog` folds to
+- **What was decided about a minor finding.** `finding_backlog` reduces to
   nothing along with everything else, so an accept or a decline — and the
   reason given for either — is gone unless the *Before* step above noted it.
   Without that note, the next cold review raises a declined finding again,
   and a person re-decides it with nothing to go on short of restoring the
   archive dump and reading `events` back out of it, the way the Check step
   above does.
-- **What has been spent.** `spendProjection` is a fold of `RunSpent` and
+- **What has been spent.** `spendProjection` is a reducer of `RunSpent` and
   nothing else (`packages/projector/src/spend.ts:1-12`, 0110 §11), so emptying
   `events` erases every run's recorded cost — `/spend` and the bar's spend
   objects read zero for all history once this section's own *After* step
@@ -2343,7 +2343,7 @@ onto the new code:
     pnpm lingtai projection rebuild spend
 
 The rebuild prices every row at the rate in force on its own day, from the
-shipped card and the dated snapshot, so the figures match what a live fold
+shipped card and the dated snapshot, so the figures match what a live reduce
 writes.
 
 **#680 — a model that gains its first price rebuilds `spend`.** When the daily
@@ -2354,7 +2354,7 @@ daily ceiling answers *could not check* and takes no new work; a pass in flight
 keeps going. If the replay does not finish, `lingtai doctor`'s `rates:` line
 warns and names `lingtai projection rebuild spend`.
 
-### One fold per stream (#797)
+### One reduce per stream (#797)
 
 Nine tickets of this epic changed what a projection stores or how it reduces,
 and each entry below says which. They are listed in the order they landed. **If
@@ -2404,7 +2404,7 @@ row's kind reads empty rather than wrong. Rebuild `spend`.
 
 **#838 — a finding's decision is `reduceFinding`'s.** `finding_backlog` gains a
 column (`last_seq`), so `doctor` reports it as drifted. The rebuild writes every
-finding's status from the one fold. Rebuild `finding_backlog`.
+finding's status from the one reduce. Rebuild `finding_backlog`.
 
 **#834 — `task_view` takes the ticket's state: `approved` after a grant, Close
 `waiting`, `landed` only on `TicketLanded`.** `task_view` gains a column
@@ -2418,7 +2418,7 @@ Rebuild `task_view`.
 **#844 — `task_view` stores each run's state.** `task_view_run` gains a column
 (`run`), so `doctor` reports it as drifted; a stored run that does not decode
 stops the runner with the same `rebuild task_view` instruction. The card's run
-part is the run's own fold. Rebuild `task_view`.
+part is the run's own reduce. Rebuild `task_view`.
 
 **#845 — the card's note comes from the transition.** Only the rule changed:
 `doctor` is green. A repeated identical release, signoff request or failure no

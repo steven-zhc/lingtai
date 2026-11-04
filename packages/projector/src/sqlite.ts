@@ -9,18 +9,18 @@
  *
  * **A laptop with nothing installed runs this.** `node:sqlite` is in the runtime
  * this repository already requires, so there is no server, no connection string
- * and no network between a fold and the disk.
+ * and no network between a reducer and the disk.
  *
  * ## The one place the dialects meet
  *
- * A projection's `create` and `apply` are the projection's, written once, in
- * Postgres — `taskViewProjection.apply` is the same fold it has always been and
+ * A projection's `create` and `reduce` are the projection's, written once, in
+ * Postgres — `taskViewProjection.reduce` is the same reduce it has always been and
  * is not going to be forked per store. So the statements arrive here in a
  * dialect this database does not speak, and `translate` answers for the
  * difference on the way through.
  *
  * **The list of differences is closed**, and it is short because the two
- * databases agree about almost everything these folds use: `on conflict … do
+ * databases agree about almost everything these reduces use: `on conflict … do
  * update set … = excluded.…`, `case when … end`, `coalesce`, a `where` on the
  * upsert, `create index if not exists`, `drop table if exists`. What is left is
  * the nine substitutions in `rewrite` and a renumbering of the placeholders.
@@ -105,7 +105,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // -------------------------------------------------------------- dialect ----
 
-/** The casts these folds use. Everything else is left alone and will fail loudly. */
+/** The casts these reduces use. Everything else is left alone and will fail loudly. */
 const CAST = /::\s*(double\s+precision|timestamptz|timestamp|bigint|boolean|integer|numeric|jsonb|text|int)\b/gi
 
 /** `$7::timestamptz` — which parameter, and what the statement says it is. */
@@ -401,7 +401,7 @@ function toEntry(row: ProjectionRow): BacklogEntry {
  * **A busy timeout of zero, deliberately.** `node:sqlite` is synchronous, so
  * SQLite's own busy wait holds the whole process — every poll, sweep and
  * projector — while another writer has the file, and a transaction that is
- * already open and awaiting a fold would never get to commit. So this
+ * already open and awaiting a reducer would never get to commit. So this
  * connection never waits on the thread: `transact` retries on a timer instead,
  * which is exactly what `createPollingWaker` does and for the same reason.
  * A store therefore wants a connection of its own, not the log's
@@ -423,7 +423,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
   /**
    * One transaction at a time on this connection.
    *
-   * `node:sqlite` is synchronous but a fold is not: `projection.apply` awaits
+   * `node:sqlite` is synchronous but a reducer is not: `projection.reduce` awaits
    * between statements, and a second `transact` landing in that window would
    * issue `BEGIN` inside an open transaction. Serialising them is what makes
    * two runners on one store behave like two runners on two pooled Postgres
@@ -461,16 +461,16 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
   /**
    * A read, in the same queue the transactions are in.
    *
-   * One connection is one transaction, so a read issued while a fold's
+   * One connection is one transaction, so a read issued while a reducer's
    * `BEGIN IMMEDIATE` is open used to be a read *inside* that transaction: it
-   * saw rows nothing had committed, and a fold that then threw left the board
+   * saw rows nothing had committed, and a reducer that then threw left the board
    * having rendered a card that never existed. The common case was quieter and
-   * worse — `commitBatch` folds a batch in one transaction and awaits between
-   * statements, so a render landing in that window returned a half-folded row,
+   * worse — `commitBatch` reduces a batch in one transaction and awaits between
+   * statements, so a render landing in that window returned a half-reduced row,
    * the state advanced and the batch's later verdicts not yet applied.
    *
    * Postgres cannot do either, because a reader there is a second connection
-   * outside the writer's transaction — so `transact`'s promise, *a fold and
+   * outside the writer's transaction — so `transact`'s promise, *a reducer and
    * its checkpoint advance together, or neither*, is made to readers as well
    * as to writers, and sharing one store between the runner and the board is
    * the shape the interface is built for. Queueing the reads behind the writes
@@ -481,14 +481,14 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
    * because queueing that one would be waiting for a transaction that is
    * waiting for the read. It is also the one case the connection cannot serve
    * two ways at once, and it has an answer already: `ctx.query`, which is what
-   * a fold reads its own writes with. `advance`, `register` and `rewind` are
+   * a reducer reads its own writes with. `advance`, `register` and `rewind` are
    * on that side too and take the connection directly rather than this.
    */
   const read = <T>(fn: () => T): Promise<T> => {
     if (inside.getStore() !== undefined) {
       return Promise.reject(
         new Error(
-          "a read on the projection store from inside its own transaction: one connection cannot answer both, so read the fold's own writes through `ctx.query`",
+          "a read on the projection store from inside its own transaction: one connection cannot answer both, so read the reducer's own writes through `ctx.query`",
         ),
       )
     }
@@ -531,12 +531,12 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           // Inside the transaction, so the table a checkpoint needs is made by
           // whoever gets there first and by nobody twice.
           if (!ensured) db.exec(CHECKPOINTS)
-          // Named, so that a read reaching this store while the fold is open
-          // can tell *the fold itself is asking* from *somebody else is*.
+          // Named, so that a read reaching this store while the reducer is open
+          // can tell *the reducer itself is asking* from *somebody else is*.
           const result = await inside.run(Symbol('transaction'), () => fn(ctx))
           db.exec('COMMIT')
           // Latched **after** the commit, and that is the whole of it: SQLite's
-          // DDL is transactional, so a rollback — a fold that threw, or a
+          // DDL is transactional, so a rollback — a reducer that threw, or a
           // `COMMIT` that came back busy — takes the `create` with it. Setting
           // the flag beside the `exec` left a store that skipped the DDL for
           // ever and answered `no such table: checkpoints` to every later

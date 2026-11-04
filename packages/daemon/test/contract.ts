@@ -340,7 +340,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const version = asked.asked ? asked.version : 0
 
         // A second ask finds the first standing and appends nothing over it:
-        // the fold keeps the newest request, so hiding one would leave the
+        // the reducer keeps the newest request, so hiding one would leave the
         // withdrawal below lifting a request nobody withdrew.
         const again = await requestShutdownUnlessStanding('human:bob', 'me too', null, store.events)
         expect(again.asked).toBe(false)
@@ -418,7 +418,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
     })
 
     it('matches a prefix as SQL like does, case and all', async () => {
-      // SQLite's `LIKE` folds ASCII case and Postgres's does not. Left alone,
+      // SQLite's `LIKE` reduces ASCII case and Postgres's does not. Left alone,
       // the two stores would disagree about which work items a reconcile even
       // looks at — so this is the assertion that keeps `sqlite.ts`'s pragma
       // honest.

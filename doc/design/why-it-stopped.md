@@ -76,7 +76,7 @@ What made the Node diagnosis *certain* was not any one run. It was **three
 different tickets failing identically**. Lingtai diagnoses a pass at a time, so
 each of the three agents paid to rediscover the machine.
 
-This is a fold, not a prompt: *the same action, failing with the same signature,
+This is a reducer, not a prompt: *the same action, failing with the same signature,
 across items that share nothing else*. `finding_backlog` is already a
 cross-item projection ([#137](https://github.com/steven-zhc/lingtai/issues/137));
 this is the same shape one level down.
@@ -194,7 +194,7 @@ because the `so` field will exist and its quality will be visible.
 
 ```
 1  BlockDiagnosis gains `so`, filled by rules only      small, no agent spend
-2  the cross-item fold — same failure, different items  the one that stops rediscovery
+2  the cross-item reduce — same failure, different items  the one that stops rediscovery
 3  the fix agent's skill, writing into `so`             cheap, and it verifies
 4  the diagnosis probe, and the 0033 amendment it needs decide after 1–3 are visible
 ```
@@ -209,7 +209,7 @@ decision — it states what the decision would have to cover.
   measurement is steps 1–3, which will show how much is left over once rules and
   the fix agent have had their turn.
 - **Cross-ticket discussion.** 0033 left it open and this leaves it open; the
-  fold in §3 is a projection, not a conversation.
+  reduce in §3 is a projection, not a conversation.
 - **What `so` looks like when it is wrong.** A remedy that is confidently wrong
   is worse than none, and nothing here says how that is caught. It is the first
   thing step 1 should be tested against.

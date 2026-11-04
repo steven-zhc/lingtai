@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest'
 
 import { queuedCards, type ProjectQueue } from '../src/lib/board.ts'
 
-/** Enough of a project for a fold that only ever reads its name. */
+/** Enough of a project for a reducer that only ever reads its name. */
 const project = (name: string): ProjectState => ({ project: name, owner: 'steven-zhc', base: 'main' }) as ProjectState
 
 /**
@@ -59,9 +59,9 @@ function barrier(expected: number) {
 }
 
 /**
- * A project that answered, carrying only what the fold reads.
+ * A project that answered, carrying only what the reducer reads.
  *
- * `client` is on a resolved filter and is the *asking*'s, not the fold's —
+ * `client` is on a resolved filter and is the *asking*'s, not the reducer's —
  * nothing below this point looks at it. `recipe` is read now, for
  * `ticketSourceOf` (#384), so it carries just enough of one for that call to
  * answer `'github'`.
@@ -72,7 +72,7 @@ function resolvedFilter(name: string, kinds: string[]) {
     ok: true,
     kinds,
     backoffMs: 0,
-    // `restarts` among them since 0040: the fold reads it for the bar's chip,
+    // `restarts` among them since 0040: the reducer reads it for the bar's chip,
     // which names both ceilings because they multiply.
     limits: { rounds: 2, restarts: 0, turns: 150, wall: '1h', wallMs: 3_600_000 },
     plan: new Map(),
@@ -105,7 +105,7 @@ describe('the projects on a board', () => {
     expect(result.cards.map((c) => c.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
   })
 
-  it('still fold in the order the projects were given, whichever answers first', async () => {
+  it('still reduce in the order the projects were given, whichever answers first', async () => {
     const slow = new Map([['lingtai', 20]])
     const result = await queuedCards([project('lingtai'), project('nextloom-ai-admin')], async (p) => {
       await new Promise((r) => setTimeout(r, slow.get(p.project!) ?? 0))

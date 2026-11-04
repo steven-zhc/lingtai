@@ -40,7 +40,7 @@ the worktree (`#468`).
 
 `FindingAccepted`, `FindingProposed` and `FindingDeclined` are the minors a
 passing gate raised, and what a person then did with each one. `finding_backlog`
-is the projection that folds them (`#137`).
+is the projection that reduces them (`#137`).
 
 `PassRouted` is where `proposed` sent a pass and why (`#271`). It carries
 **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a
@@ -95,7 +95,7 @@ project was looked at — the issue listing, a run, the merge lane — is report
 the pass and is not a `ProjectRefused`: that project was read and worked. A pass whose refusal matches the
 one on record — same `ref`, same `codeSha`, same message with its digits taken
 out — appends nothing, so N sweeps against one broken recipe are one event. The
-decision is read off the project's own fold (`passTransition`,
+decision is read off the project's own reduce (`passTransition`,
 `packages/domain/src/project.ts`) and reads no clock
 ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The same message from another
 `codeSha` is a new refusal: that commit is what tells *this recipe is broken*
@@ -208,13 +208,13 @@ version, because before 1.0 the log is reset rather than carried forward
 stored row of either one now fails this type's own zod parse rather than
 growing this table a third row for a history the reset is about to spend.
 Refusing such a row by name, at daemon start and in `lingtai doctor`, rather
-than failing partway through a fold, is #451 and is not done yet; until it
+than failing partway through a reducer, is #451 and is not done yet; until it
 lands, a person resets the log before any daemon restarts onto this commit.
 
 **The nine `1 → 2` steps went when the log went**, on 2026-09-27 (`#247`).
 [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 said this history would
 be spent by **resetting** it rather than migrating it;
-[the-pipeline](design/the-pipeline.md)'s T5b folded the old log into
+[the-pipeline](design/the-pipeline.md)'s T5b reduced the old log into
 [013](experiments/013-the-log-before-the-third-reset.md) and the cut followed.
 A store that holds no row holds none at version 1 either, so the nine
 `SCHEMA_VER`s and the nine steps beneath them came down in one commit — which
@@ -254,7 +254,7 @@ Source: `taskViewProjection` in `packages/projector/src/task-view.ts`, wired in
 
 There were two. The `outbox` projection is gone with the outbox itself
 ([0022](decisions-archive/0022-the-seams.md)), dropped by the
-`20260904T2359_drop_outbox` migration; `task_view` is now a fold and nothing
+`20260904T2359_drop_outbox` migration; `task_view` is now a reducer and nothing
 else, with the queue cache gone the same way. **Nothing writes to it but the
 projection**, and the way to correct it is `lingtai projection rebuild
 task_view` — replay, never a repair by hand.
@@ -266,7 +266,7 @@ Source: `LABEL_STATES` in `packages/domain/src/streams.ts:61`, re-exported as
 
 `queued` · `running` · `verifying` · `waiting` · `landed`
 
-**The board shows four**: `verifying` folds into `running` (ADR 0016 §8). From
+**The board shows four**: `verifying` reduces into `running` (ADR 0016 §8). From
 an operator's seat "the agent is working" and "the build is running" are the
 same fact — the machine is busy and you are not needed. `waiting` is the lane
 the board exists for, and it stays its own.
@@ -459,7 +459,7 @@ than a budget, and 0028 leaves it undecided on purpose.
 
 **A `TicketClaimed` on `ticket-{project}-{n}`.** It says which run took the ticket
 and which `worker` — host and pid — took it for. Source:
-`claimWorkItem` in `packages/conductor/src/claim.ts`; the fold is
+`claimWorkItem` in `packages/conductor/src/claim.ts`; the reducer is
 `WorkItemLifecycle` in `packages/domain/src/work-item.ts`.
 
 | | |
@@ -478,10 +478,10 @@ could take its ticket. It excluded nobody, because two conductors pass a
 timestamp check together. [0027](decisions-archive/0027-the-lease-is-deleted.md) deleted
 it: exclusion is the constraint, liveness is the lock, and neither is a number.
 
-**Recovery is an append and never a recomputation.** A projection is a fold and
+**Recovery is an append and never a recomputation.** A projection is a reducer and
 cannot read a clock; if `running` versus `queued` depended on `now()` the same
 log would produce different tables at different moments, and `lingtai projection
-rebuild task_view` would disagree with the incremental fold. That is what forced
+rebuild task_view` would disagree with the incremental reduce. That is what forced
 the lease's expiry to be inert, and it is unchanged.
 
 ## backoff — the first rule that was written down here
@@ -916,7 +916,7 @@ bought for nothing"* — and `#248` wrote the same sentence into `action.ts`.
 **What moved was not the argument but the log.**
 [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 refuses a migration for
 the recipe file and for the log alike, so the only thing that could spend the
-history was a **reset**: [the-pipeline](design/the-pipeline.md)'s T5b folded the
+history was a **reset**: [the-pipeline](design/the-pipeline.md)'s T5b reduced the
 old log into [013](experiments/013-the-log-before-the-third-reset.md) on
 2026-09-27 and the cut followed the same day. A payload change on nine event
 types costs nothing against a store with no rows in it. So, in one commit:
@@ -928,7 +928,7 @@ types costs nothing against a store with no rows in it. So, in one commit:
 - **The payload fields** are `step` and `steps`, wherever they are written, read
   or queried — including the SQL in `queries.ts` and `sqlite.ts`, which reaches
   into the stored JSON by those names, and `finding_backlog`'s column, which
-  follows the field it folds. **A column is read by the name it was declared
+  follows the field it reduces. **A column is read by the name it was declared
   under**, which is the trap `#250` fell into from the other side: it renamed the
   read with the field over a column still declared `gate`, and every backlog
   entry came back `step: undefined` with neither `pnpm typecheck` nor `pnpm test`
@@ -1199,7 +1199,7 @@ blocker-or-major in `verdictFor`, `packages/actions/src/agent-action.ts`, which
 decides what *refuses* — beside `acceptFinding` and `declineFinding` in
 `packages/conductor/src/backlog.ts`, which is where that bar now also exists as
 `decideBacklog`, a function a recipe will hand its own value to. **Both halves
-take that value or neither does**: replace the fold's literal alone and a major
+take that value or neither does**: replace the reducer's literal alone and a major
 still fails the step, is never filed, and buys the fix round the recipe said it
 would not, which is why the refusal says so. So a recipe
 cannot yet say either of the two: each declares `at: {}`, so every step refuses
@@ -1877,12 +1877,12 @@ over `progressOf` in `apps/board/src/lib/progress.ts`, which reads the run's
 A step not reached yet is
 `pending`; one configured, recorded nothing, on an item that landed is
 `never-ran`, hatched in the fail colour — that is where "configured but did not
-run" becomes visible. It used to be a `pending` count off a second fold,
+run" becomes visible. It used to be a `pending` count off a second reduce,
 `PointView`, which could not tell the two apart (#189).
 
 It was five until 2026-09-23 — the count moved with the vocabulary and the rule
 did not, because the rule never counted. `apps/board/unit/rail.test.tsx` asserts
-ten segments in all three lanes that fold, so **an operator counting ten
+ten segments in all three lanes that reduce, so **an operator counting ten
 segments on a card is looking at correct behaviour**. One of them — `design` —
 is `skipped` on every card of a recipe that says nothing at it, because it is
 the one step with a plugin and no default. It was six until 2026-09-27, when
@@ -1897,7 +1897,7 @@ run a default where the recipe is silent, so they draw a verdict either way.
 
 `closed` comes from `EndActionsResolved`, which is how a recipe's `end` plan
 reaches a projection. The conductor reads the recipe and writes down what it
-resolved; the projection only folds. **A projection may never read a recipe** —
+resolved; the projection only reduces. **A projection may never read a recipe** —
 that division is why a rebuild produces the same rows years later even if the
 recipe has changed since.
 
@@ -2014,7 +2014,7 @@ having joined the switch without it moving.
 
 `ask` and `answer` are the one decision taken before any attempt (`#147`) — a
 `WorkItemBlocked` carrying a `Question` hold, the one variant with no `run`
-(#445), and a `WorkItemUnblocked` whose `note` the fold keeps and every later
+(#445), and a `WorkItemUnblocked` whose `note` the reducer keeps and every later
 prompt carries. The board answers too; only the CLI asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
@@ -2100,7 +2100,7 @@ because it is not `runtime.limits` and the CLI route is a deliberate choice;
 `codex_text` is incomplete.
 
 Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
-`fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding
+`fail`, `skip`. `warn` was added with `runtime: other settings in scope`: reducing
 it into `ok` hides it in a wall of green, and into `fail` makes doctor red for a
 file everybody has.
 

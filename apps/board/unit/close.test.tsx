@@ -70,7 +70,7 @@ describe('the row of moves', () => {
   it('offers it on a queued card, which is where the ones that sat were', () => {
     // #32, #115, #126 and #136 were closed on GitHub for hours and the board
     // went on listing them in Queued, because `gh issue close` appends nothing
-    // and the fold reads the log. A queued card's only move was `Run now`.
+    // and the reducer reads the log. A queued card's only move was `Run now`.
     const page = read('../src/app/page.tsx')
     // `lastIndexOf`: the string also appears in `accent()` near the top of the
     // file, where it picks a card's colour and has nothing to do with a row of

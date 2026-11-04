@@ -1,5 +1,5 @@
 /**
- * `reconcile` and `converge` select ticket streams by event type and then fold
+ * `reconcile` and `converge` select ticket streams by event type and then reduce
  * each with `reduceTicket`, which reads a claim and a continuation through
  * `claimShapeOf`. #685: both type lists name `TicketContinued`, and a
  * continuation by another worker is the claimant that is checked — in the old

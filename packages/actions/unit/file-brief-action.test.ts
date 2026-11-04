@@ -173,7 +173,7 @@ describe('reading the design back off the locator', () => {
   /**
    * **And a context nothing filled in did not finish**, which is a different
    * fact from the one above: *nobody handed this a design* and *the design step
-   * kept nothing* are two things, and folding them would make a `file-brief:`
+   * kept nothing* are two things, and reducing them would make a `file-brief:`
    * built by hand look like a step that had nothing to do.
    */
   it('does not finish where nothing handed it a design', async () => {

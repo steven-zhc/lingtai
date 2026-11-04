@@ -8,7 +8,7 @@
  */
 export interface StoppedOnTheWire {
   readonly name: string
-  /** Decimal text of the seq the projection is folded up to; null where it could not be read. */
+  /** Decimal text of the seq the projection is reduced up to; null where it could not be read. */
   readonly checkpoint: string | null
   readonly error: string
 }

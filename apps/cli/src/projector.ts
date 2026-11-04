@@ -7,7 +7,7 @@
  * command builds a runner, because two runners that read a stored state,
  * reduce it and write it back over one checkpoint race (#838, #834). A command
  * that only appends says, through `conductor-note.ts`, when no conductor is up
- * to fold it. This replaces 0022's rule that every process that appends holds
+ * to reduce it. This replaces 0022's rule that every process that appends holds
  * a projector, which held only while every write was an idempotent overwrite.
  *
  * An open projector holds a session-mode Postgres connection **and keeps the
@@ -48,7 +48,7 @@ async function defaultPredatesHold(): Promise<LogPredatesHoldError | null> {
  * minors belong on the backlog by the time the run that raised them ends, and
  * what it spent belongs on `/spend` and the card by the same moment — the
  * terminal path this file is for is the one place money would otherwise sit
- * frozen at whatever a daemon last folded, while every other figure on the
+ * frozen at whatever a daemon last reduced, while every other figure on the
  * same board was current (`#498`'s review).
  *
  * A second runner rather than a second projection inside the first, because

@@ -27,12 +27,12 @@ import { repoRoot } from './docs.ts'
  *   invent a plausible board, which is the one failure that would make every
  *   other claim on the page worthless.
  *
- * The fold is here rather than in the script because it is the part with a
+ * The reducer is here rather than in the script because it is the part with a
  * property worth testing: what a withheld card keeps, and that a lane which
  * publishes five cards still counts all forty.
  */
 
-/** The four lanes, as the board has them. Not five: `verifying` folds into `running`. */
+/** The four lanes, as the board has them. Not five: `verifying` reduces into `running`. */
 export type Lane = 'queued' | 'running' | 'waiting' | 'landed'
 
 export interface SnapshotCard {
@@ -186,7 +186,7 @@ export interface MoneyBill {
 
 const EMPTY_BILL: MoneyBill = { reportedCents: 0, reportedRuns: 0, unknown: 0 }
 
-/** Every row, folded into one bill. `costUsd === null` is unknown, never free (0110 §4). */
+/** Every row, reduced into one bill. `costUsd === null` is unknown, never free (0110 §4). */
 export function billOf(rows: readonly SpendRow[]): MoneyBill {
   let reportedCents = 0
   let reportedRuns = 0
@@ -205,7 +205,7 @@ export function billOf(rows: readonly SpendRow[]): MoneyBill {
 /**
  * One bill per ticket, for every ticket named.
  *
- * A ticket with no rows at all is not an empty bill — `billOf([])` folds to
+ * A ticket with no rows at all is not an empty bill — `billOf([])` reduces to
  * nothing, which reads as nothing spent — it is `attempts` runs unknown
  * (0110 §7): this reader never took that fallback at all, and a pre-`RunSpent`
  * ticket's cost pill simply vanished (`#498`'s review). Counted the way
@@ -258,7 +258,7 @@ export interface TakeOptions {
   capturedAt: Date
   /** The commit the log was read at, or null outside a repository. */
   commit: string | null
-  /** This board's `spend`, by ticket — `scripts/snapshot.ts`'s `readSpend`, folded once by `spendByTicket`. */
+  /** This board's `spend`, by ticket — `scripts/snapshot.ts`'s `readSpend`, reduced once by `spendByTicket`. */
   spend: ReadonlyMap<string, MoneyBill>
 }
 
@@ -417,7 +417,7 @@ export function hasMoney(bill: MoneyBill): boolean {
 
 /**
  * How many cards the board's Landed lane holds — `landed` and `closed` both
- * fold into it (`LANE_OF`) — or `null` when there is nothing true to print:
+ * reduce into it (`LANE_OF`) — or `null` when there is nothing true to print:
  * no snapshot (every CI deploy), no such lane, or a lane of `0`, which a log
  * fresh from a reset would otherwise print as a boast of nothing. The whole
  * lane's `count`, never the length of the handful of cards drawn.

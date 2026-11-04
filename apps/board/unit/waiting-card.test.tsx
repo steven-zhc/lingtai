@@ -4,7 +4,7 @@
  * `actions.ts`, `decide.tsx`, `rail.tsx` and `standing.tsx` underneath it.
  *
  * Each wait is built with `aWait`/`aClaim` (`@lingtai/domain/test/events`),
- * folded through the real `task_view` projection on an in-memory sqlite store
+ * reduced through the real `task_view` projection on an in-memory sqlite store
  * — the same path `task-view-rebuild.test.ts` runs, unit under 0060 §1 — read
  * back with `store.tasks`, turned into a `BoardCard` with `toCard`
  * (`lib/board.ts`) and rendered with `<Card>` exactly as the page does. What
@@ -97,12 +97,12 @@ function buttonsOf(html: string): string[] {
   return [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')
 }
 
-async function foldOne(fx: Fixture, options: { row?: Partial<TaskCard> } = {}): Promise<string> {
+async function renderCard(fx: Fixture, options: { row?: Partial<TaskCard> } = {}): Promise<string> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.apply(fx.events, ctx))
+    await store.transact((ctx) => taskViewProjection.reduce(fx.events, ctx))
     const rows = await store.tasks({ retentionDays: 2 })
     const row = rows.find((r) => r.taskId === fx.taskId)
     if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
@@ -131,7 +131,7 @@ describe('the waiting card is pinned for every WaitReason (#482)', () => {
 
   for (const fx of FIXTURES) {
     it(`${fx.tag} — ${fx.name}`, async () => {
-      const html = await foldOne(fx)
+      const html = await renderCard(fx)
       // A hold for approval says one line of its own and no sentence (#764).
       expect(questionOf(html)).toBe(fx.name === 'signoffrequired' ? null : fx.expectedQuestion)
       expect(html).toContain('class="id"')
@@ -159,7 +159,7 @@ describe('a card held for approval (#764)', () => {
   })
 
   it('reads WAITING FOR YOU, the short name and the age, and nothing else', async () => {
-    const html = await foldOne(fx, { row: { updatedAt: new Date('2026-09-08T04:24:00.000Z') } })
+    const html = await renderCard(fx, { row: { updatedAt: new Date('2026-09-08T04:24:00.000Z') } })
     expect(html).toContain('<span class="waiting-held-badge">WAITING FOR YOU</span>')
     expect(html).toContain('ready to land · 6m')
     expect(html).not.toContain('class="snow')
@@ -179,7 +179,7 @@ describe('the cause line', () => {
   }
 
   it('distinguishes the current wait cause from its summary', async () => {
-    const html = await foldOne(fx, { row: { triage: { started: null, result: advised } } })
+    const html = await renderCard(fx, { row: { triage: { started: null, result: advised } } })
     expect(html).toContain(
       '<span class="waiting-cause-label cause-chip cause-chip--approach">The approach is wrong</span>',
     )
@@ -191,7 +191,7 @@ describe('the cause line', () => {
   })
 
   it('uses the wait reason when the copied note is stale', async () => {
-    const html = await foldOne(fx, {
+    const html = await renderCard(fx, {
       row: { note: 'old detail' },
     })
     expect(questionOf(html)).toBe(fx.expectedQuestion)
@@ -199,7 +199,7 @@ describe('the cause line', () => {
   })
 
   it('uses the wait first line when triage failed', async () => {
-    const html = await foldOne(fx, {
+    const html = await renderCard(fx, {
       row: { triage: { started: null, result: { _tag: 'TriageFailed', why: 'raw failure' } } },
     })
     expect(questionOf(html)).toBe(fx.expectedQuestion)
@@ -208,7 +208,7 @@ describe('the cause line', () => {
   })
 
   it('still renders the reason when the copied note is null', async () => {
-    const html = await foldOne(fx, { row: { note: null } })
+    const html = await renderCard(fx, { row: { note: null } })
     expect(questionOf(html)).toBe(fx.expectedQuestion)
   })
 })
@@ -221,7 +221,7 @@ describe('a small conflict’s card (#652)', () => {
     try {
       const store = createSqliteProjectionStore(db)
       await store.transact((ctx) => taskViewProjection.create(ctx))
-      await store.transact((ctx) => taskViewProjection.apply(fx.events, ctx))
+      await store.transact((ctx) => taskViewProjection.reduce(fx.events, ctx))
       const row = (await store.tasks({ retentionDays: 2 })).find((r) => r.taskId === fx.taskId)!
       const triage = {
         started: null,

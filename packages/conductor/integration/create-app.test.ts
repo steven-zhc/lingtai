@@ -300,8 +300,8 @@ describe('a return from a tab the operator forgot', () => {
    * previous return *succeeded* therefore waved the second tab through: a
    * second App was minted twenty seconds later, the screen said *Created — app
    * 222*, and app 111 was left on GitHub with a private key GitHub will never
-   * hand over again and nothing anywhere naming it. `offerCreation` folds the
-   * same field into `mintedHere` to withhold the button; this is that fold
+   * hand over again and nothing anywhere naming it. `offerCreation` reduces the
+   * same field into `mintedHere` to withhold the button; this is that reduce
    * where the key would be fetched.
    */
   it('refuses the second tab when the first minted an App and every write failed', async () => {

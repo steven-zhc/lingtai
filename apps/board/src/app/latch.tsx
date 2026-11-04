@@ -4,7 +4,7 @@
  * A disclosure that opens itself when something starts, and stays where you put it.
  *
  * **Opening is a signal; closing is not** (#132). The board and the task page
- * each re-render on every append (`live.tsx`), so anything derived from the fold
+ * each re-render on every append (`live.tsx`), so anything derived from the reducer
  * is a value that changes under a reader's hands — and `<details open={running}>` is the whole of the
  * bug that makes: React writes the attribute whenever the prop changes, so the
  * attempt that opened itself when its run started *collapses under somebody

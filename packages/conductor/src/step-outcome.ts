@@ -242,7 +242,7 @@ function designResultOf(outcome: ActionOutcomeEntry): ResultOf<'design'> {
     case 'did-not-finish':
       if (outcome.because === NEEDS_INPUT) {
         // `draft` is always `null` here: the drafter's own words before it
-        // asked are folded into `evidence`'s one string
+        // asked are reduced into `evidence`'s one string
         // (`agent-action.ts:994-998`), and nothing on `ActionResult` carries
         // them apart from the question.
         return { _tag: 'Asked', question: outcome.evidence, draft: null }

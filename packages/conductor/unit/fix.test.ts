@@ -849,7 +849,7 @@ describe('the headline says what stopped the pass', () => {
   /**
    * **And the name the log keeps, which outlives all three sentences.**
    *
-   * `ApprovalRequested.action` is the key the projection folds a gate row under
+   * `ApprovalRequested.action` is the key the projection reduces a gate row under
    * and the word the board's history and `lingtai status` print beside the
    * point — `proposed · disagreement`. It was that word on every findings-shaped
    * block whatever ended the pass, so `#187`'s rate limit is a row named

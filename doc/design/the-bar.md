@@ -133,7 +133,7 @@ Where the five that left went:
 |---|---|
 | `$488.52` · `$81.83 answering` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
 | `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen. **And `/recipe/<project>`, which is the view the row above named and which nothing built for a fortnight** (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
-| `current` + `daemon N behind` | one dot (`health.tsx`, folded by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
+| `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
 `paused` and `draining` are still chips and still amber-free, because both are
 already absent when there is nothing to say — which is the property that makes a

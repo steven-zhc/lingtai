@@ -2,35 +2,35 @@
  * `spend` — one row per `RunSpent` ([0110](../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
  * §11, `#497`).
  *
- * **It is a fold and nothing else, and it reads `RunSpent` and no other spend
+ * **It is a reducer and nothing else, and it reads `RunSpent` and no other spend
  * source.** `RunFinished`, `DiscussionAnswered` and
  * `DiscussionHeld` are the old places a cost briefly lived or still lives for
  * another reason — `task_view` and `finding_backlog` must keep not reading
- * `RunSpent` (0110 §13), and this fold must keep not reading them. `TriageAgent`
+ * `RunSpent` (0110 §13), and this reduce must keep not reading them. `TriageAgent`
  * held one too, until 0118 removed it; it stays named here because it is still
  * an exported type a later edit could reach for.
  *
  * **An event never carries a price; a projection may store an estimate, kept
  * apart from what was reported** (0110 §5, #679). `cost_usd` is written exactly
  * as the runtime reported it, `null` staying `null` rather than becoming a free
- * lunch. Where it is null the fold prices the run's usage at the rate in force
+ * lunch. Where it is null the reducer prices the run's usage at the rate in force
  * on the run's own `at` — the shipped card, then the snapshot's dated rows
  * (`estimateRow`) — and stores `estimated_usd` and `estimate_fetched` beside it,
  * or null where nothing can price it, which stays *unknown* and never `0`. The
  * snapshot is read through a port and never fetched, and no clock is read: the
- * same log folds to the same figures. A reported figure is never repriced.
+ * same log reduces to the same figures. A reported figure is never repriced.
  * Readers sum the stored columns and none prices.
  *
  * ## `kind`
  *
- * The ticket's kind as its run's claim carried it when the row was folded
+ * The ticket's kind as its run's claim carried it when the row was reduced
  * (0123 §3), and not updated afterwards. A continuation written as a second
  * claim carries none and never clears it; a triage or discussion row takes the
- * ticket's `TicketState.kind` as of that `RunSpent`, folded by domain's
- * `applyTicket` (D4) and stored in `spend_ticket`.
+ * ticket's `TicketState.kind` as of that `RunSpent`, reduced by domain's
+ * `reduceTicketEvent` (D4) and stored in `spend_ticket`.
  *
  * **`spend_ticket` is a stored `TicketState`, and that has a price.** A change
- * to `applyTicket`'s result shape makes `decodeTicket` refuse the stored rows
+ * to `reduceTicketEvent`'s result shape makes `decodeTicket` refuse the stored rows
  * until the table is rebuilt, so every such change carries `lingtai projection
  * rebuild spend` in its runbook. It is the price of 0123 §6 — a projection
  * never reads another projection's table — which is why this cannot borrow
@@ -135,7 +135,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
         ticket    text not null,
         kind      text
       )`)
-    // The ticket's `TicketState`, folded by `applyTicket`: a triage or discussion row's kind.
+    // The ticket's `TicketState`, reduced by `reduceTicketEvent`: a triage or discussion row's kind.
     await ctx.query(`
       create table if not exists spend_ticket (
         ticket text primary key,
@@ -147,11 +147,11 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
     await ctx.query('drop table if exists spend')
     await ctx.query('drop table if exists spend_stream')
     await ctx.query('drop table if exists spend_ticket')
-    // The table this projection kept before the ticket fold; a rebuild removes it.
+    // The table this projection kept before the ticket reduce; a rebuild removes it.
     await ctx.query('drop table if exists spend_kind')
   },
 
-  async apply(events, ctx) {
+  async reduce(events, ctx) {
     let snapshot: readonly RateRow[] | null = null
     for (const event of events) {
       const seq = event.seq.toString()
@@ -167,7 +167,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           break
         }
 
-        // `TicketContinued` is a continuation by type (domain `claims.ts`) and folds
+        // `TicketContinued` is a continuation by type (domain `claims.ts`) and reduces
         // as the old form does: a claim with a null kind. The stream insert is
         // idempotent per run. The ticket's own kind is not decided here: the claim
         // reaches it through the ticket reduce after the switch.
@@ -319,11 +319,11 @@ export interface SpendRow {
   durationMs: number
   costUsd: number | null
   usage: Usage
-  /** The fold's estimate where `costUsd` is null and the run was priceable; null is unknown, never 0. */
+  /** The reducer's estimate where `costUsd` is null and the run was priceable; null is unknown, never 0. */
   estimatedUsd: number | null
   /** Whether the snapshot priced any of `estimatedUsd`; null exactly when `estimatedUsd` is. */
   estimateFetched: boolean | null
-  /** The ticket's kind as its run's claim carried it when folded; null where unclassified. */
+  /** The ticket's kind as its run's claim carried it when reduced; null where unclassified. */
   kind: string | null
   /** The wait a person's grant resolved, when this row paid for a granted round; null otherwise. */
   grant: string | null

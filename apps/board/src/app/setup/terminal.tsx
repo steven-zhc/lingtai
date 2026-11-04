@@ -13,7 +13,7 @@
  * `setup/` would bring it back.
  *
  * `gh` is handed down for the same reason `Projects` is handed `app`: the page
- * reads the env, this stays a fold over its props. On a `gh` machine there is
+ * reads the env, this stays a reducer over its props. On a `gh` machine there is
  * no App, so neither the App's picker sentence nor `requested` applies.
  *
  * `requested` is the one piece of `searchParams` this still answers:

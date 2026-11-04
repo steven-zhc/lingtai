@@ -28,7 +28,7 @@ import { diffFact, RECORD_TABS, Record, TaskBody, UnpushedBanner } from '../src/
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
 import {
-  foldRun,
+  presentRunEvents,
   standingOf,
   totalsOf,
   type DiscussionView,
@@ -106,7 +106,7 @@ const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}):
 
 /** `ticket-lingtai-147` on 2026-09-14, as the ticket quotes it. */
 function blocked(): TaskDetail {
-  const run = foldRun(claim, 1, [
+  const run = presentRunEvents(claim, 1, [
     e(RUN, 'RunStarted', { baseSha: BASE }),
     e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
     e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
@@ -178,7 +178,7 @@ function blocked(): TaskDetail {
 }
 
 function running(): TaskDetail {
-  const run = foldRun(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
+  const run = presentRunEvents(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
   return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
 }
 
@@ -569,7 +569,7 @@ describe('a running task', () => {
  * The rail, on the page about the one run (#189).
  *
  * The card said which point a run was at, how long it had been there and what
- * bounded it; the page listed the five points off a fold with no `running` and
+ * bounded it; the page listed the five points off a reducer with no `running` and
  * no `never-ran`, inside a closed row, and lit nothing. These assert the reading
  * is here, from the same `Rail`, and that the record's segments can say the one
  * state the old list could not.
@@ -601,7 +601,7 @@ describe('the rail on the task page', () => {
   )
 
   function building(plan?: StepPlan): TaskDetail {
-    const run = foldRun(
+    const run = presentRunEvents(
       claim,
       1,
       [
@@ -754,7 +754,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
-    const landed = task(own, [foldRun(claim, 1, events, { over: true })])
+    const landed = task(own, [presentRunEvents(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
     expect(why(page(landed))).not.toContain('class="seq"')
   })
@@ -774,7 +774,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
     // `over` is what `loadTask` passes for the attempt that landed.
-    const landed = task(own, [foldRun(claim, 1, events, { over: true })])
+    const landed = task(own, [presentRunEvents(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
     const html = record(page(landed))
     expect(html).toContain('class="seg s-never-ran"')
@@ -783,7 +783,7 @@ describe('the rail on the task page', () => {
 
     // And the same stream on an item that did not land is only not reached yet:
     // `over` is the whole of the difference.
-    const midway = record(page(task(own.slice(0, 1), [foldRun(claim, 1, events)])))
+    const midway = record(page(task(own.slice(0, 1), [presentRunEvents(claim, 1, events)])))
     expect(midway).not.toContain('s-never-ran')
     expect(midway).toContain('class="seg s-pending"')
   })
@@ -792,7 +792,7 @@ describe('the rail on the task page', () => {
 describe('the record', () => {
   /** Always the same five, in the same order, whatever the state (0118 §2, #417). */
   it('is five tabs in a fixed order, the same five in every state, open on history', () => {
-    const run = foldRun(claim, 1, [
+    const run = presentRunEvents(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
       e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
@@ -930,17 +930,17 @@ describe('the Diff tab’s fact (#729)', () => {
   })
 
   it('says the count, lines and branch in the attempt’s panel', () => {
-    const folded = foldRun(claim, 1, [
+    const reduced = presentRunEvents(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProducedDiff', { branch: 'agent/2', headSha: HEAD, files: 2, insertions: 4, deletions: 2 }),
     ])
-    const html = renderToStaticMarkup(<Record task={{ ...task([], []), runs: [folded] }} />)
+    const html = renderToStaticMarkup(<Record task={{ ...task([], []), runs: [reduced] }} />)
     expect(html).toContain('2 files, +4 −2, on agent/2')
     expect(html).not.toContain('This attempt touched no files.')
   })
 })
 
-describe('a queued page folds the plan into the rail (#781)', () => {
+describe('a queued page reduces the plan into the rail (#781)', () => {
   const queuedOf = (plan: PlanView | null): TaskDetail =>
     task([], [], {
       queued: {

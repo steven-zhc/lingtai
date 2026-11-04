@@ -1,5 +1,5 @@
 /**
- * The control fold, and the one thing in it that ends by itself.
+ * The control reduce, and the one thing in it that ends by itself.
  *
  * `ConductorPaused` carrying an `until` is
  * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5 — the
@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { CONTROL_FOLD_TYPES, applyControl, emptyControl, evaluateControl, reduceControl } from '../src/control.ts'
+import { CONTROL_FOLD_TYPES, reduceControlEvent, emptyControl, evaluateControl, reduceControl } from '../src/control.ts'
 import type { Envelope } from '../src/envelope.ts'
 import { Actor } from '../src/envelope.ts'
 import { type EventType, SCHEMA_VER } from '../src/events.ts'
@@ -125,7 +125,7 @@ describe('a pause that ends by itself', () => {
  * **The one pause a daemon obeys whatever its watermark says** (`#405`).
  *
  * `readControl(store, since)` (`packages/daemon/src/control.ts`) is the reader
- * that cares about this field; `reduceControl` only has to fold it correctly
+ * that cares about this field; `reduceControl` only has to reduce it correctly
  * and clear it with everything else a resume clears.
  */
 describe('holdsAcrossStarts', () => {
@@ -224,7 +224,7 @@ describe('the discussions somebody asked for', () => {
 
   /**
    * Whether a question has been *answered* is a fact on `chat-<id>`, so this
-   * fold deliberately does not know it. Filtering here would put the second
+   * reduce deliberately does not know it. Filtering here would put the second
    * half of a state machine on the control stream, which is the thing
    * `RunRequested` refuses to do.
    */
@@ -294,9 +294,9 @@ describe('withdrawing one shutdown request', () => {
 })
 
 /**
- * The handoff is gone (#167, 0048). It was folded for a daemon the supervisor
- * started to claim, and since #159 that daemon folds nothing older than itself,
- * so it never did. What is on the log from before still has to fold.
+ * The handoff is gone (#167, 0048). It was reduced for a daemon the supervisor
+ * started to claim, and since #159 that daemon reduces nothing older than itself,
+ * so it never did. What is on the log from before still has to reduce.
  */
 describe('a withdrawal written with a handoff, before #167', () => {
   const asked = {
@@ -351,7 +351,7 @@ describe('a withdrawal written with a handoff, before #167', () => {
  * that stops it going quiet again.
  */
 describe('ContinueRequested (#465)', () => {
-  it('folds into continuing, oldest first', () => {
+  it('reduces into continuing, oldest first', () => {
     const state = reduceControl(
       log([
         {
@@ -393,8 +393,8 @@ describe('who may append', () => {
 })
 
 describe('CONTROL_FOLD_TYPES (#796)', () => {
-  // One payload that satisfies every case in the fold, so that each handled
-  // type changes the state — a type missing from the set would otherwise fold
+  // One payload that satisfies every case in the reducer, so that each handled
+  // type changes the state — a type missing from the set would otherwise reduce
   // to the same state either way and the test would pass anyway.
   const universal = {
     by: 'someone',
@@ -411,14 +411,14 @@ describe('CONTROL_FOLD_TYPES (#796)', () => {
   const base = { type: 'ConductorShutdownRequested', data: { by: 'a', reason: 'drain' } }
   const catalogue = Object.keys(SCHEMA_VER) as EventType[]
 
-  it.each(catalogue)('%s: folding only the set gives the state folding everything does', (type) => {
+  it.each(catalogue)('%s: reducing only the set gives the state reducing everything does', (type) => {
     const all = log([base, { type, data: universal }])
     const only = all.filter((e) => (CONTROL_FOLD_TYPES as readonly string[]).includes(e.type))
     expect(reduceControl(only, NOW)).toEqual(reduceControl(all, NOW))
   })
 })
 
-describe('the control fold in two halves (#836)', () => {
+describe('the control reduce in two halves (#836)', () => {
   const cells = lateHistories.control
 
   it('D8: a person’s resume of the ceiling’s pause waives it until that pause’s midnight', () => {
@@ -449,8 +449,8 @@ describe('the control fold in two halves (#836)', () => {
     expect(reduceControl(cells.ceilingLapsedThenResumed, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
   })
 
-  it('0124 §2: applyControl reads no clock, and evaluateControl lapses a timed pause', () => {
-    const applied = histories.control.pausedUntilLifted.reduce(applyControl, emptyControl)
+  it('0124 §2: reduceControlEvent reads no clock, and evaluateControl lapses a timed pause', () => {
+    const applied = histories.control.pausedUntilLifted.reduce(reduceControlEvent, emptyControl)
     expect(applied.paused).toBe(true)
     const evaluated = evaluateControl(applied, NOW_FIXTURE)
     expect(evaluated.paused).toBe(false)
@@ -459,7 +459,7 @@ describe('the control fold in two halves (#836)', () => {
     expect(evaluateControl(evaluated, NOW_FIXTURE)).toBe(evaluated)
   })
 
-  it('0124 §2: folding does not write into emptyControl', () => {
+  it('0124 §2: reducing does not write into emptyControl', () => {
     reduceControl(histories.control.requestsQueued, NOW_FIXTURE)
     expect(emptyControl.requested).toEqual([])
     expect(emptyControl.continuing).toEqual([])

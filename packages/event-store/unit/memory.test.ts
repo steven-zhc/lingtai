@@ -51,8 +51,8 @@ describe('in memory: what is not in the contract', () => {
   })
 
   it('takes a clock, so a test need not wait for one', async () => {
-    // The same rule the projector follows (0027): a fold that reads a clock is
-    // not a fold. Here it is so that `at` can be asserted on exactly.
+    // The same rule the projector follows (0027): a reducer that reads a clock is
+    // not a reducer. Here it is so that `at` can be asserted on exactly.
     const at = new Date('2026-09-14T12:00:00.000Z')
     const s = createMemoryEventStore({ now: () => at })
 

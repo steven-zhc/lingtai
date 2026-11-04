@@ -74,13 +74,13 @@ export const contractProjection: Projection = {
     await ctx.query(`drop table if exists ${CONTRACT_TABLE}`)
   },
 
-  async apply(events, ctx) {
+  async reduce(events, ctx) {
     for (const event of events) {
       if (event.type !== 'RunTouchedFile') continue
       const d = event.data as { path: string }
       // Keyed on `seq`, which is what makes a replay and a second projector
       // land on the same table: `do nothing` is the cheap idempotence the
-      // interface asks every fold for.
+      // interface asks every reduce for.
       await ctx.query(
         `insert into ${CONTRACT_TABLE} (seq, run_id, path) values ($1::bigint, $2, $3)
          on conflict (seq) do nothing`,
@@ -107,7 +107,7 @@ export interface ProjectionFixture {
   store: ProjectionStore
   /** A second store over the same tables — what "two clients" means. */
   another(): Promise<ProjectionStore>
-  /** The log the fold reads. Whatever log the fixture's store shares a database with. */
+  /** The log the reducer reads. Whatever log the fixture's store shares a database with. */
   events: EventStore
   /**
    * A stream id nothing else in the log uses, handed back after whatever
@@ -177,7 +177,7 @@ const runAwaitingInput = (prompt: string) => ({
 
 /**
  * `RunFailed{kind, detail}` — still in `EVENTS`, still appended by the
- * conductor and still folded into the card's note (`task-view.ts`'s
+ * conductor and still reduced into the card's note (`task-view.ts`'s
  * `runNoteOf`), so built through `aRunFailure` rather than the wire shape
  * directly (#480).
  */
@@ -234,7 +234,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
   const made = async (f: ProjectionFixture, projection: Projection, events: readonly Envelope[]): Promise<void> => {
     await f.store.transact((ctx) => projection.create(ctx))
-    await f.store.transact((ctx) => projection.apply(events, ctx))
+    await f.store.transact((ctx) => projection.reduce(events, ctx))
   }
 
   describe(`${name}: the projection store contract`, () => {
@@ -340,14 +340,14 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
 
     // --------------------------------------------- apply a batch atomically ----
 
-    it('commits a fold and its checkpoint together', async () => {
+    it('commits a reducer and its checkpoint together', async () => {
       const f = await make()
       const run = f.stream('run', 'atomic')
       try {
         const written = await f.events.append(run, 0, [touched('a.ts'), touched('b.ts')])
         await f.store.transact(async (ctx) => {
           await contractProjection.create(ctx)
-          await contractProjection.apply(written, ctx)
+          await contractProjection.reduce(written, ctx)
           await f.store.advance(ctx, CONTRACT_TABLE, written[1]!.seq)
         })
 
@@ -358,7 +358,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
-    it('leaves neither the rows nor the checkpoint behind when the fold throws', async () => {
+    it('leaves neither the rows nor the checkpoint behind when the reducer throws', async () => {
       // The whole correctness argument in one assertion. A crash between the
       // writes and the checkpoint either loses a batch or applies it twice; the
       // only way out is that there is no "between".
@@ -368,16 +368,16 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const first = await f.events.append(run, 0, [touched('kept.ts')])
         await f.store.transact(async (ctx) => {
           await contractProjection.create(ctx)
-          await contractProjection.apply(first, ctx)
+          await contractProjection.reduce(first, ctx)
           await f.store.advance(ctx, CONTRACT_TABLE, first[0]!.seq)
         })
 
         const second = await f.events.append(run, 1, [touched('lost.ts')])
         await expect(
           f.store.transact(async (ctx) => {
-            await contractProjection.apply(second, ctx)
+            await contractProjection.reduce(second, ctx)
             await f.store.advance(ctx, CONTRACT_TABLE, second[0]!.seq)
-            throw new Error('the fold changed its mind')
+            throw new Error('the reducer changed its mind')
           }),
         ).rejects.toThrow('changed its mind')
 
@@ -388,11 +388,11 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
-    it('shows a reader nothing of a fold that has not committed', async () => {
+    it('shows a reader nothing of a reducer that has not committed', async () => {
       // **The atomicity is promised to readers as well as to writers**, and
       // that half was the easy one to lose: sharing one store between the
       // runner (`into:`) and the board is the shape this interface is built
-      // for, and a render landing inside an open fold must see all of the
+      // for, and a render landing inside an open reduce must see all of the
       // batch or none of it. The read is issued once the rows are written and
       // nothing is committed — the window a 40-event `commitBatch` holds open
       // while it awaits between statements — and awaited after the rollback.
@@ -403,25 +403,25 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const written = await f.events.append(task, 0, [claimed(run, 'a card that never commits')])
         await f.store.transact((ctx) => taskViewProjection.create(ctx))
 
-        let folded = () => {}
+        let reduced = () => {}
         const applied = new Promise<void>((r) => {
-          folded = r
+          reduced = r
         })
         let release = () => {}
         const held = new Promise<void>((r) => {
           release = r
         })
-        const folding = f.store.transact(async (ctx) => {
-          await taskViewProjection.apply(written, ctx)
-          folded()
+        const reducing = f.store.transact(async (ctx) => {
+          await taskViewProjection.reduce(written, ctx)
+          reduced()
           await held
-          throw new Error('the fold changed its mind')
+          throw new Error('the reducer changed its mind')
         })
 
         await applied
         const reading = f.store.tasks({ project: f.project, retentionDays: 3650 })
         release()
-        await expect(folding).rejects.toThrow('changed its mind')
+        await expect(reducing).rejects.toThrow('changed its mind')
 
         expect(await reading).toEqual([])
         expect(await f.store.tasks({ project: f.project, retentionDays: 3650 })).toEqual([])
@@ -598,7 +598,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
      * Only `WorkItemUnblocked` may answer a question `WorkItemBlocked` put on
      * an item, and only a person's answer may replace it. A build that let
      * `DispatchRefused` write `state: 'queued'` and clear `waiting`, `asked`,
-     * `needs` and `diagnosis` here put `task_view` and the domain fold
+     * `needs` and `diagnosis` here put `task_view` and the domain reduce
      * (`packages/domain/src/ticket.ts`, which `WorkItemBlocked` alone
      * moves to `blocked` and only `WorkItemUnblocked` moves off it) in
      * disagreement forever — `selectRunnable` would admit the row, the claim
@@ -792,7 +792,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
-    it('reads an empty board rather than failing, when nothing has been folded', async () => {
+    it('reads an empty board rather than failing, when nothing has been reduced', async () => {
       const f = await make()
       try {
         expect(await f.store.tasks({ project: `${f.project}-nobody`, retentionDays: 3650 })).toEqual([])
@@ -808,7 +808,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
     it('converges when two projectors follow one log', async () => {
       // 0022: every process that appends holds a projector, so two of them on
       // one log is the ordinary case and not an edge. What makes it safe is the
-      // fold being idempotent and the checkpoint being transactional — neither
+      // reduce being idempotent and the checkpoint being transactional — neither
       // of which is a property of one database, which is why it is asserted
       // here and not in one implementation's tests.
       const f = await make()
@@ -819,7 +819,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         // The table first, once. Two `create table if not exists` racing is a
         // question about the *catalogue*, which is the one database-specific
         // thing on this path and not what converging means — what is under test
-        // is two folds and two checkpoints over one log.
+        // is two reduces and two checkpoints over one log.
         await f.store.transact(async (ctx) => {
           await contractProjection.create(ctx)
           await f.store.register(ctx, CONTRACT_TABLE)

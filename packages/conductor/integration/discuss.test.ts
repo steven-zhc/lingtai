@@ -3,7 +3,7 @@
  *
  * **`chat-<id>` has to be a stream the store will accept.** `StreamId` is a
  * regex in `@lingtai/domain` and `agent:chat-<uuid>` has to satisfy `Actor`;
- * both are enforced on append and neither is visible to a fold test. A third
+ * both are enforced on append and neither is visible to a reducer test. A third
  * kind of agent that could not write anything down would fail on its first
  * real question and nowhere before it.
  *

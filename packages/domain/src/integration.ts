@@ -69,7 +69,7 @@ export const emptyIntegration: IntegrationState = {
   lastSeq: null,
 }
 
-export function applyIntegration(state: IntegrationState, event: Envelope): IntegrationState {
+export function reduceIntegrationEvent(state: IntegrationState, event: Envelope): IntegrationState {
   const at = { version: event.version, lastSeq: event.seq }
 
   switch (event.type) {
@@ -122,7 +122,7 @@ export function applyIntegration(state: IntegrationState, event: Envelope): Inte
 }
 
 export function reduceIntegration(events: readonly Envelope[]): IntegrationState {
-  return events.reduce(applyIntegration, emptyIntegration)
+  return events.reduce(reduceIntegrationEvent, emptyIntegration)
 }
 
 /**
@@ -137,12 +137,12 @@ export function reduceIntegration(events: readonly Envelope[]): IntegrationState
  * terminal puts `lifecycle` back to `idle` while B is still merging — so this
  * says false with a merge in flight. While both are in flight `lifecycle` names
  * whichever attempted *last*, so B's `ticketId` and `headSha` have overwritten
- * A's. One `lifecycle` cannot hold two, which is why the fold does not try.
+ * A's. One `lifecycle` cannot hold two, which is why the reducer does not try.
  *
  * What is left is what a single-writer lane made this mean and a chip could
  * still say honestly: something attempted here and nothing has said how it
  * ended. Counting what is genuinely open needs the attempts paired to their
- * terminals by `ticketId`, which is a different fold, and no caller has
+ * terminals by `ticketId`, which is a different reduce, and no caller has
  * needed it.
  */
 export function laneIsBusy(state: IntegrationState): boolean {

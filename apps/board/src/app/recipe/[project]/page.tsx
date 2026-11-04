@@ -42,7 +42,7 @@ import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe 
 export const dynamic = 'force-dynamic'
 
 /**
- * The page, as a fold over its answer.
+ * The page, as a reducer over its answer.
  *
  * Exported and pure so the claims that matter — every row names a source, a
  * recipe that will not parse names the file and the fault, nothing here writes

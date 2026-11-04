@@ -317,7 +317,7 @@ export async function editBodyAndRequeueCard(input: {
  * The third move, and the only one that ends a ticket without work landing.
  *
  * **It appends; it does not delete** (`#151`). `gh issue close` by hand writes
- * nothing to the log, so the fold went on calling the item `backlog` and the
+ * nothing to the log, so the reducer went on calling the item `backlog` and the
  * board went on offering it — five items sat in Queued that GitHub had closed
  * hours earlier. This writes `TicketClosed`, and the queue passes over the
  * item *because the log says it is over*, not because a label was scraped.

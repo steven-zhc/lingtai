@@ -371,7 +371,7 @@ export async function projectFilters(
 
 /**
  * `RecipeInvalidError` puts one problem per line, which reads well in a thrown
- * message and badly in a column. Folded to one line here, keeping every problem.
+ * message and badly in a column. Reduced to one line here, keeping every problem.
  */
 function oneLine(message: string): string {
   return message.replace(/\s*\n\s*/g, ' ').trim()

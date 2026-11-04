@@ -38,7 +38,7 @@
  *   `pass-steps.ts` turns it into an ordinary `next: 'waiting'` and the pass
  *   rests exactly as an unrouted `findings` judgement would — `stopped ===
  *   null`, `Routed{when: 'findings'}` (`hold-of.ts`'s case 4), with the
- *   restarts-spent sentence folded into `why` rather than a tag of its own.
+ *   restarts-spent sentence reduced into `why` rather than a tag of its own.
  * - **An `agent:` check declared ahead of the merge lane is `CheckRed`, not
  *   `MergeRefused`** (row 9): `directionOf` answers `'red'` for every refused
  *   step but `merge`, and for `merge` only `conflict`/`verify-failed` get a
@@ -128,7 +128,7 @@ async function allEvents(store: ReturnType<typeof memoryStore>): Promise<Envelop
  * **The last `WaitStarted` on the slice is the same `WaitReason` `waitsOf`
  * reads back** (#502) — there is no hold translation left to cross-check:
  * `WaitStarted.reason` is `@lingtai/domain/wait`'s own `WaitReason`, stored
- * verbatim, so `waitsOf`'s fold and the stored payload are the same object by
+ * verbatim, so `waitsOf`'s reduce and the stored payload are the same object by
  * construction. What is still worth pinning is that `stepOutcomesOf(all)`
  * does not throw on the slice every row produces.
  */
@@ -460,13 +460,13 @@ runtime:
 
   /**
    * The same pass, run twice on the same store with fresh ports each time —
-   * `folded.restarts` is read off the work-item stream (`conduct.ts:3351`), so
+   * `reduced.restarts` is read off the work-item stream (`conduct.ts:3351`), so
    * the second `once()` sees the first's restart without any event being
    * hand-seeded. With `restarts: 1` already spent, the judge's second `claim`
    * answer is not one of the steps on offer (`"waiting"`, `"implement"`), so
    * `askTheAgent` holds rather than requeues — **not a ceiling tag of its
    * own**, but the same `Routed{when: "findings"}` an unrouted judgement gets,
-   * with the restarts-spent sentence folded into `why` (see the file header).
+   * with the restarts-spent sentence reduced into `why` (see the file header).
    */
   it('5. restarts spent: the second arrival holds, not requeues', async () => {
     const RESTARTABLE = `
@@ -1479,7 +1479,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
     // #478: this row's own wire sentence (`agent-action.ts:580`) names the
-    // real kind, and `stepOutcomesOf` must read it back rather than folding
+    // real kind, and `stepOutcomesOf` must read it back rather than reducing
     // to its own `crash` default — this is the one row here whose events
     // come from that real sentence rather than a fixture's own literal.
     const review = stepOutcomesOf(all).find((o) => o.step === 'review')
@@ -1688,7 +1688,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(typesOf(theRun(store))).toEqual([])
     // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
     // so its own three events — a real `pass-*` stream, the file header's own
-    // point — fold to none at all.
+    // point — reduce to none at all.
     expect(stepOutcomesOf(theRun(store) ?? [])).toEqual([])
   })
 
@@ -1981,7 +1981,7 @@ runtime:
     expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.FIX_SHA })
 
     // The same pass, run again on the same store with fresh ports:
-    // `folded.restarts` already carries the first, and a second WIP on a
+    // `reduced.restarts` already carries the first, and a second WIP on a
     // fresh worktree spends the second.
     const did2: string[] = []
     const again = restartWithAKeptWip(did2, store)

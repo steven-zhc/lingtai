@@ -22,7 +22,7 @@ For the #393-style advised outcome, open
 five review findings, two spent fix rounds, a saved published head, and a
 discussion exchange. Compare
 `/dev/waiting/fixable-lines-no-head/task` at the same widths: the same advice
-has no published head, so continuing saved work is refused. Both are folded
+has no published head, so continuing saved work is refused. Both are reduced
 from local events; neither checks a remote ref or makes a live request.
 
 Capture the card at a **440 px viewport** and the task page at **1200 px** to

@@ -11,3 +11,6 @@
 
 # style: the TypeScript is oxfmt's output and nothing else changed
 b56044f3ae432e94d2c1fd224c74fb6fde1fd661
+
+# refactor: the one word is reduce — a scripted rename of identifiers and words (#848)
+fab50bb14828cbb6b667762054a02614153968e7

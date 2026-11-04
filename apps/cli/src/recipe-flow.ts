@@ -7,7 +7,7 @@
  * `runLocalBranch` and `add-github.ts`'s `askBeforeGithubAdd` — so a Ctrl+C
  * keeps what was answered (#392 decision 1). An absent file is created once:
  * the first four sections' answers are collected rather than written as they
- * are given, folded in with the caller's own `seeds`, and handed to
+ * are given, reduced in with the caller's own `seeds`, and handed to
  * `setRecipe` in a single call, with a comment above every block (`SAID`,
  * below) — #395's rule that a new file is written once, by whoever collects
  * every first-run answer.
@@ -123,7 +123,7 @@ export interface RecipeAt {
   /**
    * The caller's own first-run answers — `repo.base`/`repo.remote`/`env.plantAt`
    * for a local project, `repo.base`/`env.plantAt` for a GitHub one. Written as
-   * their own `setRecipe` call when the file already exists; folded into the
+   * their own `setRecipe` call when the file already exists; reduced into the
    * one creation write, alongside this function's own four sections' answers,
    * when it does not (#432).
    */

@@ -86,7 +86,7 @@ beforeAll(async () => {
   const item5 = makeStream(wi(5))
   await seed(wi(5), [...aClaim(item5, runId(5)), ...aRelease(item5, runId(5))])
 
-  // 6 — blocked, then released with no unblock in between. Today's fold reads
+  // 6 — blocked, then released with no unblock in between. Today's reducer reads
   // this as `backlog` (stopped): `TicketReleased` sets `backlog` whatever the
   // lifecycle was, so a block nothing ever answered is not a wait. A tally
   // moved onto `waitsOf` would read it as `held` instead — `waitsOf` only

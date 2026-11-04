@@ -36,7 +36,7 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  *
  * What removed it was not a better argument but an empty store. 0061 §7 spends
  * that history by resetting the log rather than migrating it; `the-pipeline`'s
- * T5b folded the old one into
+ * T5b reduced the old one into
  * [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and T5
  * cut it. A log with no rows holds none at version 1, so the nine versions in
  * `SCHEMA_VER` and the nine steps beneath them came down in one commit rather

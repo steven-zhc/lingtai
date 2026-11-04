@@ -2,7 +2,7 @@
  * A `TicketState`, stored and read back (0124 §1, #833).
  *
  * **The first stored copy of the ticket reduce**, so a change to what
- * `applyTicket` returns makes stored rows stale. `decodeTicket` therefore
+ * `reduceTicketEvent` returns makes stored rows stale. `decodeTicket` therefore
  * refuses a value of another shape, naming the field and the rebuild, and never
  * fills a gap from `emptyTicket`: a gap filled quietly is a projection that
  * disagrees with a replay and says nothing.
@@ -122,7 +122,7 @@ export class TicketCodecError extends Error {
   override readonly name = 'TicketCodecError'
 }
 
-/** 0124 §1's codec for this fold. `bigint` as a string, `Date` as ISO, absent and `null` kept apart. */
+/** 0124 §1's codec for this reduce. `bigint` as a string, `Date` as ISO, absent and `null` kept apart. */
 export function encodeTicket(state: TicketState): string {
   return JSON.stringify(state, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))
 }

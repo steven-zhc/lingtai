@@ -1,5 +1,5 @@
 /**
- * One discussion, folded: the `chat-<id>` stream's turns and how many of them
+ * One discussion, reduced: the `chat-<id>` stream's turns and how many of them
  * have an answer (D7, D14).
  *
  * Every reader — the board's panel, the conductor's brief, the CLI's loop —
@@ -28,12 +28,12 @@ export interface ChatState {
 export const emptyChat: ChatState = { attempt: null, turns: [], answered: 0 }
 
 /**
- * One event folded into the state. Pure, reads no clock, never throws (D14).
+ * One event reduced into the state. Pure, reads no clock, never throws (D14).
  *
  * An answer belongs to the latest unanswered ask before it; with none, it
  * counts for nothing.
  */
-export function applyChat(state: ChatState, e: Envelope): ChatState {
+export function reduceChatEvent(state: ChatState, e: Envelope): ChatState {
   switch (e.type) {
     case 'DiscussionAsked': {
       const d = e.data as PayloadOf<'DiscussionAsked'>
@@ -72,5 +72,5 @@ export function applyChat(state: ChatState, e: Envelope): ChatState {
 }
 
 export function reduceChat(events: readonly Envelope[]): ChatState {
-  return events.reduce(applyChat, emptyChat)
+  return events.reduce(reduceChatEvent, emptyChat)
 }

@@ -3,7 +3,7 @@
  * gives it, and a `ticket` filled through `spend.ts`'s own link table.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
- * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
+ * the real reduce path, skipping WAL, touching no file and reading no `$HOME`,
  * so it is unit under 0060 §1. Follows `backlog-rebuild.test.ts`'s own shape:
  * the stream is built once, at module scope, off the module-global seq
  * counter `@lingtai/domain/test/support` keeps.
@@ -121,12 +121,12 @@ function rowFor(rows: readonly ProjectionRow[], seq: bigint): ProjectionRow | un
   return rows.find((r) => BigInt(r.seq as number) === seq)
 }
 
-async function fold(evts: readonly Envelope[]): Promise<{ spend: ProjectionRow[]; links: ProjectionRow[] }> {
+async function reduce(evts: readonly Envelope[]): Promise<{ spend: ProjectionRow[]; links: ProjectionRow[] }> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => spendProjection.create(ctx))
-    await store.transact((ctx) => spendProjection.apply(evts, ctx))
+    await store.transact((ctx) => spendProjection.reduce(evts, ctx))
     return await store.transact(async (ctx) => ({
       spend: await ctx.query('select * from spend order by seq'),
       links: await ctx.query('select * from spend_stream order by stream_id'),
@@ -136,13 +136,13 @@ async function fold(evts: readonly Envelope[]): Promise<{ spend: ProjectionRow[]
   }
 }
 
-async function foldInTwoBatches(mid: number): Promise<{ spend: ProjectionRow[]; links: ProjectionRow[] }> {
+async function projectInTwoBatches(mid: number): Promise<{ spend: ProjectionRow[]; links: ProjectionRow[] }> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => spendProjection.create(ctx))
-    await store.transact((ctx) => spendProjection.apply(events.slice(0, mid), ctx))
-    await store.transact((ctx) => spendProjection.apply(events.slice(mid), ctx))
+    await store.transact((ctx) => spendProjection.reduce(events.slice(0, mid), ctx))
+    await store.transact((ctx) => spendProjection.reduce(events.slice(mid), ctx))
     return await store.transact(async (ctx) => ({
       spend: await ctx.query('select * from spend order by seq'),
       links: await ctx.query('select * from spend_stream order by stream_id'),
@@ -152,9 +152,9 @@ async function foldInTwoBatches(mid: number): Promise<{ spend: ProjectionRow[]; 
   }
 }
 
-describe('spend folds one row per RunSpent, filling ticket through its own link table', () => {
+describe('spend reduces one row per RunSpent, filling ticket through its own link table', () => {
   it('fills ticket and project for an Action spent on a run stream with a RunStarted', async () => {
-    const { spend } = await fold(events)
+    const { spend } = await reduce(events)
     const row = rowFor(spend, actionSpent.seq)!
     expect(row).toMatchObject({
       stream_id: runAction.runId,
@@ -180,7 +180,7 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   })
 
   it('fills ticket for a Judge spent on the same run stream, with no step/action/round', async () => {
-    const { spend } = await fold(events)
+    const { spend } = await reduce(events)
     const row = rowFor(spend, judgeSpent.seq)!
     expect(row).toMatchObject({
       ticket: wi(1),
@@ -193,14 +193,14 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   })
 
   it('fills ticket for a Triage spent on the work item stream itself, with no link row needed', async () => {
-    const { spend, links } = await fold(events)
+    const { spend, links } = await reduce(events)
     const row = rowFor(spend, triageSpent.seq)!
     expect(row).toMatchObject({ stream_id: wi(2), ticket: wi(2), project: PROJECT, pass: null, purpose: 'Triage' })
     expect(links.find((l) => l.stream_id === wi(2))).toBeUndefined()
   })
 
   it('fills ticket for a Discussion spent through DiscussionRequested on ctl-conductor', async () => {
-    const { spend, links } = await fold(events)
+    const { spend, links } = await reduce(events)
     const row = rowFor(spend, discussionSpent.seq)!
     expect(row).toMatchObject({
       stream_id: chatStream('chat-pin-1'),
@@ -213,7 +213,7 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   })
 
   it('fills ticket through TicketClaimed when admit refused before any RunStarted was appended', async () => {
-    const { spend, links } = await fold(events)
+    const { spend, links } = await reduce(events)
     const row = rowFor(spend, adminRefusedJudgeSpent.seq)!
     expect(row).toMatchObject({
       stream_id: refusedRunId,
@@ -226,36 +226,36 @@ describe('spend folds one row per RunSpent, filling ticket through its own link 
   })
 
   it('keeps a RunSpent row whose run stream has no RunStarted, with ticket and project null', async () => {
-    const { spend } = await fold(events)
+    const { spend } = await reduce(events)
     const row = rowFor(spend, orphanSpent.seq)!
     expect(row).toMatchObject({ stream_id: 'pass-pin-orphan', ticket: null, project: null, pass: 'pass-pin-orphan' })
   })
 
   it('leaves cost_usd null rather than defaulting it to zero', async () => {
-    const { spend } = await fold(events)
+    const { spend } = await reduce(events)
     const row = rowFor(spend, nullCostSpent.seq)!
     expect(row.cost_usd).toBeNull()
   })
 
   it('writes one row per RunSpent and no more', async () => {
-    const { spend } = await fold(events)
+    const { spend } = await reduce(events)
     expect(spend).toHaveLength(7)
   })
 
-  it('folds in two batches split around the first RunStarted the same as one batch', async () => {
-    const whole = await fold(events)
-    const split = await foldInTwoBatches(afterActionRunStarted)
+  it('reduces in two batches split around the first RunStarted the same as one batch', async () => {
+    const whole = await reduce(events)
+    const split = await projectInTwoBatches(afterActionRunStarted)
     expect(split).toEqual(whole)
   })
 })
 
-describe('store.spend reads the folded table, filtered and ordered the way readSpend wants', () => {
+describe('store.spend reads the reduced table, filtered and ordered the way readSpend wants', () => {
   it('reads every row, oldest first, with ticket, pass and purpose filled from the links', async () => {
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
       await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.apply(events, ctx))
+      await store.transact((ctx) => spendProjection.reduce(events, ctx))
 
       const rows = await store.spend({})
       expect(rows.map((r) => r.seq)).toEqual([...rows].sort((a, b) => Number(a.seq) - Number(b.seq)).map((r) => r.seq))
@@ -288,7 +288,7 @@ describe('store.spend reads the folded table, filtered and ordered the way readS
     const store = createSqliteProjectionStore(db)
     try {
       await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.apply(events, ctx))
+      await store.transact((ctx) => spendProjection.reduce(events, ctx))
 
       const rows = await store.spend({ ticket: wi(1) })
       expect(rows.map((r) => r.seq).sort()).toEqual([actionSpent.seq.toString(), judgeSpent.seq.toString()].sort())
@@ -302,7 +302,7 @@ describe('store.spend reads the folded table, filtered and ordered the way readS
     const store = createSqliteProjectionStore(db)
     try {
       await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.apply(events, ctx))
+      await store.transact((ctx) => spendProjection.reduce(events, ctx))
 
       const rows = await store.spend({ ticket: [wi(1), wi(2)] })
       expect(rows.map((r) => r.ticket).sort()).toEqual([wi(1), wi(1), wi(2)].sort())
@@ -316,7 +316,7 @@ describe('store.spend reads the folded table, filtered and ordered the way readS
     const store = createSqliteProjectionStore(db)
     try {
       await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.apply(events, ctx))
+      await store.transact((ctx) => spendProjection.reduce(events, ctx))
 
       const rows = await store.spend({})
       expect(rows.find((r) => r.seq === nullCostSpent.seq.toString())?.costUsd).toBeNull()
@@ -349,7 +349,7 @@ describe('store.spend reads the grant a round was paid for with', () => {
     const store = createSqliteProjectionStore(db)
     try {
       await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.apply(stream, ctx))
+      await store.transact((ctx) => spendProjection.reduce(stream, ctx))
       const rows = await store.spend({})
       const by = (purpose: string, round: number | null) =>
         rows.find((r) => r.purpose === purpose && r.round === round)!

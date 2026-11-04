@@ -362,7 +362,7 @@ describe('writeSection', () => {
     expect(issue.body).toContain('the answer')
   })
 
-  it('matches a CRLF text against its own CRLF-folded reflection on the read-back', async () => {
+  it('matches a CRLF text against its own CRLF-reduced reflection on the read-back', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, ISSUE)
     const tickets = memoryTickets()

@@ -67,7 +67,7 @@ import { agentBranch } from './branches.ts'
  *
  * **Excludes the signoff this approval is itself answering** (#502). Since
  * `StepEnded` carries every action's own result, a `signoff` still asking for
- * approval folds onto `run.steps` as `verdict: 'asked'` too (`stepStateOf`'s
+ * approval reduces onto `run.steps` as `verdict: 'asked'` too (`stepStateOf`'s
  * `signoff` case, `run.ts`) — the same tag a design agent's own clarifying
  * question gets, because neither is a judgement of the diff. But the point
  * this function exists to answer is *what else* is unjudged, and the signoff

@@ -8,7 +8,7 @@
  * memory. The one-project state is the one most installs sit in and the one
  * with nothing at all today, so it is asserted first.
  *
- * Two claims a fold cannot catch, which is why they are markup: **every state
+ * Two claims a reducer cannot catch, which is why they are markup: **every state
  * can reach the wizard**, and **the target follows the App** rather than
  * whether anything is registered — `filters.length === 0` was the proxy for
  * that and the two come apart in both directions.

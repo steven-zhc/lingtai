@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * each waited for a reload. Every comment about that pane said *every append
  * re-renders the board*, and it was true of the board.
  *
- * The route is called with a stubbed fold rather than rendered: `Follow` needs
+ * The route is called with a stubbed reduce rather than rendered: `Follow` needs
  * Next's app router to render at all, and what is being asserted is which
  * elements the route returns, not what they paint.
  */
@@ -37,7 +37,7 @@ describe('the task route', () => {
 
     const follow = mounted.find((el) => el.type === Follow) as ReactElement<{ children: ReactNode }>
     expect(follow).toBeDefined()
-    // The page it keeps current is the fold this request read, and it is inside
+    // The page it keeps current is the reducer this request read, and it is inside
     // the subscription, so what the stream says reaches the bar and the pane.
     const inside = Children.toArray(follow.props.children).filter(isValidElement)
     const body = inside.find((el) => el.type === TaskBody) as ReactElement<{ task: TaskDetail }>

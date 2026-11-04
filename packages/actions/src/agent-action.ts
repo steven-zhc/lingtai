@@ -530,14 +530,14 @@ export function parseFindings(text: string | null): ReadAnswer {
 /**
  * Blocker or major refuses. A minor is worth knowing and not worth stopping for.
  *
- * **This is one half of the bar, and a fold is the other** (`#237`). What
+ * **This is one half of the bar, and a reducer is the other** (`#237`). What
  * refuses here is exactly what `backlogProjection`
  * (`packages/projector/src/backlog.ts`) does *not* file, and the two spell the
  * same `minor` in two packages that cannot see each other. `decideBacklog` in
  * `packages/conductor/src/backlog.ts` is that one comparison as a function, and
  * when a step reads the `backlog:` plugin **both** of these have to be handed
- * the recipe's value: wire the fold alone and a `major` still fails the action
- * here, `StepFailed` is still emitted, the fold never sees it, and a recipe
+ * the recipe's value: wire the reducer alone and a `major` still fails the action
+ * here, `StepFailed` is still emitted, the reducer never sees it, and a recipe
  * that said a major costs nothing has bought a fix round.
  *
  * The ladder is `SEVERITIES` and the bar is a position in it, so a severity
@@ -1229,7 +1229,7 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,
-        // `context.again` is the pass's own fold over its visits (`sentBackTo`),
+        // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
         // and it is null on every way through — which is every pass but one a
         // judge sent back here.
         prompt: buildDesignPrompt(spec, issue, context.again ?? null, deps.designAsks ?? 0),

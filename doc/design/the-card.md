@@ -19,7 +19,7 @@ the width the column actually gives a card.
 `#79` gave a running card its run's elapsed rather than `updatedAt`, because
 *the last time anything was appended* labelled `running 12s` would say a run
 eight minutes in had just started. `#84` separated what answering a refusal
-costs from what the work costs, because answering is default-on and folding it
+costs from what the work costs, because answering is default-on and reducing it
 in makes an invisible bill. `0039 §3` renamed that chip from *repair* to
 *answering*, because the column holds every round a pass bought and only one of
 them was ever a repair. `#113` made the age absent rather than invented on a
@@ -87,15 +87,15 @@ defined in neither:
 |---|---|---|
 | the board, a Running or Waiting card | `Rail` — the segments, the ten names, the one sentence | `laneProgress`, cut by `railCandidates` |
 | the board, a Landed row drawn open | `Segs`, unlabelled — scanned for the hatch | the same |
-| the task page, rank 2 of a **running** item | `Rail`, live — which step, the action, its elapsed and its bound | `loadTask`, the run in flight folded with the recipe's plan |
-| the task page, under every attempt in the record | `Segs`, labelled, nothing lit | `foldRun`, with `over` only on the attempt that landed |
+| the task page, rank 2 of a **running** item | `Rail`, live — which step, the action, its elapsed and its bound | `loadTask`, the run in flight reduced with the recipe's plan |
+| the task page, under every attempt in the record | `Segs`, labelled, nothing lit | `presentRunEvents`, with `over` only on the attempt that landed |
 
 It was the board's alone for a day. The task page listed the steps off
-`task.ts`'s own `PointView` — a second fold over the same events, with no
+`task.ts`'s own `PointView` — a second reduce over the same events, with no
 `running` and no `never-ran` — so it lit nothing and printed `N pending` for a
 step that had been configured and never ran, while quoting 0016 §4 beside it.
 `PointView` is gone rather than kept beside `RunProgress`: once the rail was on
-the page nothing read it that the other fold did not serve better, and two folds
+the page nothing read it that the other reduce did not serve better, and two reduces
 over one stream is how the two surfaces came to disagree. A third surface
 imports `rail.tsx` and reads `foldProgress`; it does not grow a list.
 
@@ -133,7 +133,7 @@ action's agent crashed and the item is now a person's — it is run once, 0057
 session id and so running nothing. To a reader scanning a row they are one mark — *a step that was
 reached and judged nothing* — and a fifth colour would be asking the bar to
 carry a distinction only a sentence can. The distinction survives where it is
-acted on: two events on the log, two verdicts in the fold, two different things
+acted on: two events on the log, two verdicts in the reducer, two different things
 for an operator to do.
 
 **`asked` is the one that did buy a colour, and the argument is that sentence used
@@ -155,7 +155,7 @@ false one is worse than none. All three halves of it:
 
 | | |
 |---|---|
-| the plan named actions here | and **`StepsResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything: a fold with no `StepsResolved` to read accuses nothing |
+| the plan named actions here | and **`StepsResolved` is the plan**, never the recipe being read now — a stream without one is reduced against a recipe the run never saw, which cannot accuse it of skipping anything: a reducer with no `StepsResolved` to read accuses nothing |
 | the run recorded none | no request, no verdict, no approval, no waiver |
 | **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later steps recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. `WorkItemLanded` is the anchor and nothing looser is |
 
@@ -165,7 +165,7 @@ it is decided and where a test holds it.
 
 **Every step but `end`**, and doctor makes the same exclusion in as many
 words: `end`'s record is `EndActionsResolved` on the work item's stream, which
-this fold does not read. A silent `end` here is a question the run's stream
+this reduce does not read. A silent `end` here is a question the run's stream
 cannot answer rather than a step that did not run. It read *four and not five*
 before `#227` and the exclusion is still exactly one name — a step with nothing
 declared at it never reaches this rule, because its plan is empty and `skipped`
@@ -232,7 +232,7 @@ at a step that cannot have one.
 
 The fourth is `nothing running`, and it is the one the run's own stream cannot
 name. *In flight between two steps* and *stopped, by something that is not on
-this stream* fold identically — no phase, no refusal — so **the lane settles
+this stream* reduce identically — no phase, no refusal — so **the lane settles
 which**, exactly as it settles the elapsed pill. A pass the merge lane refused
 is that card: `IntegrationRefused` goes to the integration lane's stream, the
 board never reads it, and the rail above the sentence is a run that passed every
@@ -244,7 +244,7 @@ says a person is being waited on, and that is a fact about the column rather
 than about the stream. A bought round
 appends `FixRequested`, runs an agent against the findings and appends
 `FixApplied` — and no `RunStarted`, because a round is a step inside a run. With
-`rounds: 3` that is the ordinary path here, so a fold that saw no phase in it
+`rounds: 3` that is the ordinary path here, so a reducer that saw no phase in it
 put `proposed:build refused` under a hover saying a person was being waited on, on a card
 that was spending money at the time. The round is a phase: `fixing round 2 of 3`,
 under the wall clock `RunStarted` recorded, which is the one the fixer is
@@ -262,7 +262,7 @@ go with it and not `passed` alone: *failed*, *waived* and *approved* are the
 same fact at the same two granularities, and keeping three of the four would
 have left a reader deciding which list to believe.
 
-They stay, unchanged, on a card with **no** rail: a lane that does not fold, a
+They stay, unchanged, on a card with **no** rail: a lane that does not reduce, a
 run whose stream would not read, a Landed row the lane keeps collapsed. That is
 the rule in one sentence — *the counters are the fallback, not the reading* —
 and it is written where they are rendered.
@@ -295,7 +295,7 @@ column of its own says why it has one — *45 items and growing* — so it is cu
 puts what to do next. Landed grows without bound and has no read that fetches
 many runs at once, so it is cut to the `LANDED_OPEN` rows the lane draws open —
 and to *those* rows, `runId` filtered after the slice and not before, or a
-ticket closed before any run was claimed pulls the fold down into the collapsed
+ticket closed before any run was claimed pulls the reducer down into the collapsed
 `older` disclosure. Everything past either cut keeps its counters.
 
 Which makes `railCandidates` pure and separate from the read: the cut is the

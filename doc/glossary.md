@@ -48,8 +48,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
   board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
   Code: `reduceRunEvent(state, event)` reduces one event and `reduceRun(events)`
-  a whole stream from the start, and likewise for every stream (the one-event
-  step is still named `applyRun`, `applyTicket`, … until it is renamed). Say
+  a whole stream from the start, and likewise for every stream. Say
   *reduce* for the act and **reducer** for the rule (the run reducer); the older
   words *fold* and *apply* mean the same thing.
 - **State** (状态) — what reducing every event of one stream gives. A state is
@@ -104,7 +103,7 @@ a ticket and its attempts, or a ticket and its discussions, to change in one wri
 | aggregate type | a kind of stream: ticket, attempt, discussion, merge lane, project, control |
 | aggregate | one stream (`ticket-lingtai-829`, `pass-…`) |
 | aggregate state | `TicketState`, `RunState` (to be the attempt state), … |
-| apply / when | the reducer (`reduceTicketEvent` once renamed) |
+| apply / when | the reducer (`reduceTicketEvent`) |
 | command handler | the conductor, the CLI or the board: read the state, decide, `append(stream, expectedVersion, events)` |
 | consistency boundary | one stream's version: a write is atomic within one stream and nowhere else |
 | reference to another aggregate | an id on an event (`TicketClaimed.runId`, `RunStarted.ticketId`, `DiscussionHeld.chatId`) |

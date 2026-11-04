@@ -150,7 +150,7 @@ describe('followApproval', () => {
     expect((await followApproval(target, a.w)).detail).toMatch(/^stopped waiting/)
   })
 
-  it('held again names the branch from the ticket fold, not an empty one', async () => {
+  it('held again names the branch from the ticket reduce, not an empty one', async () => {
     const h = await world()
     await store_append(h, [
       item('TicketDiscovered', {

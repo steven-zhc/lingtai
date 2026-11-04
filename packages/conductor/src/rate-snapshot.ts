@@ -79,7 +79,7 @@ export interface RatePorts {
   note: (note: FetchNote) => void
   now: () => Date
   /**
-   * Re-folds the projections that store estimates, after the snapshot is
+   * Re-reduces the projections that store estimates, after the snapshot is
    * written (#680). Resolves to a short outcome for the note; may throw.
    */
   rebuild?: (priced: string[]) => Promise<string>
@@ -149,7 +149,7 @@ async function run(ports: RatePorts): Promise<void> {
     const before = ports.read()
     const merged = mergeSnapshot(before, rows)
     if (merged !== null) ports.write(merged)
-    // After the write: replay reads the snapshot file at fold time.
+    // After the write: replay reads the snapshot file at reduce time.
     const priced = merged === null ? [] : newlyPriced(before, merged)
     let rebuilt: string | undefined
     if (priced.length > 0 && ports.rebuild !== undefined) {

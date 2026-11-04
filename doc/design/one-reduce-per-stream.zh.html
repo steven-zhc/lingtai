@@ -105,7 +105,7 @@ footer { color: var(--muted); font-size: .88rem; }
   <dl>
     <dt>event / 事件</dt><dd><code>events</code> 表里的一行，只追加、不修改。日志是唯一的事实来源。</dd>
     <dt>stream / 流</dt><dd>关于同一个主题的那一串事件，按顺序排列。从 id 的前缀能看出它是什么主题。主题有意分开：一张票、对它的每次 attempt、关于它的每场讨论是三条 stream，靠事件里带的 id 互相引用（<code>TicketClaimed.runId</code>、<code>RunStarted.ticketId</code>、<code>DiscussionHeld.chatId</code>），不合成一条。</dd>
-    <dt>reduce / reducer</dt><dd>reduce 是动作，reducer 是这条规则本身（the run reducer），结果叫 state。reducer 拿到一条 stream 的当前 state 和下一个事件，返回之后的 state。每种 stream 只有一条这样的规则。代码里 <code>reduceRunEvent(state, event)</code> 处理一个事件，<code>reduceRun(events)</code> 从头 reduce 整条 stream。旧名字 fold 和 apply 说的是同一件事，以后统一叫 reduce。一个事件那一步现在还叫 <code>applyRun</code>/<code>applyTicket</code>，最后由改名票 #848 统一改掉。</dd>
+    <dt>reduce / reducer</dt><dd>reduce 是动作，reducer 是这条规则本身（the run reducer），结果叫 state。reducer 拿到一条 stream 的当前 state 和下一个事件，返回之后的 state。每种 stream 只有一条这样的规则。代码里 <code>reduceRunEvent(state, event)</code> 处理一个事件，<code>reduceRun(events)</code> 从头 reduce 整条 stream。旧名字 reduce 和 apply 说的是同一件事，以后统一叫 reduce。一个事件那一步现在还叫 <code>reduceRunEvent</code>/<code>reduceTicketEvent</code>，最后由改名票 #848 统一改掉。</dd>
     <dt>state / 状态</dt><dd>把一条 stream 的全部事件 reduce 完得到的结果。一个 state 只描述一条 stream；需要两条 stream 才能回答的问题，属于 projection 或调用方自己做的 join。</dd>
     <dt>projection / 投影</dt><dd>按 <code>seq</code> 顺序读整个日志建出来的表，用来回答跨很多 stream 的问题：<code>task_view</code>（看板和队列）、<code>ticket_report</code>、<code>spend</code>、<code>finding_backlog</code>。一行需要某条 stream 的 state 时，就把这份 state 存在行里，每来一个新事件就用 domain 的同一条规则 reduce 进去。投影出错只能用 <code>lingtai projection rebuild</code> 重放修正。</dd>
     <dt>codec</dt><dd>把 state 编码后存进行里、读出来再解码。哪个投影第一个存某种 state，这种 state 的 codec 就跟着那张票落地（ADR 0124 §1）。形状不对的 state 会按名字报错，并提示要做哪次 rebuild。ticket 的 codec 在 #833，run 的 codec 在 #844。</dd>
@@ -225,7 +225,7 @@ footer { color: var(--muted); font-size: .88rem; }
   <ul>
     <li><b>#846 收尾票</b>：提交一份剩余事件分支的白名单。每条按文件、函数、事件类型、次数登记，并写明类别（join / reaction / select）和理由。测试会让不在名单上的分支失败，也会让名单里已经不存在的条目失败。<code>runSubject</code> 和 <code>groupHistory</code> 改成读 <code>RunState.ticketId</code>；D1–D16 每条决策都要有对应的命名测试。</li>
     <li><b>#847 文档票</b>：改正 reference 和 operating guide 里已经不对的句子，每次 rebuild 写一条升级说明。已经定稿的文案不动。</li>
-    <li><b>#848 改名票</b>：<code>applyX</code> → <code>reduceXEvent</code>；投影接口 <code>Projection.apply</code> → <code>reduce</code>；<code>foldRun</code> → <code>presentRunEvents</code>，<code>foldChat</code> → <code>presentChat</code> 等；verdict 的 <code>current</code> → <code>stale</code>（取反）；注释和文档里的 fold 都改成 reduce。脚本改名的那个 commit 加进 <code>.git-blame-ignore-revs</code>，手工修改另起一个 commit。排在最后。</li>
+    <li><b>#848 改名票</b>：<code>applyX</code> → <code>reduceXEvent</code>；投影接口 <code>Projection.apply</code> → <code>reduce</code>；<code>foldRun</code> → <code>presentRunEvents</code>，<code>foldChat</code> → <code>presentChat</code> 等；verdict 的 <code>current</code> → <code>stale</code>（取反）；注释和文档里的 reduce 都改成 reduce。脚本改名的那个 commit 加进 <code>.git-blame-ignore-revs</code>，手工修改另起一个 commit。排在最后。</li>
     <li><b>attempt 改名票（#849–#858）</b>：排在 #848 之后，一张接一张：#849 domain（<code>RunState</code> → <code>AttemptState</code>、<code>reduceRun</code> → <code>reduceAttempt</code>）；#850 conductor（<code>runPass</code> → <code>runAttempt</code>，主循环的一圈叫 turn）；#851 board、CLI、site 的名字；#852/#853 用户看得到的文字（hero 和 slogan 不动）；#854 文件改名加跳转（<code>the-attempt.html</code>、<code>one-reduce-per-stream.md</code>）；#855–#858 文档、ADR 正文和设计文档。只改声明的名字和文件名，事件名、payload 字段、<code>--json</code> 键、投影的列都不改，所以不需要 rebuild。</li>
     <li><b>snapshot</b>：0124 的缓存，放在 0.12 之后。</li>
   </ul>

@@ -1,5 +1,5 @@
 /**
- * What `task_view`, the board and every other reader of a wait folded before
+ * What `task_view`, the board and every other reader of a wait reduced before
  * 0118's `WaitReason` existed — rebuilt from the `WaitReason` directly now
  * that `Hold` is gone (#502, 0120 phase 2).
  *
@@ -174,7 +174,7 @@ export function baseRedText(because: { command: string; base: string; baseSha: s
 }
 
 /**
- * A line for `because` (0120 §3's `EscalationBecause`) to fold into an
+ * A line for `because` (0120 §3's `EscalationBecause`) to reduce into an
  * escalated wait's `why` — `''` where the router has nothing to add beyond
  * the proposal itself.
  */
@@ -313,7 +313,7 @@ function escalatedColumns(
 }
 
 /**
- * The sentence, `needs` and `diagnosis` a fold wrote before 0118, read off
+ * The sentence, `needs` and `diagnosis` a reducer wrote before 0118, read off
  * the `WaitReason` a `WaitStarted` carries. `pass` is the three facts that
  * live on the pass rather than on the wait — `branch`/`base` open a
  * `ProposedEscalated`'s own composed sentence, and `findings` rides on every

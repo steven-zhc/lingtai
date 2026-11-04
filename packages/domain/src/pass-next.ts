@@ -101,7 +101,7 @@ export type PassNext = z.infer<typeof PassNext>
 
 /**
  * Rounds spent this pass, restarts spent on the work item (0120 §4), and the
- * base merges the system made this pass (#593), and the conflict rounds (#653) — absent is none. Folded from
+ * base merges the system made this pass (#593), and the conflict rounds (#653) — absent is none. Reduced from
  * events, never parsed.
  */
 export type Spent = { rounds: number; restarts: number; baseMerges?: number; conflictRounds?: number }

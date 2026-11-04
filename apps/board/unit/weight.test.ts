@@ -153,7 +153,7 @@ describe('what the board says it has cost', () => {
 
   /**
    * Apart from the work, for the reason the card keeps it apart: a repair is
-   * default-on and spends an agent without being asked again, so folding it in
+   * default-on and spends an agent without being asked again, so reducing it in
    * would make it an invisible bill (#84).
    */
   it("keeps repair out of the work's figure and still shows it", () => {
@@ -175,7 +175,7 @@ describe('what the board says it has cost', () => {
   /**
    * `ticket-lingtai-89` ran twice before `spend` existed, so `readSpend({ ticket })`
    * returns `[]` for it — `attempts: 2` says it ran, but no row names it.
-   * `billOf` used to fold that to five empty bills, which `ledger` printed as
+   * `billOf` used to reduce that to five empty bills, which `ledger` printed as
    * `—` in every column: the same reading an unclaimed card gets, though one
    * of them ran and one never did (0110 §7).
    */

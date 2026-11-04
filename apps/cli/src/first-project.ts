@@ -149,7 +149,7 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
-   * The tickets of this project a pass is working now (`<project>#7`), asked of the board's own fold. It
+   * The tickets of this project a pass is working now (`<project>#7`), asked of the board's own reduce. It
    * **throws** where the board cannot be read — a failed read is never "nothing in flight" (#772).
    */
   inFlight?: (project: string) => Promise<readonly string[]>
@@ -939,7 +939,7 @@ async function runGithubBranch(
     if (!picked.ok) {
       // `add()`'s own gap listing (`onboard.ts:267-271`) never runs on this
       // path — `choose` refused before `add` was ever called — so the detail
-      // it would have printed is folded into the refusal here instead (#394
+      // it would have printed is reduced into the refusal here instead (#394
       // finding: a scope gap must not come back as one bare sentence).
       return { refused: refusalLines(picked).join('\n') }
     }

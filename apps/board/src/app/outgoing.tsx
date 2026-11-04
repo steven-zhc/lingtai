@@ -54,7 +54,7 @@ export function Outgoing({
   taskId,
   outgoing,
   sendable = false,
-  folded = false,
+  reduced = false,
 }: {
   taskId: string
   outgoing: OutgoingView
@@ -69,15 +69,15 @@ export function Outgoing({
   sendable?: boolean
   /**
    * Whether the prompt text sits behind a closed disclosure, with its size in
-   * the summary. A queued or approved page folds it: the opening above and the
+   * the summary. A queued or approved page reduces it: the opening above and the
    * ticket record already say what it says (0118 §2). A blocked page does not —
    * Send is the move there, and the person is approving this document.
    */
-  folded?: boolean
+  reduced?: boolean
 }) {
-  // Only what the person did to the fold. Whether there is a fold is the prop's,
+  // Only what the person did to the reducer. Whether there is a reducer is the prop's,
   // read on every render: a page that goes blocked -> queued through Follow
-  // re-renders this component rather than mounting it, so seeding from `folded`
+  // re-renders this component rather than mounting it, so seeding from `reduced`
   // once would carry the blocked page's open prompt onto the queued one.
   const [opened, setOpened] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -142,7 +142,7 @@ export function Outgoing({
         {/* How long the edit lasts, on the box that makes it. The next claim
             consumes it, whoever starts it. */}
         <span className="outonly">attempt {outgoing.attempt} only</span>
-        {folded ? null : (
+        {reduced ? null : (
           <span className="outfact" title={outgoing.version}>
             {outgoing.text.length} bytes
           </span>
@@ -157,10 +157,10 @@ export function Outgoing({
 
       {/* Bounded and scrollable. Open where Send is the move (blocked): a
           document behind a disclosure is one somebody approves without opening.
-          Folded where the opening above and the ticket record already say it
+          Reduced where the opening above and the ticket record already say it
           (queued, approved — 0118 §2), with its size in the summary. Edit is
-          outside the fold and opens it. */}
-      {folded ? (
+          outside the reducer and opens it. */}
+      {reduced ? (
         <details open={opened} onToggle={(e) => setOpened(e.currentTarget.open)}>
           <summary title={outgoing.version}>prompt · {outgoing.text.length} bytes</summary>
           <pre className="outtext">{outgoing.text}</pre>
@@ -182,7 +182,7 @@ export function Outgoing({
             className="btn"
             disabled={busy}
             onClick={() => {
-              if (folded) setOpened(true)
+              if (reduced) setOpened(true)
               setDraft(outgoing.edit?.text ?? '')
             }}
           >

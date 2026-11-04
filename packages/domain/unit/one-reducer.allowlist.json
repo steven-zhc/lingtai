@@ -185,7 +185,7 @@
   },
   {
     "file": "packages/projector/src/backlog.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "RunStarted",
     "count": 1,
     "class": "join",
@@ -193,7 +193,7 @@
   },
   {
     "file": "packages/projector/src/spend.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "DiscussionRequested",
     "count": 1,
     "class": "join",
@@ -201,7 +201,7 @@
   },
   {
     "file": "packages/projector/src/spend.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "RunSpent",
     "count": 1,
     "class": "join",
@@ -209,7 +209,7 @@
   },
   {
     "file": "packages/projector/src/spend.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "RunStarted",
     "count": 1,
     "class": "join",
@@ -217,7 +217,7 @@
   },
   {
     "file": "packages/projector/src/spend.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketClaimed",
     "count": 1,
     "class": "join",
@@ -225,7 +225,7 @@
   },
   {
     "file": "packages/projector/src/spend.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketContinued",
     "count": 2,
     "class": "join",
@@ -233,7 +233,7 @@
   },
   {
     "file": "packages/projector/src/task-view.ts",
-    "function": "applyRunEvent",
+    "function": "projectRunEvent",
     "type": "RunStarted",
     "count": 1,
     "class": "join",
@@ -241,7 +241,7 @@
   },
   {
     "file": "packages/projector/src/task-view.ts",
-    "function": "applyTicketEvent",
+    "function": "projectTicketEvent",
     "type": "TicketClaimed",
     "count": 1,
     "class": "join",
@@ -249,7 +249,7 @@
   },
   {
     "file": "packages/projector/src/task-view.ts",
-    "function": "applyTicketEvent",
+    "function": "projectTicketEvent",
     "type": "TicketContinued",
     "count": 1,
     "class": "join",
@@ -257,7 +257,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "DiscussionRequested",
     "count": 1,
     "class": "join",
@@ -265,7 +265,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "IntegrationAttempted",
     "count": 1,
     "class": "join",
@@ -273,7 +273,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "IntegrationRefused",
     "count": 1,
     "class": "join",
@@ -281,7 +281,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "IntegrationSucceeded",
     "count": 1,
     "class": "join",
@@ -289,7 +289,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "RunSpent",
     "count": 1,
     "class": "join",
@@ -297,7 +297,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "RunStarted",
     "count": 1,
     "class": "join",
@@ -305,7 +305,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "StepEnded",
     "count": 1,
     "class": "join",
@@ -313,7 +313,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketClaimed",
     "count": 1,
     "class": "join",
@@ -321,7 +321,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketClosed",
     "count": 1,
     "class": "join",
@@ -329,7 +329,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketContinued",
     "count": 1,
     "class": "join",
@@ -337,7 +337,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketLanded",
     "count": 1,
     "class": "join",
@@ -345,7 +345,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "TicketReleased",
     "count": 1,
     "class": "join",
@@ -353,7 +353,7 @@
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
-    "function": "apply",
+    "function": "reduce",
     "type": "WaitStarted",
     "count": 1,
     "class": "join",

@@ -38,7 +38,7 @@ describe('claimShapeOf', () => {
 })
 
 describe('reduceTicket over a continuation', () => {
-  it('folds the old form and TicketContinued to the same state, today’s', () => {
+  it('reduces the old form and TicketContinued to the same state, today’s', () => {
     const old = reduceTicket(stream('old'))
     const next = reduceTicket(stream('new'))
     expect(old.lifecycle).toEqual({ status: 'claimed', runId: 'r1', worker: 'w' })

@@ -381,7 +381,7 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
  *
  * **Each one still happens in the database.** The Postgres versions are three
  * anti-joins that return only the offending rows, and the reason they are
- * translated rather than replaced by a fold over `readAll` is the gate audit:
+ * translated rather than replaced by a reducer over `readAll` is the gate audit:
  * it compares fourteen event types' whole history against a plan, and
  * `StepEnded` carries an agent's entire review output. Reading those rows out
  * to compare them here would transfer and validate tens of megabytes to produce

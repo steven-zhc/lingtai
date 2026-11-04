@@ -104,7 +104,7 @@ Verified against the code rather than assumed:
 |---|---|---|
 | `append` / `read` / `readAll` | the whole `EventStore` interface — **three methods** | ordinary |
 | `UNIQUE (stream_id, version)` | optimistic concurrency, which is the safety of the model | ordinary |
-| the two projections | folds into tables, with **no `queryRaw` or `executeRaw` anywhere in production code** | nothing hand-written to port |
+| the two projections | reduces into tables, with **no `queryRaw` or `executeRaw` anywhere in production code** | nothing hand-written to port |
 | `pg_try_advisory_lock` | `lock.ts` | a file lock for Postgres too ([0046 §1](../decisions-archive/0046-lingtai-is-personal.md)) — SQLite's, not `flock(2)`, which Node cannot call ([0052](../decisions-archive/0052-the-lock-is-sqlite-on-a-file.md)) |
 | **`LISTEN`/`NOTIFY`** | `subscribe.ts` | **the only missing primitive** |
 

@@ -12,7 +12,7 @@
  * does not is a failing test rather than a silent divergence.
  *
  * **This whole file is the answer to "on a machine with no Postgres there is no
- * board".** It folds the real `taskViewProjection` and the real
+ * board".** It reduces the real `taskViewProjection` and the real
  * `backlogProjection`, rebuilds through the real runner, and reads the board
  * back, with nothing installed.
  *

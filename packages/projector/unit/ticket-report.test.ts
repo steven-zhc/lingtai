@@ -1,5 +1,5 @@
 /**
- * `ticket_report`'s rules, one test each (0123 §2, #687). Folded through an
+ * `ticket_report`'s rules, one test each (0123 §2, #687). Reduced through an
  * in-memory SQLite file, the way `spend-estimate.test.ts` does, so it stays
  * unit under 0060 §1.
  */
@@ -56,13 +56,13 @@ const spent = (
   )
 const work = (round: number): PayloadOf<'RunSpent'>['for'] => ({ _tag: 'Action', step: 'build', name: 'build', round })
 
-async function fold(batches: Envelope[][]) {
+async function reduce(batches: Envelope[][]) {
   const db = openSqliteProjections(':memory:')
   const store = createSqliteProjectionStore(db)
   try {
     const projection = ticketReportProjectionWith({ snapshot: () => SNAPSHOT })
     await store.transact((ctx) => projection.create(ctx))
-    for (const batch of batches) await store.transact((ctx) => projection.apply(batch, ctx))
+    for (const batch of batches) await store.transact((ctx) => projection.reduce(batch, ctx))
     const [row] = await store.transact((ctx) =>
       ctx.query<Record<string, unknown>>('select * from ticket_report where ticket = $1', [T]),
     )
@@ -85,7 +85,7 @@ describe('ticket_report', () => {
       for (let r = 1; r <= (p < 2 ? 4 : 3); r++) events.push(spent(run, work(r), p * 10 + 2))
       events.push(spent(run, work(0), p * 10 + 3))
     }
-    const row = await fold([events])
+    const row = await reduce([events])
     expect(row).toMatchObject({ passes: 4, fix_rounds: 14, kind: 'bug' })
   })
 
@@ -97,7 +97,7 @@ describe('ticket_report', () => {
       claim(t, 'pass-pin-a', null, 2),
     ]
     // old form split across a batch boundary
-    const row = await fold([events.slice(0, 1), events.slice(1, 2), events.slice(2)])
+    const row = await reduce([events.slice(0, 1), events.slice(1, 2), events.slice(2)])
     expect(row).toMatchObject({ passes: 1, kind: 'bug' })
     expect(parse(row?.pass_times)).toHaveLength(1)
   })
@@ -105,7 +105,7 @@ describe('ticket_report', () => {
   it('ends an interval at its last sign of life, and contributes 0 when there is none', async () => {
     const t = makeStream(T)
     const a = makeStream('pass-pin-a')
-    const row = await fold([
+    const row = await reduce([
       [
         claim(t, 'pass-pin-a', 'bug', 0),
         started(a, 1),
@@ -120,11 +120,11 @@ describe('ticket_report', () => {
     expect(row).toMatchObject({ machine_ms: 5 * 60_000, intervals_empty: 1, intervals_open: 1, passes: 3 })
   })
 
-  it('prices an unreported run at the fold and keeps reported, estimated and unknown apart', async () => {
+  it('prices an unreported run at the reducer and keeps reported, estimated and unknown apart', async () => {
     const t = makeStream(T)
     const a = makeStream('pass-pin-a')
     const usage = [{ model: 'gpt-x', tokens: { fresh: 1_000_000 } }] as PayloadOf<'RunSpent'>['usage']
-    const row = await fold([
+    const row = await reduce([
       [
         claim(t, 'pass-pin-a', 'bug', 0),
         spent(a, work(0), 1),
@@ -143,7 +143,7 @@ describe('ticket_report', () => {
     const t = makeStream(T)
     const a = makeStream('pass-pin-a')
     const b = makeStream('pass-pin-b')
-    const row = await fold([
+    const row = await reduce([
       [
         claim(t, 'pass-pin-a', 'bug', 0),
         claim(t, 'pass-pin-b', 'bug', 1),
@@ -155,14 +155,14 @@ describe('ticket_report', () => {
     expect(row).toMatchObject({ unknown_claims: 1, passes: 2 })
   })
 
-  it('folds the outcome: a landing is landed, and a close is final (D6: a later claim reopens nothing)', async () => {
+  it('reduces the outcome: a landing is landed, and a close is final (D6: a later claim reopens nothing)', async () => {
     const t = makeStream(T)
-    const closed = await fold([
+    const closed = await reduce([
       [claim(t, 'pass-pin-a', 'bug', 0), t('TicketClosed', { by: 'p', reason: 'r' }, { at: at(1) })],
     ])
     expect(closed).toMatchObject({ outcome: 'closed' })
     const t2 = makeStream(T)
-    const reopened = await fold([
+    const reopened = await reduce([
       [
         claim(t2, 'pass-pin-a', 'bug', 0),
         t2('TicketClosed', { by: 'p', reason: 'r' }, { at: at(1) }),
@@ -172,13 +172,13 @@ describe('ticket_report', () => {
     // D6: `closed` absorbs the claim, so there is no second pass and no interval.
     expect(reopened).toMatchObject({ outcome: 'closed', passes: 1, intervals_open: 0 })
     const t3 = makeStream(T)
-    const landed = await fold([
+    const landed = await reduce([
       [claim(t3, 'pass-pin-a', 'bug', 0), t3('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) })],
     ])
     expect(landed).toMatchObject({ outcome: 'landed' })
     // A close after a landing is a sequence `close.ts` refuses to write; the reduce's answer is `closed`.
     const t4 = makeStream(T)
-    const closedAfterLanding = await fold([
+    const closedAfterLanding = await reduce([
       [
         claim(t4, 'pass-pin-a', 'bug', 0),
         t4('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) }),
@@ -190,16 +190,16 @@ describe('ticket_report', () => {
 
   it('D4: a claim with a null kind keeps the kind an earlier one named', async () => {
     const t = makeStream(T)
-    const row = await fold([[claim(t, 'pass-pin-a', 'bug', 0), claim(t, 'pass-pin-b', null, 1)]])
+    const row = await reduce([[claim(t, 'pass-pin-a', 'bug', 0), claim(t, 'pass-pin-b', null, 1)]])
     expect(row).toMatchObject({ passes: 2, kind: 'bug' })
   })
 
-  it('rebuilding gives the rows of the live fold', async () => {
+  it('rebuilding gives the rows of the live reduce', async () => {
     const t = makeStream(T)
     const a = makeStream('pass-pin-a')
     const events = [claim(t, 'pass-pin-a', 'bug', 0), started(a, 1), spent(a, work(1), 2)]
-    const live = await fold(events.map((e) => [e]))
-    const once = await fold([events])
+    const live = await reduce(events.map((e) => [e]))
+    const once = await reduce([events])
     expect(once).toEqual(live)
   })
 })

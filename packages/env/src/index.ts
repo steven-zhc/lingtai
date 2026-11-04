@@ -508,7 +508,7 @@ export const SQLITE_LOG = 'lingtai.db'
  * and a `doctor` row, which rendered the machine `warn`. A store opens from a
  * written `sqlite` now
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)) —
- * `packages/daemon/integration/the-written-choice.test.ts` appends, folds
+ * `packages/daemon/integration/the-written-choice.test.ts` appends, reduces
  * `task_view`, renders the board's cards and beats the beacon on one, in a
  * process where opening a socket throws — so `init` goes on to the board and
  * the row is `ok`.
@@ -1202,7 +1202,7 @@ export function shownHome(from: NodeJS.ProcessEnv = process.env): string {
  * GitHub App names no store and is still a file somebody wrote — and a file's
  * absence alone is not it either, since an exported `LINGTAI_DATABASE_URL`
  * chooses the store with none. The caller says whether the file exists, so this
- * stays a fold over its arguments.
+ * stays a reducer over its arguments.
  */
 export function nothingSetUp(choice: StoreChoice, configExists: boolean): boolean {
   return 'refused' in choice && choice.because === 'nothing chosen' && !configExists

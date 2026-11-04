@@ -15,10 +15,10 @@
  * That shape is why a SQLite `EventStore` written months after the contract
  * passed it unchanged (#178).
  *
- * **The folds do not live here and do not move.** `taskViewProjection.apply` is
- * the same fold it was, issuing the same statements through the same
+ * **The reducers do not live here and do not move.** `taskViewProjection.reduce` is
+ * the same reduce it was, issuing the same statements through the same
  * `ProjectionContext`. What this interface covers is everything around it —
- * the checkpoint, the transaction the fold and the checkpoint share, the
+ * the checkpoint, the transaction the reducer and the checkpoint share, the
  * rebuild, the catalogue read behind the shape check, and the queries the
  * board's columns are.
  *
@@ -32,9 +32,9 @@
 import type { Envelope } from '@lingtai/domain'
 
 // Type-only, both ways. `store.ts` names the row shapes the board reads and
-// `task-view.ts` names the context a fold writes through; a cycle of types is
+// `task-view.ts` names the context a reducer writes through; a cycle of types is
 // erased before Node ever sees it, and keeping the board's card shape beside
-// the fold that produces it is worth more than a file with no edges.
+// the reducer that produces it is worth more than a file with no edges.
 import type { BacklogEntry, BacklogStatus } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
 import type { TaskCard } from './task-view.ts'
@@ -190,14 +190,14 @@ export interface Projection {
   reset(ctx: ProjectionContext): Promise<void>
 
   /**
-   * Folds one batch, in `seq` order.
+   * Reduces one batch, in `seq` order.
    *
    * **Must be idempotent.** The checkpoint is transactional, so a clean crash
    * cannot double-apply — but a process killed after the store committed and
    * before the runner noticed will re-read the same events, and so will a
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
-  apply(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>
+  reduce(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>
 }
 
 export interface ProjectionLag {
@@ -273,7 +273,7 @@ export interface ProjectionStore {
   checkpoint(name: string): Promise<bigint>
 
   /**
-   * Moves `name`'s checkpoint to `seq`. Inside the fold's transaction, always.
+   * Moves `name`'s checkpoint to `seq`. Inside the reducer's transaction, always.
    *
    * With `from`, the move is **fenced**: it throws, rolling the batch back, when
    * the stored checkpoint is below `from` — a rebuild rewound it after this
@@ -325,7 +325,7 @@ export interface ProjectionStore {
   /**
    * Which projects the board holds cards from, over the same retention window.
    *
-   * Its own query rather than a fold over a filtered read, because that is the
+   * Its own query rather than a reducer over a filtered read, because that is the
    * one question a filtered read cannot answer: narrowing to one project is
    * what removes the evidence that the others exist.
    */
