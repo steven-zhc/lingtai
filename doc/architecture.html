@@ -409,7 +409,7 @@
           <text x="20" y="120" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#96701F" style="fill:var(--brass)">DECIDES · no I/O of its own</text>
           <rect x="20" y="132" width="340" height="44" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
           <text x="34" y="152" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">conductor</text>
-          <text x="34" y="168" font-size="11" fill="currentColor" opacity=".65">the order of one turn, and the ports it needs</text>
+          <text x="34" y="168" font-size="11" fill="currentColor" opacity=".65">the order of one attempt, and the ports it needs</text>
 
           <rect x="20" y="184" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="34" y="202" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">actions</text>
@@ -570,8 +570,8 @@
     <ul class="rules defs">
       <li>
         <b>conductor turn</b>
-        <span>Ask GitHub what is runnable for each registered project, take one item, and run it to
-          a verdict. One turn handles one item, or none.</span>
+        <span>Ask GitHub what is runnable for each registered project, and start an attempt on each
+          item that fits a free slot. A turn may start several attempts, or none.</span>
         <span class="absent">Without it: nothing is worked. This is the one job
           <code>lingtai run</code> also does.</span>
       </li>
@@ -777,7 +777,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 300" role="img" aria-label="A work item passes through queue, claim, prepared, the agent, proposed, merge and integrate to end, each step listing the events it appends. Below the line, refusals from proposed, merge and the integrator collect on one bus and return to the agent in the same worktree, bounded by runtime.limits.rounds. A second line returns a pass whose rounds are spent on a refused review to the claim as a fresh pass, bounded by runtime.limits.restarts, which defaults to zero. Only a spent ceiling reaches a person.">
+        <svg viewBox="0 0 900 300" role="img" aria-label="A work item passes through queue, claim, prepared, the agent, proposed, merge and integrate to end, each step listing the events it appends. Below the line, refusals from proposed, merge and the integrator collect on one bus and return to the agent in the same worktree, bounded by runtime.limits.rounds. A second line returns an attempt whose rounds are spent on a refused review to the claim as a fresh attempt, bounded by runtime.limits.restarts, which defaults to zero. Only a spent ceiling reaches a person.">
           <defs>
             <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>

@@ -111,7 +111,7 @@ as of 2026-11-01, not a recommendation; models change faster than it does.
   generic checklist is already built in (`packages/actions/src/agent-action.ts:182`,
   `CHECKLIST`); what a reviewer lacks is what *your* codebase keeps getting wrong.
 - Check that every runtime any role names is installed and signed in, before the
-  first pass ([requirements](requirements.md)).
+  first attempt ([requirements](requirements.md)).
 
 Over tickets that landed in October 2026 (measured 2026-11-01), work was 56% of
 spend and answering refusals 35%: the fix rounds are a third of the spend, which

@@ -180,7 +180,7 @@ with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the ro
   - The sandbox without `allowUnsandboxedCommands: false` can be escaped under
     Lingtai: `bypassPermissions` approves the unsandboxed retry without asking.
   - Not measured: Linux without bubblewrap, where there is no sandbox; a full
-    pass under this sandbox, where a commit writes outside the worktree and the
+    attempt under this sandbox, where a commit writes outside the worktree and the
     agent may fail visibly; other runtime versions; and `CLAUDE_CONFIG_DIR`,
     which an attempt drops, so Claude Code reads `~/.claude`.
   - `denyRead` says nothing about the network, and this setting does not limit

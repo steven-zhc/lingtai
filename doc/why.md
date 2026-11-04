@@ -3,7 +3,7 @@
 The design argument, moved out of the root README so that it can start with
 what to type. For the commands, begin at the [tutorial](tutorial.md).
 
-Lingtai takes a queue of work, hands items to coding agents — several passes at
+Lingtai takes a queue of work, hands items to coding agents — several attempts at
 once, each in a worktree of its own — holds each at a series of steps, and
 releases it only when every step the recipe declares has passed. A person is one
 of those steps only if the recipe puts one there; a recipe with no human hold
@@ -90,7 +90,7 @@ never where Lingtai keeps what it did.
 
 An attempt is ten steps in a fixed order, and what runs at each is the recipe's.
 [`the-attempt.html`](the-attempt.html) draws them and says what each word means.
-Several passes may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
+Several attempts may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
 
 A refusal is answered by the agent that is still standing in the worktree, not
 by a new run: that is the whole of

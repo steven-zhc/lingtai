@@ -42,7 +42,7 @@ at a time.
 | `polling.interval_ms` | not a recipe setting: the daemon polls on its own schedule, for the whole machine |
 | `workspace.root`, `hooks.after_create` (cloning) | a worktree Lingtai cuts for each attempt |
 | `hooks.after_create` (installing dependencies) | the install command you give `lingtai add --install` |
-| `agent.max_concurrent_agents` | `runtime.concurrency`, several attempts per project at once, but only once a daily ceiling is set; without one it is ignored and one attempt runs in all ([0122](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0122-several-attempts-share-one-conductor.md)) |
+| `agent.max_concurrent_agents` | `runtime.concurrency`, several attempts per project at once, but only once a daily ceiling is set; without one it is ignored and one attempt runs in all ([0122](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0122-several-passes-share-one-conductor.md)) |
 | `agent.max_turns` | `runtime.limits.turns`, per run, on the `claude-code` runtime only. The `codex` runtime enforces `wall` alone, and `lingtai doctor` fails a numeric `turns` there, so on Codex bound a run with `runtime.limits.wall` instead ([reference](reference.md)) |
 | `agent.max_retry_backoff_ms` | `source.backoff`, `1h` by default and flat; `lingtai now <project> --issue <n>` takes one ticket ahead of the queue |
 | `codex.command` | `runtime.agent: codex` |
