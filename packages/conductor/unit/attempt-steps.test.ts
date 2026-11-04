@@ -20,14 +20,14 @@ import {
 /**
  * The six bodies, read through the loop rather than beside it.
  *
- * Every test here calls `runPass` with `bodiesFor(ports)` and asserts on the
+ * Every test here calls `runAttempt` with `bodiesFor(ports)` and asserts on the
  * `PassResult`, because a body's whole job is *which ending this answer is* and
  * an ending only means something where the loop reads it: a refusal travels to
  * `proposed`, a `needs-input` is the one `did-not-finish` with anywhere to go,
  * and a `never-ran` releases the item. Calling a body directly would check the
  * return value and nothing the return value is for.
  *
- * Nothing leaves the system. `PassPorts` is a fake — no process, no worktree, no
+ * Nothing leaves the system. `AttemptPorts` is a fake — no process, no worktree, no
  * agent, no GitHub, no store — which is what puts this file in `unit/` and has
  * the `build` point run it ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
  * §1).
@@ -38,7 +38,6 @@ import { StepMap, type QueueSettings, type StepAction } from '@lingtai/recipe'
 import type { Worktree } from '@lingtai/repo'
 import { describe, expect, it } from 'vitest'
 
-import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
 import {
   END_UNRESOLVED,
   bodiesFor,
@@ -46,10 +45,18 @@ import {
   type Claimed,
   type Judged,
   type Judging,
-  type PassPorts,
+  type AttemptPorts,
   type Worked,
-} from '../src/pass-steps.ts'
-import { NEEDS_INPUT, claimStep, outcomeOf, runPass, type PassOptions, type PassOver } from '../src/pass.ts'
+} from '../src/attempt-steps.ts'
+import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
+import {
+  NEEDS_INPUT,
+  claimStep,
+  outcomeOf,
+  runAttempt,
+  type AttemptOptions,
+  type AttemptOver,
+} from '../src/run-attempt.ts'
 
 // --------------------------------------------------------------- fixtures ----
 
@@ -100,7 +107,7 @@ const RED: ActionResult = { verdict: 'failed', evidence: 'pnpm install exited 1'
  * agent: *something the fixer could not have authored* (0038 §2).
  */
 const BLOCKER: ActionFinding = {
-  file: 'packages/conductor/src/pass.ts',
+  file: 'packages/conductor/src/run-attempt.ts',
   line: 1201,
   claim: 'the router is asked before the build',
   failureScenario: 'a red build pays for a review of a diff that does not compile',
@@ -110,7 +117,7 @@ const BLOCKER: ActionFinding = {
 /** What a reviewer that says the diff stops here looks like — findings, and `failed`. */
 const REVIEW_REFUSED: ActionResult = {
   verdict: 'failed',
-  evidence: 'blocker packages/conductor/src/pass.ts:1201 — the router is asked before the build',
+  evidence: 'blocker packages/conductor/src/run-attempt.ts:1201 — the router is asked before the build',
   findings: [BLOCKER],
 }
 
@@ -164,7 +171,7 @@ const coldReviewerSaying = (text: string | null): Action =>
       },
       issue: async () => ({ ref: '269', title: 'T5d', body: 'the queue is a plugin at `claim`' }),
       diff: async () =>
-        'diff --git a/packages/conductor/src/pass.ts b/packages/conductor/src/pass.ts\n--- a/packages/conductor/src/pass.ts\n+++ b/packages/conductor/src/pass.ts\n@@ -1200,3 +1200,3 @@\n a\n+b\n c\n',
+        'diff --git a/packages/conductor/src/run-attempt.ts b/packages/conductor/src/run-attempt.ts\n--- a/packages/conductor/src/run-attempt.ts\n+++ b/packages/conductor/src/run-attempt.ts\n@@ -1200,3 +1200,3 @@\n a\n+b\n c\n',
       restore: async () => ({ untouched: true as const }),
       settingsPath: '/nowhere/settings.json',
       limits: { turns: 80, wallMs: 3_600_000, diffBytes: 400_000 },
@@ -204,7 +211,7 @@ const committedSomething = (name: string, head = COMMITTED): Action => ({
 })
 
 /** A recipe with only the ten steps on it, resolved by the real schema. */
-const recipeWith = (steps: Record<string, unknown> = {}): PassOptions['recipe'] => ({
+const recipeWith = (steps: Record<string, unknown> = {}): AttemptOptions['recipe'] => ({
   steps: StepMap.parse(steps),
 })
 
@@ -276,8 +283,8 @@ interface Answers {
 }
 
 function portsAnswering(answers: Answers = {}): {
-  ports: PassPorts
-  judge: NonNullable<PassOptions['judge']>
+  ports: AttemptPorts
+  judge: NonNullable<AttemptOptions['judge']>
   asked: Asks
   taking: QueueActionDeps
   working: WorkActionDeps
@@ -358,14 +365,14 @@ function portsAnswering(answers: Answers = {}): {
     },
   }
 
-  // `#462`: the judge port moved off `PassPorts` onto `PassOptions.judge` —
-  // `proposed`'s own body never asks one any more, `runPass`'s loop does.
-  const judge: NonNullable<PassOptions['judge']> = async (on) => {
+  // `#462`: the judge port moved off `AttemptPorts` onto `AttemptOptions.judge` —
+  // `proposed`'s own body never asks one any more, `runAttempt`'s loop does.
+  const judge: NonNullable<AttemptOptions['judge']> = async (on) => {
     asked.judge.push(on)
     return of(answers.judge, { noJudge: true }, on)
   }
 
-  const ports: PassPorts = {
+  const ports: AttemptPorts = {
     onStream: () => onStream,
     readEnd: async (ticketId) => {
       asked.read.push(ticketId)
@@ -385,9 +392,9 @@ function portsAnswering(answers: Answers = {}): {
  * say.
  *
  * **`claim` runs first and separately** (0120 §6, `#463`): `claimStep` is
- * called before `runPass`, over the same options, exactly as `conduct.ts`
+ * called before `runAttempt`, over the same options, exactly as `conduct.ts`
  * now calls it. The default answer always takes the item, so every one of
- * this file's other tests sees the walk `runPass` itself runs — `admit`
+ * this file's other tests sees the walk `runAttempt` itself runs — `admit`
  * through `end` — and nothing about `claim`'s own three declines, which
  * `describe('claim runs the \`queue:\` plugin, and cannot refuse', …)` below
  * tests directly against `claimStep`.
@@ -397,10 +404,10 @@ async function pass(
     steps?: Record<string, unknown>
     answers?: Answers
     actions?: Record<string, readonly Action[]>
-    ceilings?: PassOptions['ceilings']
-    from?: PassOptions['from']
+    ceilings?: AttemptOptions['ceilings']
+    from?: AttemptOptions['from']
   } = {},
-): Promise<{ result: PassOver; asked: Asks; ports: PassPorts }> {
+): Promise<{ result: AttemptOver; asked: Asks; ports: AttemptPorts }> {
   const { ports, judge, asked, taking, working } = portsAnswering(options.answers)
   /**
    * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
@@ -492,7 +499,7 @@ async function pass(
         },
       },
     )
-  const passOptions: PassOptions = {
+  const passOptions: AttemptOptions = {
     recipe: recipeWith(options.steps),
     context,
     emit: () => {},
@@ -520,12 +527,12 @@ async function pass(
     },
   }
   await claimStep(passOptions)
-  const result = await runPass(passOptions)
+  const result = await runAttempt(passOptions)
   return { result, asked, ports }
 }
 
 /** Every visit, as `<step>:<ending>`, which is the shape of the walk. */
-const walk = (result: PassOver): string[] => result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`)
+const walk = (result: AttemptOver): string[] => result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`)
 
 const endRow = (plan: readonly ToAppend[]): PayloadOf<'EndActionsResolved'> =>
   plan[0]?.data as PayloadOf<'EndActionsResolved'>
@@ -560,7 +567,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
    * and neither reaches the router: `claim` is not in `ARRIVE_AT_THE_ROUTER`.
    *
    * **Through `claimStep`, not `pass()`** (`#463`): `claim` runs before
-   * `runPass` now, so a decline is `claimStep`'s own answer and `runPass`
+   * `runAttempt` now, so a decline is `claimStep`'s own answer and `runAttempt`
    * never starts — `conduct.ts`'s early return on `ending !== 'passed'` is
    * what makes that true in production, and this is the same call one layer
    * down, with no walk to run after it.
@@ -598,14 +605,14 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
   /**
    * The third decline, and the one with a stream behind it: the claim's append
    * may have committed. `conduct.ts`'s own `onStream` (the closure `take`
-   * writes, not `PassPorts.onStream`) is what tells its `release` that this
+   * writes, not `AttemptPorts.onStream`) is what tells its `release` that this
    * run may hold something to give back — `end` does **not** resolve for it
-   * any more (`#463`: `end` runs only inside `runPass`, and `runPass` never
+   * any more (`#463`: `end` runs only inside `runAttempt`, and `runAttempt` never
    * starts on a decline), which costs nothing observable, since
    * `release` only ever appended `endPlan` when `endedAs === 'failed'` and a
    * claim's own stop was never that outcome.
    */
-  it('names the item when the claim may have committed, and leaves nothing for `runPass` to resolve', async () => {
+  it('names the item when the claim may have committed, and leaves nothing for `runAttempt` to resolve', async () => {
     const { ports, asked, taking } = portsAnswering({
       take: { mayHold: { ticketId: 'ticket-lingtai-259', detail: 'connection reset' } },
     })
@@ -622,7 +629,7 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     expect(claimed.ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
     const detail = 'detail' in claimed.ending ? claimed.ending.detail : ''
     expect(detail).toContain('ticket-lingtai-259')
-    // `PassPorts.onStream()` names it too — the one decline that leaves a
+    // `AttemptPorts.onStream()` names it too — the one decline that leaves a
     // stream behind, which is what lets a caller tell this run may be
     // holding something rather than nothing at all.
     expect(ports.onStream()).toBe('ticket-lingtai-259')
@@ -652,17 +659,17 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     })
     const bodies = bodiesFor(ports)
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
-    const passOptions: PassOptions = {
+    const passOptions: AttemptOptions = {
       recipe: recipeWith({ end: [CLOSE_ON_LANDED] }),
       context,
       emit: () => {},
       bodies,
       actionsAt: (step, actions) => (step === 'claim' ? [claiming] : actions.map((a) => canned(a.name, PASSED))),
     }
-    // Mirrors `conduct.ts`: `runPass` runs only once `claimStep` answers `passed`.
+    // Mirrors `conduct.ts`: `runAttempt` runs only once `claimStep` answers `passed`.
     const run = async () => {
       const claimed = await claimStep(passOptions)
-      return claimed.ending.ending === 'passed' ? await runPass(passOptions) : null
+      return claimed.ending.ending === 'passed' ? await runAttempt(passOptions) : null
     }
 
     await run()
@@ -1112,7 +1119,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
    * round arriving at the answer the first one did.
    *
    * The judge answers `implement` for this ticket's own reason, since `#462`
-   * moved the routing off `proposed`'s body and into `runPass`'s loop: a
+   * moved the routing off `proposed`'s body and into `runAttempt`'s loop: a
    * `judge:` for `needs-input` is what sends *that step again, stating your
    * assumption* now, not a body override.
    */
@@ -1126,7 +1133,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
       },
     })
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
-    const result = await runPass({
+    const result = await runAttempt({
       recipe: recipeWith(),
       context,
       emit: () => {},
@@ -1572,7 +1579,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     const steps = declaring('findings', 'the lines, until the rounds are spent')
     const spend = {
       ...checked(PASSED, REVIEW_REFUSED),
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 } as PassOptions['ceilings'],
+      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 } as AttemptOptions['ceilings'],
     }
 
     const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } })
@@ -2188,7 +2195,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // `prepared`'s refusal never reaches a router, so no built-in ever gets
     // the chance to name `implement` for it — `ceilingFor('implement',
     // early)` is `null` for the same reason, proved directly in
-    // `pass.test.ts`'s "keeps what the pass reached apart from what it can
+    // `run-attempt.test.ts`'s "keeps what the pass reached apart from what it can
     // pay for" rather than through a real pass here.
   })
 })

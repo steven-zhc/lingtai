@@ -11,7 +11,7 @@
  * a person a click"*.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
- * no process, no socket, no network. The fixtures are `test/one-pass.ts`,
+ * no process, no socket, no network. The fixtures are `test/one-attempt.ts`,
  * the same harness `conduct-continuation-diffs-the-base.test.ts` uses.
  */
 import { waitsOf, ticketStream } from '@lingtai/domain'
@@ -19,7 +19,7 @@ import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
-import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-pass.ts'
+import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-attempt.ts'
 
 /**
  * `tamper` before `approval` — the finding's own order: the pipeline stops

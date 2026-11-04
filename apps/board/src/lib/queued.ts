@@ -92,7 +92,7 @@ export interface PlanView {
    * decides whether to press the button, so it is the last place a ceiling
    * should be invisible.
    *
-   * Rendered when it is zero too, for `rounds`' reason and `passCeiling`'s.
+   * Rendered when it is zero too, for `rounds`' reason and `attemptCeiling`'s.
    */
   restarts: number
 }

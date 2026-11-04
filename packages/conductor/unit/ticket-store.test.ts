@@ -1,10 +1,10 @@
 /**
- * `ticketsFor` and `passClientOf` (`#382`) — the seam that decides whether a
+ * `ticketsFor` and `ticketedClientOf` (`#382`) — the seam that decides whether a
  * pass's ticket verbs go to GitHub or to `dbTickets`, and the refusal that
  * keeps a `db` switch from numbering into a project's own GitHub history.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
- * SQLite `:memory:` and the fakes from `test/one-pass.ts`, no process, no
+ * SQLite `:memory:` and the fakes from `test/one-attempt.ts`, no process, no
  * network.
  */
 import type { LogQueries } from '@lingtai/event-store'
@@ -19,8 +19,17 @@ import { describe, expect, it } from 'vitest'
 import { runOnce } from '../src/conduct.ts'
 import { dbTickets } from '../src/db-tickets.ts'
 import { runnableNow } from '../src/discover.ts'
-import { passClientOf, TicketSourceConflict, ticketsFor, type Tickets } from '../src/ticket-store.ts'
-import { fakeGitHub, fakePorts, memoryStore, PROJECT, project, runtime, streams, withPorts } from '../test/one-pass.ts'
+import { ticketedClientOf, TicketSourceConflict, ticketsFor, type Tickets } from '../src/ticket-store.ts'
+import {
+  fakeGitHub,
+  fakePorts,
+  memoryStore,
+  PROJECT,
+  project,
+  runtime,
+  streams,
+  withPorts,
+} from '../test/one-attempt.ts'
 
 function freshSql(): TicketSql {
   return createSqliteTicketSql(openSqliteLog(':memory:'))
@@ -175,7 +184,7 @@ describe('passClientOf', () => {
    * `listIssuesSince` and `updateBody` are never reached through `client` by
    * either test there (the pass calls `dbTickets.createIssue` directly to
    * seed the ticket, and `runOnce` never updates a body or lists since a
-   * date), so a regression dropping one of those three from `passClientOf`'s
+   * date), so a regression dropping one of those three from `ticketedClientOf`'s
    * named list is invisible to the pass test's `ticketCalls`. This calls all
    * eight verbs on the client itself.
    */
@@ -184,7 +193,7 @@ describe('passClientOf', () => {
     const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
     const sql = freshSql()
     const tickets = dbTickets(sql, PROJECT)
-    const client = passClientOf(github, tickets)
+    const client = ticketedClientOf(github, tickets)
 
     const created = await client.createIssue({ title: 'a race in the importer', body: 'fix it', labels: ['bug'] })
     await client.listOpenIssues()
@@ -212,7 +221,7 @@ describe('a pass under source.tickets: db', () => {
    * pass actually calls wired to GitHub fails here; `createIssue`,
    * `listIssuesSince` and `updateBody` are not among those (the ticket is
    * seeded directly on `dbTickets` above, and `runOnce` neither updates a
-   * body nor lists since a date) — `passClientOf`'s own describe block above
+   * body nor lists since a date) — `ticketedClientOf`'s own describe block above
    * covers those three instead.
    */
   it('claims a ticket dbTickets created, blocks, and closes it — all without a GitHub call', async () => {
@@ -229,7 +238,7 @@ describe('a pass under source.tickets: db', () => {
       body: 'fix it',
       labels: ['bug'],
     })
-    const client = passClientOf(github, tickets)
+    const client = ticketedClientOf(github, tickets)
 
     const result = await Effect.runPromise(
       runOnce({
@@ -264,7 +273,7 @@ describe('a pass under source.tickets: db', () => {
 
   /**
    * The ticket's headline and first Want bullet — the queue — ran through
-   * `passClientOf` by no test before this one. `runOnce` above never calls
+   * `ticketedClientOf` by no test before this one. `runOnce` above never calls
    * `listOpenIssues` (it is handed a specific `issue:` number), so it proved
    * nothing about the read `runnableNow` makes.
    */
@@ -281,7 +290,7 @@ describe('a pass under source.tickets: db', () => {
     const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
     const recipe = await recipeOf(RECIPE_DB)
 
-    const offered = await runnableNow({ client: passClientOf(github, tickets), queue: queueOf(recipe) })
+    const offered = await runnableNow({ client: ticketedClientOf(github, tickets), queue: queueOf(recipe) })
 
     expect(offered.runnable.map((r) => r.ref)).toEqual([String(created.number)])
     expect(ticketCalls).toEqual([])

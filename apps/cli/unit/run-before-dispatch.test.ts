@@ -80,7 +80,7 @@ describe('statedBeforeDispatch', () => {
 
     expect(lines[0]).toContain('runtime: claude-code')
     expect(lines[0]).toContain('signed in to on this machine')
-    // `passCeiling`'s own sentence, verbatim — `runtime.limits` defaults to
+    // `attemptCeiling`'s own sentence, verbatim — `runtime.limits` defaults to
     // `rounds: 2, restarts: 0`, so this is its "rounds are spent" form.
     expect(lines[1]).toContain('up to 3 agent runs')
     expect(lines[1]).toContain('A pass whose rounds are spent goes to you')
@@ -108,7 +108,7 @@ describe('statedBeforeDispatch', () => {
     expect(said).not.toContain('not in that sentence: an agent run at proposed')
   })
 
-  it("does not change `passCeiling`'s own output", async () => {
+  it("does not change `attemptCeiling`'s own output", async () => {
     const resolved = await recipeFrom(ONLY_IMPLEMENT)
     const lines = statedBeforeDispatch(resolved.recipe)
     // `0070 §8`'s rule: empty is today's string, character for character.

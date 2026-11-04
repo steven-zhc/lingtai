@@ -130,7 +130,7 @@ export interface ActionResult {
    * `implement`, which is `createWorkAction`'s own commit (`#266`); and since
    * `#390` a `run:` written after it at the same step, `createKeptRunAction`'s.
    * It is on the result rather than inferred by the caller because the caller
-   * runs no git: `LeftTheTreeAt` in `packages/conductor/src/pass.ts` is the same
+   * runs no git: `LeftTheTreeAt` in `packages/conductor/src/run-attempt.ts` is the same
    * field one layer up, and the step that moved the tree is the only thing that
    * knows. `headFrom` there is what picks among more than one — *the last
    * result that has one wins* — so a `run:` after the agent commits over the
@@ -148,7 +148,7 @@ export interface ActionResult {
    * The `merge` kind produces it at `merge`, and it is on the result rather than
    * derived by the caller because the caller runs no git: `conflict` and
    * `verify-failed` are the lane's own words, they are already on the log as
-   * `RefusalReason`, and `directionOf` in `packages/conductor/src/pass.ts` routes
+   * `RefusalReason`, and `directionOf` in `packages/conductor/src/run-attempt.ts` routes
    * on them. The pipeline knows only that *something the recipe declared refused*
    * and `endingOf` spells that `action-refused`, which is right for the other five
    * kinds and would lose the direction for this one.
@@ -227,7 +227,7 @@ export interface ActionResult {
    * string is the second reader of a sentence 0031 §1 exists to prevent. It is
    * the same shape `head` has at `admit`: the one action that *makes* the thing
    * the next step needs is the only thing that knows it, so it says so, and
-   * `designFrom` in `packages/conductor/src/pass.ts` carries it onto the step's
+   * `designFrom` in `packages/conductor/src/run-attempt.ts` carries it onto the step's
    * ending for `implement`'s brief to read.
    *
    * **`""` is a document and not an absence.** *The agent answered that this
@@ -248,7 +248,7 @@ export interface ActionResult {
    * destination plugin returns rather than a field with a reader.
    *
    * **Read only off the same result the document came from** (`designFrom` in
-   * `packages/conductor/src/pass.ts`). An action that reports a locator and no
+   * `packages/conductor/src/run-attempt.ts`). An action that reports a locator and no
    * document reports nothing: a location for a document nobody has is not a
    * fact about this pass, and pairing them across two results would be the
    * pipeline deciding which document a locator belongs to.
@@ -430,9 +430,9 @@ export const NO_DESIGN: TheDesign = { document: '' }
  * *an agent stopped to ask* are the same verdict and cost different money, and a
  * caller reading a field rather than a sentence is 0031 §1 again.
  *
- * It lives here rather than in `pass.ts` because the action produces it and the
+ * It lives here rather than in `run-attempt.ts` because the action produces it and the
  * pass reads it, and a second definition of one token is the drift
- * `worktree-action.ts` names. `pass.ts` re-exports this name.
+ * `worktree-action.ts` names. `run-attempt.ts` re-exports this name.
  */
 export const NEEDS_INPUT = 'needs-input'
 
@@ -446,7 +446,7 @@ export const NEEDS_INPUT = 'needs-input'
  * that*, or *`build` printed this* — and one that ignores it dispatches the brief
  * that produced the failure.
  *
- * It is computed from the visit list rather than remembered, in `pass.ts`, and
+ * It is computed from the visit list rather than remembered, in `run-attempt.ts`, and
  * arrives here because the agent buying the round is a plugin since `#266`.
  */
 export interface SentBack {
@@ -534,7 +534,7 @@ export interface ActionContext {
    *
    * On the context rather than on a spec for `recheck`'s reason: it is a fact
    * about *this run of the pipeline* and not about the action the recipe wrote.
-   * `designOn` in `packages/conductor/src/pass.ts` is what puts it here, off
+   * `designOn` in `packages/conductor/src/run-attempt.ts` is what puts it here, off
    * the `design` step's own visit — so the one action that writes code reads what
    * the one action that writes a document produced, without either knowing the
    * other exists.
@@ -589,7 +589,7 @@ export interface Action {
 
 /**
  * Emitted for every action, in order. **Since #502 (0120 phase 2) this is
- * `RunSpent` alone.** `StepStarted`/`StepEnded` belong to `pass.ts`'s
+ * `RunSpent` alone.** `StepStarted`/`StepEnded` belong to `run-attempt.ts`'s
  * `runStep`, not to the pipeline — it writes `StepStarted` once before the
  * pipeline runs and `StepEnded{outcome}` once after, from the `StepOutcome`
  * it already builds — so the five per-action terminal events this type used
@@ -712,7 +712,7 @@ export interface PipelineOptions {
    * approval at a time — the first approval waives one and the second
    * action stops the pass again, and the continuation that answers *that*
    * wait remembers only the second, so the first runs again unwaived and
-   * refuses again. `PassOptions.from`'s own caller (`pass.ts`) is what
+   * refuses again. `AttemptOptions.from`'s own caller (`run-attempt.ts`) is what
    * accumulates every waiver this item's approvals have ever granted at this
    * step, not only the latest.
    *
@@ -862,7 +862,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
       // same reason.
       ...(result.head === undefined ? {} : { head: result.head }),
-      // Spread for `head`'s reason, read by `becauseFrom` in `pass.ts` with the
+      // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
       // same `?? "action-refused"` fallback: an explicit `undefined` would be a
       // kind claiming to have a word for its refusal and then not having one.
       ...(result.because === undefined ? {} : { because: result.because }),
@@ -878,7 +878,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       ...(result.about === undefined ? {} : { about: result.about }),
       // Spread for `head`'s reason once more, and here the absence is the one
       // that matters: *nothing at this step drafted* and *the draft was empty*
-      // are different facts, and `designFrom` in `pass.ts` distinguishes them by
+      // are different facts, and `designFrom` in `run-attempt.ts` distinguishes them by
       // the key rather than by the string (`#265`).
       ...(result.document === undefined ? {} : { document: result.document }),
       // Spread for `head`'s reason a fifth time, and *beside* the document
@@ -922,7 +922,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     if (result.verdict === 'passed') continue
 
     if (result.verdict === 'never-ran') {
-      // No verdict here, because there is no verdict: `outcomeOf` (`pass.ts`)
+      // No verdict here, because there is no verdict: `outcomeOf` (`run-attempt.ts`)
       // reads this as a `NeverStarted` result, never a pass. The pipeline
       // stops for the reason a refusal stops it and one it does not have —
       // the actions after this one would ask the same account the same
@@ -959,7 +959,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       const asked = result.because === NEEDS_INPUT
       // No verdict here either, for the reason `never-ran` has none: the
       // agent judged nothing. Which of the two it was is carried by
-      // `askedAt`/`didNotFinishAt` below — `pass.ts`'s `endingOf` tells them
+      // `askedAt`/`didNotFinishAt` below — `run-attempt.ts`'s `endingOf` tells them
       // apart the same way `StepAsked`/`StepDidNotFinish` used to.
       return {
         ok: false,

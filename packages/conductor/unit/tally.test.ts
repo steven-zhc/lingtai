@@ -15,7 +15,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { tallyPass } from '../src/index.ts'
+import { tallyTurn } from '../src/index.ts'
 import type { RunOnceResult } from '../src/index.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
@@ -103,19 +103,19 @@ beforeAll(async () => {
 describe('tallyPass', () => {
   it('counts an item that landed after the run that held it', async () => {
     // What the process saw. What the log says is that it landed.
-    expect(await tallyPass([held(1)], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(await tallyTurn([held(1)], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
   })
 
   it('counts a merge this run performed', async () => {
     const merged: RunOnceResult = { ok: true, ticketId: wi(2), runId: runId(2), mergeCommit: 'abc1234' }
-    expect(await tallyPass([merged], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(await tallyTurn([merged], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
   })
 
   it('counts a question a person now holds as held, however the run ended', async () => {
     // A gate hold and an integrator refusal both leave the item blocked, and
     // the board puts both in "Waiting on you". The run's own `ok` disagrees
     // about the second one, and the board is the one that is right.
-    expect(await tallyPass([held(3), failed(4, 'integrate')], store)).toEqual({
+    expect(await tallyTurn([held(3), failed(4, 'integrate')], store)).toEqual({
       landed: 0,
       held: 2,
       stopped: 0,
@@ -123,20 +123,20 @@ describe('tallyPass', () => {
   })
 
   it('counts a released item as stopped', async () => {
-    expect(await tallyPass([failed(5, 'agent')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await tallyTurn([failed(5, 'agent')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
   })
 
   it('counts a refusal with no work item as stopped', async () => {
     const noItem: RunOnceResult = { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: 'no recipe' }
-    expect(await tallyPass([noItem], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await tallyTurn([noItem], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
   })
 
   it('counts a block released with no unblock as stopped, not held', async () => {
-    expect(await tallyPass([failed(6, 'integrate')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await tallyTurn([failed(6, 'integrate')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
   })
 
   it('counts a whole pass', async () => {
     const pass = [held(1), held(3), failed(4, 'integrate'), failed(5, 'agent')]
-    expect(await tallyPass(pass, store)).toEqual({ landed: 1, held: 2, stopped: 1 })
+    expect(await tallyTurn(pass, store)).toEqual({ landed: 1, held: 2, stopped: 1 })
   })
 })

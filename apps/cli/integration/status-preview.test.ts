@@ -4,7 +4,7 @@
  * `#165` makes an operator a promise: the list shown before the button is what
  * the next pass will take. Nothing about a shared helper *proves* that — the
  * only thing that does is running both and comparing, which is what this file
- * is. The same GitHub is handed to `firstPass` and to `status`, and the order,
+ * is. The same GitHub is handed to `firstTurn` and to `status`, and the order,
  * the count and the passed-over sentence have to come out the same.
  *
  * The project is registered here and not by the wizard, deliberately: the
@@ -12,7 +12,7 @@
  * this asserts that the command reaches the same answer once there is a project
  * for it to ask about.
  */
-import { firstPass } from '@lingtai/conductor/wizard'
+import { firstTurn } from '@lingtai/conductor/wizard'
 import { projectStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue, Label } from '@lingtai/github'
@@ -141,7 +141,7 @@ beforeAll(async () => {
 }, 120_000)
 
 it('shows the queue lingtai status will print, in the same order and the same words', async () => {
-  const preview = await firstPass({ client: github, recipe: resolved.recipe })
+  const preview = await firstTurn({ client: github, recipe: resolved.recipe })
 
   const report = await readStatus(
     { project: PROJECT },

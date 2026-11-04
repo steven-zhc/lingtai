@@ -18,7 +18,7 @@ import type { Action, ActionContext, ActionResult, TheDesign } from '@lingtai/ac
  * writes in a recipe — `#61`'s shape, declared and never emitted.
  *
  * So there is no key, no schema and no `at`. This is an `Action` handed to
- * `runPass` through `actionsAt`, which is the seam
+ * `runAttempt` through `actionsAt`, which is the seam
  * `unit/what-a-destination-costs.test.ts` already uses for the same reason it
  * gives there: *nothing in the tree can be the subject yet, so what is pinned is
  * what the first one will meet*.
@@ -66,7 +66,7 @@ import type { Action, ActionContext, ActionResult, TheDesign } from '@lingtai/ac
  * ## Unit, and it stays unit
  *
  * Nothing here opens a file, spawns a process, reads the clock or asks the
- * network; `runPass`'s two seams — the ten bodies and how a declared list
+ * network; `runAttempt`'s two seams — the ten bodies and how a declared list
  * becomes runnable actions — are both replaced (0060 §1). That is the property
  * to check before adding to this file.
  */
@@ -75,13 +75,13 @@ import { StepMap } from '@lingtai/recipe'
 
 import {
   outcomeOf,
-  runPass,
-  type PassEvent,
-  type PassOptions,
+  runAttempt,
+  type AttemptEvent,
+  type AttemptOptions,
   type StepBodies,
   type StepEnding,
   type StepWork,
-} from '../src/pass.ts'
+} from '../src/run-attempt.ts'
 
 /** The document the destination keeps, and the thing a locator locates. */
 export const DOCUMENT = '## The shape\n\nSix bodies, and the fifth is the one that asks.\n'
@@ -264,7 +264,7 @@ export const landingBeside = (): Action => ({
  * The ten bodies, each passing.
  *
  * `proposed` passes rather than routing to a person, so the walk is the ordinary
- * one and `implement` is genuinely reached — `pass.test.ts`'s `THROUGH`, for the
+ * one and `implement` is genuinely reached — `run-attempt.test.ts`'s `THROUGH`, for the
  * reason written there. `NOT_BUILT_YET` cannot be used: its `proposed` takes a
  * refusal to a person, which is right for the router's own tests and would stop
  * this pass before the reading side ever ran.
@@ -281,7 +281,7 @@ export interface Visit {
 
 /** One emitted event, flattened to what a reducer off the log would see. */
 export interface Emitted {
-  readonly type: PassEvent['type']
+  readonly type: AttemptEvent['type']
   readonly payload: string
 }
 
@@ -305,7 +305,7 @@ export interface Carried {
  *
  * The destination is declared at `design` and the reader at `implement`, and
  * both are swapped for the fixtures above by `actionsAt` — so what runs between
- * them is the real `runPass`, the real `runActionPipeline`, the real `designOn`
+ * them is the real `runAttempt`, the real `runActionPipeline`, the real `designOn`
  * and the real `designFrom`. Those four are the pipeline as far as a locator is
  * concerned, and they are what this is asking a question of.
  */
@@ -317,7 +317,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
     implement: [readingBack(briefed), writingBeside()],
     merge: [landingBeside()],
   }
-  const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
+  const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
     at[step] ??
     actions.map((action) => ({
       name: action.name,
@@ -326,7 +326,7 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
       run: async () => PASSED,
     }))
 
-  const result = await runPass({
+  const result = await runAttempt({
     recipe: { steps: StepMap.parse(DECLARED) },
     context: { runId: 'pass-1', onSha: 'abc1234def', cwd, env: {} },
     emit: (event) => void events.push({ type: event.type, payload: JSON.stringify(event.data) }),

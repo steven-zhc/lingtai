@@ -363,7 +363,7 @@ describe('the accessors', () => {
    * repository runs on — and it survives as *a step nobody wrote* rather than as
    * *a step that does nothing*: 0065 §6 decides the second and that part is not
    * built, so the seam still reads `[]` as the omitted key and the default lane
-   * merges (`conduct-a-whole-pass.test.ts`'s *lands onto main with `merge: []`*).
+   * merges (`conduct-a-whole-attempt.test.ts`'s *lands onto main with `merge: []`*).
    * A rule that could not tell *nothing declared* from *checks and no lane*
    * would refuse every recipe here — and a refusal that offered `merge: []` as
    * the way to land nothing would send a person to a list that merges.
@@ -461,7 +461,7 @@ describe('the accessors', () => {
   })
 
   /**
-   * What `passCeiling`'s sentence names, and **only steps that dispatch**.
+   * What `attemptCeiling`'s sentence names, and **only steps that dispatch**.
    *
    * `limitsFor` truthfully answers the ceiling for a step with no `agent:` and
    * no runtime `judge:` — nothing there spends anything — so a list built off

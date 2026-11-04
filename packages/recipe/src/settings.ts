@@ -122,7 +122,7 @@ export function declaresTurnsOn(recipe: Recipe, runtime: string): boolean {
  * - *what may this **call** spend* is the action's own `limits:`, read at the
  *   seam that builds the dispatch, falling back to `ceilingOf`. Never this.
  * - *what may this **step** spend at most* is this, and it is what
- *   `passCeiling`'s sentence is made of.
+ *   `attemptCeiling`'s sentence is made of.
  *
  * Conflating them under-reports: a `review` holding a narrowed dispatch beside
  * an undeclared one may spend the ceiling, because the undeclared one may.
@@ -197,7 +197,7 @@ export interface StepBound {
  * **Every dispatching step whose bound is not the one a sentence already names**
  * (`#314`, 0070 §9).
  *
- * `passCeiling` prints one figure and multiplies it by the rounds, because the
+ * `attemptCeiling` prints one figure and multiplies it by the rounds, because the
  * rounds are `implement`'s. With per-step bounds that figure stops being the
  * whole truth, and the fix is not a longer computation but a shorter list: the
  * steps that disagree with it, named. A recipe that narrows nothing returns `[]`

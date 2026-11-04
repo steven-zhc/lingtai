@@ -202,7 +202,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   {
     event: 'StepStarted',
     why: 'handed to `options.emit`, which appends',
-    file: 'packages/conductor/src/pass.ts',
+    file: 'packages/conductor/src/run-attempt.ts',
     anchor: "type: 'StepStarted',",
   },
   {

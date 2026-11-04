@@ -17,7 +17,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { resolveWaitHolding } from '../src/resolve-wait.ts'
-import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-pass.ts'
+import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-attempt.ts'
 
 const APPROVAL_AT_PROPOSED = `
 version: 2

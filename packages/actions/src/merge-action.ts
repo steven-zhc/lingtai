@@ -19,7 +19,7 @@
  *
  * **Which is why this is the one action that carries `because`.** Every other
  * kind's refusal is *something the recipe declared said no*, and `endingOf` in
- * `packages/conductor/src/pass.ts` spells that `action-refused` at every step
+ * `packages/conductor/src/run-attempt.ts` spells that `action-refused` at every step
  * alike. The lane's own words are what a judge routes on — `directionOf` reads
  * `conflict` and `verify-failed` off the ending — so they are the action's own
  * and travel on `ActionResult.because`, exactly as `worktree:`'s `head` travels

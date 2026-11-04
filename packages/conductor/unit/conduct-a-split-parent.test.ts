@@ -19,7 +19,7 @@ import {
   project,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 describe('a split parent whose children are all closed', () => {
   it('is closed by the conductor with a comment, and no agent runs', async () => {

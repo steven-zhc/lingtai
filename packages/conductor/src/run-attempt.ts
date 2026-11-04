@@ -52,7 +52,7 @@ import { inSpan } from '@lingtai/actions/spans'
  * writes `build`, `review`, `proposed` and `merge` after them has the same.
  *
  * **All ten are now written, beside this file rather than in it** — `bodiesFor`
- * in [`pass-steps.ts`](pass-steps.ts) (`#259`, then `#254`), which is what a
+ * in [`attempt-steps.ts`](attempt-steps.ts) (`#259`, then `#254`), which is what a
  * caller hands `bodies` below. That object stays the default, because *nothing
  * was handed in* must go on doing the thing with no consequences rather than the
  * thing with a GitHub client and a paid judge behind it.
@@ -79,7 +79,7 @@ import { inSpan } from '@lingtai/actions/spans'
  * configured**: four of `end`'s six cells were declarable, drawn, and silently
  * dropped by exactly that line (`#61`, and the comment at `end-step.ts`'s kind
  * guard). So every step the pass reaches runs its declared list and lands an
- * entry in `PassOver.steps`, and a configured step whose body does not exist
+ * entry in `AttemptOver.steps`, and a configured step whose body does not exist
  * yet **throws** rather than passing quietly — *configured and did not run* must
  * not look like *empty* ([0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4). The loop reports that throw as the step's own ending rather than losing
@@ -118,14 +118,14 @@ import {
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 
-import type { TerminalOutcome } from './end-step.ts'
-// `whatArrived`, `Judging`, `Judged`: `pass-steps.ts` still holds them, and
+// `whatArrived`, `Judging`, `Judged`: `attempt-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
 // (`NOT_BUILT_YET`) — safe because neither side reads the other's export at
 // module-evaluation time, only inside a function called later.
-import { whatArrived, type Judged, type Judging } from './pass-steps.ts'
+import { whatArrived, type Judged, type Judging } from './attempt-steps.ts'
+import type { TerminalOutcome } from './end-step.ts'
 import { ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
-// Aliased: this file exports its own `outcomeOf`, over a `PassEnd` rather
+// Aliased: this file exports its own `outcomeOf`, over a `AttemptEnd` rather
 // than over a step's actions — two functions with one name would be exactly
 // the collision #466's own header warns against (`step-outcome.ts`'s own doc
 // comment).
@@ -173,7 +173,7 @@ export type SettlingStep = Exclude<Step, RefusingStep>
  * **how `proposed` was reached** — not through `StepWork.arriving` any more
  * (`#462`): the inspection is the ordinary spine visit, calling this step's
  * own body; the router's own visit is built directly by `routeProposal` in
- * `runPass`'s loop, which never calls that body at all.
+ * `runAttempt`'s loop, which never calls that body at all.
  */
 export type RoutingStep = 'proposed'
 
@@ -207,7 +207,7 @@ export interface StepSpec {
  * enum's, and a step added to the vocabulary appears in the loop without an
  * edit to this file.
  */
-export const PASS: readonly StepSpec[] = STEPS.map((step) => ({
+export const ATTEMPT: readonly StepSpec[] = STEPS.map((step) => ({
   step,
   refuses: (REFUSING_STEPS as readonly Step[]).includes(step),
   routes: step === 'proposed',
@@ -217,7 +217,7 @@ export const PASS: readonly StepSpec[] = STEPS.map((step) => ({
 }))
 
 /** The ten rows by name, because the loop moves by name rather than by index. */
-const SPEC: Readonly<Record<Step, StepSpec>> = Object.fromEntries(PASS.map((spec) => [spec.step, spec])) as Record<
+const SPEC: Readonly<Record<Step, StepSpec>> = Object.fromEntries(ATTEMPT.map((spec) => [spec.step, spec])) as Record<
   Step,
   StepSpec
 >
@@ -289,7 +289,7 @@ export interface LeftTheTreeAt {
  * the other two.
  *
  * **Still in memory and still not on an event.** This is the visit's ending,
- * which `runPass` holds; what reaches the log is `evidence`, and 0066 §3's whole
+ * which `runAttempt` holds; what reaches the log is `evidence`, and 0066 §3's whole
  * point is that a locator is what belongs there. Widening this widens nothing a
  * replay pays for.
  */
@@ -310,7 +310,7 @@ export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
  * A judgement about the change: something the recipe declared said no.
  *
  * Three fields because 0058 §3c asks for three — **which step** (the loop
- * stamps it, in `PassOver`), **what refused** (`at`, the action's own name),
+ * stamps it, in `AttemptOver`), **what refused** (`at`, the action's own name),
  * and **a reason** (`because`, machine-readable, beside `detail`, which is the
  * words). A route that forgets is a person reading *waiting on you* with no way
  * to learn why without opening a run log.
@@ -470,7 +470,7 @@ export interface StepNeverRan extends LeftTheTreeAt {
  * four are on offer is a fact the workflow computes per arrival** and not a
  * fact about the type (0061 §3: *the workflow decides which steps it may choose
  * from*). `offerFor` (`@lingtai/domain`) is that computation, and a judge's own
- * `offering` (`Judging` in `pass-steps.ts`) is built from its `available` set;
+ * `offering` (`Judging` in `attempt-steps.ts`) is built from its `available` set;
  * a destination outside it is refused by name, which is 0061 §8's rule used
  * once more — *a step refuses a destination it did not offer.*
  *
@@ -539,7 +539,7 @@ export type ActionOutcome = PipelineResult['results'][number]
 /**
  * One visit to a step, and how it ended — with everything its plugins said.
  *
- * It is both what `PassOver.steps` holds and what a later step's body reads.
+ * It is both what `AttemptOver.steps` holds and what a later step's body reads.
  * `results` is carried here rather than left on the log because the reader acts
  * on it: `proposed` is *the only step that routes* (0058 §3c) and it routes on
  * `build`'s verdict and `review`'s findings, neither of which is a `StepEnding`
@@ -551,7 +551,7 @@ export type ActionOutcome = PipelineResult['results'][number]
  *
  * **A visit and not a step**, because a pass may reach one step twice: a round
  * back to `implement` visits `implement`, `build`, `review` and `proposed`
- * again. `PassOver.steps` is therefore in *visit* order and may repeat a name.
+ * again. `AttemptOver.steps` is therefore in *visit* order and may repeat a name.
  *
  * `results` is `[]` at `end`, whose list is effects and never reaches a
  * pipeline; at any step whose list was empty; and at a `proposed` the pass
@@ -568,7 +568,7 @@ export interface StepReached {
    * `outcomeOf`, built from the same `results` beside it, and `undefined`
    * where no pipeline ran: a routing visit (`routeProposal`'s own `record()`
    * call) and `end`, whose plugins are effects rather than verdicts. Nothing
-   * reads it yet but the proof against #461's fixture (`test/one-pass.ts`'s
+   * reads it yet but the proof against #461's fixture (`test/one-attempt.ts`'s
    * `once()`); #467
    * is what puts `nextOf` in charge of what a visit carrying one does next.
    */
@@ -661,7 +661,7 @@ const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: 'pas
  * they are the two places where *pass* would be a lie the loop cannot detect.
  *
  * **All ten are written and are not here** — `bodiesFor` in
- * [`pass-steps.ts`](pass-steps.ts) (`#259`, then `#254`) — and this object is
+ * [`attempt-steps.ts`](attempt-steps.ts) (`#259`, then `#254`) — and this object is
  * still all ten, still the default, and still what runs when a caller hands
  * nothing in. So the rows below say what the step is *for*, which has not
  * changed, rather than what any running body does: not one of them is still
@@ -701,12 +701,12 @@ export const NOT_BUILT_YET: StepBodies = {
    * **Refuses, and routes nothing — since `#462` that is every body's row,
    * not only this one's.**
    *
-   * The routing this step's name used to carry is `runPass`'s own loop now
+   * The routing this step's name used to carry is `runAttempt`'s own loop now
    * (`routeProposal`, through `proposed-route.ts`), off `nextOf`'s `Propose`
    * rather than off this body's answer. So the floor `#253` set — *a pass
    * with no judge built sends every refusal to a person* — is kept the same
    * way it is for a caller that hands in a real `judge:`: `replyFor` reads an
-   * absent `PassOptions.judge` as `noJudge`, falls back to `BUILT_IN_FOR`
+   * absent `AttemptOptions.judge` as `noJudge`, falls back to `BUILT_IN_FOR`
    * where that answers, and lands on a person where neither does.
    */
   proposed: async () => ({ ending: 'passed' }),
@@ -730,7 +730,7 @@ export const NOT_BUILT_YET: StepBodies = {
    * step a recipe omits.
    *
    * The body that *can* carry them out is `bodiesFor`'s
-   * ([`pass-steps.ts`](pass-steps.ts)), and it makes exactly the call this throw
+   * ([`attempt-steps.ts`](attempt-steps.ts)), and it makes exactly the call this throw
    * names.
    */
   end: async ({ actions, outcome }) => {
@@ -774,7 +774,7 @@ export const NOT_BUILT_YET: StepBodies = {
 export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
-   * `passCeiling` prices at *up to `rounds + 1` agent runs*
+   * `attemptCeiling` prices at *up to `rounds + 1` agent runs*
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
@@ -809,12 +809,12 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
  * `StepOutcome` it already builds (`#502`, 0120 phase 2). One union because
  * both reach the log through the same `emit`.
  */
-export type PassEvent =
+export type AttemptEvent =
   | ActionEvent
   | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
   | { type: 'StepEnded'; data: PayloadOf<'StepEnded'> }
 
-export interface PassOptions {
+export interface AttemptOptions {
   /**
    * The resolved recipe. Only `steps` is read, and it holds all ten (0061 §5),
    * so `recipe.steps[step]` is a lookup that cannot miss.
@@ -833,24 +833,24 @@ export interface PassOptions {
    * A frozen context here was `#253`'s first refusal, and it is worth naming:
    * every verdict a fix round pays for is stamped with the head *before* the fix,
    * so `stepsOn()` filters all of them out and the board shows a change with no
-   * build and no review — while `PassOver.steps` says ten steps passed.
+   * build and no review — while `AttemptOver.steps` says ten steps passed.
    */
   readonly context: ActionContext
   /**
    * Every event the pipeline produces, in order, before the next action
    * starts — and since `#502` the two `runStep` itself writes around it,
-   * `StepStarted` and `StepEnded` (`PassEvent`, below).
+   * `StepStarted` and `StepEnded` (`AttemptEvent`, below).
    *
    * Passed straight through: the pipeline does not touch the store and neither
    * does this, for the reason `PipelineOptions` gives — *an action that ran but
    * whose verdict was never recorded is the failure this design exists to
    * remove.*
    */
-  readonly emit: (event: PassEvent) => Promise<void> | void
+  readonly emit: (event: AttemptEvent) => Promise<void> | void
   /**
    * The ten bodies.
    *
-   * `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) is what a caller with a
+   * `bodiesFor` in [`attempt-steps.ts`](attempt-steps.ts) is what a caller with a
    * machine under it hands here — all ten of them.
    * **`NOT_BUILT_YET` is the default and stays it**: a pass handed nothing must do
    * the thing with no consequences, not the thing with a GitHub client behind it,
@@ -878,7 +878,7 @@ export interface PassOptions {
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
    * direction answers**, or that it declared none (`#462`). Moved here from
-   * `PassPorts` (`pass-steps.ts`), since a judge is asked by `routeProposal`
+   * `AttemptPorts` (`attempt-steps.ts`), since a judge is asked by `routeProposal`
    * now rather than by a step's own body — the seam is the same one
    * `judgeDeclaredAt`/`askTheAgent` answer through, only the caller moved.
    *
@@ -893,7 +893,7 @@ export interface PassOptions {
    * merge lane's clean trial merge was proved against; the answer is the merge
    * commit the tree now stands at, or why git said no.
    *
-   * A port because `runPass` runs no git (`pass-steps.ts`'s own header). Absent
+   * A port because `runAttempt` runs no git (`attempt-steps.ts`'s own header). Absent
    * where a caller says nothing, and the route then ends at a person: a merge
    * this pass cannot make is not one it pretends to have made.
    */
@@ -1024,23 +1024,23 @@ export type Ceiling = 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds'
 /**
  * **The pass's own terminal, 0120 §6's seam** — the three `AttemptNext` tags that
  * actually end a walk, named here rather than inline so `conduct.ts` and
- * `runPass` read one type for it.
+ * `runAttempt` read one type for it.
  *
- * `claim` and `end` run outside `runPass` (`claimStep` below, and the walk's
- * own last call to `SPEC.end`), so a `PassEnd` is always the *spine's* own
+ * `claim` and `end` run outside `runAttempt` (`claimStep` below, and the walk's
+ * own last call to `SPEC.end`), so a `AttemptEnd` is always the *spine's* own
  * terminal — never `claim`'s three declines, which `claimStep`'s caller reads
  * off its `StepReached` directly, and never `end`'s own ending, which cannot
  * change what already happened.
  */
-export type PassEnd = Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
+export type AttemptEnd = Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
 
 /**
- * **What `runPass` hands back** — the terminal, the evidence it is worded
+ * **What `runAttempt` hands back** — the terminal, the evidence it is worded
  * from, and the walk's own audit trail.
  */
-export interface PassOver {
-  /** The pass's own terminal — 0120 §6's `PassEnd`, and `outcomeOf`'s input. */
-  readonly end: PassEnd
+export interface AttemptOver {
+  /** The pass's own terminal — 0120 §6's `AttemptEnd`, and `outcomeOf`'s input. */
+  readonly end: AttemptEnd
   /**
    * **The step that reported something the pass stopped for**, or null where
    * nothing did.
@@ -1071,7 +1071,7 @@ export interface PassOver {
    * than *something other than `passed`***: `nextOf` threw, or a visit ended
    * some other way with no deciding action for `nextOf` to read at all.
    *
-   * Every one of those is forced into a `PassEnd` anyway, because `end`
+   * Every one of those is forced into a `AttemptEnd` anyway, because `end`
    * cannot be skipped — `never-ran` becomes `Requeued{NeverStarted{scope:
    * 'conductor'}}`, same as an agent meeting the account-wide wall always
    * has; anything else becomes `WaitOnPerson{AgentCrashed{cause: 'crash'}}`,
@@ -1110,7 +1110,7 @@ export interface PassOver {
  *
  * - `Landed` — `landed` (`conduct.ts`, the landed ending), and that stays true
  *   where `end`'s own body then stumbled: `main` moved either way, and `end`
- *   is never what stopped a pass (`PassOver.stopped`);
+ *   is never what stopped a pass (`AttemptOver.stopped`);
  * - `WaitOnPerson` — `blocked`. A refusal a person now holds, a question put
  *   to one, an agent that started and left no receipt, or the router deciding
  *   a person is next, all end with a person holding the question and the item
@@ -1129,7 +1129,7 @@ export interface PassOver {
  * ticket is over ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)),
  * and `close.ts` resolves `end` for it on its own path.
  */
-export function outcomeOf(end: PassEnd): TerminalOutcome {
+export function outcomeOf(end: AttemptEnd): TerminalOutcome {
   switch (end._tag) {
     case 'Landed':
       return 'landed'
@@ -1147,7 +1147,7 @@ export function outcomeOf(end: PassEnd): TerminalOutcome {
  * ```ts
  * const claimed = await claimStep({ recipe, context, emit, actionsAt });
  * // claimed.ending.ending === 'passed', or there is no item to run this on
- * const over = await runPass({ recipe, context, emit, actionsAt });
+ * const over = await runAttempt({ recipe, context, emit, actionsAt });
  * over.end;      // the terminal — Requeued, WaitOnPerson or Landed
  * over.stopped;  // null, or the step that stopped it and why
  * over.routes;   // what `proposed` decided, each time it decided
@@ -1168,7 +1168,7 @@ export function outcomeOf(end: PassEnd): TerminalOutcome {
  * 3. a route is a destination from the set the workflow offered: a step, and the
  *    walk resumes there having spent a round; or `waiting`; or `claim`, which
  *    requeues and ends the pass;
- * 4. `end` runs, whatever happened, against the `PassEnd` the walk settled —
+ * 4. `end` runs, whatever happened, against the `AttemptEnd` the walk settled —
  *    manufactured, where nothing else could classify the stop, by
  *    `unansweredEnd`.
  *
@@ -1181,14 +1181,14 @@ export function outcomeOf(end: PassEnd): TerminalOutcome {
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
  * is refused. So the walk is at most `rounds + 1` laps long.
  */
-export async function runPass(options: PassOptions): Promise<PassOver> {
+export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> {
   const bodies = options.bodies ?? NOT_BUILT_YET
   const ceilings = options.ceilings ?? NOTHING_SPARE
   const steps: StepReached[] = []
   const routes: RouteTaken[] = []
-  let stopped: PassOver['stopped'] = null
+  let stopped: AttemptOver['stopped'] = null
   let unanswered = false
-  let end: PassEnd | null = null
+  let end: AttemptEnd | null = null
   /** The merge commit a `Landed` visit reported, read back once the walk is over. */
   let landed: string | null = null
   let roundsSpent = options.from?.roundsSpent ?? 0
@@ -1212,7 +1212,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   /**
    * The step after this one — `after(step)` on an ordinary pass, and
    * `options.from.step` the one time the walk leaves `prepared` on a
-   * continuation (`PassOptions.from`'s own doc). `prepared` is visited at
+   * continuation (`AttemptOptions.from`'s own doc). `prepared` is visited at
    * most once a lap, so there is nothing to guard beyond asking which step
    * is being left.
    */
@@ -1653,7 +1653,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
   // (`landed`, the last `Landed` visit's own `integrated`) or not — the row
   // "a recipe that declares something *else* at `merge`" (`conduct.ts`) is
   // exactly `landed === null` reaching this line.
-  const settled: PassEnd =
+  const settled: AttemptEnd =
     end ??
     (landed === null
       ? { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'work-item' } }
@@ -1671,10 +1671,10 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
 
 /**
  * **`claim`, run before the walk and never inside it** (0120 §6, `#463`):
- * the one step whose body has nothing to route or requeue, so `runPass`'s
- * own terminal, `PassEnd`, has no row for it. `conduct.ts` calls this first,
+ * the one step whose body has nothing to route or requeue, so `runAttempt`'s
+ * own terminal, `AttemptEnd`, has no row for it. `conduct.ts` calls this first,
  * reads `.ending` itself — `passed`, or one of the three declines
- * (`passed-over`, `not-claimed`, `claim-unconfirmed`) — and calls `runPass`
+ * (`passed-over`, `not-claimed`, `claim-unconfirmed`) — and calls `runAttempt`
  * only once it answered `passed`.
  *
  * `runStep(SPEC.claim, …)` exactly, with `[]` for `reached` (nothing has run
@@ -1682,7 +1682,7 @@ export async function runPass(options: PassOptions): Promise<PassOver> {
  * walk's own first lap — `onSha` unmoved, `round: 0`, `recheck` from the
  * caller and nothing else, because nothing has been refused yet.
  */
-export async function claimStep(options: PassOptions): Promise<StepReached> {
+export async function claimStep(options: AttemptOptions): Promise<StepReached> {
   const bodies = options.bodies ?? NOT_BUILT_YET
   return runStep(SPEC.claim, options, bodies, [], {
     context: { ...options.context, round: 0, recheck: options.context.recheck ?? [] },
@@ -1694,18 +1694,18 @@ export async function claimStep(options: PassOptions): Promise<StepReached> {
  * **A stop `nextOf` never classified** — it threw, or a visit ended some way
  * other than `passed` with no deciding action at all for it to read
  * (`decidingAction(outcome) === null`, or no `outcome` at all). `end` cannot
- * be skipped over this (0058 §3), so the walk forces a `PassEnd` anyway:
+ * be skipped over this (0058 §3), so the walk forces a `AttemptEnd` anyway:
  * `never-ran` is the account-wide wall every other `NeverStarted` dispatch
  * already requeues on (0031 §3); anything else is reported as a crash so a
  * person is told rather than the pass vanishing with nothing on the log.
  *
  * **Lossy on purpose.** `AgentCrashed`'s own `detail` is this ending's
- * sentence and nothing finer — the real ending survives on `PassOver.stopped`
+ * sentence and nothing finer — the real ending survives on `AttemptOver.stopped`
  * regardless, which is what `conduct.ts` reads instead of
- * `end.reason` wherever `PassOver.unanswered` says this function built the
+ * `end.reason` wherever `AttemptOver.unanswered` says this function built the
  * answer rather than `nextOf`.
  */
-function unansweredEnd(step: Step, run: AttemptRef, ending: StepReport): PassEnd {
+function unansweredEnd(step: Step, run: AttemptRef, ending: StepReport): AttemptEnd {
   if (ending.ending === 'never-ran') {
     return { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } }
   }
@@ -1734,13 +1734,13 @@ function detailOf(ending: StepEnding): string {
  * The two things a visit is handed that depend on *how far the walk has got*
  * rather than on which step it is.
  *
- * Computed by `runPass` alone, because neither is derivable inside `runStep`:
+ * Computed by `runAttempt` alone, because neither is derivable inside `runStep`:
  * `outcome` needs where the pass rested, and `context` needs the head the walk
  * has reached, the round it is in and what that round was bought on.
  *
  * **`arriving`/`offering` left with `#462`'s routing move** — every visit
  * `runStep` runs is a spine visit now, since a routing visit is built
- * directly by `runPass` (`routeProposal`'s own `record()` calls) rather than
+ * directly by `runAttempt` (`routeProposal`'s own `record()` calls) rather than
  * through a second call to this step's body.
  */
 interface Reaching {
@@ -1797,7 +1797,7 @@ function designOn(reached: readonly StepReached[]): TheDesign {
  * **Why the pass is at this step a second time, read off the visits** — or
  * `null`, which is every visit on the way through.
  *
- * The route is the last visit when a step is re-entered: `runPass` records
+ * The route is the last visit when a step is re-entered: `runAttempt` records
  * `proposed`'s decision and then walks straight into the step it chose. The
  * question is the visit before that one, and only where *this* step asked it — a
  * route back to `implement` from a `build` that refused carries findings rather
@@ -1831,12 +1831,12 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  * (`tellGitHubAbout`, `tell.ts`) — here it would measure resolving them and
  * not doing them. Its status is `ERROR` when the
  * step refused, failed or never ran, with no message; the round is the only
- * attribute. A routing arrival at `proposed` is built by `runPass` and never
+ * attribute. A routing arrival at `proposed` is built by `runAttempt` and never
  * reaches here, and no action runs there.
  */
 function runStep(
   spec: StepSpec,
-  options: PassOptions,
+  options: AttemptOptions,
   bodies: StepBodies,
   reached: readonly StepReached[],
   reaching: Reaching,
@@ -1867,7 +1867,7 @@ function runStep(
  */
 async function runStepBody(
   spec: StepSpec,
-  options: PassOptions,
+  options: AttemptOptions,
   bodies: StepBodies,
   reached: readonly StepReached[],
   reaching: Reaching,
@@ -1906,7 +1906,7 @@ async function runStepBody(
 
   try {
     // Every visit `runStep` runs is a spine visit since `#462` — a routing
-    // visit is built directly by `runPass` and never reaches here.
+    // visit is built directly by `runAttempt` and never reaches here.
     if (spec.plugins === 'verdicts') {
       // Hoisted so the same list goes to the pipeline and to `outcomeOf`
       // (`#466`): `result.results[i]` belongs to `pipelineActions[i]`, and a
@@ -1914,7 +1914,7 @@ async function runStepBody(
       // same actions in the same order twice.
       const pipelineActions = options.actionsAt(spec.step, actions)
       /**
-       * **Only `options.from.step`'s own first visit** (`PassOptions.from`'s
+       * **Only `options.from.step`'s own first visit** (`AttemptOptions.from`'s
        * own doc) — `reached` already carries every visit this walk has made,
        * so a step that appears there has been visited before and a fix round
        * sending the pass back through it is not the visit the approval named.
@@ -2014,7 +2014,7 @@ async function runStepBody(
  * this whole file is arranged around. An `implement` body whose agent runtime
  * raises, a `merge` whose `git push` throws, an `actionsAt` that refuses to
  * build a cell, or one of this file's own workflow assertions firing would
- * otherwise end the pass with no `PassOver`, no resolved `end` effects and no
+ * otherwise end the pass with no `AttemptOver`, no resolved `end` effects and no
  * terminal outcome on the item at all — the silent `return 1` that
  * `RefusalReason`'s doc says the old loop was built to remove. A run that
  * vanishes is the one shape an unattended pipeline cannot report.
@@ -2027,7 +2027,7 @@ async function runStepBody(
  * (`runStep`'s own early return below), so `nextOf` reading that same
  * `StepOutcome` answers `Advance` — and the loop's own rule for a `nextOf`
  * that clears against a body that did not stands the pass down rather than
- * routing it (see `runPass`'s `Advance`/`Landed` cell). A `Propose` is never
+ * routing it (see `runAttempt`'s `Advance`/`Landed` cell). A `Propose` is never
  * on offer here either: it is `nextOf`'s reading of an action that did *not*
  * clear, and a step whose plugins did not clear returns before its body ever
  * runs, so no throw and no route can share one visit. `because: "threw"` is
@@ -2166,7 +2166,7 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
  * `did-not-finish`, and its head is the base the pass came in on.
  *
  * Spread rather than assigned, so that *the tree did not move* stays an absent
- * key — `record` in `runPass` advances `onSha` on `!== undefined`, and an
+ * key — `record` in `runAttempt` advances `onSha` on `!== undefined`, and an
  * explicit `undefined` would read the same to it and differently to a reader.
  *
  * Read by `runStep` and not by `endingOf`, because it must survive the body: a
@@ -2272,7 +2272,7 @@ function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
  * **Routing left with `#462`**: no body may answer `routed` any more —
  * `proposed`'s is `async () => ({ ending: 'passed' })` — so the two checks
  * that used to hold a body to its offer (`routes`/`routing.affordable`) are
- * gone with the thing they guarded, and `runPass`'s own `routeProposal` is
+ * gone with the thing they guarded, and `runAttempt`'s own `routeProposal` is
  * what the loop is held to instead.
  *
  * Every throw is caught by `runStep` and reported as the visit's ending,
@@ -2291,7 +2291,7 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding): StepEnding {
   if (ending.ending === 'routed') {
     throw new Error(
       `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and no body may route any ` +
-        "more (`#462`) — `runPass`'s own loop does that now, off `nextOf`'s `Propose`.",
+        "more (`#462`) — `runAttempt`'s own loop does that now, off `nextOf`'s `Propose`.",
     )
   }
   return ending

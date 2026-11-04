@@ -89,7 +89,7 @@ export interface AgentHostPort {
    * `HookServer` the caller then had to `listen()` and `close()`; it now hands
    * back one already listening, and closes it when the scope closes. A fake
    * implements the same pair, which is what lets
-   * `unit/conduct-a-whole-pass.test.ts` assert that the close happened at all.
+   * `unit/conduct-a-whole-attempt.test.ts` assert that the close happened at all.
    */
   serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>
   /**

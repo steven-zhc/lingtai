@@ -1,7 +1,7 @@
 import type { StepPlan } from '@lingtai/conductor/filter'
 /**
  * #482: what today's code shows for the history rows and the progress strip,
- * for every ending `what-a-pass-writes-today.test.ts` (#461) pins — before
+ * for every ending `what-an-attempt-writes-today.test.ts` (#461) pins — before
  * #484 is free to rewrite `task.ts`'s `groupHistory` and `progress.ts`'s
  * `progressOf` onto the read model (`waitsOf`/`routesOf`/`stepOutcomesOf`).
  *
@@ -10,7 +10,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * none of it is exported (`doc/design/466.md:116`). Every row below rebuilds
  * `typesOf(theItem)` and `typesOf(theRun)` wherever that conductor test's own
  * `it` block asserts them — captured by actually running that file's own
- * fixtures once (`packages/conductor/test/one-pass.ts`) and copying the full
+ * fixtures once (`packages/conductor/test/one-attempt.ts`) and copying the full
  * payloads back, so every field below is a real wire shape today's pass wrote
  * and not an invented one. **Not every row asserts both sequences there**:
  * 13b no item-side, 14c and 14d neither, 15/15b/15c no item-side (a declined
@@ -148,7 +148,7 @@ function stripOf(
   )
 }
 
-// Row 1, `what-a-pass-writes-today.test.ts:162` — see the it() title below
+// Row 1, `what-an-attempt-writes-today.test.ts:162` — see the it() title below
 const ITEM_1: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -725,7 +725,7 @@ it('1. lands with no rounds spent', () => {
   ])
 })
 
-// Row 2, `what-a-pass-writes-today.test.ts:223` — see the it() title below
+// Row 2, `what-an-attempt-writes-today.test.ts:223` — see the it() title below
 const ITEM_2: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -1603,7 +1603,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
   ])
 })
 
-// Row 4, `what-a-pass-writes-today.test.ts:347` — see the it() title below
+// Row 4, `what-an-attempt-writes-today.test.ts:347` — see the it() title below
 const ITEM_4: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -2248,7 +2248,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
   ])
 })
 
-// Row 5, `what-a-pass-writes-today.test.ts:471` — see the it() title below
+// Row 5, `what-an-attempt-writes-today.test.ts:471` — see the it() title below
 const ITEM_5: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -3071,7 +3071,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
   ])
 })
 
-// Row 6, `what-a-pass-writes-today.test.ts:585` — see the it() title below
+// Row 6, `what-an-attempt-writes-today.test.ts:585` — see the it() title below
 const ITEM_6: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -3595,7 +3595,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
   ])
 })
 
-// Row 7, `what-a-pass-writes-today.test.ts:705` — see the it() title below
+// Row 7, `what-an-attempt-writes-today.test.ts:705` — see the it() title below
 const ITEM_7: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -4398,7 +4398,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
   ])
 })
 
-// Row 9, `what-a-pass-writes-today.test.ts:812` — see the it() title below
+// Row 9, `what-an-attempt-writes-today.test.ts:812` — see the it() title below
 const ITEM_9: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -5195,7 +5195,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
   ])
 })
 
-// Row 10a, `what-a-pass-writes-today.test.ts:900` — see the it() title below
+// Row 10a, `what-an-attempt-writes-today.test.ts:900` — see the it() title below
 const ITEM_10a: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -5914,7 +5914,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
   ])
 })
 
-// Row 10b, `what-a-pass-writes-today.test.ts:988` — see the it() title below
+// Row 10b, `what-an-attempt-writes-today.test.ts:988` — see the it() title below
 const ITEM_10b: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -6633,7 +6633,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
   ])
 })
 
-// Row 11, `what-a-pass-writes-today.test.ts:1086` — see the it() title below
+// Row 11, `what-an-attempt-writes-today.test.ts:1086` — see the it() title below
 const ITEM_11: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -6986,7 +6986,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
   ])
 })
 
-// Row 12, `what-a-pass-writes-today.test.ts:1171` — see the it() title below
+// Row 12, `what-an-attempt-writes-today.test.ts:1171` — see the it() title below
 const ITEM_12: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -7592,7 +7592,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
   ])
 })
 
-// Row 13, `what-a-pass-writes-today.test.ts:1249` — see the it() title below
+// Row 13, `what-an-attempt-writes-today.test.ts:1249` — see the it() title below
 const ITEM_13: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -8359,7 +8359,7 @@ it('13. a judge answer is unreadable', () => {
   ])
 })
 
-// Row 13b, `what-a-pass-writes-today.test.ts:1332` — see the it() title below
+// Row 13b, `what-an-attempt-writes-today.test.ts:1332` — see the it() title below
 const ITEM_13b: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -9041,7 +9041,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
   ])
 })
 
-// Row 14a, `what-a-pass-writes-today.test.ts:1493` — see the it() title below
+// Row 14a, `what-an-attempt-writes-today.test.ts:1493` — see the it() title below
 const ITEM_14a: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -9607,7 +9607,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
   ])
 })
 
-// Row 14b, `what-a-pass-writes-today.test.ts:1579` — see the it() title below
+// Row 14b, `what-an-attempt-writes-today.test.ts:1579` — see the it() title below
 const ITEM_14b: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -10095,7 +10095,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
   ])
 })
 
-// Row 14c, `what-a-pass-writes-today.test.ts:1377` — see the it() title below
+// Row 14c, `what-an-attempt-writes-today.test.ts:1377` — see the it() title below
 const ITEM_14c: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -10908,7 +10908,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
   ])
 })
 
-// Row 14d, `what-a-pass-writes-today.test.ts:1434` — see the it() title below
+// Row 14d, `what-an-attempt-writes-today.test.ts:1434` — see the it() title below
 const ITEM_14d: EventSpec[] = [
   {
     type: 'TicketClaimed',
@@ -11579,15 +11579,15 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
   ])
 })
 
-// Row 15, `what-a-pass-writes-today.test.ts:1657` — a claim decline (`passed-over`) writes no work-item events
+// Row 15, `what-an-attempt-writes-today.test.ts:1657` — a claim decline (`passed-over`) writes no work-item events
 it('15. a claim decline (`passed-over`) writes no work-item events', () => {
   // Under #502, claim writes no run events at all for a declined take — no
-  // StepStarted/StepEnded pair opens, because claim runs outside runPass (0120
+  // StepStarted/StepEnded pair opens, because claim runs outside runAttempt (0120
   // §6). The work-item stream is untouched either way.
   expect(historyOf([], new Map())).toEqual([])
 })
 
-// Row 15b, `what-a-pass-writes-today.test.ts:1698` — a claim decline (`not-claimed`) writes no work-item events
+// Row 15b, `what-an-attempt-writes-today.test.ts:1698` — a claim decline (`not-claimed`) writes no work-item events
 it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
   // The item stream does carry one event here — `TicketClaimed` by
   // `pass-somebody-else`, seeded so `claimTicket` reads the item as held — but
@@ -11597,7 +11597,7 @@ it('15b. a claim decline (`not-claimed`) writes no work-item events', () => {
   expect(historyOf([], new Map())).toEqual([])
 })
 
-// Row 15c, `what-a-pass-writes-today.test.ts:1742` — a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing
+// Row 15c, `what-an-attempt-writes-today.test.ts:1742` — a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing
 const ITEM_15c: EventSpec[] = [
   {
     type: 'TicketReleased',
@@ -11621,7 +11621,7 @@ const ITEM_15c: EventSpec[] = [
 ]
 
 it('15c. a claim decline (`claim-unconfirmed`) writes TicketReleased and resolves nothing', () => {
-  // Claim writes no run events at all under #502 (claim runs outside runPass,
+  // Claim writes no run events at all under #502 (claim runs outside runAttempt,
   // 0120 §6), so there is no RUN_15c to validate here — only the item side.
   const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_15c)
   expect(historyOf(itemEvents, new Map())).toEqual([
@@ -11643,7 +11643,7 @@ it('15c. a claim decline (`claim-unconfirmed`) writes TicketReleased and resolve
     },
   ])
 })
-// Row 16, `what-a-pass-writes-today.test.ts:1902` — see the it() title below
+// Row 16, `what-an-attempt-writes-today.test.ts:1902` — see the it() title below
 const ITEM_16: EventSpec[] = [
   {
     type: 'TicketClaimed',

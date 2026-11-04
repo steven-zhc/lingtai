@@ -8,7 +8,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * *a rule about spending money that lives inside an `if` in a 3,000-line file is
  * a rule nobody can check.* Neither function here decides anything — the
  * destination comes back from the model and is held to the offer by `judged` in
- * `pass-steps.ts`, which is where every other route is held to it too.
+ * `attempt-steps.ts`, which is where every other route is held to it too.
  *
  * **Why an agent at all, for one of the twelve directions.** 0061 §3 measured
  * `findings` at 231 refusals in fourteen days and calls it *the one judgement
@@ -33,8 +33,8 @@ import type { ActionFinding } from '@lingtai/actions'
  */
 import { STEPS } from '@lingtai/domain'
 
-import type { Judging } from './pass-steps.ts'
-import type { Destination } from './pass.ts'
+import type { Judging } from './attempt-steps.ts'
+import type { Destination } from './run-attempt.ts'
 
 /**
  * What each offered destination *is*, in the words the agent is asked to choose
@@ -163,7 +163,7 @@ function isDestination(value: unknown): value is Destination {
  * **A destination it was not offered is returned, not dropped**, and that is the
  * one case where being permissive here is the safe thing. The refusal a person
  * reads names what the judge asked for and which entry of the recipe to edit —
- * `judged` in `pass-steps.ts` builds it — and a null here would lose that,
+ * `judged` in `attempt-steps.ts` builds it — and a null here would lose that,
  * leaving *the judge said nothing* on the card for a judge that said `implement`
  * with every round spent.
  */

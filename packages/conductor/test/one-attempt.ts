@@ -52,7 +52,7 @@ export const withPorts = (ports: RunPorts) =>
  * GitHub's `fileAt` so each test keeps the recipe it wrote.
  *
  * **The write-your-own-adapter check `#461`'s fixture used to run here is
- * gone (#502).** `StepEnded{outcome}` is `pass.ts`'s own `StepOutcome`
+ * gone (#502).** `StepEnded{outcome}` is `run-attempt.ts`'s own `StepOutcome`
  * written straight to the log now — there is no second, independently-built
  * copy of the per-action events for a mismatch to show up between, so the
  * cross-check this function used to run against `eventOf` would only ever

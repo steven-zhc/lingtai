@@ -1,5 +1,5 @@
 /**
- * **A `build` refusal the base shares buys no round** (#744, 0108 §13): `runPass` asks
+ * **A `build` refusal the base shares buys no round** (#744, 0108 §13): `runAttempt` asks
  * `baseIsRed` before `replyFor`, only when a round is on offer, and a `red` ends the pass at a
  * person with the base's own evidence. Over fake bodies and the memory store — the live wiring
  * in `conduct.ts` (the cut, the plant) is reached only by the integration half.
@@ -11,7 +11,7 @@ import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createBaseCheck } from '../src/base-check.ts'
-import { runPass, type PassOptions, type StepBodies } from '../src/pass.ts'
+import { runAttempt, type AttemptOptions, type StepBodies } from '../src/run-attempt.ts'
 
 const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
 const SHA = 'a'.repeat(40)
@@ -22,7 +22,7 @@ const bodies = Object.fromEntries(
 ) as unknown as StepBodies
 
 const actionsAt =
-  (): PassOptions['actionsAt'] =>
+  (): AttemptOptions['actionsAt'] =>
   (step: Step): Action[] => {
     if (step === 'admit')
       return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
@@ -41,8 +41,8 @@ const actionsAt =
     return []
   }
 
-const run = (ceilings: { rounds: number }, over: Partial<PassOptions>) =>
-  runPass({
+const run = (ceilings: { rounds: number }, over: Partial<AttemptOptions>) =>
+  runAttempt({
     recipe: { steps: StepMap.parse({}) },
     context,
     emit: () => {},

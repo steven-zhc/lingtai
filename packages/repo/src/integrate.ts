@@ -543,7 +543,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       /**
        * **The structural half of #468's guarantee** — the other half is that no
        * step of the pass that makes one ever sees it (`conduct.ts`'s own
-       * `keepUncommittedWork` runs after `runPass` returns). This is what
+       * `keepUncommittedWork` runs after `runAttempt` returns). This is what
        * catches a *later* pass that committed on top of one instead of taking
        * its contents and leaving it behind, as the brief asks.
        */

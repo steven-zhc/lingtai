@@ -1,12 +1,12 @@
 /**
- * **The ten bodies**, against the contract [`pass.ts`](pass.ts) already fixed —
+ * **The ten bodies**, against the contract [`run-attempt.ts`](run-attempt.ts) already fixed —
  * `claim`, `admit`, `prepared`, `design`, `implement` and `end` from T4a
  * (`#259`), and `build`, `review`, `proposed` and `merge` from T4b (`#254`).
  *
- * **Still wired to nothing** (`#254`, `#259`, and `#253` before them). `runPass`
+ * **Still wired to nothing** (`#254`, `#259`, and `#253` before them). `runAttempt`
  * takes the ten bodies as a seam and defaults to `NOT_BUILT_YET`; this file is
  * what a caller hands it instead, and no caller does yet. T5 is the ticket that
- * wires it, and `pass.test.ts`'s *nothing in the conductor imports it* is the test
+ * wires it, and `run-attempt.test.ts`'s *nothing in the conductor imports it* is the test
  * that fails the day anything but the pass's own two files does.
  *
  * **Five of the ten are nothing beyond their plugins** — `prepared`, `build`,
@@ -33,7 +33,7 @@
  * So the bodies here are thin on purpose and the thinness is the point: every
  * line of them is a mapping from *what happened* to *what that costs*. Nothing
  * in them spawns a process, reads GitHub, cuts a worktree or pays an agent —
- * `PassPorts` does, and it is handed in. That is why this file's tests are in
+ * `AttemptPorts` does, and it is handed in. That is why this file's tests are in
  * `unit/` and the `build` point runs them
  * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1).
  *
@@ -63,10 +63,10 @@
  *
  * **Why plain promises rather than [0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)'s
  * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
- * the conversion is at the boundary the *caller* stands on. `runPass` is plain,
+ * the conversion is at the boundary the *caller* stands on. `runAttempt` is plain,
  * its `actionsAt` and `emit` seams are plain, and a second calling convention
  * inside one file would be a thing to learn for no gain. The caller that builds
- * a live `PassPorts` from `Repo` and `AgentHost` runs the conversion there, once,
+ * a live `AttemptPorts` from `Repo` and `AgentHost` runs the conversion there, once,
  * where it already has a runtime.
  *
  * ## What travels between the steps, and how
@@ -96,7 +96,7 @@
  *
  * **What the loop already carries is read off `StepWork` and never kept here**,
  * and there are three of those. The head: a step that moved the tree says so on
- * its ending (`LeftTheTreeAt`) and `runPass` carries it to every visit after, which
+ * its ending (`LeftTheTreeAt`) and `runAttempt` carries it to every visit after, which
  * is why `admit` and `implement` return one and nothing here reads `onSha` back.
  * The route back: which visit sent the pass to this step and why is in
  * `reached`, so `SentBack` is computed from the visit list rather than remembered
@@ -109,7 +109,7 @@
  *
  * **What does not travel is the worktree's path into `ActionContext.cwd`.** The
  * pass rebuilds three fields of the context per visit — `onSha`, `round`,
- * `recheck` — and `cwd` is the caller's throughout (`PassOptions.context`). So a
+ * `recheck` — and `cwd` is the caller's throughout (`AttemptOptions.context`). So a
  * declared `run:` at `prepared` or `build` runs where the *caller* said, and
  * `admit` cutting a worktree does not move it. That is T5's to close, and it is
  * named here rather than worked around: a body cannot write the context, and
@@ -142,7 +142,7 @@ import {
   type StepDidNotFinish,
   type StepPassed,
   type StepReached,
-} from './pass.ts'
+} from './run-attempt.ts'
 
 // -------------------------------------------------- what a pass is about ----
 
@@ -159,7 +159,7 @@ export interface Ticket {
  * it needs.
  *
  * `conduct.ts` holds it — the closure whose `take` dep made it — and the pass
- * reads it back through `PassPorts.item` (`#269`).
+ * reads it back through `AttemptPorts.item` (`#269`).
  */
 export interface Claimed {
   /** `ticket-<project>-<issue>` — `ticketStream`, and where `end` appends. */
@@ -198,7 +198,7 @@ export interface Asked {
  * `Asked` above says the judge at `proposed` may answer a question with `waiting`
  * *or that step again with* state your assumption. The second of those spends a
  * round — `offerFor`'s `InputNeeded` cell (`@lingtai/domain`) puts the asking
- * step back on the offer, and `runPass` walks into it again — and a round
+ * step back on the offer, and `runAttempt` walks into it again — and a round
  * costs an agent run. So the step must be run
  * *differently* the second time, and the only thing that can make it different is
  * what the judge said: `context.recheck` is empty on this edge, because a
@@ -222,7 +222,7 @@ export interface Asked {
  * **It moved to `@lingtai/actions` in `#266`, and is re-exported here.** The
  * step it is written for is a plugin now — `createWorkAction` reads it off
  * `ActionContext.again` — so it has to be a name that package can see, and
- * `pass.ts` is where the reducer that computes it lives (`sentBackTo`).
+ * `run-attempt.ts` is where the reducer that computes it lives (`sentBackTo`).
  */
 export type { SentBack }
 
@@ -369,7 +369,7 @@ type Arrival = Omit<Judging, 'offering'> & {
    * handed it, because an arrival carrying it is answered before any judge is
    * asked. So it is on `Arrival` and not on `Judging` — the brief is the three
    * fields and the set, and what keeps it that way is the key-set assertion at
-   * the end of `pass-steps.test.ts`'s *offers a judge only the steps the pass
+   * the end of `attempt-steps.test.ts`'s *offers a judge only the steps the pass
    * reached*: `Object.keys` of the brief is exactly `evidence`, `findings`,
    * `offering`, `when`. A field added to `Judging` fails there by name, which is
    * the whole reason that assertion is a key set rather than a spot check.
@@ -426,7 +426,7 @@ export type Judged =
    * and this item does not back off** (0031 §3).
    *
    * The same arm `Worked` carries, and the same shape `routeProposal` builds
-   * inline (`pass.ts`) rather than through a named helper, because the judge
+   * inline (`run-attempt.ts`) rather than through a named helper, because the judge
    * is the *third* depth the one wall is met at — after the step's own
    * agent and after the agent a refusal bought. A quota is about the account and
    * never about the diff (0031 §1), so a judge that never started has judged
@@ -479,7 +479,7 @@ export type Judged =
  * live implementation is a wrapper over code that already exists — which is the
  * `#226` rule T2 is held to as well, *a plugin should wrap, not reimplement*.
  */
-export interface PassPorts {
+export interface AttemptPorts {
   /**
    * `end` — **the stream `claim`'s `queue:` action left the pass on**, or null
    * where the pass is about no item.
@@ -572,7 +572,7 @@ export const END_UNRESOLVED = 'end-unresolved'
  * `review` `passed` whatever it found (0058 §3: a reviewer's `failed`
  * verdict is its findings, not a verdict about the step), so `'detail' in
  * ending` below is false for that visit and `ReviewFindings`/`ReviewEmpty`'s
- * own `evidence` is the empty string every time — `pass-steps.test.ts`'s own
+ * own `evidence` is the empty string every time — `attempt-steps.test.ts`'s own
  * assertion pins it. The free text a `findings` judge reads for that
  * direction is the findings themselves (`Judging.findings`), never this
  * field; `evidence` is populated only for the other four directions, off the
@@ -609,7 +609,7 @@ export function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
  * cleared by the take that makes them — which is the only place a reset can be,
  * now that the work runs *before* the body rather than in it.
  */
-export function bodiesFor(ports: PassPorts): StepBodies {
+export function bodiesFor(ports: AttemptPorts): StepBodies {
   return {
     ...NOT_BUILT_YET,
 
@@ -632,7 +632,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * are *took it* and three ways of *did not*, the three arrive as `failed`
      * verdicts at a step `REFUSING_STEPS` does not carry, and `endingOf` reports
      * each as a `did-not-finish` carrying the action's own `because`. None of them
-     * reaches `nextOf` either — `claim` runs outside `runPass`, and `nextOf` throws
+     * reaches `nextOf` either — `claim` runs outside `runAttempt`, and `nextOf` throws
      * if it is asked about it (0120 §6).
      *
      * **It is still where a pass begins, and there is nothing left here to
@@ -698,7 +698,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * is — *refuse before money is spent* — and the refusal has to travel: to
      * `proposed`, carrying its reason, answered there, with the person shown the
      * install that failed rather than the router that sent it to them. Every one
-     * of those joins is the skeleton's, and `pass-steps.test.ts`'s *a failed
+     * of those joins is the skeleton's, and `attempt-steps.test.ts`'s *a failed
      * install refuses, and the refusal reports like any other* is what says they
      * carry something real rather than a fixture.
      *
@@ -801,7 +801,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      *
      * **`runPlugin` declares itself at `build` since 2026-09-27** (`a417908`), and
      * this body did not have to change for it — which was the claim. A step whose
-     * work is entirely its plugins' needs an `at` key and nothing else: `runPass`
+     * work is entirely its plugins' needs an `at` key and nothing else: `runAttempt`
      * resolves `actionsAt(step, actions)` at all ten and runs them through
      * `runActionPipeline` before any body, and returns the pipeline's ending
      * without reaching the body when it did not pass.
@@ -835,8 +835,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     /**
      * **Nothing beyond its plugins, since `#462`.**
      *
-     * The routing this step's own name carries moved into `runPass`'s loop
-     * (`pass.ts`, through `proposed-route.ts`): `nextOf`'s `Propose` is what
+     * The routing this step's own name carries moved into `runAttempt`'s loop
+     * (`run-attempt.ts`, through `proposed-route.ts`): `nextOf`'s `Propose` is what
      * drives it now, at every step that produces one, not only on a visit this
      * body was handed. What is left here is exactly what every declarable step's
      * body is — the recipe's own `human:`/`watch:`/tamper plugins have already
@@ -895,13 +895,13 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * **`resolveEndActions` is called rather than reimplemented**, which is the
      * wiring this ticket asks for. What it knows — which cells `when:` matches,
      * and that a point resolves once per outcome — is named on
-     * `PassPorts.recordEnd`, where the seam is.
+     * `AttemptPorts.recordEnd`, where the seam is.
      *
      * **A pass with no stream behind it resolves nothing.** `EndActionsResolved`
      * lives on the work item's stream, and a `claim` that took no item leaves
      * none to append to; a `claim` that may have taken one leaves a stream and no
      * ticket, and that is enough for this step (`TakeAnswer`'s `mayHold`, and
-     * `PassPorts.onStream` is why it is asked rather than remembered). What the
+     * `AttemptPorts.onStream` is why it is asked rather than remembered). What the
      * body must not do either way is throw, because the ending it is running for
      * has already happened.
      *

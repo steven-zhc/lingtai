@@ -1,5 +1,5 @@
 /**
- * `passCeiling`, alone in a file with nothing to import but arithmetic.
+ * `attemptCeiling`, alone in a file with nothing to import but arithmetic.
  *
  * It was in `filter.ts`, beside a GitHub client and the environment, and the
  * onboarding wizard (#164) recomputes it in the browser as the `limits` dials
@@ -55,7 +55,7 @@ import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/dur
  * for `steps`. Only `implement`'s runs are in the product, for the reason the
  * cold reviewer's own `wall` already is not (see `boundsBesides`).
  */
-export function passCeiling(limits: {
+export function attemptCeiling(limits: {
   rounds: number
   restarts: number
   turns: TurnLimit

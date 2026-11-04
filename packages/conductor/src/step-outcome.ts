@@ -3,7 +3,7 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * `actionOf` turns one plugin's `ActionResult` (`@lingtai/actions`) into a
  * typed `Action` (`@lingtai/domain`'s `action.ts`); `outcomeOf` zips a whole
  * step's `actions` and `PipelineResult` into the `StepOutcome` that step
- * ended with — the shape `pass.ts`'s `runStep` writes straight onto
+ * ended with — the shape `run-attempt.ts`'s `runStep` writes straight onto
  * `StepEnded` since #502.
  *
  * **`eventOf` reads `plugin`, and `nextOf` (`@lingtai/domain`'s

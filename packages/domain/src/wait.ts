@@ -203,7 +203,7 @@ const StandingReason = z.discriminatedUnion('_tag', [
  * An agent that crashed, timed out or was aborted.
  *
  * **Every step but `claim` and `end`**, since #463: `claim` and `end` run
- * outside `runPass` (0120 §6), and the walk itself — `nextOf` throwing, or a
+ * outside `runAttempt` (0120 §6), and the walk itself — `nextOf` throwing, or a
  * body answering something other than `passed` with no deciding action to
  * read — can stop at `admit`, `prepared` or `build` too, none of which an
  * *agent's own* `Interrupted` could ever name (`attempt-next.ts:309`'s guard is

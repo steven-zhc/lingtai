@@ -886,7 +886,7 @@ those three has one spelling to point at.
 `NeverStarted.scope` is written `'work-item'`
 (`packages/domain/src/events.ts:226`) into every `TicketReleased.cause` that
 carries it, mirrored in `action.ts` and `pass-next.ts` and written at
-`conductor/src/pass.ts`. An exemption is a `continue` that excuses a spelling
+`conductor/src/run-attempt.ts`. An exemption is a `continue` that excuses a spelling
 everywhere at once and grows nothing — the door the four words' exemptions are
 bolted against — and a stored name is a log change, which
 [#450](https://github.com/steven-zhc/lingtai/issues/450) and
@@ -1015,7 +1015,7 @@ failure, not a number nobody was watching.
 | `apps/cli/src/source.ts` | `work-items` ×2 |
 | `apps/site/src/app/snapshot-board.tsx` | `work-items` ×1 |
 | `packages/conductor/src/discuss.ts` | `work-item` ×2 |
-| `packages/conductor/src/pass.ts` | `work-item` ×1 |
+| `packages/conductor/src/run-attempt.ts` | `work-item` ×1 |
 | `packages/conductor/src/ticket-store.ts` | `work-items` ×1 |
 | `packages/domain/src/action.ts` | `work-item` ×1 |
 | `packages/domain/src/attempt-next.ts` | `work-item` ×2 |
@@ -1227,7 +1227,7 @@ step later.
 `packages/conductor/src/judge.ts` takes the entry whose `when:` matches; and its
 row in `CALLED_DIRECTLY` went in the same diff, which is what the rule above
 promises will happen rather than an exception to it. The ceilings did not move
-with it — `Ceilings` and `onOffer` in `packages/conductor/src/pass.ts` still
+with it — `Ceilings` and `onOffer` in `packages/conductor/src/run-attempt.ts` still
 decide what a judge may choose *from*, and `decideFix` in
 `packages/conductor/src/fix.ts` and `decideRestart` in
 `packages/conductor/src/restart.ts` are the same two questions asked in the

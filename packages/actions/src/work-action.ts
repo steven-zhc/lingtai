@@ -15,7 +15,7 @@
  * *the commit this agent left*, which is what moves `onSha` for every step after
  * it. A round judged against the wrong head is a round spent on a diff nobody
  * wrote, so the thing that dispatched the agent is the only thing that says where
- * it stopped, and `LeftTheTreeAt` in `packages/conductor/src/pass.ts` carries it
+ * it stopped, and `LeftTheTreeAt` in `packages/conductor/src/run-attempt.ts` carries it
  * onto the step's ending.
  *
  * **It wraps and does not reimplement** (`#226`). The dispatch itself is
@@ -46,7 +46,7 @@ import { boundedEvidence } from './command.ts'
 
 /**
  * What the dispatch answers. The same four arms `Worked` carries in
- * `packages/conductor/src/pass-steps.ts`, which is where the caller's two
+ * `packages/conductor/src/attempt-steps.ts`, which is where the caller's two
  * implementations — the first dispatch and the fix round — already produce them.
  */
 export type WorkedAnswer =

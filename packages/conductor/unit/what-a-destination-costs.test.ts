@@ -35,7 +35,7 @@
  * **No plugin is a destination yet**, which is 0069's *what the first
  * destination plugin is … is `#295`'s remaining tickets*. So the destination
  * here is declared as the `agent:` that writes the design today and its answers
- * are canned — the arrangement `pass.test.ts`'s *what design's ending carries to
+ * are canned — the arrangement `run-attempt.test.ts`'s *what design's ending carries to
  * implement* uses one ticket earlier (`#297`), and for its reason: nothing in
  * the tree can be the subject yet, so what is pinned is **what the first one
  * will meet**. None of the three rows is a plugin's to implement; each is made
@@ -55,8 +55,15 @@ import { offerFor, type Proposal, type Step } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { outcomeOf, runPass, type Ceilings, type PassEvent, type PassOptions, type PassOver } from '../src/pass.ts'
 import { destinationOf } from '../src/proposed-route.ts'
+import {
+  outcomeOf,
+  runAttempt,
+  type Ceilings,
+  type AttemptEvent,
+  type AttemptOptions,
+  type AttemptOver,
+} from '../src/run-attempt.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 
@@ -78,22 +85,25 @@ const SPARE: Ceilings = { rounds: 2, restarts: 1, restartsSpent: 0 }
 const DESTINATION = { name: 'keep it', agent: 'claude-code', prompt: 'write the shape down' }
 
 /** A destination that answers what the row under test says it answers. */
-const answering = (result: ActionResult): PassOptions['actionsAt'] => {
+const answering = (result: ActionResult): AttemptOptions['actionsAt'] => {
   const kept: Action = { name: DESTINATION.name, kind: 'agent', yields: 'design', run: async () => result }
   return (step, actions) => (step === 'design' ? [kept] : actions.map((a) => ({ ...kept, name: a.name })))
 }
 
 /** A `StepEnded` event, narrowed from the union `emit` is handed. */
-function stepEndedFor(events: readonly PassEvent[], step: Step): Extract<PassEvent, { type: 'StepEnded' }> | undefined {
+function stepEndedFor(
+  events: readonly AttemptEvent[],
+  step: Step,
+): Extract<AttemptEvent, { type: 'StepEnded' }> | undefined {
   return events.find(
-    (e): e is Extract<PassEvent, { type: 'StepEnded' }> => e.type === 'StepEnded' && e.data.outcome.step === step,
+    (e): e is Extract<AttemptEvent, { type: 'StepEnded' }> => e.type === 'StepEnded' && e.data.outcome.step === step,
   )
 }
 
 /** One pass with a destination at `design`, and the events it appended. */
-async function passWith(result: ActionResult): Promise<{ result: PassOver; events: PassEvent[] }> {
-  const events: PassEvent[] = []
-  const passed = await runPass({
+async function attemptWith(result: ActionResult): Promise<{ result: AttemptOver; events: AttemptEvent[] }> {
+  const events: AttemptEvent[] = []
+  const passed = await runAttempt({
     recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
     context: { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
     emit: (event) => void events.push(event),
@@ -106,7 +116,7 @@ async function passWith(result: ActionResult): Promise<{ result: PassOver; event
 }
 
 /** The visits, in order, which is the whole of *what did this pass pay for*. */
-const visited = (result: PassOver): readonly Step[] => result.steps.map((visit) => visit.step)
+const visited = (result: AttemptOver): readonly Step[] => result.steps.map((visit) => visit.step)
 
 /**
  * Why the schema refused this `design:` list — the issues themselves rather than
@@ -179,7 +189,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
     it('costs nothing, because the pass is never reached', async () => {
       expect(refusing({ ...DESTINATION, prompt: 12 })).not.toEqual([])
 
-      const { result } = await passWith({ verdict: 'passed', evidence: 'kept it', findings: [], document: 'x' })
+      const { result } = await attemptWith({ verdict: 'passed', evidence: 'kept it', findings: [], document: 'x' })
       expect(visited(result)).toContain('design')
     })
   })
@@ -201,7 +211,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
    */
   describe('the destination was briefly unreachable', () => {
     it('ends `did-not-finish`, stops the pass, and buys no round', async () => {
-      const { result, events } = await passWith({
+      const { result, events } = await attemptWith({
         verdict: 'did-not-finish',
         evidence: 'confluence.example: ETIMEDOUT after 30s',
         findings: [],
@@ -249,7 +259,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * ticket's *watch out*.
      */
     it('reads a refusal at `design` as the same ending, and still buys no round', async () => {
-      const { result } = await passWith({
+      const { result } = await attemptWith({
         verdict: 'failed',
         evidence: 'the wiki answered 503',
         findings: [],
@@ -283,7 +293,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
     }
 
     it('ends `asked`, reaches the router, and rests at a person', async () => {
-      const { result, events } = await passWith(asking)
+      const { result, events } = await attemptWith(asking)
 
       expect(result.steps.find((visit) => visit.step === 'design')?.ending).toEqual({
         ending: 'asked',
@@ -308,7 +318,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * had two to give.
      */
     it('buys no round, though there were rounds to spend', async () => {
-      const { result } = await passWith(asking)
+      const { result } = await attemptWith(asking)
 
       expect(result.steps.filter((visit) => visit.step === 'design')).toHaveLength(1)
       expect(result.routes.every((route) => route.ceiling === null)).toBe(true)

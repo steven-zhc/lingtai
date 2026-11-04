@@ -27,7 +27,7 @@ import {
   once,
   project,
   refusingRuntime,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 /** Rounds and restarts to spare: a granted continuation's own round is free and the next arrival
  * is offered `claim` and `waiting` only where a restart is left, so a judge is bought only then. */

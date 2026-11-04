@@ -23,7 +23,7 @@
  * `proposed` action `judge` and checks the refusal survives the signoff.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
- * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
+ * no process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import { waitWords, reduceAttempt, type Action, type PayloadOf } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
@@ -41,7 +41,7 @@ import {
   restartRecipe,
   restartRecipeNamedJudge,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 describe('the approval a refusal reaches a person with', () => {
   /**

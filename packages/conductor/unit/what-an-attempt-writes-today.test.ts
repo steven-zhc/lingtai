@@ -7,25 +7,25 @@
  * transcribing 0120's draft table. Phase 1 (#466, #467) moves the pass onto
  * `nextOf` without changing one event; this is what makes that claim checkable.
  *
- * Driven with `once()` from `test/one-pass.ts`, never `runPass` directly:
- * `runPass` appends nothing (`pass.ts:1069` — *the pipeline does not touch the
+ * Driven with `once()` from `test/one-attempt.ts`, never `runAttempt` directly:
+ * `runAttempt` appends nothing (`run-attempt.ts:1069` — *the pipeline does not touch the
  * store*), so every event here is `conduct.ts`'s own, and `runOnce` is the seam
  * #467 must leave unchanged.
  *
  * Two endings from the ticket's table are left out, both because nothing in
- * `test/one-pass.ts` can reach them without a change to production code:
+ * `test/one-attempt.ts` can reach them without a change to production code:
  *
  * - **#3, `build` red, rounds spent.** Only `runPlugin` serves `build`
  *   (`recipe/src/recipe.ts:175–181`), and `run:` spawns a real process
  *   (`actions/src/command.ts:43`) — a subprocess in a worktree this file never
  *   cuts, which is the filesystem and so is integration (0060 §1).
- * - **#8, `prepared` refuses.** `prepared` is in `REFUSING_STEPS` (`pass.ts:120`)
+ * - **#8, `prepared` refuses.** `prepared` is in `REFUSING_STEPS` (`run-attempt.ts:120`)
  *   and does have its own hold, `SetupRefused` (`hold-of.ts:224`) — it is left
  *   out only because the one plugin that can make it refuse is `run:`
  *   (`recipe.ts:175–181`), and `run:` spawns a real process
  *   (`actions/src/command.ts:43`), the same reason row 3 is left out. Where
  *   nothing is declared there the body is `async () => ({ ending: 'passed' })`
- *   (`pass-steps.ts:1088`) and nothing here can make it answer otherwise.
+ *   (`attempt-steps.ts:1088`) and nothing here can make it answer otherwise.
  *
  * **Disagreements with 0120 found by running the rows, not by reading it:**
  *
@@ -35,14 +35,14 @@
  * - **Restarts spent is `Routed`, not a ceiling tag of its own** (row 5): a
  *   judge answering `claim` with no restarts left is not one of the steps on
  *   offer (`askTheAgent`'s `held(...)`, `conduct.ts:1849`), so `judged` in
- *   `pass-steps.ts` turns it into an ordinary `next: 'waiting'` and the pass
+ *   `attempt-steps.ts` turns it into an ordinary `next: 'waiting'` and the pass
  *   rests exactly as an unrouted `findings` judgement would — `stopped ===
  *   null`, `Routed{when: 'findings'}` (`hold-of.ts`'s case 4), with the
  *   restarts-spent sentence reduced into `why` rather than a tag of its own.
  * - **An `agent:` check declared ahead of the merge lane is `CheckRed`, not
  *   `MergeRefused`** (row 9): `directionOf` answers `'red'` for every refused
  *   step but `merge`, and for `merge` only `conflict`/`verify-failed` get a
- *   direction (`pass-steps.ts:620–628`) — an agent gate's own refusal carries
+ *   direction (`attempt-steps.ts:620–628`) — an agent gate's own refusal carries
  *   `because: 'action-refused'`, which is none of those, so it falls past
  *   `directionOf` to `hold-of.ts`'s step 2, fails `RefusalReason`'s parse, and
  *   reads `CheckRed`.
@@ -86,7 +86,7 @@ import {
   refusingRuntime,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 /** The one run stream a pass mints, or `null` where none was opened. */
 function theRun(store: ReturnType<typeof memoryStore>): Envelope[] | null {
@@ -339,7 +339,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
 
   /**
    * A judge runtime (not the built-in) answers `{"next": "claim"}` for
-   * `review`'s findings: `rested` becomes `'requeued'` (`pass.ts:1360`), the
+   * `review`'s findings: `rested` becomes `'requeued'` (`run-attempt.ts:1360`), the
    * arm is on origin (the fake's `git push` always answers `''`, so
    * `armPublished` is set), and `conduct.ts` spends a restart rather than
    * holding.
@@ -896,7 +896,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 
   /**
    * `conflict` is one of the two `RefusalReason`s a direction exists for
-   * (`directionOf`, `pass-steps.ts:626`), so it is `Routed` and not
+   * (`directionOf`, `attempt-steps.ts:626`), so it is `Routed` and not
    * `MergeRefused` — the opposite of row 9, read off the same lane.
    */
   it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', async () => {
@@ -1686,7 +1686,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(await theItem(store)).toEqual([])
     expect(said).toEqual([])
     expect(typesOf(theRun(store))).toEqual([])
-    // `claim` runs outside `runPass` (0120 §6) and never has a `StepOutcome`,
+    // `claim` runs outside `runAttempt` (0120 §6) and never has a `StepOutcome`,
     // so its own three events — a real `pass-*` stream, the file header's own
     // point — reduce to none at all.
     expect(stepOutcomesOf(theRun(store) ?? [])).toEqual([])
@@ -1696,7 +1696,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
    * **`not-claimed`: another conductor already holds the item** (`#463`).
    *
    * `claimTicket` reads `held` off the `TicketClaimed` seeded below and the
-   * claim declines before `runPass` ever starts. Same shape as row 15: the item
+   * claim declines before `runAttempt` ever starts. Same shape as row 15: the item
    * stream is exactly what was seeded (nothing of this run's own), and the run
    * stream still opens through `claim`'s own bookkeeping.
    */

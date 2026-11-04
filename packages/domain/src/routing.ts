@@ -120,11 +120,11 @@ function bornAtOrAfterImplement(step: Step): boolean {
  *
  * Each candidate a paid round or restart would cost carries exactly one
  * exclusion when it is withheld — a criterion first, then a ceiling
- * (`judged`'s own order, `pass-steps.ts:891-907`): a refusal with nothing to
+ * (`judged`'s own order, `attempt-steps.ts:891-907`): a refusal with nothing to
  * hold an agent to buys nothing at either extent (0038 §2), and raising a
  * ceiling would not have helped where that is why it is missing.
  * `'hand-to-person'` is always available, so the set returned here is never
- * empty — the same floor `onOffer` keeps today (`pass.ts:974-976`).
+ * empty — the same floor `onOffer` keeps today (`run-attempt.ts:974-976`).
  *
  * **No fix candidate ever sends `merge` back to `build`**: `FixRound.to` admits
  * only `'design' | 'implement'`, so a `merge`-born proposal's `fix-lines`

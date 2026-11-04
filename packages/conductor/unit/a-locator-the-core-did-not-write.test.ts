@@ -53,7 +53,7 @@
  *
  * `carry` replaces `actionsAt` and all ten bodies, which is what makes it a unit
  * test — and it is also what puts the port layer **outside its module graph
- * entirely**. `test/a-url-destination.ts` imports `../src/pass.ts` and never
+ * entirely**. `test/a-url-destination.ts` imports `../src/run-attempt.ts` and never
  * `conduct.ts`, so the four `it`s that run a pass are green against any port at
  * all, including one taught to classify. That is not a small gap: `conduct.ts`
  * is the file §9's retired criterion actually measured, and retiring it on the
@@ -281,7 +281,7 @@ describe('a locator the core did not write', () => {
    *
    * This is the assertion that makes the file worth keeping: it goes red the day
    * anything **on the pass's own path** learns to parse, whatever it learned —
-   * `runPass`, `runActionPipeline`, `designOn`, `designFrom`, `runStep`'s
+   * `runAttempt`, `runActionPipeline`, `designOn`, `designFrom`, `runStep`'s
    * context. **It says nothing about the ports**, which `carry` does not load:
    * those are the last `it`'s, and the header says why they needed their own.
    */

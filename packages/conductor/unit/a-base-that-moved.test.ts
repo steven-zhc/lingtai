@@ -4,7 +4,7 @@
  *
  * The lane half — which files count — is `baseMovedOn`'s, tested in
  * `packages/repo/unit/base-moved.test.ts`; the git half is integration and runs
- * after the merge (0060 §1). This file is the pass half: what `runPass` does with
+ * after the merge (0060 §1). This file is the pass half: what `runAttempt` does with
  * a `base-moved` refusal, over fakes, so nothing here leaves the system.
  *
  * Three things are claimed and each has a counter-example in the row beside it: the
@@ -17,7 +17,13 @@ import { STEPS } from '@lingtai/domain'
 import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { runPass, type PassEvent, type PassOptions, type StepBodies, type StepEnding } from '../src/pass.ts'
+import {
+  runAttempt,
+  type AttemptEvent,
+  type AttemptOptions,
+  type StepBodies,
+  type StepEnding,
+} from '../src/run-attempt.ts'
 import { outcomeOf } from '../src/step-outcome.ts'
 
 const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
@@ -49,12 +55,12 @@ const moved = (toSha: string): ActionResult => ({
  */
 async function walk(
   answers: readonly ActionResult[],
-  mergeBase: PassOptions['mergeBase'],
+  mergeBase: AttemptOptions['mergeBase'],
   buildAnswers: readonly ActionResult[] = [],
-  from?: PassOptions['from'],
+  from?: AttemptOptions['from'],
   reviewAnswers: readonly ActionResult[] = [],
 ) {
-  const events: PassEvent[] = []
+  const events: AttemptEvent[] = []
   const reviewSaw: ActionContext[] = []
   const landedOn: string[] = []
   const rounds: (number | undefined)[] = []
@@ -71,7 +77,7 @@ async function walk(
       return answers[calls++] ?? { ...PASSED, merged: 'merge-sha' }
     },
   }
-  const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+  const actionsAt: AttemptOptions['actionsAt'] = (step, actions) => {
     if (step === 'merge') return [lane]
     if (step === 'admit')
       return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
@@ -93,7 +99,7 @@ async function walk(
       ]
     return actions.map((a) => ({ name: a.name, kind: 'run', yields: 'verdict', run: async () => PASSED }) as Action)
   }
-  const result = await runPass({
+  const result = await runAttempt({
     recipe,
     context,
     emit: (event) => void events.push(event),

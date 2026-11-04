@@ -1,4 +1,4 @@
-import { passCeiling } from '@lingtai/conductor'
+import { attemptCeiling } from '@lingtai/conductor'
 import { LIMIT_DEFAULTS, parseDuration } from '@lingtai/recipe'
 
 /**
@@ -21,7 +21,7 @@ import { LIMIT_DEFAULTS, parseDuration } from '@lingtai/recipe'
  * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)) — and two
  * sentences about one limit are one sentence too many.
  */
-export const WALL_LIMIT = `the recipe's runtime.limits — by default, ${passCeiling({
+export const WALL_LIMIT = `the recipe's runtime.limits — by default, ${attemptCeiling({
   ...LIMIT_DEFAULTS,
   wallMs: parseDuration(LIMIT_DEFAULTS.wall),
 })}`

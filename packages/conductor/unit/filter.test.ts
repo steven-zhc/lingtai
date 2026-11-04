@@ -24,13 +24,13 @@ import {
   describeAssignee,
   describeFilter,
   ownerlessRefusal,
-  passCeiling,
+  attemptCeiling,
   projectClient,
   projectFilter,
 } from '../src/filter.ts'
 import type { ticketsFor } from '../src/ticket-store.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
-import { fakeGitHub, project as onePassProject, PROJECT } from '../test/one-pass.ts'
+import { fakeGitHub, project as onePassProject, PROJECT } from '../test/one-attempt.ts'
 
 const project = { project: 'lingtai', owner: 'steven-zhc', base: 'main' } as ProjectState
 
@@ -434,14 +434,14 @@ describe('what a pass may spend', () => {
   it('multiplies the wall by the runs a pass can buy, not by the rounds', () => {
     // Two rounds is three runs: the work, then two goes at what refused it.
     // Off-by-one here is the whole failure being prevented.
-    expect(passCeiling(limits(2))).toContain('up to 3 agent runs')
-    expect(passCeiling(limits(2))).toContain('at most 3h')
+    expect(attemptCeiling(limits(2))).toContain('up to 3 agent runs')
+    expect(attemptCeiling(limits(2))).toContain('at most 3h')
   })
 
   /** The assertion the ticket asked for: change the number, the sentence moves. */
   it('changes when rounds changes', () => {
-    const one = passCeiling(limits(1))
-    const four = passCeiling(limits(4))
+    const one = attemptCeiling(limits(1))
+    const four = attemptCeiling(limits(4))
 
     expect(one).not.toBe(four)
     expect(one).toContain('at most 2h')
@@ -450,8 +450,8 @@ describe('what a pass may spend', () => {
 
   it("reads the wall back in the recipe's own words", () => {
     // `15m` and not `900000`: this line is read against the file it came from.
-    expect(passCeiling(limits(1, '15m', 900_000))).toContain('15m and 150 turns each')
-    expect(passCeiling(limits(1, '15m', 900_000))).toContain('at most 30m')
+    expect(attemptCeiling(limits(1, '15m', 900_000))).toContain('15m and 150 turns each')
+    expect(attemptCeiling(limits(1, '15m', 900_000))).toContain('at most 30m')
   })
 
   /**
@@ -460,7 +460,7 @@ describe('what a pass may spend', () => {
    * that a default which spends money is shown when it is off as well as on.
    */
   it('says where a refusal goes when nothing is bought', () => {
-    const none = passCeiling(limits(0))
+    const none = attemptCeiling(limits(0))
 
     expect(none).toContain('straight to you')
     expect(none).toContain('runtime.limits.rounds: 0')
@@ -479,7 +479,7 @@ describe('what a pass may spend', () => {
    */
   it('multiplies again for the passes a restart can buy', () => {
     // Two rounds is three runs a pass; one restart is two passes. Six runs.
-    const once = passCeiling(limits(2, '1h', 3_600_000, 1))
+    const once = attemptCeiling(limits(2, '1h', 3_600_000, 1))
 
     expect(once).toContain('up to 3 agent runs')
     expect(once).toContain('up to 1 restart(s)')
@@ -493,7 +493,7 @@ describe('what a pass may spend', () => {
    * spent pass is theirs.
    */
   it('says a spent pass is yours when no restart is bought', () => {
-    const none = passCeiling(limits(2))
+    const none = attemptCeiling(limits(2))
 
     expect(none).toContain('runtime.limits.restarts: 0')
     expect(none).toContain('goes to you')
@@ -518,8 +518,8 @@ describe('what a pass may spend', () => {
       wall: LIMIT_DEFAULTS.wall,
       wallMs: parseDuration(LIMIT_DEFAULTS.wall),
     }
-    expect(passCeiling({ ...defaults, steps: [] })).toBe(passCeiling(defaults))
-    expect(passCeiling(defaults)).toBe(
+    expect(attemptCeiling({ ...defaults, steps: [] })).toBe(attemptCeiling(defaults))
+    expect(attemptCeiling(defaults)).toBe(
       'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
         'it. 2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you ' +
         '(runtime.limits.restarts: 0)',
@@ -536,7 +536,7 @@ describe('what a pass may spend', () => {
    * added, which is what keeps this one line and keeps it true.
    */
   it('names the dispatching steps bounded differently from the one it prints', () => {
-    const said = passCeiling({ ...limits(2), steps: [{ step: 'review', turns: 50, wall: '30m' }] })
+    const said = attemptCeiling({ ...limits(2), steps: [{ step: 'review', turns: 50, wall: '30m' }] })
 
     expect(said).toContain('1h and 150 turns each at implement (review 30m/50 turns)')
     // The arithmetic is untouched: three runs of `implement`'s hour.
@@ -559,7 +559,7 @@ describe('what a pass may spend in dollars', () => {
 
   /** Absent is today's string, character for character — 0070 §8's rule, carried. */
   it('is byte-identical to the pre-#370 sentence when usd is absent', () => {
-    expect(passCeiling(limits(2))).toBe(
+    expect(attemptCeiling(limits(2))).toBe(
       'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
         'it. 1h and 150 turns each, so at most 3h. A pass whose rounds are spent goes to you ' +
         '(runtime.limits.restarts: 0)',
@@ -567,13 +567,13 @@ describe('what a pass may spend in dollars', () => {
   })
 
   it('multiplies usd by the runs a pass can buy, beside the wall', () => {
-    const said = passCeiling({ ...limits(2), usd: 12 })
+    const said = attemptCeiling({ ...limits(2), usd: 12 })
     expect(said).toContain('1h, 150 turns and $12 each')
     expect(said).toContain('at most 3h and $36')
   })
 
   it("names one run's figure rather than 'each' where rounds is zero", () => {
-    const said = passCeiling({ ...limits(0), usd: 12 })
+    const said = attemptCeiling({ ...limits(0), usd: 12 })
     expect(said).toBe(
       'one agent run — 1h, 150 turns and $12. Every refusal goes straight to you ' +
         '(runtime.limits.rounds: 0, restarts: 0)',
@@ -582,7 +582,7 @@ describe('what a pass may spend in dollars', () => {
   })
 
   it('multiplies again for the passes a restart can buy', () => {
-    const said = passCeiling({ ...limits(2, 1), usd: 12 })
+    const said = attemptCeiling({ ...limits(2, 1), usd: 12 })
     expect(said).toContain('at most 2 passes, 6 agent runs and 6h and $72')
   })
 })

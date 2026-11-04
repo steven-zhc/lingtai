@@ -33,7 +33,7 @@ export {
   stepPlan,
   githubClientFor,
   ownerlessRefusal,
-  passCeiling,
+  attemptCeiling,
   projectClient,
   projectFilter,
   projectFilters,
@@ -61,7 +61,7 @@ export {
   agentRefusal,
   runOnce,
   type AgentRefusal,
-  type PassClient,
+  type TurnClient,
   type RunOnceOptions,
   type RunOnceResult,
 } from './conduct.ts'
@@ -78,8 +78,8 @@ export { nextPrompt, renderPrompt, type NextPrompt, type PromptEdit } from './pr
 export { parseResetAt, standDown } from './never-started.ts'
 export {
   runQueue,
-  tallyPass,
-  type PassTally,
+  tallyTurn,
+  type TurnTally,
   type ScheduleOptions,
   type ScheduleResult,
   type StoppedBecause,
@@ -126,7 +126,7 @@ export {
   BodyChanged,
   githubTicketStore,
   keyMarker,
-  passClientOf,
+  ticketedClientOf,
   ticketsFor,
   TicketSourceConflict,
   type ProposedRef,

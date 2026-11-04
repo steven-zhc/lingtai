@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import { Recipe, baseOf, editRecipe, excludeOf, kindsOf, resolveRecipe, runPlugin, servesStep } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { passCeiling } from '../src/filter.ts'
+import { attemptCeiling } from '../src/filter.ts'
 import {
   type WizardState,
   CHECKING_STEPS,
@@ -267,7 +267,7 @@ describe('limits', () => {
     const said = limitsSentence(state.draft.limits)
     expect(said).toEqual({
       ok: true,
-      sentence: passCeiling({ turns: 300, wall: '1h', wallMs: 3_600_000, rounds: 2, restarts: 1 }),
+      sentence: attemptCeiling({ turns: 300, wall: '1h', wallMs: 3_600_000, rounds: 2, restarts: 1 }),
     })
     expect(said.ok && said.sentence).toContain('at most 2 passes, 6 agent runs and 6h')
   })

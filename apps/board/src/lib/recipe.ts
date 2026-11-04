@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { codexAuth } from '@lingtai/agent/auth'
-import { passCeiling } from '@lingtai/conductor/ceiling'
+import { attemptCeiling } from '@lingtai/conductor/ceiling'
 import { MAX_READ_ROUNDS } from '@lingtai/conductor/discuss'
 import { describeAssignee } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -857,10 +857,10 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  *
  * **`lingtai status`'s rows, in `lingtai status`'s words**, and two of them are
  * that command's own sentences rather than a second wording of them —
- * `describeAssignee` and `passCeiling`. There is one recipe and there should be
+ * `describeAssignee` and `attemptCeiling`. There is one recipe and there should be
  * one vocabulary for it; a page that invented its own would be a second place
  * for the sentence about `restarts` to go stale, which is the whole of what
- * `passCeiling` exists to stop (0039 §3).
+ * `attemptCeiling` exists to stop (0039 §3).
  *
  * **Grouped rather than dumped.** `canonical` is 3.5KB of sorted JSON and
  * printing it whole is honest and unreadable — the whole document is still one
@@ -896,7 +896,11 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: 'a pass',
-      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall), steps: boundsBesides(recipe, 'implement') }),
+      says: attemptCeiling({
+        ...limits,
+        wallMs: parseDuration(limits.wall),
+        steps: boundsBesides(recipe, 'implement'),
+      }),
       keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
     },
     // **Beside the limits, because it is the other half of the same answer.**

@@ -66,7 +66,7 @@ import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
-import { passClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
+import { ticketedClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseTicketStream,
   parsePayload,
@@ -116,7 +116,7 @@ export interface ProjectClients {
  * on. One repository's expired installation must not cost the rest their
  * convergence.
  *
- * **The value is `passClientOf`'s shape, not `GitHubClient`** (`#382`): a
+ * **The value is `ticketedClientOf`'s shape, not `GitHubClient`** (`#382`): a
  * `db` project's ticket verbs read `dbTickets` rather than GitHub, and
  * everything this map's one reader (`findIssueDrift`/`convergeIssues`,
  * `ConvergeOptions.clients`) asks of a value is `Tickets` and `RefChannel`.
@@ -184,7 +184,7 @@ export async function clientsForProjects(
     }
     try {
       const resolved = await recipeFor(p, client)
-      clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
+      clients.set(p.project, ticketedClientOf(client, await ticketsFor(p, resolved.recipe, client)))
     } catch (err) {
       // Not known whether this project's tickets are GitHub's or dbTickets' —
       // see the doc comment above for why that rules out falling back to the

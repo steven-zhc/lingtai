@@ -48,7 +48,7 @@ import {
   endedWithoutEndActions,
   githubClientFor,
   loadProjects,
-  passCeiling,
+  attemptCeiling,
   projectFilters,
   signedInHere,
 } from '@lingtai/conductor'
@@ -2134,7 +2134,7 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
           // where an operator looks before starting something, which makes
           // it the place this number is most worth knowing — and it is the
           // one number here that is a product rather than a setting.
-          `         a pass: ${passCeiling(f.limits)}`,
+          `         a pass: ${attemptCeiling(f.limits)}`,
       }
     : {
         name: `recipe: ${f.project}`,

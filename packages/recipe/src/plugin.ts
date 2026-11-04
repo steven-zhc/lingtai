@@ -160,7 +160,7 @@ export type AnyStep = typeof ANY_STEP
  * **What a plugin's `at` carries until the bodies move** (0064 §3, `#261`).
  *
  * `at`'s value at a step is that step's `StepBody` — `StepWork<S>` in, an
- * `EndingAt<S>` out — and today the ten bodies are `pass-steps.ts`'s, hard
+ * `EndingAt<S>` out — and today the ten bodies are `attempt-steps.ts`'s, hard
  * coded. So this ticket declares the **keys** and the next one fills the
  * values in: the shape is a record from the start rather than a list that
  * changes shape later, which is what lets both halves land without changing a

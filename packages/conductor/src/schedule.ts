@@ -38,7 +38,7 @@ import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect, Runtime as EffectRuntime } from 'effect'
 
-import { type PassClient, type RunOnceResult, runOnce } from './conduct.ts'
+import { type TurnClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNow } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
@@ -47,7 +47,7 @@ import type { Slots } from './slots.ts'
 
 export interface ScheduleOptions {
   project: ProjectState
-  client: PassClient
+  client: TurnClient
   runtime: Runtime
   hookBinary: string
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */
@@ -421,14 +421,14 @@ function reportEnding(log: (line: string) => void, result: RunOnceResult): void 
  * too. "Stopped" is left meaning what it should: it ended, nothing landed, and
  * nobody was asked anything.
  */
-export interface PassTally {
+export interface TurnTally {
   landed: number
   held: number
   stopped: number
 }
 
-export async function tallyPass(ran: readonly RunOnceResult[], store: EventStore = eventStore): Promise<PassTally> {
-  const tally: PassTally = { landed: 0, held: 0, stopped: 0 }
+export async function tallyTurn(ran: readonly RunOnceResult[], store: EventStore = eventStore): Promise<TurnTally> {
+  const tally: TurnTally = { landed: 0, held: 0, stopped: 0 }
 
   for (const result of ran) {
     // A refusal before anything was claimed — an unreadable recipe — has no

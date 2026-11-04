@@ -6,7 +6,7 @@
  * inner action is `createProcessAction`'s, built exactly as a `run:` at `build`
  * or `proposed` is; what this adds is the one thing `implement` needs that no
  * other step does — the step may not refuse (`REFUSING_STEPS`,
- * `packages/conductor/src/pass.ts`), so a formatter that exits non-zero cannot
+ * `packages/conductor/src/run-attempt.ts`), so a formatter that exits non-zero cannot
  * become a refusal the step has no way to make.
  *
  * **The command's own exit code never becomes a `failed` verdict.** The

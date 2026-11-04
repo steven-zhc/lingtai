@@ -1193,7 +1193,7 @@ export const REVIEW_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
  *
  * **Rule: a `StepEnded` exists exactly where the step's plugins actually
  * ran a verdicts pipeline.** So there is none for `claim` or `end` — both
- * run outside `runPass` (0120 §6) — and none for a routed `proposed` visit,
+ * run outside `runAttempt` (0120 §6) — and none for a routed `proposed` visit,
  * whose fact is `PassRouted` instead.
  *
  * A body that then throws (an agent runtime raising, a workflow assertion

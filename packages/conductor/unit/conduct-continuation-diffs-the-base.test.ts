@@ -11,14 +11,14 @@
  * read.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
- * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
+ * no process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import { waitWords, reduceAttempt, waitsOf, ticketStream } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
-import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-pass.ts'
+import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-attempt.ts'
 
 /**
  * `human:` at `proposed`, with a `watch:` declared right after it — the

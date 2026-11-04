@@ -9,8 +9,8 @@
  * assertions are unchanged, which is the useful thing about it: **the engine was
  * replaced and the sentences a person reads off the log were not.**
  *
- * What it asserts is the *wiring*, and it is the only test that can. `pass.ts`'s
- * and `pass-steps.ts`'s tests own every decision the pass makes and own it more
+ * What it asserts is the *wiring*, and it is the only test that can. `run-attempt.ts`'s
+ * and `attempt-steps.ts`'s tests own every decision the pass makes and own it more
  * sharply, against fake bodies and fake ports; what neither of them can see is
  * the order the four acquisitions release in, that the hook was proved to fail
  * closed before the agent started, that the labels went `working` then `waiting`,
@@ -18,7 +18,7 @@
  * caller's, and this is it.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
- * process, no socket, no network. The fixtures are `test/one-pass.ts`.
+ * process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import type { Runtime } from '@lingtai/agent'
 import type { Action, Envelope, JudgeReply, RouteDecision, RouteOffer, RunSpent, ToAppend } from '@lingtai/domain'
@@ -48,7 +48,7 @@ import {
   refusingRuntime,
   runtime,
   streams,
-} from '../test/one-pass.ts'
+} from '../test/one-attempt.ts'
 
 describe('the conductor runs a whole pass, with no world to run in', () => {
   /**
@@ -132,7 +132,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      *
      * The headline used to sit over `toContain` checks for six event types, and
      * every one of them survives a step being dropped: delete `design` from
-     * `STEPS`, have `runPass` `continue` past a visit, let `stepsResolved`
+     * `STEPS`, have `runAttempt` `continue` past a visit, let `stepsResolved`
      * record five points, and `RunStarted`/`StepsResolved`/`RunFinished` are all
      * still there. That is `#61`'s own shape — declared, recorded, drawn, never
      * fired — wearing the name of the test that would have caught it.
@@ -140,9 +140,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      * What does catch it is the line `conduct.ts` prints from `pass.steps`,
      * which is one entry per *visit the loop actually made* and is the only
      * caller-side view of the walk. The step names in it, in order, have to be
-     * `STEPS` minus `claim` — the nine `runPass` itself walks, `claim` having
+     * `STEPS` minus `claim` — the nine `runAttempt` itself walks, `claim` having
      * run before it (`#463`) — so that nothing keeps a list of its own, and
-     * `end` has to be the last of them, because `runPass` runs it after the
+     * `end` has to be the last of them, because `runAttempt` runs it after the
      * walk on every ending.
      */
     const walked = lines.find((line) => line.startsWith('pass: '))
@@ -576,7 +576,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * on `RouteTaken`, for the pass's own internal reading), so a reader of the
    * log rebuilds them the same way `events.ts`'s own doc on `PassRouted` says
    * to: `routedVisit`/`ceilingOf` (`../src/proposed-route.ts`), the same
-   * functions `pass.ts`'s `routeProposal` calls to build them the first time.
+   * functions `run-attempt.ts`'s `routeProposal` calls to build them the first time.
    */
   const routeFacts = (data: { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }) => {
     const routed = routedVisit(data.offer, data.reply, data.decision)
@@ -589,8 +589,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    *
    * `appendNow` says a store that will not append is a defect and that the
    * handler at the bottom is where defects are answered for, and that was true
-   * of every append the old engine made. The swap to `pass.ts` quietly made it
-   * false for the ones made from inside the walk: `runPass`'s own loop does not
+   * of every append the old engine made. The swap to `run-attempt.ts` quietly made it
+   * false for the ones made from inside the walk: `runAttempt`'s own loop does not
    * wrap `emit`, so the rejection propagates straight out of it — unhandled —
    * into `Effect.catchAllDefect`'s own door. `merge` is not in
    * `ARRIVE_AT_THE_ROUTER`, `outcomeOf` reads `blocked`, and a dropped Postgres
@@ -610,7 +610,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * `claimTicket` appends — has no append left to refuse: `queue-action.ts`'s
    * `run()` only calls `deps.take`, and `emit` fires only where `result.spent`
    * is set (`action.ts:749`), which a queue action never is. `claim` and `end`
-   * are outside `runPass`'s loop and get no `StepStarted`/`StepEnded` of their
+   * are outside `runAttempt`'s loop and get no `StepStarted`/`StepEnded` of their
    * own either, so there is nothing `emit`-shaped before `claimTicket`'s
    * append any more — `#269`'s *different case* is gone with the event it
    * needed.
@@ -670,7 +670,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * events (`StepRequested` and the rest) no longer exist, `queue-action.ts`'s
    * `run()` calls only `deps.take` and never sets `result.spent`, so `emit`
    * never fires for it at all, and `claim` gets no `StepStarted`/`StepEnded`
-   * either — `pass.ts`'s loop never visits it (`claimStep` runs outside the
+   * either — `run-attempt.ts`'s loop never visits it (`claimStep` runs outside the
    * loop). So there is no append left anywhere before `claimTicket`'s own,
    * and the one case this test could still ask about — `claimTicket`'s own
    * append refused — is a different claim already pinned elsewhere, by
@@ -688,7 +688,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * It is the opposite rule to the one above, for the opposite kind of append.
    * A verdict lost is a pass whose report is a lie, so it is raised; a route lost
    * is an explanation missing from a pass that happened, and on a landing it is
-   * the **only** store write between `runPass` returning and the atomic
+   * the **only** store write between `runAttempt` returning and the atomic
    * `TicketLanded` + `endPlan` — `publishWhatIsCommitted` is skipped when the
    * change went in. Raised there, a dropped connection on a purely informational
    * row would release an item whose branch is already on `main`, leave `end`'s
@@ -938,7 +938,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * tree** (`#268`, [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md)
    * §2–4).
    *
-   * This is the wiring `pass-steps.test.ts` cannot see: `defaultsAt` is
+   * This is the wiring `attempt-steps.test.ts` cannot see: `defaultsAt` is
    * `conduct.ts`'s and so is the `cut` that every one of the three reaches. The
    * three rows are the migration, in order — what a recipe says today (`admit:
    * []`, in both recipes on this machine), what a recipe that never mentioned the
@@ -1139,7 +1139,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * **A throwing `onPass` costs nothing the ending needs** (`#466`).
    *
    * `onPass` runs in the one gap `conduct.ts`'s own comment names — *between
-   * `runPass` returning and the ending being written* — and nothing in its
+   * `runAttempt` returning and the ending being written* — and nothing in its
    * type stops a caller's callback from throwing. Before this, that throw
    * escaped uncaught, became a defect `Effect.catchAllDefect` answers by
    * releasing the item and reporting `stage: 'unexpected'`, and lost every
@@ -1186,7 +1186,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    *
    * **And the document is on the verdict *and* in the implementer's prompt.**
    * `evidence` is what a person reads off the card; the string the next agent works
-   * from travels on the step's ending (`pass-steps.ts`'s `designOn`) and into
+   * from travels on the step's ending (`attempt-steps.ts`'s `designOn`) and into
    * `renderPrompt`. The second half is the one that had nothing asserting it and
    * nothing doing it: `Brief.design` existed from the day the brief did and the
    * dispatch never read it, which is an agent run a recipe pays for and no reader
@@ -1208,7 +1208,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
           costUsd: 0.42,
           failure: null,
           // The document at `design`, and the implementer's decline message
-          // everywhere else — one runtime, as `runOnce` has (`one-pass.ts`).
+          // everywhere else — one runtime, as `runOnce` has (`one-attempt.ts`).
           text: 'Put it in `packages/recipe`, beside `whyNoKindAt`.',
           sessionId: 'sess-1',
         }
@@ -1499,7 +1499,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * whole subject: `conduct.ts`'s `ports.judge` is
    * `judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true }`, and
    * everything either side of that line is asserted elsewhere — the lookup in
-   * `judge.test.ts`, what the body does with the answer in `pass-steps.test.ts`.
+   * `judge.test.ts`, what the body does with the answer in `attempt-steps.test.ts`.
    * Neither of them can see whether the conductor hands the recipe's own
    * `proposed:` list to it, and a port that answered `noJudge` for ever would pass
    * both: `findings` has no built-in, so the pass would park at `waiting` exactly
@@ -1593,7 +1593,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    * nothing is spent. This is the other half of the same line, and it is the only
    * test that can see it: `judgeDeclaredAt` answering a `runtime` is asserted in
    * `judge.test.ts` and what the body does with a `next` is asserted in
-   * `pass-steps.test.ts`, and neither can say whether the conductor actually
+   * `attempt-steps.test.ts`, and neither can say whether the conductor actually
    * dispatches one.
    *
    * **The session id is the thing this fixture exists for.** Two rounds means two

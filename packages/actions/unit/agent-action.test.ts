@@ -532,7 +532,7 @@ describe("reading the reviewer's answer", () => {
     const answer = [
       'I checked every citation in the diff against the files.',
       '',
-      '- `endingOf` at `pass.ts:1473` maps each event to what the table says: `StepPassed` = `{ending:"passed"}`,',
+      '- `endingOf` at `run-attempt.ts:1473` maps each event to what the table says: `StepPassed` = `{ending:"passed"}`,',
       '  `StepFailed` = `{ending:"failed"}`. Both hold.',
       '- `StepWork` is at `440` and `StepBody` at `532`, as the diff claims.',
       '- The package graph holds: nothing new is imported across the seam.',
@@ -570,7 +570,7 @@ describe("reading the reviewer's answer", () => {
     // green action: no position in a truncated object parses, and that is the
     // whole of the difference the refusal downstream is for.
     const { findings, parsed } = parseFindings(
-      `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`,
+      `Here is what I found.\n\n{"findings":[{"file":"run-attempt.ts","line":1473,"severity":"major","claim":"the ending is`,
     )
 
     expect(parsed).toBe(false)
