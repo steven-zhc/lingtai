@@ -253,10 +253,14 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
       ]
       // The anchor check is part of the one statement: the row is inserted only
       // `WHERE` the log holds the snapshot's anchor, so a writer that reduced a
-      // log before it was emptied cannot land a row after. A stored row whose
-      // own anchor no longer holds is replaced whatever its version.
-      const rows = await sql.query<{ stream_id: string }>(
-        `INSERT INTO stream_snapshots
+      // log before it was emptied cannot land a row after. The conflict clause
+      // looks at versions only: on Postgres a conflicting row committed after this
+      // statement began is visible to it while the events it anchors on are not,
+      // so judging that row's anchor here would call a newer row void and
+      // overwrite it with an older one.
+      const upsert = () =>
+        sql.query<{ stream_id: string }>(
+          `INSERT INTO stream_snapshots
            (stream_id, reducer, reducer_version, stream_version, last_seq, last_at, state)
          SELECT ${pg ? '$1::text, $2::text, $3::integer, $4::integer, $5::bigint, $6::text, $7::jsonb' : '$1, $2, $3, $4, $5, $6, $7'}
          WHERE ${incoming}
@@ -267,25 +271,44 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
            state = excluded.state,
            written_at = ${pg ? 'now()' : "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"}
          WHERE stream_snapshots.stream_version < excluded.stream_version
-            OR NOT ${stored('stream_snapshots')}
          RETURNING stream_id`,
-        [...params, snapshot.state],
-      )
-      if (rows.length > 0) return 'written'
-      // Nothing returned: either the row there is as new (kept) or the incoming
-      // anchor was not in the log (refused). 'kept' is claimed from ONE statement
-      // that checks the stored row and both anchors together, so they come from
-      // one snapshot of the database: separate reads can straddle a reset and a
-      // restore and pair a stale row with a current-looking log.
-      const kept = await sql.query<{ ok: unknown }>(
-        `SELECT 1 AS ok FROM stream_snapshots s
+          [...params, snapshot.state],
+        )
+      if ((await upsert()).length > 0) return 'written'
+      // Nothing returned: the row there is as new (kept), the incoming anchor was
+      // not in the log (refused), or the row there is void and must go first.
+      // 'kept' is claimed from ONE statement that checks the stored row and both
+      // anchors together, so they come from one snapshot of the database:
+      // separate reads can straddle a reset and a restore and pair a stale row
+      // with a current-looking log.
+      const keptSql = `SELECT 1 AS ok FROM stream_snapshots s
          WHERE s.stream_id = $1 AND s.reducer = $2 AND s.reducer_version = $3
            AND s.stream_version >= ${pg ? '$4::integer' : '$4'}
            AND ${stored('s')}
-           AND ${incoming}`,
-        params,
+           AND ${incoming}`
+      if ((await sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
+      // A void row is judged in a statement of its own, where the row and the
+      // events come from one snapshot (a snapshot that sees a row sees the event
+      // it was reduced to), then removed only if it is still exactly that row.
+      const void_ = await sql.query<{ stream_version: unknown; last_seq: unknown; last_at: unknown }>(
+        `SELECT s.stream_version, s.last_seq, s.last_at FROM stream_snapshots s
+         WHERE s.stream_id = $1 AND s.reducer = $2 AND s.reducer_version = $3
+           AND NOT ${stored('s')}`,
+        params.slice(0, 3),
       )
-      if (kept.length > 0) return 'kept'
+      const old = void_[0]
+      if (old !== undefined) {
+        await sql.query(
+          `DELETE FROM stream_snapshots
+           WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3
+             AND stream_version = ${pg ? '$4::integer' : '$4'} AND last_seq = ${pg ? '$5::bigint' : '$5'}
+             AND last_at = ${pg ? '$6::text' : '$6'}
+           RETURNING stream_id`,
+          [...params.slice(0, 3), old.stream_version, old.last_seq, old.last_at],
+        )
+        if ((await upsert()).length > 0) return 'written'
+        if ((await sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
+      }
       throw anchorNotInLogError(snapshot)
     },
   }
