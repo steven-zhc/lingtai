@@ -61,5 +61,7 @@
   "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645",
   "ticket.discussionsHeld": "cc9461458e33fab1fe5d3dc6068933cedae175e5fba5ae96061b39a41c90f4c9",
   "ticket.kindThenTriage": "bbf0a2b5b1084b7b807fd2aa0cad685a0d9b3afeceeb7c0424a5702151def985",
-  "ticket.kindedClaimAfterClosed": "add21b1b8ff959bb35df5120515b181ef16155fce796ae609f9953b169719812"
+  "ticket.kindedClaimAfterClosed": "add21b1b8ff959bb35df5120515b181ef16155fce796ae609f9953b169719812",
+  "finding.acceptedOnly": "3a8ebf6a4ce94299deaa941f9afdcb8413a22c40542d9908e822caa8e2de2fd2",
+  "finding.declinedThenAccepted": "6208f786c715becb40d8a5e069a20d6411a22abbe7fd4a113e687af3eae8409b"
 }

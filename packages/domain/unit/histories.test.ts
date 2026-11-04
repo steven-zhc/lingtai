@@ -20,9 +20,11 @@ import type { Envelope } from '../src/index.ts'
 import {
   CONTROL_FOLD_TYPES,
   EVENTS,
+  backlogStream,
   parseTicketStream,
   reduceChat,
   reduceControl,
+  reduceFinding,
   reduceRun,
   reduceTicket,
 } from '../src/index.ts'
@@ -81,12 +83,13 @@ describe('coverage', () => {
     })
   }
 
-  it('COVERS holds every catalogue case label of applyRun, applyTicket, applyControl and applyChat', () => {
+  it('COVERS holds every catalogue case label of applyRun, applyTicket, applyControl, applyChat and applyFinding', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
     expect(missing(caseLabels('run.ts', 'applyRun'), COVERS.run)).toEqual([])
     expect(missing(caseLabels('ticket.ts', 'applyTicket'), COVERS.ticket)).toEqual([])
     expect(missing(caseLabels('control.ts', 'applyControl'), COVERS.control)).toEqual([])
     expect(missing(caseLabels('chat.ts', 'applyChat'), COVERS.chat)).toEqual([])
+    expect(missing(caseLabels('backlog.ts', 'applyFinding'), COVERS.finding)).toEqual([])
   })
 
   it('COVERS.control is CONTROL_FOLD_TYPES', () => {
@@ -98,6 +101,9 @@ describe('the histories fold', () => {
   for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceRun(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
   for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
+  for (const h of singles.filter((s) => s.kind === 'finding' && s.name !== 'declinedThenAccepted')) {
+    it(`finding.${h.name}`, () => void reduceFinding(h.events))
+  }
   for (const h of singles.filter((s) => s.kind === 'control')) {
     it(`control.${h.name}`, () => void reduceControl(h.events, NOW))
   }
@@ -183,5 +189,36 @@ describe('the hash lock', () => {
       unlisted.map(([name]) => name),
       `add to histories.hashes.json:\n${JSON.stringify(Object.fromEntries(unlisted), null, 2)}`,
     ).toEqual([])
+  })
+})
+
+describe('the finding fold', () => {
+  const f = histories.finding
+  const at = (events: readonly Envelope[]) => reduceFinding(events)
+
+  it('D7: accepted then proposed is accepted, with its issue', () => {
+    const s = at(f.acceptedThenProposed)
+    expect(s).toMatchObject({
+      status: 'accepted',
+      kind: 'tech-debt',
+      labels: ['tech-debt'],
+      proposed: { externalRef: '9200', url: null },
+    })
+  })
+
+  it('D7: accepted alone is accepted and owes its issue', () => {
+    expect(at(lateHistories.finding.acceptedOnly)).toMatchObject({ status: 'accepted', proposed: null })
+  })
+
+  it('D7: declined is declined, with its reason', () => {
+    expect(at(f.declined)).toMatchObject({ status: 'declined', reason: 'not worth a ticket', by: 'steven' })
+  })
+
+  it('a decline after an accept throws, naming the stream', () => {
+    const accepted = lateHistories.finding.acceptedOnly
+    const stream = backlogStream('lingtai', 'minor-3')
+    const declined = { ...f.declined[0]!, streamId: stream, seq: accepted[0]!.seq + 1n }
+    expect(() => reduceFinding([...accepted, declined])).toThrow(stream)
+    expect(() => reduceFinding(lateHistories.finding.declinedThenAccepted)).toThrow(backlogStream('lingtai', 'minor-4'))
   })
 })

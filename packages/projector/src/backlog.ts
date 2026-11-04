@@ -30,13 +30,48 @@
  * person (0038 §1–§4) — and a minor on a failing gate is in the prompt the
  * fixing agent is handed.
  */
-import type { Finding, PayloadOf } from '@lingtai/domain'
-import { findingKey, findingsRaisedOf, parseTicketStream } from '@lingtai/domain'
+import type { Finding, FindingState, PayloadOf } from '@lingtai/domain'
+import { applyFinding, findingKey, findingsRaisedOf, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection } from './store.ts'
 
 export const BACKLOG_TABLE = 'finding_backlog'
+
+interface DecisionRow {
+  status: string
+  last_seq: string | number | bigint | null
+  decided_seq: string | number | bigint | null
+  proposed_ref: string | null
+  proposed_url: string | null
+}
+
+/**
+ * The row as the fold's state. Only what a rule of `applyFinding` reads is
+ * real — the status, and whether an issue is recorded; the rest is a
+ * placeholder, because the update takes its values from the event and never
+ * from this (and the row keeps no labels or proposal seq).
+ */
+function findingOfRow(row: DecisionRow, id: { project: string; key: string }): FindingState {
+  switch (row.status) {
+    case 'open':
+      return { status: 'open' }
+    case 'declined':
+      return { status: 'declined', by: '', at: new Date(0), seq: 0n, reason: '' }
+    case 'accepted':
+      return {
+        status: 'accepted',
+        by: '',
+        at: new Date(0),
+        seq: 0n,
+        kind: '',
+        labels: [],
+        proposed: row.proposed_ref === null ? null : { externalRef: row.proposed_ref, url: null, seq: 0n },
+      }
+    default:
+      throw new Error(`finding_backlog ${id.project}/${id.key} has status "${row.status}"`)
+  }
+}
 
 /**
  * `accepted` with no `proposedRef` is a decision whose issue the log has not
@@ -103,6 +138,7 @@ export const backlogProjection: Projection = {
         proposed_ref     text,
         proposed_url     text,
         reason           text,
+        last_seq         bigint,
         primary key (project, key)
       )`)
     await ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
@@ -138,36 +174,56 @@ export const backlogProjection: Projection = {
           break
         }
 
-        case 'FindingAccepted': {
-          const d = event.data as PayloadOf<'FindingAccepted'>
-          await ctx.query(
-            `update finding_backlog
-               set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
-             where project = $1 and key = $2`,
-            [d.project, d.key, d.by, event.at, seq, d.kind],
-          )
-          break
-        }
-
-        case 'FindingProposed': {
-          const d = event.data as PayloadOf<'FindingProposed'>
-          await ctx.query(
-            `update finding_backlog set proposed_ref = $3, proposed_url = $4
-             where project = $1 and key = $2`,
-            [d.project, d.key, d.externalRef, d.url],
-          )
-          break
-        }
-
+        case 'FindingAccepted':
+        case 'FindingProposed':
         case 'FindingDeclined': {
-          const d = event.data as PayloadOf<'FindingDeclined'>
-          await ctx.query(
-            `update finding_backlog
-               set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
-                   reason = $6
-             where project = $1 and key = $2`,
-            [d.project, d.key, d.by, event.at, seq, d.reason],
+          // Read the row again for every event: an earlier event of this batch
+          // has already updated it, and the fold must see that.
+          const d = event.data as { project: string; key: string }
+          const [row] = await ctx.query<DecisionRow>(
+            `select status, last_seq, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
+            [d.project, d.key],
           )
+          // A finding nothing raised has no row to be wrong about.
+          if (!row) break
+          // Delivery is at-least-once: two runners share this checkpoint, and the
+          // fence on advance refuses only a checkpoint rewound below a runner's
+          // cursor, so two runners at the same cursor can each fold the same batch
+          // (apply and advance share one transaction; that does not prevent it).
+          // An event no newer than the last one reduced into the row is that
+          // replay, by identity (its seq) — never by payload. This read can be
+          // stale by the time of the write, so each update below carries the same
+          // condition (`last_seq < seq`): a stale runner matches nothing and can
+          // never move last_seq backwards.
+          if (row.last_seq !== null && BigInt(row.last_seq) >= event.seq) break
+          const before = findingOfRow(row, d)
+          const after = applyFinding(before, event)
+          if (before.status === 'open' && after.status === 'accepted') {
+            const a = event.data as PayloadOf<'FindingAccepted'>
+            await ctx.query(
+              `update finding_backlog
+                 set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6,
+                     last_seq = $5
+               where project = $1 and key = $2 and (last_seq is null or last_seq < $5)`,
+              [a.project, a.key, a.by, event.at, seq, a.kind],
+            )
+          } else if (before.status === 'open' && after.status === 'declined') {
+            const x = event.data as PayloadOf<'FindingDeclined'>
+            await ctx.query(
+              `update finding_backlog
+                 set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
+                     reason = $6, last_seq = $5
+               where project = $1 and key = $2 and (last_seq is null or last_seq < $5)`,
+              [x.project, x.key, x.by, event.at, seq, x.reason],
+            )
+          } else if (after !== before) {
+            const p = event.data as PayloadOf<'FindingProposed'>
+            await ctx.query(
+              `update finding_backlog set proposed_ref = $3, proposed_url = $4, last_seq = $5
+               where project = $1 and key = $2 and (last_seq is null or last_seq < $5)`,
+              [p.project, p.key, p.externalRef, p.url, seq],
+            )
+          }
           break
         }
 
