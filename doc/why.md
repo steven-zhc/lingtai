@@ -3,7 +3,7 @@
 The design argument, moved out of the root README so that it can start with
 what to type. For the commands, begin at the [tutorial](tutorial.md).
 
-Lingtai takes a queue of work, hands items to coding agents — several passes at
+Lingtai takes a queue of work, hands items to coding agents — several attempts at
 once, each in a worktree of its own — holds each at a series of steps, and
 releases it only when every step the recipe declares has passed. A person is one
 of those steps only if the recipe puts one there; a recipe with no human hold
@@ -88,9 +88,9 @@ never where Lingtai keeps what it did.
 
 ## The loop
 
-A pass is ten steps in a fixed order, and what runs at each is the recipe's.
-[`the-pass.html`](the-pass.html) draws them and says what each word means.
-Several passes may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
+An attempt is ten steps in a fixed order, and what runs at each is the recipe's.
+[`the-attempt.html`](the-attempt.html) draws them and says what each word means.
+Several attempts may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
 
 A refusal is answered by the agent that is still standing in the worktree, not
 by a new run: that is the whole of
@@ -110,7 +110,7 @@ implements them, and a host wires the two together.
 
 | Decides · no I/O of its own | Touches the world · one thing each |
 |---|---|
-| **`conductor`** the order of one pass, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
+| **`conductor`** the order of one attempt, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
 | **`actions`** what runs at a point, and what its verdict means | **`projector`** the reducer, and the checkpoint in the same transaction |
 | **`agent-env`** what the agent's environment holds | **`github`** the App, the token, issues and labels |
 | **`recipe`** what the managed repository asked for | **`repo`** git: the mirror, the worktree, the merge lane |

@@ -565,7 +565,7 @@
     <ul class="rules defs">
       <li>
         <b>一趟 conductor</b>
-        <span>为每个已注册的项目问 GitHub 现在有什么可跑，取一件，跑到出结论为止。一趟处理一件，或者一件也不处理。</span>
+        <span>为每个已注册的项目问 GitHub 现在有什么可跑，为每个落进空闲名额的条目启动一次尝试。一趟可能启动多次尝试，也可能一次也不启动。</span>
         <span class="absent">没有它：没有活被干。这是 <code>lingtai run</code> 也会做的那一项。</span>
       </li>
       <li>
@@ -754,7 +754,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 300" role="img" aria-label="一件活依次经过队列、认领、prepared、agent、proposed、merge，再到 integrate 与 end，每一步列出它追加的事件。线下方，来自 proposed、merge 和 integrator 的拒绝汇到同一条总线上，回到同一个工作树里的 agent，由 runtime.limits.rounds 封顶。另一条线把 review 被拒、轮次用尽的一趟 pass 送回认领处，成为新的一趟，由 runtime.limits.restarts 封顶，该键默认为零。只有上限全部用尽才会到人这里。">
+        <svg viewBox="0 0 900 300" role="img" aria-label="一件活依次经过队列、认领、prepared、agent、proposed、merge，再到 integrate 与 end，每一步列出它追加的事件。线下方，来自 proposed、merge 和 integrator 的拒绝汇到同一条总线上，回到同一个工作树里的 agent，由 runtime.limits.rounds 封顶。另一条线把 review 被拒、轮次用尽的一次尝试送回认领处，成为新的一次尝试，由 runtime.limits.restarts 封顶，该键默认为零。只有上限全部用尽才会到人这里。">
           <defs>
             <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>

@@ -83,7 +83,7 @@ footer { color: var(--muted); font-size: .88rem; }
 
 <header>
   <h1>One reduce per stream：最终逻辑说明</h1>
-  <p>0.12 的主题叫「一本账」（one set of books），对应 epic #797。本文是英文规格书 <code>doc/design/one-fold-per-stream.md</code> 的中文导读（文件名保留旧词 fold，内容已改用 reduce），说明这项工作做完后系统怎么运作。更新于 2026-11-03（晚）：术语统一成 reduce / reducer、attempt、stale；加入「一份实现」和「按 seq 去重」两条原则，以及由此新增的 #842–#848 和 attempt 改名票。</p>
+  <p>0.12 的主题叫「一本账」（one set of books），对应 epic #797。本文是英文规格书 <code>doc/design/one-reduce-per-stream.md</code> 的中文导读，说明这项工作做完后系统怎么运作。更新于 2026-11-03（晚）：术语统一成 reduce / reducer、attempt、stale；加入「一份实现」和「按 seq 去重」两条原则，以及由此新增的 #842–#848 和 attempt 改名票。</p>
 </header>
 
 <section>
@@ -312,7 +312,7 @@ footer { color: var(--muted); font-size: .88rem; }
   </ul>
 </section>
 
-<footer>依据：<code>doc/design/one-fold-per-stream.md</code>（D17–D20）、<code>doc/glossary.md</code> § The log and its states，以及 #821–#858 的正文。截至 2026-11-03：#821–#832、#836、#837、#839–#841 已合并；#838 已批 fix round；其余已放开，按依赖顺序排队。</footer>
+<footer>依据：<code>doc/design/one-reduce-per-stream.md</code>（D17–D20）、<code>doc/glossary.md</code> § The log and its states，以及 #821–#858 的正文。截至 2026-11-03：#821–#832、#836、#837、#839–#841 已合并；#838 已批 fix round；其余已放开，按依赖顺序排队。</footer>
 
 </main>
 </body>

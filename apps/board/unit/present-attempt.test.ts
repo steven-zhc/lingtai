@@ -1,7 +1,7 @@
 import type { TicketClaim } from '@lingtai/domain'
 /**
  * `presentAttempt` draws an attempt from `AttemptState` (#828). Each test is named for
- * the decision of `doc/design/one-fold-per-stream.md` it holds.
+ * the decision of `doc/design/one-reduce-per-stream.md` it holds.
  */
 import { reduceAttempt, type Envelope } from '@lingtai/domain'
 import { histories, lateHistories } from '@lingtai/domain/test/histories'

@@ -119,7 +119,7 @@ Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Code
   把路径换成你想关闭的路径。测量只用了一个临时目录，没有测 `~/.lingtai/config.yml` 或 `~/.ssh`。它拦不住这些读取：
   - 单独的 `permissions.deny` 只覆盖 Claude Code 自己的 Read 工具，不覆盖子进程，所以它不是补救办法。
   - 沙箱若没有 `allowUnsandboxedCommands: false`，在 Lingtai 下可以被绕过：`bypassPermissions` 会不经询问就批准未沙箱化的重试。
-  - 未测量：没有 bubblewrap 的 Linux（那里没有沙箱）；在该沙箱下完整跑一次 pass（提交会写入工作树之外，agent 可能明显失败）；其他运行时版本；以及 `CLAUDE_CONFIG_DIR`（pass 会丢弃它，于是 Claude Code 读取 `~/.claude`）。
+  - 未测量：没有 bubblewrap 的 Linux（那里没有沙箱）；在该沙箱下完整跑一次尝试（提交会写入工作树之外，agent 可能明显失败）；其他运行时版本；以及 `CLAUDE_CONFIG_DIR`（尝试会丢弃它，于是 Claude Code 读取 `~/.claude`）。
   - `denyRead` 与网络无关，这项设置不限制网络。
 - Codex：`~/.codex/config.toml` 中 `default_permissions` 所指权限配置的 `deny` 条目会在角色之上进一步收窄运行，不能放宽（codex-cli 0.164.0，`codex sandbox`：读取被拒绝，对照组读取成功）。其中若设置了 `sandbox_mode`，则保持原行为：配置不生效，读取成功。
 
@@ -132,7 +132,7 @@ Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Code
 
 - [Why it is built this way](doc/why.md)：日志、目标与架构。
 - [The tutorial](doc/tutorial.md)：同一条路径的完整版，含 Fish，以及把项目迁到 GitHub 的第 2 部分。
-- [The ten steps of a pass](doc/the-pass.html)：一张票是如何被构建的。
+- [The ten steps of an attempt](doc/the-attempt.html)：一张票是如何被构建的。
 - [Architecture](doc/architecture.html)：你在哪个进程里、谁在向日志追加、状态存放在哪里。
 - [Operating](doc/operating.md)：你要输入的一切，以及每一次拒绝的含义。
 - [Reference](doc/reference.md)：每个术语、事件类型和动作种类。

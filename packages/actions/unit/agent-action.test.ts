@@ -1144,7 +1144,7 @@ describe('the action', () => {
  * (`#294`, 0058 §3c).
  *
  * `design` is on `ARRIVE_AT_THE_ROUTER`, `goesToTheRouter` admits a
- * `did-not-finish` whose `because` is `needs-input`, and `the-pass.py` draws the
+ * `did-not-finish` whose `because` is `needs-input`, and `the-attempt.py` draws the
  * fan — and until this ticket no branch in `createDraftAction` produced the token,
  * so a design agent that could not answer the ticket had one move: write its
  * doubts into the document and hand them to the implementer, which is the shape

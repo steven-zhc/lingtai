@@ -3,7 +3,7 @@
 ## TL;DR
 
 - [Write the ticket as the prompt](#write-the-ticket-as-the-prompt): the issue body is pasted whole into the agent's prompt, so write it to be worked from.
-- [Size it for one pass](#size-it-for-one-pass): one ticket, one pass, a result you can check in one sitting.
+- [Size it for one attempt](#size-it-for-one-attempt): one ticket, one attempt, a result you can check in one sitting.
 - [Order and release](#order-and-release): a kind label sets priority, a chain goes in *blocked by*, and nothing is released unread.
 - [Choose a model for each role](#choose-a-model-for-each-role): a recipe names a runtime and model per role, and a reviewer from another family has other blind spots.
 - [Gate what has failed](#gate-what-has-failed): keep the gates that refuse, delete the ones that never do, and watch each one fail once.
@@ -40,9 +40,9 @@ On 2026-11-01 two passes of #811 failed because the reviewer chased a race with 
 projection rebuild; one line under *Out of scope* would have said it was not
 wanted.
 
-## Size it for one pass
+## Size it for one attempt
 
-**The rule.** One ticket, one pass, and a result you can check in one sitting.
+**The rule.** One ticket, one attempt, and a result you can check in one sitting.
 Before you file, ask: *can I name the shape of the diff that would close this?*
 If the honest answer is *it depends what the agent finds*, it is research wearing
 a ticket's clothes, and a run is the most expensive way to do research.
@@ -111,7 +111,7 @@ as of 2026-11-01, not a recommendation; models change faster than it does.
   generic checklist is already built in (`packages/actions/src/agent-action.ts:182`,
   `CHECKLIST`); what a reviewer lacks is what *your* codebase keeps getting wrong.
 - Check that every runtime any role names is installed and signed in, before the
-  first pass ([requirements](requirements.md)).
+  first attempt ([requirements](requirements.md)).
 
 Over tickets that landed in October 2026 (measured 2026-11-01), work was 56% of
 spend and answering refusals 35%: the fix rounds are a third of the spend, which
@@ -139,7 +139,7 @@ Ten steps, closed forever — `claim`, `admit`, `prepared`, `design`,
 `implement`, `build`, `review`, `proposed`, `merge`, `end`
 ([reference](reference.md#step--10-closed-forever)). Fourteen action kinds, of
 which four produce a verdict, two run for effect, one keeps what a step made,
-one reads it back, and six are names for code the pass calls itself and no step
+one reads it back, and six are names for code the attempt calls itself and no step
 yet reads
 ([reference](reference.md#gate-action--14-keys-of-which-4-produce-a-verdict)).
 

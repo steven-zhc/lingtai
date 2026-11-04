@@ -1,5 +1,5 @@
 /**
- * D1 (`doc/design/one-fold-per-stream.md` §5): one verdict ladder. Each cell is
+ * D1 (`doc/design/one-reduce-per-stream.md` §5): one verdict ladder. Each cell is
  * reduced over the fixed histories (#798) through both readers — `AttemptState.steps`
  * (which is what task_view's `rowOf` reads since #844) and `boardFactOf` — and they must give one word.
  */

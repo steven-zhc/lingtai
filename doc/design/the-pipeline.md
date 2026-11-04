@@ -349,10 +349,10 @@ bail has nothing left to bail from.
 - [ ] A `review` that returns nothing is a review that found nothing
 - [ ] Every path into `end` has been through `build` and `review`
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
-- [ ] **`doc/the-pass.html` and its Chinese twin are redrawn from the code**,
+- [ ] **`doc/the-attempt.html` and its Chinese twin are redrawn from the code**,
       not before it. They draw 0039's five gate points today, which is accurate
       and is not the decided shape; a banner says so until the pass they draw is
-      the one that runs. `scripts/the-pass.py` is the source — the HTML is
+      the one that runs. `scripts/the-attempt.py` is the source — the HTML is
       generated
 - [ ] **No retired name survives** — not in an identifier, a type, an event
       type, a recipe key, or a string a person reads. `gate` is gone entirely
@@ -379,11 +379,11 @@ bail has nothing left to bail from.
 - [ ] **The two drawings say ten.** `#227` left them at five on purpose, and it
       is a redraw rather than a rename: `doc/architecture.html`'s prose moved
       because its figure draws a *pass* and never enumerated the vocabulary,
-      but `scripts/the-pass.py` puts five nodes on a spine and says so in the
+      but `scripts/the-attempt.py` puts five nodes on a spine and says so in the
       subtitle, the caption and the figure's `alt` — so changing the count
       without moving the geometry would leave a page describing something it
       does not draw. The HTML is generated; the edit is to the script
-      (`doc/the-pass.html` and `doc/the-pass.zh.html` are its output, and the
+      (`doc/the-attempt.html` and `doc/the-attempt.zh.html` are its output, and the
       Chinese page moves in the same commit). **`architecture.zh.html` is not
       on this list and was not deferred**: `427d734` moved its English twin's
       two prose lines and left it saying 五个闸口点是固定且封闭的, so for one

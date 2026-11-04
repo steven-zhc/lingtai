@@ -1,0 +1,10 @@
+# Cloudflare Pages' redirects file. The site is a static export (`output:
+# 'export'`), so Next's own redirects never run; `public/` is copied verbatim
+# into `out/`, which is where Cloudflare reads this from, beside `_headers`.
+#
+# The drawing of one attempt was `the-pass` until #854. Pages also serves an
+# HTML file at its extension-less URL, so a bookmark may hold either form.
+/doc/the-pass.html     /doc/the-attempt.html     301
+/doc/the-pass.zh.html  /doc/the-attempt.zh.html  301
+/doc/the-pass          /doc/the-attempt          301
+/doc/the-pass.zh       /doc/the-attempt.zh       301

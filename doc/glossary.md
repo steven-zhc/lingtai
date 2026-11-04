@@ -19,8 +19,8 @@ disagree, the code is right and this is corrected.
   scheduled by `requestContinuation` in
   `packages/conductor/src/resolve-wait.ts`). The machine's fix round is not
   one: it stays inside the same `runPass` loop. Neither move in the right
-  column is one; each starts a new pass.
-- A requeued pass is still told about earlier attempts and where their commits
+  column is one; each starts a new attempt.
+- A requeued attempt is still told about earlier attempts and where their commits
   are (`attemptBrief` and the arms on origin, `packages/conductor/src/prompt.ts`),
   so it can reuse that work — but it is new development and goes through build
   and review again.
@@ -28,7 +28,7 @@ disagree, the code is right and this is corrected.
   [0118](decisions/0118-a-hold-explains-itself.md) §1; the granted round is
   [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
   0120 §5.
-- [The pass](the-pass.html) shows where each of these arrives from.
+- [The attempt](the-attempt.html) shows where each of these arrives from.
 
 ## The log and its states
 
@@ -46,10 +46,10 @@ Lingtai is an event log. Everything else is what the log's events add up to.
 - **Reduce** — the one rule that takes a stream's state and its next event and
   returns the state after it. Each kind of stream has exactly one, in
   `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
-  board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
+  board and the projections ([one-reduce-per-stream](design/one-reduce-per-stream.md)).
   Code: `reduceAttemptEvent(state, event)` reduces one event and `reduceAttempt(events)`
   a whole stream from the start, and likewise for every stream. Say
-  *reduce* for the act and **reducer** for the rule (the run reducer); the older
+  *reduce* for the act and **reducer** for the rule (the attempt reducer); the older
   words *fold* and *apply* mean the same thing.
 - **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a
@@ -84,7 +84,7 @@ The states, one per kind of stream:
 | State | Stream | What it is |
 |---|---|---|
 | **AttemptState** | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/attempt.ts`. |
-| **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its passes: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
+| **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its attempts: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
 | **ControlState** | `ctl-conductor`, one per machine | Whether the conductor may take work: paused or not, by whom, why and until when, and a standing request to drain. What depends on the clock (a pause that lifts at `until`) is evaluated by the reader. `packages/domain/src/control.ts`. |
 | **ProjectState** | `prj-{project}`, one per repository | What Lingtai was told about a repository: its owner, base branch, the recipe hash last resolved, and a refusal nothing has recovered from yet. `packages/domain/src/project.ts`. |
 | **IntegrationState** | `int-{project}-{base}`, one per base branch | The merge lane for one base branch: idle or attempting which ticket's head, and how many attempts. `packages/domain/src/integration.ts`. |

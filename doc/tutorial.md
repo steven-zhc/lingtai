@@ -75,7 +75,7 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --build 'npm run build' --defaults --land hold
 ```
 
-A pass has ten steps in a fixed order. This setup saves Chapter Garden's
+An attempt has ten steps in a fixed order. This setup saves Chapter Garden's
 choices in a local recipe; steps you did not configure keep their defaults.
 
 ![Selected Chapter Garden recipe fields connect to Lingtai's ten fixed steps.](img/recipe.svg)
@@ -275,7 +275,7 @@ your checkout, so Step 4's `git merge lingtai-base` does not apply: look on GitH
 
 ## Next
 
-For the model behind it, see [the concepts](concepts.md). To read or change what `init` wrote, see [the recipe guide](recipe.md). Once a pass has run, [the CLI guide](cli.md) has the command for each routine
+For the model behind it, see [the concepts](concepts.md). To read or change what `init` wrote, see [the recipe guide](recipe.md). Once an attempt has run, [the CLI guide](cli.md) has the command for each routine
 action that follows: waiting on a ticket, answering a question, restarting the
-daemon. To subscribe to what a pass writes, [the events](events.json) lists each step's
+daemon. To subscribe to what an attempt writes, [the events](events.json) lists each step's
 events with the code that appends them.

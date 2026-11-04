@@ -1270,7 +1270,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    *
    * The clause was decided, drawn and routed for and nothing could produce the
    * token: `ARRIVE_AT_THE_ROUTER` carries `design`, `goesToTheRouter` admits a
-   * question, `the-pass.py` draws the fan — and `createDraftAction` had three
+   * question, `the-attempt.py` draws the fan — and `createDraftAction` had three
    * branches, none of which set it. So a design agent that found the ticket
    * unanswerable wrote its doubts into the document and handed them to the
    * implementer, which is the one reader that cannot answer them.

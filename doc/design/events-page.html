@@ -1164,7 +1164,7 @@ button.chip.on{background:var(--accent);color:var(--surface)}
 const D = JSON.parse(document.getElementById('data').textContent);
 const E = D.events;
 const STEPS = ['claim','admit','prepared','design','implement','build','review','proposed','merge','end'];
-// the pass order from doc/the-pass.html: claim admit prepared design implement build review proposed merge end
+// the pass order from doc/the-attempt.html: claim admit prepared design implement build review proposed merge end
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const NOSUM = 'no description in the source';

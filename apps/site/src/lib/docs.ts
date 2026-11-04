@@ -182,14 +182,14 @@ export const HTML_DOCS = [
     note: 'The architecture page, in Chinese. A change to either belongs in both.',
   },
   {
-    file: 'the-pass.html',
-    label: 'The Pass',
-    note: 'One pass from claim to end, and where a refusal goes. Draws 0039, which is accepted and not yet built — the two places it is ahead of the code are marked on it.',
+    file: 'the-attempt.html',
+    label: 'The Attempt',
+    note: 'One attempt from claim to end, and where a refusal goes.',
   },
   {
-    file: 'the-pass.zh.html',
-    label: '一趟 pass',
-    note: 'The pass page, in Chinese. Both are generated from one geometry, so a change belongs in both.',
+    file: 'the-attempt.zh.html',
+    label: '一次尝试',
+    note: 'The attempt page, in Chinese. Both are generated from one geometry, so a change belongs in both.',
   },
 ]
 

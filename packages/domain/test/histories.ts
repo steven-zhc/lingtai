@@ -1,6 +1,6 @@
 /**
  * Fixed event histories every reducer of the one-reduce epic (#797) is run over
- * (#798, plan `doc/design/one-fold-per-stream.md` §3 T0a, §4, §5).
+ * (#798, plan `doc/design/one-reduce-per-stream.md` §3 T0a, §4, §5).
  *
  * **Append only.** `seq` is assigned here, from this module's own counter, in the
  * order the histories are built below, and `histories.hashes.json` hashes it. A

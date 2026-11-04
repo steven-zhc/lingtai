@@ -1,7 +1,7 @@
 # Reading and changing your recipe
 
 The tutorial's `lingtai init` wrote one file, the project's **recipe**. It is
-the only place that says what a pass does for this project: which agent writes
+the only place that says what an attempt does for this project: which agent writes
 the change, what checks it, and whether a person approves before it lands. This
 page is for the first time you open it.
 
@@ -22,7 +22,7 @@ doubt it.
 
 ## What a choice becomes
 
-A pass has ten fixed steps: `claim`, `admit`, `prepared`, `design`,
+An attempt has ten fixed steps: `claim`, `admit`, `prepared`, `design`,
 `implement`, `build`, `review`, `proposed`, `merge`, `end`. The file has a few
 top-level blocks, and the steps are one of them.
 
@@ -73,7 +73,7 @@ steps:
     - name: build
       run: npm run build
   proposed:
-    - name: hold every pass
+    - name: hold every attempt
       human: Land this? The setup was answered 'hold'.
 
 source:
@@ -89,7 +89,7 @@ well as `runtime.agent`. An `agent:` written on the entry wins; `runtime.agent`
 is only what the built-in implementer uses when `implement` is empty or left out.
 Every entry still needs its own plugin key, so deleting `agent:` from the entry
 does not select the fallback; it makes the recipe invalid.
-Change only `runtime.agent` in this excerpt and the next pass still runs
+Change only `runtime.agent` in this excerpt and the next attempt still runs
 `claude-code`.
 
 `runtime.limits` is absent from the file, and that is fine: a key you leave out
@@ -109,12 +109,12 @@ same thing, and a step with nothing declared runs its built-in default:
 | `merge` | lands the branch on the base |
 | the other six | nothing runs |
 
-Two things follow, and each has cost somebody a pass.
+Two things follow, and each has cost somebody an attempt.
 
 - **Writing anything at a step replaces its default; it does not add to it.**
   A `run:` under `merge:` meant as an extra check also means the landing is no
   longer there.
-- **`merge: []` does not stop landing.** What holds a pass for a person is a
+- **`merge: []` does not stop landing.** What holds an attempt for a person is a
   `human:` at `proposed:`, which is the step before the landing.
 
 So the file, not Lingtai's defaults, answers two questions about your project:
@@ -122,7 +122,7 @@ So the file, not Lingtai's defaults, answers two questions about your project:
 - **Does anything check a diff before review?** Read `steps.build`. If it is
   empty, nothing does.
 - **Does a person approve a landing?** Read `steps.proposed`. If no `human:` is
-  there, a pass that gets past review lands unattended. `--land hold` writes
+  there, an attempt that gets past review lands unattended. `--land hold` writes
   one; `--land <branch>` removes them.
 
 `init` run without `--build` or `--land` can leave you with either, so look
@@ -163,9 +163,9 @@ refuses it, in the same row:
 ```
 
 `human:` serves `proposed` and nothing else, so that is where it goes. A
-running daemon reads the file again at the start of each pass, so an edit
-applies to the next pass without a restart. That works both ways: delete a
-hold and the next pass can land unattended, so edit the file with that in mind.
+running daemon reads the file again at the start of each attempt, so an edit
+applies to the next attempt without a restart. That works both ways: delete a
+hold and the next attempt can land unattended, so edit the file with that in mind.
 
 ## Every other key
 
