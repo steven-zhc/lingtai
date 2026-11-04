@@ -152,49 +152,6 @@ describe('the verifying overlay and the rows a ticket event may make', () => {
   })
 })
 
-describe('delivery is at-least-once', () => {
-  it('the same events handed over twice leave the row as one delivery does, without reducing again', async () => {
-    const h = histories.ticket.waitsResolvedBeforeClose
-    const cut = h.findIndex((e) => e.type === 'WaitResolved')
-    const events = h.slice(0, cut + 1)
-    const once = await tableAfter(events)
-    const twice = await withStore(async (run, ctx) => {
-      await run(events)
-      spy.calls = 0
-      await run(events.slice(0, 1))
-      await run(events.slice(cut, cut + 1))
-      expect(spy.calls).toBe(0)
-      return ctx.query('select * from task_view order by task_id')
-    })
-    expect(twice).toEqual(once)
-    // A later event with a greater seq still reduces.
-    const later = await tableAfter(h.slice(0, cut + 2))
-    expect(later[0]!.state).toBe('running')
-  })
-
-  it('two runners that both read before either writes have one effect', async () => {
-    // SQLite only: a Postgres twin is the integration half, which a pass does not run.
-    const ticket = makeStream('ticket-race-1')
-    const claim = aClaim(ticket, 'pass-race-1')
-    const first = ticket('TicketReleased', { runId: 'pass-race-1', reason: 'x', cause: null })
-    const second = { ...first, data: { ...(first.data as object), reason: 'y' } } as Envelope
-    await withStore(async (run, ctx) => {
-      await run(claim)
-      const stale = await ctx.query('select ticket from task_view where task_id = $1', ['ticket-race-1'])
-      const staleCtx: ProjectionContext = {
-        query: ((sql: string, params?: readonly unknown[]) =>
-          sql.startsWith('select ticket from task_view where')
-            ? Promise.resolve(stale)
-            : ctx.query(sql, params)) as never,
-      }
-      await taskViewProjection.apply([first], staleCtx)
-      await taskViewProjection.apply([second], staleCtx)
-      const [row] = await ctx.query('select note from task_view where task_id = $1', ['ticket-race-1'])
-      expect(row!.note).toBe('x')
-    })
-  })
-})
-
 describe('incremental against rebuild', () => {
   const cases: [string, Envelope[]][] = [
     ['waitsResolvedBeforeClose', [...histories.ticket.waitsResolvedBeforeClose]],

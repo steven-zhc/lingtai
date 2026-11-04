@@ -17,8 +17,8 @@ import type { ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
 const SHA = 'a'.repeat(40)
-// ticket and ticket_seq name the stream's own runs and seqs (#834).
-const VOLATILE = ['task_id', 'issue', 'updated_seq', 'updated_at', 'last_attempt_at', 'ticket', 'ticket_seq']
+// ticket names the stream's own runs and seqs (#834).
+const VOLATILE = ['task_id', 'issue', 'updated_seq', 'updated_at', 'last_attempt_at', 'ticket']
 
 type Reclaim = (stream: ReturnType<typeof makeStream>, runId: string) => Envelope[]
 const oldForm: Reclaim = (stream, runId) => aClaim(stream, runId)

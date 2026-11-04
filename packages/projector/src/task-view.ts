@@ -205,14 +205,10 @@ export const taskViewProjection: Projection = {
 
         updated_seq  bigint not null,
 
-        -- The ticket reduce (applyTicket), stored as encodeTicket writes it, and
-        -- the seq of the event it was reduced to. Every one-stream column above
-        -- is read off it (#834). Its own seq and not updated_seq, because an
-        -- event that moves no derived column leaves updated_at alone, so
-        -- updated_seq is not "the last ticket event seen". No default on either:
-        -- a table built before this is refused by the shape check until rebuilt.
-        ticket       jsonb not null,
-        ticket_seq   bigint not null
+        -- The ticket reduce (applyTicket), stored as encodeTicket writes it.
+        -- Every one-stream column above is read off it (#834). No default: a
+        -- table built before this is refused by the shape check until rebuilt.
+        ticket       jsonb not null
       )`)
     await ctx.query('create index if not exists task_view_state_idx on task_view (project, state)')
     await ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
@@ -231,8 +227,7 @@ export const taskViewProjection: Projection = {
     await ctx.query(`
       create table if not exists task_view_ticket (
         task_id    text primary key,
-        ticket     jsonb not null,
-        ticket_seq bigint not null
+        ticket     jsonb not null
       )`)
   },
 
@@ -574,9 +569,9 @@ function noteOf(event: Envelope, after: TicketState, lifecycleMoved: boolean): {
 /**
  * One event on a ticket's stream: reduce it once, and write what the reduce says (#834).
  *
- * **The dedupe is the write's own condition** (`ticket_seq <`), one atomic statement and
- * never a read then a write: of two runners that loaded the same row, the second touches
- * 0 rows. `reduceStoredTicket` returning null is only the cheap skip on one runner.
+ * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in
+ * `seq` order, so each event is a plain read, a reduce and a write. There is no per-row
+ * `seq` guard and no lock ordering between `task_view` and `task_view_ticket`.
  *
  * **State moves only when the lifecycle does**, asked of the two reduces and never of the
  * row: the row's `state` may be the run stream's `verifying` overlay, which an edit to the
@@ -593,18 +588,15 @@ async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promis
     ? row.ticket
     : (await ctx.query<{ ticket: unknown }>('select ticket from task_view_ticket where task_id = $1', [taskId]))[0]
         ?.ticket
-  const reduced = reduceStoredTicket(stored, event, 'task_view')
-  if (reduced === null) return
-  const { before, after } = reduced
+  const { before, after } = reduceStoredTicket(stored, event, 'task_view')
   const seq = event.seq.toString()
   const encoded = encodeTicket(after)
 
   if (!row && !MAKES_THE_ROW.has(event.type)) {
     await ctx.query(
-      `insert into task_view_ticket (task_id, ticket, ticket_seq) values ($1, $2::jsonb, $3::bigint)
-       on conflict (task_id) do update set ticket = excluded.ticket, ticket_seq = excluded.ticket_seq
-       where task_view_ticket.ticket_seq < excluded.ticket_seq`,
-      [taskId, encoded, seq],
+      `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
+       on conflict (task_id) do update set ticket = excluded.ticket`,
+      [taskId, encoded],
     )
     return
   }
@@ -662,7 +654,6 @@ async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promis
     ['last_attempt_at', p(now.last_attempt_at, '::timestamptz')],
     ['restarts', p(now.restarts, '::int')],
     ['ticket', p(encoded, '::jsonb')],
-    ['ticket_seq', seqPh],
     ['updated_at', p(event.at, '::timestamptz'), writeTouched],
     ['updated_seq', seqPh, writeTouched],
   ]
@@ -675,15 +666,14 @@ async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promis
   ].join(', ')
 
   if (row && !MAKES_THE_ROW.has(event.type)) {
-    await ctx.query(`update task_view set ${sets} where task_id = ${id} and ticket_seq < ${seqPh}`, params)
+    await ctx.query(`update task_view set ${sets} where task_id = ${id}`, params)
     return
   }
 
   await ctx.query(
     `insert into task_view (task_id, run_id, ${cols.map(([name]) => name).join(', ')})
      values (${id}, ${runPh}, ${cols.map(([, ph]) => ph).join(', ')})
-     on conflict (task_id) do update set ${sets}
-     where task_view.ticket_seq < ${seqPh}`,
+     on conflict (task_id) do update set ${sets}`,
     params,
   )
   // The state lives in exactly one place at a time: it is in the row now.

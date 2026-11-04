@@ -5,8 +5,7 @@
  *
  * **Generated from the code before #480's rewrite, and regenerated once since.**
  * #522 removed four redundant columns from it, and #834 regenerated it once when
- * `task_view` began reading its columns off the ticket reduce. That change added
- * `ticket_seq` to every row (the column is new, nothing in a row moved) and moved
+ * `task_view` began reading its columns off the ticket reduce. That change moved
  * exactly one value: `ticket-pin-dispatch`'s `updated_seq`, 28 -> 27, because a
  * `DispatchRefused` on a blocked ticket moves no derived column and so leaves the
  * card's age alone ("an event that moves no derived column does not move it").
