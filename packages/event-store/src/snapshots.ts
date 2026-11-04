@@ -293,14 +293,34 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
       // valid meanwhile (a restore) or replaced by a valid one (another writer)
       // matches nothing here. Whatever it deleted, the upsert and the 'kept'
       // check then say what is true now.
-      await sql.query(
-        `DELETE FROM stream_snapshots
-         WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3
-           AND NOT ${stored('stream_snapshots')}
-           AND ${incoming}
-         RETURNING stream_id`,
-        params,
-      )
+      //
+      // The delete also names the row it was shown (its version, seq and at). On
+      // Postgres a DELETE that meets a row updated meanwhile re-checks its
+      // predicate against the new row but keeps its old snapshot of `events`, so
+      // the newer row's anchor can look absent and a valid row would be deleted.
+      // With the observed identity in the predicate, a replaced row no longer
+      // matches and is left alone.
+      const seen = (
+        await sql.query<{ stream_version: unknown; last_seq: unknown; last_at: unknown }>(
+          `SELECT stream_version, CAST(last_seq AS text) AS last_seq, last_at FROM stream_snapshots
+           WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3`,
+          [snapshot.streamId, snapshot.reducer, snapshot.reducerVersion],
+        )
+      )[0]
+      if (seen !== undefined) {
+        const seenSeq = String(seen.last_seq)
+        await sql.query(
+          `DELETE FROM stream_snapshots
+           WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3
+             AND stream_version = ${pg ? '$7::integer' : '$7'}
+             AND last_seq = ${pg ? '$8::bigint' : '$8'}
+             AND last_at = ${pg ? '$9::text' : '$9'}
+             AND NOT ${stored('stream_snapshots')}
+             AND ${incoming}
+           RETURNING stream_id`,
+          [...params, Number(seen.stream_version), pg ? seenSeq : BigInt(seenSeq), String(seen.last_at)],
+        )
+      }
       if ((await upsert()).length > 0) return 'written'
       if ((await sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
       throw anchorNotInLogError(snapshot)
