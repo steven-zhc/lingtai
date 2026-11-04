@@ -452,13 +452,13 @@ describe('snapshotCensus (#879)', () => {
   it('is ok when every row is usable', async () => {
     const r = await snapshotCensus(async () => [row('control', 2, 3, 3)])
     expect(r.status).toBe('ok')
-    expect(r.detail).toBe('3 snapshots, 3 usable')
+    expect(r.detail).toBe('3 snapshots, 3 usable (6 KB)')
   })
 
   it('reports an older version as void, naming reducer and version', async () => {
     const r = await snapshotCensus(async () => [row('control', 1, 1, 1, 14_000), row('control', 2, 4, 4)])
     expect(r.status).toBe('info')
-    expect(r.detail).toBe('5 snapshots, 4 usable · void: control v1 ×1 (14 KB, older version)')
+    expect(r.detail).toBe('5 snapshots, 4 usable (8 KB) · void: control v1 ×1 (14 KB, older version)')
   })
 
   it('reports an unanchored current-version row as void by anchor', async () => {

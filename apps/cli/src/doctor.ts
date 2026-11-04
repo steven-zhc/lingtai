@@ -1703,6 +1703,7 @@ export async function snapshotCensus(census: () => Promise<SnapshotCensusRow[]>)
 
 function classifySnapshots(name: string, rows: SnapshotCensusRow[]): CheckResult {
   let usable = 0
+  let usableBytes = 0
   let total = 0
   const void_: string[] = []
   const other: string[] = []
@@ -1718,11 +1719,12 @@ function classifySnapshots(name: string, rows: SnapshotCensusRow[]): CheckResult
       void_.push(label(r.rows, r.bytes, 'older version'))
     } else {
       usable += r.anchored
+      usableBytes += (r.bytes * r.anchored) / r.rows
       const unanchored = r.rows - r.anchored
       if (unanchored > 0) void_.push(label(unanchored, (r.bytes * unanchored) / r.rows, 'anchor no longer holds'))
     }
   }
-  const lines = [`${total} snapshots, ${usable} usable`]
+  const lines = [`${total} snapshots, ${usable} usable${usable > 0 ? ` (${kb(usableBytes)})` : ''}`]
   if (void_.length > 0) lines[0] += ` · void: ${void_.join(', ')}`
   if (other.length > 0) lines.push(`other code: ${other.join(', ')}`)
   const clean = void_.length === 0 && other.length === 0
