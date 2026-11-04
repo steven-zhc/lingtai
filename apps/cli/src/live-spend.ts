@@ -13,6 +13,21 @@ export const liveSpend = new Set<ProjectionRunner>()
 /** Starts in flight: a runner reads its checkpoint inside `start()`, so a rebuild must wait for these. */
 const starting = new Set<Promise<unknown>>()
 
+/** Closes in flight: a released runner is out of `liveSpend` at once but may still be committing a batch. */
+const closing = new Set<Promise<unknown>>()
+
+/**
+ * Unregisters a runner and closes it, counted as closing until its pending
+ * batches have committed, so a rebuild that holds meanwhile waits for them
+ * rather than replaying beside a writer it can no longer see.
+ */
+export function releaseLive(runner: ProjectionRunner): Promise<void> {
+  liveSpend.delete(runner)
+  const closed = runner.close().catch(() => {})
+  closing.add(closed)
+  return closed.finally(() => closing.delete(closed))
+}
+
 /** Set while a rebuild holds the live runners; a start waits on it rather than reading a rewound checkpoint. */
 let standingDown: Promise<void> | null = null
 
@@ -30,6 +45,7 @@ export async function holdLiveSpend(): Promise<() => Promise<void>> {
   standingDown = mine
   await previous
   await Promise.allSettled(starting)
+  await Promise.allSettled(closing)
   const held = [...liveSpend].filter((r) => r.running)
   await Promise.all(held.map((r) => r.stop()))
   return async () => {

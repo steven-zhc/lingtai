@@ -85,3 +85,38 @@ describe('a runner still starting when a rebuild holds the live runners (#860)',
     expect(calls).toContain('late:start')
   })
 })
+
+describe('a runner being released when a rebuild holds the live runners (#860)', () => {
+  it('is waited for until its close has settled', async () => {
+    const { spendProjection } = await import('@lingtai/projector')
+    const { holdLiveSpend, startLive, releaseLive } = await import('../src/live-spend.ts')
+    let finishClose: () => void = () => {}
+    let closed = false
+    const runner = {
+      running: true,
+      start: async () => {},
+      stop: async () => {},
+      close: () =>
+        new Promise<void>((resolve) => {
+          finishClose = () => {
+            closed = true
+            resolve()
+          }
+        }),
+    } as never
+    await startLive(spendProjection, runner)
+    const releasing = releaseLive(runner)
+    let held = false
+    const hold = holdLiveSpend().then((resume) => {
+      held = true
+      return resume
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(held).toBe(false)
+    finishClose()
+    await releasing
+    const resume = await hold
+    expect(closed).toBe(true)
+    await resume()
+  })
+})

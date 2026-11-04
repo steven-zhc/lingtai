@@ -26,7 +26,7 @@ import {
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
 
-import { liveSpend, startLive } from './live-spend.ts'
+import { releaseLive, startLive } from './live-spend.ts'
 
 /**
  * The guard #451 put in front of daemon start, `lingtai doctor` and `lingtai
@@ -82,12 +82,12 @@ async function releaseSecondary(
   log: (line: string) => void,
 ): Promise<void> {
   if (!runner) return
-  liveSpend.delete(runner)
+  const closed = releaseLive(runner)
   if (runner.failure) {
     log(`the ${name} projection stopped during this run: ${String(runner.failure)}`)
     log(`${name} is behind until it is rebuilt — lingtai projection rebuild ${name}`)
   }
-  await runner.close().catch(() => {})
+  await closed
 }
 
 /**
