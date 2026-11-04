@@ -14,7 +14,7 @@ all of this, and `lingtai env` writes the project file.
 
 ## Context
 
-An agent and the commands a pass runs are subprocesses of the conductor, and the
+An agent and the commands an attempt runs are subprocesses of the conductor, and the
 conductor's environment holds Lingtai's own log URL and GitHub App key. A
 project often needs its own values, such as a database URL for its tests, and
 two projects can use the same variable name with different values. A run that
@@ -45,7 +45,7 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
    evaluated before `allow`/`deny` apply, so a name can be both required and
    denied: the machine must be configured with it, and this run does not need to
    see it. If a required name has no value in the file, the project is
-   refused for that pass at stage `env`, before any work item is claimed and
+   refused for that attempt at stage `env`, before any work item is claimed and
    before any agent starts. The refusal names each missing variable and the
    `lingtai env set` command that fixes it. The environment belongs to the
    project, not the ticket, so it is refused once rather than once per ticket.
@@ -86,7 +86,7 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
    check runs against the host, and `refuseHosts` entries are also checked
    against the URL's username, because a pooled connection puts the project ref
    there. A hit throws `ProductionValueError`. This covers every value that
-   reaches the agent and every extension's declared values, and the pass is
+   reaches the agent and every extension's declared values, and the attempt is
    refused at stage `env`.
 
 8. **Names and layers are always visible; values never are.**

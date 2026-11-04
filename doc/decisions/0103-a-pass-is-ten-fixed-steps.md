@@ -1,8 +1,8 @@
-# 0103 — The pipeline: a pass is ten fixed steps, four may refuse, and only `proposed` routes
+# 0103 — The pipeline: an attempt is ten fixed steps, four may refuse, and only `proposed` routes
 
 **Status** accepted · 2026-10-01
 
-Lingtai is a development pipeline, not a workflow builder. Every pass walks the
+Lingtai is a development pipeline, not a workflow builder. Every attempt walks the
 same ten steps in the same order; what each step *does* is the plugins the
 recipe declares there, or that step's default plugin when it declares nothing.
 The workflow keeps exactly three things for itself: the order, which four steps
@@ -18,7 +18,7 @@ branch is merged into a base, the issue is closed. Calling those stations
 generic "extension points" hid half of them and made every one look equally
 configurable. A refusal is not an ordinary return value — it buys a fix round
 (roughly 31 agent turns), holds the ticket and may reach a person — so it
-cannot be a plugin's to invent. And a pass must be bounded: if any step could
+cannot be a plugin's to invent. And an attempt must be bounded: if any step could
 send work anywhere, a misconfigured plugin would loop on somebody's money and
 never report a fault.
 
@@ -27,9 +27,9 @@ never report a fault.
 1. **There are ten steps, in a fixed order, and the set is closed.** `claim`,
    `admit`, `prepared`, `design`, `implement`, `build`, `review`, `proposed`,
    `merge`, `end` — `Step`/`STEPS` in `packages/domain/src/events.ts`, and the
-   spine the loop walks is that tuple and nothing else (`PASS` in
-   `packages/conductor/src/pass.ts`). The UI, the recipe's `steps:` keys and the
-   log share these names. `waiting` is not a step: it is where a pass rests until
+   spine the loop walks is that tuple and nothing else (the spine in
+   `packages/conductor/src/run-attempt.ts`). The UI, the recipe's `steps:` keys and the
+   log share these names. `waiting` is not a step: it is where an attempt rests until
    a person moves it. A step's contents are the recipe's; its existence is not.
 
 2. **Every step is one kind of thing: a list of plugins.** A step's behaviour is
@@ -37,14 +37,14 @@ never report a fault.
    (`packages/actions/src/action.ts`); the first action that does not pass stops
    the list and the remaining entries are recorded as skipped. Nine steps run
    verdict-producing actions; `end` runs effects (`close:`, `labels:`, `refs:`)
-   resolved against the pass's outcome, and runs on every outcome. Every verdict
+   resolved against the attempt's outcome, and runs on every outcome. Every verdict
    is stamped with `onSha`, the commit it is about, by the core rather than by
    the plugin; a step that moves the tree reports the new head. What a plugin
    is, and which plugins exist, is
    [0105](0105-a-plugin-is-a-declaration-and-an-implementation.md).
 
 3. **Exactly four steps may refuse: `prepared`, `build`, `proposed`, `merge`.**
-   `REFUSING_STEPS` in `pass.ts`, and only those can produce the `refused`
+   `REFUSING_STEPS` in `run-attempt.ts`, and only those can produce the `refused`
    ending. A plugin at a refusing step supplies the judgement, never the
    consequence. An action that says no at any of the other six is reported as
    `did-not-finish` with `because: "action-refused"`: no round is bought and
@@ -53,8 +53,8 @@ never report a fault.
    carrying its findings, and `proposed` judges them.
 
 4. **A step ends one of seven ways, and the type says which go anywhere.**
-   `StepEnding` in `pass.ts`:
-   - `passed` — the pass moves to the next step on the spine.
+   `StepEnding` in `run-attempt.ts`:
+   - `passed` — the attempt moves to the next step on the spine.
    - `refused` — `{ because, at, detail }`: a machine-readable reason beside the
      words; only the four refusing steps.
    - `asked` — `{ at, detail }`, the question in the agent's words and no
@@ -62,7 +62,7 @@ never report a fault.
    - `did-not-finish` — `{ because, at, detail }`: a crash, a timeout or an
      abort, a spent turn or dollar budget, a body that threw
      (`because: "threw"`), or a mechanical decline. A crash, timeout or abort
-     stops the pass directly, with a person next (`AgentCrashed`); every other
+     stops the attempt directly, with a person next (`AgentCrashed`); every other
      cause routes through `proposed`'s router instead, carrying the reason
      (`#472`, point 6 below).
    - `held` — a declared `human:` (or `watch:`) asked a person; the recipe has
@@ -74,14 +74,14 @@ never report a fault.
 5. **Asked and crashed are different endings, not one ending and a string.**
    The `NEEDS_INPUT` token is compared once, inside `runActionPipeline`, which
    answers `askedAt` beside `didNotFinishAt`; above it nothing branches on a
-   `because` string to decide where a pass goes. They are separate events too:
+   `because` string to decide where an attempt goes. They are separate events too:
    `StepAsked` and `StepDidNotFinish`. Both now reach `proposed`'s router,
    same as point 6 below, except the one `did-not-finish` cause that answers
    `AgentCrashed` directly. Neither buys a fix round.
 
 6. **Every step that does not simply pass arrives at `proposed`, carrying its
    reason intact** — read off each visit's `StepOutcome` by `nextOf`
-   (`packages/domain/src/pass-next.ts`), which answers `Propose` for `design`,
+   (`packages/domain/src/attempt-next.ts`), which answers `Propose` for `design`,
    `implement`'s own question, `build`, `review`'s own answer (parsed or
    not), the merge lane's own refusal, a refusal at `admit` (cutting the
    worktree) or at `prepared`, and a check before the merge lane refusing.
@@ -94,13 +94,13 @@ never report a fault.
    (no item yet), `end` runs after the decision, and a `proposed` that
    refuses routes to itself, a second visit with no direction above it to
    appeal to, so it still rests at `waiting`. `proposed` also runs on the way
-   through: a pass that sailed past has a recorded decision saying so, and
+   through: an attempt that sailed past has a recorded decision saying so, and
    that visit is where `review`'s findings are judged.
 
-7. **The workflow computes the offer; the judge picks from it.** `onOffer` in
-   `pass.ts` (mirrored by `stepsOnOffer` in `packages/conductor/src/judge.ts`)
-   works out which destinations are *reachable* from where the pass got to, then
-   which are *affordable* against two ceilings — `rounds` per pass and `restarts`
+7. **The workflow computes the offer; the judge picks from it.** `offerFor` in
+   `packages/domain/src/routing.ts` (mirrored by `stepsOnOffer` in `packages/conductor/src/judge.ts`)
+   works out which destinations are *reachable* from where the attempt got to, then
+   which are *affordable* against two ceilings — `rounds` per attempt and `restarts`
    per ticket (`runtime.limits.rounds`, `runtime.limits.restarts`):
    - `waiting` — always, and free, so every arrival is answerable.
    - `implement` — from `implement` or any later step; never from `prepared`,
@@ -108,18 +108,18 @@ never report a fault.
    - `build` — from `merge`: a conflict an agent resolved is new code written
      after review, so it goes back through `build` and `review`. That edge is
      what keeps *every path into `end` has been through `build` and `review`*.
-   - `claim` (a requeue, ending this pass) — only on `proposed`'s way-through
+   - `claim` (a requeue, ending this attempt) — only on `proposed`'s way-through
      visit, the `findings` direction, and only while a restart is left. A red
      build or a conflict never buys a fresh worktree.
    - the step that asked — after `asked`, and nothing else, because only it knows
      the question.
 
    A judge is handed the set and never the counts. An answer outside the set is
-   refused by name and the pass goes to a person (`askJudge`).
+   refused by name and the attempt goes to a person (`askJudge`).
 
 8. **Judges are declared at `proposed`, one per direction.** `judge:` is legal
    only at `proposed`. The direction (`JudgeWhen`) is read off the arriving
-   ending by `directionOf` in `packages/conductor/src/pass-steps.ts`: `red` (any
+   ending by `whenOf` in `packages/conductor/src/proposed-route.ts`: `red` (any
    refusal before `merge`), `verify-failed` and `conflict` (from the merge lane),
    `needs-input` (an `asked` ending) and `findings` (`review`'s, judged on the way
    through). `judgeDeclaredAt` takes the first entry whose `when:` matches. A
@@ -130,9 +130,9 @@ never report a fault.
    `BUILT_IN_FOR` answers: `red` and `verify-failed` get `same-worktree`;
    `conflict`, `needs-input` and `findings` go to a person.
 
-9. **Only `proposed` may send a pass to a person.** `waiting` has one way in. A
+9. **Only `proposed` may send an attempt to a person.** `waiting` has one way in. A
    `human:` or `watch:` is legal at `proposed` and nowhere else, so a hold
-   declared there is reached on every pass one step before anything lands.
+   declared there is reached on every attempt one step before anything lands.
    A refusal with nothing an agent could be held to, or an answer nobody could
    parse, goes to a person whatever is declared.
 
@@ -162,12 +162,12 @@ never report a fault.
     there would judge a change already on the base), and a written `merge:` list
     with checks but no lane is refused (it would pass having landed nothing).
 
-13. **Configured and did not run is Lingtai's bug.** Every pass records its plan
+13. **Configured and did not run is Lingtai's bug.** Every attempt records its plan
     in `StepsResolved`, all ten steps with the action names the recipe declared at
     each, beside the `configHash`, so a declared
     action that produced no verdict is detectable by comparing plan to verdicts.
     A configured step whose body cannot run throws, and the loop reports that as
-    the step's own `did-not-finish` rather than losing the pass, so `end` still
+    the step's own `did-not-finish` rather than losing the attempt, so `end` still
     runs.
 
 ## Consequences
@@ -177,7 +177,7 @@ never report a fault.
   person may override.
 - Every loop passes through `proposed`, so every loop is bounded by two numbers
   the workflow owns. A replaced or paid judge can choose badly, but it costs one
-  pass and stops at a person; it cannot widen a ceiling it never sees.
+  attempt and stops at a person; it cannot widen a ceiling it never sees.
 - A recipe that declares an `agent:` at several steps buys several agents; the
   schema does not flag that, and `runtime.limits` is the only bound.
 - Replacing a default replaces the work: a `merge:` step that omits the lane
@@ -199,7 +199,7 @@ never report a fault.
 - **A plugin's `at` carrying the step body.** `at`'s keys decide legality today;
   every value is the `notBuiltYet` placeholder, and what runs is built by
   `actionsFromRecipe` (`packages/actions/src/from-recipe.ts`) with ports from
-  `conduct.ts`. The ten step bodies stay in `packages/conductor/src/pass-steps.ts`.
+  `conduct.ts`. The ten step bodies stay in `packages/conductor/src/attempt-steps.ts`.
   See [the-plugin-body.md](../design/the-plugin-body.md).
 - **An `ask-or-assume` built-in judge for `needs-input`.** Only `same-worktree`
   exists; `needs-input` reaches a person unless a runtime judge is declared.

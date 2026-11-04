@@ -1,4 +1,4 @@
-# 0108 — Failure, fix rounds and restarts: a refusal buys a round in the same worktree, a wall stops the conductor, and a crash stops the pass
+# 0108 — Failure, fix rounds and restarts: a refusal buys a round in the same worktree, a wall stops the conductor, and a crash stops the attempt
 
 **Status** accepted · 2026-10-01
 
@@ -15,7 +15,7 @@ holds the item for a person. Lingtai's own failures never reach an agent at all.
 
 ## Context
 
-A pass can end badly in four unlike ways: a judgement about the diff, a check
+An attempt can end badly in four unlike ways: a judgement about the diff, a check
 that went red, an account that will not run an agent, and an agent that died
 mid-run. They cost different money. A loop that re-buys agents without a bound
 never errors, it only spends; an account-wide quota answered item by item walks
@@ -34,17 +34,17 @@ fixes the bounds and the endings that router works inside.
    names the owner on the card (`lingtai` or `repository`). The owner decides the
    sentence a person reads, never a purchase.
 
-2. **The worktree is the whole of a pass.** It is cut `--force --detach` at the
+2. **The worktree is the whole of an attempt.** It is cut `--force --detach` at the
    base's sha from the mirror `~/.lingtai/repos/<project>.git` into
    `~/.lingtai/worktrees/<project>/<runId>` (`provisionWorktree`,
    `packages/repo/src/worktree.ts`), and its scope encloses the merge lane.
    Detached is what makes that possible: no worktree has `agent/<n>` checked out,
    so the lane can fetch and update it. Every refusal therefore happens while the
-   work is still on disk, and a new run is the answer only to a pass that ended.
+   work is still on disk, and a new attempt is the answer only to an attempt that ended.
 
 3. **A refusal is answered in that worktree, carrying its own evidence — one
    round.** A round is `implement` again with `fixBrief` (`packages/conductor/src/fix.ts`)
-   instead of the ticket prompt, then the pass walks forward through `build`,
+   instead of the ticket prompt, then the attempt walks forward through `build`,
    `review` and `proposed` again. The evidence is one argument with three shapes:
    the reviewer's findings, a command's output (both ends, clipped to
    `runtime.budget.evidence`), or the paths the lane could not merge. The round
@@ -68,7 +68,7 @@ fixes the bounds and the endings that router works inside.
    (`ActionContext.recheck`) and asked whether those sequences still happen, so
    silencing a finding does not pass. `fixBrief` tells the fixer that if the
    refusal is wrong or not this diff's, it changes nothing and commits nothing;
-   a round with no new commit stops the pass and holds the item for a person
+   a round with no new commit stops the attempt and holds the item for a person
    with the fixer's final message.
 
 6. **What buys a round by default is mechanical; a judgement needs a declared
@@ -83,33 +83,33 @@ fixes the bounds and the endings that router works inside.
 
 7. **A restart starts the ticket over from the base, and only a judgement earns
    one.** It is the `claim` destination: offered only for `findings` and only
-   while `restarts` are left. A pass held by a declared `human:` or `watch:`
+   while `restarts` are left. An attempt held by a declared `human:` or `watch:`
    action stops for that person and never reaches the router. A red check or a conflict never
    restarts, whatever a recipe or a judge says, because their work is still
    there. The approach being abandoned is pushed to its arm
    `agent/<n>-attempt-<k>` first; then `PassRestarted` (arm, head sha, rounds
    spent, every finding) goes on the work item's stream; then the claim is
-   released. If the arm is not on origin, no restart is spent and the pass ends
+   released. If the arm is not on origin, no restart is spent and the attempt ends
    as `failed`. A restarted item waits out `source.backoff` like any release.
 
 8. **The recipe bounds automatic spending; a person can grant one more round.**
    `runtime.limits` holds `turns` (300) and `wall`
    (`2h`), which bound one agent run, and `rounds` (2) and `restarts` (0), which
-   count runs a pass and passes a ticket may buy automatically. `rounds: 0`
-   sends every refusal to a person; `restarts: 0` sends a spent pass to a person. `rounds` and
+   count runs an attempt and attempts a ticket may buy automatically. `rounds: 0`
+   sends every refusal to a person; `restarts: 0` sends a spent attempt to a person. `rounds` and
    `restarts` written inside a dispatch's own `limits:` are refused by name.
    The automatic ceiling for a ticket is `(restarts + 1) × (rounds + 1) × wall`, and
-   `passCeiling` (`packages/conductor/src/ceiling.ts`) is the one function that
+   `attemptCeiling` (`packages/conductor/src/ceiling.ts`) is the one function that
    says it, wherever a project's limits are shown (onboarding, the project
    listing, `lingtai doctor`). Since `#370`, the same block may hold `usd` — a
    dollar ceiling on one run, with no default — and where it is declared the
    automatic ceiling gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
    printed beside the time figure rather than in place of it. **A third bound
    is free and is not a knob** (#593): when the base moved on files the branch
-   also changed, the system merges it in itself and the pass builds and reviews
+   also changed, the system merges it in itself and the attempt builds and reviews
    again — no agent runs for the merge and no `round` is spent — at most twice
-   per pass (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
-   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): `CONFLICT_ROUNDS_LIMIT = 2` per pass, beside the base-merge budget, never drawn from `rounds`, and never counted in it — that round runs an agent, so it falls outside the ceiling above, and its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. Absent, the
+   per attempt (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
+   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): `CONFLICT_ROUNDS_LIMIT = 2` per attempt, beside the base-merge budget, never drawn from `rounds`, and never counted in it — that round runs an agent, so it falls outside the ceiling above, and its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. Absent, the
    sentence is unchanged, character for character. A person's `GrantFixRound`
    ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
    one additional `implement` round on saved work when the wait has a fixable
@@ -121,7 +121,7 @@ fixes the bounds and the endings that router works inside.
    `turns`, `wall` and, when declared, `usd` ceilings. Like any round (§3), its
    result passes `build`, `review` and `proposed` again before the merge lane
    may land it ([0118](0118-a-hold-explains-itself.md) §1, §11). A person's
-   `Requeue` instead starts a new pass from base with the recipe's rounds; it
+   `Requeue` instead starts a new attempt from base with the recipe's rounds; it
    neither spends nor refunds an automatic restart (0118 §7).
 
 9. **A minor finding does not refuse; it is filed.** `verdictFor`
@@ -141,7 +141,7 @@ fixes the bounds and the endings that router works inside.
 
 11. **An agent that never started stops the conductor, not the item.** Wherever
     it happens — the implementer, a design agent, a reviewer, a fixer, an agent
-    judge — the step ends `never-ran` (`StepNeverRan`) and the pass stops: no
+    judge — the step ends `never-ran` (`StepNeverRan`) and the attempt stops: no
     round, no judge, no question for a person. The conductor appends
     `ConductorPaused` on `ctl-conductor` with an `until`; `standDown`
     (`packages/conductor/src/never-started.ts`) reads a reset time out of the
@@ -158,7 +158,7 @@ fixes the bounds and the endings that router works inside.
     changes nothing else.
 
 12. **An agent that started and did not finish judged nothing, and stops only
-    the pass.** A crash, a spent turn budget, a missing receipt, or a fixer that
+    the attempt.** A crash, a spent turn budget, a missing receipt, or a fixer that
     committed nothing ends the step `did-not-finish` (`StepDidNotFinish`). It buys
     no round, reaches no judge, is not retried, and does not pause the conductor,
     because a crash is local — except a crash whose detail is the runtime's account-limit
@@ -169,24 +169,24 @@ fixes the bounds and the endings that router works inside.
 
 
 13. **A refusal the base shares buys nothing.** Before a `build` refusal buys
-    a round, the refused command is run on the pass's base commit. If it fails
+    a round, the refused command is run on the attempt's base commit. If it fails
     there too, the refusal is not about the diff: no round is bought, and the
-    pass holds for a person, saying which check is red on the base (`base is
+    attempt holds for a person, saying which check is red on the base (`base is
     red: <check>`). A fix agent does not fix what it did not break; rounds spent
     on it are spent for nothing. The base's result is recorded on the log, keyed
-    by the base commit and the command, so passes in flight and the next ticket
+    by the base commit and the command, so attempts in flight and the next ticket
     reuse it, and a base that moves runs it again.
 
 ## Consequences
 
 - Every refusal is one flow with one ceiling. Only the evidence differs between a
   build, a review and a lane refusal.
-- A pass never re-implements work it still has on disk; only a judge that says
-  *the approach* can buy a fresh pass.
+- An attempt never re-implements work it still has on disk; only a judge that says
+  *the approach* can buy a fresh attempt.
 - The release reason carries the step, the ending and the runtime's own words
   (`TicketReleased.reason`). The next attempt's brief quotes it, so changing
   that wording changes what the next agent reads.
-- A misread reset time costs a wasted pass, never a wrong decision: resuming
+- A misread reset time costs a wasted attempt, never a wrong decision: resuming
   early meets the wall and pauses again.
 - A crash at `implement` costs a person's attention, not an agent. Whether the
   implementer deserves a retry of its own is unmeasured and not offered.

@@ -7,18 +7,18 @@ recorded for write-back and never branched on. A claim is one attempt. Whatever
 it ends in, if it committed anything it leaves `agent/<n>` (the newest work) and
 `agent/<n>-attempt-<k>` (this attempt's own arm) on origin. The next attempt is
 handed the names of earlier arms that exist, beside how each attempt ended, as
-an offer rather than an instruction. Every pass is still cut from the base. A
+an offer rather than an instruction. Every attempt is still cut from the base. A
 landing may sweep the arms through `refs:` at `end`. Closing a ticket nobody
 will do is a fourth terminal outcome, and `end` runs on it like the other three.
 
 ## Context
 
 Tickets came from GitHub only when this decision was first made, but the
-scheduler's decisions — what runs, in what order, what a pass costs — do not
+scheduler's decisions — what runs, in what order, what an attempt costs — do not
 depend on GitHub. Keeping the source behind a port rather than letting it leak
 into the core is what let a second source, `db`, land later as an adapter
-rather than an edit to the core. A pass's worktree
-is deleted when the pass ends, so commits nothing pushed are lost, and a later
+rather than an edit to the core. An attempt's worktree
+is deleted when the attempt ends, so commits nothing pushed are lost, and a later
 attempt can only build on work that is on a ref it can fetch. A ticket somebody
 decides not to do needs an ending on the log, or the board keeps drawing it as
 queued and the recipe's `end` actions (closing the issue, labels) silently never
@@ -26,8 +26,8 @@ run.
 
 ## Decision
 
-1. **The core's input is a ticket.** A pass works on `Ticket`
-   (`packages/conductor/src/pass-steps.ts`): the store's reference, a title and
+1. **The core's input is a ticket.** An attempt works on `Ticket`
+   (`packages/conductor/src/attempt-steps.ts`): the store's reference, a title and
    a body, and the body becomes the prompt. The listing the queue reads is cheap
    and holds no body; the body is fetched once, for the ticket that was claimed.
    Which system a ticket came from is recorded and never decides anything.
@@ -67,8 +67,8 @@ run.
    (`ticketSourceOf`, `packages/recipe/src/settings.ts`) — the default lives
    there and not on the schema, so a recipe that omits the field hashes
    exactly as it did before the field existed. `ticketsFor` (`ticket-store.ts`)
-   resolves the source; `passClientOf` swaps only those eight verbs onto the
-   client a pass is handed — the refs, `fileAt`, the default branch and the
+   resolves the source; `ticketedClientOf` swaps only those eight verbs onto the
+   client an attempt is handed — the refs, `fileAt`, the default branch and the
    token are untouched.
 
    **The source is chosen once.** `ticketsFor` refuses with
@@ -147,7 +147,7 @@ run.
 
 7. **The agent commits as the work stands.** `prompts/ticket.md` tells the
    implementer to commit each piece as it lands and not to push. The worktree is
-   deleted when the pass ends and there is no warning before the last turn. An
+   deleted when the attempt ends and there is no warning before the last turn. An
    unreviewed commit on an arm costs nothing; `main` is guarded by the steps,
    never by a branch being clean.
 
@@ -173,7 +173,7 @@ run.
    WIP itself carries. Resetting would also put the WIP commit into
    `agent/<n>`'s own history, which the lane guard above refuses.
 
-9. **The cut does not move.** Every pass starts from the base as the mirror
+9. **The cut does not move.** Every attempt starts from the base as the mirror
    has it, never from an earlier attempt's branch. A refused approach does not
    carry into the next attempt unless the agent chooses to read it, which keeps
    *start over* meaning something.
@@ -219,7 +219,7 @@ run.
 
 - A second ticket system (Jira, Linear) is one `Tickets` adapter that passes
   `describeTicketsContract` (`packages/conductor/test/tickets-contract.ts`),
-  not a change to how a pass runs.
+  not a change to how an attempt runs.
 - Closing on landing and closing on close are separate `end` actions. `when:
   any` also fires on `blocked` and `failed`, where closing the issue is wrong.
   This repository's recipe declares both, and

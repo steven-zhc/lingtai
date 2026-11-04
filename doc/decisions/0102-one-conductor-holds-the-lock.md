@@ -1,4 +1,4 @@
-# 0102 — The conductor and the daemon: one process holds the work, a file lock makes it the only one, and stopping drains the pass
+# 0102 — The conductor and the daemon: one process holds the work, a file lock makes it the only one, and stopping drains the attempt
 
 **Status** accepted · 2026-10-01
 
@@ -8,7 +8,7 @@ They control the daemon by appending events and they watch its beacon. Exactly o
 process conducts at a time. A SQLite lock on a file under `~/.lingtai/locks/`
 enforces that, and `lingtai run` takes the same lock, so holding the lock proves
 that every claim recorded by another worker is dead. Stopping is a command that
-drains the pass in flight. A control signal applies only to the daemon that was
+drains the attempt in flight. A control signal applies only to the daemon that was
 running when it was appended. `lingtai restart` drains, waits and starts, and it
 refuses before it drains, never after. Every start that takes work is recorded as
 `ConductorStarted`.
@@ -21,7 +21,7 @@ a process that nothing else restarts casually, and two conductors racing for one
 ticket is the failure that defeats claiming in the first place. A running Node
 process keeps the code it imported when it started, so new code reaches the
 conductor only through a restart. That makes the restart a routine act, and a safe
-restart needs two things: a drain that waits for the pass, and a start that can
+restart needs two things: a drain that waits for the attempt, and a start that can
 say what code it is running and who started it.
 
 ## Decision
@@ -102,12 +102,12 @@ say what code it is running and who started it.
    `detached: true`, so a Ctrl+C aimed at the daemon does not kill the agent it is
    about to wait for.
 
-8. **Stopping is a command, and the boundary is the pass.** `lingtai shutdown
+8. **Stopping is a command, and the boundary is the attempt.** `lingtai shutdown
    [why]` appends `ConductorShutdownRequested` and returns. The daemon finishes
-   every pass in flight ([0122](0122-several-passes-share-one-conductor.md) §4; the agent, every step, the merge lane) and takes nothing
+   every attempt in flight ([0122](0122-several-passes-share-one-conductor.md) §4; the agent, every step, the merge lane) and takes nothing
    new. An idle daemon wakes on the request itself rather than waiting for the
    five-minute sweep.
-   - **No default timeout.** A drain can last as long as the pass ceiling the
+   - **No default timeout.** A drain can last as long as the attempt ceiling the
      recipe's `runtime.limits` allow, and the command prints that limit up front.
    - `--timeout <duration>` gives up after that long. `--force` does not wait at
      all. Either one leaves the agent running on purpose, as an orphan for the next
@@ -167,7 +167,7 @@ say what code it is running and who started it.
     beacon's commit is behind `origin/main`. A person decides, and the decision is
     one command.
 
-13. **Work is found by asking GitHub on each pass, not by storing a queue.** A pass
+13. **Work is found by asking GitHub on each turn, not by storing a queue.** A turn
     starts at startup, after every completion, on a control event or a
     `QueueChanged`, and on a five-minute sweep (`SWEEP_MS`). Nothing records what
     the queue looked like.
