@@ -218,7 +218,7 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('mean $1.50 reported + $0.25 estimated')
     expect(r.out).toContain('1 unknown')
     expect(r.out).toContain('ticket-lingtai-1  bug  landed')
-    expect(r.out).toContain('over 3 fix rounds · 2 passes · 1 run unknown')
+    expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unknown')
   })
 
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {

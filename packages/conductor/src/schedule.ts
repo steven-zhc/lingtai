@@ -304,7 +304,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               return !declinedBeforeWork(result)
             },
             (err: unknown) => {
-              const line = `${entry.taskId}: pass failed — ${err instanceof Error ? err.message : String(err)}`
+              const line = `${entry.taskId}: turn failed — ${err instanceof Error ? err.message : String(err)}`
               log(line)
               told(() => options.failed?.(line))
               return false

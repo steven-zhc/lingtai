@@ -320,7 +320,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
         ok: false,
         ticketId,
         reason: 'stale',
-        detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh pass.`,
+        detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
       }
     }
     resolution = { _tag: 'GrantFixRound', onSha: head, ref }
@@ -414,8 +414,8 @@ async function savedHead(
         ticketId,
         reason: saved.recorded ? 'wip-head' : 'unrecorded-wip',
         detail: saved.recorded
-          ? `Run ${runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh pass.`
-          : `Run ${runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh pass.`,
+          ? `Run ${runId} saved uncommitted work as ${saved.armSha} on ${saved.arm}. Recover that work as a clean commit without the WIP commit in its ancestry, then requeue for a fresh attempt.`
+          : `Run ${runId} names a WIP head on ${saved.arm} but has no matching saved-work record. Restore a recorded remote head or requeue for a fresh attempt.`,
       }
     case 'BranchDiverged':
       return {
@@ -429,7 +429,7 @@ async function savedHead(
         ok: false,
         ticketId,
         reason: 'no-saved-head',
-        detail: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh pass.`,
+        detail: `Run ${runId} has no published head to continue. Push the saved work to a remote ref, or requeue for a fresh attempt.`,
       }
   }
 }

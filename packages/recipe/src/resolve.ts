@@ -297,7 +297,7 @@ function unknownKeys(raw: unknown): string[] {
         ? 'repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` ' +
           'are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. ' +
           '`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this ' +
-          'repository wants a pass to spend; the two old ceilings do not add up to the new one, ' +
+          'repository wants an attempt to spend; the two old ceilings do not add up to the new one, ' +
           'so Lingtai will not guess'
         : `${key}: a recipe has no such key, and nothing read it — a recipe declares ` +
           `${declared.join(', ')}. Nothing here was applied; move the block under the key ` +

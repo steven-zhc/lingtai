@@ -343,7 +343,7 @@ describe('the judge chooses, and cannot widen anything', () => {
         limits: { [ceiling]: 9 },
       }).problems!
       expect(inside).toHaveLength(1)
-      expect(inside[0]!.why).toContain('bounds the pass and not one call (0040)')
+      expect(inside[0]!.why).toContain('bounds the attempt and not one call (0040)')
     }
   })
 })

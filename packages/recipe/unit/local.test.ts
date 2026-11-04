@@ -420,7 +420,7 @@ steps:
         'app',
         withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
       )
-      await expect(refusing).rejects.toThrow(/projects\.app\.steps: a pass is not configured/)
+      await expect(refusing).rejects.toThrow(/projects\.app\.steps: an attempt is not configured/)
       await expect(
         resolveLocalRecipe(
           'app',
@@ -432,7 +432,7 @@ steps:
     it("so is one under a project's section", async () => {
       await expect(
         resolveLocalRecipe('app', withMachine('projects:\n  app:\n    steps:\n      merge: []\n')),
-      ).rejects.toThrow(/projects\.app\.steps: a pass is not configured in the machine file/)
+      ).rejects.toThrow(/projects\.app\.steps: an attempt is not configured in the machine file/)
     })
 
     /**

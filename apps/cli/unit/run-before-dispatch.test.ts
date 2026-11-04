@@ -83,7 +83,7 @@ describe('statedBeforeDispatch', () => {
     // `attemptCeiling`'s own sentence, verbatim — `runtime.limits` defaults to
     // `rounds: 2, restarts: 0`, so this is its "rounds are spent" form.
     expect(lines[1]).toContain('up to 3 agent runs')
-    expect(lines[1]).toContain('A pass whose rounds are spent goes to you')
+    expect(lines[1]).toContain('An attempt whose rounds are spent goes to you')
 
     // Nothing besides `implement` dispatches, so no further-runs line at all.
     expect(lines.some((l) => l.includes('not in that sentence'))).toBe(false)
@@ -115,7 +115,7 @@ describe('statedBeforeDispatch', () => {
     // What `lingtai add` prints for the same recipe, minus its leading label.
     expect(lines[1]).toBe(
       'a pass up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused it. ' +
-        '2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you (runtime.limits.restarts: 0)',
+        '2h and 300 turns each, so at most 6h. An attempt whose rounds are spent goes to you (runtime.limits.restarts: 0)',
     )
   })
 })

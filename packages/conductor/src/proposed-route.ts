@@ -114,7 +114,7 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       }
       return proposal.from
     default:
-      throw new Error(`"${candidate.id}" is not a candidate id this pass knows how to place`)
+      throw new Error(`"${candidate.id}" is not a candidate id this attempt knows how to place`)
   }
 }
 
@@ -194,7 +194,7 @@ function notAskedWhy(offer: RouteOffer): string {
   const offering = offer.available.map((c) => `\`${destinationOf(c, offer.proposal)}\``).join(', ')
   return (
     `no \`judge:\` is declared for a "${when}" and there is no built-in that answers one, so the ` +
-    `pass is held for a person rather than the workflow choosing from ${offering} on its own (0061 §3)`
+    `attempt is held for a person rather than the workflow choosing from ${offering} on its own (0061 §3)`
   )
 }
 

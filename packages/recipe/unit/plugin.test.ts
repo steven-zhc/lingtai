@@ -919,7 +919,7 @@ describe('the one `proposed` will hold', () => {
         limits: { [ceiling]: 9 },
       }).problems!
       expect(inside).toHaveLength(1)
-      expect(inside[0]!.why).toContain('bounds the pass and not one call (0040)')
+      expect(inside[0]!.why).toContain('bounds the attempt and not one call (0040)')
       expect(inside[0]!.why).toContain('Write it at `runtime.limits`')
     }
   })
@@ -1546,7 +1546,7 @@ describe('a dispatch is one shape', () => {
    */
   it("refuses `rounds` and `restarts` inside a dispatch's `limits:`, in the recipe's own voice", () => {
     for (const [field, counts] of [
-      ['rounds', 'how many times a pass sends the agent back'],
+      ['rounds', 'how many times an attempt sends the agent back'],
       ['restarts', 'how many times a ticket starts the work over'],
     ] as const) {
       const refused = Recipe.safeParse({
@@ -1555,7 +1555,7 @@ describe('a dispatch is one shape', () => {
       })
       expect(refused.success).toBe(false)
       const why = refused.error!.issues.map((issue) => issue.message).join('\n')
-      expect(why).toContain(`\`${field}\` bounds the pass and not one call (0040)`)
+      expect(why).toContain(`\`${field}\` bounds the attempt and not one call (0040)`)
       expect(why).toContain(counts)
       expect(why).toContain('Write it at `runtime.limits`')
     }

@@ -94,14 +94,14 @@ export function attemptCeiling(limits: {
       `${pass}. ` +
       (limits.rounds === 0
         ? 'Every refusal goes straight to you (runtime.limits.rounds: 0, restarts: 0)'
-        : 'A pass whose rounds are spent goes to you (runtime.limits.restarts: 0)')
+        : 'An attempt whose rounds are spent goes to you (runtime.limits.restarts: 0)')
     )
   }
-  const passes = limits.restarts + 1
-  const runs = passes * (limits.rounds + 1)
+  const attempts = limits.restarts + 1
+  const runs = attempts * (limits.rounds + 1)
   return (
     `${pass}. Then up to ${limits.restarts} restart(s) — the ticket started over ` +
-    `from the base carrying what refused it — so at most ${passes} passes, ` +
+    `from the base carrying what refused it — so at most ${attempts} attempts, ` +
     `${runs} agent runs and ${formatDuration(limits.wallMs * runs)}` +
     (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`) +
     ` before it is yours`

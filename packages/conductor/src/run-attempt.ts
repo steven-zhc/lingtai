@@ -738,7 +738,7 @@ export const NOT_BUILT_YET: StepBodies = {
     throw new Error(
       `the \`end\` step has ${actions.length} effect(s) declared — ${actions
         .map((a) => `"${a.name}"`)
-        .join(', ')} — and this pass has no body to carry them out. ` +
+        .join(', ')} — and this attempt has no body to carry them out. ` +
         // The outcome is quoted into the call the body will make, because it is
         // the argument a body had no value for until `StepWork` carried one:
         // the effects are filtered by `when:`, and a body that cannot read the
@@ -1384,7 +1384,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
     if (next._tag === 'MergeBase') {
       merged =
         options.mergeBase === undefined
-          ? { failed: 'this pass was handed no way to merge the base in' }
+          ? { failed: 'this attempt was handed no way to merge the base in' }
           : await options.mergeBase(next.toSha)
     }
     // Read before `record` moves `onSha` to the merge commit (#671).
@@ -2138,7 +2138,7 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   if (result.ok) return { ending: 'passed' }
   throw new Error(
     'runActionPipeline returned `ok: false` with no failed, held, never-ran, did-not-finish or ' +
-      'asked action. That is a pipeline that stopped for a reason it did not name, and a pass ' +
+      'asked action. That is a pipeline that stopped for a reason it did not name, and an attempt ' +
       'cannot report it — see `PipelineResult` in packages/actions/src/action.ts.',
   )
 }
@@ -2290,7 +2290,7 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding): StepEnding {
   }
   if (ending.ending === 'routed') {
     throw new Error(
-      `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and no body may route any ` +
+      `the \`${spec.step}\` step routed the attempt to \`${ending.to}\`, and no body may route any ` +
         "more (`#462`) — `runAttempt`'s own loop does that now, off `nextOf`'s `Propose`.",
     )
   }

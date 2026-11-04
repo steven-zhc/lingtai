@@ -70,7 +70,7 @@ describe('waitWords', () => {
       question: SETUP_HOLD_TEXT,
     }
     expect(waitWords(setup)).toMatchObject({
-      line: 'ready to land — the recipe asks you to approve each pass',
+      line: 'ready to land — the recipe asks you to approve each attempt',
       short: 'ready to land',
     })
     const repair: WaitReason = { ...setup, step: 'merge', question: 'a repair is waiting on you' }

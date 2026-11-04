@@ -211,12 +211,14 @@ export const runPlugin = definePlugin('run', {
  */
 function boundsThePass(field: 'rounds' | 'restarts'): z.ZodType {
   const counts =
-    field === 'rounds' ? 'how many times a pass sends the agent back' : 'how many times a ticket starts the work over'
+    field === 'rounds'
+      ? 'how many times an attempt sends the agent back'
+      : 'how many times a ticket starts the work over'
   return z
     .never({
       error:
-        `\`${field}\` bounds the pass and not one call (0040): it counts ${counts}, which is a fact ` +
-        'about the pass rather than about one dispatch. Write it at `runtime.limits`, where the ' +
+        `\`${field}\` bounds the attempt and not one call (0040): it counts ${counts}, which is a fact ` +
+        'about the attempt rather than about one dispatch. Write it at `runtime.limits`, where the ' +
         'ceiling is stated once (0070 §5)',
     })
     .optional()
@@ -426,7 +428,7 @@ export const agentPlugin = definePlugin('agent', {
 export function whyThePathEscapes(written: string): string | null {
   if (written === '') return 'it is empty, and a document has to be written somewhere'
   if (/^[\\/]/.test(written) || /^[A-Za-z]:[\\/]/.test(written)) {
-    return 'it is absolute, and an absolute path names somewhere outside the tree this pass owns'
+    return 'it is absolute, and an absolute path names somewhere outside the tree this attempt owns'
   }
   if (written.startsWith('~')) {
     return "it starts at a home directory, which is where Lingtai's own files live and is not the worktree"
@@ -627,7 +629,7 @@ export const filePlugin = definePlugin('file', {
           code: 'custom',
           message:
             `"${written}" is not a path inside the worktree — ${why}. A \`file:\` writes into the tree ` +
-            'this pass owns and nowhere else, so the path is relative to it, with no `..` in it',
+            'this attempt owns and nowhere else, so the path is relative to it, with no `..` in it',
         })
         return
       }
@@ -652,7 +654,7 @@ export const filePlugin = definePlugin('file', {
           code: 'custom',
           message:
             `"${written}" names \`${unknown}\`, which a \`file:\` path does not take — \`${THE_PLACEHOLDER}\` ` +
-            "is the one placeholder, and it becomes the ticket's number when the pass runs. " +
+            "is the one placeholder, and it becomes the ticket's number when the attempt runs. " +
             whyNotThatPlaceholder(unknown),
         })
       }
@@ -1673,14 +1675,14 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
  */
 const ONLY_PROPOSED_ROUTES =
   '`proposed` is the only step that routes (0058 §3b), and a judge is asked there once about ' +
-  'wherever the pass got to: a refusal at this step *travels* to it carrying its reason ' +
-  '(`nextOf` in `packages/domain/src/pass-next.ts`), so a `judge:` here would be a ' +
+  'wherever the attempt got to: a refusal at this step *travels* to it carrying its reason ' +
+  '(`nextOf` in `packages/domain/src/attempt-next.ts`), so a `judge:` here would be a ' +
   'second router at a step that has not finished deciding what its own ending is. Written at ' +
   '`proposed` it is read — `proposed` takes the one entry whose `when:` matches the reason the ' +
   'last step gave, one judge per direction, and only the `findings` one is a judgement worth an ' +
   'agent — and **the workflow counts, the judge chooses** (0061 §3): the workflow reads `rounds` ' +
   'and `restarts`, works out which steps are on offer, and hands the judge that set. The set ' +
-  'depends on how far the pass got and not only on what is left to spend, so a judge answers ' +
+  'depends on how far the attempt got and not only on what is left to spend, so a judge answers ' +
   'which of these and never what is legal, and one that returns a step it was not offered is ' +
   'refused by name'
 
@@ -1712,7 +1714,7 @@ const ONLY_THE_LANE_LANDS =
   "reason and decides nothing** (0058 §3c): a refusal carries the lane's own `conflict` or " +
   '`verify-failed` to `proposed`, which is where a round is bought for it. It declares no `base:` ' +
   'either, and that is deliberate rather than missing (0061 §4): the base is one value that flows, ' +
-  'and a second home for it would let what a pass lands disagree with what it was cut from'
+  'and a second home for it would let what an attempt lands disagree with what it was cut from'
 
 /**
  * **Why a `worktree:` belongs at `admit` and nowhere else** — `ONLY_THE_LANE_LANDS`'s
@@ -1735,7 +1737,7 @@ const ONLY_THE_LANE_LANDS =
  * work already written.
  */
 const ONLY_ADMIT_CUTS =
-  '`worktree:` is what `admit` does, and `admit` is the only step that does it (0058 §3): a pass is ' +
+  '`worktree:` is what `admit` does, and `admit` is the only step that does it (0058 §3): an attempt is ' +
   'cut one branch, before anything has been claimed against it or written in it, and every step ' +
   'after that one works inside what the cut made — so a `worktree:` further down the spine would ' +
   'move the ground under a change already written, and one before `admit` would ask for a tree while ' +
@@ -1743,7 +1745,7 @@ const ONLY_ADMIT_CUTS =
   '`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there ' +
   'runs that same action off `baseOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and ' +
   'nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting ' +
-  'with two homes, so what a pass lands cannot disagree with what it was cut from'
+  'with two homes, so what an attempt lands cannot disagree with what it was cut from'
 
 /**
  * **Why a `queue:` belongs at `claim` and nowhere else** — `ONLY_ADMIT_CUTS`'s
@@ -1761,17 +1763,17 @@ const ONLY_ADMIT_CUTS =
  * take anywhere later would be a pass working one ticket while holding another.
  */
 const ONLY_CLAIM_TAKES =
-  '`queue:` is what `claim` does, and `claim` is the only step that does it (0058 §3): a pass is ' +
+  '`queue:` is what `claim` does, and `claim` is the only step that does it (0058 §3): an attempt is ' +
   'about one work item, `claim` is where it is decided which, and every step after it is about that ' +
-  'one — so a `queue:` further down the spine would have a pass working one ticket while holding ' +
+  'one — so a `queue:` further down the spine would have an attempt working one ticket while holding ' +
   'another. Written at `claim` it is read — `createQueueAction` in ' +
-  '`packages/actions/src/queue-action.ts` re-reads the offer for the issue the pass was pointed at, ' +
+  '`packages/actions/src/queue-action.ts` re-reads the offer for the issue the attempt was pointed at, ' +
   'and a recipe that declares nothing there runs that same action off `queueOf(recipe)` (0065 §2) — ' +
   'and **it cannot refuse** (0058 §2): a claim that took nothing is holding nothing, so its three ' +
   'declines are reported as `did-not-finish` carrying `passed-over`, `not-claimed` or ' +
   '`claim-unconfirmed`, and never as a refusal that buys a round. What is *not* this plugin is the ' +
-  'queue pass — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are ' +
-  'on offer before a pass exists to have steps, and `backoff` is only read there'
+  'queue turn — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are ' +
+  'on offer before an attempt exists to have steps, and `backoff` is only read there'
 
 /**
  * **Why a `file:` belongs at `design` and nowhere else** — `ONLY_CLAIM_TAKES`'s
@@ -2002,7 +2004,7 @@ export function whyNoKindAt(step: Step, kind: ActionKind, plugins: readonly Plug
   if (calledDirectly !== undefined) {
     return (
       `no step reads a \`${kind}:\` action from the recipe yet — the plugin is the name ` +
-      '[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and ' +
+      '[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 gives code the attempt already runs, and ' +
       `it is wired to the recipe by the ticket that makes the file \`steps:\`. Today ${calledDirectly}. ` +
       'Refused rather than accepted here because an action nothing reads would be resolved, recorded on ' +
       'the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)'
@@ -2133,7 +2135,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (step === 'claim') {
     return (
-      '`claim` picks the ticket the pass is about and does nothing else (0058 §3), so the only plugin ' +
+      '`claim` picks the ticket the attempt is about and does nothing else (0058 §3), so the only plugin ' +
       'it carries is the one that picks — `queue:`, which is the key `queuePlugin` declares there. ' +
       'Nothing has been claimed, cut or written when this step runs, so a command has no worktree to ' +
       'run in and belongs at `prepared`, an agent has no diff to read and a glob no file list to ' +
@@ -2145,7 +2147,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (step === 'admit') {
     return (
-      '`admit` cuts the branch a pass owns and does nothing else (0058 §3), so the only plugin it ' +
+      '`admit` cuts the branch an attempt owns and does nothing else (0058 §3), so the only plugin it ' +
       'carries is the one that cuts — `worktree:`, which is the key `worktreePlugin` declares there. ' +
       'There is no worktree until this step has made one, so a command has nowhere to run and belongs ' +
       'at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file ' +
@@ -2184,7 +2186,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   return (
     'a hold at `prepared` cannot be answered — the run is released back to the queue and the ' +
-    'question goes with it, so the item would re-claim, re-install and ask again on every pass. ' +
+    'question goes with it, so the item would re-claim, re-install and ask again on every attempt. ' +
     'Ask before the claim with `lingtai ask`, or at `proposed`, where there is a diff to approve'
   )
 }
@@ -2523,7 +2525,7 @@ function actionsAt(step: Step) {
             nameOf(written[i]),
             `the "${step}" step already cuts a worktree at entry ${cuts[0]}, and a step cuts one or ` +
               'none. Two of them would cut the same path twice, and the base a reading shows would ' +
-              'not be the base the pass was cut from',
+              'not be the base the attempt was cut from',
             REFUSED_WHEN_IT_RESOLVED,
           ),
         })
@@ -2617,11 +2619,11 @@ function actionsAt(step: Step) {
             `the "${step}" step is written with ${written.length} action` +
             `${written.length === 1 ? '' : 's'} and none of them is the lane, so the step would ` +
             'pass having landed nothing — and nothing follows from that: the `TicketLanded` ' +
-            "append is guarded on the lane's own commit, so the pass falls through to the failed " +
+            "append is guarded on the lane's own commit, so the attempt falls through to the failed " +
             'tail, releases the ticket and buys a second agent for the same diff. Write the lane ' +
             `last. An empty "${step}: []" resolves, but it is not the way to land nothing — the ` +
             'conductor reads it as the omitted key, so the default lane runs and the branch merges ' +
-            '(0065 §6 decides otherwise and is not built yet). To hold a pass before anything ' +
+            '(0065 §6 decides otherwise and is not built yet). To hold an attempt before anything ' +
             'lands, declare a `human:` action at `proposed:`. ' +
             REFUSED_WHEN_IT_RESOLVED,
         })
@@ -2825,7 +2827,7 @@ const Version = z
           ? 'version: 1 is the recipe as it was before 0061 — five of the ten steps ' +
             'could be configured and the other five could not, under a key `steps:` ' +
             'replaced rather than renamed. There is no migration: rewrite this file ' +
-            'as `version: 2`, with `steps:` naming the ten steps in pass order, each ' +
+            'as `version: 2`, with `steps:` naming the ten steps in attempt order, each ' +
             'a list of plugins. A step the file leaves out runs nothing.'
           : `version: ${written} is not a recipe this Lingtai knows — it reads \`version: ${RECIPE_VERSION}\``,
     })

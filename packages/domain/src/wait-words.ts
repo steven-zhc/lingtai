@@ -38,7 +38,7 @@ export interface WaitWords {
 /** The one thing the setup's own hold says, quoted into the recipe. */
 export const SETUP_HOLD_TEXT = "Land this? The setup was answered 'hold'."
 
-const APPROVE_EVERY_PASS = 'the recipe asks you to approve each pass'
+const APPROVE_EVERY_ATTEMPT = 'the recipe asks you to approve each attempt'
 
 const APPROVE_EVERY_STEP_PASSED: BlockRecommendation = {
   action: 'approve',
@@ -331,7 +331,7 @@ export function waitWords(
       return judgement(stepLine(reason.step, 'asked', reason.question), reason.run, reason.question)
 
     case 'SignoffRequired': {
-      const asked = reason.question === SETUP_HOLD_TEXT ? APPROVE_EVERY_PASS : reason.question.trim()
+      const asked = reason.question === SETUP_HOLD_TEXT ? APPROVE_EVERY_ATTEMPT : reason.question.trim()
       const question = asked === '' ? 'ready to land' : `ready to land — ${asked}`
       const recommendation = reason.step === 'merge' && pass.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null
       return { ...judgement(question, reason.run, reason.question, recommendation), short: 'ready to land' }

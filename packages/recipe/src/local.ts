@@ -92,7 +92,7 @@ export class AgentUnresolvedError extends Error {
  */
 function stepsRefusal(at: string, project: string, home: string): string {
   return (
-    `${at}: a pass is not configured in the machine file — it is configured in the recipe, ` +
+    `${at}: an attempt is not configured in the machine file — it is configured in the recipe, ` +
     `${recipePath(project, home)}, under \`steps:\`. Nothing here was applied; ` +
     'move the block there if it is meant to run'
   )
@@ -180,7 +180,7 @@ export async function resolveAgent(
   if (detected.length > 1) {
     throw new AgentUnresolvedError(
       `${detected.join(' and ')} are all signed in on this machine, and ${path} names no runtime.agent — ` +
-        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path} — the pass's own ` +
+        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path} — the attempt's own ` +
         "runtime, which a step's `agent:` overrides but does not replace; Lingtai does not pick one silently",
     )
   }

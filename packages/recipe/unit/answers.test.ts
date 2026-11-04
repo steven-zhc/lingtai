@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { budgetChange, kindsChanges, landingChanges, roundsChange, ticketsChange, wallChange } from '../src/answers.ts'
 
-const HOLD = { name: 'hold every pass', human: "Land this? The setup was answered 'hold'." }
+const HOLD = { name: 'hold every attempt', human: "Land this? The setup was answered 'hold'." }
 const HAND_WRITTEN_HOLD = { name: 'approval', human: 'Merge this? It is my own code.' }
 const JUDGE = { name: 'the lines or the approach', judge: 'claude-code', when: 'findings' }
 

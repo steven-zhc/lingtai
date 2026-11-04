@@ -145,9 +145,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
      * `end` has to be the last of them, because `runAttempt` runs it after the
      * walk on every ending.
      */
-    const walked = lines.find((line) => line.startsWith('pass: '))
+    const walked = lines.find((line) => line.startsWith('attempt: '))
     expect(walked, `no pass line among:\n${lines.join('\n')}`).toBeDefined()
-    const visits = walked!.slice('pass: '.length).split(' ')
+    const visits = walked!.slice('attempt: '.length).split(' ')
     expect(visits.map((v) => v.split('=')[0])).toEqual(STEPS.filter((s) => s !== 'claim'))
     expect(visits.at(-1)).toBe('end=skipped')
     // A step whose default action ran still reads passed.

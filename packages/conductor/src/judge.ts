@@ -537,7 +537,7 @@ export async function askJudge(
       `one of the steps it was offered — ${brief.offer.map((step) => `"${step}"`).join(', ')}. ` +
       'A judge chooses which of the offered steps is next; which steps are on offer is the ' +
       "workflow's, and it counts the rounds and restarts spent to work them out (0061 §3). " +
-      'The pass is held for a person, because a judge that answered outside the set is not one ' +
+      'The attempt is held for a person, because a judge that answered outside the set is not one ' +
       'to ask a second time',
   }
 }

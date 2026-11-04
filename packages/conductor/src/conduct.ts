@@ -592,7 +592,7 @@ export function attemptLine(
   declared: Readonly<Record<string, readonly unknown[] | undefined>>,
 ): string {
   const word = (v: StepReached): string => (wasSkipped(v, declared) ? 'skipped' : v.ending.ending)
-  return `pass: ${steps.map((v) => `${v.step}=${word(v)}`).join(' ')}`
+  return `attempt: ${steps.map((v) => `${v.step}=${word(v)}`).join(' ')}`
 }
 
 /** A visit that passed having run no action, at a step the recipe declared nothing for. */
@@ -1502,7 +1502,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (worktree === null) {
           throw new Error(
             "the `implement` step has no worktree — `admit`'s `worktree:` action did not cut one, " +
-              "and the spine says it did. This is the pass's own bookkeeping and not a judgement " +
+              "and the spine says it did. This is the attempt's own bookkeeping and not a judgement " +
               'about the change.',
           )
         }
@@ -2745,7 +2745,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
-              `${outcome.failure.detail} — so the pass is held for a person (${spent})`,
+              `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
           )
         }
         const chose = chosenIn(outcome.text)
@@ -4066,7 +4066,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (took === null) {
           throw new Error(
             'the `implement` step has no item — the step that makes it did not run, ' +
-              "and the spine says it did. This is the pass's own bookkeeping and not a " +
+              "and the spine says it did. This is the attempt's own bookkeeping and not a " +
               'judgement about the change.',
           )
         }
@@ -4246,7 +4246,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * it is about (`appendNow`).
        */
       if (unappended !== null) {
-        log(`the store refused an append during the pass: ${whyOf(unappended)}`)
+        log(`the store refused an append during the attempt: ${whyOf(unappended)}`)
         return yield* Effect.die(unappended)
       }
 
@@ -4795,7 +4795,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
       const reason =
         stopped === null
-          ? `the pass ended without landing and without asking anybody${unpushed}`
+          ? `the attempt ended without landing and without asking anybody${unpushed}`
           : `the \`${stopped.step}\` step ${stopped.ending.ending}: ${said(detailOf(stopped))}${unpushed}`
       yield* release(reason)
       return {

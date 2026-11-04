@@ -311,17 +311,17 @@ export function checksBrief(commands: readonly string[]): string {
           commands.join('\n'),
           '```',
           '',
-          'Those are every command this pass runs against your change — at `build`, ' +
-            '`proposed` and `merge` — and it is the whole of what this pass asks you to ' +
+          'Those are every command this attempt runs against your change — at `build`, ' +
+            '`proposed` and `merge` — and it is the whole of what this attempt asks you to ' +
             'run. A cold review and a judge check the result too, but neither is a ' +
             'command you run — anything slower or wider you might run yourself, another ' +
             'app\'s build, a suite this project calls "integration," anything that reaches a ' +
-            "network, a database or another process, is not this pass's to run, and its " +
-            'result is not something this pass owes.',
+            "network, a database or another process, is not this attempt's to run, and its " +
+            'result is not something this attempt owes.',
         ].join('\n')
 
   return [
-    '## What this pass checks, and what it does not',
+    '## What this attempt checks, and what it does not',
     '',
     bar,
     '',

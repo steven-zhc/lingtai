@@ -341,11 +341,11 @@ describe('renderStatus keeps every fact the old output printed', () => {
   describe('a pass held for approval', () => {
     const held: StatusWait = {
       reason: 'SignoffRequired',
-      line: 'ready to land — the recipe asks you to approve each pass',
+      line: 'ready to land — the recipe asks you to approve each attempt',
       short: 'ready to land',
       needs: 'judgement',
       words: 'waiting for your review',
-      detail: ['ready to land — the recipe asks you to approve each pass'],
+      detail: ['ready to land — the recipe asks you to approve each attempt'],
       recommendation: null,
       command:
         'lingtai approve lingtai --issue 1   (or lingtai requeue lingtai --issue 1 [--into-body "<text>"], or the board)',
@@ -375,7 +375,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
     it.each([false, true])('says the sentence once, then the command (all: %s)', (all) => {
       const out = renderStatus(report, { all }).join('\n')
       const lines = out.split('\n').map((l) => l.trim())
-      expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each pass')).toHaveLength(1)
+      expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each attempt')).toHaveLength(1)
       expect(out).toContain('#1  Add the chapter')
       expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai requeue`)
       expect(out).not.toContain('failure')

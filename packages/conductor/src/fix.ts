@@ -416,7 +416,8 @@ export function decideFix(input: FixInput): FixDecision {
   if (roundsSpent >= rounds) {
     return no(
       'spent',
-      `the ceiling of ${rounds} round(s) for this pass is spent, and the ` + `${refusal.action} action still refuses`,
+      `the ceiling of ${rounds} round(s) for this attempt is spent, and the ` +
+        `${refusal.action} action still refuses`,
     )
   }
 
@@ -1105,7 +1106,7 @@ export function diagnoseDisagreement(input: {
         // not get worse to fix the others.
         return input.refusals <= 1
           ? `One agent refused ${at} and no round answered it. ${refused}, and the ` +
-              `pass's ${input.rounds} fix round(s) had already been spent on an earlier ` +
+              `attempt's ${input.rounds} fix round(s) had already been spent on an earlier ` +
               `refusal, so no agent was sent to make them stop happening. The findings ` +
               `stand unanswered: what changes that is raising ` +
               `\`runtime.limits.rounds\` — or reading them yourself.`
@@ -1292,7 +1293,7 @@ export function diagnoseUnfixed(input: {
         // land here too. How much was re-run is `notAgain`'s: this arm is
         // reached in round 2 as readily as in round 1.
         return (
-          `\`${input.action}\` refuses ${at}, and this pass stopped on an agent that did ` +
+          `\`${input.action}\` refuses ${at}, and this attempt stopped on an agent that did ` +
           `not finish rather than on the check. The agent sent to make it green was ` +
           `stopped — ${clipFailure(input.stop.failure)}, so nothing new was decided and ` +
           `${notAgain}. This is infrastructure and not your call: send it again.`
@@ -1302,7 +1303,7 @@ export function diagnoseUnfixed(input: {
         // repository's failure, so *send it again* costs another full budget and
         // answers nothing (`RUN_OWNER`, and `conduct.ts`'s own block).
         return (
-          `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's turn ` +
+          `\`${input.action}\` refuses ${at}, and this attempt stopped on the recipe's turn ` +
           `limit rather than on the check. The agent sent to make it green spent its whole ` +
           `budget without committing — ${clipFailure(input.stop.failure)}, so ${notAgain}. ` +
           `The limit is a scope alarm: requeued as written this buys another ` +
@@ -1313,7 +1314,7 @@ export function diagnoseUnfixed(input: {
         // the repository's failure, and sending it again spends another whole
         // budget against the same limit.
         return (
-          `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's dollar ` +
+          `\`${input.action}\` refuses ${at}, and this attempt stopped on the recipe's dollar ` +
           `ceiling rather than on the check. The agent sent to make it green spent its whole ` +
           `budget without committing — ${clipFailure(input.stop.failure)}, so ${notAgain}. ` +
           `The limit is a scope alarm: requeued as written this buys another ` +
@@ -1368,7 +1369,7 @@ export function diagnoseUnfixed(input: {
         // refuse more than one diff, which is the ordinary shape.
         return ran === 1
           ? `\`${input.action}\` refuses ${at}, and no round was bought to answer it: ` +
-              `the pass's ${input.rounds} fix round(s) had already been spent on an ` +
+              `the attempt's ${input.rounds} fix round(s) had already been spent on an ` +
               `earlier refusal, so \`${input.action}\` refused once and was never run ` +
               `again. What it printed is below, and it is one result rather than a ` +
               `repeated one.`
@@ -1645,7 +1646,7 @@ export function mergeAnywayBecause(input: {
       if (input.refusals <= 1) {
         const refused =
           input.on === 'findings' ? `The ${input.action} reviewer refuses it` : `\`${input.action}\` refuses it`
-        return `${refused} and no round answered it; the pass's ${after} went on an earlier refusal.`
+        return `${refused} and no round answered it; the attempt's ${after} went on an earlier refusal.`
       }
       return input.on === 'findings'
         ? `Two agents disagreed: the ${input.action} reviewer still refuses it after ${after}.`
