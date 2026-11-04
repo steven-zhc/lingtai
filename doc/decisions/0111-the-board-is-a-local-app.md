@@ -31,12 +31,17 @@ budget.
    so an event definition change breaks the board at compile time. `pnpm build`
    ships it as Next's `standalone` output (see
    [0113](0113-distribution-is-a-versioned-binary.md)).
-2. **It serves loopback, one person, no authentication.** The port is
-   `board.port` in `~/.lingtai/config.yml`, else `BOARD_PORT = 17820`
-   (`packages/env`); a value that is not a port number is refused by name.
-   `lingtai board` always sets the host to `127.0.0.1`, because Next's default is
-   `0.0.0.0`. From a checkout, `pnpm --filter @lingtai/board dev|start`
-   (`apps/board/serve.ts`) serves the same port.
+2. **It serves every address by default, one person, no authentication.** The
+   address is `board.host` in `~/.lingtai/config.yml` (`LINGTAI_BOARD_HOST`),
+   else `0.0.0.0`; the port is `board.port`, else `BOARD_PORT = 17820`
+   (`packages/env`). A host that is not an IP literal, or a port that is not a
+   port number, is refused by name. The board has no authentication, so a board
+   on a non-loopback address belongs on a network whose every member may approve,
+   requeue and answer as this machine's account; `board.host: 127.0.0.1` keeps it
+   to this machine. A link or a probe goes to `127.0.0.1` when the board serves
+   every address, and to the address itself when `board.host` names one. From a
+   checkout, `pnpm --filter @lingtai/board dev|start` (`apps/board/serve.ts`)
+   serves the same address and port.
 3. **Live updates are SSE at `/api/stream`, woken by the store, never by a
    timer.** The route bridges the store's waker; its one `setInterval` is a
    keep-alive comment. The seq is the SSE event id, and a reconnect resumes from
