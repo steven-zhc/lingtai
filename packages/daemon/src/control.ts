@@ -144,15 +144,25 @@ export async function readControl(
     let start = 0
     let from = 0
     if (row !== null) {
-      from = row.streamVersion
       try {
         state = controlReducer.decode(row.state)
         start = row.streamVersion
+        from = start
       } catch (e) {
         sayOnce('decode', e)
       }
     }
-    const tail = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES, start + 1)
+    let tail = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES, start + 1)
+    if (row !== null && start > 0) {
+      // The anchor was checked before the tail was read; a reset in between would pair the old
+      // state with the new log's events. Ask again: only an anchor still holding vouches for the tail.
+      const again = await snapshots.latest(key).catch(() => null)
+      if (again === null || again.streamVersion !== row.streamVersion || again.lastSeq !== row.lastSeq) {
+        state = controlReducer.initial
+        from = 0
+        tail = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)
+      }
+    }
     const reduced = reduceFrom(controlReducer, state, tail)
     const last = tail[tail.length - 1]
     if (last !== undefined && cache.writer !== undefined && crossesCommitBoundary(from, last.version)) {

@@ -95,6 +95,27 @@ describe('readControl offers', () => {
     expect(offer).not.toHaveBeenCalled()
   })
 
+  it('treats an undecodable snapshot as absent for the commit point', async () => {
+    const { store, snapshots, at } = await build(pauses(9))
+    snapshots.plant(at(6, 'not json {'))
+    const offer = vi.fn()
+    await readControl(store, 0, { snapshots, writer: { offer } })
+    expect(offer).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads from version 1 when the anchor stops holding after the tail was read', async () => {
+    const { store, snapshots, at } = await build(pauses(6))
+    snapshots.plant(at(5))
+    const real = snapshots.latest.bind(snapshots)
+    let calls = 0
+    const reset = {
+      ...snapshots,
+      latest: (k: Parameters<typeof real>[0]) => (++calls > 1 ? Promise.resolve(null) : real(k)),
+    }
+    const want = await readControl(store)
+    expect(await readControl(store, 0, { snapshots: reset as never })).toEqual(want)
+  })
+
   it('never touches the process log when a store is passed with no snapshots', async () => {
     const { store } = await build(pauses(6))
     await expect(readControl(store)).resolves.toBeDefined()
