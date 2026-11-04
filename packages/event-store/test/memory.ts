@@ -75,14 +75,14 @@ import {
   UnknownEventTypeError,
 } from '../src/event-store.ts'
 import type { LogQueries, TypeCount, TypeRow } from '../src/queries.ts'
-import { type Snapshot, type SnapshotStore, staleEpochError, validateSnapshot } from '../src/snapshots.ts'
+import { type Snapshot, type SnapshotStore, anchorNotInLogError, validateSnapshot } from '../src/snapshots.ts'
 
 export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType' | 'typeCounts'> {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
   all(): Envelope[]
   /**
    * Empties the log and does not reset `seq`, which is what `AUTOINCREMENT` does
-   * — so the epoch after it differs by `seq`, not by the clock. Test-only: the
+   * — so an event appended after it differs by `seq`, not by the clock. Test-only: the
    * stand-in for the documented reset.
    */
   clear(): void
@@ -239,33 +239,38 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
   }
 }
 
-/**
- * A `SnapshotStore` in memory, whose epoch is taken from the same array of
- * events as the log it sits beside (#868): the first event's `seq@at`.
- */
-export function createMemorySnapshotStore(events: MemoryEventStore): SnapshotStore {
+/** A `SnapshotStore` in memory, whose anchors are checked against the same array of events as the log beside it. */
+export function createMemorySnapshotStore(events: MemoryEventStore): SnapshotStore & {
+  /** Sets a row with no anchor check — how a test holds a void one. Test-only. */
+  plant(snapshot: Snapshot): void
+} {
   const rows = new Map<string, Snapshot>()
   const id = (k: { streamId: string; reducer: string; reducerVersion: number }) =>
     JSON.stringify([k.streamId, k.reducer, k.reducerVersion])
-  const epoch = async (): Promise<string | null> => {
-    const first = events.all()[0]
-    return first === undefined ? null : `${first.seq}@${first.at.toISOString()}`
-  }
+  const holds = (s: Snapshot): boolean =>
+    events
+      .all()
+      .some(
+        (e) =>
+          e.streamId === s.streamId &&
+          e.version === s.streamVersion &&
+          e.seq === s.lastSeq &&
+          e.at.getTime() === s.lastAt.getTime(),
+      )
   return {
-    epoch,
+    plant(snapshot) {
+      rows.set(id(snapshot), { ...snapshot })
+    },
     async latest(key) {
       const row = rows.get(id(key))
-      if (row === undefined || row.epoch !== (await epoch())) return null
+      if (row === undefined || !holds(row)) return null
       return { ...row }
     },
     async put(snapshot) {
       validateSnapshot(snapshot)
-      const current = await epoch()
-      if (current === null || current !== snapshot.epoch) throw staleEpochError(snapshot.epoch, current)
+      if (!holds(snapshot)) throw anchorNotInLogError(snapshot)
       const there = rows.get(id(snapshot))
-      if (there !== undefined && there.epoch === snapshot.epoch && there.streamVersion >= snapshot.streamVersion) {
-        return 'kept'
-      }
+      if (there !== undefined && holds(there) && there.streamVersion >= snapshot.streamVersion) return 'kept'
       rows.set(id(snapshot), { ...snapshot })
       return 'written'
     },

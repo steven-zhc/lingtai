@@ -1,17 +1,20 @@
 /**
- * What every `SnapshotStore` must do (#868, 0124 §7–§8). Run against the
+ * What every `SnapshotStore` must do (#868, #869, 0124 §7–§8). Run against the
  * memory store and SQLite in `unit/`, and against Postgres in `integration/`.
  */
+import type { Envelope } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import type { Snapshot, SnapshotStore } from '../src/snapshots.ts'
 
 export interface SnapshotHarness {
-  /** A stream id no other harness instance uses, so a shared table starts empty for this case. */
+  /** The stream id the harness appends to and snapshots, no other harness instance uses it. */
   sid: string
   snapshots: SnapshotStore
-  /** One event on a stream of the harness's own. */
-  append(): Promise<void>
+  /** One event on the harness's own stream `sid`; the envelope as the store returns it. */
+  append(): Promise<Envelope>
+  /** Writes a row with no anchor check — how a case holds a void one without emptying a shared log. */
+  plant(snapshot: Snapshot): Promise<void>
   /** Empties this log's events; absent where the log is shared. */
   empty?: () => Promise<void>
 }
@@ -20,14 +23,13 @@ export function describeSnapshotContract(name: string, fresh: () => Promise<Snap
   describe(`${name}: SnapshotStore`, () => {
     const key = (h: SnapshotHarness, reducerVersion = 1) => ({ streamId: h.sid, reducer: 'control', reducerVersion })
 
-    async function snap(h: SnapshotHarness, over: Partial<Snapshot> = {}): Promise<Snapshot> {
-      const epoch = await h.snapshots.epoch()
-      if (epoch === null) throw new Error('the case must append before it snapshots')
+    /** A snapshot anchored on `env`, the event it was reduced to. */
+    function snap(h: SnapshotHarness, env: Envelope, over: Partial<Snapshot> = {}): Snapshot {
       return {
         ...key(h),
-        streamVersion: 3,
-        lastSeq: 12n,
-        epoch,
+        streamVersion: env.version,
+        lastSeq: env.seq,
+        lastAt: env.at,
         state: JSON.stringify({ a: 1, b: ['x'] }),
         ...over,
       }
@@ -39,14 +41,14 @@ export function describeSnapshotContract(name: string, fresh: () => Promise<Snap
       expect(await h.snapshots.latest(key(h))).toBeNull()
     })
 
-    it('round-trips every field, with lastSeq a bigint', async () => {
+    it('round-trips every field, with lastSeq a bigint and lastAt a Date', async () => {
       const h = await fresh()
-      await h.append()
-      const put = await snap(h, { lastSeq: 9007199254740991n })
+      const put = snap(h, await h.append())
       expect(await h.snapshots.put(put)).toBe('written')
       const got = await h.snapshots.latest(key(h))
       expect(got).not.toBeNull()
       expect(typeof got?.lastSeq).toBe('bigint')
+      expect(got?.lastAt).toBeInstanceOf(Date)
       expect(got).toEqual({ ...put, state: got?.state })
       // Parsed, not compared as text: Postgres keeps the state as `jsonb`,
       // which reorders keys and normalises whitespace.
@@ -55,72 +57,83 @@ export function describeSnapshotContract(name: string, fresh: () => Promise<Snap
 
     it('keeps the row for a lower or equal streamVersion, and replaces it for a higher one', async () => {
       const h = await fresh()
-      await h.append()
-      const first = await snap(h, { streamVersion: 5, state: '{"v":5}' })
-      expect(await h.snapshots.put(first)).toBe('written')
-      expect(await h.snapshots.put({ ...first, streamVersion: 5, state: '{"v":"same"}' })).toBe('kept')
-      expect(await h.snapshots.put({ ...first, streamVersion: 4, state: '{"v":4}' })).toBe('kept')
-      expect(JSON.parse((await h.snapshots.latest(key(h)))?.state ?? '')).toEqual({ v: 5 })
-      expect(await h.snapshots.put({ ...first, streamVersion: 6, lastSeq: 20n, state: '{"v":6}' })).toBe('written')
+      const e1 = await h.append()
+      const e2 = await h.append()
+      const e3 = await h.append()
+      expect(await h.snapshots.put(snap(h, e2, { state: '{"v":2}' }))).toBe('written')
+      expect(await h.snapshots.put(snap(h, e2, { state: '{"v":"same"}' }))).toBe('kept')
+      expect(await h.snapshots.put(snap(h, e1, { state: '{"v":1}' }))).toBe('kept')
+      expect(JSON.parse((await h.snapshots.latest(key(h)))?.state ?? '')).toEqual({ v: 2 })
+      expect(await h.snapshots.put(snap(h, e3, { state: '{"v":3}' }))).toBe('written')
       const got = await h.snapshots.latest(key(h))
-      expect(got?.streamVersion).toBe(6)
-      expect(got?.lastSeq).toBe(20n)
+      expect(got?.streamVersion).toBe(e3.version)
+      expect(got?.lastSeq).toBe(e3.seq)
     })
 
     it('keeps two keys that differ only in reducerVersion as separate rows', async () => {
       const h = await fresh()
-      await h.append()
-      await h.snapshots.put(await snap(h, { reducerVersion: 1, state: '{"v":1}' }))
-      await h.snapshots.put(await snap(h, { reducerVersion: 2, state: '{"v":2}' }))
+      const e = await h.append()
+      await h.snapshots.put(snap(h, e, { reducerVersion: 1, state: '{"v":1}' }))
+      await h.snapshots.put(snap(h, e, { reducerVersion: 2, state: '{"v":2}' }))
       expect(JSON.parse((await h.snapshots.latest(key(h, 1)))?.state ?? '')).toEqual({ v: 1 })
       expect(JSON.parse((await h.snapshots.latest(key(h, 2)))?.state ?? '')).toEqual({ v: 2 })
     })
 
-    it('has no epoch on an empty log, a stable one across appends, and refuses a put against it', async () => {
+    it('refuses a put whose anchor is not in the log, and stores nothing', async () => {
       const h = await fresh()
-      // A shared log already holds other cases' events; only an owned one starts empty.
-      if (h.empty !== undefined) {
-        expect(await h.snapshots.epoch()).toBeNull()
-        await expect(
-          h.snapshots.put({ ...key(h), streamVersion: 1, lastSeq: 1n, epoch: 'nope', state: '{}' }),
-        ).rejects.toThrow()
-      }
-      await h.append()
-      const e = await h.snapshots.epoch()
-      expect(e).not.toBeNull()
-      await h.append()
-      expect(await h.snapshots.epoch()).toBe(e)
-    })
-
-    it('refuses a put whose epoch is not the current one, and stores nothing', async () => {
-      const h = await fresh()
-      await h.append()
-      await expect(h.snapshots.put(await snap(h, { epoch: 'not-this-log' }))).rejects.toThrow(/epoch/)
+      const e = await h.append()
+      const wrongSeq = snap(h, e, { lastSeq: e.seq + 1000n })
+      await expect(h.snapshots.put(wrongSeq)).rejects.toThrow(/anchor event.*not in this log/)
+      await expect(h.snapshots.put(snap(h, e, { streamVersion: e.version + 5 }))).rejects.toThrow(/not in this log/)
+      await expect(h.snapshots.put(snap(h, e, { lastAt: new Date(e.at.getTime() + 1) }))).rejects.toThrow(
+        /not in this log/,
+      )
       expect(await h.snapshots.latest(key(h))).toBeNull()
     })
 
     it('refuses a snapshot out of range with a RangeError', async () => {
       const h = await fresh()
-      await h.append()
-      await expect(h.snapshots.put(await snap(h, { streamVersion: 0 }))).rejects.toThrow(RangeError)
-      await expect(h.snapshots.put(await snap(h, { lastSeq: -1n }))).rejects.toThrow(RangeError)
-      await expect(h.snapshots.put(await snap(h, { reducer: '' }))).rejects.toThrow(RangeError)
-      await expect(h.snapshots.put(await snap(h, { reducerVersion: 1.5 }))).rejects.toThrow(RangeError)
+      const e = await h.append()
+      await expect(h.snapshots.put(snap(h, e, { streamVersion: 0 }))).rejects.toThrow(RangeError)
+      await expect(h.snapshots.put(snap(h, e, { lastSeq: -1n }))).rejects.toThrow(RangeError)
+      await expect(h.snapshots.put(snap(h, e, { reducer: '' }))).rejects.toThrow(RangeError)
+      await expect(h.snapshots.put(snap(h, e, { reducerVersion: 1.5 }))).rejects.toThrow(RangeError)
+      await expect(h.snapshots.put(snap(h, e, { lastAt: new Date(Number.NaN) }))).rejects.toThrow(RangeError)
     })
 
-    it('is void across a reset: another epoch answers null and is replaced at a lower version', async () => {
+    describe('a row whose anchor no longer holds', () => {
+      const cases: [string, (e: Envelope) => Partial<Snapshot>][] = [
+        ['a version past the end of the stream', (e) => ({ streamVersion: e.version + 5 })],
+        ['the right version with another seq', (e) => ({ lastSeq: e.seq + 1000n })],
+        ['the right version and seq with an at off by 1ms', (e) => ({ lastAt: new Date(e.at.getTime() + 1) })],
+      ]
+      for (const [what, over] of cases) {
+        it(`answers null and is replaced at a lower version: ${what}`, async () => {
+          const h = await fresh()
+          const e1 = await h.append()
+          const e2 = await h.append()
+          await h.plant(snap(h, e2, { state: '{"void":true}', ...over(e2) }))
+          expect(await h.snapshots.latest(key(h))).toBeNull()
+          expect(await h.snapshots.put(snap(h, e1, { state: '{"v":1}' }))).toBe('written')
+          const got = await h.snapshots.latest(key(h))
+          expect(got?.streamVersion).toBe(e1.version)
+          expect(JSON.parse(got?.state ?? '')).toEqual({ v: 1 })
+        })
+      }
+    })
+
+    it('is void across a reset: the emptied log answers null and the row is replaced at a lower version', async () => {
       const h = await fresh()
       if (h.empty === undefined) return // a shared log cannot be emptied
       await h.append()
-      await h.snapshots.put(await snap(h, { streamVersion: 9 }))
-      const before = await h.snapshots.epoch()
+      const e2 = await h.append()
+      await h.snapshots.put(snap(h, e2))
       await h.empty()
-      expect(await h.snapshots.epoch()).toBeNull()
-      await h.append()
-      expect(await h.snapshots.epoch()).not.toBe(before)
       expect(await h.snapshots.latest(key(h))).toBeNull()
-      expect(await h.snapshots.put(await snap(h, { streamVersion: 2 }))).toBe('written')
-      expect((await h.snapshots.latest(key(h)))?.streamVersion).toBe(2)
+      const again = await h.append()
+      expect(await h.snapshots.latest(key(h))).toBeNull()
+      expect(await h.snapshots.put(snap(h, again))).toBe('written')
+      expect((await h.snapshots.latest(key(h)))?.streamVersion).toBe(again.version)
     })
   })
 }

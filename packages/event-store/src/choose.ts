@@ -172,7 +172,6 @@ function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
 
 function deferredSnapshots(resolve: () => Promise<SnapshotStore>): SnapshotStore {
   return {
-    epoch: async () => (await resolve()).epoch(),
     latest: async (key) => (await resolve()).latest(key),
     put: async (snapshot) => (await resolve()).put(snapshot),
   }
