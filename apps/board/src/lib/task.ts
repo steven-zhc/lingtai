@@ -18,6 +18,7 @@ import {
   type BlockDiagnosis,
   type Envelope,
   type TicketClaim,
+  type TicketDiscussion,
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
@@ -1061,28 +1062,22 @@ export function foldChat(chatId: string, events: readonly Envelope[], held: Disc
  *
  * The requests are on `ctl-conductor` and the exchanges are on their own
  * streams, so this is a **join done by a reader at read time** — where 0012
- * puts every join of this kind. `DiscussionHeld` on the item's own stream is
- * what says a conversation was closed and what it produced.
+ * puts every join of this kind. The held half is the ticket reduce's
+ * (`TicketState.discussions`); this lists control's chats for the ticket first,
+ * then any held chat control did not name, in held order.
  */
 export function chatIdsFor(
   control: readonly { chatId: string; ticketId: string }[],
-  own: readonly Envelope[],
+  held: readonly TicketDiscussion[],
   taskId: string,
 ): { chatId: string; held: DiscussionView['held'] }[] {
   const order: string[] = []
   for (const d of control) {
     if (d.ticketId === taskId && !order.includes(d.chatId)) order.push(d.chatId)
   }
-  const held = new Map<string, DiscussionView['held']>()
-  for (const e of own) {
-    if (e.type !== 'DiscussionHeld') continue
-    const d = (e.data ?? {}) as Record<string, unknown>
-    const chatId = String(d['chatId'] ?? '')
-    const outcome = d['outcome']
-    if (!order.includes(chatId)) order.push(chatId)
-    held.set(chatId, outcome === 'prompt' || outcome === 'ticket' || outcome === 'none' ? outcome : 'none')
-  }
-  return order.map((chatId) => ({ chatId, held: held.get(chatId) ?? null }))
+  for (const h of held) if (!order.includes(h.chatId)) order.push(h.chatId)
+  const outcomes = new Map(held.map((h) => [h.chatId, h.outcome]))
+  return order.map((chatId) => ({ chatId, held: outcomes.get(chatId) ?? null }))
 }
 
 /**
@@ -1610,7 +1605,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const attempts = new Map(folded.map((r) => [r.runId, r.attempt]))
 
   const conductor = reduceControl(control)
-  const chats = chatIdsFor(conductor.discussions, own, taskId)
+  const chats = chatIdsFor(conductor.discussions, ticketState.discussions, taskId)
   const chatStreams =
     chats.length > 0
       ? await timed('events.chat', () => Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId)))), {
@@ -1807,7 +1802,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     // The chat streams are **not** in the history, and that is 0033 §6 read the
     // other way round: the point of giving a conversation its own stream is
     // that forty turns of exploration do not drown the thirty-six events this
-    // section exists to show. The work item's own `DiscussionHeld` is here, and
+    // section exists to show. The ticket's own record that a discussion was held is here, and
     // it is the two lines the ticket's history was promised to grow by.
     history: groupHistory([...own, ...streams.flat()], attempts),
   }

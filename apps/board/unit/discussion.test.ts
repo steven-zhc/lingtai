@@ -116,11 +116,26 @@ describe('which conversations an item has had', () => {
         { chatId: 'chat-1', ticketId: 'ticket-lingtai-89' },
         { chatId: 'chat-2', ticketId: 'ticket-lingtai-87' },
       ],
-      [e('ticket-lingtai-89', 'DiscussionHeld', { chatId: 'chat-1', costUsd: 0.42, outcome: 'prompt' })],
+      [{ chatId: 'chat-1', outcome: 'prompt' }],
       'ticket-lingtai-89',
     )
 
     expect(chats).toEqual([{ chatId: 'chat-1', held: 'prompt' }])
+  })
+
+  it('lists a held chat control does not name after the control-named ones', () => {
+    const chats = chatIdsFor(
+      [{ chatId: 'chat-2', ticketId: 't' }],
+      [
+        { chatId: 'chat-9', outcome: 'none' },
+        { chatId: 'chat-2', outcome: 'ticket' },
+      ],
+      't',
+    )
+    expect(chats).toEqual([
+      { chatId: 'chat-2', held: 'ticket' },
+      { chatId: 'chat-9', held: 'none' },
+    ])
   })
 
   it('leaves an unconcluded conversation open rather than calling it closed', () => {

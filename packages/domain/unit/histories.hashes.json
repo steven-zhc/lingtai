@@ -59,6 +59,9 @@
   "ticket.triagedTwice": "1bf0781f1ee1a9f636d73667eebb067b72fd5f1487dfce434744d305cb7528c7",
   "ticket.waitAfterClosed": "7e0762619635e71610aa5ba8327f631bbec84f887b5c89c322594331c582d76a",
   "ticket.waitThenLanded": "81be000f8b72ee843deef6be0aac59f7d4d4a9676a6f2c79102a1e316a53c645",
-  "finding.acceptedOnly": "930fccf402b4deea60bcce8a60653b124ead4b25dd6e30a3aab141cfa36e4aeb",
-  "finding.declinedThenAccepted": "718b7801dfac06fd40f2f00691a60321741ea628df99bada1122550fb96e3c27"
+  "ticket.discussionsHeld": "cc9461458e33fab1fe5d3dc6068933cedae175e5fba5ae96061b39a41c90f4c9",
+  "ticket.kindThenTriage": "bbf0a2b5b1084b7b807fd2aa0cad685a0d9b3afeceeb7c0424a5702151def985",
+  "ticket.kindedClaimAfterClosed": "add21b1b8ff959bb35df5120515b181ef16155fce796ae609f9953b169719812",
+  "finding.acceptedOnly": "3a8ebf6a4ce94299deaa941f9afdcb8413a22c40542d9908e822caa8e2de2fd2",
+  "finding.declinedThenAccepted": "6208f786c715becb40d8a5e069a20d6411a22abbe7fd4a113e687af3eae8409b"
 }

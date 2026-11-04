@@ -1026,6 +1026,60 @@ const late_waitThenLanded = (() => {
   ])
 })()
 
+/** #843: latest outcome wins, held order is kept, and a close does not absorb a held. */
+const late_discussionsHeld = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9117))
+  const r1 = passStream('t9117-1')
+  return stamp([
+    ...aClaim(t, r1),
+    t('DiscussionHeld', { chatId: 'c1', outcome: 'prompt', by: 'steven' }),
+    t('DiscussionHeld', { chatId: 'c2', outcome: 'none', by: 'steven' }),
+    t('DiscussionHeld', { chatId: 'c1', outcome: 'ticket', by: 'steven' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    t('DiscussionHeld', { chatId: 'c3', outcome: 'none', by: 'steven' }),
+  ])
+})()
+
+/** #835: a kinded claim, a release, a kindless claim, then a triage `RunSpent` — spend reads `bug`. */
+const late_kindThenTriage = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9118))
+  const r1 = passStream('t9118-1')
+  const r2 = passStream('t9118-2')
+  return stamp([
+    t('TicketClaimed', { runId: r1, worker: 'conductor:1', title: null, kind: 'bug' }),
+    ...aRelease(t, r1),
+    t('TicketClaimed', { runId: r2, worker: 'conductor:1', title: null, kind: null }),
+    t('RunSpent', {
+      for: { _tag: 'Triage', waitId: 'wait-9118' as WaitId },
+      runtime: 'claude-code',
+      turns: 3,
+      durationMs: 1000,
+      usage: [{ model: 'claude-opus-5', tokens: { fresh: 100, output: 20 } }],
+      costUsd: 0.1,
+    }),
+  ])
+})()
+
+/** #835: a kinded claim after a close is absorbed by the ticket fold, so a triage `RunSpent` reads `bug`. */
+const late_kindedClaimAfterClosed = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9119))
+  const r1 = passStream('t9119-1')
+  const r2 = passStream('t9119-2')
+  return stamp([
+    t('TicketClaimed', { runId: r1, worker: 'conductor:1', title: null, kind: 'bug' }),
+    t('TicketClosed', { by: 'steven', reason: 'not wanted' }),
+    t('TicketClaimed', { runId: r2, worker: 'conductor:1', title: null, kind: 'feature' }),
+    t('RunSpent', {
+      for: { _tag: 'Triage', waitId: 'wait-9119' as WaitId },
+      runtime: 'claude-code',
+      turns: 3,
+      durationMs: 1000,
+      usage: [{ model: 'claude-opus-5', tokens: { fresh: 100, output: 20 } }],
+      costUsd: 0.1,
+    }),
+  ])
+})()
+
 /** D7: an accept with nothing after it — opening the issue is still owed. */
 const late_acceptedOnly = (() => {
   const f = makeStream(backlogStream(PROJECT, 'minor-3'))
@@ -1070,6 +1124,9 @@ export const lateHistories = {
     triagedTwice: late_triagedTwice,
     waitAfterClosed: late_waitAfterClosed,
     waitThenLanded: late_waitThenLanded,
+    discussionsHeld: late_discussionsHeld,
+    kindThenTriage: late_kindThenTriage,
+    kindedClaimAfterClosed: late_kindedClaimAfterClosed,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,
@@ -1125,6 +1182,7 @@ export const COVERS = {
     'WaitTriaged',
     'TicketSplit',
     'TicketLinked',
+    'DiscussionHeld',
     'TicketClosed',
     'TicketLanded',
     'DispatchRefused',
