@@ -972,7 +972,7 @@
 
   <section>
     <h2>Where state lives</h2>
-    <p class="lede">Seven places. Only one of them is authoritative; the rest can be rebuilt,
+    <p class="lede">Eight places. Only one of them is authoritative; the rest can be rebuilt,
       re-fetched, or thrown away.</p>
 
     <div class="tablewrap">
@@ -983,6 +983,7 @@
         <tbody>
           <tr><td class="k">events</td><td>every fact about what Lingtai did</td><td class="who">conductor, board, CLI, agent</td><td class="who">no — it is the source</td></tr>
           <tr><td class="k">checkpoints</td><td>how far the projection has read</td><td class="who">the projector, in the reducer's own transaction</td><td class="who">yes</td></tr>
+          <tr><td class="k">stream_snapshots</td><td>one stream's reduced state, every fifth event (<a href="decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md">0124</a>)</td><td class="who">the daemon and the board</td><td class="who">yes — delete any row; the next read reduces from version 1</td></tr>
           <tr><td class="k">task_view</td><td>the board's cards</td><td class="who">the projector, and nothing else</td><td class="who">yes — <code>lingtai projection rebuild task_view</code></td></tr>
           <tr><td class="k">daemon_status</td><td>the heartbeat</td><td class="who">the daemon</td><td class="who">deliberately outside the log</td></tr>
           <tr><td class="k">~/.lingtai/repos</td><td>a bare mirror per project</td><td class="who">worktree provisioning</td><td class="who">yes — re-clone</td></tr>

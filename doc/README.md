@@ -107,7 +107,7 @@ replaces.
 | [0121](decisions/0121-the-cli-output-and-input-contract.md)               | **The CLI contract** — one layout, the board's palette, plain output without colour or a TTY, `--json` as one versioned document, help generated from each command's definition and grouped four ways                                              | accepted; not yet built      |
 | [0122](decisions/0122-several-passes-share-one-conductor.md)              | **Several attempts, one conductor** — slots per project, tickets that collide never run together, one landing at a time, a drain waits for every attempt, and a daily dollar ceiling that stops new work and kills nothing                              | accepted; not yet built      |
 | [0123](decisions/0123-the-report-counts-what-the-log-holds.md)            | **The report** — one `ticket_report` row per ticket, spend by day from `spend`, convergence as the share of tickets at five or more rounds and as a review survival curve, and the tickets that went round most explained from facts | accepted                     |
-| [0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) | **Snapshots** — a stream's reducer saved every fifth event by the daemon or the board, read as snapshot plus tail, void when the reducer's version or the log's epoch changes; events only gain optional fields | accepted |
+| [0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) | **Snapshots** — a stream's reducer saved every fifth event by the daemon or the board, read as snapshot plus tail, void when the reducer's version changes or its anchor event is not in the log; events only gain optional fields | accepted |
 
 ## Experiments
 

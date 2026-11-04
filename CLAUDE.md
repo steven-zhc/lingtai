@@ -49,6 +49,10 @@ projection, since each has its own table and checkpoint; replay, never a repair
 by hand. Each is reduced from the log and nothing else, by its one writer, the
 conductor-lock holder (0100 §13); a rebuild takes that lock and refuses while a
 daemon holds it.
+A snapshot (`stream_snapshots`, [0124](doc/decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md))
+is not a projection: it has two writers, the daemon and the board, and no
+rebuild. It is a disposable cache, void on another reducer version or a missing
+anchor event, so a reset needs no step for it.
 
 ## Opening an issue
 
