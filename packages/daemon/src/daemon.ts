@@ -31,8 +31,10 @@
  * One of those failures is knowable on the way up: a projection whose table no
  * longer has the columns its DDL declares will throw on the first event that
  * needs one, and `start()` compares the two before it follows. So a drifted
- * shape is a daemon that refuses with the remedy in the message, rather than one
- * that runs until the wrong event arrives (#90).
+ * shape stops that projection alone, with the remedy in the message, and the
+ * daemon comes up and keeps the conductor lock with the rest (0100 §13, #839);
+ * a rebuild is refused while it runs, so shut it down first. It is not left to
+ * run until the wrong event arrives (#90).
  */
 import { paint } from '@lingtai/env/colour'
 import { type LogPredatesHoldError, logPredatesHold, processLog } from '@lingtai/event-store'
@@ -88,7 +90,7 @@ export function notTakingWork(stopped: readonly StoppedProjection[]): string | n
   const entry = stopped.find((s) => s.name === WORK_PROJECTION)
   if (!entry) return null
   const at = entry.checkpoint === null ? 'an unread checkpoint' : `seq ${entry.checkpoint}`
-  return `${WORK_PROJECTION} stopped at ${at} — not taking work until it is rebuilt: \`lingtai projection rebuild ${WORK_PROJECTION}\`, then \`lingtai restart\``
+  return `${WORK_PROJECTION} stopped at ${at} — not taking work until it is rebuilt: \`lingtai shutdown\`, then \`lingtai projection rebuild ${WORK_PROJECTION}\`, then \`lingtai start\``
 }
 
 /** How long start waits for a stopped projection's checkpoint before it goes undated. */
@@ -264,9 +266,13 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         if (err instanceof ProjectionShapeError)
           tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
         // A handler error during catch-up, which is what a restart under the
-        // supervisor meets first: stop that projection and bring the daemon up.
-        if (!(err instanceof ProjectionShapeError) && runner.failure !== null) {
-          await dated(recordStopped(projection.name, () => runner, runner.failure))
+        // supervisor meets first, and a shape that has drifted from its table
+        // (a rebuild not yet run after a column was dropped, 0100 §13): stop that
+        // projection alone and bring the daemon up with the rest (#839).
+        if (err instanceof ProjectionShapeError || runner.failure !== null) {
+          await dated(
+            recordStopped(projection.name, () => runner, err instanceof ProjectionShapeError ? err : runner.failure),
+          )
           options.onRunner?.(projection, runner)
           continue
         }

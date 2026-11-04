@@ -11,12 +11,12 @@ import { userInfo } from 'node:os'
  * wrappers over `ask()` and `answer()` in `@lingtai/conductor` and nothing more,
  * for `requeue`'s reason — one decision, one function, whichever side asks.
  *
- * **Both hold a projector**, for `withProjector`'s rule: each moves a card the
- * board is showing, `ask` into the lane a person watches and `answer` out of it.
+ * **Neither holds a projector** (0100 §13): the conductor lock's holder is the
+ * board's only writer, so each says when none is up.
  */
 import { answer, ask, loadProject } from '@lingtai/conductor'
 
-import { withProjector } from './projector.ts'
+import { noteConductor } from './conductor-note.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface AskCommandOptions {
@@ -50,7 +50,7 @@ async function decide(
     return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
   }
 
-  return withProjector(progress, async (): Promise<Answered> => {
+  const append = async (): Promise<Answered> => {
     // The local account, as `requeue` and the board record it (0007).
     const by = options.by ?? `human:${userInfo().username}`
     const outcome =
@@ -58,7 +58,10 @@ async function decide(
         ? await ask({ project: options.project, issue: options.issue, question: options.text, by })
         : await answer({ project: options.project, issue: options.issue, answer: options.text, by })
     return fromOutcome(outcome)
-  })
+  }
+  const answered = await append()
+  if (answered.code === 0) await noteConductor(progress)
+  return answered
 }
 
 export function askVerdict(options: AskCommandOptions, progress: (line: string) => void): Promise<Answered> {

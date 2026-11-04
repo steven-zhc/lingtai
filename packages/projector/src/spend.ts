@@ -276,13 +276,11 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           event.streamId,
         ])
         const reduced = reduceStoredTicket(row?.state, event, SPEND_TABLE)
-        if (reduced !== null) {
-          await ctx.query(
-            `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
-             on conflict (ticket) do update set state = excluded.state`,
-            [event.streamId, encodeTicket(reduced.after)],
-          )
-        }
+        await ctx.query(
+          `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
+           on conflict (ticket) do update set state = excluded.state`,
+          [event.streamId, encodeTicket(reduced.after)],
+        )
       }
     }
   },

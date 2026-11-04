@@ -2,8 +2,8 @@
  * The backlog page's read, and whether what it read is current (`#137`).
  *
  * `finding_backlog` is a second projection. The board holds no projector and
- * reads the table straight, the way it reads `task_view`; every process that
- * appends follows it while it runs (`withProjector`). A table nobody follows is
+ * reads the table straight, the way it reads `task_view`; the conductor lock's
+ * holder is its only writer (0100 §13). A table nobody follows is
  * a frozen list, which renders as *nothing open* — the one thing a backlog page
  * must never say falsely — so the page reports the table's lag and says
  * *nothing open* only when that is zero.

@@ -223,9 +223,8 @@ export async function lagOf(name: string): Promise<SpendCurrency> {
 
 /**
  * Read `spend` from its table and say how far behind it is. The board holds
- * no projector: every process that appends follows `spend` while it runs
- * (`withProjector`, `apps/cli/src/projector.ts`), the same guarantee
- * `task_view` has, so a page reports the lag rather than folding it away.
+ * no projector: the conductor lock's holder is the only writer of `spend`
+ * (0100 §13), as it is of `task_view`, so a page reports the lag rather than folding it away.
  * A table nobody built reads as no rows with `lag = head` — *behind N*.
  */
 export async function currentSpend(

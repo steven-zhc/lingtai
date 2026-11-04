@@ -34,8 +34,8 @@ import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 
+import { noteConductor } from './conductor-note.ts'
 import { heading, symbol } from './output.ts'
-import { withProjector } from './projector.ts'
 
 export interface EndReplayOptions {
   /** Narrows to one project; every affected one otherwise. */
@@ -62,9 +62,6 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
     return 1
   }
 
-  // Held for the appending, not applied after it. This command writes end
-  // actions and the board reads a projection of them, so it follows the log
-  // while it works — the same rule the daemon and `lingtai run` obey.
   log(
     heading(
       [
@@ -79,7 +76,7 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
         .join(' '),
     ),
   )
-  return withProjector(log, async () => {
+  const replay = async (): Promise<number> => {
     // One client per project — now a project's own ticket side too
     // (`projectClient`, #383), never GitHub's for a `db` project. An
     // installation token is scoped to one repository, and minting one per item
@@ -128,5 +125,8 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
 
     log(`${replayed} replayed`)
     return 0
-  })
+  }
+  const code = await replay()
+  if (code === 0) await noteConductor(log)
+  return code
 }

@@ -115,8 +115,6 @@ interface State {
   /** `stream:round`, each distinct pair once. */
   rounds: string[]
   open: OpenInterval[]
-  /** The last event seq folded into this row: an event at or below it is a replay and changes nothing. */
-  appliedSeq: bigint
 }
 
 const json = <T>(value: unknown, fallback: T): T => {
@@ -126,8 +124,8 @@ const json = <T>(value: unknown, fallback: T): T => {
 
 /**
  * A `ticket_report` row as a reader sees it: what `report()` in the conductor
- * takes, less the fold's own bookkeeping (`claims`, `rounds`, `open_intervals`,
- * `applied_seq`). Declared here because the conductor depends on this package.
+ * takes, less the fold's own bookkeeping (`claims`, `rounds`, `open_intervals`).
+ * Declared here because the conductor depends on this package.
  */
 export interface TicketReportRow {
   ticket: string
@@ -178,7 +176,6 @@ const fresh = (ticket: string): State => ({
   paid: [],
   rounds: [],
   open: [],
-  appliedSeq: 0n,
 })
 
 /**
@@ -199,7 +196,6 @@ async function load(ctx: ProjectionContext, ticket: string): Promise<{ s: State;
       paid: json(row.paid, []),
       rounds: json(row.rounds, []),
       open: json(row.open_intervals, []),
-      appliedSeq: BigInt(String(row.applied_seq ?? 0)),
     },
   }
 }
@@ -231,17 +227,13 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
   const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
   // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
   const outcomeAt = outcome === 'open' ? null : t.since
-  // The write's own condition is the dedupe, one atomic statement and never a read then a write: of two
-  // runners that loaded the same row, the second touches 0 rows. `applied_seq` is set to the event's seq
-  // on every save, and so is `lastSeq` inside `ticket_state` on every ticket-stream save, so
-  // `applied_seq >= lastSeq` holds for every stored row and this guard is at least as strict as one on `lastSeq`.
   await ctx.query(
     `insert into ticket_report
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
-        paid, rounds, open_intervals, ticket_state, applied_seq)
+        paid, rounds, open_intervals, ticket_state)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb,
-             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb, $20)
+             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb)
      on conflict (ticket) do update set
        project = excluded.project, kind = excluded.kind, outcome = excluded.outcome,
        outcome_at = excluded.outcome_at, passes = excluded.passes, fix_rounds = excluded.fix_rounds,
@@ -249,9 +241,7 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
        intervals_open = excluded.intervals_open, unknown_claims = excluded.unknown_claims,
        pass_times = excluded.pass_times, reviews = excluded.reviews, waits = excluded.waits,
        cost = excluded.cost, paid = excluded.paid, rounds = excluded.rounds,
-       open_intervals = excluded.open_intervals, ticket_state = excluded.ticket_state,
-       applied_seq = excluded.applied_seq
-     where ticket_report.applied_seq < excluded.applied_seq`,
+       open_intervals = excluded.open_intervals, ticket_state = excluded.ticket_state`,
     [
       s.ticket,
       project,
@@ -272,7 +262,6 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
       JSON.stringify(s.rounds),
       JSON.stringify(s.open),
       encodeTicket(t),
-      s.appliedSeq.toString(),
     ],
   )
 }
@@ -360,8 +349,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         paid            jsonb not null,
         rounds          jsonb not null,
         open_intervals  jsonb not null,
-        ticket_state    jsonb not null,
-        applied_seq     bigint not null default 0
+        ticket_state    jsonb not null
       )`)
     await ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
     // Which ticket a pass or chat stream is about — this projection's own, never `spend_stream`.
@@ -497,8 +485,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         if (ticket !== null) {
           const { s, stored } = await load(ctx, ticket)
           if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
-          if (s.appliedSeq < event.seq && signOfLife(s, event, event.streamId)) {
-            s.appliedSeq = event.seq
+          if (signOfLife(s, event, event.streamId)) {
             await save(ctx, s)
           }
         }
@@ -508,16 +495,11 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
       if (change === null && !onTicketStream) continue
 
       const { s, stored } = await load(ctx, ticket)
-      // A replay (a second follower from an older cursor) must not add twice.
-      if (s.appliedSeq >= event.seq) continue
       let after: TicketState | null = null
       if (onTicketStream) {
-        const reduced = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE)
-        if (reduced === null) continue
-        after = s.ticketState = reduced.after
+        after = s.ticketState = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE).after
       } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
       change?.(s, after)
-      s.appliedSeq = event.seq
       // A pass-stream event is also a sign of life, whatever else it did.
       if (isPassStream(event.streamId)) signOfLife(s, event, event.streamId)
       await save(ctx, s)

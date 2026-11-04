@@ -7,8 +7,8 @@ import { userInfo } from 'node:os'
  * A wrapper over `close()` in `@lingtai/conductor` and nothing more, for the
  * reason `ask` gives: one decision, one function, whichever side asks.
  *
- * **It holds a projector**, for `withProjector`'s rule — this moves a card the
- * board is showing, out of every lane and into the archive.
+ * **It holds no projector** (0100 §13): the conductor lock's holder is the
+ * board's only writer, so it says when none is up.
  *
  * **It brings a client, so the `end` point can run** (0044). What the issue
  * itself ends up as is the recipe's call — a `close: true` action at `end` with
@@ -25,7 +25,7 @@ import { close, loadProject } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { hasGitHubAuth } from '@lingtai/env'
 
-import { withProjector } from './projector.ts'
+import { noteConductor } from './conductor-note.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface CloseCommandOptions {
@@ -55,7 +55,7 @@ export async function closeVerdict(options: CloseCommandOptions, progress: (line
 
   const { client, resolved } = await projectClient(project)
 
-  return withProjector(progress, async (): Promise<Answered> => {
+  const append = async (): Promise<Answered> => {
     // The local account, as `requeue`, `ask` and the board record it (0007).
     const by = options.by ?? `human:${userInfo().username}`
     const outcome = await close({
@@ -68,7 +68,10 @@ export async function closeVerdict(options: CloseCommandOptions, progress: (line
       recipe: async () => resolved,
     })
     return fromOutcome(outcome)
-  })
+  }
+  const answered = await append()
+  if (answered.code === 0) await noteConductor(progress)
+  return answered
 }
 
 export async function closeCommand(options: CloseCommandOptions, log = console.log): Promise<number> {

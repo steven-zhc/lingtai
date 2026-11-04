@@ -8,13 +8,8 @@ import { applyTicket, decodeTicket, emptyTicket } from '@lingtai/domain'
 
 /**
  * The stored state, or `emptyTicket` for none (`undefined`: no row yet), reduced
- * by `event` only when `event.seq` is greater than the state's `lastSeq`.
- *
- * **A `null` is a replay, and nothing was reduced.** Delivery is at-least-once —
- * two runners share one checkpoint and either can hand a row an event it already
- * holds — so the skip is made before `applyTicket` is called, on `seq` alone. It
- * never reads the payload or the transition, so a sequence no writer makes still
- * throws in the reduce (#822).
+ * by `event`. One runner writes each projection (0100 §13), so every event is
+ * reduced exactly once and no row-level replay guard is needed.
  *
  * A stored value that does not decode throws (`decodeTicket`) rather than
  * reducing from `emptyTicket`: `null` is a stored value, `undefined` is none.
@@ -23,8 +18,7 @@ export function reduceStoredTicket(
   stored: unknown,
   event: Envelope,
   projection: string,
-): { before: TicketState; after: TicketState } | null {
+): { before: TicketState; after: TicketState } {
   const before = stored === undefined ? emptyTicket : decodeTicket(stored, projection, event.streamId)
-  if (before.lastSeq !== null && event.seq <= before.lastSeq) return null
   return { before, after: applyTicket(before, event) }
 }

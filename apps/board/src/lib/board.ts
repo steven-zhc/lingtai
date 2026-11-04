@@ -1131,8 +1131,8 @@ export async function loadBoard(project?: string): Promise<Board> {
   // more read that is nobody's argument. Read once, by exactly the tickets on
   // this board — never a read per card, and never the whole table — and
   // `currentSpend` reads the table and reports its lag, the way `task_view` is
-  // read: the board holds no projector, and `withProjector` follows `spend`
-  // in every process that appends (#786, reversing #498's fold).
+  // read: the board holds no projector, and the conductor lock's holder
+  // follows `spend` (0100 §13; #786, reversing #498's fold).
   const [queued, spend, daemon, triageDeclared] = await Promise.all([
     timed('board.queue', () => queuedCards(registered.filter((p) => project === undefined || p.project === project))),
     // Not measured, so not claimed: a skipped read has no lag to report, and

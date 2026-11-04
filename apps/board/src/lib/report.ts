@@ -134,7 +134,7 @@ export interface ReportCurrency {
 
 /**
  * Both tables read straight, with the lag of each. The board holds no
- * projector; every process that appends follows both (`withProjector`), and a
+ * projector; the conductor lock's holder is the only writer of both (0100 §13), and a
  * page that is behind says so (`currentSpend`). Nothing is cached.
  */
 export async function currentReport(

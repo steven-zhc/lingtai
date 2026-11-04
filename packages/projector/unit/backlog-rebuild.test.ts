@@ -6,10 +6,9 @@
  * **Generated from today's code, and never regenerated after the `src`
  * change.** The snapshot this file commits alongside it was captured against
  * `backlog.ts` before #481's rewrite; `vitest -u` after the rewrite would turn
- * this file into a tautology rather than a pin. **Regenerated once, for #838:**
- * the rows gained one key, `last_seq` (the seq of the last finding event reduced
- * into the row, so a replayed event is skipped by identity), and nothing else in
- * them changed. If this test goes red, the
+ * this file into a tautology rather than a pin. **Regenerated once, for #860:**
+ * the rows lost one key, `last_seq` (#838's replay guard, gone with the second
+ * runner), and nothing else in them changed. If this test goes red, the
  * fold changed — fix `backlog.ts`/`read-model.ts`, never the snapshot.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
@@ -491,62 +490,6 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
       } finally {
         db.close()
       }
-    }
-  })
-
-  it('an event handed over twice, as a second runner would, leaves the row as one delivery does', async () => {
-    const db = openSqliteProjections(':memory:')
-    try {
-      const store = createSqliteProjectionStore(db)
-      await store.transact((ctx) => backlogProjection.create(ctx))
-      await store.transact((ctx) => backlogProjection.apply(events, ctx))
-      const rows = () => store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
-      const once = await rows()
-      const decided = events.filter((e) => e.streamId === backlogStream(PROJECT, acceptedKey))
-      await store.transact((ctx) => backlogProjection.apply(decided, ctx))
-      await store.transact((ctx) => backlogProjection.apply(decided, ctx))
-      expect(await rows()).toEqual(once)
-    } finally {
-      db.close()
-    }
-  })
-
-  it('a runner that read the open row before another folded the accept and proposal cannot move last_seq backwards', async () => {
-    const db = openSqliteProjections(':memory:')
-    try {
-      const store = createSqliteProjectionStore(db)
-      const decided = events.filter((e) => e.streamId === backlogStream(PROJECT, acceptedKey))
-      const rest = events.filter((e) => !decided.includes(e))
-      await store.transact((ctx) => backlogProjection.create(ctx))
-      await store.transact((ctx) => backlogProjection.apply(rest, ctx))
-      let interleaved = false
-      await store.transact(async (ctx) => {
-        const racing = {
-          ...ctx,
-          query: (async (sql: string, params?: unknown[]) => {
-            const rows = await ctx.query(sql, params)
-            if (!interleaved && sql.includes('select status, last_seq')) {
-              interleaved = true
-              // the other runner folds both events while this one holds the open row
-              await backlogProjection.apply(decided, ctx)
-            }
-            return rows
-          }) as typeof ctx.query,
-        }
-        await backlogProjection.apply([decided[0]!], racing)
-      })
-      expect(interleaved).toBe(true)
-      const read = () =>
-        store.transact((ctx) =>
-          ctx.query('select status, last_seq, proposed_ref from finding_backlog where key = $1', [acceptedKey]),
-        )
-      const [row] = await read()
-      expect(String(row!.last_seq)).toBe(String(decided[1]!.seq))
-      expect(row!.proposed_ref).not.toBeNull()
-      await store.transact((ctx) => backlogProjection.apply([decided[1]!], ctx))
-      expect(await read()).toEqual([row])
-    } finally {
-      db.close()
     }
   })
 

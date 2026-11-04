@@ -164,7 +164,23 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     cursor = last.seq
   }
 
+  /**
+   * The batches this follow has in flight. A nudge-triggered drain runs beside
+   * `start()` and `close()` and neither waits for it, so `stop()` stops taking
+   * new ones and waits for these: a stopped runner has committed everything it will.
+   */
+  let pending: { open: boolean; inflight: Set<Promise<void>> } | null = null
+
   async function follow(): Promise<void> {
+    const mine = { open: true, inflight: new Set<Promise<void>>() }
+    pending = mine
+    const guarded = (events: readonly Envelope[]): Promise<void> => {
+      if (!mine.open) return Promise.resolve()
+      const commit = commitBatch(events)
+      mine.inflight.add(commit)
+      return commit.finally(() => mine.inflight.delete(commit))
+    }
+
     // The store and the waker come off one log unless the caller named them,
     // and the log is reached for only if one of them is missing — so a runner
     // handed both still opens no client (`#157`).
@@ -182,7 +198,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       fromSeq,
       store,
       waker,
-      onBatch: commitBatch,
+      onBatch: guarded,
       batchSize: options.batchSize ?? 500,
       onError: (error, phase) => {
         if (phase === 'handler') failure = error
@@ -225,8 +241,12 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
 
     async stop() {
       const sub = subscription
+      const mine = pending
       subscription = null
+      pending = null
+      if (mine) mine.open = false
       await sub?.close()
+      if (mine) await Promise.allSettled(mine.inflight)
     },
 
     async rebuild() {

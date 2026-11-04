@@ -585,8 +585,10 @@ const liveRunners: Runners = {
     // Drop the table, reset the checkpoint, replay — which is what makes a
     // projection's shape free to change, a rebuild rather than a migration.
     // `rebuildProjection` refuses before any of that if the log predates
-    // #445's payload reset (#451).
-    return projection.rebuildProjection({
+    // #445's payload reset (#451). The conductor lock is taken first and for
+    // the whole replay (0100 §13): a rebuild is a writer, and the lock holder
+    // is the only one.
+    return projection.rebuildUnderLock({
       name: request.name,
       queries: log.queries,
       runnerFor: () => createProjectionRunner({ projection: chosen }),

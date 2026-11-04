@@ -188,16 +188,6 @@ describe('ticket_report', () => {
     expect(closedAfterLanding).toMatchObject({ outcome: 'closed' })
   })
 
-  it('does not add an event twice when a second follower replays it from an older cursor', async () => {
-    const t = makeStream(T)
-    const a = makeStream('pass-pin-a')
-    const events = [claim(t, 'pass-pin-a', 'bug', 0), started(a, 1), spent(a, work(1), 2)]
-    const once = await fold([events])
-    const twice = await fold([events, events.slice(1), events.slice(2)])
-    expect(twice).toEqual(once)
-    expect(parse(twice?.cost).Answering).toMatchObject({ reportedCents: 50, reportedRuns: 1 })
-  })
-
   it('D4: a claim with a null kind keeps the kind an earlier one named', async () => {
     const t = makeStream(T)
     const row = await fold([[claim(t, 'pass-pin-a', 'bug', 0), claim(t, 'pass-pin-b', null, 1)]])

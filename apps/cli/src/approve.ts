@@ -20,7 +20,7 @@ import { agentBranchOf, reduceTicket, ticketStream, waitWords } from '@lingtai/d
 import { hasGitHubAuth } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 
-import { withProjector } from './projector.ts'
+import { boundReal, type Bound, WAIT_MS } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface ApproveCommandOptions {
@@ -30,9 +30,9 @@ export interface ApproveCommandOptions {
   by?: string
 }
 
-/** How long `approve` waits for a conductor to land what it approved. */
-export const WAIT_MS = 60_000
 const POLL_MS = 1_000
+
+export { WAIT_MS, type Bound }
 
 export interface FollowWorld {
   /** `conductorLockHolder`: who conducts, null for nobody, a throw where the lock could not be asked. */
@@ -45,41 +45,6 @@ export interface FollowWorld {
   /** Settles `op` against `ms` and `signal`; injected so a test needs no real timer. */
   bound?: Bound
 }
-
-export type Bound = <T>(
-  op: Promise<T>,
-  ms: number,
-  signal?: AbortSignal,
-) => Promise<{ ok: true; value: T } | { ok: false; why: 'timeout' | 'abort' }>
-
-/** A read that never answers must not outlast the 60 seconds or Ctrl+C. */
-const boundReal: Bound = (op, ms, signal) =>
-  new Promise((resolve, reject) => {
-    let settled = false
-    const end = (r: Parameters<typeof resolve>[0]): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-      resolve(r)
-    }
-    const onAbort = (): void => end({ ok: false, why: 'abort' })
-    const timer = setTimeout(() => end({ ok: false, why: 'timeout' }), Math.max(0, ms))
-    // `op` is handled before anything can settle first: a rejection that arrives
-    // after a timeout or Ctrl+C is dropped here and never becomes unhandled.
-    op.then(
-      (value) => end({ ok: true, value }),
-      (err) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        reject(err)
-      },
-    )
-    if (signal?.aborted) return onAbort()
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
 
 export interface Followed {
   detail: string
@@ -185,7 +150,7 @@ const sleepFor = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener('abort', done, { once: true })
   })
 
-/** `progress` is where `withProjector`'s warnings go: stdout, or stderr under `--json`. */
+/** `progress` is where a command's side remarks go: stdout, or stderr under `--json`. */
 export async function approveVerdict(
   options: ApproveCommandOptions,
   progress: (line: string) => void,
@@ -216,10 +181,9 @@ export async function approveVerdict(
 
   const by = options.by ?? `human:${userInfo().username}`
 
-  // This is the command most likely to be run with the board open, and it moves
-  // a card off the lane the board exists for. So it follows the log while it
-  // works, like every other host that appends — see `withProjector`.
-  const approved = await withProjector(progress, async (): Promise<Answered> => {
+  // It holds no projector: the conductor that lands the approval is the board's
+  // only writer (0100 §13), and `followApproval` below says when none is up.
+  const grant = async (): Promise<Answered> => {
     // `approveRun`'s own line carries the sha and the actor; it is held back and
     // becomes the verdict's detail, so a success prints one verdict and not two.
     const said: string[] = []
@@ -258,7 +222,8 @@ export async function approveVerdict(
         extra: { continuesAt: result.continuesAt, ...(unscheduled === undefined ? {} : { unscheduled }) },
       },
     }
-  })
+  }
+  const approved = await grant()
 
   const { verdict } = approved
   if (verdict.outcome === 'refused') {

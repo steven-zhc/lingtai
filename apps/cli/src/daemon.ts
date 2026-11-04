@@ -43,10 +43,10 @@ import { pausedSentence } from './day-ceiling.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
+import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
 import { pauseCommand } from './pause.ts'
 import { PROJECTIONS } from './projection.ts'
-import { trackLiveSpend } from './projector.ts'
 import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
@@ -727,10 +727,9 @@ export async function daemonCommand(
  * the whole foreground group, so before §3 detached the agent, the signal that
  * began the shutdown killed the run it claimed to be waiting for.
  *
- * **The one place that does not hold a projector**, and deliberately: a
- * projector catches up to the head before it returns, so a pause issued against
- * a daemon that has been down would replay the backlog before pausing anything.
- * See `withProjector` for the rule and for this exception.
+ * **Holds no projector**, like every command but the lock holder (0100 §13):
+ * the daemon it addresses is the only writer, and an emergency control must not
+ * queue behind a fold.
  */
 export async function controlCommand(
   verb: 'pause' | 'resume' | 'shutdown',

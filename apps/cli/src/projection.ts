@@ -4,6 +4,13 @@
  * without importing that file, which calls `main()` on import (#435, the
  * same reason `addFlow` lives in `add.ts`).
  */
+import {
+  acquireDaemonLock,
+  type AcquireDaemonLockOptions,
+  createFileLocker,
+  type Locker,
+  type LockResult,
+} from '@lingtai/daemon'
 import { logPredatesHold } from '@lingtai/event-store'
 import type { LogQueries } from '@lingtai/event-store/queries'
 import {
@@ -92,5 +99,56 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
     return behind ? 1 : 0
   } finally {
     await runner.close()
+  }
+}
+
+/** Stands in for the real locker where `acquire` is replaced and never reads it. */
+const NO_LOCKER: Locker = {
+  tryLock: () => Promise.reject(new Error('no locker configured: acquire was replaced')),
+}
+
+export interface RebuildUnderLockOptions extends RebuildProjectionOptions {
+  /** Takes the conductor lock. A seam so a test needs no real lock file; when replaced, no real locker is built either (#273). */
+  acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>
+}
+
+/**
+ * `lingtai projection rebuild`'s body: `rebuildProjection` while holding the
+ * conductor lock, or a refusal that names who does (0100 §13).
+ *
+ * **One writer per projection, and a rebuild is a writer.** It drops the table,
+ * rewinds the checkpoint and replays, so a daemon folding beside it would
+ * race the replay. The lock is taken here, in the command's body, and **not
+ * inside `rebuildProjection`**: `rates.ts` calls that from the daemon and from
+ * `lingtai run`, which already hold the lock, and a second `tryLock` there
+ * would be refused every time (the price-triggered rebuild, #680).
+ *
+ * The lock is released in a `finally`, and a lock that cannot be asked about
+ * is a refusal that touches nothing.
+ */
+export async function rebuildUnderLock(options: RebuildUnderLockOptions): Promise<number> {
+  const error = options.error ?? ((line: string) => console.error(line))
+  let held: LockResult
+  try {
+    held = await (options.acquire ?? acquireDaemonLock)({
+      name: 'lingtai projection rebuild',
+      locker: options.acquire ? NO_LOCKER : createFileLocker(),
+    })
+  } catch (err) {
+    error(
+      `${symbol.fail()} could not take the conductor lock (${err instanceof Error ? err.message : String(err)}) — nothing was rebuilt; lingtai doctor says who holds it`,
+    )
+    return 1
+  }
+  if (!held.ok) {
+    error(
+      `${symbol.fail()} ${held.holder ?? 'another process'} holds the conductor lock and is the only writer of ${options.name} — lingtai shutdown "…" first (lingtai service shutdown where the supervisor keeps it), then rebuild`,
+    )
+    return 1
+  }
+  try {
+    return await rebuildProjection(options)
+  } finally {
+    await held.lock.release()
   }
 }

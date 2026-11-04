@@ -118,9 +118,9 @@ describe('backlog listing', () => {
     expect(renderBacklog(backlog({ entries: [], all: true }))).toEqual(['the backlog is empty'])
   })
 
-  it('keeps the line that says the catch-up failed', () => {
+  it('keeps the line that says the backlog may be behind', () => {
     const lines = renderBacklog(backlog({ behind: 'database is down', entries: [] }))
-    expect(lines[0]).toBe('the backlog could not catch up, and may be behind: database is down')
+    expect(lines[0]).toBe('the backlog may be behind: database is down')
   })
 
   it('--json carries every field, ISO dates, the title, and `behind` only when it is true', () => {
