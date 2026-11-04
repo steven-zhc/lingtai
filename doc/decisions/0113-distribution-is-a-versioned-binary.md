@@ -48,14 +48,14 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
    (0101 §1). Code cache and snapshot are off. Inside a SEA the bundle treats
    `process.execPath` as its own location, so `board/` is found beside the
    binary. The prompt and hook also live beside the binary, and the CLI reads
-   them from that version's directory before a pass.
+   them from that version's directory before an attempt.
 5. **Four platforms, each built and run on itself.** `macos-arm64`,
    `macos-x64`, `linux-x64`, `linux-arm64`, with Node 26, in
    `.github/workflows/release.yml`. Each job runs
    `apps/release/integration/build.test.ts` (bundle and binary both start the
    board and serve a page), builds the artifact, runs `dist/lingtai version` and
    checks it names its platform and, on a tag, the tag's version. Bun builds
-   the hook on each platform; the release test starts an empty pass from the
+   the hook on each platform; the release test starts an empty attempt from the
    bundle and installed binary to verify both runtime assets. No Windows.
 6. **macOS binaries are always signed ad hoc** with `codesign --sign -` and
    verified. The test asserts the signature with `codesign --verify`, and that a

@@ -59,7 +59,7 @@ using them in a terminal.
 
    **`init` and `add` end on a summary card**, after their questions, which
    are asked with nothing printed around them. The card is three groups —
-   *this machine*, *this project*, *each pass* — a blank line between, a
+   *this machine*, *this project*, *each attempt* — a blank line between, a
    lowercase `muted` label and a plain value per row, one fact a row (the trial
    build's result and time among them); then one line, `✓ ready`, with
    doctor's count and the recipe's path; then the numbered `NEXT` block, the

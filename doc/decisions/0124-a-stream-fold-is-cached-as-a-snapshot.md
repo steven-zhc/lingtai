@@ -105,7 +105,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
 
 7. **The write cannot go backwards.** A snapshot row is keyed by
    `(stream, reduce name, reduce version)` and replaced only by one at a higher stream
-   version, in one conditional statement. Two passes (0122), the daemon and the
+   version, in one conditional statement. Two attempts (0122), the daemon and the
    board writing at once leave the newest; a slow writer that finishes late
    changes nothing.
 

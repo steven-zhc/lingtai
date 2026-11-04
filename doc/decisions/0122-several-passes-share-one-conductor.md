@@ -1,24 +1,24 @@
-# 0122 — Several passes share one conductor: slots per project, who runs together, one landing at a time, what a drain waits for
+# 0122 — Several attempts, one conductor: slots per project, who runs together, one landing at a time, what a drain waits for
 
 **Status** accepted · 2026-10-25
 
-One conductor may run several passes at once. How many is `runtime.concurrency`
+One conductor may run several attempts at once. How many is `runtime.concurrency`
 in a project's recipe, default 1. Tickets that cannot safely run together are
 never started together, landings onto one base are taken one at a time, a drain
-waits for every pass in flight, and a daily dollar ceiling stops the taking of
-new work without ever killing a pass that is running.
+waits for every attempt in flight, and a daily dollar ceiling stops the taking of
+new work without ever killing an attempt that is running.
 
-**Words.** A **pass** is one ticket's ten steps ([0103](0103-a-pass-is-ten-fixed-steps.md)).
-A **look** is one iteration of the work loop over every project
-(`pump` → `drain` → `options.pass` in `packages/daemon/src/work-loop.ts`); the
-code's own comments call it a pass, and this ADR does not. A **slot** is one
-place a pass may run: the pair (project, number in flight).
+**Words.** An **attempt** is one ticket's ten steps ([0103](0103-a-pass-is-ten-fixed-steps.md)).
+A **look** is one turn of the conductor's loop over every project
+(`pump` → `drain` → `options.pass` in `packages/daemon/src/work-loop.ts`, the property
+that calls it). A **slot** is one
+place an attempt may run: the pair (project, number in flight).
 
 ## Context
 
-Everything above the lock was written for one pass at a time.
-`work-loop.ts` says so in *One pass at a time*: running a second concurrently
-"would race for the same claim". `apps/cli/src/conduct.ts` hands every project
+Everything above the lock was written for one attempt at a time:
+running a second concurrently would race for the same claim.
+`apps/cli/src/conduct.ts` hands every project
 `max: options.max ?? 1`, `runQueue` in `packages/conductor/src/schedule.ts`
 awaits each `runOnce` in turn, and the beacon names one `currentRunId`
 ([0102](0102-one-conductor-holds-the-lock.md) §2). The operator's decisions in
@@ -37,8 +37,8 @@ and the dollar ceiling lands before any N > 1.
    restart, paste*, [the-plugin-body](../design/the-plugin-body.md)); Lingtai's own
    `concurrency: 2` is an operator change after that restart.
 
-   **Looks stay one at a time. A look starts passes into free slots and does not
-   wait for them. A pass finishing triggers another look** (completion events
+   **Looks stay one at a time. A look starts attempts into free slots and does not
+   wait for them. An attempt finishing triggers another look** (completion events
    already wake the loop, `work-loop.ts`). Serial looks are what keep the claim
    race closed; the claim's expected-version append
    ([0109](0109-the-core-takes-a-ticket.md) §5) is the backstop. This replaces the
@@ -50,7 +50,7 @@ and the dollar ceiling lands before any N > 1.
 2. **Who runs together.** Order is `selectRunnable`'s (`packages/conductor/src/queue.ts`,
    called from `schedule.ts`) and does not change: kind, then issue number. A look
    fills free slots by walking that order and **skipping**, not stopping at, any
-   candidate that collides with a pass in flight in the same project: a higher
+   candidate that collides with an attempt in flight in the same project: a higher
    ticket that collides waits for the collision to clear and a lower one that does
    not collide takes the slot.
    - **A blocked-by chain never runs together.** This is already so: a ticket with
@@ -65,7 +65,7 @@ and the dollar ceiling lands before any N > 1.
      with nothing**: everything else runs, and no agent is paid to predict scope.
      What this lets through is caught by the re-review on a moved base (§3, #593)
      and by conflict waits (#589).
-   - **The in-memory set of passes in flight is subtracted first.** A ticket
+   - **The in-memory set of attempts in flight is subtracted first.** A ticket
      claimed a moment ago may still read `queued` in `task_view` on the next look,
      because the projection lags the claim. If both miss, the claim's version
      check refuses the second.
@@ -86,22 +86,22 @@ and the dollar ceiling lands before any N > 1.
    overlap, goes back to `build` and `review` (#593). The lost-push retry already
    re-runs all of it.
 
-4. **A drain waits for every pass in flight.** `stop()` and `busy` in
-   `work-loop.ts` await every pass's promise, not one retained promise, and the
+4. **A drain waits for every attempt in flight.** `stop()` and `busy` in
+   `work-loop.ts` await every attempt's promise, not one retained promise, and the
    beacon names every run in flight ([0102](0102-one-conductor-holds-the-lock.md)
    §2, §8). `apps/cli/src/restart.ts` needs no new mechanism: `waitForTheLock`
    already waits for the daemon to exit, and `facts.inFlight()` already returns a
-   list. Its sentence about what a drain may spend stays one pass's ceiling
-   (`WALL_LIMIT`), because the passes run side by side and none starts after the
+   list. Its sentence about what a drain may spend stays one attempt's ceiling
+   (`WALL_LIMIT`), because the attempts run side by side and none starts after the
    drain is asked for.
 
-5. **The daily dollar ceiling pauses taking new work and never stops a pass in
+5. **The daily dollar ceiling pauses taking new work and never stops an attempt in
    flight.** It is one figure in `~/.lingtai/config.yml`
    ([0117](0117-configuration-is-config-yml-and-the-environment.md), so it can
    also be exported as a `LINGTAI_` variable) and it stays installation-wide,
    because one account pays. **While none is set, the installation runs one
-   pass in all**, whatever each project's `concurrency` says: a look starts a
-   pass only when nothing is in flight in any project, so two projects with a
+   attempt in all**, whatever each project's `concurrency` says: a look starts an
+   attempt only when nothing is in flight in any project, so two projects with a
    free slot each do not run together. `lingtai doctor` says so: no N > 1 runs
    unbounded.
    - The day is the machine's local calendar day. Spend is the sum of today's
@@ -123,41 +123,41 @@ and the dollar ceiling lands before any N > 1.
      gains optional fields).
    - A ceiling whose spend cannot be trusted to be current is not checked, and
      no work is taken.
-   - **The overshoot is bounded only as far as the recipe bounds a pass.** The
-     figure is `passCeiling`'s (`packages/conductor/src/ceiling.ts`) times the
+   - **The overshoot is bounded only as far as the recipe bounds an attempt.** The
+     figure is `attemptCeiling`'s (`packages/conductor/src/ceiling.ts`) times the
      slots in flight, and that product counts `implement`'s runs alone: the cold
      reviewer's and a judge's calls are outside it, and `runtime.limits.usd` is
      optional. So the daily ceiling is a bound on when new work stops being
-     taken, not on the day's total; what a pass spends after the ceiling is
+     taken, not on the day's total; what an attempt spends after the ceiling is
      reached is whatever its own limits allow, and **Lingtai states no figure for
-     it**: `passCeiling` is `implement`'s alone, so slots × that figure is not a
+     it**: `attemptCeiling` is `implement`'s alone, so slots × that figure is not a
      bound. An operator who wants one adds up `runtime.limits.usd` over every
      step that dispatches (the implementation rounds, the cold reviewer, a judge)
-     for one pass, and multiplies by the slots in flight; a step with no
+     for one attempt, and multiplies by the slots in flight; a step with no
      `runtime.limits.usd` makes the sum unbounded. That is the price of never
-     killing a pass.
+     killing an attempt.
 
-6. **Per pass, and shared.**
+6. **Per attempt, and shared.**
 
-   | Resource | Where | Per pass because, or shared and safe because |
+   | Resource | Where | Per attempt because, or shared and safe because |
    | --- | --- | --- |
-   | Worktree | `~/.lingtai/worktrees/<project>/<runId>` (`run-log.ts`) | Per pass: named by `runId`. |
-   | Branch | `agent/<issue>` | Per pass: one issue is one pass. |
-   | Run log | `runLogPath` (`run-log.ts`) | Per pass: `<runId>.log`. `findOrphanLogs` reads only `*.log`, so it leaves the `runs/<runId>/` directories alone. |
-   | Hook socket | `socketPathFor` (`packages/agent/src/hook-config.ts`) | Per pass: `tmpdir()/lingtai/<sha256(home, runId)[:12]>.sock`. The parent directory is shared and safe, since each name is per run and a socket is removed only by the run that made it. |
-   | Agent settings | `settingsPathFor`, `<home>/runs/<runId>/settings.json` | Per pass: under the run's own directory, as its labelled siblings are. |
-   | Codex output schema | `tmpdir()/lingtai-output-schema-<runId>.json` (`codex.ts`) | Per pass: named by `runId`. |
+   | Worktree | `~/.lingtai/worktrees/<project>/<runId>` (`run-log.ts`) | Per attempt: named by `runId`. |
+   | Branch | `agent/<issue>` | Per attempt: one issue is one attempt. |
+   | Run log | `runLogPath` (`run-log.ts`) | Per attempt: `<runId>.log`. `findOrphanLogs` reads only `*.log`, so it leaves the `runs/<runId>/` directories alone. |
+   | Hook socket | `socketPathFor` (`packages/agent/src/hook-config.ts`) | Per attempt: `tmpdir()/lingtai/<sha256(home, runId)[:12]>.sock`. The parent directory is shared and safe, since each name is per run and a socket is removed only by the run that made it. |
+   | Agent settings | `settingsPathFor`, `<home>/runs/<runId>/settings.json` | Per attempt: under the run's own directory, as its labelled siblings are. |
+   | Codex output schema | `tmpdir()/lingtai-output-schema-<runId>.json` (`codex.ts`) | Per attempt: named by `runId`. |
    | Scratch directories | `sea-build.ts`, `triage-checkout.ts`, `install.ts`, `ticket.ts`, `apps/release/src/binary.ts` | Per call: each is a `mkdtemp`. |
    | Test lock directory | `setup()` in `teardown.ts`, a `mkdtemp` | Per vitest run. The unit project has no `globalSetup`, so a unit test that took a lock would throw rather than take the operator's. |
-   | Test store | a SQLite file in a directory made per vitest run by `packages/event-store/test-support/teardown.ts`, only while no `LINGTAI_TEST_DATABASE_URL` is set | Per pass. The gate's `pnpm test` gets `PATH, HOME, TMPDIR, LANG, USER, LOGNAME` plus the project's env file, so the URL reaches a pass only if the operator wrote it there, which is the case below. |
-   | Ports | every test that binds uses `listen(0, …)` | No port is assigned to a pass. `17820` and `18080` in `apps/cli/unit/board*.test.ts` are values handed to a fake world that starts no server. The gap is `freePort()` then bind later, in `apps/release/integration/build.test.ts` (spawn), `apps/cli/integration/board.test.ts` (a delayed `serveBoard`) and `apps/cli/integration/telegram.test.ts` (`botApi(port)` after the conductor has started): the port is free when probed and could be taken before the bind. Two runs drawing the same ephemeral port is very unlikely, and it is integration-only. Held by `packages/event-store/unit/no-fixed-port.test.ts`. |
-   | `node_modules`, `.vite`, `.next` | inside the worktree | Per pass: `node_modules` is a real directory, not a link. |
+   | Test store | a SQLite file in a directory made per vitest run by `packages/event-store/test-support/teardown.ts`, only while no `LINGTAI_TEST_DATABASE_URL` is set | Per attempt. The gate's `pnpm test` gets `PATH, HOME, TMPDIR, LANG, USER, LOGNAME` plus the project's env file, so the URL reaches an attempt only if the operator wrote it there, which is the case below. |
+   | Ports | every test that binds uses `listen(0, …)` | No port is assigned to an attempt. `17820` and `18080` in `apps/cli/unit/board*.test.ts` are values handed to a fake world that starts no server. The gap is `freePort()` then bind later, in `apps/release/integration/build.test.ts` (spawn), `apps/cli/integration/board.test.ts` (a delayed `serveBoard`) and `apps/cli/integration/telegram.test.ts` (`botApi(port)` after the conductor has started): the port is free when probed and could be taken before the bind. Two runs drawing the same ephemeral port is very unlikely, and it is integration-only. Held by `packages/event-store/unit/no-fixed-port.test.ts`. |
+   | `node_modules`, `.vite`, `.next` | inside the worktree | Per attempt: `node_modules` is a real directory, not a link. |
    | pnpm content store | under the operator's `HOME` | Shared. Concurrent `pnpm install` is safe by pnpm's own atomic writes, which is pnpm's claim and not proven here; it held with two `pnpm test` runs in two checkouts at once (#641). |
 
-   **With `LINGTAI_TEST_DATABASE_URL` set the test store is shared, not per pass:**
-   `setup()` makes no directory for it, every pass's suite writes the one Postgres
+   **With `LINGTAI_TEST_DATABASE_URL` set the test store is shared, not per attempt:**
+   `setup()` makes no directory for it, every attempt's suite writes the one Postgres
    database, and the first suite's teardown deletes every `esctest*` event and
-   control stream in it, including a still-running pass's. At N > 1 a pass
+   control stream in it, including a still-running attempt's. At N > 1 an attempt
    therefore runs its tests with no URL set, or the URL names a database of its
    own.
 
@@ -182,17 +182,17 @@ and the dollar ceiling lands before any N > 1.
    | The daily ceiling | §5 | Stays installation-wide | Midnight, or a higher figure |
    | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | `lingtai resume` |
    | The lock | [0102](0102-one-conductor-holds-the-lock.md) §4 | Stays installation-wide | — |
-   | *One pass at a time* | `work-loop.ts` | Per project, as slots (§1) | — |
+   | The loop runs one attempt at a time | `work-loop.ts` | Per project, as slots (§1) | — |
    | A refused recipe | `stage: "recipe"` in `conduct.ts` | Already per project | — |
    | A missing environment | `env` in `schedule.ts` | Already per project | — |
-   | No GitHub App | `projectsForPass` in `apps/cli/src/conduct.ts` (#355) | Stays installation-wide: one App per machine ([0114](0114-a-github-app-not-a-token.md)) | — |
+   | No GitHub App | `projectsForTurn` in `apps/cli/src/conduct.ts` (#355) | Stays installation-wide: one App per machine ([0114](0114-a-github-app-not-a-token.md)) | — |
    | A red base | None exists | If one is added, it is per project | — |
 
 ## Consequences
 
 - Both the beacon and the work loop hold a set of runs where they held one.
   `lingtai status`, `doctor` and the board's bar read the set.
-- Until a ceiling is configured nothing changes for anyone: one pass in the
+- Until a ceiling is configured nothing changes for anyone: one attempt in the
   whole installation, as today.
 - Two tickets that collide in a way a `Fix` row did not predict both run, and the
   second to land pays a re-review on the new base. That cost is chosen over paying

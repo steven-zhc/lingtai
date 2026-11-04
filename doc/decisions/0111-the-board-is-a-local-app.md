@@ -85,7 +85,7 @@ budget.
    is mode `0600` in a `0700` directory and stops at `RUN_LOG_MAX_BYTES` (8 MB),
    saying in itself where it stopped. Writing never gates a tool call, and a
    failed write never fails a run.
-10. **The log is a composed trace of every agent in the pass.** The implementer's
+10. **The log is a composed trace of every agent in the attempt.** The implementer's
     tool calls come from the hook socket with their verdicts, and its prose from
     the `stream-json` output. Each step action writes a start line and an end line
     under `<step>:<action>`; an agent action's own output and tool calls (taken
