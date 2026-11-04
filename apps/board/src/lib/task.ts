@@ -12,6 +12,7 @@ import {
   splitProgressOf,
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
+  isPassStream,
   parseTicketStream,
   triageFactsOf,
   waitWords,
@@ -1294,17 +1295,26 @@ export function totalsFact(totals: Totals): string | null {
 export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<string, number>): HistoryGroup[] {
   // Insertion order is first-seq order, which is the order the groups read in.
   const groups = new Map<string, HistoryGroup>()
-  // A run stream's own subject, read off its `RunStarted` — the one event on
-  // that stream carrying a ticket id, and always the first (#505). Without
-  // it, a `PassRouted` on that same stream has nothing to open its sentence on.
+  // A run stream's own subject, which the run's reducer reads off its
+  // `RunStarted` (#505). Without it, a `PassRouted` on that same stream has
+  // nothing to open its sentence on. Only pass streams are run streams: the
+  // ticket's own stream never reaches `reduceRun`.
+  const sorted = [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
+  const byRun = new Map<string, Envelope[]>()
+  for (const e of sorted) {
+    if (!isPassStream(e.streamId)) continue
+    const own = byRun.get(e.streamId)
+    if (own) own.push(e)
+    else byRun.set(e.streamId, [e])
+  }
   const branchByRun = new Map<string, string>()
+  for (const [streamId, own] of byRun) {
+    const { ticketId } = reduceRun(own)
+    const parsed = typeof ticketId === 'string' ? parseTicketStream(ticketId) : null
+    if (parsed) branchByRun.set(streamId, agentBranchOf(parsed.issue))
+  }
 
-  for (const e of [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))) {
-    if (e.type === 'RunStarted') {
-      const ticketId = (e.data as { ticketId?: unknown } | null)?.ticketId
-      const parsed = typeof ticketId === 'string' ? parseTicketStream(ticketId) : null
-      if (parsed) branchByRun.set(e.streamId, agentBranchOf(parsed.issue))
-    }
+  for (const e of sorted) {
     let group = groups.get(e.streamId)
     if (!group) {
       const attempt = attempts.get(e.streamId) ?? null

@@ -476,7 +476,7 @@ describe('progressOf: now', () => {
     e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }, { at })
   const nowOf = (events: readonly Envelope[]) => progressOf(reduceRun(events))?.now
 
-  it('the lane wait ends with merge', () => {
+  it('D10: the lane wait ends with merge', () => {
     const events = lateHistories.run.laneWaited
     const before = events.slice(0, events.length - 1)
     expect(nowOf(before)?.label).toBe('waiting for the merge lane')

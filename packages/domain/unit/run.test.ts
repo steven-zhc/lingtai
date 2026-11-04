@@ -419,7 +419,7 @@ describe('RunState instants and the recorded plan (#827)', () => {
     expect(state.openedAt).toEqual(events[0]!.at)
   })
 
-  it('laneWaitedAt is the MergeLaneWaited at', () => {
+  it('D10: laneWaitedAt is the MergeLaneWaited at', () => {
     const events = lateHistories.run.laneWaited
     expect(reduceRun(events).laneWaitedAt).toEqual(events.find((e) => e.type === 'MergeLaneWaited')!.at)
   })
@@ -431,7 +431,7 @@ describe('RunState instants and the recorded plan (#827)', () => {
     expect(state.lifecycle.status).not.toBe('awaiting-approval')
   })
 
-  it('resolved holds the hash and the ten steps', () => {
+  it('D10: resolved holds the hash and the ten steps', () => {
     const state = reduceRun(lateHistories.run.planResolved)
     expect(state.resolved?.configHash).toBe('cfg-plan')
     expect(state.resolved?.steps).toHaveLength(10)
