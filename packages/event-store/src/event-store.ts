@@ -349,10 +349,18 @@ export interface EventStore {
   read(streamId: string, fromVersion?: number): Promise<Envelope[]>
 
   /**
+   * The version of the stream's last event, or 0 for an empty or unknown
+   * stream. It reads no events, and it **rejects as `read` would** — no caller
+   * may turn a failed read into 0. This is where an append's `expectedVersion`
+   * comes from (#796, #872).
+   */
+  head(streamId: string): Promise<number>
+
+  /**
    * One stream's events of `types` only, in version order, from `fromVersion`
    * (inclusive, default 1). Versions are the events' own, so the list has gaps
    * where the other types were — **never take a stream's version from its
-   * length**; an append's `expectedVersion` comes from the full `read` (#796).
+   * length**; an append's `expectedVersion` comes from `head` (#796).
    * An empty `types` returns nothing without asking the database.
    */
   readTypes(streamId: string, types: readonly EventType[], fromVersion?: number): Promise<Envelope[]>
@@ -404,6 +412,15 @@ export function createEventStore(client: Db): EventStore {
         .all()
       return rows.map((r) => toEnvelope(r as EventRow))
     },
+
+    head: (streamId) =>
+      Promise.resolve(
+        client.orm.public.Event.where({ streamId })
+          .select('version')
+          .orderBy((e) => e.version.desc())
+          .limit(1)
+          .all(),
+      ).then((rows) => Number(rows[0]?.version ?? 0)),
 
     async readTypes(streamId, types, fromVersion = 1) {
       if (types.length === 0) return []

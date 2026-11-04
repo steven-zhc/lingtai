@@ -198,12 +198,12 @@ function sayOnce(kind: 'latest' | 'decode', e: unknown): void {
  * "somebody told the daemon before me" and "somebody is telling me".
  */
 export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  return (await store.read(CONTROL_STREAM)).length
+  return store.head(CONTROL_STREAM)
 }
 
 /** Appends one event and returns the version it landed at. */
 async function append(type: string, data: unknown, store: EventStore, at?: number): Promise<number> {
-  const expected = at ?? (await store.read(CONTROL_STREAM)).length
+  const expected = at ?? (await store.head(CONTROL_STREAM))
   await store.append(CONTROL_STREAM, expected, [
     { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
   ])
@@ -321,7 +321,7 @@ export async function recordStart(
   // a start depends on what else landed, so a `RunRequested` between the read
   // and the append is a reason to read again, not a start with no record.
   for (let attempt = 0; ; attempt++) {
-    const at = (await store.read(CONTROL_STREAM)).length
+    const at = await store.head(CONTROL_STREAM)
     try {
       await append(
         'ConductorStarted',
@@ -359,7 +359,7 @@ export interface RecordedStart {
  * the lock records nothing and exits 0.
  */
 export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
-  const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === 'ConductorStarted' && e.version > version)
+  const found = (await store.readTypes(CONTROL_STREAM, ['ConductorStarted'], version + 1))[0]
   if (!found) return null
   const d = (found.data ?? {}) as Record<string, unknown>
   return {

@@ -525,8 +525,8 @@ export async function askDiscussion(input: {
     if (!input.question.trim()) return { ok: false, detail: 'a question needs a question' }
     const chatId = input.chatId ?? `chat-${randomUUID()}`
     const by = actor()
-    const events = await eventStore.read(CONTROL_STREAM)
-    await eventStore.append(CONTROL_STREAM, events.length, [
+    const at = await eventStore.head(CONTROL_STREAM)
+    await eventStore.append(CONTROL_STREAM, at, [
       {
         type: 'DiscussionRequested',
         actor: by,

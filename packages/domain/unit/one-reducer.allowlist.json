@@ -1,19 +1,11 @@
 [
   {
-    "file": "apps/board/src/app/api/webhook/route.ts",
-    "function": "POST",
-    "type": "QueueChanged",
-    "count": 1,
-    "class": "select",
-    "reason": "Idempotency on the queue stream's delivery id: has this delivery already been appended (plan \u00a71.3)."
-  },
-  {
     "file": "apps/board/src/lib/markdown.ts",
     "function": "sourceOfPayloadDocument",
     "type": "RunPrompted",
     "count": 1,
     "class": "reaction",
-    "reason": "Chooses how one field of one event is rendered, and keeps no state (plan \u00a71.3)."
+    "reason": "Chooses how one field of one event is rendered, and keeps no state (plan §1.3)."
   },
   {
     "file": "apps/cli/src/day-ceiling.ts",
@@ -21,7 +13,7 @@
     "type": "RunSpent",
     "count": 1,
     "class": "select",
-    "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan \u00a71.6)."
+    "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan §1.6)."
   },
   {
     "file": "apps/cli/src/discuss.ts",
@@ -29,7 +21,7 @@
     "type": "DiscussionRequested",
     "count": 1,
     "class": "reaction",
-    "reason": "A trigger: it queues the answering loop on that one event (plan \u00a71.9)."
+    "reason": "A trigger: it queues the answering loop on that one event (plan §1.9)."
   },
   {
     "file": "apps/cli/src/triage.ts",
@@ -37,7 +29,7 @@
     "type": "WaitStarted",
     "count": 1,
     "class": "reaction",
-    "reason": "A trigger: it hands a new wait to triage and keeps no state (plan \u00a71.9)."
+    "reason": "A trigger: it hands a new wait to triage and keeps no state (plan §1.9)."
   },
   {
     "file": "apps/cli/src/triage.ts",
@@ -45,7 +37,7 @@
     "type": "RunSpent",
     "count": 1,
     "class": "select",
-    "reason": "Idempotency: whether this attempt's spend has already landed in the events appended since it read the stream (plan \u00a71.9)."
+    "reason": "Idempotency: whether this attempt's spend has already landed in the events appended since it read the stream (plan §1.9)."
   },
   {
     "file": "apps/cli/src/triage.ts",
@@ -53,7 +45,7 @@
     "type": "TriageStarted",
     "count": 1,
     "class": "select",
-    "reason": "Race detection over the events appended since this attempt read the stream (plan \u00a71.6)."
+    "reason": "Race detection over the events appended since this attempt read the stream (plan §1.6)."
   },
   {
     "file": "packages/conductor/src/base-check.ts",
@@ -61,7 +53,7 @@
     "type": "BaseChecked",
     "count": 1,
     "class": "select",
-    "reason": "A lookup of the latest base check; one event type, nothing reduced (plan \u00a71.9)."
+    "reason": "A lookup of the latest base check; one event type, nothing reduced (plan §1.9)."
   },
   {
     "file": "packages/conductor/src/conduct.ts",
@@ -69,7 +61,7 @@
     "type": "RunSpent",
     "count": 1,
     "class": "reaction",
-    "reason": "Sums the pass's own spend in memory as it is appended, and keeps nothing after the pass (plan \u00a71.5)."
+    "reason": "Sums the pass's own spend in memory as it is appended, and keeps nothing after the pass (plan §1.5)."
   },
   {
     "file": "packages/conductor/src/create-app.ts",
@@ -77,7 +69,7 @@
     "type": "GitHubAppCreated",
     "count": 1,
     "class": "select",
-    "reason": "The latest GitHubAppCreated on a stream that holds only that type (plan \u00a71.5)."
+    "reason": "The latest GitHubAppCreated on a stream that holds only that type (plan §1.5)."
   },
   {
     "file": "packages/conductor/src/end-step.ts",
@@ -85,7 +77,7 @@
     "type": "EndActionsResolved",
     "count": 1,
     "class": "select",
-    "reason": "Idempotency: has this outcome's plan already been appended (plan \u00a71.5)."
+    "reason": "Idempotency: has this outcome's plan already been appended (plan §1.5)."
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
@@ -93,7 +85,7 @@
     "type": "SplitStarted",
     "count": 1,
     "class": "select",
-    "reason": "The first SplitStarted for a wait, which differs from splitProgressOf's last on purpose (plan \u00a71.5)."
+    "reason": "The first SplitStarted for a wait, which differs from splitProgressOf's last on purpose (plan §1.5)."
   },
   {
     "file": "packages/conductor/src/tell.ts",
@@ -102,14 +94,6 @@
     "count": 1,
     "class": "reaction",
     "reason": "Reacts to the plan just appended in options.appended, and reduces no stream."
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "function": "startAfter",
-    "type": "ConductorStarted",
-    "count": 1,
-    "class": "select",
-    "reason": "A watermark query: the first ConductorStarted after a version (plan \u00a71.7)."
   },
   {
     "file": "packages/daemon/src/converge.ts",
@@ -125,7 +109,7 @@
     "type": "DiscussionRequested",
     "count": 1,
     "class": "reaction",
-    "reason": "A trigger on one event as it arrives (plan \u00a71.7)."
+    "reason": "A trigger on one event as it arrives (plan §1.7)."
   },
   {
     "file": "packages/daemon/src/work-loop.ts",
@@ -133,7 +117,7 @@
     "type": "WaitStarted",
     "count": 1,
     "class": "reaction",
-    "reason": "A trigger on one event as it arrives (plan \u00a71.7)."
+    "reason": "A trigger on one event as it arrives (plan §1.7)."
   },
   {
     "file": "packages/daemon/src/work-loop.ts",
@@ -141,7 +125,7 @@
     "type": "PluginFailed",
     "count": 1,
     "class": "reaction",
-    "reason": "A guard on one event as it is recorded, so a failure of the recorder does not record itself (plan \u00a71.7)."
+    "reason": "A guard on one event as it is recorded, so a failure of the recorder does not record itself (plan §1.7)."
   },
   {
     "file": "packages/extension/src/index.ts",
@@ -149,7 +133,7 @@
     "type": "IntegrationRefused",
     "count": 1,
     "class": "reaction",
-    "reason": "Renders one event as a notification (plan \u00a71.8)."
+    "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
     "file": "packages/extension/src/index.ts",
@@ -157,7 +141,7 @@
     "type": "RunAwaitingInput",
     "count": 1,
     "class": "reaction",
-    "reason": "Renders one event as a notification (plan \u00a71.8)."
+    "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
     "file": "packages/extension/src/index.ts",
@@ -165,7 +149,7 @@
     "type": "RunFailed",
     "count": 1,
     "class": "reaction",
-    "reason": "Renders one event as a notification (plan \u00a71.8)."
+    "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
     "file": "packages/extension/src/index.ts",
@@ -173,7 +157,7 @@
     "type": "TicketLanded",
     "count": 1,
     "class": "reaction",
-    "reason": "Renders one event as a notification (plan \u00a71.8)."
+    "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
     "file": "packages/extension/src/index.ts",
@@ -181,7 +165,7 @@
     "type": "WaitStarted",
     "count": 1,
     "class": "reaction",
-    "reason": "Renders one event as a notification (plan \u00a71.8)."
+    "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
     "file": "packages/projector/src/backlog.ts",
@@ -205,7 +189,7 @@
     "type": "RunSpent",
     "count": 1,
     "class": "join",
-    "reason": "One spend row per event, with an estimate that is a pure function of the payload and the rate snapshot (0110 \u00a75)."
+    "reason": "One spend row per event, with an estimate that is a pure function of the payload and the rate snapshot (0110 §5)."
   },
   {
     "file": "packages/projector/src/spend.ts",
@@ -213,7 +197,7 @@
     "type": "RunStarted",
     "count": 1,
     "class": "join",
-    "reason": "The run-to-ticket link, spend's own copy: a projection never reads another's table (0123 \u00a76)."
+    "reason": "The run-to-ticket link, spend's own copy: a projection never reads another's table (0123 §6)."
   },
   {
     "file": "packages/projector/src/spend.ts",
@@ -301,7 +285,7 @@
     "type": "RunStarted",
     "count": 1,
     "class": "join",
-    "reason": "The run-to-ticket link, its own copy because a projection never reads another's table (0123 \u00a76)."
+    "reason": "The run-to-ticket link, its own copy because a projection never reads another's table (0123 §6)."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -317,7 +301,7 @@
     "type": "TicketClaimed",
     "count": 1,
     "class": "join",
-    "reason": "Writes the run link and opens a machine-time interval, the report's cross-stream index (0123 \u00a72)."
+    "reason": "Writes the run link and opens a machine-time interval, the report's cross-stream index (0123 §2)."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -325,7 +309,7 @@
     "type": "TicketClosed",
     "count": 1,
     "class": "join",
-    "reason": "Closes the open intervals; which events end an interval is 0123 \u00a72's rule and exists only here."
+    "reason": "Closes the open intervals; which events end an interval is 0123 §2's rule and exists only here."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -333,7 +317,7 @@
     "type": "TicketContinued",
     "count": 1,
     "class": "join",
-    "reason": "Writes the run link and opens a machine-time interval, as TicketClaimed does (0123 \u00a72)."
+    "reason": "Writes the run link and opens a machine-time interval, as TicketClaimed does (0123 §2)."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -341,7 +325,7 @@
     "type": "TicketLanded",
     "count": 1,
     "class": "join",
-    "reason": "Closes the open intervals; which events end an interval is 0123 \u00a72's rule and exists only here."
+    "reason": "Closes the open intervals; which events end an interval is 0123 §2's rule and exists only here."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -349,7 +333,7 @@
     "type": "TicketReleased",
     "count": 1,
     "class": "join",
-    "reason": "Closes the open intervals; which events end an interval is 0123 \u00a72's rule and exists only here."
+    "reason": "Closes the open intervals; which events end an interval is 0123 §2's rule and exists only here."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -357,6 +341,6 @@
     "type": "WaitStarted",
     "count": 1,
     "class": "join",
-    "reason": "Closes the open intervals; which events end an interval is 0123 \u00a72's rule and exists only here."
+    "reason": "Closes the open intervals; which events end an interval is 0123 §2's rule and exists only here."
   }
 ]

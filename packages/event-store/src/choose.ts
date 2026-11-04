@@ -146,7 +146,7 @@ async function open(): Promise<Opened> {
  * `store: EventStore = eventStore`, evaluated when the function is called.
  *
  * Every method forwards, which is what makes this honest rather than clever:
- * each one is already `async`, so awaiting the open costs a caller nothing it
+ * every method returns a promise, so awaiting the open costs a caller nothing it
  * was not already awaiting, and the refusal arrives as that call's rejection
  * rather than as a module that would not load.
  */
@@ -154,6 +154,7 @@ export function deferredEventStore(resolve: () => Promise<EventStore>): EventSto
   return {
     append: async (streamId, expectedVersion, events) => (await resolve()).append(streamId, expectedVersion, events),
     read: async (streamId, fromVersion) => (await resolve()).read(streamId, fromVersion),
+    head: (streamId) => resolve().then((s) => s.head(streamId)),
     readTypes: async (streamId, types, fromVersion) => (await resolve()).readTypes(streamId, types, fromVersion),
     readAll: async (fromSeq, limit) => (await resolve()).readAll(fromSeq, limit),
   }

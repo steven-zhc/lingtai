@@ -219,6 +219,10 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
         .map((r) => decodeRow(r, r.at))
     },
 
+    async head(streamId) {
+      return log.reduce((m, e) => (e.streamId === streamId && e.version > m ? e.version : m), 0)
+    },
+
     async readTypes(streamId, types, fromVersion = 1) {
       return log
         .filter((e) => e.streamId === streamId && e.version >= fromVersion && types.includes(e.type as EventType))
