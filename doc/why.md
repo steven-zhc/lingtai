@@ -88,7 +88,7 @@ never where Lingtai keeps what it did.
 
 ## The loop
 
-A pass is ten steps in a fixed order, and what runs at each is the recipe's.
+An attempt is ten steps in a fixed order, and what runs at each is the recipe's.
 [`the-attempt.html`](the-attempt.html) draws them and says what each word means.
 Several passes may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
 
@@ -110,7 +110,7 @@ implements them, and a host wires the two together.
 
 | Decides · no I/O of its own | Touches the world · one thing each |
 |---|---|
-| **`conductor`** the order of one pass, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
+| **`conductor`** the order of one attempt, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
 | **`actions`** what runs at a point, and what its verdict means | **`projector`** the reducer, and the checkpoint in the same transaction |
 | **`agent-env`** what the agent's environment holds | **`github`** the App, the token, issues and labels |
 | **`recipe`** what the managed repository asked for | **`repo`** git: the mirror, the worktree, the merge lane |

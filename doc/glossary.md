@@ -19,8 +19,8 @@ disagree, the code is right and this is corrected.
   scheduled by `requestContinuation` in
   `packages/conductor/src/resolve-wait.ts`). The machine's fix round is not
   one: it stays inside the same `runPass` loop. Neither move in the right
-  column is one; each starts a new pass.
-- A requeued pass is still told about earlier attempts and where their commits
+  column is one; each starts a new attempt.
+- A requeued attempt is still told about earlier attempts and where their commits
   are (`attemptBrief` and the arms on origin, `packages/conductor/src/prompt.ts`),
   so it can reuse that work — but it is new development and goes through build
   and review again.
@@ -28,7 +28,7 @@ disagree, the code is right and this is corrected.
   [0118](decisions/0118-a-hold-explains-itself.md) §1; the granted round is
   [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
   0120 §5.
-- [The pass](the-attempt.html) shows where each of these arrives from.
+- [The attempt](the-attempt.html) shows where each of these arrives from.
 
 ## The log and its states
 
@@ -49,7 +49,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   board and the projections ([one-reduce-per-stream](design/one-reduce-per-stream.md)).
   Code: `reduceAttemptEvent(state, event)` reduces one event and `reduceAttempt(events)`
   a whole stream from the start, and likewise for every stream. Say
-  *reduce* for the act and **reducer** for the rule (the run reducer); the older
+  *reduce* for the act and **reducer** for the rule (the attempt reducer); the older
   words *fold* and *apply* mean the same thing.
 - **State** (状态) — what reducing every event of one stream gives. A state is
   about one stream and nothing else; an answer that needs two streams is a

@@ -365,7 +365,7 @@
   </header>
 
   <div class="thesis">
-    <p><b>Conductor is not a process.</b> It is the code for one pass of the loop —
+    <p><b>Conductor is not a process.</b> It is the code for one turn of the loop —
       discover, claim, worktree, agent, gates, integrate. It runs inside whatever process
       calls it.</p>
     <p><b>Daemon and CLI are processes</b>, and since <a href="decisions-archive/0022-the-seams.md">0022</a>
@@ -409,7 +409,7 @@
           <text x="20" y="120" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#96701F" style="fill:var(--brass)">DECIDES · no I/O of its own</text>
           <rect x="20" y="132" width="340" height="44" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
           <text x="34" y="152" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">conductor</text>
-          <text x="34" y="168" font-size="11" fill="currentColor" opacity=".65">the order of one pass, and the ports it needs</text>
+          <text x="34" y="168" font-size="11" fill="currentColor" opacity=".65">the order of one turn, and the ports it needs</text>
 
           <rect x="20" y="184" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="34" y="202" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">actions</text>
@@ -500,7 +500,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 350" role="img" aria-label="The lingtai daemon process holds a conductor pass, a projector, a heartbeat, a reconcile at startup, a lock file and whatever subscribers the recipes declare, each of which is a process of its own. The lingtai run process holds a conductor pass and a projector, and nothing else. Both call the same conductor library.">
+        <svg viewBox="0 0 780 350" role="img" aria-label="The lingtai daemon process holds a conductor turn, a projector, a heartbeat, a reconcile at startup, a lock file and whatever subscribers the recipes declare, each of which is a process of its own. The lingtai run process holds a conductor turn and a projector, and nothing else. Both call the same conductor library.">
           <defs>
             <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -513,7 +513,7 @@
           <text x="34" y="61" font-size="11.5" fill="currentColor" opacity=".6">long-lived · holds one lock file</text>
 
           <rect x="34" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="112" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">conductor pass</text>
+          <text x="112" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">conductor turn</text>
           <rect x="200" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
           <text x="278" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">projector</text>
 
@@ -532,17 +532,17 @@
           <!-- cli -->
           <rect x="410" y="20" width="350" height="220" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".55"/>
           <text x="424" y="44" font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">lingtai run</text>
-          <text x="424" y="61" font-size="11.5" fill="currentColor" opacity=".6">your terminal · one pass, then exits</text>
+          <text x="424" y="61" font-size="11.5" fill="currentColor" opacity=".6">your terminal · one turn, then exits</text>
 
           <rect x="424" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
-          <text x="502" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">conductor pass</text>
+          <text x="502" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">conductor turn</text>
           <rect x="590" y="76" width="156" height="32" fill="none" stroke="#96701F" style="stroke:var(--brass)" stroke-width="2"/>
           <text x="668" y="96" text-anchor="middle" font-size="12.5" fill="currentColor">projector</text>
 
           <line x1="424" y1="128" x2="746" y2="128" stroke="currentColor" stroke-dasharray="3 5" opacity=".3"/>
           <text x="424" y="150" font-size="12" fill="#2C6B67" style="fill:var(--flow)">the board follows a run by hand, live</text>
           <text x="424" y="170" font-size="12" fill="currentColor" opacity=".6">no work loop · no heartbeat · no lock</text>
-          <text x="424" y="190" font-size="12" fill="currentColor" opacity=".6">no reconcile — that pass appends, and a</text>
+          <text x="424" y="190" font-size="12" fill="currentColor" opacity=".6">no reconcile — that turn appends, and a</text>
           <text x="424" y="206" font-size="12" fill="currentColor" opacity=".6">command should not release someone else's claim</text>
 
           <!-- shared library -->
@@ -569,9 +569,9 @@
 
     <ul class="rules defs">
       <li>
-        <b>conductor pass</b>
+        <b>conductor turn</b>
         <span>Ask GitHub what is runnable for each registered project, take one item, and run it to
-          a verdict. One pass handles one item, or none.</span>
+          a verdict. One turn handles one item, or none.</span>
         <span class="absent">Without it: nothing is worked. This is the one job
           <code>lingtai run</code> also does.</span>
       </li>
@@ -588,10 +588,10 @@
       <li>
         <b>work loop</b>
         <span>Wakes on an append rather than on a timer, asks the log whether it is paused, and runs
-          a pass. Pause is an event, so a pause issued while the daemon is down is waiting when it
+          a turn. Pause is an event, so a pause issued while the daemon is down is waiting when it
           comes back.</span>
         <span class="absent">Without it — <code>--no-conduct</code> — you get a daemon that keeps
-          the board current and takes no work, which is what to run beside a pass already in
+          the board current and takes no work, which is what to run beside a turn already in
           flight.</span>
       </li>
       <li>
@@ -612,7 +612,7 @@
         <span class="absent">It appends the repair rather than quietly tidying, because a system
           that silently cleans up after itself cannot tell you it has been crashing — the disk gets
           cleaner, the symptom disappears, and something kills the daemon nightly for six weeks
-          before it surfaces as something else. <em>Only the daemon runs it</em>: the pass releases
+          before it surfaces as something else. <em>Only the daemon runs it</em>: the turn releases
           claims other runs hold, and a one-shot command somebody is watching should not have that
           effect on work it was not asked about.</span>
       </li>

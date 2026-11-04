@@ -182,7 +182,7 @@ with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the ro
   - Not measured: Linux without bubblewrap, where there is no sandbox; a full
     pass under this sandbox, where a commit writes outside the worktree and the
     agent may fail visibly; other runtime versions; and `CLAUDE_CONFIG_DIR`,
-    which a pass drops, so Claude Code reads `~/.claude`.
+    which an attempt drops, so Claude Code reads `~/.claude`.
   - `denyRead` says nothing about the network, and this setting does not limit
     it.
 - Codex: the `deny` entries of the profile named by `default_permissions` in
@@ -202,7 +202,7 @@ with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the ro
 
 - [Why it is built this way](doc/why.md): the log, the goals, and the architecture.
 - [The tutorial](doc/tutorial.md): the same path in full, with Fish, and Part 2, which moves the project to GitHub.
-- [The ten steps of a pass](doc/the-attempt.html): how one ticket gets built.
+- [The ten steps of an attempt](doc/the-attempt.html): how one ticket gets built.
 - [Architecture](doc/architecture.html): which process you are in, who appends to the log, and where state lives.
 - [Operating](doc/operating.md): everything you type, and what every refusal means.
 - [Reference](doc/reference.md): every term, the event types and the action kinds.

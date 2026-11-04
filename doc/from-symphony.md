@@ -22,8 +22,8 @@ memory, and after a restart it polls again and dispatches what is still eligible
 pipeline is as flexible as the prompt: you change it by editing one file in
 prose.
 
-**In Lingtai it is outside the agent.** A pass is ten fixed steps
-([the pass](the-attempt.html)): the `build` check, a cold reviewer, the merge lane.
+**In Lingtai it is outside the agent.** An attempt is ten fixed steps
+([the attempt](the-attempt.html)): the `build` check, a cold reviewer, the merge lane.
 The agent cannot skip them or reach them, and it never holds a tracker
 credential. Everything that happens is appended to a log, so a restart loses
 nothing.
@@ -40,14 +40,14 @@ at a time.
 | `tracker.required_labels` | the kind labels the recipe's `source.kinds` names (`bug`, `feature`, …); an issue with none is invisible to the queue |
 | `tracker.active_states`, `tracker.terminal_states` | none — Lingtai keeps its own states for a ticket, and a closed issue is finished |
 | `polling.interval_ms` | not a recipe setting: the daemon polls on its own schedule, for the whole machine |
-| `workspace.root`, `hooks.after_create` (cloning) | a worktree Lingtai cuts for each pass |
+| `workspace.root`, `hooks.after_create` (cloning) | a worktree Lingtai cuts for each attempt |
 | `hooks.after_create` (installing dependencies) | the install command you give `lingtai add --install` |
-| `agent.max_concurrent_agents` | `runtime.concurrency`, several passes per project at once, but only once a daily ceiling is set; without one it is ignored and one pass runs in all ([0122](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0122-several-passes-share-one-conductor.md)) |
+| `agent.max_concurrent_agents` | `runtime.concurrency`, several attempts per project at once, but only once a daily ceiling is set; without one it is ignored and one attempt runs in all ([0122](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0122-several-attempts-share-one-conductor.md)) |
 | `agent.max_turns` | `runtime.limits.turns`, per run, on the `claude-code` runtime only. The `codex` runtime enforces `wall` alone, and `lingtai doctor` fails a numeric `turns` there, so on Codex bound a run with `runtime.limits.wall` instead ([reference](reference.md)) |
 | `agent.max_retry_backoff_ms` | `source.backoff`, `1h` by default and flat; `lingtai now <project> --issue <n>` takes one ticket ahead of the queue |
 | `codex.command` | `runtime.agent: codex` |
 | the prompt body (Liquid) | the `prompt:` beside an `agent:` at `implement:` — **project guidance only**, see below ([`agent:`](plugins/agent.md)) |
-| reloading `WORKFLOW.md` without a restart | the recipe is resolved again on each pass |
+| reloading `WORKFLOW.md` without a restart | the recipe is resolved again on each attempt |
 
 ## What Lingtai does not have yet
 
