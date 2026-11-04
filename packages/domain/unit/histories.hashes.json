@@ -63,5 +63,11 @@
   "ticket.kindThenTriage": "bbf0a2b5b1084b7b807fd2aa0cad685a0d9b3afeceeb7c0424a5702151def985",
   "ticket.kindedClaimAfterClosed": "add21b1b8ff959bb35df5120515b181ef16155fce796ae609f9953b169719812",
   "finding.acceptedOnly": "3a8ebf6a4ce94299deaa941f9afdcb8413a22c40542d9908e822caa8e2de2fd2",
-  "finding.declinedThenAccepted": "6208f786c715becb40d8a5e069a20d6411a22abbe7fd4a113e687af3eae8409b"
+  "finding.declinedThenAccepted": "6208f786c715becb40d8a5e069a20d6411a22abbe7fd4a113e687af3eae8409b",
+  "scenario.staleSignoff": "912d445b0359a4d6596db65a02a7109d220895cc972807521659848ee73eccc6",
+  "scenario.fixRoundAfterCompletion": "200cb7fde892d6a41eac6ebdc41a179a0604f68167846b2047e1698894bc5ca0",
+  "scenario.secondRun": "a86550f11321bce33c6e30abaa34b4b04cd8adce572638161d2d9370f07222cd",
+  "scenario.askAfterRelease": "b3075cca328e551e8b1ba83105bbeee8290cb567cf7ae3cf3e07f39bfd5e4bce",
+  "scenario.closeAfterRelease": "debdc4ec830e60e922faace28229f10989c64b54526ba921336f7393a4554504",
+  "scenario.requeueOfRunWait": "37f4677f6066febd73ca116a8b3a790507f32117ad15569e7e7836204a36f9de"
 }
