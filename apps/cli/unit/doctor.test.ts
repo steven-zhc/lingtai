@@ -32,9 +32,11 @@ import {
   runDoctor,
   schemaChecks,
   seaRow,
+  snapshotCensus,
   spendToday,
   unconvergedRow,
 } from '../src/doctor.ts'
+import { gatingFailures } from '../src/restart.ts'
 
 /** `database.store: sqlite`, as `storeChoice()` reads it off a written `config.yml`. */
 const wroteSqlite = (): StoreChoice => ({
@@ -428,6 +430,81 @@ describe('lingtai doctor — every check has a section', () => {
     for (const name of ['discuss: p signed in', 'discuss: p codex ready', 'triage: p codex ready']) {
       expect(areaOf({ name, status: 'ok', detail: '' })).toBe('Projects')
     }
+  })
+})
+
+describe('snapshotCensus (#879)', () => {
+  const row = (reducer: string, reducerVersion: number, rows: number, anchored: number, bytes = 2048) => ({
+    reducer,
+    reducerVersion,
+    rows,
+    anchored,
+    bytes,
+  })
+
+  it('is ok and says so when the table is absent', async () => {
+    const r = await snapshotCensus(async () => [])
+    expect(r.status).toBe('ok')
+    expect(r.detail).toBe('no snapshots yet')
+  })
+
+  it('is ok when every row is usable', async () => {
+    const r = await snapshotCensus(async () => [row('control', 2, 3, 3)])
+    expect(r.status).toBe('ok')
+    expect(r.detail).toBe('3 snapshots, 3 usable')
+  })
+
+  it('reports an older version as void, naming reducer and version', async () => {
+    const r = await snapshotCensus(async () => [row('control', 1, 1, 1, 14_000), row('control', 2, 4, 4)])
+    expect(r.status).toBe('info')
+    expect(r.detail).toBe('5 snapshots, 4 usable · void: control v1 ×1 (14 KB, older version)')
+  })
+
+  it('reports an unanchored current-version row as void by anchor', async () => {
+    const r = await snapshotCensus(async () => [row('attempt', 1, 3, 1, 3000)])
+    expect(r.status).toBe('info')
+    expect(r.detail).toContain('1 usable')
+    expect(r.detail).toContain('attempt v1 ×2')
+    expect(r.detail).toContain('anchor no longer holds')
+  })
+
+  it('counts a row both older and unanchored once, as older version', async () => {
+    const r = await snapshotCensus(async () => [row('control', 1, 2, 0)])
+    expect(r.detail).toContain('control v1 ×2')
+    expect(r.detail).toContain('older version')
+    expect(r.detail).not.toContain('anchor no longer')
+  })
+
+  it("keeps another build's rows apart from void", async () => {
+    const r = await snapshotCensus(async () => [row('control', 99, 1, 1), row('newfangled', 1, 2, 2)])
+    expect(r.status).toBe('info')
+    expect(r.detail).not.toContain('void')
+    expect(r.detail).toContain('other code: control v99 ×1')
+    expect(r.detail).toContain('newfangled v1 ×2')
+  })
+
+  it('is a warn, naming the error, when the read fails', async () => {
+    const r = await snapshotCensus(async () => {
+      throw new Error('connection reset')
+    })
+    expect(r.status).toBe('warn')
+    expect(r.detail).toContain('connection reset')
+  })
+
+  it('never adds a gating failure to a report', async () => {
+    const report = await runDoctor(
+      {},
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [],
+      {
+        ...reach,
+        snapshots: async () => [row('control', 1, 1, 1)],
+      },
+    )
+    expect(report.results.find((x) => x.name === 'snapshots')?.status).toBe('info')
+    expect(gatingFailures(report.results)).toBe(gatingFailures(report.results.filter((x) => x.name !== 'snapshots')))
   })
 })
 

@@ -75,7 +75,13 @@ import {
   UnknownEventTypeError,
 } from '../src/event-store.ts'
 import type { LogQueries, TypeCount, TypeRow } from '../src/queries.ts'
-import { type Snapshot, type SnapshotStore, anchorNotInLogError, validateSnapshot } from '../src/snapshots.ts'
+import {
+  type Snapshot,
+  type SnapshotCensusRow,
+  type SnapshotStore,
+  anchorNotInLogError,
+  validateSnapshot,
+} from '../src/snapshots.ts'
 
 export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType' | 'typeCounts'> {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
@@ -269,6 +275,24 @@ export function createMemorySnapshotStore(events: MemoryEventStore): SnapshotSto
       const row = rows.get(id(key))
       if (row === undefined || !holds(row)) return null
       return { ...row }
+    },
+    async census() {
+      const by = new Map<string, SnapshotCensusRow>()
+      for (const row of rows.values()) {
+        const k = JSON.stringify([row.reducer, row.reducerVersion])
+        const there = by.get(k) ?? {
+          reducer: row.reducer,
+          reducerVersion: row.reducerVersion,
+          rows: 0,
+          anchored: 0,
+          bytes: 0,
+        }
+        there.rows += 1
+        if (holds(row)) there.anchored += 1
+        there.bytes += Buffer.byteLength(row.state)
+        by.set(k, there)
+      }
+      return [...by.values()].sort((a, b) => a.reducer.localeCompare(b.reducer) || a.reducerVersion - b.reducerVersion)
     },
     async put(snapshot) {
       validateSnapshot(snapshot)

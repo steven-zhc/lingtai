@@ -175,6 +175,7 @@ function deferredSnapshots(resolve: () => Promise<SnapshotStore>): SnapshotStore
   return {
     latest: async (key) => (await resolve()).latest(key),
     put: async (snapshot) => (await resolve()).put(snapshot),
+    census: async () => (await resolve()).census(),
   }
 }
 

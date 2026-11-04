@@ -57,6 +57,16 @@ describeSnapshotContract('sqlite', () => {
   }
 })
 
+describe('sqlite: a census of a log nothing has snapshotted', () => {
+  it('answers no rows and creates no table', async () => {
+    const db = openSqliteLog(':memory:')
+    const log = createSqliteLog({ db, path: ':memory:' })
+    expect(await log.snapshots.census()).toEqual([])
+    const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stream_snapshots'`).all()
+    expect(tables).toEqual([])
+  })
+})
+
 describe('sqlite: a stale writer', () => {
   it('does not replace a post-reset row with a writer holding a pre-reset anchor, and says so', async () => {
     const db = openSqliteLog(':memory:')

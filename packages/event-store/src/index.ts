@@ -22,6 +22,7 @@ export {
   createSqlSnapshotStore,
   execIdempotently,
   type Snapshot,
+  type SnapshotCensusRow,
   type SnapshotKey,
   type SnapshotStore,
 } from './snapshots.ts'
