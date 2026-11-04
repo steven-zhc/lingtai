@@ -53,15 +53,14 @@ import {
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
 import { runLogPath } from '@lingtai/conductor/run-log'
+import { readControl } from '@lingtai/daemon'
 import {
   chatStream,
   parseTicketStream,
   reduceChat,
-  reduceControl,
   reduceAttempt,
   reduceTicket,
   triageFactsOf,
-  CONTROL_STREAM,
   type ChatState,
   type DiscussionRequest,
   type Envelope,
@@ -441,7 +440,7 @@ export function nextRequest(asks: readonly DiscussionRequest[], chat: ChatState)
  * bill they did not watch accumulate.
  */
 export async function answerOutstanding(log: (line: string) => void = () => {}): Promise<number> {
-  const control = reduceControl(await eventStore.read(CONTROL_STREAM))
+  const control = await readControl()
   const byChat = new Map<string, DiscussionRequest[]>()
   for (const d of control.discussions) {
     byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d])

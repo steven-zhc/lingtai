@@ -7,7 +7,7 @@
  */
 import { dayCeilingPause, daySpend, daySpendText, startOfLocalDay, type DaySpend } from '@lingtai/conductor'
 import { machineDayCeiling } from '@lingtai/env'
-import { eventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore, log } from '@lingtai/event-store'
 import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
 
 import { spendRebuildHold, spendRebuilds } from './rates.ts'
@@ -95,7 +95,12 @@ export async function dayCeilingStop(
         (await spendStallIn(lags, (ports.now ?? (() => new Date()))(), store ?? eventStore))
       if (stall !== null) return `could not check the daily ceiling: ${stall} — taking no work`
     }
-    const pause = await dayCeilingPause({ ceilingUsd, rows, store: store ?? eventStore })
+    const pause = await dayCeilingPause({
+      ceilingUsd,
+      rows,
+      store: store ?? eventStore,
+      snapshots: store === undefined ? log.snapshots : undefined,
+    })
     // The hold was checked before an asynchronous read; a rebuild that began
     // meanwhile may have dropped the table under it, so that answer is not used.
     if (ceilingUsd !== undefined && rebuilds() !== began) {

@@ -441,6 +441,9 @@ importers:
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../repo
+      effect:
+        specifier: ^3.22.1
+        version: 3.22.1
       pg:
         specifier: ^8.16.3
         version: 8.23.0

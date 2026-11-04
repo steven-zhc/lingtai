@@ -5,8 +5,6 @@ import {
   type ControlState,
   controlReducer,
   evaluateControl,
-  crossesCommitBoundary,
-  reduceFrom,
   type ShutdownRequest,
   parsePayload,
   reduceControl,
@@ -76,9 +74,17 @@ import {
  * being taken is bounded by the sweep. That is the number 0031 is replacing:
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
-import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
+import {
+  ConcurrencyError,
+  type EventStore,
+  eventStore,
+  log,
+  readThroughSnapshot,
+  type SnapshotStore,
+} from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasks, type TaskCard } from '@lingtai/projector'
+import { Effect, Either } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -134,47 +140,17 @@ export async function readControl(
   // The default snapshots belong to the default store's log; a store passed in has none of its own.
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
   if (since <= 0) {
-    if (snapshots === undefined) return reduceControl(await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES))
-    const key = { streamId: CONTROL_STREAM, reducer: controlReducer.name, reducerVersion: controlReducer.version }
-    const row = await snapshots.latest(key).catch((e: unknown) => {
-      sayOnce('latest', e)
-      return null
-    })
-    let state = controlReducer.initial
-    let start = 0
-    let from = 0
-    if (row !== null) {
-      try {
-        state = controlReducer.decode(row.state)
-        start = row.streamVersion
-        from = start
-      } catch (e) {
-        sayOnce('decode', e)
-      }
-    }
-    let tail = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES, start + 1)
-    if (row !== null && start > 0) {
-      // The anchor was checked before the tail was read; a reset in between would pair the old
-      // state with the new log's events. Ask again: only an anchor still holding vouches for the tail.
-      const again = await snapshots.latest(key).catch(() => null)
-      if (again === null || again.streamVersion !== row.streamVersion || again.lastSeq !== row.lastSeq) {
-        state = controlReducer.initial
-        from = 0
-        tail = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)
-      }
-    }
-    const reduced = reduceFrom(controlReducer, state, tail)
-    const last = tail[tail.length - 1]
-    if (last !== undefined && cache.writer !== undefined && crossesCommitBoundary(from, last.version)) {
-      cache.writer.offer({
-        ...key,
-        streamVersion: last.version,
-        lastSeq: last.seq,
-        lastAt: last.at,
-        state: controlReducer.encode(reduced),
-      })
-    }
-    return evaluateControl(reduced, new Date())
+    // Rethrown as the store's own error: `runPromise` would wrap it in a `FiberFailure`.
+    const read = await Effect.runPromise(
+      Effect.either(
+        readThroughSnapshot(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
+          snapshots,
+          writer: cache.writer,
+        }),
+      ),
+    )
+    if (Either.isLeft(read)) throw read.left
+    return evaluateControl(read.right, new Date())
   }
   const all = await events.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)
   const scoped = reduceControl(all.filter((e) => e.version > since))
@@ -182,13 +158,6 @@ export async function readControl(
   const whole = reduceControl(all)
   if (!whole.paused || !whole.holdsAcrossStarts) return scoped
   return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
-}
-
-const saidSnapshot = { latest: false, decode: false }
-function sayOnce(kind: 'latest' | 'decode', e: unknown): void {
-  if (saidSnapshot[kind]) return
-  saidSnapshot[kind] = true
-  console.error(`control snapshot ${kind} failed, reducing from version 1: ${String(e)}`)
 }
 
 /**
@@ -281,11 +250,12 @@ export async function requestShutdownUnlessStanding(
   force = false,
 ): Promise<Asking> {
   for (let attempt = 0; ; attempt++) {
-    const events = await store.read(CONTROL_STREAM)
-    const standing = reduceControl(events).shutdown
+    const at = await store.head(CONTROL_STREAM)
+    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+      .shutdown
     if (standing !== null) return { asked: false, standing }
     try {
-      const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, events.length)
+      const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at)
       return { asked: true, version }
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
@@ -409,17 +379,13 @@ export async function withdrawShutdown(
   store: EventStore = eventStore,
 ): Promise<Withdrawal> {
   for (let attempt = 0; ; attempt++) {
-    const events = await store.read(CONTROL_STREAM)
-    const standing = reduceControl(events).shutdown
+    const head = await store.head(CONTROL_STREAM)
+    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+      .shutdown
     if (standing === null) return { withdrew: false, standing: null }
     if (standing.version !== version) return { withdrew: false, standing }
     try {
-      const at = await append(
-        'ConductorShutdownWithdrawn',
-        { by, version, reason, handoff: null },
-        store,
-        events.length,
-      )
+      const at = await append('ConductorShutdownWithdrawn', { by, version, reason, handoff: null }, store, head)
       return { withdrew: true, request: standing, version: at }
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err

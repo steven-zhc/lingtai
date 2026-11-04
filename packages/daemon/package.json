@@ -23,6 +23,7 @@
     "@lingtai/github": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "@lingtai/repo": "workspace:*",
+    "effect": "^3.22.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {

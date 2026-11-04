@@ -57,8 +57,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
     file: 'packages/daemon/src/control.ts',
-    anchor:
-      "const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, events.length)",
+    anchor: "const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at)",
   },
   {
     event: 'ConductorShutdownWithdrawn',

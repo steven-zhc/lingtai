@@ -13,10 +13,18 @@
  * guarantee it is not (#332). A process that died before it appended `RunSpent`
  * leaves no row at all, and is not counted either.
  */
-import { CONTROL_STREAM, parsePayload, reduceControl } from '@lingtai/domain'
+import {
+  CONTROL_FOLD_TYPES,
+  CONTROL_STREAM,
+  type ControlState,
+  controlReducer,
+  evaluateControl,
+  parsePayload,
+} from '@lingtai/domain'
 import type { Usage } from '@lingtai/domain'
 import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
-import type { EventStore } from '@lingtai/event-store'
+import { type EventStore, readThroughSnapshot, type SnapshotStore } from '@lingtai/event-store'
+import { Effect, Either } from 'effect'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
 
@@ -130,6 +138,15 @@ export const ceilingReached = (day: DaySpend, ceilingUsd: number): boolean =>
 /** The opening of the sentence a person reads on a ceiling pause. `cause: 'day-ceiling'` is what tells it from a provider quota pause's, never this text. */
 const CEILING_REASON = 'daily ceiling reached — '
 
+/** The control state at `now`, read through the snapshot when this store has one. A failed read throws the store's own error. */
+async function readState(store: EventStore, now: Date, snapshots?: SnapshotStore): Promise<ControlState> {
+  const read = await Effect.runPromise(
+    Effect.either(readThroughSnapshot(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, { snapshots })),
+  )
+  if (Either.isLeft(read)) throw read.left
+  return evaluateControl(read.right, now)
+}
+
 /**
  * A pause that is the ceiling's own and still holds while today is under the
  * figure — the figure was raised or removed — is lifted here, because the
@@ -137,13 +154,13 @@ const CEILING_REASON = 'daily ceiling reached — '
  * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which the reducer does not
  * count as a person's waiver. Any other pause is left alone.
  */
-async function liftOwnPause(store: EventStore, now: Date): Promise<void> {
-  const events = await store.read(CONTROL_STREAM)
-  const control = reduceControl(events, now)
+async function liftOwnPause(store: EventStore, now: Date, snapshots?: SnapshotStore): Promise<void> {
+  const head = await store.head(CONTROL_STREAM)
+  const control = await readState(store, now, snapshots)
   // `ConductorResumed` also withdraws a standing shutdown request (reduceControl),
   // and an unrelated shutdown is not ours to withdraw: leave the pause for it.
   if (!control.paused || control.shutdown !== null || control.cause !== 'day-ceiling') return
-  await store.append(CONTROL_STREAM, events.length, [
+  await store.append(CONTROL_STREAM, head, [
     { type: 'ConductorResumed', actor: 'conductor', data: parsePayload('ConductorResumed', { by: 'lingtai' }) },
   ])
 }
@@ -153,6 +170,8 @@ export interface DayCeilingOptions {
   /** Rows at or after `since`. The live one is `readSpend({ since })`. */
   rows: (since: Date) => Promise<readonly DayRow[]>
   store: EventStore
+  /** Only the default store's own log has snapshots; a caller that passes its own store passes none. */
+  snapshots?: SnapshotStore
   now?: Date
 }
 
@@ -170,22 +189,22 @@ export interface DayCeilingOptions {
 export async function dayCeilingPause(options: DayCeilingOptions): Promise<string | null> {
   const now = options.now ?? new Date()
   if (options.ceilingUsd === undefined) {
-    await liftOwnPause(options.store, now)
+    await liftOwnPause(options.store, now, options.snapshots)
     return null
   }
   const day = daySpend(await options.rows(startOfLocalDay(now)), now, readRateSnapshot())
   if (!ceilingReached(day, options.ceilingUsd)) {
-    await liftOwnPause(options.store, now)
+    await liftOwnPause(options.store, now, options.snapshots)
     return null
   }
   const reason = daySpendText(day, options.ceilingUsd)
-  const events = await options.store.read(CONTROL_STREAM)
+  const head = await options.store.head(CONTROL_STREAM)
   // `lingtai resume` after one of our own pauses lifts the ceiling for the rest
   // of the day that pause covered: it is not asked again until that midnight.
-  const control = reduceControl(events, now)
+  const control = await readState(options.store, now, options.snapshots)
   if (control.ceilingWaivedUntil !== null) return null
   if (!control.paused) {
-    await options.store.append(CONTROL_STREAM, events.length, [
+    await options.store.append(CONTROL_STREAM, head, [
       {
         type: 'ConductorPaused',
         actor: 'conductor',
