@@ -3,12 +3,12 @@
  * reduces' before and after decide it, and no event type does. Each row of the issue's table has a test
  * here, over real events reduced one at a time, and the scenarios read the stored row after every event.
  */
-import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
+import type { Envelope, AttemptState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   agentBranchOf,
-  reduceRunEvent,
+  reduceAttemptEvent,
   reduceTicketEvent,
-  emptyRun,
+  emptyAttempt,
   emptyTicket,
   parseTicketStream,
   ticketStream,
@@ -19,7 +19,7 @@ import {
   aLanding,
   aRelease,
   aResolution,
-  aRun,
+  anAttempt,
   aRunFailure,
   aWait,
   aWaitId,
@@ -47,10 +47,10 @@ function ticketNotes(events: readonly Envelope[]) {
 }
 
 function runNotes(events: readonly Envelope[]) {
-  let state: RunState = emptyRun
+  let state: AttemptState = emptyAttempt
   return events.map((e) => {
     const before = state
-    state = reduceRunEvent(before, e)
+    state = reduceAttemptEvent(before, e)
     return runNoteOf(before, state)
   })
 }
@@ -90,7 +90,7 @@ async function notesAfterEach(events: readonly Envelope[]): Promise<(string | nu
 
 describe('ticketNoteOf: the transitions', () => {
   const t = makeStream(TICKET)
-  const run = aRun('pass-a')
+  const run = anAttempt('pass-a')
   const ask = aWaitId()
   const question = {
     _tag: 'AgentQuestion' as const,
@@ -165,7 +165,7 @@ describe('ticketNoteOf: the transitions', () => {
 })
 
 describe('runNoteOf: the transitions', () => {
-  const run = aRun('pass-b')
+  const run = anAttempt('pass-b')
 
   it('→ awaiting-input is the prompt, and a second prompt replaces the first', () => {
     const notes = runNotes([
@@ -186,13 +186,14 @@ describe('runNoteOf: the transitions', () => {
   })
 
   it('every run status is a sentence or writes nothing', () => {
-    const quiet: RunState['lifecycle'][] = [
+    const quiet: AttemptState['lifecycle'][] = [
       { status: 'pending' },
       { status: 'running' },
       { status: 'gating', headSha: 's' },
       { status: 'finished', exitCode: 0, turns: 1, durationMs: 1 },
     ]
-    for (const lifecycle of quiet) expect(runNoteOf(emptyRun, { ...emptyRun, lifecycle: { ...lifecycle } })).toBeNull()
+    for (const lifecycle of quiet)
+      expect(runNoteOf(emptyAttempt, { ...emptyAttempt, lifecycle: { ...lifecycle } })).toBeNull()
   })
 })
 

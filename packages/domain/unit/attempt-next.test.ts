@@ -9,13 +9,20 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { Action, StepOutcome } from '../src/action.ts'
-import { ImpossibleOutcomeError, nextOf, PassNext, RequeueCause, spentAfter, type Spent } from '../src/pass-next.ts'
+import {
+  ImpossibleOutcomeError,
+  nextOf,
+  AttemptNext,
+  RequeueCause,
+  spentAfter,
+  type Spent,
+} from '../src/attempt-next.ts'
 import { fromOf, type Proposal } from '../src/proposal.ts'
 import { CeilingReached } from '../src/route.ts'
 import { Finding, RefusalReason, Step } from '../src/vocabulary.ts'
-import type { RunRef } from '../src/wait.ts'
+import type { AttemptRef } from '../src/wait.ts'
 
-const run: RunRef = { runId: 'pass-1' }
+const run: AttemptRef = { runId: 'pass-1' }
 const base = { plugin: 'run', name: 'pnpm test', onSha: 'sha-onsha', evidence: '' }
 
 function action(yields: Action['yields'], result: unknown, overrides: Partial<typeof base> = {}): Action {
@@ -41,7 +48,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 // `FixRound`, which this suite's final `it` checks.
 const nextTags = new Set<string>()
 
-function next(o: StepOutcome, r: RunRef = run): ReturnType<typeof nextOf> {
+function next(o: StepOutcome, r: AttemptRef = run): ReturnType<typeof nextOf> {
   const result = nextOf(o, r)
   nextTags.add(result._tag)
   return result
@@ -683,28 +690,28 @@ describe('spentAfter', () => {
   const spent: Spent = { rounds: 1, restarts: 2 }
 
   it('Advance: unchanged', () => {
-    const next = PassNext.parse({ _tag: 'Advance', to: 'merge' })
+    const next = AttemptNext.parse({ _tag: 'Advance', to: 'merge' })
     expect(spentAfter(spent, next)).toEqual(spent)
   })
 
   it('Propose: unchanged', () => {
     const proposal: Proposal = { _tag: 'BuildRed', output: 'red' }
-    const next = PassNext.parse({ _tag: 'Propose', proposal })
+    const next = AttemptNext.parse({ _tag: 'Propose', proposal })
     expect(spentAfter(spent, next)).toEqual(spent)
   })
 
   it('FixRound: sets rounds, leaves restarts', () => {
-    const next = PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 5 })
+    const next = AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 5 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 5, restarts: 2 })
   })
 
   it('FixRound with conflict: counts the conflict round, leaving rounds alone (#653)', () => {
-    const next = PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 1, conflict: 1 })
+    const next = AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 1, conflict: 1 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, conflictRounds: 1 })
   })
 
   it('parses a FixRound written before conflict existed, and a CeilingReached of rounds', () => {
-    expect(PassNext.parse({ _tag: 'FixRound', to: 'implement', round: 2 })).toEqual({
+    expect(AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 2 })).toEqual({
       _tag: 'FixRound',
       to: 'implement',
       round: 2,
@@ -713,24 +720,24 @@ describe('spentAfter', () => {
   })
 
   it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {
-    const next = PassNext.parse({ _tag: 'MergeBase', toSha: 'base-1', merge: 2 })
+    const next = AttemptNext.parse({ _tag: 'MergeBase', toSha: 'base-1', merge: 2 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, baseMerges: 2 })
   })
 
   it('Requeued{Restart}: sets restarts and resets rounds to 0', () => {
     const cause = RequeueCause.parse({ _tag: 'Restart', restart: 7 })
-    const next = PassNext.parse({ _tag: 'Requeued', cause })
+    const next = AttemptNext.parse({ _tag: 'Requeued', cause })
     expect(spentAfter(spent, next)).toEqual({ rounds: 0, restarts: 7 })
   })
 
   it('Requeued{NeverStarted}: unchanged', () => {
     const cause = RequeueCause.parse({ _tag: 'NeverStarted', scope: 'work-item' })
-    const next = PassNext.parse({ _tag: 'Requeued', cause })
+    const next = AttemptNext.parse({ _tag: 'Requeued', cause })
     expect(spentAfter(spent, next)).toEqual(spent)
   })
 
   it('WaitOnPerson: unchanged', () => {
-    const next = PassNext.parse({
+    const next = AttemptNext.parse({
       _tag: 'WaitOnPerson',
       reason: { _tag: 'OwnQuestion', question: 'which design?', by: 'steven' },
     })
@@ -738,7 +745,7 @@ describe('spentAfter', () => {
   })
 
   it('Landed: unchanged', () => {
-    const next = PassNext.parse({ _tag: 'Landed', integrated: 'merge-sha-1' })
+    const next = AttemptNext.parse({ _tag: 'Landed', integrated: 'merge-sha-1' })
     expect(spentAfter(spent, next)).toEqual(spent)
   })
 })

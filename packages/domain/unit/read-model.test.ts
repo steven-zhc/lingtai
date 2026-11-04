@@ -19,7 +19,17 @@ import {
   waitsOf,
 } from '../src/index.ts'
 import { triageStatus, type TriageResult } from '../src/wait.ts'
-import { aClaim, aRelease, aResolution, aRoute, aRun, aTriageStart, aTriaged, aWait, aWaitId } from '../test/events.ts'
+import {
+  aClaim,
+  aRelease,
+  aResolution,
+  aRoute,
+  anAttempt,
+  aTriageStart,
+  aTriaged,
+  aWait,
+  aWaitId,
+} from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
 function verdict(name: string, onSha: string, accepted: boolean, findings: readonly unknown[] = []): Action {
@@ -35,7 +45,7 @@ function verdict(name: string, onSha: string, accepted: boolean, findings: reado
 
 describe('stepOutcomesOf', () => {
   it('reads the outcome straight off StepEnded, keyed by its run', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const outcome: StepOutcome = { step: 'build', round: 0, actions: [verdict('pnpm test', 'sha-a', true)] }
     const events = run.aStepEnded(outcome)
 
@@ -45,7 +55,7 @@ describe('stepOutcomesOf', () => {
 
 describe('routesOf', () => {
   it('replays routeNext over the stored offer, reply and decision', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const item = makeStream('ticket-1')
     const offer = {
       proposal: { _tag: 'BuildRed' as const, output: 'tsc failed' },
@@ -70,7 +80,7 @@ describe('routesOf', () => {
   })
 
   it('also appends TicketReleased{cause: Restart} for a Selected restart, on the item stream it was given', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const item = makeStream('ticket-1')
     const offer = {
       proposal: { _tag: 'ReviewFindings' as const, findings: [] },
@@ -216,7 +226,7 @@ describe('releaseCauseOf', () => {
 
 describe('findingsRaisedOf', () => {
   it('answers one entry per accepted verdict action, carrying its findings', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const minor = { file: 'a.ts', line: 1, claim: 'c', failureScenario: 's', severity: 'minor' as const }
     const outcome: StepOutcome = {
       step: 'review',
@@ -238,7 +248,7 @@ describe('findingsRaisedOf', () => {
   })
 
   it('answers nothing for a refusing action', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const outcome: StepOutcome = { step: 'review', round: 0, actions: [verdict('review', 'sha-a', false)] }
     expect(run.aStepEnded(outcome).flatMap(findingsRaisedOf)).toEqual([])
   })
@@ -246,7 +256,7 @@ describe('findingsRaisedOf', () => {
 
 describe('boardFactOf', () => {
   it('answers a StepEnded fact per action, and loses no action to the step it belongs to', () => {
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     const outcome: StepOutcome = { step: 'build', round: 0, actions: [verdict('pnpm test', 'sha-a', true)] }
     const facts = run.aStepEnded(outcome).flatMap(boardFactOf)
 

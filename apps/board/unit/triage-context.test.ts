@@ -4,7 +4,7 @@
  * reads `Interrupted` on both. Each was a literal on the card before.
  */
 import type { WaitId } from '@lingtai/domain'
-import { aRunRef } from '@lingtai/domain/test/events'
+import { anAttemptRef } from '@lingtai/domain/test/events'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
@@ -12,7 +12,7 @@ import { cardTriageStatus, toCard, triageContextOf } from '../src/lib/board.ts'
 import { currentTriageStatus } from '../src/lib/task.ts'
 
 const waitId = 'wait-1' as WaitId
-const reason = { _tag: 'NothingProduced', run: aRunRef('run-one'), said: null } as const
+const reason = { _tag: 'NothingProduced', run: anAttemptRef('run-one'), said: null } as const
 
 function waiting(triage: TaskCard['triage']): TaskCard {
   return {

@@ -6,7 +6,7 @@
  */
 import { AgentHost, Repo, type RunOnceOptions, type RunOnceResult, type Tickets } from '@lingtai/conductor'
 import { CONTROL_STREAM, type ProjectState, ticketStream } from '@lingtai/domain'
-import { aClaim, aLanding, aResolution, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, aLanding, aResolution, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { resolveRecipe } from '@lingtai/recipe'
@@ -91,7 +91,7 @@ async function approve(store: Store, issue: number, runId: string, landed = fals
     ...aClaim(item, runId),
     ...aWait(
       item,
-      { _tag: 'SignoffRequired', run: aRunRef(runId), step: 'merge', action: 'human:land', question: 'land it?' },
+      { _tag: 'SignoffRequired', run: anAttemptRef(runId), step: 'merge', action: 'human:land', question: 'land it?' },
       waitId,
     ),
     ...aResolution(item, waitId, { _tag: 'Approve', onSha: SHA }, 'human:steven'),

@@ -1,6 +1,6 @@
 import type { StepPlan } from '@lingtai/conductor/filter'
 /**
- * Where a run has got to *now*, drawn from its `RunState` (`progressOf`).
+ * Where a run has got to *now*, drawn from its `AttemptState` (`progressOf`).
  *
  * The card described what a run had accumulated and never where it was: at
  * 17:23 one read `1 passed · attempt 2` while the truth was "the agent finished
@@ -9,7 +9,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * burning money.
  *
  * **Nothing new is written down for this.** (The budget line is not this draw's:
- * a run's rounds come from `RunState` and its grants from `spend`, #826.) `RunStarted` opens the agent phase
+ * a run's rounds come from `AttemptState` and its grants from `spend`, #826.) `RunStarted` opens the agent phase
  * and `RunFinished` closes it, `StepsResolved` names all ten steps, and the
  * last `StepStarted` with no matching verdict is the step the run is at. The
  * recipe's timeout is the denominator, and it arrives already parsed as
@@ -32,7 +32,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { STEPS, type RunState, type Step } from '@lingtai/domain'
+import { STEPS, type AttemptState, type Step } from '@lingtai/domain'
 
 /**
  * What a point has come to on *this* run.
@@ -337,8 +337,8 @@ function stateOf(
 }
 
 /**
- * Where the run is, drawn from its `RunState` (#827). The board reads no events
- * here: `RunState` holds the instants (`openedAt`, `agentStartedAt`, `askedAt`,
+ * Where the run is, drawn from its `AttemptState` (#827). The board reads no events
+ * here: `AttemptState` holds the instants (`openedAt`, `agentStartedAt`, `askedAt`,
  * `laneWaitedAt`, `step.since`) and the recorded plan (`resolved`); this picks
  * the labels and budgets, which are the board's.
  *
@@ -347,7 +347,7 @@ function stateOf(
  * about one would be inventing a start.
  */
 export function progressOf(
-  state: RunState,
+  state: AttemptState,
   plan: StepPlan = new Map(),
   /**
    * Whether this item **landed**. Not whether it is over.
@@ -412,7 +412,7 @@ export function progressOf(
  * asked, lane, agent, step. **Null when that one is not live** — a phase that
  * ended is not replaced by an older one that happens to still look live.
  */
-function nowOf(state: RunState): Phase | null {
+function nowOf(state: AttemptState): Phase | null {
   const wallMs = state.invocation?.limits?.wallMs ?? null
   const status = state.lifecycle.status
   const stepNow = state.step
@@ -455,7 +455,7 @@ function nowOf(state: RunState): Phase | null {
  * **One function, so the card and the task page cannot word one hold's
  * budget two ways** — the argument `describeArm` and `describeWait` already
  * make, moved here rather than beside them because the ceilings this reads
- * come off `RunState` and `spend`, not off `task_view`'s columns.
+ * come off `AttemptState` and `spend`, not off `task_view`'s columns.
  *
  * Both ceilings are the caller's to resolve — **the event where the log has
  * one, the recipe only where it does not** (`roundsOf`, `restartsOf`): the

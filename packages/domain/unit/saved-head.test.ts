@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyRun, reduceRun, savedHeadOf } from '../src/index.ts'
+import { emptyAttempt, reduceAttempt, savedHeadOf } from '../src/index.ts'
 import { lateHistories } from '../test/histories.ts'
 
-const head = (name: keyof typeof lateHistories.run) => savedHeadOf(reduceRun(lateHistories.run[name]))
+const head = (name: keyof typeof lateHistories.run) => savedHeadOf(reduceAttempt(lateHistories.run[name]))
 
 describe('savedHeadOf', () => {
   it('a clean published row is Saved', () => {
@@ -36,11 +36,11 @@ describe('savedHeadOf', () => {
   })
 
   it('no row at all is NoSavedHead', () => {
-    expect(savedHeadOf(emptyRun)).toEqual({ _tag: 'NoSavedHead' })
+    expect(savedHeadOf(emptyAttempt)).toEqual({ _tag: 'NoSavedHead' })
   })
 
   it('a row without branchCarries is carried', () => {
-    const state = reduceRun(lateHistories.run.publishedClean)
+    const state = reduceAttempt(lateHistories.run.publishedClean)
     expect(state.published?.branchCarries).toBeUndefined()
     expect(savedHeadOf(state)._tag).toBe('Saved')
   })

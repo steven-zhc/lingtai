@@ -648,7 +648,7 @@ export const RunProducedDiff = z.object({
  * ones that are not failures: what the incident needed was not a record of
  * pushes but the answer to *did this happen at all*, and only an event that is
  * always there answers that. Since #468 and #652 a grant decides on it: `run.ts` reduces
- * the last one into `RunState.published`, and `savedHeadOf` says whether it left
+ * the last one into `AttemptState.published`, and `savedHeadOf` says whether it left
  * a clean head a fix round can continue from.
  *
  * **Every outcome of the publish, which is not every run.** A run that *landed*
@@ -2031,7 +2031,7 @@ export const ProjectConfigured = z.object({
  * commit beside it the event records a symptom nobody can act on.
  *
  * Appended only when it differs from the refusal already on record — see
- * `passTransition` — so a sweep on a loop does not write the same row every few
+ * `turnTransition` — so a sweep on a loop does not write the same row every few
  * seconds into a log that keeps it for ever.
  *
  * @summary The conductor could not look at a project and said why, once, when it began.

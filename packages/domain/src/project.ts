@@ -148,7 +148,7 @@ export function isPending(state: ProjectState): boolean {
 }
 
 /** What one pass saw of a project: refused, and why — or looked at and not refused. */
-export type PassObservation =
+export type TurnObservation =
   | { refused: true; detail: string; ref: string | null; codeSha: string | null }
   | { refused: false; ref: string | null; codeSha: string | null }
 
@@ -172,9 +172,9 @@ export type PassObservation =
  * event exists to carry: a restart into new code that still refuses the same
  * way says the recipe is broken, where the first said the process might be old.
  */
-export function passTransition(
+export function turnTransition(
   state: ProjectState,
-  seen: PassObservation,
+  seen: TurnObservation,
 ): ToAppend<PayloadOf<'ProjectRefused'> | PayloadOf<'ProjectRecovered'>> | null {
   const project = state.project
   if (project === null) return null

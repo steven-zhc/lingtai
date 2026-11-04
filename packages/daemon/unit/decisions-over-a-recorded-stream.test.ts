@@ -5,8 +5,8 @@ import {
   aRelease,
   aResolution,
   aRoute,
-  aRun,
-  aRunRef,
+  anAttempt,
+  anAttemptRef,
   aWait,
   aWaitId,
   anIntegrationRefusal,
@@ -137,7 +137,7 @@ function fakeClient(labelsByIssue: ReadonlyMap<number, readonly string[]>, calls
 describe('what wakes the loop', () => {
   it('matches `COMPLETION_EVENTS` label by label, not event type', () => {
     const item = makeStream('ticket-lingtai-701')
-    const run = aRun('pass-701')
+    const run = anAttempt('pass-701')
     const passed = run.aStepEnded({
       step: 'build',
       round: 0,
@@ -195,7 +195,7 @@ describe('what wakes the loop', () => {
       ['own question', aWait(item, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, ownQuestionId)],
       [
         'agent question',
-        aWait(item, { _tag: 'AgentQuestion', run: aRunRef(run.runId), step: 'implement', question: 'which way?' }),
+        aWait(item, { _tag: 'AgentQuestion', run: anAttemptRef(run.runId), step: 'implement', question: 'which way?' }),
       ],
       [
         'answered',
@@ -264,7 +264,12 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
     await appendBuilt(
       store,
       versions,
-      aWait(waiting, { _tag: 'AgentQuestion', run: aRunRef('pass-602'), step: 'implement', question: 'which way?' }),
+      aWait(waiting, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-602'),
+        step: 'implement',
+        question: 'which way?',
+      }),
     )
 
     // Waited, then requeued — never claimed, so only `WorkItemBlocked` and

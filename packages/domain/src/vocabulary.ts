@@ -82,7 +82,7 @@ export type RefusalReason = z.infer<typeof RefusalReason>
  * two can never name it differently; `@lingtai/repo` cannot hold it because
  * `conduct.ts` imports *types* only from that package (`live.ts`).
  *
- * **A fixed literal, not built from `PASS_STREAM_PREFIX`.** A human or an
+ * **A fixed literal, not built from `ATTEMPT_STREAM_PREFIX`.** A human or an
  * agent setting aside its own work with `git commit -m "wip: partial
  * refactor"` must never be caught by this, so the prefix cannot be the bare
  * `wip: ` — and it cannot follow `runId`'s own prefix either, which moved from

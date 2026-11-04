@@ -3,7 +3,7 @@ import type { TicketClaim } from '@lingtai/domain'
 import {
   decideRoute,
   offerFor,
-  reduceRun,
+  reduceAttempt,
   STEPS,
   type Envelope,
   type Finding,
@@ -458,7 +458,7 @@ export async function preview(name: CaseName) {
     progress === null
       ? null
       : {
-          spent: spentOf(reduceRun(runs.get(standing.runId as string) ?? []).roundsOpened, grantedOf([])),
+          spent: spentOf(reduceAttempt(runs.get(standing.runId as string) ?? []).roundsOpened, grantedOf([])),
           granted: grantedOf([]),
         }
   const card = toCard(projected, null, progress, null, null, undefined, undefined, undefined, null, rounds)

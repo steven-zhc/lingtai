@@ -12,7 +12,7 @@
 
 export const TICKET_STREAM_PREFIX = 'ticket-'
 
-export const PASS_STREAM_PREFIX = 'pass-'
+export const ATTEMPT_STREAM_PREFIX = 'pass-'
 
 /** `ticket-{project}-`, every work item's stream for one project. */
 export function ticketStreamsOf(project: string): string {
@@ -60,18 +60,18 @@ export function agentBranchOf(issue: string): string {
 }
 
 /** `pass-{uuid}` — a pass's own stream. The uuid is a caller's to make. */
-export function passStream(id: string): string {
-  return `${PASS_STREAM_PREFIX}${id}`
+export function attemptStream(id: string): string {
+  return `${ATTEMPT_STREAM_PREFIX}${id}`
 }
 
 /** Whether `id` is a pass's own stream. */
-export function isPassStream(id: string): boolean {
-  return id.startsWith(PASS_STREAM_PREFIX)
+export function isAttemptStream(id: string): boolean {
+  return id.startsWith(ATTEMPT_STREAM_PREFIX)
 }
 
-/** The inverse of `passStream`, beside it so the two cannot drift. */
-export function passIdOf(runId: string): string {
-  return runId.slice(PASS_STREAM_PREFIX.length)
+/** The inverse of `attemptStream`, beside it so the two cannot drift. */
+export function attemptIdOf(runId: string): string {
+  return runId.slice(ATTEMPT_STREAM_PREFIX.length)
 }
 
 export const CHAT_STREAM_PREFIX = 'chat-'

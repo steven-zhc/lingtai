@@ -10,7 +10,7 @@
  * a pasted entry still needs its `reason` written by hand.
  *
  * Out of scope on purpose: a `Set` of type names, `includes(e.type)` and a
- * lookup table keyed by type. Routing by stream (`isPassStream`,
+ * lookup table keyed by type. Routing by stream (`isAttemptStream`,
  * `isBacklogStream`) is the allowed shape and is not counted.
  */
 import { readdir, readFile } from 'node:fs/promises'

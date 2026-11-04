@@ -1018,9 +1018,9 @@ failure, not a number nobody was watching.
 | `packages/conductor/src/pass.ts` | `work-item` ×1 |
 | `packages/conductor/src/ticket-store.ts` | `work-items` ×1 |
 | `packages/domain/src/action.ts` | `work-item` ×1 |
+| `packages/domain/src/attempt-next.ts` | `work-item` ×2 |
 | `packages/domain/src/envelope.ts` | `work-item` ×1 |
 | `packages/domain/src/events.ts` | `work-item` ×1 |
-| `packages/domain/src/pass-next.ts` | `work-item` ×2 |
 | `packages/domain/src/ticket.ts` | `WorkItemLink` ×2 |
 | `packages/event-store/src/queries.ts` | `work_item` ×2 |
 | `packages/event-store/src/sqlite.ts` | `work_item` ×2 |

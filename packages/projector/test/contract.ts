@@ -1,5 +1,5 @@
 import { waitWords, type Envelope, type Finding, type PayloadOf, type ToAppend } from '@lingtai/domain'
-import { aRun, aRunFailure, aWait } from '@lingtai/domain/test/events'
+import { anAttempt, aRunFailure, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
 /**
@@ -152,7 +152,7 @@ const toAppend = (e: Envelope): ToAppend => ({ type: e.type, actor: e.actor, dat
 
 /** `StepPassed`, built through `aStepEnded` — 0120 retires it, so this goes through the builder rather than the wire shape directly (#480). */
 const stepPassed = (runId: string, findings: Finding[] = []): ToAppend[] =>
-  aRun(runId)
+  anAttempt(runId)
     .aStepEnded({
       step: 'proposed',
       round: 0,
@@ -185,7 +185,7 @@ const runFailed = (
   runId: string,
   kind: 'crash' | 'timeout' | 'aborted' | 'out-of-turns' | 'out-of-usd',
   detail: string,
-): ToAppend[] => aRunFailure(aRun(runId), kind, detail).map(toAppend)
+): ToAppend[] => aRunFailure(anAttempt(runId), kind, detail).map(toAppend)
 
 /**
  * `WorkItemBlocked{hold: Asked}`, built through `aWait` — 0120 retires both,

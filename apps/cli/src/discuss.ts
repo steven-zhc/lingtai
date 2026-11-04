@@ -58,7 +58,7 @@ import {
   parseTicketStream,
   reduceChat,
   reduceControl,
-  reduceRun,
+  reduceAttempt,
   reduceTicket,
   triageFactsOf,
   CONTROL_STREAM,
@@ -190,7 +190,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
   // `worktree add -B` leaves `agent/<n>` pointing at the base after an attempt
   // that committed nothing, so the ref existing proves nothing about the attempt.
   // `RunProducedDiff` is the attempt saying it produced something.
-  const head = index >= 0 ? reduceRun(streams[index] ?? []).headSha : null
+  const head = index >= 0 ? reduceAttempt(streams[index] ?? []).headSha : null
 
   const state = await loadProject(project).catch(() => null)
   const base = state?.base ?? 'main'

@@ -1,5 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
-import type { RunRef } from '@lingtai/domain/wait'
+import type { AttemptRef } from '@lingtai/domain/wait'
 import { describeWaitLines } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -63,7 +63,7 @@ export function UnpushedBanner({
   unpushed,
   mirror,
 }: {
-  unpushed: RunRef['unpushed'] | null
+  unpushed: AttemptRef['unpushed'] | null
   mirror: TaskDetail['unpushedMirror']
 }) {
   if (!unpushed) return null

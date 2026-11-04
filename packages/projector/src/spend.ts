@@ -73,7 +73,7 @@ import {
   chatStream,
   decodeTicket,
   encodeTicket,
-  isPassStream,
+  isAttemptStream,
   isTicketStream,
   parseTicketStream,
 } from '@lingtai/domain'
@@ -210,7 +210,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
             )
             ticket = link ? link.ticket : null
             // A pass stream's kind is its own claim's, null included: it never borrows the ticket's.
-            if (isPassStream(event.streamId)) {
+            if (isAttemptStream(event.streamId)) {
               kind = link ? (link.kind ?? null) : null
               fromTicket = false
             }
@@ -227,7 +227,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
             estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
           }
           const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
-          const pass = isPassStream(event.streamId) ? event.streamId : null
+          const pass = isAttemptStream(event.streamId) ? event.streamId : null
           const step = d.for._tag === 'Action' ? d.for.step : null
           const action = d.for._tag === 'Action' ? d.for.name : null
           const round = d.for._tag === 'Action' ? d.for.round : null

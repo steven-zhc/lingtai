@@ -12,7 +12,7 @@ import { approveHolding, type ApproveOptions } from '@lingtai/conductor/decide'
  * the function `approveCard` calls underneath the lock.
  */
 import { type Action, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
-import { aClaim, aRun, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore, type MemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -47,12 +47,12 @@ describe("the approved card's continue button", () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 508)
     const item = makeStream(ticketId)
-    const run = aRun('pass-508')
+    const run = anAttempt('pass-508')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-508'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-508'),
+        run: anAttemptRef('pass-508'),
         step: 'merge',
         action: 'unfixed',
         question: 'land it?',
@@ -80,7 +80,7 @@ describe("the approved card's continue button", () => {
     await seed(store, ticketId, [
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-508'),
+        run: anAttemptRef('pass-508'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge too?',

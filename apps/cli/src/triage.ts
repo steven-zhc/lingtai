@@ -27,7 +27,7 @@ import {
 import {
   parsePayload,
   parseTicketStream,
-  reduceRun,
+  reduceAttempt,
   reduceTicket,
   ticketStream,
   triageFactsOf,
@@ -171,7 +171,7 @@ async function finishInterrupted(
       return
     const started = reduced.waits.findLast((w) => w.waitId === waitId)!.triage.started!
     const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
-    const headSha = runId === null ? null : reduceRun(await deps.store.read(runId)).headSha
+    const headSha = runId === null ? null : reduceAttempt(await deps.store.read(runId)).headSha
     const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
     try {
       await deps.store.append(ticketId, events.length, [
@@ -454,7 +454,7 @@ async function gatherEvidence(
   if (runId !== null) {
     // An unreadable run stream is not evidence that the attempt has no head.
     const runEvents = await deps.store.read(runId)
-    const run = reduceRun(runEvents)
+    const run = reduceAttempt(runEvents)
     routed = run.route
     published = run.published
     head = run.headSha
@@ -495,7 +495,7 @@ async function gatherEvidence(
       routed,
       published,
       diffStat,
-      // `head`, the log's own claim (`RunState.headSha`) —
+      // `head`, the log's own claim (`AttemptState.headSha`) —
       // never `headSha`, the mirror's resolution of it. A mirror that cannot
       // resolve a head the attempt did produce (a pruned worktree, a re-cloned
       // mirror) must not read as "the attempt committed nothing": the log is
@@ -1019,7 +1019,7 @@ async function waitTriageWithin(
           data: parsePayload('WaitTriaged', {
             waitId: request.waitId,
             attempt,
-            // `RunState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
+            // `AttemptState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
             // with no base either, where `reading` already says no file can be
             // read.
             headSha: headSha ?? baseSha ?? '',

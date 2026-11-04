@@ -12,7 +12,7 @@ import {
   splitProgressOf,
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
-  isPassStream,
+  isAttemptStream,
   parseTicketStream,
   triageFactsOf,
   waitWords,
@@ -23,12 +23,18 @@ import {
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
-  reduceRun,
+  reduceAttempt,
   filesOf,
   STEPS,
-  type RunState as DomainRunState,
+  type AttemptState as DomainRunState,
 } from '@lingtai/domain'
-import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  triageStatus,
+  type AttemptRef,
+  type TriageStatus,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { hasGitHubAuth } from '@lingtai/env'
 /**
  * One task, reduced from its streams on demand.
@@ -225,10 +231,10 @@ export interface TicketView {
  * asking and was never released. All used to render as an attempt that was
  * simply missing, which is the same complaint `skipped` answers one level up.
  */
-export type RunState = 'claimed' | 'running' | 'asked' | 'released' | 'finished' | 'failed'
+export type AttemptState = 'claimed' | 'running' | 'asked' | 'released' | 'finished' | 'failed'
 
 export interface RunOutcome {
-  state: RunState
+  state: AttemptState
   /**
    * What the log said beside the word: a failure's `kind`, a non-zero exit, the
    * release's reason. Null when the word is the whole of it.
@@ -569,7 +575,7 @@ export interface StandingView {
    */
   reason: WaitReason | null
   /** Unpushed work on the current blocked wait's run, never an earlier wait's. */
-  unpushed: RunRef['unpushed'] | null
+  unpushed: AttemptRef['unpushed'] | null
   /**
    * The sha `WaitResolved{Approve}` recorded, while `approved` — what
    * `ScheduleContinuation` sends back as `onSha` (#508), so a click made
@@ -1082,9 +1088,9 @@ export function chatIdsFor(
 }
 
 /**
- * One attempt, drawn from the run's `RunState` and the claim that opened it.
+ * One attempt, drawn from the run's `AttemptState` and the claim that opened it.
  *
- * There is no second reducer of the run stream here: `reduceRun` is the one, and
+ * There is no second reducer of the run stream here: `reduceAttempt` is the one, and
  * this is a drawing of what it holds. Joined from outside are the claim (when
  * it was opened, why it was released) and `progress`, which needs the recipe's
  * plan and whether this attempt landed — neither is on the stream.
@@ -1164,7 +1170,7 @@ export function presentRunEvents(
     branch = '',
   }: { plan?: StepPlan; over?: boolean; held?: boolean; branch?: string } = {},
 ): RunView {
-  const state = reduceRun(run)
+  const state = reduceAttempt(run)
   return presentRun(state, claim, attempt, progressOf(state, plan, over), held, branch)
 }
 
@@ -1301,18 +1307,18 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
   // A run stream's own subject, which the run's reducer reads off its
   // `RunStarted` (#505). Without it, a `PassRouted` on that same stream has
   // nothing to open its sentence on. Only pass streams are run streams: the
-  // ticket's own stream never reaches `reduceRun`.
+  // ticket's own stream never reaches `reduceAttempt`.
   const sorted = [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))
   const byRun = new Map<string, Envelope[]>()
   for (const e of sorted) {
-    if (!isPassStream(e.streamId)) continue
+    if (!isAttemptStream(e.streamId)) continue
     const own = byRun.get(e.streamId)
     if (own) own.push(e)
     else byRun.set(e.streamId, [e])
   }
   const branchByRun = new Map<string, string>()
   for (const [streamId, own] of byRun) {
-    const { ticketId } = reduceRun(own)
+    const { ticketId } = reduceAttempt(own)
     const parsed = typeof ticketId === 'string' ? parseTicketStream(ticketId) : null
     if (parsed) branchByRun.set(streamId, agentBranchOf(parsed.issue))
   }
@@ -1608,7 +1614,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   if (!exists(own, ticket)) return null
 
   // Each stream is reduced once; everything below draws from these states.
-  const states = claims.map((_, i) => reduceRun(streams[i] ?? []))
+  const states = claims.map((_, i) => reduceAttempt(streams[i] ?? []))
   // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
   const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)

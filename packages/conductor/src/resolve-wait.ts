@@ -28,9 +28,9 @@ import {
   parsePayload,
   parseTicketStream,
   type PayloadOf,
-  reduceRun,
+  reduceAttempt,
   reduceTicket,
-  type RunState,
+  type AttemptState,
   savedHeadOf,
   type ToAppend,
   type WaitId,
@@ -77,7 +77,7 @@ import { agentBranch } from './branches.ts'
  */
 const UNPASSED = new Set(['failed', 'never-ran', 'did-not-finish', 'asked'])
 
-export function refusingOn(run: RunState, onSha: string): string[] {
+export function refusingOn(run: AttemptState, onSha: string): string[] {
   const awaiting = run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.step : null
   return Object.values(run.steps)
     .filter((g) => g.onSha === onSha && UNPASSED.has(g.verdict) && g.step !== awaiting)
@@ -404,7 +404,7 @@ async function savedHead(
   runId: string | null,
 ): Promise<Refused | { ok: true; head: string; ref: string }> {
   if (runId === null) return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
-  const saved = savedHeadOf(reduceRun(await store.read(runId)))
+  const saved = savedHeadOf(reduceAttempt(await store.read(runId)))
   switch (saved._tag) {
     case 'Saved':
       return { ok: true, head: saved.head, ref: saved.ref }
@@ -491,7 +491,7 @@ async function checkApprove(
       detail: `${ticketId} has no run to approve — nothing was resolved.`,
     }
   }
-  const run = reduceRun(await store.read(runId))
+  const run = reduceAttempt(await store.read(runId))
 
   const current =
     run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : run.headSha !== null ? run.headSha : null

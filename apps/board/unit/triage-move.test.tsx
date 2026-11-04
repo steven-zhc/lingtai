@@ -5,7 +5,7 @@
  */
 import { approveHolding } from '@lingtai/conductor/decide'
 import { reduceTicket, ticketStream, waitsOf, type WaitId } from '@lingtai/domain'
-import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { aClaim, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { acceptedTriageNote, type Resolution, type WaitReason } from '@lingtai/domain/wait'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -23,7 +23,7 @@ const daemon = { startedAt: new Date('2026-10-20T12:00:00Z') }
 
 const checkRefused = {
   _tag: 'CheckRefused',
-  run: aRunRef('run-647'),
+  run: anAttemptRef('run-647'),
   step: 'build',
   action: 'test',
   evidence: 'two tests red',
@@ -166,7 +166,7 @@ describe('a stale card', () => {
     const signoff = (question: string) =>
       ({
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-647'),
+        run: anAttemptRef('pass-647'),
         step: 'proposed',
         action: 'unfixed',
         question,

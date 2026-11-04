@@ -21,7 +21,7 @@ import {
   type PayloadOf,
   SCHEMA_VER,
   parsePayload,
-  reduceRun,
+  reduceAttempt,
 } from '@lingtai/domain'
 import { lateHistories } from '@lingtai/domain/test/histories'
 import { describe, expect, it } from 'vitest'
@@ -292,7 +292,7 @@ describe('attemptOutcome', () => {
   it('reports what the run committed and what the gate said about it', () => {
     const e = stream('pass-2')
     const outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         e('RunProducedDiff', {
           branch: 'agent/59',
           headSha: '1a2b3c4d5e6f',
@@ -330,7 +330,7 @@ describe('attemptOutcome', () => {
   it("lists a review gate's findings under its output", () => {
     const e = stream('pass-2')
     const outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         e(
           'StepEnded',
           ended(
@@ -359,7 +359,7 @@ describe('attemptOutcome', () => {
   it("falls back to the run's failure", () => {
     const e = stream('pass-1')
     const outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         e('RunFailed', {
           kind: 'timeout',
           detail: 'the run was killed by an operator timeout before it produced anything',
@@ -376,11 +376,11 @@ describe('attemptOutcome', () => {
   /**
    * The ticket's "which point it died at": a `StepStarted` with no matching
    * verdict. There is no output to quote, and the fact is the finding — which
-   * `RunState.step` keeps for a run that died inside it.
+   * `AttemptState.step` keeps for a run that died inside it.
    */
   it('names the point a run died inside', () => {
     const e = stream('pass-1')
-    const outcome = attemptOutcome(reduceRun([e('StepStarted', started('pass-1', 'build'))]), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt([e('StepStarted', started('pass-1', 'build'))]), BUDGET)
 
     expect(outcome.evidence?.what).toBe('build')
     expect(outcome.evidence?.text).toContain('never returned a verdict')
@@ -389,7 +389,7 @@ describe('attemptOutcome', () => {
   it('says nothing about a gate that passed', () => {
     const e = stream('pass-1')
     const outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         e('StepStarted', started('pass-1', 'build')),
         e('StepEnded', ended('pass-1', 'build', verdictAction('tsc', 'ok', 'accepted'))),
       ]),
@@ -402,19 +402,19 @@ describe('attemptOutcome', () => {
 
 describe('attemptOutcome over the fixture histories', () => {
   it('a refusal outranks a later failure', () => {
-    const outcome = attemptOutcome(reduceRun(lateHistories.run.refusedThenFailed), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.refusedThenFailed), BUDGET)
     expect(outcome.evidence?.what).toBe('review:cold')
     expect(outcome.evidence?.text).toContain('off by one')
   })
 
   it('a failure inside a step is the run failing', () => {
-    const outcome = attemptOutcome(reduceRun(lateHistories.run.failedInsideStep), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.failedInsideStep), BUDGET)
     expect(outcome.evidence?.what).toBe('the run itself (out-of-turns)')
     expect(outcome.receipt).toEqual({ turns: 30 })
   })
 
   it('a step left open names itself', () => {
-    const outcome = attemptOutcome(reduceRun(lateHistories.run.stepEndedForAnother), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.stepEndedForAnother), BUDGET)
     expect(outcome.evidence?.what).toBe('implement')
     expect(outcome.evidence?.text).toContain('never returned a verdict')
   })
@@ -433,7 +433,7 @@ describe('attemptBrief', () => {
     const attempts = priorAttempts(history)
     const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         run('RunProducedDiff', {
           branch: 'agent/59',
           headSha: '1a2b3c4d5e6f',
@@ -495,7 +495,7 @@ describe('attemptBrief', () => {
     const attempts = priorAttempts(history)
     const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      reduceRun([run('RunFailed', { kind: 'timeout', detail: 'killed by an operator timeout' })]),
+      reduceAttempt([run('RunFailed', { kind: 'timeout', detail: 'killed by an operator timeout' })]),
       BUDGET,
     )
 
@@ -516,7 +516,7 @@ describe('attemptBrief', () => {
     const attempts = priorAttempts(history)
     const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      reduceRun([
+      reduceAttempt([
         run('RunFailed', { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' }),
         run('RunKeptUncommitted', {
           arm: 'agent/59-attempt-2',
@@ -567,7 +567,7 @@ describe('attemptBrief', () => {
     const attempts = priorAttempts(events)
     const run = stream('pass-8')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
-      reduceRun([run('StepEnded', ended('pass-8', 'build', verdictAction('tsc', 'x'.repeat(10_000), 'refused')))]),
+      reduceAttempt([run('StepEnded', ended('pass-8', 'build', verdictAction('tsc', 'x'.repeat(10_000), 'refused')))]),
       BUDGET,
     )
 
@@ -647,7 +647,7 @@ describe('attemptBrief', () => {
         stream('ticket-lingtai-169')('TicketReleased', released('pass-1', 'gates refused the diff')),
       ])
       attempts[0]!.outcome = attemptOutcome(
-        reduceRun([run('StepEnded', ended('pass-1', 'build', verdictAction('tsc', evidence, 'refused')))]),
+        reduceAttempt([run('StepEnded', ended('pass-1', 'build', verdictAction('tsc', evidence, 'refused')))]),
         budget,
       )
       return attemptBrief(attempts, budget)

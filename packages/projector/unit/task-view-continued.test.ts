@@ -8,7 +8,7 @@
  * today's seqs.
  */
 import type { Envelope } from '@lingtai/domain'
-import { aClaim, aRelease, aResolution, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aResolution, anAttempt, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
@@ -26,13 +26,13 @@ const continued: Reclaim = (stream, runId) => [stream('TicketContinued', { runId
 
 function streamOf(name: string, reclaim: Reclaim) {
   const stream = makeStream(`ticket-pin-${name}`)
-  const run = aRun(`pass-pin-${name}`)
+  const run = anAttempt(`pass-pin-${name}`)
   const approve = (): Envelope[] => {
     const waitId = aWaitId()
     return [
       ...aWait(
         stream,
-        { _tag: 'SignoffRequired', run: aRunRef(run.runId), step: 'merge', action: 'human', question: 'merge?' },
+        { _tag: 'SignoffRequired', run: anAttemptRef(run.runId), step: 'merge', action: 'human', question: 'merge?' },
         waitId,
       ),
       ...aResolution(stream, waitId, { _tag: 'Approve', onSha: SHA }),

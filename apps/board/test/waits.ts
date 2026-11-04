@@ -29,7 +29,7 @@ const FIXTURES: WaitFixture[] = []
 /**
  * **What turns on `task_view.awaiting_sha` since #502.** `ApprovalRequested`
  * is gone — a card's Approve sha is read off the run's
- * `RunState` now (#844), through the `signoff` action a `StepEnded` carries whenever one is
+ * `AttemptState` now (#844), through the `signoff` action a `StepEnded` carries whenever one is
  * live (`task-view.ts`'s `rowOf`). This builds exactly that `StepEnded`, standing in for
  * whatever declared the signoff (a `human:` action, or the router's own
  * floor) so this fixture file does not have to change shape, only the event

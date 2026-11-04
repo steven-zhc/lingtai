@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 import { reduceTicketEvent, reduceTicket, waitsOf, ticketStream, type Envelope } from '@lingtai/domain'
-import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { aClaim, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
@@ -255,7 +255,12 @@ describe('closing a blocked item', () => {
     const item = makeStream(ticketId)
     await store.append(ticketId, 0, [
       ...aClaim(item, 'pass-40'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-40'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-40'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     const outcome = await closeUnlocked({

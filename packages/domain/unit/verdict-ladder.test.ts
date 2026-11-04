@@ -1,12 +1,12 @@
 /**
  * D1 (`doc/design/one-fold-per-stream.md` §5): one verdict ladder. Each cell is
- * reduced over the fixed histories (#798) through both readers — `RunState.steps`
+ * reduced over the fixed histories (#798) through both readers — `AttemptState.steps`
  * (which is what task_view's `rowOf` reads since #844) and `boardFactOf` — and they must give one word.
  */
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
-import { boardFactOf, reduceRun } from '../src/index.ts'
+import { boardFactOf, reduceAttempt } from '../src/index.ts'
 import { histories } from '../test/histories.ts'
 
 const BOARD_ENDING = {
@@ -19,7 +19,7 @@ const BOARD_ENDING = {
 } as const
 
 function readers(events: readonly Envelope[]) {
-  const steps = Object.fromEntries(Object.entries(reduceRun(events).steps).map(([k, s]) => [k, s.verdict]))
+  const steps = Object.fromEntries(Object.entries(reduceAttempt(events).steps).map(([k, s]) => [k, s.verdict]))
   const board = Object.fromEntries(
     events.flatMap(boardFactOf).flatMap((f) => (f._tag === 'StepEnded' ? [[`${f.step}:${f.action}`, f] as const] : [])),
   )

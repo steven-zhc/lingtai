@@ -21,14 +21,14 @@ import {
   type Candidate,
   type ExcludedCandidate,
   type JudgeReply,
-  type PassNext,
+  type AttemptNext,
   type Proposal,
   type RouteDecision,
   type RouteOffer,
   type RoutingPolicy,
   type Spent,
 } from '@lingtai/domain'
-import type { RunRef } from '@lingtai/domain/wait'
+import type { AttemptRef } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 
 import { BUILT_IN_FOR } from './judge.ts'
@@ -36,7 +36,7 @@ import type { Judged, Judging } from './pass-steps.ts'
 import type { Ceiling, Destination, StepRouted } from './pass.ts'
 
 export { decideRoute, offerFor, routeNext }
-export type { PassNext, RouteDecision, RouteOffer, RoutingPolicy, Spent }
+export type { AttemptNext, RouteDecision, RouteOffer, RoutingPolicy, Spent }
 
 /** 0120 §2's mapping, read off the proposal rather than off an ending — replaces `directionOf` for routing. */
 export function whenOf(proposal: Proposal): JudgeWhen {
@@ -256,4 +256,4 @@ export function ceilingOf(chose: Destination, offer: RouteOffer): Ceiling | null
   return excluded !== undefined && excluded.because._tag === 'CeilingReached' ? excluded.because.ceiling : null
 }
 
-export type { RunRef }
+export type { AttemptRef }

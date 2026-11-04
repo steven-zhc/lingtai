@@ -6,7 +6,7 @@
  * depends on imports `events.ts` back.
  *
  * **Not in `route.ts`, even though that file's header once promised it.**
- * `routeNext` returns `PassNext`, so this file imports `pass-next.ts`; and
+ * `routeNext` returns `AttemptNext`, so this file imports `pass-next.ts`; and
  * `pass-next.ts` imports `wait.ts`, which imports `route.ts` at load time to
  * build `EscalationBecause` (`wait.ts:102`). A `route.ts` that imported this
  * file back would close that ESM cycle. So `route.ts` stays a leaf.
@@ -20,11 +20,11 @@
  */
 import { z } from 'zod'
 
-import { FixRound, MergeBase, type PassNext, Restart, type Spent } from './pass-next.ts'
+import { FixRound, MergeBase, type AttemptNext, Restart, type Spent } from './attempt-next.ts'
 import { Proposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { STEPS, type Step } from './vocabulary.ts'
-import { RunRef } from './wait.ts'
+import { AttemptRef } from './wait.ts'
 
 /**
  * The two ceilings a recipe resolves to, as totals rather than what is left
@@ -291,13 +291,13 @@ export function decideRoute(offer: RouteOffer, reply: JudgeReply): RouteDecision
  * way `nextOf` does (`pass-next.ts:77`). Filling in a field the sketch elided
  * is not a different decision, so it needs no ADR of its own.
  *
- * `HandToPerson` never escapes this function — every `PassNext` it returns
+ * `HandToPerson` never escapes this function — every `AttemptNext` it returns
  * is `FixRound`, `MergeBase`, `Requeued` or `WaitOnPerson`, never `nextOf`'s own
  * `Advance`, `Propose` or `Landed` — and an unjudged `InputNeeded` (a
  * `NotAsked` reply, never an unreadable or unknown one) is the only case that
  * reaches `AgentQuestion` rather than `ProposedEscalated`.
  */
-export function routeNext(offer: RouteOffer, reply: JudgeReply, decision: RouteDecision, run: RunRef): PassNext {
+export function routeNext(offer: RouteOffer, reply: JudgeReply, decision: RouteDecision, run: AttemptRef): AttemptNext {
   if (decision._tag === 'Selected') {
     if (reply._tag !== 'Selected') {
       throw new ImpossibleRouteError(

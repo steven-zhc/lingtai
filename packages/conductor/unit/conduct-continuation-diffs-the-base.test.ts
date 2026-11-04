@@ -13,7 +13,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import { waitWords, reduceRun, waitsOf, ticketStream } from '@lingtai/domain'
+import { waitWords, reduceAttempt, waitsOf, ticketStream } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
@@ -72,7 +72,7 @@ describe('a continuation never diffs against the sha it was approved at', () => 
     // computation does — never the approved sha, which is a different
     // commit on this fixture (`provision` cuts at `a`*40, `implement`
     // commits to `b`*40).
-    const run = reduceRun(await store.read(first.runId))
+    const run = reduceAttempt(await store.read(first.runId))
     expect(run.baseSha).toBe('a'.repeat(40))
     expect(onSha).not.toBe(run.baseSha)
 

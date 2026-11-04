@@ -91,7 +91,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * a strip for either row would be the same invented page view the paragraph
  * above refuses for 15/15b/15c.
  */
-import { reduceRun, type Envelope, type EventType } from '@lingtai/domain'
+import { reduceAttempt, type Envelope, type EventType } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
@@ -141,7 +141,7 @@ function stripOf(
   landed: boolean,
   plan: StepPlan = EMPTY_PLAN,
 ): { step: string; state: string }[] {
-  const progress = progressOf(reduceRun(runEvents), plan, landed)
+  const progress = progressOf(reduceAttempt(runEvents), plan, landed)
   const html = renderToStaticMarkup(<Segs steps={progress?.steps ?? []} at={null} labels />)
   return [...html.matchAll(/<li class="seg s-([a-z-]+)"[^>]*>.*?<span class="slab [^"]*">([a-z]+)<\/span><\/li>/g)].map(
     (m) => ({ step: m[2]!, state: m[1]! }),

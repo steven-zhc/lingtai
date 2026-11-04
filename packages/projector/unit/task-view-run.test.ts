@@ -1,6 +1,6 @@
 /**
  * #844: `task_view`'s run columns are `rowOf(ticket, run)`, a pure function of the stored ticket reduce and
- * the stored `RunState` of `ticket.runs.at(-1)`. Each scenario in `lateScenarios` names one rule that
+ * the stored `AttemptState` of `ticket.runs.at(-1)`. Each scenario in `lateScenarios` names one rule that
  * function carries; each is reduced on `createSqliteProjectionStore(openSqliteProjections(':memory:'))`.
  *
  * The incremental-against-rebuild check reduces the same events in batches of 1, 3 and all, which proves the

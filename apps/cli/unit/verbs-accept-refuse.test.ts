@@ -53,7 +53,16 @@ import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/co
  * reach or not reach.
  */
 import { type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
-import { aClaim, aLanding, aResolution, aRun, aRunRef, aWait, aWaitId, aWithdrawal } from '@lingtai/domain/test/events'
+import {
+  aClaim,
+  aLanding,
+  aResolution,
+  anAttempt,
+  anAttemptRef,
+  aWait,
+  aWaitId,
+  aWithdrawal,
+} from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -131,7 +140,12 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-103'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-103'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-103'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     const result = await requeueHolding({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId)
@@ -174,7 +188,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
       ...aClaim(item, 'pass-111'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-111'),
+        run: anAttemptRef('pass-111'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -205,7 +219,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 114)
     const item = makeStream(ticketId)
-    const run = aRun('pass-114')
+    const run = anAttempt('pass-114')
     const waitId = aWaitId()
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-114'),
@@ -213,7 +227,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
         item,
         {
           _tag: 'SignoffRequired',
-          run: aRunRef('pass-114'),
+          run: anAttemptRef('pass-114'),
           step: 'proposed',
           action: 'unfixed',
           question: 'approve this merge?',
@@ -241,12 +255,12 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 112)
     const item = makeStream(ticketId)
-    const run = aRun('pass-112')
+    const run = anAttempt('pass-112')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-112'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-112'),
+        run: anAttemptRef('pass-112'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -292,12 +306,12 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 115)
     const item = makeStream(ticketId)
-    const run = aRun('pass-115')
+    const run = anAttempt('pass-115')
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-115'),
       ...aWait(item, {
         _tag: 'SignoffRequired',
-        run: aRunRef('pass-115'),
+        run: anAttemptRef('pass-115'),
         step: 'proposed',
         action: 'unfixed',
         question: 'approve this merge?',
@@ -343,7 +357,12 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
     const item = makeStream(ticketId)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-122'),
-      ...aWait(item, { _tag: 'AgentQuestion', run: aRunRef('pass-122'), step: 'implement', question: 'which helper?' }),
+      ...aWait(item, {
+        _tag: 'AgentQuestion',
+        run: anAttemptRef('pass-122'),
+        step: 'implement',
+        question: 'which helper?',
+      }),
     ])
 
     const result = await answerUnlocked({ project: PROJECT, issue: 122, answer: 'yes', by: 'human:steven', store })

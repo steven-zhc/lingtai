@@ -5,7 +5,7 @@ import { parsePayload, reduceTicket, ticketStream, waitsOf, type Envelope, type 
  * `createMemoryEventStore()` and `memoryTickets()` — no filesystem, no
  * network (0060 §1).
  */
-import { aClaim, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
@@ -34,7 +34,7 @@ async function aBlockedTicket(store: EventStore): Promise<{ ticketId: string; wa
     ...aClaim(item, 'pass-1'),
     ...aWait(
       item,
-      { _tag: 'AgentQuestion', run: aRunRef('pass-1'), step: 'implement', question: 'which helper?' },
+      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', question: 'which helper?' },
       waitId,
     ),
   ])
@@ -264,7 +264,7 @@ describe('editBodyAndRequeueHolding', () => {
         item,
         {
           _tag: 'MergeRefused',
-          run: aRunRef('pass-1'),
+          run: anAttemptRef('pass-1'),
           reason: 'dirty-base',
           raw: 'the base moved',
         },

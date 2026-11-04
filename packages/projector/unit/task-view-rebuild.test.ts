@@ -41,8 +41,8 @@ import {
   aRelease,
   aResolution,
   aRoute,
-  aRun,
-  aRunRef,
+  anAttempt,
+  anAttemptRef,
   aWait,
   aWaitId,
   aWithdrawal,
@@ -74,7 +74,7 @@ const asked = makeStream('ticket-pin-asked')
 events.push(
   ...aWait(asked, {
     _tag: 'AgentQuestion',
-    run: aRunRef('pass-pin-asked'),
+    run: anAttemptRef('pass-pin-asked'),
     step: 'implement',
     question: 'which approach?',
   }),
@@ -88,7 +88,7 @@ events.push(
     human,
     {
       _tag: 'SignoffRequired',
-      run: aRunRef('pass-pin-human'),
+      run: anAttemptRef('pass-pin-human'),
       step: 'merge',
       action: 'human',
       question: 'merge this?',
@@ -103,7 +103,7 @@ const declined = makeStream('ticket-pin-declined')
 events.push(
   ...aWait(declined, {
     _tag: 'FixerDisagrees',
-    run: aRunRef('pass-pin-declined'),
+    run: anAttemptRef('pass-pin-declined'),
     said: 'the fixer thinks this is fine',
   }),
 )
@@ -113,7 +113,7 @@ const red = makeStream('ticket-pin-red')
 events.push(
   ...aWait(red, {
     _tag: 'ProposedEscalated',
-    run: aRunRef('pass-pin-red'),
+    run: anAttemptRef('pass-pin-red'),
     proposal: { _tag: 'BuildRed', output: 'tsc failed' },
     because: { _tag: 'NotAsked' },
   }),
@@ -123,7 +123,7 @@ const verify = makeStream('ticket-pin-verify')
 events.push(
   ...aWait(verify, {
     _tag: 'ProposedEscalated',
-    run: aRunRef('pass-pin-verify'),
+    run: anAttemptRef('pass-pin-verify'),
     proposal: { _tag: 'VerifyRed', output: 'verify red output' },
     because: { _tag: 'NotAsked' },
   }),
@@ -133,7 +133,7 @@ const conflict = makeStream('ticket-pin-conflict')
 events.push(
   ...aWait(conflict, {
     _tag: 'ProposedEscalated',
-    run: aRunRef('pass-pin-conflict'),
+    run: anAttemptRef('pass-pin-conflict'),
     proposal: { _tag: 'MergeConflict', output: 'conflict output', paths: ['a.ts'], baseSha: 'base1', headSha: 'head1' },
     because: { _tag: 'NotAsked' },
   }),
@@ -143,7 +143,7 @@ const findings = makeStream('ticket-pin-findings')
 events.push(
   ...aWait(findings, {
     _tag: 'ProposedEscalated',
-    run: aRunRef('pass-pin-findings'),
+    run: anAttemptRef('pass-pin-findings'),
     proposal: {
       _tag: 'ReviewFindings',
       findings: [{ file: 'a.ts', line: 1, claim: 'bug', failureScenario: 'breaks on empty input', severity: 'major' }],
@@ -157,7 +157,7 @@ const checkred = makeStream('ticket-pin-checkred')
 events.push(
   ...aWait(checkred, {
     _tag: 'CheckRefused',
-    run: aRunRef('pass-pin-checkred'),
+    run: anAttemptRef('pass-pin-checkred'),
     step: 'merge',
     action: 'ci',
     evidence: 'ci red',
@@ -170,7 +170,7 @@ const mergerefused = makeStream('ticket-pin-mergerefused')
 events.push(
   ...aWait(mergerefused, {
     _tag: 'MergeRefused',
-    run: aRunRef('pass-pin-mergerefused'),
+    run: anAttemptRef('pass-pin-mergerefused'),
     reason: 'dirty-base',
     raw: 'uncommitted changes present',
   }),
@@ -181,7 +181,7 @@ const ceiling = makeStream('ticket-pin-ceiling')
 events.push(
   ...aWait(ceiling, {
     _tag: 'BudgetExhausted',
-    run: aRunRef('pass-pin-ceiling'),
+    run: anAttemptRef('pass-pin-ceiling'),
     cause: 'out-of-turns',
     detail: 'spent 80 turns',
   }),
@@ -192,7 +192,7 @@ const crashed = makeStream('ticket-pin-crashed')
 events.push(
   ...aWait(crashed, {
     _tag: 'AgentCrashed',
-    run: aRunRef('pass-pin-crashed'),
+    run: anAttemptRef('pass-pin-crashed'),
     step: 'implement',
     cause: 'crash',
     detail: 'segfault',
@@ -204,7 +204,7 @@ const setup = makeStream('ticket-pin-setup')
 events.push(
   ...aWait(setup, {
     _tag: 'SetupRefused',
-    run: aRunRef('pass-pin-setup'),
+    run: anAttemptRef('pass-pin-setup'),
     step: 'prepared',
     action: 'install',
     why: 'npm install failed',
@@ -219,7 +219,7 @@ events.push(
 // more (`read-model.ts`'s own `verdictOf` comment), so that half of this row
 // is gone rather than rewritten.
 const approvalStream = makeStream('ticket-pin-approval')
-const approvalRun = aRun('pass-pin-approval')
+const approvalRun = anAttempt('pass-pin-approval')
 const approvalWaitId = aWaitId()
 events.push(...aClaim(approvalStream, approvalRun.runId))
 events.push(
@@ -241,7 +241,7 @@ events.push(
     approvalStream,
     {
       _tag: 'SignoffRequired',
-      run: aRunRef(approvalRun.runId),
+      run: anAttemptRef(approvalRun.runId),
       step: 'merge',
       action: 'human',
       question: 'merge this?',
@@ -258,7 +258,7 @@ const afterApprovalGranted = events.length
 // a round is reduced off `PassRouted`'s stored offer/reply/decision now, and
 // carries no ceiling of its own.
 const roundsStream = makeStream('ticket-pin-rounds')
-const roundsRun = aRun('pass-pin-rounds')
+const roundsRun = anAttempt('pass-pin-rounds')
 events.push(...aClaim(roundsStream, roundsRun.runId))
 function fixRoundOffer(round: number): RouteOffer {
   return {
@@ -279,7 +279,7 @@ const afterRoundTwo = events.length
 
 // ---- row 17: the rounds were spent and the ticket started over ------------
 const restartStream = makeStream('ticket-pin-restart')
-const restartRun = aRun('pass-pin-restart')
+const restartRun = anAttempt('pass-pin-restart')
 events.push(...aClaim(restartStream, restartRun.runId))
 const restartOffer: RouteOffer = {
   proposal: { _tag: 'ReviewFindings', findings: [] },
@@ -315,7 +315,7 @@ events.push(
 
 // ---- row 21: an ordinary verdict pass --------------------------------------
 const stepPassedStream = makeStream('ticket-pin-steppassed')
-const stepPassedRun = aRun('pass-pin-steppassed')
+const stepPassedRun = anAttempt('pass-pin-steppassed')
 events.push(...aClaim(stepPassedStream, stepPassedRun.runId))
 events.push(
   ...stepPassedRun.aStepEnded(
@@ -334,7 +334,7 @@ events.push(
 
 // ---- row 22: an ordinary verdict refusal -----------------------------------
 const stepFailedStream = makeStream('ticket-pin-stepfailed')
-const stepFailedRun = aRun('pass-pin-stepfailed')
+const stepFailedRun = anAttempt('pass-pin-stepfailed')
 events.push(...aClaim(stepFailedStream, stepFailedRun.runId))
 events.push(
   ...stepFailedRun.aStepEnded(
@@ -353,7 +353,7 @@ events.push(
 
 // ---- row 23: a verdict action an account wall stopped before it ran -------
 const stepNeverRanStream = makeStream('ticket-pin-stepneverran')
-const stepNeverRanRun = aRun('pass-pin-stepneverran')
+const stepNeverRanRun = anAttempt('pass-pin-stepneverran')
 events.push(...aClaim(stepNeverRanStream, stepNeverRanRun.runId))
 events.push(
   ...stepNeverRanRun.aStepEnded(
@@ -372,7 +372,7 @@ events.push(
 
 // ---- row 24: a commit action interrupted at round 0, which also writes RunFailed ----
 const didNotFinishStream = makeStream('ticket-pin-didnotfinish')
-const didNotFinishRun = aRun('pass-pin-didnotfinish')
+const didNotFinishRun = anAttempt('pass-pin-didnotfinish')
 events.push(...aClaim(didNotFinishStream, didNotFinishRun.runId))
 events.push(
   ...didNotFinishRun.aStepEnded(
@@ -389,13 +389,13 @@ events.push(
   ),
 )
 // `aStepEnded` no longer writes this for a round-0 interrupted dispatch
-// (#502 — that bookkeeping was `aRun`'s own `contextFor`, now gone), so it
+// (#502 — that bookkeeping was `anAttempt`'s own `contextFor`, now gone), so it
 // is pushed explicitly, matching what `conduct.ts` itself still appends.
 events.push(didNotFinishRun.event('RunFailed', { kind: 'crash', detail: 'crashed partway through' }))
 
 // ---- row 25: a commit action that stopped to ask ---------------------------
 const stepAskedStream = makeStream('ticket-pin-stepasked')
-const stepAskedRun = aRun('pass-pin-stepasked')
+const stepAskedRun = anAttempt('pass-pin-stepasked')
 events.push(...aClaim(stepAskedStream, stepAskedRun.runId))
 events.push(
   ...stepAskedRun.aStepEnded(
@@ -416,7 +416,7 @@ events.push(
 // `StepWaived` is gone (#502): a waiver is one action's own `Waived{waitId}`
 // result on `StepEnded` now (0120 §6).
 const stepWaivedStream = makeStream('ticket-pin-stepwaived')
-const stepWaivedRun = aRun('pass-pin-stepwaived')
+const stepWaivedRun = anAttempt('pass-pin-stepwaived')
 events.push(...aClaim(stepWaivedStream, stepWaivedRun.runId))
 events.push(
   ...stepWaivedRun.aStepEnded(
@@ -450,7 +450,7 @@ events.push(
 // holding the item (`claim.ts:150-152`), approved twice over. The reducer must
 // not count either re-claim as a fresh attempt.
 const continuedStream = makeStream('ticket-pin-continued')
-const continuedRun = aRun('pass-pin-continued')
+const continuedRun = anAttempt('pass-pin-continued')
 events.push(...aClaim(continuedStream, continuedRun.runId))
 
 function aSignoffApproved(run: typeof continuedRun, question: string): Envelope[] {
@@ -470,7 +470,7 @@ function aSignoffApproved(run: typeof continuedRun, question: string): Envelope[
     ),
     ...aWait(
       continuedStream,
-      { _tag: 'SignoffRequired', run: aRunRef(run.runId), step: 'merge', action: 'human', question },
+      { _tag: 'SignoffRequired', run: anAttemptRef(run.runId), step: 'merge', action: 'human', question },
       waitId,
     ),
     ...aResolution(continuedStream, waitId, { _tag: 'Approve', onSha: SHA }),
@@ -492,7 +492,7 @@ const afterContinuedRestart = events.length
 
 // ---- rows 29-31: what a release does to the run the card names (#844) ----
 // Added before #844 changed `src`, and snapshotted on the code as it was, so each row shows today's answer.
-const verdictAfterRelease = (stream: ReturnType<typeof makeStream>, run: ReturnType<typeof aRun>): Envelope[] => [
+const verdictAfterRelease = (stream: ReturnType<typeof makeStream>, run: ReturnType<typeof anAttempt>): Envelope[] => [
   ...aClaim(stream, run.runId),
   ...run.aStepEnded(
     outcomeOf('review', 0, [
@@ -511,25 +511,30 @@ const verdictAfterRelease = (stream: ReturnType<typeof makeStream>, run: ReturnT
 
 // `lingtai ask` after a release: no run is the card's.
 const askAfterReleaseStream = makeStream('ticket-pin-askafterrelease')
-const askAfterReleaseRun = aRun('pass-pin-askafterrelease')
+const askAfterReleaseRun = anAttempt('pass-pin-askafterrelease')
 events.push(...verdictAfterRelease(askAfterReleaseStream, askAfterReleaseRun))
 events.push(...aWait(askAfterReleaseStream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }))
 
 // A close after a release.
 const closeAfterReleaseStream = makeStream('ticket-pin-closeafterrelease')
-const closeAfterReleaseRun = aRun('pass-pin-closeafterrelease')
+const closeAfterReleaseRun = anAttempt('pass-pin-closeafterrelease')
 events.push(...verdictAfterRelease(closeAfterReleaseStream, closeAfterReleaseRun))
 events.push(closeAfterReleaseStream('TicketClosed', { by: 'steven', reason: 'not wanted' }))
 
 // A person requeues a run's wait: `resolve-wait.ts` appends the resolution and the release in one append.
 const requeueOfRunWaitStream = makeStream('ticket-pin-requeueofrunwait')
-const requeueOfRunWaitRun = aRun('pass-pin-requeueofrunwait')
+const requeueOfRunWaitRun = anAttempt('pass-pin-requeueofrunwait')
 const requeueOfRunWaitId = aWaitId()
 events.push(...aClaim(requeueOfRunWaitStream, requeueOfRunWaitRun.runId))
 events.push(
   ...aWait(
     requeueOfRunWaitStream,
-    { _tag: 'AgentQuestion', run: aRunRef(requeueOfRunWaitRun.runId), step: 'implement', question: 'which approach?' },
+    {
+      _tag: 'AgentQuestion',
+      run: anAttemptRef(requeueOfRunWaitRun.runId),
+      step: 'implement',
+      question: 'which approach?',
+    },
     requeueOfRunWaitId,
   ),
 )

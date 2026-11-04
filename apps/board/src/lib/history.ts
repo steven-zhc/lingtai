@@ -28,7 +28,7 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
-import { boardFactOf, fromOf, PASS_STREAM_PREFIX, routeNext, waitWords } from '@lingtai/domain'
+import { boardFactOf, fromOf, ATTEMPT_STREAM_PREFIX, routeNext, waitWords } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 import { presentCause } from './triage-cause.ts'
@@ -120,7 +120,7 @@ function sha(d: Payload, key: string, n = 7): string {
 
 /** `pass-78db72ff-d659-…` → `78db72ff`. The same cut `TicketClaimed` made. */
 function runShort(d: Payload, key: string): string {
-  return need(d, key).slice(PASS_STREAM_PREFIX.length, PASS_STREAM_PREFIX.length + 8)
+  return need(d, key).slice(ATTEMPT_STREAM_PREFIX.length, ATTEMPT_STREAM_PREFIX.length + 8)
 }
 
 function list(v: unknown): string {
@@ -592,7 +592,7 @@ export function summarise(event: Envelope, branch?: string): string {
  * actor. The whole value goes in the row's `title`.
  */
 export function shortActor(actor: string): string {
-  const prefix = `agent:${PASS_STREAM_PREFIX}`
+  const prefix = `agent:${ATTEMPT_STREAM_PREFIX}`
   if (!actor.startsWith(prefix)) return actor
   return `${prefix}${actor.slice(prefix.length, prefix.length + 8)}`
 }

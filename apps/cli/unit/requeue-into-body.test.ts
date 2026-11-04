@@ -1,5 +1,5 @@
 import { reduceTicket, ticketStream, type Envelope, type ProjectState } from '@lingtai/domain'
-import { aClaim, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
@@ -21,7 +21,11 @@ async function blocked(store: EventStore, issue: number) {
   const waitId = aWaitId()
   await seed(store, ticketId, [
     ...aClaim(stream, 'pass-1'),
-    ...aWait(stream, { _tag: 'AgentQuestion', run: aRunRef('pass-1'), step: 'implement', question: 'which?' }, waitId),
+    ...aWait(
+      stream,
+      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', question: 'which?' },
+      waitId,
+    ),
   ])
   return { ticketId, waitId }
 }

@@ -4,7 +4,7 @@
  * the same run the approval was about.
  */
 import { type Action, reduceTicket, ticketStream } from '@lingtai/domain'
-import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, anAttempt, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -32,13 +32,13 @@ async function approvedTicket(issue: number, runId: string) {
   const store = createMemoryEventStore()
   const ticketId = ticketStream(PROJECT, issue)
   const item = makeStream(ticketId)
-  const run = aRun(runId)
+  const run = anAttempt(runId)
   const waitId = aWaitId()
   await store.append(ticketId, 0, [
     ...aClaim(item, runId),
     ...aWait(
       item,
-      { _tag: 'SignoffRequired', run: aRunRef(runId), step: 'merge', action: 'human:land', question: 'land it?' },
+      { _tag: 'SignoffRequired', run: anAttemptRef(runId), step: 'merge', action: 'human:land', question: 'land it?' },
       waitId,
     ),
   ])

@@ -293,7 +293,7 @@
     "type": "RunSpent",
     "count": 1,
     "class": "join",
-    "reason": "Sums cost, paid claims and distinct (pass, round) over spend rows; rounds that spent is not RunState.roundsOpened."
+    "reason": "Sums cost, paid claims and distinct (pass, round) over spend rows; rounds that spent is not AttemptState.roundsOpened."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",
@@ -309,7 +309,7 @@
     "type": "StepEnded",
     "count": 1,
     "class": "join",
-    "reason": "One reviews[] entry per review StepEnded from that payload alone; RunState.steps keeps only the latest verdict per key."
+    "reason": "One reviews[] entry per review StepEnded from that payload alone; AttemptState.steps keeps only the latest verdict per key."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { Envelope, PayloadOf, WaitId } from '@lingtai/domain'
 import { chatStream, CONTROL_STREAM } from '@lingtai/domain'
-import { aRun } from '@lingtai/domain/test/events'
+import { anAttempt } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
@@ -27,7 +27,7 @@ const wi = (n: number | string) => `ticket-${PROJECT}-${n}`
 
 const USAGE = [{ model: 'claude-opus-5', tokens: { fresh: 100, output: 20 } }]
 
-function aRunStarted(run: ReturnType<typeof aRun>, ticketId: string): Envelope {
+function aRunStarted(run: ReturnType<typeof anAttempt>, ticketId: string): Envelope {
   return run.event('RunStarted', {
     ticketId,
     runtime: 'claude-code',
@@ -59,7 +59,7 @@ function aRunSpent(
 const events: Envelope[] = []
 
 // ---- Action and Judge, on one run stream after its RunStarted -------------
-const runAction = aRun('pass-pin-action')
+const runAction = anAttempt('pass-pin-action')
 events.push(aRunStarted(runAction, wi(1)))
 const afterActionRunStarted = events.length
 const actionSpent = aRunSpent(runAction.event, { _tag: 'Action', step: 'proposed', name: 'review', round: 0 })
@@ -338,7 +338,7 @@ describe('store.spend reads the reduced table, filtered and ordered the way read
 
 describe('store.spend reads the grant a round was paid for with', () => {
   it('has the wait id on a granted Action row, null on an automatic one and on a Judge row', async () => {
-    const run = aRun('pass-pin-grant')
+    const run = anAttempt('pass-pin-grant')
     const stream = [
       aRunStarted(run, wi(9)),
       aRunSpent(run.event, { _tag: 'Action', step: 'implement', name: 'agent', round: 1 }),

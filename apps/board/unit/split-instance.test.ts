@@ -1,6 +1,6 @@
 import { splitTicketHolding } from '@lingtai/conductor/split-ticket'
 import { splitProgressOf, ticketStream } from '@lingtai/domain'
-import { aClaim, aRun, aRunRef, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { aClaim, anAttempt, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -56,10 +56,10 @@ describe('runSplit around the writer (0118 §12 rule 7)', () => {
     const ticketId = ticketStream('p', 1)
     const item = makeStream(ticketId)
     const waitId = aWaitId()
-    const run = aRun('pass-1')
+    const run = anAttempt('pass-1')
     await store.append(ticketId, 0, [
       ...aClaim(item, run.runId),
-      ...aWait(item, { _tag: 'NothingProduced', run: aRunRef(run.runId), said: null }, waitId),
+      ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
     ])
     const real = store.append.bind(store)
     store.append = async (id, version, events) => {
