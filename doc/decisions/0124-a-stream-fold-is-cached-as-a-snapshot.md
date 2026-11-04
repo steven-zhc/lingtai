@@ -105,20 +105,22 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
 
 7. **The write cannot go backwards.** A snapshot row is keyed by
    `(stream, reduce name, reduce version)` and replaced only by one at a higher stream
-   version, in one conditional statement. Two attempts (0122), the daemon and the
+   version, or by one whose stored anchor no longer holds (§8), in one conditional statement. Two attempts (0122), the daemon and the
    board writing at once leave the newest; a slow writer that finishes late
    changes nothing.
 
-8. **A snapshot belongs to one log, named by its epoch.** A log's **epoch** is
-   derived from its lowest-`seq` event, as `<seq>@<at>`; it is never stored, and a
-   log with no events has none. Emptying `events` gives a new epoch and restoring
-   the same events gives the same one. Every snapshot stores the epoch it was
-   reduced from — read before the stream — and a snapshot from another epoch is
-   void: `latest` answers none for it and `put` replaces it at any version. A reset
-   ([0100](0100-one-append-only-log.md) §5) is a new epoch, and its procedure in
-   `doc/operating.md` also empties the snapshot table — the epoch is what keeps a
-   forgotten step from returning a pre-reset state (a pause, a standing shutdown),
-   not the step itself.
+8. **A snapshot belongs to one log, named by the event it was reduced to.** Every
+   snapshot stores that event's stream version, `seq` and `at` (the `at` to the
+   millisecond an envelope carries), and is usable only while `events` still holds
+   the event of that stream at that version with that `seq` and `at`. Otherwise it
+   is void: `latest` answers none for it, `put` replaces it at any version, and a
+   `put` whose own anchor is not in the log is refused and stores nothing. `seq`
+   alone is not the anchor, because a reset restarts it and the same start-up
+   appends can land on the same `seq`; the `at` cannot repeat. A reset
+   ([0100](0100-one-append-only-log.md) §5) therefore needs no step for snapshots,
+   and a forgotten one cannot return a pre-reset state (a pause, a standing
+   shutdown). A restore of the same events keeps them usable, which is right: it
+   is the same log.
 
 9. **Snapshots live beside the log, in every store, and are disposable.** One
    table, `stream_snapshots`, in the same database as `events`, created on first
@@ -128,7 +130,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    store's contract suite (0100 §6). The reducer registry lives in `@lingtai/domain`
    and the storage in `@lingtai/event-store`, which already depends on it.
    Deleting every row is always safe. `lingtai doctor` reports how many
-   snapshots are void against their reduce's version or the log's epoch; nothing
+   snapshots are void against their reduce's version or their anchor event; nothing
    repairs a snapshot by hand.
 
 10. **Who reads through a snapshot, in order.** First the board and the CLI's

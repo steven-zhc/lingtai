@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createSqlSnapshotStore } from '../src/snapshots.ts'
+import { anchorSql, createSqlSnapshotStore } from '../src/snapshots.ts'
 import { createSqliteLog, createSqliteTicketSql, openSqliteLog } from '../src/sqlite.ts'
 import { createMemoryEventStore, createMemorySnapshotStore } from '../test/memory.ts'
 import { describeSnapshotContract } from '../test/snapshot-contract.ts'
@@ -8,15 +8,23 @@ import { discovered } from '../test/support.ts'
 
 describeSnapshotContract('memory', () => {
   const events = createMemoryEventStore()
-  let n = 0
+  const snapshots = createMemorySnapshotStore(events)
+  const sid = 'ticket-mem-1'
+  let version = 0
   return {
-    sid: 's-1',
-    snapshots: createMemorySnapshotStore(events),
+    sid,
+    snapshots,
     append: async () => {
-      await events.append(`ticket-mem-${n}`, 0, [discovered('t')])
-      n += 1
+      const [env] = await events.append(sid, version, [discovered('t')])
+      version += 1
+      if (env === undefined) throw new Error('append returned nothing')
+      return env
     },
-    empty: async () => events.clear(),
+    plant: async (s) => snapshots.plant(s),
+    empty: async () => {
+      events.clear()
+      version = 0
+    },
   }
 })
 
@@ -24,77 +32,79 @@ describeSnapshotContract('sqlite', () => {
   const db = openSqliteLog(':memory:')
   const log = createSqliteLog({ db, path: ':memory:' })
   const events = log.store
-  let n = 0
+  const sid = 'ticket-sql-1'
+  let version = 0
   return {
-    sid: 's-1',
+    sid,
     snapshots: log.snapshots,
     append: async () => {
-      await events.append(`ticket-sql-${n}`, 0, [discovered('t')])
-      n += 1
+      const [env] = await events.append(sid, version, [discovered('t')])
+      version += 1
+      if (env === undefined) throw new Error('append returned nothing')
+      return env
+    },
+    plant: async (s) => {
+      await log.snapshots.latest(s) // makes the table
+      db.prepare(
+        `INSERT OR REPLACE INTO stream_snapshots (stream_id, reducer, reducer_version, stream_version, last_seq, last_at, state)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(s.streamId, s.reducer, s.reducerVersion, s.streamVersion, s.lastSeq, s.lastAt.toISOString(), s.state)
     },
     empty: async () => {
       db.exec('DELETE FROM events')
+      version = 0
     },
   }
 })
 
-describe('sqlite: a stale writer and a row that cannot be read', () => {
-  it('does not replace a newer epoch with a stale writer, and says so', async () => {
+describe('sqlite: a stale writer', () => {
+  it('does not replace a post-reset row with a writer holding a pre-reset anchor, and says so', async () => {
     const db = openSqliteLog(':memory:')
     const log = createSqliteLog({ db, path: ':memory:' })
-    await log.store.append('ticket-a', 0, [discovered('t')])
-    const e1 = (await log.snapshots.epoch()) as string
+    const [a] = await log.store.append('ticket-a', 0, [discovered('t')])
     db.exec('DELETE FROM events')
-    await log.store.append('ticket-b', 0, [discovered('t')])
-    const e2 = (await log.snapshots.epoch()) as string
-    const base = { streamId: 's', reducer: 'control', reducerVersion: 1, streamVersion: 2, lastSeq: 2n, state: '{}' }
-    expect(await log.snapshots.put({ ...base, epoch: e2 })).toBe('written')
-    await expect(log.snapshots.put({ ...base, epoch: e1, streamVersion: 1 })).rejects.toThrow(/epoch/)
-    expect((await log.snapshots.latest(base))?.epoch).toBe(e2)
-  })
-
-  it('rejects a row with empty numeric text rather than reading it as zero', async () => {
-    const db = openSqliteLog(':memory:')
-    const log = createSqliteLog({ db, path: ':memory:' })
-    await log.store.append('ticket-a', 0, [discovered('t')])
-    const epoch = (await log.snapshots.epoch()) as string
-    const key = { streamId: 's', reducer: 'control', reducerVersion: 1 }
-    expect(await log.snapshots.latest(key)).toBeNull() // makes the table
-    for (const col of ['stream_version', 'last_seq']) {
-      db.exec('DELETE FROM stream_snapshots')
-      const v = (c: string) => (c === col ? "''" : '1')
-      db.exec(
-        `INSERT INTO stream_snapshots (stream_id, reducer, reducer_version, stream_version, last_seq, epoch, state)
-         VALUES ('s', 'control', 1, ${v('stream_version')}, ${v('last_seq')}, '${epoch}', '{}')`,
-      )
-      await expect(log.snapshots.latest(key)).rejects.toThrow(new RegExp(`${col}.*not an integer`))
-    }
+    const [b] = await log.store.append('ticket-b', 0, [discovered('t')])
+    if (a === undefined || b === undefined) throw new Error('append returned nothing')
+    const base = { streamId: 'ticket-b', reducer: 'control', reducerVersion: 1, state: '{}' }
+    const post = { ...base, streamVersion: 1, lastSeq: b.seq, lastAt: b.at }
+    expect(await log.snapshots.put(post)).toBe('written')
+    const pre = { ...post, lastSeq: a.seq, lastAt: a.at }
+    await expect(log.snapshots.put(pre)).rejects.toThrow(/not in this log/)
+    expect((await log.snapshots.latest(post))?.lastSeq).toBe(b.seq)
   })
 })
 
 describe('sqlite: a put whose insert selected nothing', () => {
-  it('is refused, not kept, though the epoch reads as current afterwards', async () => {
+  it('is refused, not kept, though the anchor reads as present afterwards', async () => {
     const db = openSqliteLog(':memory:')
     const log = createSqliteLog({ db, path: ':memory:' })
-    await log.store.append('ticket-a', 0, [discovered('t')])
+    const [e] = await log.store.append('ticket-a', 0, [discovered('t')])
+    if (e === undefined) throw new Error('append returned nothing')
     const real = createSqliteTicketSql(db)
-    // The INSERT selects nothing (the log was emptied at that instant); by the
-    // time the epoch is read again it is back, so only the row can say 'kept'.
+    // The INSERT selects nothing (the anchor was missing at that instant); a
+    // newer row then sits there. Only a statement that checks the incoming
+    // anchor too can refuse rather than say 'kept'.
     const store = createSqlSnapshotStore({
       ...real,
       query: async (text, params) => (text.includes('INSERT INTO stream_snapshots') ? [] : real.query(text, params)),
     })
-    const epoch = (await store.epoch()) as string
     const snap = {
-      streamId: 's',
+      streamId: 'ticket-a',
       reducer: 'control',
       reducerVersion: 1,
       streamVersion: 1,
-      lastSeq: 1n,
-      epoch,
+      lastSeq: e.seq + 1000n,
+      lastAt: e.at,
       state: '{}',
     }
-    await expect(store.put(snap)).rejects.toThrow(/epoch/)
-    expect(await store.latest(snap)).toBeNull()
+    await createSqlSnapshotStore(real).put({ ...snap, lastSeq: e.seq }) // a holding row at the same version
+    await expect(store.put(snap)).rejects.toThrow(/not in this log/)
+  })
+})
+
+describe('the Postgres anchor', () => {
+  it('compares at millisecond precision, never `e.at = …` directly', () => {
+    const sql = anchorSql('postgres', { streamId: '$1', version: '$2', seq: '$3', at: '$4' })
+    expect(sql).toContain("date_trunc('milliseconds', e.at)")
   })
 })
