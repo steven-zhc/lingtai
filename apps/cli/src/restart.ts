@@ -427,7 +427,7 @@ export function lostTheLock(holder: string | null, log: (line: string) => void):
   log(
     paint.held(
       `the lock was taken first${holder ? ` (${holder})` : ''}, and this started nothing. Whether a daemon is conducting ` +
-        `afterwards is not something this process can know — a lingtai run exits when its pass ends, and a ` +
+        `afterwards is not something this process can know — a lingtai run exits when its attempt ends, and a ` +
         `daemon that read the drain before it was withdrawn exits too. lingtai doctor says whether one is up; ` +
         `if none is, lingtai restart again waits for the lock and starts one.`,
     ),
@@ -949,7 +949,7 @@ export async function prepareRestart(
       log(
         paint.held(
           `${before.conducting} is conducting and no daemon's beacon is fresh — a lingtai run, or a daemon whose ` +
-            `beacon is not landing. A drain is asked either way: a daemon reads it, and a lingtai run finishes its pass regardless.`,
+            `beacon is not landing. A drain is asked either way: a daemon reads it, and a lingtai run finishes its attempt regardless.`,
         ),
       )
     }
@@ -998,7 +998,7 @@ export async function prepareRestart(
     log(
       paint.muted(
         drainTimeoutMs === null
-          ? `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+          ? `an attempt is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `the daemon gives up after ${Math.round(drainTimeoutMs / 1000)}s and exits with its agent still running, which the next conductor kills.`,
       ),
     )
@@ -1032,7 +1032,7 @@ export async function prepareRestart(
       log(
         request !== null
           ? paint.held(
-              `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its pass and exits, ` +
+              `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its attempt and exits, ` +
                 `and nothing was started. lingtai restart picks that request up again and starts; lingtai resume lifts it.`,
             )
           : paint.held(`${stopped}. Nothing was asked to stop and nothing was started.`),
@@ -1448,7 +1448,7 @@ export async function queueForTheLock(
           return (await holder()) ?? 'nobody, while the lock is handed to this command'
         },
         ctrlC:
-          "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its pass, and the supervisor then starts one that takes work.",
+          "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its attempt, and the supervisor then starts one that takes work.",
         ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
         ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
         ...(progress === undefined ? {} : { progress }),

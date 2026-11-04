@@ -446,10 +446,10 @@ describe('the spend the bar handed to a page', () => {
   })
 })
 
-describe('the health dot counts passes in flight (#640)', () => {
+describe('the health dot counts attempts in flight (#640)', () => {
   it('says how many in the title when there are two, and nothing for one', () => {
     const two = bearing('open', board({ inFlight: ['lingtai#1', 'lingtai#2'] }), null)
-    expect(two.title).toContain('2 passes in flight')
+    expect(two.title).toContain('2 attempts in flight')
     expect(bearing('open', board({ inFlight: ['lingtai#1'] }), null).title).not.toContain('in flight')
   })
 })

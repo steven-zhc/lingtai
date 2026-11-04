@@ -72,7 +72,7 @@ describe('lingtai board, the arguments', () => {
     const r = await capture(['shutdown'])
     expect(r.code).toBe(2)
     expect(r.err).toContain('lingtai board stop')
-    expect(r.err).toContain('no pass to finish')
+    expect(r.err).toContain('no attempt to finish')
     const asJson = await capture(['shutdown', '--json'])
     expect(asJson.code).toBe(2)
     expect(JSON.parse(asJson.out)).toMatchObject({ command: 'board', error: { code: 'usage' } })

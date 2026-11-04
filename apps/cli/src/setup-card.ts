@@ -187,7 +187,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         ],
       },
       {
-        title: 'each pass',
+        title: 'each attempt',
         rows: [
           ['writes', agentRow(recipe.writer)],
           ['reviews', agentRow(recipe.reviewer)],
@@ -196,7 +196,10 @@ export function renderSetupCard(facts: SetupCardFacts): string {
             recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
           ],
           ['trial', trialRow(trial)],
-          ['approve', recipe.approves ? 'you approve every pass before it lands' : 'a pass lands with no one asking'],
+          [
+            'approve',
+            recipe.approves ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking',
+          ],
         ],
       },
     )

@@ -103,8 +103,8 @@ export function EventsBody({ doc }: { doc: EventsDoc }) {
     >
       <h1>Events</h1>
       <p>
-        A pass writes events as it goes. Pick a step to see the events it writes; every event is listed once, under its
-        group.
+        An attempt writes events as it goes. Pick a step to see the events it writes; every event is listed once, under
+        its group.
       </p>
     </EventsFilter>
   )

@@ -6,7 +6,7 @@ export const NO_RESTART_EFFECT = 'This neither spends nor refunds an automatic r
 export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
   Approve: {
     title: 'Approve and continue',
-    consequence: 'Continue this run from its recorded commit. Any refusal at this hold is waived.',
+    consequence: 'Continue this attempt from its recorded commit. Any refusal at this hold is waived.',
   },
   GrantFixRound: {
     title: 'Continue fixing current work',
@@ -20,12 +20,12 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
   Requeue: {
     title: 'Start over from base',
     consequence:
-      'Start a new pass from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
+      'Start a new attempt from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
   },
   EditBodyAndRequeue: {
     title: 'Add to the ticket and start over',
     consequence:
-      'Append your text to the ticket body, then queue a new pass from main with that text. ' + NO_RESTART_EFFECT,
+      'Append your text to the ticket body, then queue a new attempt from main with that text. ' + NO_RESTART_EFFECT,
   },
   Split: {
     title: 'Split into smaller tickets',
@@ -33,6 +33,6 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
   },
   Close: {
     title: 'Close the ticket',
-    consequence: 'End this ticket without another pass. A reason is required.',
+    consequence: 'End this ticket without another attempt. A reason is required.',
   },
 }

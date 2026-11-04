@@ -829,7 +829,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
           files: mapFiles({ [PATH]: LISTED }),
         }),
       )
-      expect(asked.some((q) => q.includes('Each pass runs these checks before review — keep this list?'))).toBe(true)
+      expect(asked.some((q) => q.includes('Each attempt runs these checks before review — keep this list?'))).toBe(true)
       const q = asked.find((x) => x.includes('Try them once now'))!
       expect(q).toContain('on `develop`, to see that they work?')
       expect(q).toContain(ending)

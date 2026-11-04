@@ -91,7 +91,7 @@ function runFor(manager: Manager | null, name: string): string {
 /** Why a script, found by name or by its command, is skipped rather than suggested. */
 function skipReasonFor(name: string, command: string): string | null {
   if (INTEGRATION_NAME.test(name)) {
-    return `"${name}" looks like an integration or end-to-end check — those do not fit inside a pass (CLAUDE.md, ~803s)`
+    return `"${name}" looks like an integration or end-to-end check — those do not fit inside an attempt (CLAUDE.md, ~803s)`
   }
   if (INTEGRATION_NAME.test(command) || NEEDS_A_WORLD.test(command)) {
     return `"${name}" runs "${command}", which looks like an integration or end-to-end check — needing a browser or a running app, a worktree has neither`

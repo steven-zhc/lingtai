@@ -114,7 +114,7 @@ describe('statedBeforeDispatch', () => {
     // `0070 §8`'s rule: empty is today's string, character for character.
     // What `lingtai add` prints for the same recipe, minus its leading label.
     expect(lines[1]).toBe(
-      'a pass up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused it. ' +
+      'an attempt up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused it. ' +
         '2h and 300 turns each, so at most 6h. An attempt whose rounds are spent goes to you (runtime.limits.restarts: 0)',
     )
   })

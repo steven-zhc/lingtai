@@ -10,7 +10,7 @@ import { EventsBody } from './events-body'
 
 export const metadata: Metadata = {
   title: 'Events',
-  description: 'The ten steps of a pass and the events each writes, linked to the code that appends them.',
+  description: 'The ten steps of an attempt and the events each writes, linked to the code that appends them.',
   alternates: { canonical: '/docs/events/' },
 }
 

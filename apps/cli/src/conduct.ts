@@ -328,7 +328,7 @@ export function conductWork(
     // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
     const limit = slots && !slots.ceilingSet ? 1 : wanted
     if (slots && wanted > 1 && !slots.ceilingSet) {
-      say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one pass runs in all`)
+      say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one attempt runs in all`)
     }
     // Passes already in flight, in any project, keep the look detached even when the
     // limit has since fallen to one or the ceiling has been removed: awaiting would
@@ -795,6 +795,6 @@ async function record(
     const next = turnTransition(current, seen)
     if (next) await store.append(projectStream(name), current.version, [next])
   } catch (err) {
-    log(`${name}: could not record the pass on the log — ${(err as Error).message}`)
+    log(`${name}: could not record the attempt on the log — ${(err as Error).message}`)
   }
 }

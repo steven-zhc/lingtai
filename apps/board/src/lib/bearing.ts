@@ -79,7 +79,7 @@ function beating(health: Health): string {
   const secs = Math.round((health.sinceBeatMs ?? 0) / 1000)
   if (health.daemon === 'up') {
     // The count rides in the title and never in a chip of its own (#134); one pass or none says nothing (#640).
-    const side = health.inFlight.length > 1 ? ` · ${health.inFlight.length} passes in flight` : ''
+    const side = health.inFlight.length > 1 ? ` · ${health.inFlight.length} attempts in flight` : ''
     return `daemon beating ${secs}s ago${side}${predates(health)}`
   }
   if (health.daemon === 'stale') return `no beat for ${secs}s`

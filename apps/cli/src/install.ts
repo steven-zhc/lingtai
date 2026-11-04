@@ -585,7 +585,7 @@ export async function uninstall(options: { yes: boolean; nothingConducts: boolea
   if (running.length > 0) {
     world.log(`${symbol.fail()} ${paint.fail('not uninstalling — these are running from what would be removed:')}`)
     for (const p of running) world.log(paint.fail(`  · pid ${p.pid}  ${p.command}`))
-    world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
+    world.log(paint.muted('lingtai shutdown stops a daemon after its attempt; then lingtai uninstall again'))
     return 1
   }
   // A daemon from a checkout is none of those, and its agents' worktrees,
@@ -616,7 +616,7 @@ export async function uninstall(options: { yes: boolean; nothingConducts: boolea
         `not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`,
       )}`,
     )
-    world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
+    world.log(paint.muted('lingtai shutdown stops a daemon after its attempt; then lingtai uninstall again'))
     return 1
   }
   // Whether the log this copy reads survives the removal — read before

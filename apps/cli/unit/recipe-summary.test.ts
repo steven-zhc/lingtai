@@ -73,7 +73,7 @@ describe('the confirm before registering (#542, #773)', () => {
     const asked = world.events.filter((e) => CONFIRM.test(e))
     expect(asked).toHaveLength(1)
     expect(asked[0]).toContain(
-      'nothing checks a diff before review, and a pass lands on main with no one asking — register anyway?',
+      'nothing checks a diff before review, and an attempt lands on main with no one asking — register anyway?',
     )
     // No block above the question: it is the whole of what is said.
     expect(world.events.join('\n')).not.toContain('Before registering')
@@ -92,7 +92,7 @@ describe('the confirm before registering (#542, #773)', () => {
     const world = terminal()
     await askRecipe(world, at({ flags: { install: 'none' }, buildFlags: ['npm test'] }))
     const asked = world.events.find((e) => CONFIRM.test(e))
-    expect(asked).toContain('a pass lands on main with no one asking — register anyway?')
+    expect(asked).toContain('an attempt lands on main with no one asking — register anyway?')
     expect(asked).not.toContain('nothing checks')
   })
 

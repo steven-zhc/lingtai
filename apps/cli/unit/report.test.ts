@@ -285,9 +285,9 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('getting past review')
   })
 
-  it('says how many passes the machine time skipped', async () => {
+  it('says how many attempts the machine time skipped', async () => {
     const r = await run({}, { tickets: async () => [row({ intervalsEmpty: 2, intervalsOpen: 1 })] })
-    expect(r.out).toContain('3 passes left out of machine time: 2 with no sign of life, 1 still open')
+    expect(r.out).toContain('3 attempts left out of machine time: 2 with no sign of life, 1 still open')
   })
 })
 

@@ -1298,7 +1298,7 @@ describe('the plan reduced into the rail (#781)', () => {
   it('draws a closed disclosure with one cell per step and the limits under it', () => {
     const html = renderToStaticMarkup(<Rail progress={none()} live={false} plan={view} />)
     expect(html).toContain('<details class="srailplan">')
-    expect(html).toContain('What the next pass does at each step')
+    expect(html).toContain('What the next attempt does at each step')
     expect(html.match(/<li class="splancell"/g)).toHaveLength(STEPS.length)
     expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
     expect(html).toContain('<span class="skipped">skipped</span>')

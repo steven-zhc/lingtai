@@ -1262,8 +1262,8 @@ export async function daemonLiveness(
   // Up with several passes side by side says how many, and one or none stays as it was (#640).
   let side = ''
   if (beat.state === 'up') {
-    if (held === null) side = ' — passes in flight unreadable'
-    else if (held.length > 1) side = ` — ${held.length} passes in flight`
+    if (held === null) side = ' — attempts in flight unreadable'
+    else if (held.length > 1) side = ` — ${held.length} attempts in flight`
   }
   // The same argument one state along. `starting` is up and taking nothing
   // yet, and saying only `starting` would invite the restart that `#144`'s
@@ -1470,7 +1470,7 @@ async function passRefusals(load: typeof loadProjects = loadProjects): Promise<C
 
   const refusing = projects.filter((p) => p.project !== null && p.refused !== null)
   if (refusing.length === 0) {
-    return { name, status: 'ok', detail: 'no project is refused by the last pass that looked at it' }
+    return { name, status: 'ok', detail: 'no project is refused by the last turn that looked at it' }
   }
 
   const status = await readStatus().catch(() => null)
@@ -1492,7 +1492,7 @@ export function refusalsRow(read: ReturnType<typeof describeRefusal>[]): CheckRe
   return {
     name,
     status: failing.length > 0 ? 'fail' : 'warn',
-    title: read.length === 1 ? read[0]!.title : `${read.length} projects are refused by the last pass`,
+    title: read.length === 1 ? read[0]!.title : `${read.length} projects are refused by the last turn`,
     detail: read.map((r) => r.detail).join('\n'),
     // Only when every failing project is one a restart is the remedy for — one
     // refused by code older than this checkout. A refusal by the code here
@@ -1559,14 +1559,14 @@ export function describeRefusal(
   return now.daemonUp
     ? {
         status: 'fail',
-        title: `${project} is refused by the last pass`,
+        title: `${project} is refused by the last turn`,
         detail: `${head}${witness}`,
         restartAnswers: older,
       }
     : {
         status: 'warn',
-        title: `${project} was refused by the last pass and no daemon is up`,
-        detail: `${head}${witness}. No daemon is up; the next pass records whether it still refuses`,
+        title: `${project} was refused by the last turn and no daemon is up`,
+        detail: `${head}${witness}. No daemon is up; the next turn records whether it still refuses`,
         restartAnswers: older,
       }
 }
@@ -2134,7 +2134,7 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
           // where an operator looks before starting something, which makes
           // it the place this number is most worth knowing — and it is the
           // one number here that is a product rather than a setting.
-          `         a pass: ${attemptCeiling(f.limits)}`,
+          `         an attempt: ${attemptCeiling(f.limits)}`,
       }
     : {
         name: `recipe: ${f.project}`,
@@ -2451,7 +2451,7 @@ function extensionOutcome(
         `${detail}\n${absent.join(', ')} declared by an extension and not set in either file. ` +
         `An extension gets only what it declares, so it would run without them — ` +
         (inTheLoop
-          ? `and a step's action verdict is what the loop waits for, so every pass is refused after a worktree and an install.`
+          ? `and a step's action verdict is what the loop waits for, so every attempt is refused after a worktree and an install.`
           : `a subscriber runs off the log and changes no outcome, so what is lost is the notification, once per event, as a PluginFailed.`),
       fix: [
         ...absent.map((variable) => `lingtai env set ${project} ${variable}`),

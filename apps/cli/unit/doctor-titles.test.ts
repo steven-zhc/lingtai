@@ -108,7 +108,7 @@ describe('conductor: refusals on the log', () => {
     expect(refusalsRow([older])).toMatchObject({ status: 'fail', fix: RESTART, restartAnswers: true })
     expect(refusalsRow([older]).title).toBe(older.title)
     const two = refusalsRow([older, older])
-    expect(two.title).toBe('2 projects are refused by the last pass')
+    expect(two.title).toBe('2 projects are refused by the last turn')
     expect(two.fix).toBe(RESTART)
     expect(refusalsRow([older, same]).fix).toBeUndefined()
     expect(refusalsRow([same]).fix).toBeUndefined()

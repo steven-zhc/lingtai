@@ -123,7 +123,7 @@ export function Outgoing({
     return (
       <div className="outgoing">
         <p className="outhead">
-          <span className="outname">next pass from base</span>
+          <span className="outname">next attempt from base</span>
         </p>
         {/* Never merely absent. A missing template, an unregistered project and
             a recipe that will not parse all look like "no prompt", and only the
@@ -138,7 +138,7 @@ export function Outgoing({
   return (
     <div className="outgoing">
       <p className="outhead">
-        <span className="outname">next pass from base</span>
+        <span className="outname">next attempt from base</span>
         {/* How long the edit lasts, on the box that makes it. The next claim
             consumes it, whoever starts it. */}
         <span className="outonly">attempt {outgoing.attempt} only</span>

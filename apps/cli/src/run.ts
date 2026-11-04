@@ -209,9 +209,9 @@ export function statedBeforeDispatch(recipe: Recipe): string[] {
   }
   const named = [...runtimes]
   const lines = [
-    `runtime: ${named.join(', ')} — lingtai holds no key of its own, so this pass spends on whatever account ` +
+    `runtime: ${named.join(', ')} — lingtai holds no key of its own, so this attempt spends on whatever account ` +
       `${named.length === 1 ? 'that runtime is' : 'those runtimes are'} signed in to on this machine`,
-    `a pass ${attemptCeiling({
+    `an attempt ${attemptCeiling({
       ...limitsFor(recipe, 'implement'),
       wallMs: parseDuration(limitsFor(recipe, 'implement').wall),
       // `implement`'s own runs, which is the whole of what the sentence counts
@@ -608,7 +608,7 @@ export async function run(
         // `0 landed` over a merge that had happened, and exited 1 on the count.
         const { landed, held, stopped } = yield* Effect.tryPromise({
           try: () => world.tallyPass(outcome.ran),
-          catch: (err) => refuse(`the pass ran, but its summary could not be read back: ${(err as Error).message}`),
+          catch: (err) => refuse(`the attempt ran, but its summary could not be read back: ${(err as Error).message}`),
         })
         log(
           `${stopped === 0 ? symbol.pass() : symbol.fail()} ${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`,

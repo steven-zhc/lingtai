@@ -58,7 +58,7 @@ describe('renderSetupCard', () => {
     const lines = rows(FACTS)
     expect(lines[0]).toBe('init  chapter-garden-a')
     expect(lines.filter((l) => l === '')).toHaveLength(3)
-    expect(lines).toEqual(expect.arrayContaining(['this machine', 'this project', 'each pass']))
+    expect(lines).toEqual(expect.arrayContaining(['this machine', 'this project', 'each attempt']))
   })
 
   it('aligns every value in one column', () => {
@@ -115,8 +115,8 @@ describe('renderSetupCard', () => {
     const bare = { ...FACTS, recipe: { ...RECIPE, reviewer: null, checks: [], approves: false } }
     expect(row(bare, 'reviews')).toMatch(/^reviews +none$/)
     expect(row(bare, 'checks')).toContain('none — nothing checks a diff before review')
-    expect(row(bare, 'approve')).toContain('a pass lands with no one asking')
-    expect(row(FACTS, 'approve')).toContain('you approve every pass before it lands')
+    expect(row(bare, 'approve')).toContain('an attempt lands with no one asking')
+    expect(row(FACTS, 'approve')).toContain('you approve every attempt before it lands')
     expect(row(FACTS, 'reviews')).toContain('claude-code, opus')
   })
 
@@ -178,7 +178,7 @@ describe('renderSetupCard for a repository on GitHub (#755)', () => {
     expect(lines[0]).toBe('init')
     expect(lines).toContain('this machine')
     expect(lines).not.toContain('this project')
-    expect(lines).not.toContain('each pass')
+    expect(lines).not.toContain('each attempt')
     expect(lines.find((l) => l.trim().startsWith('github'))).toMatch(/the App lingtai-me/)
   })
 })

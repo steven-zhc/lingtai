@@ -743,7 +743,7 @@ export async function sendAttempt(input: {
 
     revalidatePath(`/task/${input.taskId}`)
     revalidatePath('/')
-    return { ok: result.ok, detail: result.ok ? 'sent — the next pass starts from base' : result.detail }
+    return { ok: result.ok, detail: result.ok ? 'sent — the next attempt starts from base' : result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
@@ -776,7 +776,7 @@ export async function runNow(input: { project: string; issue: string }): Promise
     // `ticket-<project>-<n>` here is a revalidation that quietly stops matching.
     revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
     revalidatePath('/')
-    return { ok: true, detail: `asked for by ${by} — the next pass takes it` }
+    return { ok: true, detail: `asked for by ${by} — the next attempt takes it` }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

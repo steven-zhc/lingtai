@@ -697,7 +697,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             href={only === undefined ? '/spend' : `/spend?project=${encodeURIComponent(only)}`}
             title={`${
               total === 0
-                ? 'nothing has run — and what a pass may spend when it does'
+                ? 'nothing has run — and what an attempt may spend when it does'
                 : 'everything that is not waiting on you — and what it has cost'
             }${today.short === null ? '' : ` — ${today.text}`}`}
           >
