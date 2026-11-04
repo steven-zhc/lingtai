@@ -380,7 +380,7 @@
     <p><b>conductor 不是一个进程。</b>它是回路跑一趟的代码 —— 发现、认领、工作树、代理、闸口、并入。
       它在哪个进程里被调用，就在哪个进程里跑。</p>
     <p><b>daemon 和 CLI 才是进程</b>，而自 <a href="decisions-archive/0022-the-seams.md">0022</a> 起，
-      两者的差别比从前小了：都调用 conductor，也都在运行期间持有一个 projector。
+      两者的差别比从前小了：都调用 conductor，也都在运行期间持有一个 projector，因为两者各持有 conductor 锁。
       daemon 多出来的是一把锁、一次心跳、启动时的一次修复，以及一个不断取活干的循环。</p>
   </div>
 
@@ -494,8 +494,10 @@
 
   <section>
     <h2>两个宿主，一条规则</h2>
-    <p class="lede">每一个会往日志里追加的进程，在其运行期间都持有一个 projector。
-      正是这条规则，抹掉了大家一再被绊到的那处差别。</p>
+    <p class="lede">每个投影只有一个写入者：持有 conductor 锁的那个进程，即 daemon 或
+      <code>lingtai run</code>。其余命令只追加和读取。没有 conductor 在运行时，投影原地不动，
+      而滞后量会如实说明。<code>run</code> 持有这把锁，所以看板能像跟随 daemon 那样实时跟随一趟运行，
+      这也抹掉了大家一再被绊到的那处差别。</p>
 
     <figure>
       <div class="canvas">
@@ -552,8 +554,9 @@
       <figcaption><b>现在两个框里都有 projector，这就是那处改动。</b>从前一条命令是「追加、返回，
         然后在退出的路上把投影补上」—— 一件事两套机制，而 <code>run</code> 拿的是差的那套：
         整趟运行期间看板一动不动，命令退出的瞬间才跳到最新（<code>#64</code>）。
-        同一份日志上跑两个 projector 是构造上安全的：<code>apply</code> 幂等，
-        检查点又在写入的同一个事务里推进，所以后到的那个会发现无事可做。不用锁，也不用协调。</figcaption>
+        两个框里都有 projector，是因为两者各持有 conductor 锁，所以同一时刻只有其中一个在运行。
+        同一个投影上出现第二个写入者，就是事件被投递两次（<code>#838</code>）和死锁（<code>#834</code>）的来源，
+        所以其余命令都不持有 projector。</figcaption>
     </figure>
 
     <h3 class="sub-h">daemon 的每项常驻工作是干什么的</h3>
@@ -567,10 +570,11 @@
       </li>
       <li>
         <b>projector</b>
-        <span>事件一落地就读，并推进 <code>task_view</code> —— 唯一的那个投影，也是看板渲染的那张表。
-          它是读者；它从不往日志里写。</span>
+        <span>事件一落地就读，并推进四个投影 —— <code>task_view</code>（看板）、<code>finding_backlog</code>、
+          <code>spend</code> 和 <code>ticket_report</code>。它是读者；它从不往日志里写。</span>
         <span class="absent">没有它：日志完全正确，而每一块屏幕都停在它最后看到的地方。
-          现在每个会追加的进程都持有它，所以这已经不再是两个宿主之间的差别。</span>
+          持有它的是持有 conductor 锁的那个进程，即 daemon 或 <code>lingtai run</code>；
+          没有 conductor 在运行时，投影原地不动，而滞后量会如实说明。</span>
       </li>
       <li>
         <b>取活循环</b>
@@ -693,7 +697,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 220" role="img" aria-label="events 表上的一个 Postgres 触发器在 lingtai 通道上发出 NOTIFY。事件存储的 subscribe 把它接到三个消费者：看板的 SSE 路由、daemon 的取活循环，以及当前持有 projector 的那个进程。">
+        <svg viewBox="0 0 780 220" role="img" aria-label="events 表上的一个 Postgres 触发器在 lingtai 通道上发出 NOTIFY。事件存储的 subscribe 把它接到三个消费者：看板的 SSE 路由、daemon 的取活循环，以及conductor 的 projector。">
           <defs>
             <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
