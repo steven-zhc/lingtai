@@ -738,7 +738,7 @@ export function Standing({
                   ? 'The ticket was closed.'
                   : standing.afterMove.result === 'continued'
                     ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
-                    : 'The ticket returned to the queue for a new pass from base.'}
+                    : 'The ticket returned to the queue for a new attempt from base.'}
               </span>
             </p>
             <p>
@@ -924,7 +924,7 @@ export function Standing({
                 const consequence = fixUnavailable
                   ? 'The saved branch and head must be available before a fix round can be granted.'
                   : tag === 'Requeue' && sendable !== null
-                    ? `Send the composed prompt for attempt ${sendable}; the new pass starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
+                    ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
                     : copy.consequence
                 return (
                   <ResolutionCard
@@ -1316,7 +1316,7 @@ function Reason({
 function LastAttempt({ deciding, attempts }: { deciding: StandingView['deciding']; attempts: number }) {
   if (deciding === null) return null
   const lead =
-    deciding.attempt === attempts ? `the last pass, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
+    deciding.attempt === attempts ? `the last attempt, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
   const label = `${lead} · ${deciding.fromStep ? 'stopped at ' : ''}${deciding.source}`
   if (deciding.evidence?.trim())
     return (

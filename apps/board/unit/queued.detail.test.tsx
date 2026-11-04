@@ -305,7 +305,7 @@ describe('what will happen', () => {
   it('renders the plan and the bounds together', () => {
     const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={PLAN} />)
 
-    expect(html).toContain('What the next pass does at each step')
+    expect(html).toContain('What the next attempt does at each step')
     expect(html).not.toContain('<details open')
     expect(html).toContain('prepared')
     expect(html).toContain('install')

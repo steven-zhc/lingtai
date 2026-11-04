@@ -177,7 +177,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
   if (skipped > 0) {
     out.push(
       '',
-      `${skipped} ${skipped === 1 ? 'pass' : 'passes'} left out of machine time: ${r.intervals.empty} with no sign of life, ${r.intervals.open} still open`,
+      `${skipped} ${skipped === 1 ? 'attempt' : 'attempts'} left out of machine time: ${r.intervals.empty} with no sign of life, ${r.intervals.open} still open`,
     )
   }
 
@@ -187,7 +187,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
     section(
       `landed tickets (${l.landed})`,
       keyValues([
-        ['passes', spread(l.passes)],
+        ['attempts', spread(l.passes)],
         ['fix rounds', spread(l.fixRounds)],
         ['waits', spread(l.waits)],
         ['machine time', spread(l.machineMs, duration)],

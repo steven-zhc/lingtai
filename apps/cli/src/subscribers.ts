@@ -283,7 +283,7 @@ export function describeSubscribers({ built, quiet, unread }: SubscriberBuild): 
 export function unreadLines(unread: readonly UnreadProject[]): string[] {
   return unread.map(
     ({ project, problem }) =>
-      `subscribers: ${project} unknown, so nothing it declares is running yet — asked again each pass: ${problem}`,
+      `subscribers: ${project} unknown, so nothing it declares is running yet — asked again each turn: ${problem}`,
   )
 }
 

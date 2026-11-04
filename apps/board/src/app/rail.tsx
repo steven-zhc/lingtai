@@ -366,7 +366,7 @@ export function Rail({
            for hours. */
         <p
           className="snow quiet"
-          title="nothing on this run's stream is running and nothing on it refused — what the pass is stopped on is not on it, and the note says what"
+          title="nothing on this run's stream is running and nothing on it refused — what the attempt is stopped on is not on it, and the note says what"
         >
           nothing running
           {held !== null ? <span className="shold"> — {held}</span> : null}
@@ -440,7 +440,7 @@ export function limits(plan: PlanView): string {
 function PlanRow({ plan, columns }: { plan: PlanView; columns: readonly string[] }) {
   return (
     <details className="srailplan">
-      <summary>What the next pass does at each step</summary>
+      <summary>What the next attempt does at each step</summary>
       <ol className="splanrow">
         {columns.map((name) => {
           const p = plan.steps.find((q) => q.step === name)

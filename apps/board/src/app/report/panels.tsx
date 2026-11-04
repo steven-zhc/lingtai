@@ -76,7 +76,7 @@ export function Tiles({ report }: { report: Pick<Report, 'counts' | 'landed' | '
       <Tile
         k="median machine time"
         v={landed.machineMs.median === null ? '—' : durationText(landed.machineMs.median)}
-        s={`excludes waiting${skipped > 0 ? ` · ${skipped} pass${skipped === 1 ? '' : 'es'} left no interval` : ''}`}
+        s={`excludes waiting${skipped > 0 ? ` · ${skipped} attempt${skipped === 1 ? '' : 's'} left no interval` : ''}`}
         title={none}
       />
     </section>
@@ -216,7 +216,7 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
                 <th>ticket</th>
                 <th>kind</th>
                 <th className="num">fix rounds</th>
-                <th className="num">passes</th>
+                <th className="num">attempts</th>
                 <th className="num">cost</th>
                 <th>outcome</th>
               </tr>

@@ -23,7 +23,7 @@ export const INSTALL_URL = `${SITE_URL}/install.sh`
 /** The public docs, in the order the Docs menu lists them. A rule is drawn after `rule`. */
 export const DOCS_MENU: { slug: string; label: string; note?: string; rule?: boolean }[] = [
   { slug: 'tutorial', label: 'Tutorial', note: 'One ticket, start to finish' },
-  { slug: 'concepts', label: 'Concepts', note: 'The steps of a pass' },
+  { slug: 'concepts', label: 'Concepts', note: 'The steps of an attempt' },
   { slug: 'requirements', label: 'Requirements', note: 'What it needs' },
   { slug: 'safety', label: 'What an agent can touch', note: 'Before you run it' },
   { slug: 'guide', label: 'Best practices', note: 'How to get good results', rule: true },

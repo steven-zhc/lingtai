@@ -209,7 +209,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/github\s+gh, signed in as sam/)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
     expect(text).toMatch(/lands on\s+main, on GitHub/)
-    expect(text).toContain('each pass')
+    expect(text).toContain('each attempt')
     expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
     expect(text).not.toContain('a dump line')
     expect(text).not.toContain('tier guarded')

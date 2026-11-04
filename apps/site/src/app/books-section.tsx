@@ -103,7 +103,7 @@ function receiptCard(r: MedianReceipt | RealReceipt, landed: number) {
       />
     )
   }
-  if (r.passes > 1) rows.push({ key: 'Passes', value: num(r.passes) })
+  if (r.passes > 1) rows.push({ key: 'Attempts', value: num(r.passes) })
   const status =
     r.outcome === 'landed'
       ? ({ kind: 'landed', text: '✓ Landed' } as const)

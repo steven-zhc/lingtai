@@ -607,13 +607,13 @@ async function runLocalBranch(
       flying = await ports.inFlight(name)
     } catch (error) {
       return {
-        refused: `could not read the board to check for a pass of ${name} in flight — ${errorText(error)}. ${world.kept}`,
+        refused: `could not read the board to check for an attempt of ${name} in flight — ${errorText(error)}. ${world.kept}`,
       }
     }
     if (flying.length > 0) {
       return {
         refused:
-          `a pass of ${name} is in flight (${flying.join(', ')}) — moving its landing under it would cut and land ` +
+          `an attempt of ${name} is in flight (${flying.join(', ')}) — moving its landing under it would cut and land ` +
           `on two remotes. Run this again once they finish, or after lingtai shutdown. ${world.kept}`,
       }
     }

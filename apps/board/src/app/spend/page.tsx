@@ -122,7 +122,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
               the drain says (0039 §3), so the page cannot word a recipe
               differently from the CLI. */}
           {limits.length === 0 ? (
-            <p className="empty">No recipe could be read, so nothing here can say what a pass would spend.</p>
+            <p className="empty">No recipe could be read, so nothing here can say what an attempt would spend.</p>
           ) : (
             <ul className="policy">
               {limits.map((l) => (

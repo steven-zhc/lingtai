@@ -60,8 +60,8 @@ lingtai add [<owner>/<repo>] [flags]
   --check-build yes|no         try install and build once first;
                                --defaults skips it unless yes
   --land <branch|hold>
-      where a pass lands, or hold every pass for a person at proposed
-  --rounds <n>                 fix rounds a pass may buy
+      where an attempt lands, or hold every one for a person at proposed
+  --rounds <n>                 fix rounds an attempt may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
   --defaults, --yes
@@ -161,7 +161,7 @@ lingtai backlog accept <project> <key> --kind <kind> [--unheld]
   Open one as an issue through the ticket store. One key: there is
   no accept-all. Without --kind, opens the issue of an entry
   already accepted — safe to repeat, never a second.
-  --unheld   without agent:hold, so the next pass may take it
+  --unheld   without agent:hold, so the next turn may take it
 lingtai backlog decline <project> <key> --reason <why>
   Recorded, so the next attempt does not ask again.
 ```
@@ -245,7 +245,7 @@ lingtai board start [--port <n>] [--dir <path>] [--no-open]
   --no-open     no browser — what the service’s job passes
 lingtai board stop
   Stop the board this machine is running. Not shutdown, which
-  waits for a pass. Where a supervisor keeps the board, this is
+  waits for an attempt. Where a supervisor keeps the board, this is
   its stop, and it stays stopped until lingtai service start.
 lingtai board restart
   Stop, then start. Refuses nothing first: a UI at the wrong
@@ -388,7 +388,7 @@ Changes state — `--json` on its verdict (version 1).
 lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
                 [--json]
   A blocked item goes back to the queue — held for approval or not —
-  and the next pass cuts a fresh branch from a base that has since
+  and the next attempt cuts a fresh branch from a base that has since
   moved. The actor is still recorded in by.
 ```
 
@@ -420,7 +420,7 @@ lingtai close lingtai --issue <n> "superseded"
 | hold the projections current and take work | [lingtai start](#lingtai-start) |
 | the old name of start, still answered | [lingtai daemon](#lingtai-daemon) |
 | keep the daemon and the board running | [lingtai service](#lingtai-service) |
-| drain, wait for the pass, and start one daemon | [lingtai restart](#lingtai-restart) |
+| drain, wait for the attempt, and start one daemon | [lingtai restart](#lingtai-restart) |
 | stop the daemon after the ticket in flight | [lingtai shutdown](#lingtai-shutdown) |
 | stop the daemon taking new tickets | [lingtai pause](#lingtai-pause) |
 | take tickets again | [lingtai resume](#lingtai-resume) |
@@ -476,7 +476,7 @@ lingtai service status [--json]
   a systemd user unit each on Linux. No service manager? run
   lingtai daemon and lingtai board start in the foreground.
   shutdown drains the conductor through the log, waits for the
-  pass, unloads it, then stops the board. restart is that and
+  attempt, unloads it, then stops the board. restart is that and
   start, unchecked — lingtai restart is the checked one.
   status reports each job on its own: one word for both would hide
   a board that is up beside a conductor launchd keeps respawning.
@@ -489,7 +489,7 @@ lingtai service status
 
 ### lingtai restart
 
-Drain, wait for the pass, and start one daemon.
+Drain, wait for the attempt, and start one daemon.
 
 Changes state.
 
@@ -518,7 +518,7 @@ Changes state.
 
 ```text
 lingtai shutdown [why] [--force] [--timeout <duration>] [--no-color]
-  The pass finishes first, so the steps and the merge lane run
+  The attempt finishes first, so the steps and the merge lane run
   too. It does not outlive the daemon it was sent to.
   --force                do not wait. The agent is left running and
                          the next conductor kills it
@@ -615,8 +615,8 @@ lingtai init [flags]
   --check-build yes|no         try install and build once first;
                                --defaults skips it unless yes
   --land <branch|hold>
-      where a pass lands, or hold every pass for a person at proposed
-  --rounds <n>                 fix rounds a pass may buy
+      where an attempt lands, or hold every one for a person at proposed
+  --rounds <n>                 fix rounds an attempt may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
   --defaults, --yes

@@ -72,7 +72,7 @@ export async function drainForUpgrade(how: UpgradeDrain): Promise<Drained> {
         own === null
           ? 'not upgrading: lingtai doctor failed, and nothing was asked to stop. --despite-doctor upgrades anyway, once read'
           : `not upgrading: lingtai doctor failed, and nothing more was asked to stop — but the drain you asked for earlier ` +
-              `(${own.reason}) is still standing, and a daemon that read it still stops after its pass. ` +
+              `(${own.reason}) is still standing, and a daemon that read it still stops after its attempt. ` +
               'lingtai resume lifts it; --despite-doctor upgrades anyway, once read',
       ),
     )

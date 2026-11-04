@@ -308,7 +308,7 @@ async function tryTheBuild(
   const trial = input.tryBuild
   if (trial === null) {
     world.log(
-      'the trial run was not run — no checkout on this machine; the first pass’s `build` is where these first run',
+      'the trial run was not run — no checkout on this machine; the first attempt’s `build` is where these first run',
     )
     return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
   }
@@ -450,7 +450,7 @@ async function askBuild(
       name: 'the build steps',
       flag: '--build <command> (repeatable), or --build none',
       given: null,
-      prompt: 'Each pass runs these checks before review — keep this list? (yes / no to write your own)',
+      prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
       choices: ['yes', 'no'],
       fallback: 'yes',
       why,

@@ -553,8 +553,8 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       'the install command',
       'a command that must pass before review',
       'which labels are work',
-      'when a pass is ready',
-      'how many times a pass sends the agent back',
+      'when an attempt is ready',
+      'how many times an attempt sends the agent back',
       'what one agent run may take',
       'a dollar ceiling per agent run',
     ]

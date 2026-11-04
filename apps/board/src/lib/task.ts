@@ -850,9 +850,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             reason: continued
               ? 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
-                ? 'The wait was resolved; a new pass starts from base.'
+                ? 'The wait was resolved; a new attempt starts from base.'
                 : released
-                  ? `${m.then?.reason ?? ''} A new pass starts from base.`
+                  ? `${m.then?.reason ?? ''} A new attempt starts from base.`
                   : (m.then?.reason ?? ''),
             ...(continued && m.resolution._tag === 'GrantFixRound'
               ? { ref: m.resolution.ref, head: m.resolution.onSha }

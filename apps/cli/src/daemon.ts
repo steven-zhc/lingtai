@@ -448,7 +448,7 @@ export async function daemonCommand(
             // there is no longer anything to approximate: the multiple *is* the
             // number, and asking the reader to multiply was only ever the cost of
             // not having it.
-            `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+            `an attempt is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
     )
@@ -590,7 +590,7 @@ export async function daemonCommand(
       onShutdown: (why) =>
         asked?.force === true
           ? stopNow(
-              `${why} — forced, so the pass is not finished. The agent is left running for the next conductor to kill.`,
+              `${why} — forced, so the attempt is not finished. The agent is left running for the next conductor to kill.`,
             )
           : void drain(why, asked?.timeoutMs ?? null),
 
@@ -621,14 +621,14 @@ export async function daemonCommand(
         // says the loop went round.
         const attemptLine = (refused: boolean): string =>
           paint.accent(
-            `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
+            `turn (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
               (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
           )
         if (verbose) console.log(attemptLine(true))
         // A refusal is not trace: a quiet start must still say why nothing was taken.
         else if (outcome.refused.length > 0) {
           console.log(
-            `${outcome.refused.length} project(s) refused this pass — lingtai start --verbose, or lingtai status`,
+            `${outcome.refused.length} project(s) refused this turn — lingtai start --verbose, or lingtai status`,
           )
         }
       },
@@ -781,7 +781,7 @@ export async function controlCommand(
     // fear; this way the dangerous thing has to be asked for by name.
     const force = input.force === true
     if (force && input.timeout !== undefined) {
-      console.error('--timeout is about waiting for the pass, and --force does not wait. Use one.')
+      console.error('--timeout is about waiting for the attempt, and --force does not wait. Use one.')
       return 2
     }
 
@@ -794,7 +794,7 @@ export async function controlCommand(
     if (force) {
       // What `--timeout` has always done when it tripped, and what a second
       // Ctrl+C does. The orphan is the point, and it already has an owner.
-      detail = `${asked}\n--force: it stops without finishing the pass. The agent is left running, and the next conductor kills it and releases the claim.`
+      detail = `${asked}\n--force: it stops without finishing the attempt. The agent is left running, and the next conductor kills it and releases the claim.`
     } else {
       // Said up front, because the alternative is a command that has returned
       // and a daemon that looks hung (0030 §6). What is being waited for is the
@@ -806,8 +806,8 @@ export async function controlCommand(
             // request outlived the daemon it was aimed at; the next `lingtai start`
             // now needs nothing lifted, so saying otherwise would send a person to
             // a command that has nothing to do.
-            `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
-          : `the daemon finishes the pass in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`
+            `the daemon finishes the attempt in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
+          : `the daemon finishes the attempt in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`
       }`
     }
     for (const line of renderVerdict('shutdown asked', { outcome: 'accepted', detail })) console.log(line)

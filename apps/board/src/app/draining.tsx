@@ -36,7 +36,7 @@ export async function Draining() {
   if (beat.state !== 'draining') return null
 
   const held = await inFlight().catch(() => [])
-  const said = `the conductor is finishing the pass in flight and will then stop; it is taking no new work`
+  const said = `the conductor is finishing the attempt in flight and will then stop; it is taking no new work`
 
   return (
     <>

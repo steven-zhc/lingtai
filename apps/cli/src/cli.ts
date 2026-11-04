@@ -1355,8 +1355,8 @@ export async function runCli(
   }
   if (args[0] === 'board' && args[1] === 'shutdown') {
     const sentence =
-      'lingtai board shutdown does not exist — shutdown means finish the pass in flight, and waits as long as the ' +
-      'wall limit for it. A board has no pass to finish: pnpm lingtai board stop, which returns at once'
+      'lingtai board shutdown does not exist — shutdown means finish the attempt in flight, and waits as long as the ' +
+      'wall limit for it. A board has no attempt to finish: pnpm lingtai board stop, which returns at once'
     if (args.some(jsonOn)) printJsonError('board', 'usage', sentence)
     else console.error(`${symbol.fail()} ${sentence}`)
     return 2
@@ -1393,9 +1393,9 @@ export async function runCli(
     // Gone rather than kept as an alias. It sent the supervisor's signal, and
     // launchd SIGKILLed the drain that began twenty seconds in (#174).
     console.error(
-      "lingtai service stop is gone — it was the supervisor's signal, which kills a pass in flight 20 seconds in.",
+      "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
     )
-    console.error('pnpm lingtai service shutdown "why" drains through the log, waits for the pass, then unloads.')
+    console.error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
     return 2
   }
   restartArgs = null

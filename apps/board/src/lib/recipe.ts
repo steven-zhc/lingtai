@@ -895,7 +895,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
       keys: ['steps'],
     },
     {
-      name: 'a pass',
+      name: 'an attempt',
       says: attemptCeiling({
         ...limits,
         wallMs: parseDuration(limits.wall),

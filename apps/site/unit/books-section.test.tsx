@@ -50,7 +50,7 @@ describe('the books section', () => {
     expect(t).toContain('ISSUE #782 · BUG')
     expect(html).toContain('r-stamp on">LANDED')
     expect(html).toContain('r-stamp closed on">NOT LANDED')
-    expect(t).toContain('Passes 2')
+    expect(t).toContain('Attempts 2')
     expect(html).toContain('href="https://github.com/steven-zhc/lingtai/issues/782"')
     expect(t).toContain('Open #664 →')
     expect(t).toContain('lingtai report --from 2026-10-02 --to 2026-10-31 --project lingtai')

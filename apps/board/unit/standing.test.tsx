@@ -1867,7 +1867,7 @@ describe('the moves the column ends in', () => {
     expect(html).toContain('class="sreading sreading--advised"')
     expect(html.indexOf('repair this line')).toBeLessThan(html.indexOf('class="spair" data-rank="discussion"'))
     expect(html.indexOf('class="spair" data-rank="discussion"')).toBeLessThan(html.indexOf('class="sresolutiongrid"'))
-    expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('next pass from base'))
+    expect(html.indexOf('class="sresolutiongrid"')).toBeLessThan(html.indexOf('next attempt from base'))
     expect(html.match(/class="chat /g)).toHaveLength(1)
   })
 

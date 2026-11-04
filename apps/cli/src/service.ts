@@ -147,12 +147,12 @@ export const DAEMON_JOB: Job = {
     launchd: [
       "No ExitTimeOut, deliberately: launchd's 20 seconds stands. Set to the",
       'wall limit it would make bootout, logout and machine shutdown block',
-      'for an hour. The pass is waited for through the log instead —',
+      'for an hour. The attempt is waited for through the log instead —',
       'lingtai service shutdown drains first and unloads after (#174).',
     ],
     systemd: [
       "No TimeoutStopSec, deliberately: systemd's 90s stands. The wall limit here",
-      'would make logout and machine shutdown block for an hour. The pass is waited',
+      'would make logout and machine shutdown block for an hour. The attempt is waited',
       'for through the log — lingtai service shutdown drains first, stops after (#174).',
     ],
   },
@@ -175,13 +175,13 @@ export const BOARD_JOB: Job = {
   stopNote: {
     launchd: [
       "No ExitTimeOut: launchd's 20 seconds is far more than this needs. The",
-      'board serves in this process and detaches nothing, so there is no pass to',
+      'board serves in this process and detaches nothing, so there is no attempt to',
       'finish and no drain to wait for — which is why the board gets stop and',
       'not shutdown (#187).',
     ],
     systemd: [
       "No TimeoutStopSec: systemd's 90s is far more than this needs. The board serves",
-      'in this process and detaches nothing, so there is no pass to finish and no drain',
+      'in this process and detaches nothing, so there is no attempt to finish and no drain',
       'to wait for — which is why the board gets stop and not shutdown (#187).',
     ],
   },
@@ -779,8 +779,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     // Gone rather than kept as an alias. It sent the supervisor's signal, and
     // launchd SIGKILLed the drain that began twenty seconds in (#174); a name
     // that used to return in seconds and now waits a pass should be chosen.
-    error("lingtai service stop is gone — it was the supervisor's signal, which kills a pass in flight 20 seconds in.")
-    error('pnpm lingtai service shutdown "why" drains through the log, waits for the pass, then unloads.')
+    error(
+      "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
+    )
+    error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
     return 2
   }
   if (!verb || !VERBS.includes(verb)) {
@@ -1283,7 +1285,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       error(
         `the supervisor accepted the start, and the control stream could not be read to see whether a daemon recorded one — ${unread}.`,
       )
-      error('So whether a daemon took work is not known: a daemon may be running a pass now.')
+      error('So whether a daemon took work is not known: a daemon may be running an attempt now.')
       error(
         'pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.',
       )
@@ -1368,7 +1370,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // with no pass for its signal to kill, and the unload goes ahead then.
       log(`the conductor lock could not be queued for — ${queue.message}.`)
       log(
-        `asking the supervisor whether a daemon is running, for up to ${IDLE_WAIT_POLLS}s: with none, there is no pass to drain`,
+        `asking the supervisor whether a daemon is running, for up to ${IDLE_WAIT_POLLS}s: with none, there is no attempt to drain`,
       )
       for (let i = 0; i < IDLE_WAIT_POLLS; i++) {
         const now = ask()
@@ -1381,7 +1383,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         }
         if (!processRunning(platform, now.lines)) {
           log(
-            'the supervisor has no daemon running, so nothing holds the conductor lock or a pass — stopped without the drain',
+            'the supervisor has no daemon running, so nothing holds the conductor lock or an attempt — stopped without the drain',
           )
           const stopped = platform === 'launchd' ? await unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
           return stopped ? 0 : 1
@@ -1392,7 +1394,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         `a daemon stayed running for ${IDLE_WAIT_POLLS}s while the conductor lock could not be queued for. Nothing was stopped:`,
       )
       error(
-        "it may be in a pass the supervisor's signal would kill, and without a place in the lock's queue the copy started after a drain could take work that the unload kills.",
+        "it may be in an attempt the supervisor's signal would kill, and without a place in the lock's queue the copy started after a drain could take work that the unload kills.",
       )
       error(
         platform === 'launchd'
@@ -1405,7 +1407,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error)
       if (asked instanceof Error) {
         error(`the shutdown could not be asked for — ${asked.message}. Nothing was stopped:`)
-        error("the supervisor's signal would kill a pass in flight, so it is not sent without the drain.")
+        error("the supervisor's signal would kill an attempt in flight, so it is not sent without the drain.")
         return 1
       }
       if (!asked.asked) {
@@ -1424,7 +1426,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       let mine = asked.version
       log(`draining — ${await options.drain.holding().catch(() => 'what is in flight could not be read')}.`)
       log(
-        `the pass in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`,
+        `the attempt in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`,
       )
 
       // A lock gone with its connection can be taken, in the gap, by a copy the
@@ -1477,13 +1479,13 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
               : lifted.withdrew
                 ? 'The request is withdrawn. '
                 : '') +
-            'A daemon that had already read it still finishes its pass and exits, and the supervisor then starts one that takes work — ' +
+            'A daemon that had already read it still finishes its attempt and exits, and the supervisor then starts one that takes work — ' +
             'it reads nothing asked before it started. pnpm lingtai service shutdown asks again.',
         )
         return waited === 'interrupted' ? 130 : 1
       }
       log(
-        'this command holds the conductor lock — the pass is over, and nothing the supervisor starts now can take work',
+        'this command holds the conductor lock — the attempt is over, and nothing the supervisor starts now can take work',
       )
 
       // Unloaded, not killed: KeepAlive would bring a killed job straight back.

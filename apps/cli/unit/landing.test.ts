@@ -299,7 +299,7 @@ describe('askLanding', () => {
         log: () => {},
       }
       await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => 'main' })
-      expect(asked[0]).toContain('when a pass is ready')
+      expect(asked[0]).toContain('when an attempt is ready')
       expect(asked[0]).toContain(expected)
       expect(seen[0]).toEqual(['wait for me to approve', 'land it without asking'])
     }
@@ -456,7 +456,7 @@ describe('askLimits', () => {
     expect(limits.usd).toBe(4)
 
     // The per-answer echo of the ceiling is gone (#773); a dollar ceiling's warning stays.
-    expect(lines.some((l) => l.includes('a pass'))).toBe(false)
+    expect(lines.some((l) => l.includes('an attempt'))).toBe(false)
   })
 
   it('--budget none removes usd', async () => {

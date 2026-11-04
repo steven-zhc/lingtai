@@ -298,7 +298,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     expect(text).toMatch(/github\s+gh, signed in as steven/)
     expect(text).not.toMatch(/^(Machine|Store|GitHub App)$/m)
     expect(text).not.toContain('this project')
-    expect(text).not.toContain('each pass')
+    expect(text).not.toContain('each attempt')
     expect(text).not.toContain('the recipe is written once')
     expect(text).toMatch(/^✓ ready — doctor: [^\n]*[^\n]$/m)
     expect(text).not.toMatch(/ready[^\n]*recipe:/)

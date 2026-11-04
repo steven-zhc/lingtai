@@ -84,7 +84,7 @@ export const ENV_PLANT_AT = '.env.local'
  * findings 2 and 3).
  */
 export const SAID: Said = {
-  runtime: "which agent's pass this is",
+  runtime: "which agent's attempt this is",
   'steps.implement': 'which agent writes the change',
   'steps.review': 'which agent, if any, reads it cold before it moves on',
   'steps.prepared': 'getting the worktree ready before the agent starts',
@@ -93,8 +93,8 @@ export const SAID: Said = {
   'source.kinds': 'which labels are work, most wanted first',
   repo: 'the branch this project governs, and where it pushes',
   'steps.end': 'what happens to the ticket once it ends',
-  'steps.proposed': 'what happens once a pass is ready to land',
-  'runtime.limits': 'what one pass may spend before it comes back to you',
+  'steps.proposed': 'what happens once an attempt is ready to land',
+  'runtime.limits': 'what one attempt may spend before it comes back to you',
   env: "what the agent's environment is filtered to",
 }
 
@@ -402,7 +402,7 @@ export async function askRecipe(
   const unseenUnattended = summary.landsUnattended && at.flags['land'] === undefined
   if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
     // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
-    const lands = `a pass lands on ${summary.base || 'the base branch'} with no one asking`
+    const lands = `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
     const asks =
       unseenEmptyBuild && unseenUnattended
         ? `nothing checks a diff before review, and ${lands}`
