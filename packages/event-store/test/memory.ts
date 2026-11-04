@@ -75,10 +75,17 @@ import {
   UnknownEventTypeError,
 } from '../src/event-store.ts'
 import type { LogQueries, TypeCount, TypeRow } from '../src/queries.ts'
+import { type Snapshot, type SnapshotStore, staleEpochError, validateSnapshot } from '../src/snapshots.ts'
 
 export interface MemoryEventStore extends EventStore, Pick<LogQueries, 'rowsOfType' | 'typeCounts'> {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
   all(): Envelope[]
+  /**
+   * Empties the log and does not reset `seq`, which is what `AUTOINCREMENT` does
+   * — so the epoch after it differs by `seq`, not by the clock. Test-only: the
+   * stand-in for the documented reset.
+   */
+  clear(): void
   /**
    * Pushes a row this build cannot read, skipping `parsePayload` — the only
    * way a test can get one into this store at all: `append` validates on the
@@ -172,6 +179,10 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
       return written.map((r) => decodeRow(r, r.at))
     },
 
+    clear() {
+      log.length = 0
+    },
+
     plant(row) {
       seq += 1n
       log.push({
@@ -224,6 +235,39 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
 
     all() {
       return log.map((r) => decodeRow(r, r.at))
+    },
+  }
+}
+
+/**
+ * A `SnapshotStore` in memory, whose epoch is taken from the same array of
+ * events as the log it sits beside (#868): the first event's `seq@at`.
+ */
+export function createMemorySnapshotStore(events: MemoryEventStore): SnapshotStore {
+  const rows = new Map<string, Snapshot>()
+  const id = (k: { streamId: string; reducer: string; reducerVersion: number }) =>
+    JSON.stringify([k.streamId, k.reducer, k.reducerVersion])
+  const epoch = async (): Promise<string | null> => {
+    const first = events.all()[0]
+    return first === undefined ? null : `${first.seq}@${first.at.toISOString()}`
+  }
+  return {
+    epoch,
+    async latest(key) {
+      const row = rows.get(id(key))
+      if (row === undefined || row.epoch !== (await epoch())) return null
+      return { ...row }
+    },
+    async put(snapshot) {
+      validateSnapshot(snapshot)
+      const current = await epoch()
+      if (current === null || current !== snapshot.epoch) throw staleEpochError(snapshot.epoch, current)
+      const there = rows.get(id(snapshot))
+      if (there !== undefined && there.epoch === snapshot.epoch && there.streamVersion >= snapshot.streamVersion) {
+        return 'kept'
+      }
+      rows.set(id(snapshot), { ...snapshot })
+      return 'written'
     },
   }
 }

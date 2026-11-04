@@ -18,6 +18,13 @@ import type { Log } from './log.ts'
 export { closeProcessLog, processEventStore, processLog, processTicketSql } from './choose.ts'
 export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
 export type { TicketSql } from './ticket-sql.ts'
+export {
+  createSqlSnapshotStore,
+  execIdempotently,
+  type Snapshot,
+  type SnapshotKey,
+  type SnapshotStore,
+} from './snapshots.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {
   type EndedOutcome,

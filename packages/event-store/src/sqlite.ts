@@ -35,6 +35,7 @@ import type { Envelope } from '@lingtai/domain'
 import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, UnconvergedUpdate } from './queries.ts'
+import { createSqlSnapshotStore } from './snapshots.ts'
 import type { TicketSql } from './ticket-sql.ts'
 import type { Waker } from './wake.ts'
 
@@ -623,6 +624,7 @@ export function createSqliteLog(options: SqliteLogOptions): Log {
   return {
     store: createSqliteEventStore(options.db),
     queries: createSqliteLogQueries(options.db),
+    snapshots: createSqlSnapshotStore(createSqliteTicketSql(options.db)),
     waker: () => waker,
   }
 }

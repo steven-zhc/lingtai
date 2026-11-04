@@ -45,6 +45,7 @@ import { createEventStore, type EventStore } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
 import type { LogQueries } from './queries.ts'
 import { createPostgresTicketSql } from './queries.ts'
+import type { SnapshotStore } from './snapshots.ts'
 import type { TicketSql } from './ticket-sql.ts'
 import type { WakeListener, Waker, WakeSession } from './wake.ts'
 
@@ -169,6 +170,14 @@ function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
   }
 }
 
+function deferredSnapshots(resolve: () => Promise<SnapshotStore>): SnapshotStore {
+  return {
+    epoch: async () => (await resolve()).epoch(),
+    latest: async (key) => (await resolve()).latest(key),
+    put: async (snapshot) => (await resolve()).put(snapshot),
+  }
+}
+
 /**
  * A waker whose session opens once the log is open.
  *
@@ -207,6 +216,7 @@ export function deferredLog(resolve: () => Promise<Log>): Log {
   return {
     store: deferredEventStore(async () => (await resolve()).store),
     queries: deferredQueries(async () => (await resolve()).queries),
+    snapshots: deferredSnapshots(async () => (await resolve()).snapshots),
     waker: (name) => deferredWaker(async () => (await resolve()).waker(name)),
   }
 }
