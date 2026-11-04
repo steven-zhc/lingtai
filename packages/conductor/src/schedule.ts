@@ -188,17 +188,22 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       return yield* Effect.die(new Error('this project has no name recorded — re-run lingtai add'))
     }
 
+    // Asked twice a turn (#861): the answer is a fact about the moment it is
+    // asked, and the queue read in between can take long enough to change it.
+    const stopIfPaused = function* () {
+      if (!options.paused) return undefined
+      const asked = options.paused
+      const why = yield* Effect.promise(() => asked())
+      if (why === null) return undefined
+      log(why)
+      told(() => options.failed?.(why))
+      return finish('paused')
+    }
+
     for (;;) {
       if (options.signal?.aborted) return finish('aborted')
-      if (options.paused) {
-        const asked = options.paused
-        const why = yield* Effect.promise(() => asked())
-        if (why !== null) {
-          log(why)
-          told(() => options.failed?.(why))
-          return finish('paused')
-        }
-      }
+      const stoppedFirst = yield* stopIfPaused()
+      if (stoppedFirst) return stoppedFirst
       if (options.max !== undefined && ran.length >= options.max) return finish('max')
 
       // Asked, every time round the loop. GitHub says what it is offering and
@@ -233,6 +238,13 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         }),
       )
       if (queue.length === 0) return finish('empty')
+
+      // Asked again after the read, not before the claim: `take`'s `runnableNow`
+      // reads GitHub only, and the read a stopped `task_view` makes stale is
+      // `selectRunnable`'s `readTasks`. A stop landing after this line is out of
+      // reach and fine — the rows were read while the projection still followed.
+      const stoppedSecond = yield* stopIfPaused()
+      if (stoppedSecond) return stoppedSecond
 
       if (options.slots) {
         if (envRefused) return finish('env')
