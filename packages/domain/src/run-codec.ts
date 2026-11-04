@@ -13,7 +13,7 @@
  */
 import { z } from 'zod'
 
-import type { AttemptState } from './attempt.ts'
+import { emptyAttempt, reduceAttemptEvent, type AttemptState } from './attempt.ts'
 import {
   Finding,
   Invocation,
@@ -25,6 +25,7 @@ import {
   RuntimeId,
   Step,
 } from './events.ts'
+import type { Reducer } from './reducer.ts'
 import { firstDifference } from './ticket-codec.ts'
 
 const IsoDate = z.iso.datetime().transform((s) => new Date(s))
@@ -116,32 +117,50 @@ export function encodeRun(state: AttemptState): string {
   return JSON.stringify(state, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))
 }
 
-/**
- * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `AttemptState`.
- * Throws, naming the run and `lingtai projection rebuild <projection>`, on any other shape.
- */
-export function decodeRun(stored: unknown, projection: string, runId?: string): AttemptState {
-  const refuse = (what: string): never => {
-    throw new RunCodecError(
-      `${projection}${runId === undefined ? '' : ` ${runId}`}: the stored run state is not today's shape (${what}); ` +
-        `run \`lingtai projection rebuild ${projection}\``,
-    )
-  }
+/** The parse behind both decoders: the state, or what is wrong with the stored value. */
+function parseStored(stored: unknown): { ok: true; state: AttemptState } | { ok: false; what: string } {
   let value = stored
   if (typeof stored === 'string') {
     try {
       value = JSON.parse(stored)
     } catch {
-      return refuse('not JSON')
+      return { ok: false, what: 'not JSON' }
     }
   }
   const parsed = StoredRun.safeParse(value)
   if (!parsed.success) {
     const issue = parsed.error.issues[0]!
-    return refuse(`${issue.path.length === 0 ? 'run_state' : issue.path.join('.')}: ${issue.message}`)
+    return { ok: false, what: `${issue.path.length === 0 ? 'run_state' : issue.path.join('.')}: ${issue.message}` }
   }
   const state = parsed.data as AttemptState
   const differs = firstDifference(value, JSON.parse(encodeRun(state)), 'run_state')
-  if (differs !== null) return refuse(`${differs}: not part of today's shape`)
-  return state
+  if (differs !== null) return { ok: false, what: `${differs}: not part of today's shape` }
+  return { ok: true, state }
+}
+
+/**
+ * A string (SQLite) or a parsed value (Postgres `jsonb`), back to a `AttemptState`.
+ * Throws, naming the run and `lingtai projection rebuild <projection>`, on any other shape.
+ */
+export function decodeRun(stored: unknown, projection: string, runId?: string): AttemptState {
+  const r = parseStored(stored)
+  if (r.ok) return r.state
+  throw new RunCodecError(
+    `${projection}${runId === undefined ? '' : ` ${runId}`}: the stored run state is not today's shape (${r.what}); ` +
+      `run \`lingtai projection rebuild ${projection}\``,
+  )
+}
+
+/** The attempt reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
+export const attemptReducer: Reducer<AttemptState> = {
+  name: 'attempt',
+  version: 1,
+  initial: emptyAttempt,
+  reduceEvent: reduceAttemptEvent,
+  encode: encodeRun,
+  decode: (stored) => {
+    const r = parseStored(stored)
+    if (r.ok) return r.state
+    throw new RunCodecError(`attempt snapshot: the stored state is not today's shape (${r.what})`)
+  },
 }

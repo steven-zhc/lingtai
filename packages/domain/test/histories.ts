@@ -441,7 +441,7 @@ function declined(): readonly Envelope[] {
 
 /** Single-stream histories, by the kind of stream they sit on. Built in this order; append only. */
 export const histories = {
-  run: {
+  attempt: {
     landedFirstTry: landedFirstTry(),
     fixRoundThenLanded: fixRoundThenLanded(),
     askedThenResumed: askedThenResumed(),
@@ -1096,7 +1096,7 @@ const late_declinedThenAccepted = (() => {
 })()
 
 export const lateHistories = {
-  run: {
+  attempt: {
     fixRoundRouted: late_fixRoundRouted,
     stepEndedForAnother: late_stepEndedForAnother,
     publishedClean: late_publishedClean,
@@ -1319,7 +1319,7 @@ export const lateScenarios = {
  * own types. Types reached only through board or projector helpers are not here.
  */
 export const COVERS = {
-  run: [
+  attempt: [
     'RunStarted',
     'RunPrompted',
     'RunTouchedFile',
@@ -1428,7 +1428,28 @@ const late_everyTicketTypeOnOneStream = stamp(
   })(),
 )
 
+/**
+ * The attempt reducer's fixture (#878): the first event of each type it handles, taken from the attempt histories
+ * above in the order they first appear, on one stream. The terminal events go last, so nothing after them is a no-op.
+ */
+const late_everyAttemptType = stamp(
+  (() => {
+    const seen = new Set<string>()
+    const picked: Envelope[] = []
+    for (const e of [...Object.values(histories.attempt), ...Object.values(lateHistories.attempt)].flat()) {
+      if (seen.has(e.type)) continue
+      seen.add(e.type)
+      picked.push(e)
+    }
+    const last = (e: Envelope) => e.type === 'RunFinished' || e.type === 'RunFailed'
+    const ordered = [...picked.filter((e) => !last(e)), ...picked.filter(last)]
+    const streamId = attemptStream('every-type')
+    return ordered.map((e, i) => ({ ...e, streamId, version: i + 1 }))
+  })(),
+)
+
 export const reducerFixtures = {
   control: { everyControlEvent: late_everyControlEvent },
   ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
+  attempt: { everyAttemptEvent: late_everyAttemptType },
 } as const

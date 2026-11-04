@@ -89,7 +89,7 @@ describe('coverage', () => {
 
   it('COVERS holds every catalogue case label of reduceAttemptEvent, reduceTicketEvent, reduceControlEvent, reduceChatEvent and reduceFindingEvent', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
-    expect(missing(caseLabels('attempt.ts', 'reduceAttemptEvent'), COVERS.run)).toEqual([])
+    expect(missing(caseLabels('attempt.ts', 'reduceAttemptEvent'), COVERS.attempt)).toEqual([])
     expect(missing(caseLabels('ticket.ts', 'reduceTicketEvent'), COVERS.ticket)).toEqual([])
     expect(missing(caseLabels('control.ts', 'reduceControlEvent'), COVERS.control)).toEqual([])
     expect(missing(caseLabels('chat.ts', 'reduceChatEvent'), COVERS.chat)).toEqual([])
@@ -102,7 +102,7 @@ describe('coverage', () => {
 })
 
 describe('the histories reduce', () => {
-  for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceAttempt(h.events))
+  for (const h of singles.filter((s) => s.kind === 'attempt')) it(`attempt.${h.name}`, () => void reduceAttempt(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
   for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
   for (const h of singles.filter((s) => s.kind === 'finding' && s.name !== 'declinedThenAccepted')) {
@@ -152,13 +152,13 @@ describe('shape', () => {
 
 describe('the cells that tell the old reduces from the new', () => {
   const CELLS = [
-    'run.commitCompletedNoHead', // 1
-    'run.worktreeNotDone', // 2
-    'run.designAnswerUnreadable', // 3
-    'run.laterActionNotReached', // 4
-    'run.signoffRequestedThenLifecycle', // 5
-    'run.failedThenFinished', // 6
-    'run.verdictOnOlderHead', // 7
+    'attempt.commitCompletedNoHead', // 1
+    'attempt.worktreeNotDone', // 2
+    'attempt.designAnswerUnreadable', // 3
+    'attempt.laterActionNotReached', // 4
+    'attempt.signoffRequestedThenLifecycle', // 5
+    'attempt.failedThenFinished', // 6
+    'attempt.verdictOnOlderHead', // 7
     'ticket.claimedAfterClosed', // 8
     'ticket.waitsResolvedBeforeClose', // 9
     'scenario.integratedWithoutLanding', // 10

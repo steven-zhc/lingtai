@@ -1234,7 +1234,7 @@ describe('resolveWait', () => {
 
   it('refusingOn lists a commit that produced no head on the approved sha', () => {
     // D1 (#821): `Completed` with `head: null` did not finish, so an approval must waive it by name.
-    const reduced = reduceAttempt(histories.run.commitCompletedNoHead)
+    const reduced = reduceAttempt(histories.attempt.commitCompletedNoHead)
     expect(refusingOn(reduced, 'sha-1')).toEqual(['implement:keep'])
   })
 

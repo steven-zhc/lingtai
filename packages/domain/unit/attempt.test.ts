@@ -356,26 +356,26 @@ describe('AttemptState.step and implementRound (#822)', () => {
   })
 
   it('D12: a StepEnded for another step leaves step', () => {
-    const state = reduceAttempt(lateHistories.run.stepEndedForAnother)
+    const state = reduceAttempt(lateHistories.attempt.stepEndedForAnother)
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
   })
 
   it('a FixRound route raises implementRound', () => {
-    const state = reduceAttempt(lateHistories.run.fixRoundRouted)
+    const state = reduceAttempt(lateHistories.attempt.fixRoundRouted)
     expect(state.implementRound).toBe(1)
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 1 }))
   })
 
   it('a FixRound route is a round opened', () => {
-    expect(reduceAttempt(lateHistories.run.fixRoundRouted).roundsOpened).toEqual([1])
+    expect(reduceAttempt(lateHistories.attempt.fixRoundRouted).roundsOpened).toEqual([1])
   })
 
   it('D3: a failure stays a failure', () => {
-    expect(reduceAttempt(histories.run.failedThenFinished).failure).toMatchObject({ kind: 'crash' })
+    expect(reduceAttempt(histories.attempt.failedThenFinished).failure).toMatchObject({ kind: 'crash' })
   })
 
   it('a failure inside a step is the failure', () => {
-    const state = reduceAttempt(lateHistories.run.failedInsideStep)
+    const state = reduceAttempt(lateHistories.attempt.failedInsideStep)
     expect(state.failure).toMatchObject({ kind: 'out-of-turns' })
     expect(state.step).toEqual(expect.objectContaining({ step: 'implement', round: 0 }))
     expect(state.receipt?.turns).toBe(30)
@@ -383,18 +383,18 @@ describe('AttemptState.step and implementRound (#822)', () => {
   })
 
   it('the last refusal is kept', () => {
-    expect(reduceAttempt(histories.run.fixRoundThenLanded).refusal?.key).toBe('review:cold')
+    expect(reduceAttempt(histories.attempt.fixRoundThenLanded).refusal?.key).toBe('review:cold')
   })
 
   it('route is the last PassRouted payload, whatever its next', () => {
-    const history = lateHistories.run.fixRoundRouted
+    const history = lateHistories.attempt.fixRoundRouted
     const routed = history.findLast((e) => e.type === 'PassRouted')!
     expect(reduceAttempt(history).route).toEqual(routed.data)
     expect(reduceAttempt(history.filter((e) => e.type !== 'PassRouted')).route).toBeNull()
   })
 
   it('route is set when the route is not a FixRound too', () => {
-    const history = lateHistories.run.fixRoundRouted
+    const history = lateHistories.attempt.fixRoundRouted
     const routed = history.findLast((e) => e.type === 'PassRouted')!
     const handed = {
       ...routed,
@@ -415,7 +415,7 @@ describe('AttemptState instants and the recorded plan (#827)', () => {
     [...xs].reverse().find((e) => (e as { type: string }).type === type) as { at: Date }
 
   it('step.since is the last StepStarted, agentStartedAt the RunStarted, openedAt the first event', () => {
-    const events = lateHistories.run.fixRoundRouted
+    const events = lateHistories.attempt.fixRoundRouted
     const state = reduceAttempt(events)
     expect(state.step?.since).toEqual(last(events, 'StepStarted').at)
     expect(state.agentStartedAt).toEqual(events.find((e) => e.type === 'RunStarted')!.at)
@@ -423,19 +423,19 @@ describe('AttemptState instants and the recorded plan (#827)', () => {
   })
 
   it('D10: laneWaitedAt is the MergeLaneWaited at', () => {
-    const events = lateHistories.run.laneWaited
+    const events = lateHistories.attempt.laneWaited
     expect(reduceAttempt(events).laneWaitedAt).toEqual(events.find((e) => e.type === 'MergeLaneWaited')!.at)
   })
 
   it('askedAt is the signoff StepEnded at, and stays after the lifecycle moves on', () => {
-    const events = histories.run.signoffRequestedThenLifecycle
+    const events = histories.attempt.signoffRequestedThenLifecycle
     const state = reduceAttempt(events)
     expect(state.askedAt).toEqual(events.find((e) => e.type === 'StepEnded')!.at)
     expect(state.lifecycle.status).not.toBe('awaiting-approval')
   })
 
   it('D10: resolved holds the hash and the ten steps', () => {
-    const state = reduceAttempt(lateHistories.run.planResolved)
+    const state = reduceAttempt(lateHistories.attempt.planResolved)
     expect(state.resolved?.configHash).toBe('cfg-plan')
     expect(state.resolved?.steps).toHaveLength(10)
   })

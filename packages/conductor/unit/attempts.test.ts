@@ -402,19 +402,19 @@ describe('attemptOutcome', () => {
 
 describe('attemptOutcome over the fixture histories', () => {
   it('a refusal outranks a later failure', () => {
-    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.refusedThenFailed), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.attempt.refusedThenFailed), BUDGET)
     expect(outcome.evidence?.what).toBe('review:cold')
     expect(outcome.evidence?.text).toContain('off by one')
   })
 
   it('a failure inside a step is the run failing', () => {
-    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.failedInsideStep), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.attempt.failedInsideStep), BUDGET)
     expect(outcome.evidence?.what).toBe('the run itself (out-of-turns)')
     expect(outcome.receipt).toEqual({ turns: 30 })
   })
 
   it('a step left open names itself', () => {
-    const outcome = attemptOutcome(reduceAttempt(lateHistories.run.stepEndedForAnother), BUDGET)
+    const outcome = attemptOutcome(reduceAttempt(lateHistories.attempt.stepEndedForAnother), BUDGET)
     expect(outcome.evidence?.what).toBe('implement')
     expect(outcome.evidence?.text).toContain('never returned a verdict')
   })
