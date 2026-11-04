@@ -6,7 +6,7 @@
  * exists for exactly this — and `lingtai run` never did, because the lock's
  * reasoning was written about a second *daemon* and `lingtai run` was never
  * counted as a conductor. It conducts the same work through the same
- * `conductorPass`, and `CLAUDE.md` teaches people to run it by hand.
+ * `conductorTurn`, and `CLAUDE.md` teaches people to run it by hand.
  *
  * The claim mechanism hid the consequence: while a claim carried a thirty-minute
  * lease, a live lease turned the second claimant away, so the gap only opened on

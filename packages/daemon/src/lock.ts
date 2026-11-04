@@ -6,7 +6,7 @@
  * daemon. launchd keeps one daemon alive, the obvious way to debug it is to run
  * `lingtai daemon` in a terminal while that one is still up — and `CLAUDE.md`
  * teaches people to run `lingtai run` by hand, which conducts exactly the same
- * work through the same `conductorPass`. **A conductor is anything that claims,
+ * work through the same `conductorTurn`. **A conductor is anything that claims,
  * not a process with a particular name** (#93). Two of them racing for the same
  * ticket is the failure that makes the whole claim mechanism pointless — and it
  * would present as an expensive mystery rather than an error.

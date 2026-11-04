@@ -2,7 +2,7 @@
  * A pause one project's run appended stops the next project in the same pass
  * (#210).
  *
- * `conductorPass` read the control stream once for the whole pass and then
+ * `conductorTurn` read the control stream once for the whole pass and then
  * walked every registered project. A run that meets an account-wide wall stands
  * the conductor down (0031 §3), and the project after it was claimed anyway,
  * straight into the same wall — the pause was on the log and nothing between

@@ -16,8 +16,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { Attempt, RECORD_TABS } from '../src/app/task/[id]/page.tsx'
-import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from '../src/lib/recipe.ts'
-import { presentRunEvents, type RunView } from '../src/lib/task.ts'
+import { changesFromHead, describeAction, forgetAttemptRecipes, recipeOfAttempt } from '../src/lib/recipe.ts'
+import { presentAttemptEvents, type AttemptView } from '../src/lib/task.ts'
 
 const RECIPE = `
 version: 2
@@ -67,8 +67,8 @@ function e(type: string, data: unknown): Envelope {
 const claim: TicketClaim = { runId: RUN, at: new Date('2026-09-16T09:59:00.000Z'), ended: null }
 
 /** A finished run, with `StepsResolved` naming `configHash` — or with none. */
-function runWith(configHash: string | null): RunView {
-  return presentRunEvents(claim, 1, [
+function runWith(configHash: string | null): AttemptView {
+  return presentAttemptEvents(claim, 1, [
     e('RunStarted', { baseSha: BASE, configHash: configHash ?? 'unrelated' }),
     ...(configHash === null
       ? []
@@ -111,16 +111,16 @@ function fake(files: Record<string, string | Error>) {
   return { client, asked, atHead, heads: () => heads }
 }
 
-const render = (run: RunView) => renderToStaticMarkup(<Attempt run={run} alone={true} deciding={false} />)
+const render = (run: AttemptView) => renderToStaticMarkup(<Attempt run={run} alone={true} deciding={false} />)
 
-beforeEach(() => forgetRunRecipes())
+beforeEach(() => forgetAttemptRecipes())
 
 describe("the recipe beside an attempt's actions", () => {
   it("is read at the run's base commit and proved by the hash it recorded", async () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, asked, atHead, heads } = fake({ [BASE]: RECIPE })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('run')
     expect(recipe.of === 'run' && recipe.at).toEqual({ base: BASE })
@@ -142,7 +142,7 @@ describe("the recipe beside an attempt's actions", () => {
     const run = runWith(await hashOf(RECIPE.replace('20m', '30m')))
     const { client, atHead } = fake({ [BASE]: RECIPE })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('head')
     expect(recipe.of === 'head' && recipe.why).toMatch(/hashes to .* and this run was given/)
@@ -157,7 +157,7 @@ describe("the recipe beside an attempt's actions", () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, atHead } = fake({ [BASE]: new Error('502 from GitHub') })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('head')
     expect(recipe.of === 'head' && recipe.why).toContain('could not be read: 502 from GitHub')
@@ -169,7 +169,7 @@ describe("the recipe beside an attempt's actions", () => {
     expect(run.configHash).toBeNull()
     const { client, asked, atHead } = fake({ [BASE]: RECIPE })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('head')
     expect(recipe.of === 'head' && recipe.why).toContain('no StepsResolved')
@@ -181,7 +181,7 @@ describe("the recipe beside an attempt's actions", () => {
     const run = runWith(await hashOf(HEAD))
     const { client, atHead } = fake({ [BASE]: new Error('502 from GitHub') })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('run')
     expect(recipe.of === 'run' && recipe.at).toEqual({ head: 'main' })
@@ -190,7 +190,7 @@ describe("the recipe beside an attempt's actions", () => {
   it('leaves a point the recipe left empty reading skipped, with no command', async () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, atHead } = fake({ [BASE]: RECIPE })
-    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) })
+    const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
 
     for (const step of ['admit', 'prepared', 'merge', 'end']) {
       expect(html).toMatch(new RegExp(`<span class="actstep">${step}</span><span class="empty">skipped</span>`))
@@ -203,8 +203,8 @@ describe("the recipe beside an attempt's actions", () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, asked, atHead, heads } = fake({ [BASE]: RECIPE })
 
-    const first = await recipeOfRun(run, client, atHead)
-    const second = await recipeOfRun(run, client, atHead)
+    const first = await recipeOfAttempt(run, client, atHead)
+    const second = await recipeOfAttempt(run, client, atHead)
 
     expect(second).toEqual(first)
     expect(asked).toHaveLength(1)
@@ -230,7 +230,7 @@ describe('the recipe an attempt was given', () => {
   it("reads in lingtai status's rows and its words", async () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, atHead } = fake({ [BASE]: RECIPE })
-    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) })
+    const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
 
     expect(html).toContain('<dt>picks up</dt><dd>bug</dd>')
     expect(html).toContain('<dt>excludes</dt><dd>blocked</dd>')
@@ -249,7 +249,7 @@ describe('the recipe an attempt was given', () => {
   it('says the record carries no comments, so a bare number is not one with no reasoning', async () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, atHead } = fake({ [BASE]: RECIPE })
-    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) })
+    const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
 
     expect(html).toContain('What the log records is the canonical recipe')
     expect(html).toContain('comments discarded (0047 §2)')
@@ -262,7 +262,7 @@ describe('the recipe an attempt was given', () => {
     const run = runWith(await hashOf(RECIPE))
     const { client, atHead } = fake({ [BASE]: RECIPE })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     expect(recipe.of === 'run' && recipe.from).toEqual({
       of: 'changed',
       ref: 'main',
@@ -286,7 +286,7 @@ describe('the recipe an attempt was given', () => {
     const run = runWith(await hashOf(HEAD))
     const { client, atHead } = fake({ [BASE]: HEAD })
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     expect(recipe.of === 'run' && recipe.at).toEqual({ base: BASE })
     expect(recipe.of === 'run' && recipe.from).toEqual({ of: 'same', ref: 'main' })
     expect(render({ ...run, recipe })).toContain('Nothing differs from the recipe at the head of main')
@@ -299,7 +299,7 @@ describe('the recipe an attempt was given', () => {
       throw new Error('no recipe at ~/.lingtai/lingtai/recipe.yml')
     }
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     // The attempt's recipe is still proved and still shown; only the
     // comparison is lost.
     expect(recipe.of).toBe('run')
@@ -317,7 +317,7 @@ describe('the recipe an attempt was given', () => {
     const run = runWith(await hashOf(RECIPE.replace('20m', '30m')))
     const { client, atHead } = fake({ [BASE]: RECIPE })
 
-    const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) })
+    const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
     expect(html).toContain('Not this run&#x27;s recipe')
     expect(html).not.toContain('Nothing differs')
     expect(html).toContain('there is nothing to compare it with')
@@ -333,7 +333,7 @@ describe('the recipe an attempt was given', () => {
     const { client } = fake({ [BASE]: two })
     const atHead = async () => resolveRecipe(async () => RECIPE, 'main')
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     expect(recipe.of === 'run' && recipe.from.of).toBe('changed')
     const changes = recipe.of === 'run' && recipe.from.of === 'changed' ? recipe.from.changes : []
     // `build` is untouched and says nothing: the added action is named, and the
@@ -365,7 +365,7 @@ describe('the recipe an attempt was given', () => {
     const { client } = fake({ [BASE]: ORDERED })
     const atHead = async () => resolveRecipe(async () => SWAPPED, 'main')
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     expect(recipe.of === 'run' && recipe.from).toEqual({
       of: 'changed',
       ref: 'main',
@@ -385,7 +385,7 @@ describe('the recipe an attempt was given', () => {
     const edited = SWAPPED.replace('pnpm lint', 'pnpm lint --fix')
     const atHead = async () => resolveRecipe(async () => edited, 'main')
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     const changes = recipe.of === 'run' && recipe.from.of === 'changed' ? recipe.from.changes : []
     expect(changes.map((c) => c.path)).toEqual(['steps.proposed', 'steps.proposed.lint.run'])
     expect(render({ ...run, recipe })).toContain('2 values')
@@ -400,7 +400,7 @@ describe('the recipe an attempt was given', () => {
     const { client } = fake({ [BASE]: mine })
     const atHead = async () => resolveRecipe(async () => theirs, 'main')
 
-    const recipe = await recipeOfRun(run, client, atHead)
+    const recipe = await recipeOfAttempt(run, client, atHead)
     // `changed` stands on the hash; the walk is what has nothing to name.
     expect(recipe.of === 'run' && recipe.from.of).toBe('changed')
     expect(recipe.of === 'run' && recipe.from.of === 'changed' && recipe.from.changes).toEqual([])

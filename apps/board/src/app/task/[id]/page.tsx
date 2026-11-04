@@ -9,7 +9,7 @@ import { theHome } from '@/lib/home'
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { billText, spendChip } from '@/lib/spend'
-import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
+import { loadTask, totalsFact, type AttemptView, type TaskDetail, type TicketView } from '@/lib/task'
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
@@ -170,7 +170,7 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
 }
 
 /** Green is a run that ended well; red is one that did not; amber is neither yet. */
-function outcomeClass(state: RunView['outcome']['state']): string {
+function outcomeClass(state: AttemptView['outcome']['state']): string {
   if (state === 'failed') return 'fail'
   if (state === 'finished') return 'pass'
   return 'hold'
@@ -195,7 +195,7 @@ export function Attempt({
   followed = false,
   now = Date.now(),
 }: {
-  run: RunView
+  run: AttemptView
   alone: boolean
   /**
    * True when the block at the top points here.
@@ -339,7 +339,7 @@ export function Attempt({
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.
  */
-export function RecipeGiven({ run }: { run: RunView }) {
+export function RecipeGiven({ run }: { run: AttemptView }) {
   const recipe = run.recipe
   if (recipe === undefined) return null
   if (recipe.of === 'none') {
@@ -520,7 +520,7 @@ function FromHeadSays({ from }: { from: FromHead }) {
 export const RECORD_TABS = ['history', 'diff', 'findings', 'attempts', 'ticket'] as const
 
 /** `attempt 2`, above an attempt's share of a tab — only where there is more than one to tell apart. */
-function Of({ run, many }: { run: RunView; many: boolean }) {
+function Of({ run, many }: { run: AttemptView; many: boolean }) {
   return many ? <p className="rof">attempt {run.attempt}</p> : null
 }
 
@@ -535,7 +535,7 @@ function plural(n: number, word: string): string {
  * 0), so it falls to the paths the agent's file tools reported from that
  * attempt on (all attempts when none has a diff), as before.
  */
-export function diffFact(runs: readonly RunView[]): string {
+export function diffFact(runs: readonly AttemptView[]): string {
   const at = runs.findLastIndex((r) => r.diff !== null)
   const counted = at < 0 ? undefined : runs[at]
   if (counted?.diff && counted.diff.files > 0) {
@@ -566,7 +566,7 @@ export function Record({ task, now }: { task: TaskDetail; now?: number }) {
   // Did a run propose anything to diff against? `headSha` is set only by
   // `RunProposedCompletion`; a run that never reached it has nothing to show
   // a button for (the files line, or its own empty sentence, still can).
-  const proposed = (run: RunView): run is RunView & { baseSha: string; headSha: string } =>
+  const proposed = (run: AttemptView): run is AttemptView & { baseSha: string; headSha: string } =>
     run.baseSha !== null && run.headSha !== null
 
   // What the diagnosis said beyond rank 3's sentence: what was already done, and

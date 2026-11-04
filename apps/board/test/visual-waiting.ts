@@ -22,7 +22,7 @@ import { describeHeld, spentOf } from '@/lib/progress'
 import { grantedOf } from '@/lib/spend'
 import {
   presentChat,
-  presentRunEvents,
+  presentAttemptEvents,
   savedFixWork,
   standingOf,
   totalsOf,
@@ -443,7 +443,7 @@ export async function preview(name: CaseName) {
   const discussions = chats.map(([id, events]) => presentChat(id, events, null))
   const foldedRuns = [...runs.entries()].map(([runId, events], index) => {
     const claim: TicketClaim = { runId, at: events[0]?.at ?? new Date(0), ended: null }
-    return presentRunEvents(claim, index + 1, events)
+    return presentAttemptEvents(claim, index + 1, events)
   })
   const standing = standingOf(own, foldedRuns)
   const previewStanding: StandingView = { ...standing }

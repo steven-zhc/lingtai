@@ -68,7 +68,7 @@ export interface ConductOptions {
   /** How many items one pass may take. One, so completion drives the loop. */
   max?: number
   /** The daemon's in-flight set and where a started pass is handed (0122); absent, every pass is awaited. */
-  slots?: Pick<PassSlots, 'set' | 'started'>
+  slots?: Pick<TurnSlots, 'set' | 'started'>
   /**
    * The commit this process was loaded from, read once at its start and never
    * per pass — the checkout is exactly what moves under loaded modules. Carried
@@ -100,7 +100,7 @@ export interface ConductOptions {
   onRecipe?: (project: string, recipe: Recipe) => void
 }
 
-export interface PassOutcome {
+export interface TurnOutcome {
   /** Projects looked at. */
   projects: number
   /** Items run across all of them. */
@@ -116,7 +116,7 @@ export interface PassOutcome {
  *
  * `conductProjects` was already a seam (`conduct-pause.test.ts`), but `work` —
  * what each project's share of a pass does — was a closure inside
- * `conductorPass` with no way to drive it under the unit half. `ConductWorld`
+ * `conductorTurn` with no way to drive it under the unit half. `ConductWorld`
  * is that seam, following `apps/cli/src/run.ts`'s `RunWorld`/`liveRunWorld`.
  */
 export interface ConductWorld {
@@ -139,7 +139,7 @@ export function liveConductWorld(): ConductWorld {
  * waits for it. `ceilingSet` is whether a daily ceiling is configured — while
  * none is, the installation runs one pass in all and a look awaits its pass.
  */
-export interface PassSlots {
+export interface TurnSlots {
   set: Slots
   started: (pass: Promise<boolean | void>) => void
   ceilingSet: boolean
@@ -161,12 +161,12 @@ export interface ConductWorkOptions {
   prompt: string
   /** The control stream, read once for the whole pass (#210). */
   control: ControlState
-  outcome: PassOutcome
+  outcome: TurnOutcome
   max?: number
   merge?: boolean
   paused?: () => Promise<string | null>
   /** Absent, every pass is awaited, as it always was. */
-  slots?: PassSlots
+  slots?: TurnSlots
   log: (line: string) => void
   /** See `ConductOptions.tell`. */
   tell?: (line: string) => void
@@ -533,7 +533,7 @@ export function conductWork(
 export function projectsForTurn(
   registered: readonly ProjectState[],
   canReach: boolean,
-  outcome: PassOutcome,
+  outcome: TurnOutcome,
 ): readonly ProjectState[] {
   const projects = canReach ? registered : registered.filter((p) => p.owner === null)
   if (!canReach && registered.some((p) => p.owner !== null)) {
@@ -551,9 +551,9 @@ export function projectsForTurn(
  * `runPromise` at its own edge. The projector is the daemon's, held for as long
  * as the daemon runs, which is why there is no scope of that kind here.
  */
-export async function conductorPass(options: ConductOptions = {}): Promise<PassOutcome> {
+export async function conductorTurn(options: ConductOptions = {}): Promise<TurnOutcome> {
   const log = options.log ?? (() => {})
-  const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+  const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
 
   const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
   try {
@@ -700,7 +700,7 @@ export interface ProjectsOptions {
    */
   work: (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'>
   codeSha: string | null
-  outcome: PassOutcome
+  outcome: TurnOutcome
   log: (line: string) => void
   /**
    * Asked before each project, and a sentence back ends the pass there (#210).
@@ -717,11 +717,11 @@ export interface ProjectsOptions {
  * Every registered project, each in isolation — and a refusal's start and end
  * on the project's stream.
  *
- * Split from `conductorPass` so the part that decides what reaches the log runs
+ * Split from `conductorTurn` so the part that decides what reaches the log runs
  * without a GitHub App: that record is the claim of `#148`, and a claim about
  * the log is tested against the log.
  */
-export async function conductProjects(options: ProjectsOptions): Promise<PassOutcome> {
+export async function conductProjects(options: ProjectsOptions): Promise<TurnOutcome> {
   const { outcome, log, store = eventStore } = options
   const say = options.tell ?? log
 

@@ -89,14 +89,14 @@ import {
   issueUrl,
   triageContextOf,
   waitingNeighbours,
-  type PassLimitsView,
+  type AttemptLimitsView,
   type WaitingNeighbour,
 } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
-import { describeHeld, elapsed, progressOf, spentOf, type RunProgress } from './progress.ts'
+import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
-import { recipeOfRun, type RunRecipe } from './recipe.ts'
+import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBill,
@@ -266,7 +266,7 @@ export interface PromptView {
 }
 
 /** One attempt, whole. */
-export interface RunView {
+export interface AttemptView {
   runId: string
   /** 1-based, in the order this item's claims were made. */
   attempt: number
@@ -282,15 +282,15 @@ export interface RunView {
   configHash: string | null
   /**
    * The recipe the page shows beside this attempt's gate actions, and whether
-   * it is provably this run's — see `RunRecipe`. Absent where nothing asked:
+   * it is provably this run's — see `AttemptRecipe`. Absent where nothing asked:
    * a reducer on its own has no GitHub to ask, and `loadTask` fills it in.
    */
-  recipe?: RunRecipe
+  recipe?: AttemptRecipe
   /** From `RunFinished`. Null until it lands, and for a run that never got there. */
   turns: number | null
   /**
    * Every purpose's bill reduced into one, over the `spend` rows whose `pass`
-   * is this run's own stream (`#498`). `presentRunEvents` cannot read it — there is no
+   * is this run's own stream (`#498`). `presentAttemptEvents` cannot read it — there is no
    * database inside a pure reduce — so it returns an empty bill here and
    * `loadTask` fills it in, the same way it fills in `recipe`.
    */
@@ -323,11 +323,11 @@ export interface RunView {
    * `running` and no `never-ran`. It cited 0016 §4 and could not keep it: a
    * point configured and never run arrived as `N pending`, the word for *not
    * reached yet* (#189). With the rail on this page `PointView` had no reader
-   * left that `RunProgress` does not serve better, so it went rather than
+   * left that `AttemptProgress` does not serve better, so it went rather than
    * stayed a second opinion — two reduces over one stream is how they came
    * apart.
    */
-  progress: RunProgress | null
+  progress: AttemptProgress | null
 }
 
 /**
@@ -633,7 +633,7 @@ function oneLine(text: string | null): string | null {
  * (`claimed`, `released`, a run that failed with no verdicts) is exactly the
  * one a gate-shaped summary could never name.
  */
-function refusalOn(run: RunView): Deciding | null {
+function refusalOn(run: AttemptView): Deciding | null {
   /**
    * A gate that never ran stopped this attempt without refusing it (#133).
    *
@@ -643,7 +643,7 @@ function refusalOn(run: RunView): Deciding | null {
    * red line at the top of a page whose actual answer is that the account ran
    * out. The line says nothing judged the diff, and names no refusal.
    *
-   * **Before the refusals, not after.** `presentRunEvents` keeps one entry per gate for
+   * **Before the refusals, not after.** `presentAttemptEvents` keeps one entry per gate for
    * the whole attempt, so a `failed` from an earlier round of the same pass is
    * still in `run.gates` — about a commit that is no longer the head. A gate
    * that never ran is always the last thing a pass did (the pipeline and the
@@ -747,7 +747,7 @@ function refusalOn(run: RunView): Deciding | null {
  * *in attempt 1 ↓* on the evidence — and it is still a pointer and never a
  * copy, because the whole of it stays in the attempt it names (design §2).
  */
-function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding | null {
+function decidingOf(runs: readonly AttemptView[], named: AttemptView | null): Deciding | null {
   if (named !== null) {
     const own = refusalOn(named)
     if (own !== null) return own
@@ -791,7 +791,7 @@ function whoWaits(life: TicketLifecycle): string {
  * in this file is: what the page *says* about a stopped item is settled by
  * envelopes and nothing else.
  */
-export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
+export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[]): StandingView {
   const item = reduceTicket(own)
   const since = item.since
 
@@ -944,7 +944,7 @@ export interface TaskDetail {
   /** Null only when the id is not `ticket-<project>-<n>`. */
   ticket: TicketView | null
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
-  runs: RunView[]
+  runs: AttemptView[]
   /** Every conversation held about this item, oldest first. */
   discussions: DiscussionView[]
   /**
@@ -1095,16 +1095,16 @@ export function chatIdsFor(
  * it was opened, why it was released) and `progress`, which needs the recipe's
  * plan and whether this attempt landed — neither is on the stream.
  */
-export function presentRun(
+export function presentAttempt(
   state: DomainRunState,
   claim: TicketClaim,
   attempt: number,
-  progress: RunProgress | null,
+  progress: AttemptProgress | null,
   /** Whether the ticket is stopped at **this attempt's** wait now (`loadTask` reads it off the lifecycle). */
   held: boolean = false,
   /** The branch `waitWords` words an `asked` detail with. */
   branch: string = '',
-): RunView {
+): AttemptView {
   const build = STEPS.indexOf('build')
   const steps: StepVerdict[] = Object.values(state.steps).map((s) => {
     const name = s.step.slice(0, s.step.indexOf(':'))
@@ -1152,8 +1152,8 @@ export function presentRun(
   }
 }
 
-/** `presentRun` for a caller holding events rather than a state. */
-export function presentRunEvents(
+/** `presentAttempt` for a caller holding events rather than a state. */
+export function presentAttemptEvents(
   claim: TicketClaim,
   attempt: number,
   run: readonly Envelope[],
@@ -1169,9 +1169,9 @@ export function presentRunEvents(
     held = false,
     branch = '',
   }: { plan?: StepPlan; over?: boolean; held?: boolean; branch?: string } = {},
-): RunView {
+): AttemptView {
   const state = reduceAttempt(run)
-  return presentRun(state, claim, attempt, progressOf(state, plan, over), held, branch)
+  return presentAttempt(state, claim, attempt, progressOf(state, plan, over), held, branch)
 }
 
 /**
@@ -1221,7 +1221,7 @@ function outcomeOf(state: DomainRunState, claim: TicketClaim, held: boolean, bra
  * purpose `billOf` gives a row that did arrive.
  */
 export function totalsOf(
-  runs: readonly RunView[],
+  runs: readonly AttemptView[],
   discussions: readonly DiscussionView[] = [],
   rows: readonly SpendRow[] = [],
 ): Totals {
@@ -1470,7 +1470,7 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
  */
 async function planFor(
   project: string,
-): Promise<{ plan: StepPlan; limits: Pick<PassLimitsView, 'rounds' | 'restarts'> } | undefined> {
+): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> } | undefined> {
   const state = await loadProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
@@ -1481,7 +1481,7 @@ async function planFor(
 
 /**
  * The recipe each attempt was given, keyed by run — or, where that cannot be
- * proved, head's, named as head's (#190). See `recipeOfRun`.
+ * proved, head's, named as head's (#190). See `recipeOfAttempt`.
  *
  * **No round trip per render for a proved run**: the recipe at a base commit
  * is kept per `(repo, sha)`, which is exact because a commit never changes.
@@ -1490,16 +1490,16 @@ async function planFor(
  *
  * Never throws: a project that will not load is every attempt saying so.
  */
-async function recipesFor(project: string, runs: readonly RunView[]): Promise<Map<string, RunRecipe>> {
+async function recipesFor(project: string, runs: readonly AttemptView[]): Promise<Map<string, AttemptRecipe>> {
   if (runs.length === 0) return new Map()
-  let recipes: RunRecipe[]
+  let recipes: AttemptRecipe[]
   try {
     const state = await loadProject(project)
     if (!state) throw new Error('it is not a registered project')
     const client = await githubClientFor(state)
     let head: ReturnType<typeof currentRecipe> | null = null
     const atHead = () => (head ??= currentRecipe(state))
-    recipes = await timed('recipe.run', () => Promise.all(runs.map((r) => recipeOfRun(r, client, atHead))))
+    recipes = await timed('recipe.run', () => Promise.all(runs.map((r) => recipeOfAttempt(r, client, atHead))))
   } catch (err) {
     const why = `no recipe could be read for ${project}: ${(err as Error).message}`
     recipes = runs.map(() => ({ of: 'none', why }))
@@ -1619,7 +1619,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
   const reduced = claims.map((c, i) =>
-    presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
+    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
   )
   const attempts = new Map(reduced.map((r) => [r.runId, r.attempt]))
 
@@ -1756,7 +1756,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     (standing.state === 'running' || standing.state === 'blocked') && ticket !== null
       ? timed('next.plan', () => planFor(ticket.project))
       : undefined,
-    ticket !== null ? recipesFor(ticket.project, reduced) : new Map<string, RunRecipe>(),
+    ticket !== null ? recipesFor(ticket.project, reduced) : new Map<string, AttemptRecipe>(),
   ])
   const plan = planAndLimits?.plan
   const limits = planAndLimits?.limits ?? null

@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Attempt } from '../src/app/task/[id]/page.tsx'
-import { presentRunEvents } from '../src/lib/task.ts'
+import { presentAttemptEvents } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -41,11 +41,11 @@ const SHA = 'c'.repeat(40)
 const claim = (): TicketClaim => ({ runId: RUN, at: new Date('2026-09-10T07:40:00.000Z'), ended: null })
 
 /** Started and nothing since: `outcomeOf`'s `running`. */
-const running = () => presentRunEvents(claim(), 2, [e(RUN, 'RunStarted', { baseSha: SHA })])
+const running = () => presentAttemptEvents(claim(), 2, [e(RUN, 'RunStarted', { baseSha: SHA })])
 
 /** Started and finished: the ordinary attempt, and the one that stays shut. */
 const finished = () =>
-  presentRunEvents(claim(), 2, [
+  presentAttemptEvents(claim(), 2, [
     e(RUN, 'RunStarted', { baseSha: SHA }),
     e(RUN, 'RunFinished', { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
   ])

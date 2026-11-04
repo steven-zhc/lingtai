@@ -16,7 +16,14 @@ import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { backoffOf } from '../src/lib/queued.ts'
-import { presentRunEvents, groupHistory, heldRunOf, standingOf, totalsOf, type RunView } from '../src/lib/task.ts'
+import {
+  presentAttemptEvents,
+  groupHistory,
+  heldRunOf,
+  standingOf,
+  totalsOf,
+  type AttemptView,
+} from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -71,7 +78,7 @@ describe('one attempt', () => {
    * in from `spend`, the way it fills in `recipe`.
    */
   it('carries the turns and duration the log has always recorded', () => {
-    const run = presentRunEvents(CLAIM, 1, [
+    const run = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40), runtime: 'claude-code' }),
       e(RUN_1, 'RunPrompted', { promptVersion: 'ticket@1924', bytes: 4593, prompt: 'do the thing' }),
       e(RUN_1, 'RunFinished', { exitCode: 0, turns: 92, durationMs: 1_405_000, costUsd: 8.4 }),
@@ -84,7 +91,7 @@ describe('one attempt', () => {
   })
 
   it("holds its own verdicts, so two attempts' gates are never one list", () => {
-    const one = presentRunEvents(CLAIM, 1, [
+    const one = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
       e(RUN_1, 'StepEnded', {
         runId: RUN_1,
@@ -104,7 +111,7 @@ describe('one attempt', () => {
         },
       }),
     ])
-    const two = presentRunEvents({ ...CLAIM, runId: RUN_2 }, 2, [
+    const two = presentAttemptEvents({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: 'c'.repeat(40) }),
       e(RUN_2, 'StepEnded', {
         runId: RUN_2,
@@ -139,7 +146,7 @@ describe('one attempt', () => {
    * opening the page is looking for was the one gate not on it.
    */
   it("shows a never-ran gate's words, which it files under a different name", () => {
-    const run = presentRunEvents(CLAIM, 1, [
+    const run = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: 'b'.repeat(40) }),
       e(RUN_1, 'StepEnded', {
         runId: RUN_1,
@@ -167,7 +174,7 @@ describe('one attempt', () => {
   })
 
   it('says a run was released rather than leaving it reading as still running', () => {
-    const run = presentRunEvents({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
+    const run = presentAttemptEvents({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
     ])
 
@@ -175,11 +182,11 @@ describe('one attempt', () => {
   })
 
   it('says a claim whose stream is empty is that, and not a run in flight', () => {
-    expect(presentRunEvents(CLAIM, 1, []).outcome.state).toBe('claimed')
+    expect(presentAttemptEvents(CLAIM, 1, []).outcome.state).toBe('claimed')
   })
 
   it('names a failure by its kind, and leaves the whole of it to the history', () => {
-    const run = presentRunEvents(CLAIM, 1, [
+    const run = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
       e(RUN_1, 'RunFailed', { kind: 'never-started', detail: 'a long message from the runtime' }),
     ])
@@ -188,7 +195,7 @@ describe('one attempt', () => {
   })
 
   it('lists a file once, however many times the agent touched it', () => {
-    const run = presentRunEvents(CLAIM, 1, [
+    const run = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'RunTouchedFile', { path: 'src/task.ts', op: 'write' }),
       e(RUN_1, 'RunTouchedFile', { path: 'src/task.ts', op: 'edit' }),
       e(RUN_1, 'RunTouchedFile', { path: 'src/page.tsx', op: 'edit' }),
@@ -201,7 +208,7 @@ describe('one attempt', () => {
   })
 
   it('still shows all ten steps, including the ones nothing was configured at', () => {
-    const run = presentRunEvents(CLAIM, 1, [
+    const run = presentAttemptEvents(CLAIM, 1, [
       e(RUN_1, 'StepsResolved', { steps: [{ step: 'proposed', actions: ['build'] }] }),
     ])
 
@@ -212,8 +219,8 @@ describe('one attempt', () => {
 })
 
 describe('the totals', () => {
-  function run(over: Partial<RunView>): RunView {
-    return { ...presentRunEvents(CLAIM, 1, []), ...over }
+  function run(over: Partial<AttemptView>): AttemptView {
+    return { ...presentAttemptEvents(CLAIM, 1, []), ...over }
   }
 
   /** `round: 0` is Work, `round` at 1 or above is Answering (0039 §3). */
@@ -326,7 +333,8 @@ describe('a TicketContinued is read as an old-form continuation is', () => {
   }
   const withAt = (env: Envelope, when: string): Envelope => ({ ...env, at: at(when) })
 
-  const runsOf = (own: Envelope[]): RunView[] => reduceTicket(own).claims.map((c, i) => presentRunEvents(c, i + 1, []))
+  const runsOf = (own: Envelope[]): AttemptView[] =>
+    reduceTicket(own).claims.map((c, i) => presentAttemptEvents(c, i + 1, []))
 
   /** The same stream twice: only the last event differs in type and payload. */
   function streams(): { old: Envelope[]; next: Envelope[] } {
@@ -410,7 +418,7 @@ describe('an attempt asked (#829)', () => {
   function drawn(own: Envelope[], run: Envelope[]) {
     const t = reduceTicket(own)
     const held = t.claims[0]!.runId === heldRunOf(t.lifecycle)
-    return presentRunEvents(t.claims[0]!, 1, run, { held }).outcome
+    return presentAttemptEvents(t.claims[0]!, 1, run, { held }).outcome
   }
 
   it('finished then held at signoff reads asked; after approve-and-continue it reads by its run again', () => {

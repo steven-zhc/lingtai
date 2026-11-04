@@ -184,7 +184,7 @@ export interface Phase {
   budgetMs: number | null
 }
 
-export interface RunProgress {
+export interface AttemptProgress {
   /**
    * When the run's first event landed, ISO — the prepare gates, which run
    * before the agent starts. This is the elapsed the card shows, and it is the
@@ -362,7 +362,7 @@ export function progressOf(
    * because nothing should have run in them. See `RailCandidate.over`.
    */
   over = false,
-): RunProgress | null {
+): AttemptProgress | null {
   if (state.openedAt === null) return null
 
   const steps = STEPS.map((step) => {

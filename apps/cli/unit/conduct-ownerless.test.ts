@@ -6,12 +6,12 @@ import { resolveRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { conductProjects, conductWork, projectsForTurn, type ConductWorld, type PassOutcome } from '../src/conduct.ts'
+import { conductProjects, conductWork, projectsForTurn, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
 
 /**
  * A pass's per-project work, for a project with no owner beside a GitHub one
  * (`#355`) — `conductWork` is the seam this needed: before it, `work` was a
- * closure inside `conductorPass` with no way to drive either branch under the
+ * closure inside `conductorTurn` with no way to drive either branch under the
  * unit half (0060 §1), the way `unit/run-ownerless.test.ts` already proves for
  * `lingtai run`.
  *
@@ -140,7 +140,7 @@ describe('conductWork, a pass across a project with no owner and a GitHub projec
       },
     }
 
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const work = conductWork(
       {
         hookBinary: '/dev/null',
@@ -211,11 +211,11 @@ describe('conductWork, with no GitHub App on this machine', () => {
       },
     }
 
-    // Not `conductorPass`'s filtering itself — `projectsForTurn`, below, is
+    // Not `conductorTurn`'s filtering itself — `projectsForTurn`, below, is
     // what proves that — only that `conductWork`'s no-owner branch does not
     // care whether an outer `'*'` refusal is already on `outcome`, the shape
-    // `conductorPass` now hands it in.
-    const outcome: PassOutcome = {
+    // `conductorTurn` now hands it in.
+    const outcome: TurnOutcome = {
       projects: 0,
       ran: 0,
       refused: [{ project: '*', detail: 'no GitHub App configured' }],
@@ -239,37 +239,37 @@ describe('conductWork, with no GitHub App on this machine', () => {
 })
 
 /**
- * `conductorPass`'s own filter (`#355`) — which registered projects reach
+ * `conductorTurn`'s own filter (`#355`) — which registered projects reach
  * `conductProjects` at all, and whether the `'*'` refusal is pushed. Tested
- * directly because `conductorPass` reaches `loadProjects()` and
+ * directly because `conductorTurn` reaches `loadProjects()` and
  * `hasGitHubApp()` straight from the environment, with no seam to drive
  * either under the unit half.
  */
 describe('projectsForPass', () => {
   it('hands every registered project through, and refuses nothing, when there is an App', () => {
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], true, outcome)
     expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
     expect(outcome.refused).toEqual([])
   })
 
   it('keeps GitHub projects and refuses nothing under gh, where the machine can reach GitHub', () => {
-    // `conductorPass` hands `hasGitHubAuth()`, which is true on `gh` with no App at all.
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    // `conductorTurn` hands `hasGitHubAuth()`, which is true on `gh` with no App at all.
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], hasGitHubAuth({ LINGTAI_GITHUB_AUTH: 'gh' }), outcome)
     expect(projects).toEqual([LOCAL_PROJECT, GH_PROJECT])
     expect(outcome.refused).toEqual([])
   })
 
   it('drops every GitHub project and pushes one `*` refusal, with no App', () => {
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const projects = projectsForTurn([LOCAL_PROJECT, GH_PROJECT], false, outcome)
     expect(projects).toEqual([LOCAL_PROJECT])
     expect(outcome.refused).toEqual([{ project: '*', detail: 'no GitHub App configured' }])
   })
 
   it('pushes no refusal when every registered project is already owner-less', () => {
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const projects = projectsForTurn([LOCAL_PROJECT], false, outcome)
     expect(projects).toEqual([LOCAL_PROJECT])
     expect(outcome.refused).toEqual([])

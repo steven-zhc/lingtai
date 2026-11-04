@@ -188,7 +188,7 @@ export interface StatusReading {
   /** Today's spend against the ceiling, in the one sentence. */
   spendLine?: () => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
-  stepOf?: (runId: string) => Promise<StatusRun['step']>
+  stepOf?: (runId: string) => Promise<StatusAttempt['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
   savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHeadReading>
 }
@@ -225,7 +225,7 @@ export function readingOf(
 }
 
 /** Where one running pass is: its run, and the step and round of the last `StepStarted` (#640). */
-export interface StatusRun {
+export interface StatusAttempt {
   runId: string
   step: { step: string; round: number } | null
   /** Set when the run's stream could not be read: `step` null then means unknown, not "no step". */
@@ -236,7 +236,7 @@ export interface StatusRun {
  * The step a run is inside: `AttemptState.step` off its reduced stream (D12). A failed read throws — it
  * is not "no step".
  */
-async function lastStep(runId: string): Promise<StatusRun['step']> {
+async function lastStep(runId: string): Promise<StatusAttempt['step']> {
   return reduceAttempt(await eventStore.read(runId)).step
 }
 
@@ -277,7 +277,7 @@ export interface StatusRow {
   unoffered: boolean
   wait: StatusWait | null
   /** For a `running` or `verifying` row: which run, and the step it is at. Null otherwise. */
-  run: StatusRun | null
+  run: StatusAttempt | null
 }
 
 /** `ProjectFilter` reduced to what a reader needs, so a report can be built by hand in a test. */

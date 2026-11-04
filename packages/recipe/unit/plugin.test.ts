@@ -323,7 +323,7 @@ describe('a `no_log` field never leaves its plugin', () => {
     expect(hashRecipe(recorded, [spendPlugin])).toBe(hashRecipe(recipe, [spendPlugin]))
   })
 
-  /** The board's half of this is `apps/board/unit/run-recipe.test.tsx`. */
+  /** The board's half of this is `apps/board/unit/attempt-recipe.test.tsx`. */
   it("never reaches a refusal's text", () => {
     const read = readFields(spendPlugin, { name: 'pay', spend: '50 USD', token: 4321 })
 

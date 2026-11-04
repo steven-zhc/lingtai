@@ -38,7 +38,7 @@ import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
-import { conductorPass } from './conduct.ts'
+import { conductorTurn } from './conduct.ts'
 import { pausedSentence } from './day-ceiling.ts'
 import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
@@ -597,7 +597,7 @@ export async function daemonCommand(
       pass: async (reason, started) => {
         await declared.retry()
         const recipes = new Map<string, Triage | null>()
-        const outcome = await conductorPass({
+        const outcome = await conductorTurn({
           merge: !('no-merge' in flags),
           // The commit read at startup, so a refusal on the log says which
           // process refused (#148).

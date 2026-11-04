@@ -32,12 +32,12 @@ export async function buildRelease({ out, root = ROOT }: BuildOptions): Promise<
   mkdirSync(out, { recursive: true })
   buildBoard(root, out)
   await bundleCli(root, out)
-  buildPassAssets(root, out)
+  buildAttemptAssets(root, out)
   writePackage(root, out)
 }
 
 /** Build the platform-specific hook and copy the prompt beside the CLI. */
-function buildPassAssets(root: string, out: string): void {
+function buildAttemptAssets(root: string, out: string): void {
   const hook = join(out, 'packages', 'hook', 'bin', 'lingtai-hook')
   mkdirSync(join(out, 'packages', 'hook', 'bin'), { recursive: true })
   const built = spawnSync('bun', ['build', '--compile', '--minify', '--outfile', hook, 'src/lingtai-hook.ts'], {

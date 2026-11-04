@@ -16,7 +16,7 @@ import {
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 
-import type { RunProgress } from '@/lib/progress'
+import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
@@ -494,7 +494,7 @@ export function Standing({
    * reduce, and its clock ticks here because `Follow` re-renders on an append
    * (#172). Null for a run with nothing on its stream yet.
    */
-  progress?: RunProgress | null
+  progress?: AttemptProgress | null
   /**
    * The budget line the rail carries beside its sentence — rounds spent
    * against their ceiling, restarts left against theirs (`#415`), composed by
@@ -851,7 +851,7 @@ export function Standing({
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
                 {standing.state === 'queued' ? (
-                  <LastPass deciding={standing.deciding} attempts={standing.attempts} />
+                  <LastAttempt deciding={standing.deciding} attempts={standing.attempts} />
                 ) : standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason
                     raw={raw}
@@ -1313,7 +1313,7 @@ function Reason({
  * The queued page's refusal: the last pass's, whole, and named as such. The
  * label drops "the last pass" when the refusal is an earlier attempt's.
  */
-function LastPass({ deciding, attempts }: { deciding: StandingView['deciding']; attempts: number }) {
+function LastAttempt({ deciding, attempts }: { deciding: StandingView['deciding']; attempts: number }) {
   if (deciding === null) return null
   const lead =
     deciding.attempt === attempts ? `the last pass, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
