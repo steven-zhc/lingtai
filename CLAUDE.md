@@ -42,12 +42,13 @@ choosing the other store start an empty one rather than carry the history over.
 So: quote the seq where you are proving what happened, and cite the issue where
 somebody has to follow you there later.
 
-There are two projections, `task_view` (the board) and `finding_backlog` (the
-minors passing gates raised, #137), and the way to correct either is
-`lingtai projection rebuild <name>` — one rebuild per projection, since each has
-its own table and checkpoint; replay, never a repair by hand. Both are folds and
-nothing else: the outbox and the queue cache are gone (0022), so nothing writes
-to them but the projection.
+There are four projections — `task_view` (the board), `finding_backlog` (the
+minors passing gates raised, #137), `spend` and `ticket_report` — and the way to
+correct any of them is `lingtai projection rebuild <name>`: one rebuild per
+projection, since each has its own table and checkpoint; replay, never a repair
+by hand. Each is reduced from the log and nothing else, by its one writer, the
+conductor-lock holder (0100 §13); a rebuild takes that lock and refuses while a
+daemon holds it.
 
 ## Opening an issue
 
@@ -236,9 +237,12 @@ because the recipe does not carry it — so the capability and its list stay
 correct though what they guarded has moved out of reach. **A managed repository that is not Lingtai should almost certainly have it
 on**: there a watched path is rare, and a hold means something.
 
-The board follows a bare `lingtai run` live: **every process that appends holds
-a projector while it runs** (0022), so there is nothing to start in a second
-terminal and nothing to wait for at the end. The health dot in the bar says
+The board follows a bare `lingtai run` live: **each projection has one writer,
+the process holding the conductor lock** (0100 §13, #860) — the daemon, or a
+`lingtai run` — so there is nothing to start in a second terminal and nothing to
+wait for at the end. Every other command (`approve`, `requeue`, `backlog`, …)
+appends and reads; with no conductor up the projections stand still, and the lag
+says so. The health dot in the bar says
 whether that is actually true — it reports the projection's lag and the daemon's
 beacon, not whether the socket is open, which is the distinction #64 turned on.
 Green and silent is the whole of the ordinary case; when it is not, the sentence
@@ -262,10 +266,10 @@ same ticket. Beside a pass already in flight,
 
     pnpm lingtai daemon --no-conduct
 
-exits immediately with `another daemon holds the lock — nothing to do`. It used
-to be described here as safe, on the grounds that two projectors on one log
-converge — which is true, and is not what the lock is about. There is nothing
-to start anyway: the run in flight is already holding a projector.
+exits immediately with `another daemon holds the lock — nothing to do`. There is
+nothing to start anyway: the run in flight holds the lock, and with it the
+projections' one writer. Two writers on one projection are not safe — #838
+delivered an event twice and #834 deadlocked before #860 made it one.
 
 **A running daemon holds the code it started with.** 0010's *the source runs
 unbuilt* removes the build, not the restart: Node caches a module at import, so
