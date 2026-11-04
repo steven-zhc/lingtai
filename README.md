@@ -202,7 +202,7 @@ with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the ro
 
 - [Why it is built this way](doc/why.md): the log, the goals, and the architecture.
 - [The tutorial](doc/tutorial.md): the same path in full, with Fish, and Part 2, which moves the project to GitHub.
-- [The ten steps of a pass](doc/the-pass.html): how one ticket gets built.
+- [The ten steps of a pass](doc/the-attempt.html): how one ticket gets built.
 - [Architecture](doc/architecture.html): which process you are in, who appends to the log, and where state lives.
 - [Operating](doc/operating.md): everything you type, and what every refusal means.
 - [Reference](doc/reference.md): every term, the event types and the action kinds.

@@ -1187,7 +1187,7 @@ export function parseDraft(text: string | null): Drafted {
  * **The fourth is `needs-input`, and until `#294` no runtime could reach it.**
  * 0058 §3c names `design` as one of the three steps that may end asking,
  * `nextOf` answers `Propose` for a refusal at `design`,
- * and `the-pass.py` draws the fan — and this function had no branch that produced
+ * and `the-attempt.py` draws the fan — and this function had no branch that produced
  * the token, so a design agent that found the ticket unanswerable had one move:
  * write its doubts into the document and hand them to the implementer, which is
  * the shape the step exists to avoid. That is `#61`'s shape — decided, drawn,

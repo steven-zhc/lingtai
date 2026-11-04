@@ -28,7 +28,7 @@ disagree, the code is right and this is corrected.
   [0118](decisions/0118-a-hold-explains-itself.md) §1; the granted round is
   [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
   0120 §5.
-- [The pass](the-pass.html) shows where each of these arrives from.
+- [The pass](the-attempt.html) shows where each of these arrives from.
 
 ## The log and its states
 
@@ -46,7 +46,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
 - **Reduce** — the one rule that takes a stream's state and its next event and
   returns the state after it. Each kind of stream has exactly one, in
   `@lingtai/domain`, and every reader calls it: the conductor, the CLI, the
-  board and the projections ([one-fold-per-stream](design/one-fold-per-stream.md)).
+  board and the projections ([one-reduce-per-stream](design/one-reduce-per-stream.md)).
   Code: `reduceAttemptEvent(state, event)` reduces one event and `reduceAttempt(events)`
   a whole stream from the start, and likewise for every stream. Say
   *reduce* for the act and **reducer** for the rule (the run reducer); the older

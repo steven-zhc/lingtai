@@ -23,7 +23,7 @@ pipeline is as flexible as the prompt: you change it by editing one file in
 prose.
 
 **In Lingtai it is outside the agent.** A pass is ten fixed steps
-([the pass](the-pass.html)): the `build` check, a cold reviewer, the merge lane.
+([the pass](the-attempt.html)): the `build` check, a cold reviewer, the merge lane.
 The agent cannot skip them or reach them, and it never holds a tracker
 credential. Everything that happens is appended to a log, so a restart loses
 nothing.

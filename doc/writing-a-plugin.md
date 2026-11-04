@@ -415,5 +415,5 @@ ceiling is spent — and the pass says which of the two happened.
   behaviour is its plugins*, which is the sentence 0064 makes true.
 - [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) — `steps:`, the universal
   keys, and module-as-key.
-- [the-pass.html](the-pass.html) — the ten steps, what each word on them means,
+- [the-attempt.html](the-attempt.html) — the ten steps, what each word on them means,
   and what a person writes in a recipe.

@@ -17,7 +17,7 @@ stops where the recipe says a person decides.
 [Open the diagram at full size](img/concepts.svg).
 
 The ten steps are `claim`, `admit`, `prepared`, `design`, `implement`, `build`,
-`review`, `proposed`, `merge` and `end`. [The pass](the-pass.html) says what
+`review`, `proposed`, `merge` and `end`. [The pass](the-attempt.html) says what
 each one does and what you can put there.
 
 ## Two ways to go back
@@ -84,7 +84,7 @@ is waiting for and offers the moves that make sense:
 
 ## Going further
 
-- [The pass](the-pass.html) walks all ten steps and says where a ticket goes
+- [The pass](the-attempt.html) walks all ten steps and says where a ticket goes
   when one will not let it past.
 - [The architecture](architecture.html) shows which process is doing what, and
   where each piece of state lives.

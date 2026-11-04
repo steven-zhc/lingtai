@@ -89,7 +89,7 @@ never where Lingtai keeps what it did.
 ## The loop
 
 A pass is ten steps in a fixed order, and what runs at each is the recipe's.
-[`the-pass.html`](the-pass.html) draws them and says what each word means.
+[`the-attempt.html`](the-attempt.html) draws them and says what each word means.
 Several passes may run at once ([0122](decisions/0122-several-passes-share-one-conductor.md)).
 
 A refusal is answered by the agent that is still standing in the worktree, not

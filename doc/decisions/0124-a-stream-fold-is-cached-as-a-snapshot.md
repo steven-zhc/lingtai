@@ -44,7 +44,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    store, after the reducers have their final shape.** A version exists to
    invalidate a stored snapshot, and until one is stored there is nothing for
    it to invalidate: a reducer reaches its final shape directly
-   ([design/one-fold-per-stream.md](../design/one-fold-per-stream.md) §5), and
+   ([design/one-reduce-per-stream.md](../design/one-reduce-per-stream.md) §5), and
    is registered at version 1 with that shape. A reducer's codec lands earlier
    when a projection stores its state (design §3, D17): it lands with the first
    projection that stores that state, written against the reducer's state as it then is,

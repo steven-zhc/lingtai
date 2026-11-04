@@ -132,7 +132,7 @@ Lingtai 自身不增加任何文件访问策略。agent 受 Claude Code 和 Code
 
 - [Why it is built this way](doc/why.md)：日志、目标与架构。
 - [The tutorial](doc/tutorial.md)：同一条路径的完整版，含 Fish，以及把项目迁到 GitHub 的第 2 部分。
-- [The ten steps of a pass](doc/the-pass.html)：一张票是如何被构建的。
+- [The ten steps of a pass](doc/the-attempt.html)：一张票是如何被构建的。
 - [Architecture](doc/architecture.html)：你在哪个进程里、谁在向日志追加、状态存放在哪里。
 - [Operating](doc/operating.md)：你要输入的一切，以及每一次拒绝的含义。
 - [Reference](doc/reference.md)：每个术语、事件类型和动作种类。

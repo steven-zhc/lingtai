@@ -1,6 +1,6 @@
 /**
  * Writes `doc/cli.json` and `doc/cli.md` from the command definitions and the
- * parser (#545) — the counterpart of `scripts/the-pass.py`. Run: `pnpm docs:cli`.
+ * parser (#545) — the counterpart of `scripts/the-attempt.py`. Run: `pnpm docs:cli`.
  * `apps/cli/unit/cli-doc.test.ts` fails when what is committed differs.
  */
 import { writeFileSync } from 'node:fs'
