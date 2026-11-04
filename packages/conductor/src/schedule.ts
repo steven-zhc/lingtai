@@ -1,6 +1,6 @@
 import type { Runtime } from '@lingtai/agent'
-import { type ProjectState, reduceTicket } from '@lingtai/domain'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type ProjectState, ticketReducer } from '@lingtai/domain'
+import { type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 /**
  * Taking the queue, rather than one issue somebody named.
  *
@@ -44,6 +44,7 @@ import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
 import { readFixFiles, waitsFor } from './same-file.ts'
 import type { Slots } from './slots.ts'
+import { readState } from './snapshot-state.ts'
 
 export interface ScheduleOptions {
   project: ProjectState
@@ -427,14 +428,22 @@ export interface TurnTally {
   stopped: number
 }
 
-export async function tallyTurn(ran: readonly RunOnceResult[], store: EventStore = eventStore): Promise<TurnTally> {
+export async function tallyTurn(
+  ran: readonly RunOnceResult[],
+  store?: EventStore,
+  snapshots?: SnapshotStore,
+): Promise<TurnTally> {
+  const reader = store ?? eventStore
+  const snaps = snapshots ?? (store === undefined ? log.snapshots : undefined)
   const tally: TurnTally = { landed: 0, held: 0, stopped: 0 }
 
   for (const result of ran) {
     // A refusal before anything was claimed — an unreadable recipe — has no
     // stream to read. It stopped, and there is nowhere else to check.
-    const events = result.ticketId ? await store.read(result.ticketId).catch(() => null) : null
-    if (events === null) {
+    const ticket = result.ticketId
+      ? await readState(reader, ticketReducer, result.ticketId, 'all', { snapshots: snaps }).catch(() => null)
+      : null
+    if (ticket === null) {
       // Either no work item, or the log could not be read. Fall back to what
       // this process saw rather than lose the summary to a failing read.
       if (result.ok === true) tally.landed += 1
@@ -443,7 +452,7 @@ export async function tallyTurn(ran: readonly RunOnceResult[], store: EventStore
       continue
     }
 
-    const status = reduceTicket(events).lifecycle.status
+    const status = ticket.lifecycle.status
     if (status === 'landed') tally.landed += 1
     else if (status === 'blocked') tally.held += 1
     else tally.stopped += 1

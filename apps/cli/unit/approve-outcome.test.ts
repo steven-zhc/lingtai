@@ -1,8 +1,9 @@
-import { ticketStream } from '@lingtai/domain'
+import { reduceAll, ticketReducer, ticketStream } from '@lingtai/domain'
 import { aClaim, aLanding, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { describe, expect, it } from 'vitest'
+import { log } from '@lingtai/event-store'
+import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
+import { describe, expect, it, vi } from 'vitest'
 
 const boundOf = async <T>(op: Promise<T>) => ({ ok: true as const, value: await op })
 const store_append = (h: Awaited<ReturnType<typeof world>>, events: ReturnType<typeof aLanding>) => h.append(events)
@@ -103,6 +104,7 @@ describe('followApproval', () => {
         read: async () => {
           throw new Error('store down')
         },
+        readTypes: () => Promise.reject(new Error('unused')),
       },
     })
     const r = await followApproval(target, h.w)
@@ -120,7 +122,7 @@ describe('followApproval', () => {
   })
 
   it('a stream read that never answers: Ctrl+C ends the wait, and so does the 60 seconds', async () => {
-    const pending = { read: () => new Promise<never>(() => {}) }
+    const pending = { read: () => new Promise<never>(() => {}), readTypes: () => Promise.reject(new Error('unused')) }
     const ac = new AbortController()
     const h = await world({ store: pending, signal: ac.signal })
     setTimeout(() => ac.abort(), 5)
@@ -194,7 +196,10 @@ describe('followApproval', () => {
     process.on('unhandledRejection', on)
     try {
       let fail: (e: Error) => void = () => {}
-      const late = { read: () => new Promise<never>((_, rej) => (fail = rej)) }
+      const late = {
+        read: () => new Promise<never>((_, rej) => (fail = rej)),
+        readTypes: () => Promise.reject(new Error('unused')),
+      }
       const ac = new AbortController()
       const h = await world({ store: late, signal: ac.signal })
       setTimeout(() => ac.abort(), 5)
@@ -205,6 +210,48 @@ describe('followApproval', () => {
       expect(unhandled).toEqual([])
     } finally {
       process.off('unhandledRejection', on)
+    }
+  })
+})
+
+describe('followApproval reads the ticket through its snapshot', () => {
+  const landed = async () => {
+    const h = await world()
+    await h.append(aLanding(item, 'abcdef0123456789', 'main'))
+    return h
+  }
+
+  it('a snapshot planted below the head gives the same outcome, and is asked for', async () => {
+    const h = await landed()
+    const stored = await h.store.read(stream)
+    const snapshots = createMemorySnapshotStore(h.store)
+    const at = stored[0]!
+    await snapshots.put({
+      streamId: stream,
+      reducer: ticketReducer.name,
+      reducerVersion: ticketReducer.version,
+      streamVersion: at.version,
+      lastSeq: at.seq,
+      lastAt: at.at,
+      state: ticketReducer.encode(reduceAll(ticketReducer, stored.slice(0, 1))),
+    })
+    const latest = vi.spyOn(snapshots, 'latest')
+    const r = await followApproval(target, { ...h.w, snapshots })
+    expect(r.detail).toBe('landed on main in abcdef0')
+    expect(latest).toHaveBeenCalled()
+  })
+
+  it('a store passed in with no snapshots never touches the process log', async () => {
+    const h = await landed()
+    const latest = vi.spyOn(log.snapshots, 'latest').mockImplementation(() => {
+      throw new Error('the process log was touched')
+    })
+    try {
+      const r = await followApproval(target, h.w)
+      expect(r.detail).toBe('landed on main in abcdef0')
+      expect(latest).not.toHaveBeenCalled()
+    } finally {
+      latest.mockRestore()
     }
   })
 })

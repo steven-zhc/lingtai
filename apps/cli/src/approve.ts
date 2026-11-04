@@ -15,10 +15,11 @@ import { userInfo } from 'node:os'
  */
 import { approve as approveRun, currentRecipe, loadProject, ownerlessClient } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { agentBranchOf, reduceTicket, ticketStream, waitWords } from '@lingtai/domain'
+import { agentBranchOf, ticketReducer, ticketStream, waitWords } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 
 import { boundReal, type Bound, WAIT_MS } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -37,7 +38,9 @@ export { WAIT_MS, type Bound }
 export interface FollowWorld {
   /** `conductorLockHolder`: who conducts, null for nobody, a throw where the lock could not be asked. */
   holder: () => Promise<string | null>
-  store: Pick<EventStore, 'read'>
+  store: Pick<EventStore, 'read' | 'readTypes'>
+  /** Read-only: a short command never writes a snapshot (0124 §5). */
+  snapshots?: SnapshotStore
   now: () => number
   /** Resolves early when `signal` aborts. */
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>
@@ -94,11 +97,15 @@ export async function followApproval(
   for (;;) {
     if (world.signal?.aborted) return stopped
     try {
-      const read = await bound(world.store.read(stream), deadline - world.now(), world.signal)
+      const read = await bound(
+        readState(world.store, ticketReducer, stream, 'all', { snapshots: world.snapshots }),
+        deadline - world.now(),
+        world.signal,
+      )
       if (!read.ok) {
         return read.why === 'abort' ? stopped : { detail: `${holder} is continuing it; ${status}`, outcome: 'pending' }
       }
-      const ticket = reduceTicket(read.value)
+      const ticket = read.value
       const lifecycle = ticket.lifecycle
       switch (lifecycle.status) {
         case 'landed':
@@ -251,6 +258,7 @@ export async function approveVerdict(
       {
         holder: () => conductorLockHolder(),
         store: eventStore,
+        snapshots: world.store === undefined ? log.snapshots : undefined,
         now: Date.now,
         sleep: sleepFor,
         signal: abort.signal,
