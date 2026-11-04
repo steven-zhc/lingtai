@@ -122,6 +122,26 @@ export function describeSnapshotContract(name: string, fresh: () => Promise<Snap
       }
     })
 
+    it('counts what the table holds per (reducer, reducerVersion): usable, older version, void anchor', async () => {
+      const h = await fresh()
+      const e1 = await h.append()
+      const e2 = await h.append()
+      // Names no other case uses: the census is over the whole table and a shared log holds every case's rows.
+      const a = `census-a-${h.sid}`
+      const b = `census-b-${h.sid}`
+      await h.snapshots.put(snap(h, e2, { reducer: a, reducerVersion: 2 }))
+      await h.snapshots.put(snap(h, e1, { reducer: a, reducerVersion: 1 }))
+      await h.plant(snap(h, e2, { reducer: b, reducerVersion: 1, lastSeq: e2.seq + 1_000_000n }))
+      const mine = (await h.snapshots.census()).filter((r) => r.reducer === a || r.reducer === b)
+      const of = (reducer: string, reducerVersion: number) =>
+        mine.find((r) => r.reducer === reducer && r.reducerVersion === reducerVersion)
+      expect(mine).toHaveLength(3)
+      expect(of(a, 2)).toMatchObject({ rows: 1, anchored: 1 })
+      expect(of(a, 1)).toMatchObject({ rows: 1, anchored: 1 })
+      expect(of(b, 1)).toMatchObject({ rows: 1, anchored: 0 })
+      for (const r of mine) expect(r.bytes).toBeGreaterThan(0)
+    })
+
     it('is void across a reset: the emptied log answers null and the row is replaced at a lower version', async () => {
       const h = await fresh()
       if (h.empty === undefined) return // a shared log cannot be emptied

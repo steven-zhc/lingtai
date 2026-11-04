@@ -38,11 +38,28 @@ export interface Snapshot extends SnapshotKey {
   state: string
 }
 
+/** What the table holds for one `(reducer, reducerVersion)`, whatever stream the rows are on. */
+export interface SnapshotCensusRow {
+  reducer: string
+  reducerVersion: number
+  /** How many rows. */
+  rows: number
+  /** How many of those rows have an anchor event that holds in this log. */
+  anchored: number
+  /** The stored text length of their states: an order of magnitude, not an exact figure. */
+  bytes: number
+}
+
 export interface SnapshotStore {
   /** The row for `key` whose anchor event is still in this log; null for none, or for a void one. */
   latest(key: SnapshotKey): Promise<Snapshot | null>
   /** One conditional statement (§7). 'kept' when the row already there has a holding anchor at ≥ streamVersion. */
   put(snapshot: Snapshot): Promise<'written' | 'kept'>
+  /**
+   * What the table holds, one row per `(reducer, reducerVersion)`. It reads and never
+   * creates: a table nothing has written yet answers `[]` and stays absent.
+   */
+  census(): Promise<SnapshotCensusRow[]>
 }
 
 /** A snapshot the store refuses before anything is written. */
@@ -227,6 +244,50 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
   })
 
   return {
+    async census() {
+      // The catalogue first, and no `ensure()`: a doctor that reads must not create.
+      const there = pg
+        ? await sql.query<{ result: unknown }>(
+            `SELECT to_regclass('"public"."stream_snapshots"') IS NOT NULL AS "result"`,
+          )
+        : await sql.query<{ result: unknown }>(
+            `SELECT 1 AS "result" FROM sqlite_master WHERE type = 'table' AND name = 'stream_snapshots'`,
+          )
+      if (there.length === 0 || there[0]?.result === false) return []
+      const rows = await sql.query<{
+        reducer: unknown
+        reducer_version: unknown
+        n: unknown
+        anchored: unknown
+        bytes: unknown
+      }>(
+        `SELECT s.reducer AS reducer, s.reducer_version AS reducer_version, count(*) AS n,
+                sum(CASE WHEN ${stored('s')} THEN 1 ELSE 0 END) AS anchored,
+                sum(${pg ? 'octet_length(s.state::text)' : 'length(CAST(s.state AS BLOB))'}) AS bytes
+         FROM stream_snapshots s
+         GROUP BY s.reducer, s.reducer_version
+         ORDER BY s.reducer, s.reducer_version`,
+      )
+      return rows.map((r) => {
+        const version = integerOf(r.reducer_version)
+        const n = integerOf(r.n)
+        const anchored = integerOf(r.anchored)
+        const bytes = integerOf(r.bytes)
+        if (typeof r.reducer !== 'string' || version === null || n === null || anchored === null || bytes === null) {
+          throw new Error(
+            `the snapshot census cannot be read: ${JSON.stringify(r, (_k, v) => (typeof v === 'bigint' ? String(v) : v))}`,
+          )
+        }
+        return {
+          reducer: r.reducer,
+          reducerVersion: Number(version),
+          rows: Number(n),
+          anchored: Number(anchored),
+          bytes: Number(bytes),
+        }
+      })
+    },
+
     async latest(key) {
       await ensure()
       const rows = await sql.query<Row>(

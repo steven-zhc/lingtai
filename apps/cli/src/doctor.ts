@@ -68,7 +68,7 @@ import {
   readControl,
   readStatus,
 } from '@lingtai/daemon'
-import { type RecordedRefusal, type RuntimeId, isEventType } from '@lingtai/domain'
+import { type RecordedRefusal, REDUCERS, type RuntimeId, isEventType } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChoice,
@@ -91,12 +91,17 @@ import { badge, paint } from '@lingtai/env/colour'
 // opens nothing until something asks it a question. It is what the rows above
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
-import { log, logPredatesHold } from '@lingtai/event-store'
+import { createSqlSnapshotStore, log, logPredatesHold, type SnapshotCensusRow } from '@lingtai/event-store'
 // The submodule, not the barrel: these two checks run on the *direct*
 // connection, and the barrel's `log` is the pooled one. Through a pooler is
 // where the suite learned what a dropped connection costs (#157), and an audit
 // that reds on one would hold `lingtai restart`.
-import { createPostgresLogQueries, type LogQueries, type UnconvergedUpdate } from '@lingtai/event-store/queries'
+import {
+  createPostgresLogQueries,
+  createPostgresTicketSql,
+  type LogQueries,
+  type UnconvergedUpdate,
+} from '@lingtai/event-store/queries'
 import type { GhRun, GitHubClient } from '@lingtai/github'
 import { ghScopeGap, ghScopeRefresh, ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
@@ -1131,6 +1136,8 @@ export interface DoctorReach {
   shapes: (p: Projection) => ReturnType<typeof projectionShape>
   lockHolder: () => ReturnType<typeof conductorLockHolder>
   orphans: () => ReturnType<typeof findOrphans>
+  /** `SnapshotStore.census` of the log this machine chose; the process log's own where absent. */
+  snapshots?: () => Promise<SnapshotCensusRow[]>
   titles: () => ReturnType<typeof readTasks>
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Promise<string | null>
@@ -1668,6 +1675,60 @@ export async function readableTypes(queries: LogQueries): Promise<CheckResult> {
       'so reading any stream that holds one throws and a projection rebuild cannot run\n' +
       orphaned.map((r) => `${r.type} ×${r.rows}`).join('\n'),
   }
+}
+
+const kb = (bytes: number): string => `${Math.max(1, Math.round(bytes / 1024))} KB`
+
+/**
+ * What `stream_snapshots` holds against this build's `REDUCERS` (0124 §9, #879). A snapshot is a
+ * cache, so nothing here is `fail`: void ones are `info`, a read that failed is `warn`, and no
+ * remedy is offered — deleting rows is not a doctor action. A row at a version above this
+ * build's, or under a name it does not register, is **another build's** and not void.
+ */
+export async function snapshotCensus(census: () => Promise<SnapshotCensusRow[]>): Promise<CheckResult> {
+  const name = 'snapshots'
+  let rows: SnapshotCensusRow[]
+  try {
+    rows = await census()
+  } catch (err) {
+    return {
+      name,
+      status: 'warn',
+      detail: `the snapshot census could not be read: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (rows.length === 0) return { name, status: 'ok', detail: 'no snapshots yet' }
+  return classifySnapshots(name, rows)
+}
+
+function classifySnapshots(name: string, rows: SnapshotCensusRow[]): CheckResult {
+  let usable = 0
+  let usableBytes = 0
+  let total = 0
+  const void_: string[] = []
+  const other: string[] = []
+  const registry: Record<string, { version: number } | undefined> = REDUCERS
+  for (const r of rows) {
+    total += r.rows
+    const current = registry[r.reducer]?.version
+    const label = (n: number, b: number, why?: string) =>
+      `${r.reducer} v${r.reducerVersion} ×${n} (${kb(b)}${why === undefined ? '' : `, ${why}`})`
+    if (current === undefined || r.reducerVersion > current) {
+      other.push(label(r.rows, r.bytes))
+    } else if (r.reducerVersion < current) {
+      void_.push(label(r.rows, r.bytes, 'older version'))
+    } else {
+      usable += r.anchored
+      usableBytes += (r.bytes * r.anchored) / r.rows
+      const unanchored = r.rows - r.anchored
+      if (unanchored > 0) void_.push(label(unanchored, (r.bytes * unanchored) / r.rows, 'anchor no longer holds'))
+    }
+  }
+  const lines = [`${total} snapshots, ${usable} usable${usable > 0 ? ` (${kb(usableBytes)})` : ''}`]
+  if (void_.length > 0) lines[0] += ` · void: ${void_.join(', ')}`
+  if (other.length > 0) lines.push(`other code: ${other.join(', ')}`)
+  const clean = void_.length === 0 && other.length === 0
+  return { name, status: clean ? 'ok' : 'info', detail: lines.join('\n') }
 }
 
 /**
@@ -3156,6 +3217,9 @@ export async function runDoctor(
     await step('the lock', async () => results.push(await conductorLock(reach.lockHolder)))
     await step('event types', async () => results.push(await readableTypes(queries)))
     await step('holds', async () => results.push(await logPredatesHoldRow(queries)))
+    await step('snapshots', () =>
+      snapshotCensus(reach.snapshots ?? log.snapshots.census).then((r) => void results.push(r)),
+    )
     await step('orphans', async () => results.push(await orphans(reach.orphans)))
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
@@ -3201,6 +3265,8 @@ export async function runDoctor(
     await step('the lock', async () => results.push(await conductorLock()))
     await step('event types', async () => results.push(await readableTypes(audit)))
     await step('holds', async () => results.push(await logPredatesHoldRow(audit)))
+    const direct_ = createSqlSnapshotStore(createPostgresTicketSql({ url: direct }))
+    await step('snapshots', () => snapshotCensus(reach.snapshots ?? direct_.census).then((r) => void results.push(r)))
     await step('orphans', async () => results.push(await orphans()))
     // The projection and not the audit connection: this is what the rows are
     // *called*, not what they assert, so it is read where every other
@@ -3315,7 +3381,7 @@ const OTHER = 'Other'
  */
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Machine', ['node', 'packages load under Node', 'release']],
-  ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections']],
+  ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections', 'snapshots']],
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
