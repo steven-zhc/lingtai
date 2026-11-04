@@ -1425,6 +1425,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               store,
               github: options.client,
               ticketId,
+              ...ticketSnapshots,
               labels: labelsFor('queued'),
               editEnded: true,
               appended: endResolved,
@@ -2447,6 +2448,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           store,
           github: options.client,
           ticketId,
+          ...ticketSnapshots,
           labels: labelsFor('running'),
           // A continuation is the same work going on: the landing, the next
           // hold or the release edits that wait's comment with the real
@@ -4499,6 +4501,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             store,
             github: options.client,
             ticketId,
+            ...ticketSnapshots,
             labels: labelsFor('landed'),
             editEnded: true,
             appended: endResolved,
@@ -4757,6 +4760,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             store,
             github: options.client,
             ticketId,
+            ...ticketSnapshots,
             question,
             waitId,
             editEnded: true,

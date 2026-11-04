@@ -511,31 +511,33 @@ export async function editEndedWaits(
  * the recipe's own `end` actions run last and may set labels of their own, and
  * a recipe must be able to overrule a default.
  */
-export async function tellGitHubAbout(options: {
-  store: EventStore
-  /**
-   * Both ports, because this is the one function that carries out an
-   * `EndActionsResolved` and `refs:` is one of the three things it may hold
-   * (`#240`). Required rather than optional: a channel that silently cannot
-   * delete is a recipe that resolved an effect nothing ran, which is `#61`.
-   */
-  github: IssueChannel & RefChannel
-  ticketId: string
-  /** Lingtai's own labels for this state, or `null` to leave them alone. */
-  labels?: readonly string[] | null
-  /** The question, when a person is now the thing being waited on. */
-  question?: string
-  /** The wait `question` announces; recorded so the comment can be edited when the wait ends (#750). */
-  waitId?: string
-  /**
-   * First rewrite the waiting comment of every wait the log shows is over (#750).
-   * Passed by `conduct.ts` alone: the CLI and the board never edit, so that a
-   * comment has one writer.
-   */
-  editEnded?: boolean
-  /** The events just appended; any `EndActionsResolved` among them is carried out. */
-  appended?: readonly ToAppend[]
-}): Promise<void> {
+export async function tellGitHubAbout(
+  options: {
+    store: EventStore
+    /**
+     * Both ports, because this is the one function that carries out an
+     * `EndActionsResolved` and `refs:` is one of the three things it may hold
+     * (`#240`). Required rather than optional: a channel that silently cannot
+     * delete is a recipe that resolved an effect nothing ran, which is `#61`.
+     */
+    github: IssueChannel & RefChannel
+    ticketId: string
+    /** Lingtai's own labels for this state, or `null` to leave them alone. */
+    labels?: readonly string[] | null
+    /** The question, when a person is now the thing being waited on. */
+    question?: string
+    /** The wait `question` announces; recorded so the comment can be edited when the wait ends (#750). */
+    waitId?: string
+    /**
+     * First rewrite the waiting comment of every wait the log shows is over (#750).
+     * Passed by `conduct.ts` alone: the CLI and the board never edit, so that a
+     * comment has one writer.
+     */
+    editEnded?: boolean
+    /** The events just appended; any `EndActionsResolved` among them is carried out. */
+    appended?: readonly ToAppend[]
+  } & SnapshotReadOptions,
+): Promise<void> {
   const { store, github, ticketId } = options
   // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefs`'s, and
   // a helper that took the wider union would let one reach `tellGitHub`, whose
@@ -544,7 +546,14 @@ export async function tellGitHubAbout(options: {
   // for a sweep that never ran. That is `#61`'s failure inside one function.
   const tell = (change: IssueWrite) => tellGitHub({ store, github, ticketId, change })
 
-  if (options.editEnded === true) await editEndedWaits({ store, github, ticketId })
+  if (options.editEnded === true)
+    await editEndedWaits({
+      store,
+      github,
+      ticketId,
+      ...(options.snapshots === undefined ? {} : { snapshots: options.snapshots }),
+      ...(options.writer === undefined ? {} : { writer: options.writer }),
+    })
 
   if (options.question !== undefined) {
     const first = firstLine(options.question)

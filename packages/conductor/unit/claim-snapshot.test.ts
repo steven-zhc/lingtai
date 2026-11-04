@@ -10,12 +10,14 @@ import { describe, expect, it } from 'vitest'
 import { claimTicket } from '../src/claim.ts'
 
 describe('claimTicket with a snapshot below the head', () => {
-  it('appends at the head, and a second claim sees the first', async () => {
+  it('appends at the head, and a second claim racing it loses', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 9101)
     const discovered = histories.ticket.claimedReleasedClaimedLanded.find((e) => e.type === 'TicketDiscovered')!
-    const edited = histories.ticket.approvedAfterSignoff.find((e) => e.type === 'PromptEdited')
-    const seed = [discovered, ...(edited ? [edited] : [])]
+    // An event type `reduceTicketEvent` ignores, after the snapshot: the tail is not empty, and a read
+    // filtered by type would come back without it, leaving `version` below the head.
+    const ignored = histories.run.landedFirstTry.find((e) => e.type === 'RunStarted')!
+    const seed = [discovered, ignored]
     await store.append(
       ticketId,
       0,
@@ -34,14 +36,17 @@ describe('claimTicket with a snapshot below the head', () => {
       state: ticketReducer.encode(reduceAll(ticketReducer, stored.slice(0, 1))),
     })
     const head = stored[stored.length - 1]!.version
+    expect(head).toBeGreaterThan(at.version)
 
-    const first = await claimTicket(ticketId, { runId: 'run-a', store, snapshots })
-    expect(first).toMatchObject({ ok: true, claim: { version: head + 1 } })
-
-    // The second read starts from the same planted snapshot and must see the first claim: a tail
-    // filtered by type, or a stale `version`, would miss it. (The store-level race, two appends at one
-    // `version`, is `snapshot-read.test.ts`'s `ConcurrencyError`.)
-    const second = await claimTicket(ticketId, { runId: 'run-b', store, snapshots })
-    expect(second.ok).toBe(false)
+    // Two claims racing from the same planted snapshot: both read the head, both append at it, and the store
+    // lets one in. The loser is refused rather than double-claiming.
+    const raced = await Promise.all([
+      claimTicket(ticketId, { runId: 'run-a', store, snapshots }),
+      claimTicket(ticketId, { runId: 'run-b', store, snapshots }),
+    ])
+    const won = raced.filter((r) => r.ok)
+    expect(won).toHaveLength(1)
+    expect(won[0]).toMatchObject({ claim: { version: head + 1 } })
+    expect((await store.read(ticketId)).filter((e) => e.type === 'TicketClaimed')).toHaveLength(1)
   })
 })
