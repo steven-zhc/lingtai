@@ -370,7 +370,7 @@
       calls it.</p>
     <p><b>Daemon and CLI are processes</b>, and since <a href="decisions-archive/0022-the-seams.md">0022</a>
       they differ by less than they used to. Both call the conductor, and both hold a projector
-      for as long as they run. What the daemon adds is a lock, a heartbeat, a repair at startup
+      for as long as they run, because each holds the conductor lock. What the daemon adds is a lock, a heartbeat, a repair at startup
       and a loop that keeps taking work.</p>
   </div>
 
@@ -492,8 +492,11 @@
 
   <section>
     <h2>Two hosts, one rule</h2>
-    <p class="lede">Every process that appends holds a projector for as long as it runs. That rule
-      is what removed the difference people kept being surprised by.</p>
+    <p class="lede">Each projection has one writer: the process holding the conductor lock, which is
+      the daemon or <code>lingtai run</code>. Every other command appends and reads. With no
+      conductor up the projections stand still, and the lag says so. Because <code>run</code> holds
+      the lock, it follows a run live just as the daemon does, and that removed the difference
+      people kept being surprised by.</p>
 
     <figure>
       <div class="canvas">
@@ -553,10 +556,11 @@
       <figcaption><b>The projector is in both boxes now, and that is the change.</b> A command used
         to append, return, and catch the projections up on its way out — two mechanisms for one
         job, and <code>run</code> had the worse one: the board sat frozen for the whole of a run
-        and jumped to current when the command exited (<code>#64</code>). Two projectors on one log
-        is safe by construction: <code>apply</code> is idempotent and the checkpoint advances inside
-        the same transaction as its writes, so whichever gets there second finds nothing to do. No
-        lock, no coordination.</figcaption>
+        and jumped to current when the command exited (<code>#64</code>). Both boxes hold the
+        projector because each holds the conductor lock, so only one of them is ever running at a
+        time. A second writer on one projection is what delivered an event twice
+        (<code>#838</code>) and deadlocked (<code>#834</code>), which is why every other command
+        holds none.</figcaption>
     </figure>
 
     <h3 class="sub-h">What each of the daemon's standing jobs is for</h3>
@@ -573,11 +577,13 @@
       </li>
       <li>
         <b>projector</b>
-        <span>Reads events as they land and advances <code>task_view</code> — the one projection,
-          and the table the board renders. It is a reader; it never writes to the log.</span>
+        <span>Reads events as they land and advances the four projections — <code>task_view</code> (the board),
+          <code>finding_backlog</code>, <code>spend</code> and <code>ticket_report</code>. It is a
+          reader; it never writes to the log.</span>
         <span class="absent">Without it: the log is perfectly correct and every screen is frozen at
-          whatever it last saw. Held by every process that appends, which is why this is no longer
-          a difference between the two hosts.</span>
+          whatever it last saw. Held by whichever process holds the conductor lock, the daemon or
+          <code>lingtai run</code>; with no conductor up the projections stand still, and the lag
+          says so.</span>
       </li>
       <li>
         <b>work loop</b>
@@ -713,7 +719,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 780 220" role="img" aria-label="A Postgres trigger on the events table fires NOTIFY on the lingtai channel. The event store's subscribe bridges it to three consumers: the board's SSE route, the daemon's work loop, and the projector in whichever process is holding one.">
+        <svg viewBox="0 0 780 220" role="img" aria-label="A Postgres trigger on the events table fires NOTIFY on the lingtai channel. The event store's subscribe bridges it to three consumers: the board's SSE route, the daemon's work loop, and the conductor's projector.">
           <defs>
             <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>

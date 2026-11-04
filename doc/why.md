@@ -119,14 +119,16 @@ implements them, and a host wires the two together.
 | | **`hook`** one Bun binary, inside the agent's sandbox |
 
 Two hosts assemble them — `apps/cli` and `packages/daemon` — plus `apps/board`,
-which reads the projection and appends decisions. **Every process that appends
-holds a projector while it runs**, so the board follows a run by hand just as it
-follows the daemon. The daemon adds what only a long-lived process can owe: a
+which reads the projection and appends decisions. **Each projection has one
+writer, the process holding the conductor lock** — the daemon or `lingtai run` —
+so the board follows a run by hand just as it follows the daemon. Every other
+command appends and reads, and with no conductor up the projections stand still
+and the lag says so. The daemon adds what only a long-lived process can owe: a
 lock file, a heartbeat, a repair at startup, and a loop that keeps taking
 work.
 
-There are **two projections**, `task_view` (the board) and `finding_backlog`
-(the minors passing gates raised), and each is rebuilt on its own with
+There are **four projections**, `task_view` (the board), `finding_backlog`
+(the minors passing gates raised), `spend` and `ticket_report`, and each is rebuilt on its own with
 `lingtai projection rebuild <name>` — one rebuild per projection. Anything else
 you want to know is folded from the log on demand.
 
