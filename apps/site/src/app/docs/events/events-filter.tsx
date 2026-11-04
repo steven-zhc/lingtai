@@ -192,16 +192,16 @@ export function EventsFilter({
         <p className="kicker">{by === 'stream' ? 'Streams' : 'Groups'}</p>
         <ul>
           {by === 'stream'
-            ? streams.map(([prefix, list]) => (
-                <li key={prefix}>
-                  <a href={`#${streamId(prefix)}`}>
-                    {prefix}{' '}
-                    <span className="ev-count">
-                      {filter === null ? list.length : list.filter((e) => matches(e.at, filter)).length}
-                    </span>
-                  </a>
-                </li>
-              ))
+            ? streams
+                .map(([prefix, list]) => [prefix, list, list.filter((e) => matches(e.at, filter))] as const)
+                .filter(([, , hit]) => hit.length > 0)
+                .map(([prefix, list, hit]) => (
+                  <li key={prefix}>
+                    <a href={`#${streamId(prefix)}`}>
+                      {prefix} <span className="ev-count">{filter === null ? list.length : hit.length}</span>
+                    </a>
+                  </li>
+                ))
             : (filter === null ? groups.map(([g, l]) => [g, l, l] as const) : shown).map(([group, list, hit]) => (
                 <li key={group}>
                   <a href={`#${groupId(group)}`}>

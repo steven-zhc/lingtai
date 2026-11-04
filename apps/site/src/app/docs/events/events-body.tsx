@@ -103,8 +103,8 @@ export function EventsBody({ doc }: { doc: EventsDoc }) {
     >
       <h1>Events</h1>
       <p>
-        An attempt writes events as it goes. Pick a step to see the events it writes; every event is listed once, under
-        its group.
+        An attempt writes events as it goes. Pick a step to see the events it writes. Listed by group, every event
+        appears once, under its group; listed by stream, it appears under each stream prefix it is written on.
       </p>
     </EventsFilter>
   )
