@@ -162,9 +162,11 @@ discovering:
   Priority is a label on the recipe's `priority` list, read at queue time. If
   ordering ever needs to be *decided* rather than derived, that becomes an event
   and this arrow becomes real.
-- **A verdict is stale, not revoked.** `gatesOn(run)` returns only the verdicts
-  whose `onSha` matches the current head, so a force-push invalidates approval by
-  arithmetic rather than by anything remembering to undo it.
+- **A verdict is stale, not revoked.** `stepsOn(run)` (in `packages/domain`)
+  returns only the verdicts whose `onSha` matches the current head, so a
+  force-push invalidates approval by arithmetic rather than by anything
+  remembering to undo it. That holds from `build` on: a step before `build` makes
+  the head, so its `onSha` is the commit it started on and it never reads stale.
 
 The full catalogue is [`packages/core/src/events.ts`](../packages/core/src/events.ts),
 which is the authority. Notable additions over what the old loop could express:

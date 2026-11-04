@@ -1484,15 +1484,28 @@ The shape is GitHub Actions': a `name`, exactly one of the keys above, and its
 parameters beside it. Order within a point is the array's, the first refusal
 wins, and the actions after it do not run.
 
-Verdicts: `passed` · `failed` · `needs-approval`. The third is not a flavour of
-failure — nothing is wrong, and nothing may proceed until a person says so.
+Verdicts: `passed` · `failed` · `never-ran` · `did-not-finish` · `asked` ·
+`waived`. Only the first two judge the diff. `never-ran` is a step whose agent
+never started (a quota, a signed-out runtime); `did-not-finish` is one that
+started and ended with no receipt, which includes a commit that recorded no head;
+`asked` is a step that stopped to put a question to a person — a requested
+signoff reads `asked` — and so is not broken machinery; `waived` is a person
+overriding a refusal, by name. None of the last four says the diff was bad:
+nothing was judged. One ladder in `packages/domain/src/run.ts` (`verdictOf`)
+reads an action into these words, and `RunState`, `task_view` and the board all
+take them from it.
 
-**Verdicts are keyed `point:action`** in `task_view`, the board and `reduceRun`.
-Two points may run an action of the same name, and a bare name would let the
-second silently overwrite the first.
+**Verdicts are keyed by step and action, and the run.** `reduceRun` and the
+board's rail key them `step:action`, within one run's state; `task_view` keys
+them `runId:step:action`, so a second attempt cannot overwrite the first's
+cells. Two steps may run an action of the same name, and a bare name would let
+the second silently overwrite the first.
 
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
-it by arithmetic rather than by anybody noticing.
+it by arithmetic rather than by anybody noticing. That holds from `build` on, and
+only there: a step before `build` makes the head, so its `onSha` is the commit
+it started on and would never match the final one. Those never read stale. The
+task page shows a stale verdict as stale.
 
 ## step × kind — where a plugin is legal, and who says so
 
@@ -1859,8 +1872,9 @@ says an issue should look like against what GitHub says it does.
 
 The board and the task page draw **all ten steps**, always, marking an empty
 one `skipped` rather than leaving it out — `Segs` in `apps/board/src/app/rail.tsx`,
-over `foldProgress` in `apps/board/src/lib/progress.ts`, which folds
-`StepsResolved` against the verdicts that followed. A step not reached yet is
+over `progressOf` in `apps/board/src/lib/progress.ts`, which reads the run's
+`RunState`: the recorded `StepsResolved` plan against the verdicts that followed.
+A step not reached yet is
 `pending`; one configured, recorded nothing, on an item that landed is
 `never-ran`, hatched in the fail colour — that is where "configured but did not
 run" becomes visible. It used to be a `pending` count off a second fold,
