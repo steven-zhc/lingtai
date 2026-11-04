@@ -21,6 +21,7 @@ import { billHasAny, billText, spendChip } from '@/lib/spend'
 import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
 import { codeSpans } from './code-spans.tsx'
@@ -611,7 +612,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       const [board, projects, control] = await Promise.all([
         loadBoard(only),
         timed('projects.read', () => loadProjects()).catch(() => []),
-        timed('events.control', () => readControl()),
+        timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
       const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' })
       return [board, projects, control, day] as const
