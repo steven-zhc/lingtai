@@ -75,6 +75,7 @@ const reach: DoctorReach = {
   shapes: async (p: Projection) => ({ projection: p.name, matched: [], absent: [], drift: [] }),
   lockHolder: async () => null,
   orphans: async () => [],
+  snapshots: async () => [],
   titles: async () => [],
   settings: async () => null,
   runtimes: () => [signedInRuntime],
