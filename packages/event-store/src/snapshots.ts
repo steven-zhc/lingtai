@@ -243,25 +243,20 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
       )
       if (rows.length > 0) return 'written'
       // Nothing returned: either the row there is as new (kept) or the epoch was
-      // not current (refused). A later epoch read cannot tell which — a restore
-      // can reinstate the epoch after the INSERT selected nothing — so 'kept' is
-      // claimed only from the stored row itself: it must exist, with this
-      // snapshot's epoch at an equal or higher version, and that epoch be current.
-      const there = await sql.query<{ epoch: string; stream_version: unknown }>(
-        `SELECT epoch, stream_version FROM stream_snapshots
-         WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3`,
-        [snapshot.streamId, snapshot.reducer, snapshot.reducerVersion],
+      // not current (refused). 'kept' is claimed from ONE statement that checks
+      // the stored row and the log's epoch together, so both come from one
+      // snapshot of the database: separate reads can straddle a reset and a
+      // restore and pair a stale row with a current-looking epoch.
+      const kept = await sql.query<{ ok: unknown }>(
+        `SELECT 1 AS ok FROM stream_snapshots
+         WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3
+           AND epoch = $4 AND stream_version >= $5
+           AND (${EPOCH_SQL[sql.dialect]}) = $4`,
+        [snapshot.streamId, snapshot.reducer, snapshot.reducerVersion, snapshot.epoch, snapshot.streamVersion],
       )
-      const row = there[0]
+      if (kept.length > 0) return 'kept'
+      // Only the message reads the epoch now; the decision above is made.
       const current = await epoch()
-      if (
-        row !== undefined &&
-        row.epoch === snapshot.epoch &&
-        Number(row.stream_version) >= snapshot.streamVersion &&
-        current === snapshot.epoch
-      ) {
-        return 'kept'
-      }
       throw staleEpochError(snapshot.epoch, current)
     },
   }
