@@ -198,7 +198,7 @@ rather than by running it again, and say in the ticket which one moved and why.
 **A round is bought at the router and not by refusing**, so *`design` may not
 refuse* ([0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3) settles
 nothing about what these cost, and the answer differs by row. Rows one and two
-buy nothing: one never reaches a attempt at all, and a `did-not-finish` never
+buy nothing: one never reaches an attempt at all, and a `did-not-finish` never
 reaches the router, so there is no offer and nothing to spend. The third does
 reach it, and `onOffer("design", asked, …)` puts **`design` itself** on the offer
 while a round remains — nobody but the step that asked knows the question, so

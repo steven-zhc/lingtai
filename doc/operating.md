@@ -624,7 +624,7 @@ says the work item is over. `lingtai close` is still how you end one.
 **What `db` does not do:**
 
 - No webhook. The daemon notices a new or changed ticket on its sweep (every
-  five minutes) or at the next turn completion — never at once.
+  five minutes) or when an attempt settles or completes — never at once.
 - No web page. A ticket's `url` is always `null`, so a board card has no link.
 - No dependencies. `blockedBy` is always `0`; hold a chain by hand with
   `agent:hold`.
@@ -1408,7 +1408,7 @@ uses the new unit. `service restart` is what applies it now — on macOS
 
 **`shutdown` drains first and tells the supervisor last** (#174). The
 supervisor's own stop is a signal and a deadline — launchd SIGKILLs at its
-default `ExitTimeOut` of 20 seconds, systemd at `TimeoutStopSec`'s 90 — and a
+default `ExitTimeOut` of 20 seconds, systemd at `TimeoutStopSec`'s 90 — and an
 attempt takes up to an hour. `service stop` used to send that signal: the daemon
 began its drain and launchd killed the agent twenty seconds in. So `service
 shutdown` takes a place in the queue for the conductor lock, appends the request
