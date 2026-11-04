@@ -1230,13 +1230,16 @@ export function liveInitWorld(): InitWorld {
     ...(refusal('', interactivity(false)) === null ? { gh: liveGh } : {}),
     appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal),
-    // A host that is not an address is refused by `board` below, by name; the
-    // probe asks loopback meanwhile rather than throw from a lookup.
+    // A host that is not an address finds no board here, so `board` below is
+    // asked and refuses it by name: the probe never answers for a setting
+    // that is invalid, whatever happens to be listening on loopback.
     boardAt: (port) => {
-      let reach = '127.0.0.1'
+      let reach: string
       try {
         reach = boardReachHost(boardHost())
-      } catch {}
+      } catch {
+        return Promise.resolve(null)
+      }
       return boardAt(port, reach)
     },
     board: async (port) => {

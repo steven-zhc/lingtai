@@ -849,6 +849,11 @@ export function machineBoardPort(
   return Option.getOrUndefined(written.right)
 }
 
+/** An IP literal a URL can name: a scoped IPv6 (`fe80::1%en0`) is one `isIP` accepts and the URL parser does not. */
+function isBoardHost(v: string): boolean {
+  return isIP(v) !== 0 && !v.includes('%')
+}
+
 /**
  * `board.host`, the address every board of this machine's listens on, or
  * undefined where nothing names one (0111 §2). `LINGTAI_BOARD_HOST` exported,
@@ -868,7 +873,7 @@ export function machineBoardHost(
   // empty is caught here: it is a value somebody wrote, and not an absent one.
   if (from[`${PREFIX}BOARD_HOST`] === '') {
     throw new Error(
-      `${PREFIX}BOARD_HOST is empty, which is not an IP address, so no address was read — ` +
+      `${PREFIX}BOARD_HOST is empty, which is not an unscoped IP address, so no address was read — ` +
         `unset it to have the default, ${BOARD_HOST}`,
     )
   }
@@ -879,9 +884,9 @@ export function machineBoardHost(
   }
   if (Option.isSome(exported.right)) {
     const v = exported.right.value
-    if (isIP(v) === 0) {
+    if (!isBoardHost(v)) {
       throw new Error(
-        `${PREFIX}BOARD_HOST is ${JSON.stringify(v)}, which is not an IP address, so no address was read — ` +
+        `${PREFIX}BOARD_HOST is ${JSON.stringify(v)}, which is not an unscoped IP address, so no address was read — ` +
           `unset it to have the default, ${BOARD_HOST}`,
       )
     }
@@ -895,9 +900,9 @@ export function machineBoardHost(
         `take that line out to have the default, ${BOARD_HOST}`,
     )
   }
-  if (Option.isSome(written.right) && isIP(written.right.value) === 0) {
+  if (Option.isSome(written.right) && !isBoardHost(written.right.value)) {
     throw new Error(
-      `${file.path} sets board.host to ${JSON.stringify(written.right.value)}, which is not an IP address, so no address was read — ` +
+      `${file.path} sets board.host to ${JSON.stringify(written.right.value)}, which is not an unscoped IP address, so no address was read — ` +
         `take that line out to have the default, ${BOARD_HOST}`,
     )
   }

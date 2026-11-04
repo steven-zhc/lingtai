@@ -15,6 +15,8 @@ it.each([
   [{ LINGTAI_BOARD_HOST: '' }, file(null), 'LINGTAI_BOARD_HOST'],
   [{}, file('board:\n  host: "1.2.3.4:5"\n'), 'board.host'],
   [{}, file('board:\n  host: localhost\n'), 'board.host'],
+  [{ LINGTAI_BOARD_HOST: 'fe80::1%en0' }, file(null), 'LINGTAI_BOARD_HOST'],
+  [{}, file('board:\n  host: "fe80::1%en0"\n'), 'board.host'],
 ])('refuses a value that is not an IP literal by name', (from, written, name) => {
   expect(() => machineBoardHost(from, written)).toThrow(name)
 })

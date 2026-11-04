@@ -106,7 +106,8 @@ export interface BoardOptions {
  *
  * `server.js` reads `PORT` and `HOSTNAME` from the environment and nothing
  * else, and `chdir`s into its own directory. The host is always set: 0008's
- * board has no auth, and Next's default is `0.0.0.0`.
+ * board has no auth, and it serves `board.host` — every address by default, `0.0.0.0` (0111 §2) — so
+ * Next's own default is never what decides where it listens.
  *
  * **Loading `server.js` is not listening.** Its `startServer` is not awaited, so
  * `import()` settles before the port is bound, and a port somebody else holds
