@@ -1,4 +1,4 @@
-import type { Envelope } from '@lingtai/domain'
+import { reduceAll, ticketReducer, type Envelope } from '@lingtai/domain'
 import { aClaim, aLanding, aRelease, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
@@ -11,16 +11,16 @@ import type { WaitReason } from '@lingtai/domain/wait'
  * time the summary printed it was not. Counting what the process did printed
  * `0 landed` over a merge and exited 1 on the count.
  */
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { log } from '@lingtai/event-store'
+import { createMemoryEventStore, createMemorySnapshotStore, type MemoryEventStore } from '@lingtai/event-store/memory'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { tallyTurn } from '../src/index.ts'
 import type { RunOnceResult } from '../src/index.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
-let store: EventStore
+let store: MemoryEventStore
 
 const wi = (n: number) => {
   const id = `ticket-${PROJECT}-${n}`
@@ -138,5 +138,37 @@ describe('tallyPass', () => {
   it('counts a whole pass', async () => {
     const pass = [held(1), held(3), failed(4, 'integrate'), failed(5, 'agent')]
     expect(await tallyTurn(pass, store)).toEqual({ landed: 1, held: 2, stopped: 1 })
+  })
+})
+
+describe('tallyTurn reads through the ticket snapshot', () => {
+  it('a snapshot planted below the head gives the same tally, and is asked for', async () => {
+    const stored = await store.read(wi(1))
+    const snapshots = createMemorySnapshotStore(store)
+    const at = stored[0]!
+    await snapshots.put({
+      streamId: wi(1),
+      reducer: ticketReducer.name,
+      reducerVersion: ticketReducer.version,
+      streamVersion: at.version,
+      lastSeq: at.seq,
+      lastAt: at.at,
+      state: ticketReducer.encode(reduceAll(ticketReducer, stored.slice(0, 1))),
+    })
+    const latest = vi.spyOn(snapshots, 'latest')
+    expect(await tallyTurn([held(1)], store, snapshots)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(latest).toHaveBeenCalled()
+  })
+
+  it('a store passed in with no snapshots never touches the process log', async () => {
+    const latest = vi.spyOn(log.snapshots, 'latest').mockImplementation(() => {
+      throw new Error('the process log was touched')
+    })
+    try {
+      expect(await tallyTurn([held(1)], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+      expect(latest).not.toHaveBeenCalled()
+    } finally {
+      latest.mockRestore()
+    }
   })
 })
