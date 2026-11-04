@@ -42,12 +42,12 @@ the worktree (`#468`).
 passing gate raised, and what a person then did with each one. `finding_backlog`
 is the projection that reduces them (`#137`).
 
-`PassRouted` is where `proposed` sent a pass and why (`#271`). It carries
+`PassRouted` is where `proposed` sent an attempt and why (`#271`). It carries
 **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a
-judge may choose `implement` and the pass still go to `waiting` because `rounds`
+judge may choose `implement` and the attempt still go to `waiting` because `rounds`
 is spent, and *the decision sent this to a person* and *the decision wanted
 another round and there was none* are the two sentences a person reads on the
-card. Written by the pass and not by whatever routed, because the budget is the
+card. Written by the attempt and not by whatever routed, because the budget is the
 workflow's ([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §3,
 [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §7).
 **It was never named `Gate…`** — the allowlist below could only shrink — so for
@@ -86,22 +86,22 @@ and keep reading them for ever.
 
 A **transition** type is appended when a state changes, never while it lasts.
 `ProjectRefused` and `ProjectRecovered` are the pair (`#148`). A conductor's
-pass that cannot look at a project — the catch in `conduct.ts`, a recipe that
+turn that cannot look at a project — the catch in `conduct.ts`, a recipe that
 will not resolve or a client that will not build — appends `ProjectRefused` to
 `prj-{project}`, carrying the message, the `ref` the recipe was read from and
-the `codeSha` of the refusing process. A later pass that looks at the project
+the `codeSha` of the refusing process. A later turn that looks at the project
 without refusing appends `ProjectRecovered`. Something that fails after the
 project was looked at — the issue listing, a run, the merge lane — is reported by
-the pass and is not a `ProjectRefused`: that project was read and worked. A pass whose refusal matches the
+the turn and is not a `ProjectRefused`: that project was read and worked. A turn whose refusal matches the
 one on record — same `ref`, same `codeSha`, same message with its digits taken
 out — appends nothing, so N sweeps against one broken recipe are one event. The
-decision is read off the project's own reduce (`passTransition`,
+decision is read off the project's own reduce (`turnTransition`,
 `packages/domain/src/project.ts`) and reads no clock
 ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The same message from another
 `codeSha` is a new refusal: that commit is what tells *this recipe is broken*
 apart from *this process is too old for a recipe that is fine*. It is not
 `DispatchRefused`, which is about tiers and is appended after a claim that a
-refusing pass never reaches. A run that `runOnce` stops before its claim is not
+refusing turn never reaches. A run that `runOnce` stops before its claim is not
 a `ProjectRefused` either.
 
 A project is **pending** between `ProjectOnboardingStarted` and
@@ -172,7 +172,7 @@ are not — one per work item, run, lane and project, forever.
 `ctl-github-app` is the installation's App and holds one event per creation
 (`#169`). It is beside `ctl-conductor` rather than on it because the daemon
 appends to that stream while it runs, and a board recording an App would race a
-pass for the version — `ext-subscribers` is apart for the same reason.
+turn for the version — `ext-subscribers` is apart for the same reason.
 
 ## upcaster — 7 chains, 9 steps
 
@@ -277,7 +277,7 @@ column is merged.
 **It was `gates` until `#247`**, and it is a *stored* value, so the rename is
 `lingtai projection rebuild task_view` and not only a diff. `#249` left it
 standing because the phase had no word under ten steps — `proposed` is a step
-rather than a phase; the word is what the pass does between an agent proposing
+rather than a phase; the word is what the attempt does between an agent proposing
 completion and an item landing, and it is the one `verify-failed` carries for
 the way that phase ends badly.
 
@@ -310,7 +310,7 @@ Together these are the answer to *what does an agent know about why the last
 attempt failed*, which is the premise of `#82`. It was also `repair`'s
 ([0025](decisions-archive/0025-a-failure-buys-one-agent.md)), and a refusal buys no run
 to be told anything since `#143` — so what carries a failure forward is the
-attempt history in `{{failure}}`, and the round inside the pass, which is handed
+attempt history in `{{failure}}`, and the round inside the attempt, which is handed
 the refusal verbatim. An agent that cannot see the failure repeats it.
 
 | Key | Default | What it decides | Applied by |
@@ -325,12 +325,12 @@ reasoning: its diff was 1391 lines across 6 files and fitted comfortably, and fa
 past that is a work item scoped too large — which the compaction counter already
 reports. A megabyte produces a worse review, not a better one.
 
-### what a pass may spend — `runtime.limits`, the recipe's
+### what an attempt may spend — `runtime.limits`, the recipe's
 
-Two of these bound **one agent run**; `rounds` bounds **how many of them a pass
-buys**; `restarts` bounds **how many passes one ticket buys**. They sit in one
+Two of these bound **one agent run**; `rounds` bounds **how many of them an attempt
+buys**; `restarts` bounds **how many attempts one ticket buys**. They sit in one
 block because the number anybody actually wants is the product,
-`(restarts + 1) × (rounds + 1) × wall`, and it is computed once — `passCeiling`
+`(restarts + 1) × (rounds + 1) × wall`, and it is computed once — `attemptCeiling`
 — so `lingtai add`, the board's chip and `lingtai shutdown` cannot say different
 things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
 [0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
@@ -339,8 +339,8 @@ things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-
 |---|---|---|
 | `runtime.limits.turns` | `300` | turns before the runtime stops the agent, **per run** |
 | `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.rounds` | `2` | how many times a pass sends the agent back **into the same worktree**, carrying what refused it — findings, a build's output, or the conflict left standing there. `0` means nothing patches a diff in place |
-| `runtime.limits.restarts` | `0` | how many times a pass whose `rounds` are spent **starts the ticket over** from the base, carrying the findings, instead of asking a person. Only a refused *review* is answered this way; a red build and a conflict stay in the worktree, because for those the work is still there. `0` is what it did before the key existed |
+| `runtime.limits.rounds` | `2` | how many times an attempt sends the agent back **into the same worktree**, carrying what refused it — findings, a build's output, or the conflict left standing there. `0` means nothing patches a diff in place |
+| `runtime.limits.restarts` | `0` | how many times an attempt whose `rounds` are spent **starts the ticket over** from the base, carrying the findings, instead of asking a person. Only a refused *review* is answered this way; a red build and a conflict stay in the worktree, because for those the work is still there. `0` is what it did before the key existed |
 | `runtime.limits.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike the other three bounds above — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
@@ -349,15 +349,15 @@ things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-
 [0070](decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
 `turns` and `wall` bound one call, so a dispatch may write its own `limits:` —
 `agent:` and a runtime `judge:` both — and `limits: { turns: 50 }` narrows the
-turns and keeps the pass's wall. A figure past the ceiling is refused when the
+turns and keeps the attempt's wall. A figure past the ceiling is refused when the
 recipe resolves, by name:
 
 > steps.implement's "write the change" asks for 300 turns; runtime.limits.turns
 > is 150, and a step may only narrow it (0070 §5)
 
 The ceiling is said **once**, here, and every other number is a reduction from
-it — otherwise what a pass may spend would only be knowable after reading every
-action in every step, and `passCeiling`'s sentence would stop being an upper
+it — otherwise what an attempt may spend would only be knowable after reading every
+action in every step, and `attemptCeiling`'s sentence would stop being an upper
 bound. `rounds` and `restarts` may not move at all: they count *how many*
 calls, which is not a thing one action can have an opinion about. `usd` bounds
 one run, the same as `turns` and `wall` — but a dispatch's `limits:` has no
@@ -365,7 +365,7 @@ key for it either, so writing it there is refused the same way: `rounds` and
 `restarts` are refused by name, with the reason above; `usd` is refused as an
 unrecognized key, the schema saying nothing else about it yet. Where a step
 does narrow,
-`passCeiling` names it on the same line — *1h and 150 turns each at implement
+`attemptCeiling` names it on the same line — *1h and 150 turns each at implement
 (review 30m/50 turns), so at most 3h* — and a recipe that narrows nothing prints
 exactly what it always printed.
 
@@ -374,7 +374,7 @@ the smallest number that makes the feature exist. `rounds` replaces two ceilings
 that were one each, and [0038](decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
 §4's reason for having two was real: a build going red and a review refusing are
 different failures, and one round shared between them means whichever happens
-first decides whether the other gets an attempt at all. A pass that fixes a red
+first decides whether the other gets an attempt at all. An attempt that fixes a red
 build and then meets a finding needs two rounds to do what two purses of one did.
 
 **Why `restarts` defaults to zero, which is the opposite argument.** That rule
@@ -585,10 +585,10 @@ first row. `packages/conductor/unit/prompt.test.ts` holds this table against
 
 ## step — 10, closed forever
 
-A step is a **place in the pass**, not a kind of check. The set may never grow.
+A step is a **place in the attempt**, not a kind of check. The set may never grow.
 It was five until 2026-09-23, when
 [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 widened it to the
-ten a pass actually goes through: *the board cannot draw what the model does not
+ten an attempt actually goes through: *the board cannot draw what the model does not
 name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 
 | Step | When | May refuse? | Built? |
@@ -616,18 +616,18 @@ an action declared there is refused when the recipe resolves rather than
 accepted and skipped (`#61`) — today's implementing agent is dispatched by
 `conduct.ts` directly. **`design` was the second until `#265`**, when
 `agentPlugin` took it: an `agent:` there drafts rather than reviews, and the step
-runs **nothing** where a recipe declares nothing, so what an unconfigured pass
+runs **nothing** where a recipe declares nothing, so what an unconfigured attempt
 does is what it always did — `implement` is briefed with `""` and works from the
 issue. **`claim` was the third until `#269`**, when `queuePlugin`
 took it and the take became an action like the cut and the lane. It was six until 2026-09-27, when `runPlugin` took
 `build` and `agentPlugin` took `review`: the build and the cold reviewer had
 shared `proposed:` because it was the only door open, and each has its own step
 now. `admit` was the fourth until `#268` gave the cut to `worktreePlugin` and
-emptied that body — the first of 0061 §3's five names for the pass's own calls to
+emptied that body — the first of 0061 §3's five names for the attempt's own calls to
 become a key, and the shape the other four move in
 ([0065](decisions-archive/0065-the-default-is-a-plugin.md) §4). They are all ten steps regardless — the closed set is about
-the places in the pass, not about what is built today — and naming them is what
-lets the log, the recipe and the board say where a pass is. What is left of
+the places in the attempt, not about what is built today — and naming them is what
+lets the log, the recipe and the board say where an attempt is. What is left of
 0058's own plan is [the-pipeline](design/the-pipeline.md).
 
 `proposed` was called `diff` until
@@ -885,7 +885,7 @@ those three has one spelling to point at.
 **The stored value is a row here, not an exemption.** `ReleaseCause`'s
 `NeverStarted.scope` is written `'work-item'`
 (`packages/domain/src/events.ts:226`) into every `TicketReleased.cause` that
-carries it, mirrored in `action.ts` and `pass-next.ts` and written at
+carries it, mirrored in `action.ts` and `attempt-next.ts` and written at
 `conductor/src/run-attempt.ts`. An exemption is a `continue` that excuses a spelling
 everywhere at once and grows nothing — the door the four words' exemptions are
 bolted against — and a stored name is a log change, which
@@ -946,7 +946,7 @@ types costs nothing against a store with no rows in it. So, in one commit:
   every reader of it looks it up by — `status.ts`'s `NAMES`, `labelsFor`,
   `stateInk`, the board's and the site's `COLUMN_OF`. `#249` left `gates`
   standing because the phase had no word under ten steps; the word is what the
-  pass does between an agent proposing completion and an item landing, and it is
+  attempt does between an agent proposing completion and an item landing, and it is
   the one `verify-failed` already carries. **A lookup renamed ahead of the value
   it reads matches nothing** and falls through to printing the stored word as a
   label of its own, which is how `1 running, 1 gates` came to be one fact under
@@ -1108,16 +1108,16 @@ written as a stand-in.
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
 | `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
-| `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the pass runs** (`#310`), so each pass's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the pass ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
-| `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the pass was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
+| `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the attempt runs** (`#310`), so each attempt's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the attempt ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
+| `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the attempt was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question. **`proposed` only, since `#270`**: 0058 §3b gives `merge` three ways out and the third is *anything else → `proposed`, and only `proposed` may send it to a person* — and the landing is an action in `merge`'s own list now, so a hold beside it would be asked about a merge already made | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
 | `labels:` | — same | a GitHub client |
 | `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
-| `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
-| `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **A legal list is checks, then the lane** — `merge: [{name: smoke, run: pnpm smoke}, {name: land it, merge: {strategy: merge-commit}}]`, and the lane alone is legal too. Both ways of getting it wrong are refused when the recipe resolves (0065 §8): anything written *after* a lane would run on a change already on the base, and a step written with checks and **no** lane would pass having landed nothing — releasing the ticket and buying a second agent for the same diff. `merge: []` is neither of those, so it resolves — and **it still merges**: the conductor sees an empty list and an omitted key as the same thing, so the default lane runs (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-pass.test.ts`'s *lands onto main with `merge: []`*). 0065 §6's *`[]` runs nothing* is decided and not built, so an empty `merge:` is **not** the way to stop landing unattended — that is a `human:` at `proposed:` | the mirror, and the `base` it is *handed* |
-| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue pass**'s field, and that pass runs before a pass exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
+| `worktree:` | — it cuts the branch the attempt owns, at `admit`, and reports the head the rest of the attempt is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
+| `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **A legal list is checks, then the lane** — `merge: [{name: smoke, run: pnpm smoke}, {name: land it, merge: {strategy: merge-commit}}]`, and the lane alone is legal too. Both ways of getting it wrong are refused when the recipe resolves (0065 §8): anything written *after* a lane would run on a change already on the base, and a step written with checks and **no** lane would pass having landed nothing — releasing the ticket and buying a second agent for the same diff. `merge: []` is neither of those, so it resolves — and **it still merges**: the conductor sees an empty list and an omitted key as the same thing, so the default lane runs (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-attempt.test.ts`'s *lands onto main with `merge: []`*). 0065 §6's *`[]` runs nothing* is decided and not built, so an empty `merge:` is **not** the way to stop landing unattended — that is a `human:` at `proposed:` | the mirror, and the `base` it is *handed* |
+| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue turn**'s field, and that turn runs before an attempt exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for ten of the thirteen directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in and `base-moved` by `merge-the-base` (#593), which spend nothing. **The other ten cost a run each time they arrive**, and only where you declare a runtime for them — `#471`'s seven included, since `#472` wires `nextOf` to propose all of them: declare nothing and they reach a person, free, as they always did; declare one and it is asked every time the direction arrives. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
@@ -1138,7 +1138,7 @@ reviewer's spawn — `from-recipe.ts` carries it onto the gate and `agent-gate.t
 onto `RunRequest.model`, which is `--model` for `claude-code` — so writing a
 cheap model on `review` actually buys a cheap review.
 
-**A second runtime in one pass is dispatched since `#314`**
+**A second runtime in one attempt is dispatched since `#314`**
 ([0070](decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
 §7). The runtime a step's `agent:` names is the one that step runs on —
 `actionsFromRecipe` hands the action `runtimeFor(action.agent)`, and
@@ -1147,7 +1147,7 @@ cheap model on `review` actually buys a cheap review.
 before the claim is a runtime **nothing on this machine is signed in to**:
 `agentRefusal` (`conductor/src/conduct.ts`) reads every `agent:` in the file and
 not only `runtime.agent`, and a step naming one this machine cannot start stops
-the pass before the claim, naming the point and the action — *`steps.review`'s
+the attempt before the claim, naming the point and the action — *`steps.review`'s
 "review" action names agent codex, and nothing on this machine is signed in to
 codex* — and `lingtai doctor`'s recipe row says the same refusal. **The remedy is
 the one thing the two refusals do not share**: `runtime.agent` is written in
@@ -1155,8 +1155,8 @@ the one thing the two refusals do not share**: `runtime.agent` is written in
 so the refusal carries which of the two it is and the row names that file. For a
 step the way out is signing in to that runtime or naming one this machine has —
 never repeating `runtime.agent`, which is no longer required. The alternative was
-the silent pick 0046 §3 exists to refuse — a claim taken and a worktree cut for a
-pass whose `review` cannot start.
+the silent pick 0046 §3 exists to refuse — a claim taken and a worktree cut for an
+attempt whose `review` cannot start.
 
 **`worktree:` and `judge:` were two of the five and are the two now wired**
 (`#268`, `#274`, [0065](decisions-archive/0065-the-default-is-a-plugin.md) §4).
@@ -1183,11 +1183,11 @@ one that survives. That is the same pair of calls `conduct.ts` used to make from
 the step's body, handed the four values rather than re-reading the recipe behind
 the action (`queueOf`, `packages/recipe/src/settings.ts`).
 
-**And the queue pass is still called directly, because it is a different question
+**And the queue turn is still called directly, because it is a different question
 rather than the same one twice.** `selectRunnable` in
 `packages/conductor/src/queue.ts` asks GitHub which issues are on offer *before a
-pass exists to have steps*, and `backoff` is only read there. The key above is the
-pass's own re-read of that answer for the one issue it was pointed at — which is
+attempt exists to have steps*, and `backoff` is only read there. The key above is the
+attempt's own re-read of that answer for the one issue it was pointed at — which is
 why a label edited between the two takes effect, and why `backoff` rides on the
 block without being read at `claim`.
 
@@ -1319,7 +1319,7 @@ wire it meets it, and `packages/conductor/unit/step-matrix.test.ts` pins it.
 `worktree:` or under `repo:`, which is the same setting's v1 spelling, with
 `baseOf` the only reader of either — and `worktree.ts:133` and `integrate.ts:73`
 both take it as a parameter. A second
-declaration would manufacture a disagreement between what a pass cut and what
+declaration would manufacture a disagreement between what an attempt cut and what
 it lands, which cannot happen today. `merge:`'s one field is `strategy`, and it
 has one legal value because `integrate.ts:417` offers one: `git merge
 --no-edit`, then a push that is a fast-forward where it can be one.
@@ -1422,7 +1422,7 @@ proposed:
 about judges: the build and the cold reviewer have to be declared at `build:` and
 `review:` rather than at `proposed:`. `ARRIVE_AT_THE_ROUTER` is the seven steps
 whose refusal *travels* to `proposed`, and `proposed` is not among them because it
-**is** the router — so a check refusing there stops the pass with no judge asked
+**is** the router — so a check refusing there stops the attempt with no judge asked
 and no round bought, whatever is written above (`a417908`,
 [the-pipeline.md](design/the-pipeline.md) T5d).
 
@@ -1445,16 +1445,16 @@ universal keys on the steps they bound, written today as `runtime.limits`, and a
 recipe writing either under a judge is refused by name. What it *does* declare
 since that ticket is `model:` and `limits:` — which model buys the judgement and
 what that one call may spend, the same two fields with the same meanings
-`agent:` carries (0070 §3) — because the cheapest call in a pass by two orders
+`agent:` carries (0070 §3) — because the cheapest call in an attempt by two orders
 of magnitude was the one with no way to ask for a cheap model. A built-in takes
 neither: it is a function the router applies and spends nothing. The workflow counts what is spent, works out the set of steps on offer
 (`stepsOnOffer` in `packages/conductor/src/judge.ts`) and hands the judge that
-set; **the set depends on how far the pass got, not only on what is left to
+set; **the set depends on how far the attempt got, not only on what is left to
 spend**, so `prepared`'s refusal offers no `implement` with every round unspent,
 because no agent has run and there is no diff to fix. A judge answers *which of
 these*, never *what is legal*, and one that returns a step it was not offered
-is refused by name and the pass is held for a person — 0061 §8's rule once
-more, and the reason a wrong answer costs one pass rather than running for ever.
+is refused by name and the attempt is held for a person — 0061 §8's rule once
+more, and the reason a wrong answer costs one attempt rather than running for ever.
 
 **`stepsOnOffer` is the whole of that bound, so every rule the workflow has to
 say *no agent for this one* is in it** — a rule left where it used to live is a
@@ -1572,7 +1572,7 @@ each says the part an operator can act on:
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
 - **A plugin that serves no step at all** — `backlog:`, whose `at` is `{}`, and
   it is the last one. It is a name 0061 §3 gives
-  code the pass already runs, and the recipe is not yet what tells it to.
+  code the attempt already runs, and the recipe is not yet what tells it to.
   **`worktree:`, `judge:`, `merge:` and `queue:` were on this list and left it**, with
   `#268`, `#274`, `#270` and `#269`. Asked
   first, and the same sentence at all ten steps, because it is a fact about the
@@ -1596,7 +1596,7 @@ each says the part an operator can act on:
   `merge:` serves `merge`, so a lane written anywhere else is refused by the
   *first* shape above now — *`merge:` does not implement `prepared` — it serves
   `merge`* — carrying the clause its own row used to, because somebody who wrote a
-  lane at the wrong step is exactly who needs it: a pass lands once, last, after
+  lane at the wrong step is exactly who needs it: an attempt lands once, last, after
   every step before it has passed, and what it does with the answer is report the
   reason rather than decide on it. `judge:` serves
   `proposed`, so it is refused by the *first* shape above now — *`judge:` does
@@ -1607,7 +1607,7 @@ each says the part an operator can act on:
   restarts and the judge only choosing from what it is offered (0061 §3).
 
 Where each step's list comes from. **There is one call site, and it names its
-step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which
+step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runAttempt`, which
 asks it at every step whose plugins are verdicts and hands the same
 dependencies at all of them (`#256`). So a refusal is the plugins' and never a
 fact about which steps a caller remembered:
@@ -1623,7 +1623,7 @@ and this is where that is written down: nothing has been committed yet, so
 it is a step before a change exists, not a step missing a dependency. `human:`
 is refused for a different reason and a sharper one: a hold there is turned
 into a *release* back to the queue, so the person would be asked a question
-that re-asks itself — and pays for a worktree and an install — on every pass,
+that re-asks itself — and pays for a worktree and an install — on every attempt,
 and can never be answered. Ask before the claim, or at `proposed`, where there
 is a diff to approve.
 
@@ -1640,7 +1640,7 @@ for the mirror reason: they are effects rather than verdicts, and *an action
 that is silently absent is worse than a run that will not start.*
 
 The refusal arrives when the recipe resolves — so `lingtai doctor`, `lingtai
-add` and the first moment of a pass all name it, before a ticket is claimed or
+add` and the first moment of an attempt all name it, before a ticket is claimed or
 an install paid for. `actionsFromRecipe` asks the same plugins again for a
 caller that builds actions in code rather than reading a recipe.
 
@@ -1800,7 +1800,7 @@ A `push-rejected` on the log is a base that beat this merge **four times**
 nothing: the lane answers it itself, by merging against the base where it now is
 and pushing again, and the whole run of pushes is one `IntegrationAttempted` and
 one terminal. That is on purpose — an `IntegrationRefused` reaches the `desktop`
-subscriber as *did not merge* and wakes a queue pass, and a race the lane goes on
+subscriber as *did not merge* and wakes a queue turn, and a race the lane goes on
 to win is neither.
 
 ## run stage — 15
@@ -1810,19 +1810,18 @@ in `packages/conductor/src/conduct.ts`.
 
 **Since `#256` all but six of them are step names**, and that is the shape of the
 list rather than a coincidence: the conductor resolves the recipe, the
-environment and the tier and then hands the rest to `runPass`, so a run that
-failed inside the pass is named by the step that stopped it
-(`PassResult.stoppedAt`). The four points and the eight hand-written stages that
+environment and the tier and then hands the rest to `runAttempt`, so a run that
+failed inside the attempt is named by the step that stopped it. The four points and the eight hand-written stages that
 used to be here are gone with the engine that had them.
 
-Before the pass, four:
+Before the attempt, four:
 
 `recipe` · `env` · `dispatch` · `unexpected`
 
 Inside it, one per step — **nine of the ten, and `end` is not one of them**: it
 runs after the walk on every ending and cannot refuse (0058 §3), so it never
 becomes `stoppedAt` and there is no run it can be said to have stopped. Plus
-`pass`, where the pass ended without landing and without anybody having been
+`pass`, where the attempt ended without landing and without anybody having been
 asked:
 
 `claim` · `admit` · `prepared` · `design` · `implement` · `build` · `review` ·
@@ -1830,7 +1829,7 @@ asked:
 
 And one beside them: `restart`, where the rounds were spent and a second
 approach was bought (0040) — the item is released and the next claim is an
-ordinary pass from the base.
+ordinary attempt from the base.
 
 **`implement` is the one worth recognising, and what it is not is `diff: no
 commits`.** That stage is gone and what replaced it is not a stage at all. The
