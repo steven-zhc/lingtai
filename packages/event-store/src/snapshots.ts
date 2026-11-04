@@ -143,30 +143,34 @@ interface Row {
 
 const keyName = (k: SnapshotKey) => `(${k.streamId}, ${k.reducer}, v${k.reducerVersion})`
 
+/** An integer column as it arrives (number, bigint or digit text); anything else, `''` included, is null. */
+function integerOf(v: unknown): bigint | null {
+  if (typeof v === 'bigint') return v
+  if (typeof v === 'number') return Number.isInteger(v) ? BigInt(v) : null
+  if (typeof v === 'string' && /^-?\d+$/.test(v)) return BigInt(v)
+  return null
+}
+
 function parseRow(key: SnapshotKey, row: Row): Snapshot {
   const bad = (what: string): never => {
     throw new Error(`snapshot ${keyName(key)} cannot be read: ${what}`)
   }
-  const streamVersion = Number(row.stream_version)
-  const reducerVersion = Number(row.reducer_version)
-  if (!Number.isInteger(streamVersion)) bad(`stream_version ${String(row.stream_version)} is not an integer`)
-  if (!Number.isInteger(reducerVersion)) bad(`reducer_version ${String(row.reducer_version)} is not an integer`)
-  let lastSeq: bigint
-  try {
-    lastSeq = BigInt(String(row.last_seq))
-  } catch {
-    return bad(`last_seq ${String(row.last_seq)} is not an integer`)
-  }
-  if (typeof row.epoch !== 'string') bad('epoch is not text')
-  if (typeof row.state !== 'string') bad('state is not text')
+  const streamVersion = integerOf(row.stream_version)
+  const reducerVersion = integerOf(row.reducer_version)
+  const lastSeq = integerOf(row.last_seq)
+  if (streamVersion === null) return bad(`stream_version ${String(row.stream_version)} is not an integer`)
+  if (reducerVersion === null) return bad(`reducer_version ${String(row.reducer_version)} is not an integer`)
+  if (lastSeq === null) return bad(`last_seq ${String(row.last_seq)} is not an integer`)
+  if (typeof row.epoch !== 'string') return bad('epoch is not text')
+  if (typeof row.state !== 'string') return bad('state is not text')
   return {
     streamId: key.streamId,
     reducer: key.reducer,
-    reducerVersion,
-    streamVersion,
+    reducerVersion: Number(reducerVersion),
+    streamVersion: Number(streamVersion),
     lastSeq,
-    epoch: row.epoch as string,
-    state: row.state as string,
+    epoch: row.epoch,
+    state: row.state,
   }
 }
 
@@ -210,14 +214,14 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
     async put(snapshot) {
       validateSnapshot(snapshot)
       await ensure()
-      const current = await epoch()
-      if (current === null || current !== snapshot.epoch) throw staleEpochError(snapshot.epoch, current)
-      // A reset between the read above and this statement leaves a row of the
-      // old epoch: void on arrival, and replaced by the next put (`epoch <>`).
+      // The epoch check is part of the one statement: the row is inserted only
+      // `WHERE` the log's current epoch is the snapshot's, so a writer that read
+      // its epoch before a reset cannot land a row after it.
       const rows = await sql.query<{ stream_id: string }>(
         `INSERT INTO stream_snapshots
            (stream_id, reducer, reducer_version, stream_version, last_seq, epoch, state)
-         VALUES ($1, $2, $3, $4, $5, $6, ${pg ? '$7::jsonb' : '$7'})
+         SELECT ${pg ? '$1::text, $2::text, $3::integer, $4::integer, $5::bigint, $6::text, $7::jsonb' : '$1, $2, $3, $4, $5, $6, $7'}
+         WHERE (${EPOCH_SQL[sql.dialect]}) = $6
          ON CONFLICT (stream_id, reducer, reducer_version) DO UPDATE SET
            stream_version = excluded.stream_version,
            last_seq = excluded.last_seq,
@@ -237,7 +241,12 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
           snapshot.state,
         ],
       )
-      return rows.length > 0 ? 'written' : 'kept'
+      if (rows.length > 0) return 'written'
+      // Nothing returned: either the row there is as new (kept) or the epoch was
+      // not current (refused). Ask which.
+      const current = await epoch()
+      if (current === null || current !== snapshot.epoch) throw staleEpochError(snapshot.epoch, current)
+      return 'kept'
     },
   }
 }

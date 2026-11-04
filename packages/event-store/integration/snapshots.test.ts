@@ -2,7 +2,7 @@
  * The Postgres `SnapshotStore`, held to the contract (#868): the
  * `stream_snapshots` DDL, `jsonb` state and the conditional upsert.
  *
- * No `empty`: the test database is shared across files, and emptying its
+ * No `empty`, and each case has a stream id of its own: the test database is shared across files, and emptying its
  * `events` would delete rows other files' cleanup expects to find.
  */
 import pg from 'pg'
@@ -39,9 +39,11 @@ describe.skipIf(!postgresUnderTest())('against Postgres', () => {
     const log = createPostgresLog({ store, url: directPostgresUrl() })
     const id = `ticket-snap-${crypto.randomUUID().slice(0, 8)}`
     created.add(id)
-    used.add('s-1')
+    const sid = `s-${crypto.randomUUID().slice(0, 8)}`
+    used.add(sid)
     let appended = false
     return {
+      sid,
       snapshots: log.snapshots,
       append: async () => {
         await store.append(id, appended ? (await store.read(id)).length : 0, [discovered('t')])
