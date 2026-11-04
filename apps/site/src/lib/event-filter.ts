@@ -11,6 +11,7 @@ export const NONE = 'none'
 export interface Indexed {
   name: string
   group: string
+  stream: readonly string[]
   at: readonly string[]
 }
 
@@ -40,6 +41,24 @@ export function byGroup<T extends Indexed>(events: readonly T[]): [string, T[]][
   const groups = new Map<string, T[]>()
   for (const e of events) groups.set(e.group, [...(groups.get(e.group) ?? []), e])
   return [...groups]
+}
+
+/** `?by=` → `stream` or `group`; anything else is the default, `group`. */
+export type By = 'group' | 'stream'
+export function parseBy(search: string): By {
+  return new URLSearchParams(search).get('by') === 'stream' ? 'stream' : 'group'
+}
+
+/** Events by stream prefix in order of first appearance; an event on several appears under each. Events on none go under `none`. */
+export function byStream<T extends Indexed>(events: readonly T[]): [string, T[]][] {
+  const streams = new Map<string, T[]>()
+  for (const e of events)
+    for (const p of e.stream.length ? e.stream : [NONE]) streams.set(p, [...(streams.get(p) ?? []), e])
+  return [...streams]
+}
+
+export function streamId(prefix: string): string {
+  return `stream-${prefix.replace(/[^a-z0-9]+/gi, '')}`
 }
 
 /** The groups with at least one event shown under `filter`, in order. */

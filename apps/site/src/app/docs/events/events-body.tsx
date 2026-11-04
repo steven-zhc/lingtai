@@ -89,7 +89,7 @@ function Event({ event, doc }: { event: EventEntry; doc: EventsDoc }) {
 
 export function EventsBody({ doc }: { doc: EventsDoc }) {
   const entries = Object.fromEntries(doc.events.map((e) => [e.name, <Event key={e.name} event={e} doc={doc} />]))
-  const index = doc.events.map(({ name, group, at }) => ({ name, group, at }))
+  const index = doc.events.map(({ name, group, stream, at }) => ({ name, group, stream, at }))
   return (
     <EventsFilter
       steps={[...STEPS]}

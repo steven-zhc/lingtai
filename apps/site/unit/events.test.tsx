@@ -9,7 +9,7 @@ import { Bar } from '../src/app/chrome'
 import { EventsBody, label } from '../src/app/docs/events/events-body'
 import { EventsFilter } from '../src/app/docs/events/events-filter'
 import EventsPage from '../src/app/docs/events/page'
-import { byGroup, counts, groupId, matches, parseStep, shownGroups } from '../src/lib/event-filter'
+import { byGroup, byStream, parseBy, counts, groupId, matches, parseStep, shownGroups } from '../src/lib/event-filter'
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 const doc = JSON.parse(read('../../../doc/events.json')) as EventsDoc
@@ -105,6 +105,22 @@ describe('/docs/events/', () => {
       <EventsBody doc={{ ...fixture, events: [{ ...fixture.events[0]!, summary: 'open `tick and **bold' }] }} />,
     )
     expect(broken).toContain('open `tick and **bold')
+  })
+
+  it('lists by stream, an event on several streams under each, and parses ?by=', () => {
+    const idx = [
+      { name: 'A', group: 'g', stream: ['x-', 'y-'], at: [] },
+      { name: 'B', group: 'g', stream: ['y-'], at: [] },
+      { name: 'C', group: 'g', stream: [], at: [] },
+    ]
+    expect(byStream(idx).map(([p, l]) => [p, l.map((e) => e.name)])).toEqual([
+      ['x-', ['A']],
+      ['y-', ['A', 'B']],
+      ['none', ['C']],
+    ])
+    expect(parseBy('?by=stream')).toBe('stream')
+    expect(parseBy('?by=nonsense')).toBe('group')
+    expect(parseBy('')).toBe('group')
   })
 
   it('keeps server-only imports out of the client graph', () => {

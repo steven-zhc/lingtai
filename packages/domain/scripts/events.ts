@@ -332,24 +332,33 @@ export const STREAMS_END = '<!-- streams:end -->'
 const GLOSSARY_STATES = 'glossary.md#the-log-and-its-states'
 
 /** The text between the markers, heading included: a pure function of `doc/events.json`'s events. */
-export function renderStreams(doc: { events: readonly { name: string; stream: readonly string[]; retired: boolean }[] }): string {
+export function renderStreams(doc: {
+  events: readonly { name: string; stream: readonly string[]; retired: boolean }[]
+}): string {
   const prefixes = Object.keys(PREFIXES) as StreamPrefix[]
-  const link = (e: { name: string; retired: boolean }) => `[${e.name}](events.json#${e.name})${e.retired ? ' *(retired)*' : ''}`
+  const link = (e: { name: string; retired: boolean }) =>
+    `[${e.name}](events.json#${e.name})${e.retired ? ' *(retired)*' : ''}`
   const notes: string[] = []
   for (const e of doc.events) {
     const on = e.stream.length
     const note = MULTI[e.name as EventType]
     if (on >= 2 && note === undefined) throw new Error(`${e.name} is on ${on} prefixes and has no MULTI note`)
     if (on < 2 && note !== undefined) throw new Error(`MULTI names ${e.name}, which is on ${on} prefixes`)
-    if (note !== undefined) notes.push(`- ${link(e)} is on ${e.stream.map((p) => `\`${p}\``).join(', ')}: ${note}.`)
+    if (note !== undefined) notes.push(`- ${link(e)} is on ${e.stream.map((p) => `\`${p}\``).join(', ')} — ${note}.`)
   }
   for (const name of Object.keys(MULTI)) {
     if (!doc.events.some((e) => e.name === name)) throw new Error(`MULTI names ${name}, which is not in the manifest`)
   }
   const rows = prefixes.map((p) => {
     const { onePer, state } = PREFIXES[p]
-    const types = doc.events.filter((e) => e.stream.includes(p)).map(link).join(', ')
-    const st = state === null ? 'none' : `[${state.split(' (')[0]}](${GLOSSARY_STATES})${state.includes(' (') ? ' (' + state.split(' (').slice(1).join(' (') : ''}`
+    const types = doc.events
+      .filter((e) => e.stream.includes(p))
+      .map(link)
+      .join(', ')
+    const st =
+      state === null
+        ? 'none'
+        : `[${state.split(' (')[0]}](${GLOSSARY_STATES})${state.includes(' (') ? ' (' + state.split(' (').slice(1).join(' (') : ''}`
     return `| \`${p}\` | ${onePer} | ${st} | ${types} |`
   })
   const none = doc.events.filter((e) => e.stream.length === 0).map(link)
