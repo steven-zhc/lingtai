@@ -132,8 +132,12 @@ same URL can be visible from a checkout and invisible to a daemon started from
     `finding_backlog` (minor findings). A projection reads only the log — every
     timestamp it stores comes from `event.at` — so dropping it and replaying
     yields the same table. A wrong or reshaped projection is fixed by
-    `lingtai projection rebuild <name>`, never by hand. Every process that
-    appends holds a projector while it runs.
+    `lingtai projection rebuild <name>`, never by hand. **Each projection has one
+    writer**: the process holding the conductor lock reduces it from the log, in
+    `seq` order, with the checkpoint in the same transaction. Every other process
+    appends and reads; one that must show its own write waits for the checkpoint
+    to reach that event. With no conductor up the projections stand still, and the
+    lag says so.
 
 14. **An event records a result, never the process that reached it.** An
     agent's output cannot be produced twice, so a transcript is nothing a second
