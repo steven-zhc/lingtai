@@ -2,11 +2,11 @@
  * A whole-stream control read starts from the latest usable snapshot (0124 §6, #871)
  * and gives the answer reducing from version 1 gives.
  */
-import { CONTROL_STREAM, controlReducer, reduceAll } from '@lingtai/domain'
+import { CONTROL_STREAM, type ControlState, controlReducer, reduceAll, reduceControl } from '@lingtai/domain'
 import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import type { Snapshot } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { readControl } from '../src/control.ts'
 
@@ -120,4 +120,62 @@ describe('readControl offers', () => {
     const { store } = await build(pauses(6))
     await expect(readControl(store)).resolves.toBeDefined()
   })
+})
+
+// Today's two-reduce algorithm for `since > 0`, kept as the reference (#874).
+function reference(stored: Parameters<typeof reduceControl>[0], since: number, now: Date): ControlState {
+  const events = stored
+  const scoped = reduceControl(
+    events.filter((e) => e.version > since),
+    now,
+  )
+  if (scoped.paused) return scoped
+  const whole = reduceControl(events, now)
+  if (!whole.paused || !whole.holdsAcrossStarts) return scoped
+  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
+}
+
+const pick = (s: ControlState) => ({
+  paused: s.paused,
+  by: s.by,
+  reason: s.reason,
+  until: s.until,
+  cause: s.cause,
+  shutdown: s.shutdown,
+})
+
+describe('readControl(store, since) equals the two-reduce reference', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  for (const [n, history] of all.entries()) {
+    for (let len = 1; len <= history.length; len++) {
+      it(`history ${n}, prefix ${len}`, async () => {
+        const { store, stored, snapshots, at } = await build(history.slice(0, len))
+        const untils = stored
+          .map((e) => (e.data as { until?: unknown } | null)?.until)
+          .filter((u): u is string => typeof u === 'string')
+          .map((u) => Date.parse(u))
+          .filter((t) => !Number.isNaN(t))
+        const nows = [new Date('2026-01-01T00:00:00Z'), ...untils.flatMap((t) => [new Date(t - 1), new Date(t + 1)])]
+        vi.useFakeTimers({ toFake: ['Date'] })
+        const check = async (cache: { snapshots?: typeof snapshots }) => {
+          for (const now of nows) {
+            vi.setSystemTime(now)
+            for (let since = 0; since <= len; since++) {
+              const got = await readControl(store, since, cache)
+              const want = since === 0 ? reduceControl(stored, now) : reference(stored, since, now)
+              expect(pick(got), `since ${since} now ${now.toISOString()}`).toEqual(pick(want))
+            }
+          }
+        }
+        await check({})
+        for (let k = 1; k <= len; k++) {
+          snapshots.plant(at(k))
+          await check({ snapshots })
+        }
+      })
+    }
+  }
 })
