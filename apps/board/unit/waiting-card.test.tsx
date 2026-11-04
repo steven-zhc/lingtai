@@ -12,7 +12,7 @@
  * resolutions. Those now live on the task page (0118 §2).
  *
  * `standing.tsx` and the task page's own controls are out of scope on
- * purpose: their props are `StandingView`/`RunView`, which are #483's and
+ * purpose: their props are `StandingView`/`AttemptView`, which are #483's and
  * #484's to rewrite, so a pin built on them could not survive either ticket
  * unedited.
  */

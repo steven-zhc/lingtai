@@ -60,7 +60,7 @@ import {
 } from '@lingtai/projector/task-view'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
-import { describeHeld, progressOf, spentOf, type Granted, type RunProgress } from './progress.ts'
+import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import {
   addBills,
@@ -295,7 +295,7 @@ export interface BoardCard {
    * (#170). Reduced from the run's own stream rather than held in `task_view` —
    * see `progress.ts` for why that does not make the list expensive.
    */
-  progress: RunProgress | null
+  progress: AttemptProgress | null
 }
 
 /**
@@ -320,7 +320,7 @@ export interface BoardCard {
  * the last time two of them were written separately one of them was wrong for a
  * day without anybody being able to see it.
  */
-export interface PassLimitsView {
+export interface AttemptLimitsView {
   project: string
   /** `runtime.limits.rounds`. Zero means nothing patches a diff in place. */
   rounds: number
@@ -343,7 +343,7 @@ export interface PassLimitsView {
 export interface Board {
   columns: BoardColumn[]
   /** One per project whose recipe could be read. */
-  limits: PassLimitsView[]
+  limits: AttemptLimitsView[]
   /**
    * The priority order the Queued column groups by — `source.kinds`, earlier
    * first, which is the order `selectRunnable` sorts on.
@@ -634,14 +634,14 @@ function moveOf(
 export function toCard(
   t: TaskCard,
   runnableAt: Date | null = null,
-  progress: RunProgress | null = null,
+  progress: AttemptProgress | null = null,
   kindColor: string | null = null,
   /**
    * The project's own ceilings, for `held`'s fallback when the run's stream
    * named none of its own — a round never bought, a restart never spent. Null
    * where the recipe could not be read; `held` then reads the log alone.
    */
-  limits: Pick<PassLimitsView, 'rounds' | 'restarts'> | null = null,
+  limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> | null = null,
   /**
    * This ticket's `spend`, already split by `billOf` — read once for the whole
    * board and handed in here, never read per card (`#498`). Empty bills on
@@ -826,7 +826,7 @@ export async function queuedCards(
   problems: QueueProblem[]
   /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
   notes: QueueProblem[]
-  limits: PassLimitsView[]
+  limits: AttemptLimitsView[]
   /** `source.backoff` per project, for the held cards `loadBoard` reduces from the log. */
   backoffMs: Map<string, number>
   /**
@@ -853,7 +853,7 @@ export async function queuedCards(
   // Gathered here rather than by a second pass over the projects: this loop
   // already resolves every recipe, and asking GitHub twice for a fact that
   // arrived with the first answer is how a render gets expensive.
-  const limits: PassLimitsView[] = []
+  const limits: AttemptLimitsView[] = []
   const backoffMs = new Map<string, number>()
   const plans = new Map<string, StepPlan>()
   const ticketSources = new Map<string, TicketSource>()
@@ -997,7 +997,7 @@ async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
 ): Promise<{
-  progress: Map<string, RunProgress>
+  progress: Map<string, AttemptProgress>
   fixHeads: Map<string, string>
   roundsOpened: Map<string, readonly number[]>
 }> {

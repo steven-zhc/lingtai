@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Discussion } from '../src/app/discussion.tsx'
 import { emptyBill } from '../src/lib/spend.ts'
-import { totalsFact, totalsOf, type DiscussionView, type RunView } from '../src/lib/task.ts'
+import { totalsFact, totalsOf, type DiscussionView, type AttemptView } from '../src/lib/task.ts'
 
 function chat(over: Partial<DiscussionView> = {}): DiscussionView {
   return {
@@ -100,7 +100,7 @@ describe('the meter', () => {
   })
 })
 
-function run(over: Partial<RunView> = {}): RunView {
+function run(over: Partial<AttemptView> = {}): AttemptView {
   return {
     runId: 'pass-1',
     attempt: 1,
@@ -158,7 +158,7 @@ describe("the ledger's total", () => {
    * label. The split stays behind it because answering a refusal is
    * default-on and a discussion has a meter rather than a limit (#84, 0033
    * §4) — stated, but not the headline. The money is `spend`'s, by purpose
-   * (`#498`) — `totalsOf`'s third argument, never `RunView.costUsd` or
+   * (`#498`) — `totalsOf`'s third argument, never `AttemptView.costUsd` or
    * `DiscussionView.costUsd`.
    */
   it('leads with the sum and keeps the split behind it', () => {

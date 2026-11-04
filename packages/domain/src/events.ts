@@ -2019,7 +2019,7 @@ export const ProjectConfigured = z.object({
  * and it is appended after a claim that a pass unable to read its recipe never
  * reaches.
  *
- * It is `PassOutcome.refused` on the log — the catch in `conduct.ts`, and
+ * It is `TurnOutcome.refused` on the log — the catch in `conduct.ts`, and
  * nothing else — for a throw before the pass had looked at the project. A throw
  * after, from a project whose recipe resolved and whose queue was being worked,
  * stays in the outcome and is not this. A run that `runOnce` stops before its

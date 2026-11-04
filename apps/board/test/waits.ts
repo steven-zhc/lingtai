@@ -123,7 +123,7 @@ add('ProposedEscalated', 'proposedescalated-buildred', (item) => [
   // `Routed` hold (the router handing `proposed` to a person), and this
   // fixture's run reached origin (`onOrigin !== null`), so production
   // pairs this ending with an `ApprovalRequested{step:'proposed',
-  // action:'judge'}` (RUN_5/RUN_13 in `what-a-pass-shows-today.test.tsx`).
+  // action:'judge'}` (RUN_5/RUN_13 in `what-an-attempt-shows-today.test.tsx`).
   // That is not unconditional, though: a push to origin that itself failed
   // leaves `onOrigin` null and no `ApprovalRequested` at all — the
   // `proposedescalated-unpushed` fixture below is that case.

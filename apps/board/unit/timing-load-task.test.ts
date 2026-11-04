@@ -9,7 +9,7 @@ import { readTasks } from '@lingtai/projector/task-view'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { queuedFor } from '../src/lib/queued.ts'
-import { recipeOfRun } from '../src/lib/recipe.ts'
+import { recipeOfAttempt } from '../src/lib/recipe.ts'
 import { currentSpend } from '../src/lib/spend.ts'
 import { loadTask } from '../src/lib/task.ts'
 import { measure } from '../src/lib/timing.ts'
@@ -49,7 +49,7 @@ vi.mock('../src/lib/spend.ts', async (original) => ({
 }))
 vi.mock('../src/lib/recipe.ts', async (original) => ({
   ...(await original<typeof import('../src/lib/recipe.ts')>()),
-  recipeOfRun: vi.fn(),
+  recipeOfAttempt: vi.fn(),
 }))
 vi.mock('../src/lib/queued.ts', async (original) => ({
   ...(await original<typeof import('../src/lib/queued.ts')>()),
@@ -76,7 +76,7 @@ beforeEach(() => {
   vi.mocked(currentSpend).mockResolvedValue({ rows: [], currency: { lag: 0 } } as unknown as Awaited<
     ReturnType<typeof currentSpend>
   >)
-  vi.mocked(recipeOfRun).mockResolvedValue({ of: 'none', why: 'test' })
+  vi.mocked(recipeOfAttempt).mockResolvedValue({ of: 'none', why: 'test' })
   vi.mocked(queuedFor).mockResolvedValue(null as unknown as Awaited<ReturnType<typeof queuedFor>>)
 })
 

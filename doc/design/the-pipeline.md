@@ -369,7 +369,7 @@ bail has nothing left to bail from.
       they are a ticket of their own rather than an afternoon's grep — both
       numbers are the section's and both are checked. `GATE_CARRYING` in
       `packages/domain/unit/upcast.test.ts` and `GateCheckPassed` in
-      `apps/board/unit/run-recipe.test.tsx` are two of them and not the two.
+      `apps/board/unit/attempt-recipe.test.tsx` are two of them and not the two.
       Then `prompts/` — `ticket.md:25`'s *Lingtai runs the gates and the merge
       lane* is in every ticket an agent is given — `scripts/`, and every config
       file, `.lingtai/config.yaml:108`'s `gates:` among them, which nothing

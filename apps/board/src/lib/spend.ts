@@ -109,7 +109,7 @@ export function addBills(
  *
  * Credited to Work, since a ticket's cards and rows carry no per-attempt
  * repair flag to split the credit by — `totalsOf`'s own per-run fallback does
- * that split, where a `RunView` is available to read it off.
+ * that split, where a `AttemptView` is available to read it off.
  */
 export function withNoSpendFallback(
   bills: Record<Purpose, Bill>,

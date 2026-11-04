@@ -2,7 +2,7 @@ import { inWords } from '@lingtai/conductor/queue'
 import { formatTurns } from '@lingtai/recipe/duration'
 import type { CSSProperties } from 'react'
 
-import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } from '@/lib/progress'
+import { elapsed, stepOf, type StepProgress, type StepState, type AttemptProgress } from '@/lib/progress'
 import type { PlanView } from '@/lib/queued'
 
 /**
@@ -237,7 +237,7 @@ export function Rail({
   plan,
 }: {
   /** Null on a ticket that has never run: the segments are then the plan's. */
-  progress: RunProgress | null
+  progress: AttemptProgress | null
   /**
    * Whether the run is in flight — the lane's word, as it is for the elapsed
    * pill above, and never the rail's. A reducer cannot answer it: a pass stopped

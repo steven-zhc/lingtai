@@ -7,7 +7,7 @@
  * reaches the log — with each project's work stood in for, since what is under
  * test is the record and the isolation, not GitHub.
  *
- * Every sweep re-reads the project streams, as `conductorPass` does, so the
+ * Every sweep re-reads the project streams, as `conductorTurn` does, so the
  * "once" below comes from the log and not from anything this process remembers.
  */
 import { loadProject } from '@lingtai/conductor'
@@ -15,7 +15,7 @@ import { projectStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { type PassOutcome, conductProjects } from '../src/conduct.ts'
+import { type TurnOutcome, conductProjects } from '../src/conduct.ts'
 
 const BROKEN = `esctest${crypto.randomUUID().slice(0, 6)}`
 const HEALTHY = `esctest${crypto.randomUUID().slice(0, 6)}`
@@ -39,7 +39,7 @@ beforeAll(async () => {
 })
 
 /** One sweep over both projects, BROKEN throwing while `broken`. */
-async function sweep(broken: boolean, codeSha: string, worked: string[] = []): Promise<PassOutcome> {
+async function sweep(broken: boolean, codeSha: string, worked: string[] = []): Promise<TurnOutcome> {
   const projects = [(await loadProject(BROKEN, store))!, (await loadProject(HEALTHY, store))!]
   return conductProjects({
     projects,

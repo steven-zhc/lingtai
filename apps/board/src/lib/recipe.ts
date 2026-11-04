@@ -82,7 +82,7 @@ type Resolved = Awaited<ReturnType<typeof currentRecipe>>
  *   beside it.
  * - `none` — neither could be read, and `why` says so.
  */
-export type RunRecipe =
+export type AttemptRecipe =
   | {
       of: 'run'
       recipe: Resolved['recipe']
@@ -252,7 +252,7 @@ async function fromHead(mine: Resolved, atHead: () => Promise<Resolved>): Promis
 const atSha = new Map<string, Resolved | { problem: string }>()
 
 /** Only for tests, which must not inherit another test's answer. */
-export function forgetRunRecipes(): void {
+export function forgetAttemptRecipes(): void {
   atSha.clear()
 }
 
@@ -294,11 +294,11 @@ async function recipeAtSha(client: GitHubClient, sha: string): Promise<Resolved 
  *
  * Never throws.
  */
-export async function recipeOfRun(
+export async function recipeOfAttempt(
   run: { baseSha: string | null; configHash: string | null },
   client: GitHubClient,
   atHead: () => Promise<Resolved>,
-): Promise<RunRecipe> {
+): Promise<AttemptRecipe> {
   let why: string
   if (run.configHash === null) {
     why = 'this run recorded no StepsResolved, so there is no hash to prove a recipe against'

@@ -7,7 +7,7 @@ import { resolveRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { conductProjects, conductWork, type ConductWorld, type PassOutcome } from '../src/conduct.ts'
+import { conductProjects, conductWork, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
 
 /**
  * `conductWork`'s own `continuing` dispatch (#465, 0120 §6).
@@ -133,7 +133,7 @@ describe('conductWork: a continuing row that has gone stale', () => {
       },
     }
 
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const work = conductWork(
       {
         hookBinary: '/dev/null',
@@ -186,7 +186,7 @@ describe('conductWork: a continuing row declined at claim', () => {
       },
     }
 
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const work = conductWork(
       {
         hookBinary: '/dev/null',
@@ -232,7 +232,7 @@ describe('conductWork: two continuing rows for the same project', () => {
       },
     }
 
-    const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
     const work = conductWork(
       {
         hookBinary: '/dev/null',

@@ -48,7 +48,7 @@ import { describe, expect, it } from 'vitest'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
-import { progressOf, spentOf, type RunProgress } from '../src/lib/progress.ts'
+import { progressOf, spentOf, type AttemptProgress } from '../src/lib/progress.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
 import { emptyBill, grantedOf, type Bill } from '../src/lib/spend.ts'
 
@@ -409,7 +409,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
  * run's state, no grants (these fixtures carry no `RunSpent`), and nothing
  * where there is no progress, so no held line either.
  */
-const roundsFor = (events: Envelope[], progress: RunProgress | null) =>
+const roundsFor = (events: Envelope[], progress: AttemptProgress | null) =>
   progress === null
     ? null
     : { spent: spentOf(reduceAttempt(events).roundsOpened, grantedOf([])), granted: grantedOf([]) }
@@ -891,7 +891,7 @@ describe("a held item's budget", () => {
    * **The event where the log has one, the recipe only where it does not.** A
    * run that never bought a round has nothing of its own to say what the
    * ceiling was, and a ticket on its first approach has nothing of its own
-   * either — both read the project's `PassLimitsView` instead.
+   * either — both read the project's `AttemptLimitsView` instead.
    */
   it("falls back to the recipe's own ceiling when the run never bought one", () => {
     const html = render(

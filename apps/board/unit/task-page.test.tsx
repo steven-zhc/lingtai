@@ -28,11 +28,11 @@ import { diffFact, RECORD_TABS, Record, TaskBody, UnpushedBanner } from '../src/
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
 import {
-  presentRunEvents,
+  presentAttemptEvents,
   standingOf,
   totalsOf,
   type DiscussionView,
-  type RunView,
+  type AttemptView,
   type TaskDetail,
   type TicketView,
 } from '../src/lib/task.ts'
@@ -86,7 +86,7 @@ const TICKET: TicketView = {
 
 const CRASH = 'the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.'
 
-const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
+const task = (own: Envelope[], runs: AttemptView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
   taskId: ITEM,
   waiting: { previous: null, next: null },
   unpushedMirror: null,
@@ -106,7 +106,7 @@ const task = (own: Envelope[], runs: RunView[], rest: Partial<TaskDetail> = {}):
 
 /** `ticket-lingtai-147` on 2026-09-14, as the ticket quotes it. */
 function blocked(): TaskDetail {
-  const run = presentRunEvents(claim, 1, [
+  const run = presentAttemptEvents(claim, 1, [
     e(RUN, 'RunStarted', { baseSha: BASE }),
     e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
     e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
@@ -178,7 +178,7 @@ function blocked(): TaskDetail {
 }
 
 function running(): TaskDetail {
-  const run = presentRunEvents(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
+  const run = presentAttemptEvents(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
   return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
 }
 
@@ -601,7 +601,7 @@ describe('the rail on the task page', () => {
   )
 
   function building(plan?: StepPlan): TaskDetail {
-    const run = presentRunEvents(
+    const run = presentAttemptEvents(
       claim,
       1,
       [
@@ -754,7 +754,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
-    const landed = task(own, [presentRunEvents(claim, 1, events, { over: true })])
+    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
     expect(why(page(landed))).not.toContain('class="seq"')
   })
@@ -774,7 +774,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
     // `over` is what `loadTask` passes for the attempt that landed.
-    const landed = task(own, [presentRunEvents(claim, 1, events, { over: true })])
+    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
     const html = record(page(landed))
     expect(html).toContain('class="seg s-never-ran"')
@@ -783,7 +783,7 @@ describe('the rail on the task page', () => {
 
     // And the same stream on an item that did not land is only not reached yet:
     // `over` is the whole of the difference.
-    const midway = record(page(task(own.slice(0, 1), [presentRunEvents(claim, 1, events)])))
+    const midway = record(page(task(own.slice(0, 1), [presentAttemptEvents(claim, 1, events)])))
     expect(midway).not.toContain('s-never-ran')
     expect(midway).toContain('class="seg s-pending"')
   })
@@ -792,7 +792,7 @@ describe('the rail on the task page', () => {
 describe('the record', () => {
   /** Always the same five, in the same order, whatever the state (0118 §2, #417). */
   it('is five tabs in a fixed order, the same five in every state, open on history', () => {
-    const run = presentRunEvents(claim, 1, [
+    const run = presentAttemptEvents(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
       e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
@@ -894,7 +894,7 @@ describe('the waiting links in the header (#584)', () => {
 
 describe('the Diff tab’s fact (#729)', () => {
   const diff = (files: number) => ({ branch: 'agent/2', files, insertions: 4, deletions: 2 })
-  const run = (attempt: number, over: Partial<RunView> = {}): RunView =>
+  const run = (attempt: number, over: Partial<AttemptView> = {}): AttemptView =>
     ({
       runId: `run-${attempt}`,
       attempt,
@@ -904,8 +904,8 @@ describe('the Diff tab’s fact (#729)', () => {
       diff: null,
       steps: [],
       ...over,
-    }) as unknown as RunView
-  const touched = [{ path: 'a.md', op: 'edit' }] as unknown as RunView['files']
+    }) as unknown as AttemptView
+  const touched = [{ path: 'a.md', op: 'edit' }] as unknown as AttemptView['files']
 
   it('counts the files git found when the agent’s tools recorded none', () => {
     expect(diffFact([run(1, { diff: diff(2) })])).toBe('2 files')
@@ -930,7 +930,7 @@ describe('the Diff tab’s fact (#729)', () => {
   })
 
   it('says the count, lines and branch in the attempt’s panel', () => {
-    const reduced = presentRunEvents(claim, 1, [
+    const reduced = presentAttemptEvents(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProducedDiff', { branch: 'agent/2', headSha: HEAD, files: 2, insertions: 4, deletions: 2 }),
     ])

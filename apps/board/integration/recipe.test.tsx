@@ -129,7 +129,7 @@ describe("what a project's recipe says today", () => {
     // `describeAssignee`'s sentence, not a second wording of it.
     expect(html).toContain('any issue, whoever it is assigned to')
     // All ten steps, including the nine nothing is configured at (0016 §4,
-    // 0061 §5). The unit twin of this assertion is in `run-recipe.test.tsx`.
+    // 0061 §5). The unit twin of this assertion is in `attempt-recipe.test.tsx`.
     expect(html).toContain(
       'claim 0 · admit 0 · prepared 0 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0',
     )
