@@ -52,10 +52,10 @@ import {
   attemptIdOf,
   attemptStream,
   reduceAttempt,
-  reduceTicket,
+  ticketReducer,
   stepOutcomesOf,
-  waitsOf,
-  designAsksOf,
+  waitsFromState,
+  designAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
 import type { PauseCause, ProjectState } from '@lingtai/domain'
@@ -69,7 +69,7 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
-import { type EventStore, eventStore, log as theLog, readThroughSnapshot } from '@lingtai/event-store'
+import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type Snapshot } from '@lingtai/event-store'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -215,7 +215,7 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armFor, diffBaseShaOf, landedOnBaseOf, priorAttempts } from './attempts.ts'
+import { armForState, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
@@ -223,7 +223,7 @@ import { closeHolding } from './close.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
-import { fixBrief, grantedAdviceOf } from './fix.ts'
+import { fixBrief, grantedAdviceFromState } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
@@ -477,6 +477,11 @@ export interface RunOnceOptions {
   token?: TokenSource
   home?: string
   store?: EventStore
+  /**
+   * Where the pass offers snapshots of what it read (0124 §5). Given only inside the daemon, which
+   * holds one writer for its lifetime; `lingtai run` reads snapshots and never writes them.
+   */
+  snapshotWriter?: { offer(snapshot: Snapshot): void }
   gitEnv?: NodeJS.ProcessEnv
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
@@ -667,6 +672,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const store = options.store ?? eventStore
     // The default log's snapshots belong to the default store; a store passed in has none of its own.
     const controlSnapshots = options.store === undefined ? theLog.snapshots : undefined
+    // What every ticket read in this pass is offered: the same snapshots, and the daemon's writer if it gave one.
+    const ticketSnapshots = { snapshots: controlSnapshots, writer: options.snapshotWriter }
     const home = options.home ?? stateDir()
     const log = options.log ?? (() => {})
     const project = options.project.project!
@@ -1085,8 +1092,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * the agent. It is also where the restarts already spent are counted, which
      * is what `Ceilings.restartsLeft` is.
      */
-    const before = yield* Effect.promise(() => store.read(ticketId))
-    const reduced = reduceTicket(before)
+    // Read through a snapshot where the default log has one, and every event type (#876): `version`
+    // is the stream's head and `claimTicket` appends at it, so a typed tail would break every append.
+    // A failure is a defect, as it was inside `Effect.promise`.
+    const reduced = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', ticketSnapshots).pipe(
+      Effect.orDie,
+    )
 
     /**
      * **Resuming a held run, read fresh off the log rather than trusted from
@@ -1102,14 +1113,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (options.continuing === undefined) return null
       if (reduced.lifecycle.status !== 'approved' || reduced.lifecycle.runId !== options.continuing.runId) return null
       const { waitId: approvedWaitId, onSha: approvedOnSha } = reduced.lifecycle
-      const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
+      const reason = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const runState = reduceAttempt(runEvents)
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
-      const priorGrant = waitsOf(before).some(
+      const priorGrant = waitsFromState(reduced).some(
         (wait) =>
           wait.resolution?._tag === 'GrantFixRound' &&
           'run' in wait.reason &&
@@ -1132,7 +1143,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * every `Approve` this item has ever recorded for this run, so both
          * come back together.
          */
-        waive: waivedActionsAt(waitsOf(before), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
+        waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
         // The wait this continuation resumes: a fresh UUID per wait, so it is
         // what tells one continuation's judge from the next one's (#580).
@@ -1140,8 +1151,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted ? { grantRef: reduced.lifecycle.grantRef } : {}),
         // Only a granted lap: it is one round long, so this reaches the round
         // the person paid for, on the advice of the wait they granted it on (#643).
-        ...(granted && grantedAdviceOf(before, adviceWaitId) !== undefined
-          ? { advice: grantedAdviceOf(before, adviceWaitId)! }
+        ...(granted && grantedAdviceFromState(reduced, adviceWaitId) !== undefined
+          ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runState, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
@@ -1215,7 +1226,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // `options.continuing !== undefined`: a stale request is an ordinary
     // fresh claim, with its own prior attempts to carry into the prompt like
     // any other.
-    const previous = continuation !== null ? undefined : priorAttempts(before).at(-1)
+    const previous = continuation !== null ? undefined : priorAttemptsFromState(reduced, ticketId).at(-1)
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
@@ -1226,7 +1237,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const next = nextPrompt({
       base: basePromptVersion,
       budget: recipe.runtime.budget,
-      item: before,
+      item: { state: reduced, streamId: ticketId },
       lastRun,
       arms,
     })
@@ -1234,7 +1245,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (previous) {
       log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? 'no ending recorded'}`)
     }
-    const arm = armFor(before, branch, continuation !== null ? runId : null, next.attempt)
+    const arm = armForState(reduced, ticketId, branch, continuation !== null ? runId : null, next.attempt)
 
     /**
      * **What the back edges may spend** (0061 §3, and 0040's two dimensions).
@@ -1395,7 +1406,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           try: async () => {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseTicket(ticketId, runId, reason, store, cause).catch((err: unknown) => {
+            await releaseTicket(ticketId, runId, reason, store, cause, ticketSnapshots).catch((err: unknown) => {
               backInTheQueue = false
               log(`the item was not released: ${whyOf(err)}`)
             })
@@ -2355,12 +2366,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // than acted on wrongly when the request has gone stale.
           claim =
             options.continuing !== undefined && continuation !== null
-              ? await continueTicket(ticketId, runId, { store })
+              ? await continueTicket(ticketId, runId, { store, ...ticketSnapshots })
               : // The claim carries what the task is, because it is now the
                 // only place a title enters the log at all.
                 await claimTicket(ticketId, {
                   runId,
                   store,
+                  ...ticketSnapshots,
                   title: runnable.title,
                   kind: runnable.kind,
                   children: options.client,
@@ -2394,7 +2406,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (closed.ok) {
             // The split's wait is over (`WaitResolved{Split}` is on the stream).
             // This path calls `tellGitHub` directly, so it edits here (#750).
-            await editEndedWaits({ store, github: options.client, ticketId })
+            await editEndedWaits({ store, github: options.client, ticketId, ...ticketSnapshots })
             // Said before the close, not after it: the comment has no record of
             // its own to retry from, and a close that fails here is finished later
             // by reconciliation — which would close the issue without ever
@@ -3216,7 +3228,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runtime: options.runtime,
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
-          designAsks: designAsksOf(before),
+          designAsks: designAsksFromState(reduced),
           diff: async (from?: string) =>
             // The format is fixed here, not by the user's git config: `hunksOf` strips
             // `a/` and `b/`, which `diff.srcPrefix`, `diff.dstPrefix` or `diff.noprefix`
@@ -4443,7 +4455,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           { _tag: 'OwnQuestion' }
         >
         const resumed =
-          continuation === null ? undefined : waitsOf(before).find((w) => w.waitId === continuation.resumedWaitId)
+          continuation === null
+            ? undefined
+            : waitsFromState(reduced).find((w) => w.waitId === continuation.resumedWaitId)
         const standing = standingFor({
           reason,
           granted: continuation?.grant !== undefined,

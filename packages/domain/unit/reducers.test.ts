@@ -17,7 +17,10 @@ import type { Envelope, Reducer } from '../src/index.ts'
 import { COVERS, reducerFixtures } from '../test/histories.ts'
 import versions from './reducer-versions.json' with { type: 'json' }
 
-const FIXTURE: Record<string, readonly Envelope[]> = { control: reducerFixtures.control.everyControlEvent }
+const FIXTURE: Record<string, readonly Envelope[]> = {
+  control: reducerFixtures.control.everyControlEvent,
+  ticket: reducerFixtures.ticket.everyTicketType,
+}
 
 function hashOver(reducer: Reducer<unknown>, events: readonly Envelope[]): string {
   let s = reducer.initial

@@ -58,7 +58,15 @@
  * rule nobody can check.
  */
 import type { ActionFinding } from '@lingtai/actions'
-import { type Envelope, SEVERITIES, type Severity, type WaitId, triageFactsOf } from '@lingtai/domain'
+import {
+  type Envelope,
+  SEVERITIES,
+  type Severity,
+  type TicketState,
+  type WaitId,
+  triageFactsFromState,
+  triageFactsOf,
+} from '@lingtai/domain'
 import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
 
 import { checksBrief } from './prompt.ts'
@@ -591,7 +599,15 @@ export type GrantedAdvice =
  * so this does not write a second reduce.
  */
 export function grantedAdviceOf(events: readonly Envelope[], waitId: WaitId): GrantedAdvice | undefined {
-  const { result } = triageFactsOf(events, waitId)
+  return adviceFrom(triageFactsOf(events, waitId).result)
+}
+
+/** `grantedAdviceOf` over a state already reduced. */
+export function grantedAdviceFromState(state: TicketState, waitId: WaitId): GrantedAdvice | undefined {
+  return adviceFrom(triageFactsFromState(state, waitId).result)
+}
+
+function adviceFrom(result: ReturnType<typeof triageFactsOf>['result']): GrantedAdvice | undefined {
   if (result?._tag !== 'TriageAdvised') return undefined
   const { cause } = result
   if (cause._tag === 'FixableLines') return cause.fixes.length > 0 ? { on: 'lines', fixes: cause.fixes } : undefined

@@ -70,5 +70,6 @@
   "scenario.askAfterRelease": "b3075cca328e551e8b1ba83105bbeee8290cb567cf7ae3cf3e07f39bfd5e4bce",
   "scenario.closeAfterRelease": "debdc4ec830e60e922faace28229f10989c64b54526ba921336f7393a4554504",
   "scenario.requeueOfRunWait": "37f4677f6066febd73ca116a8b3a790507f32117ad15569e7e7836204a36f9de",
-  "control.everyControlEvent": "6ff392a306450a928a55365122a8dc9331a6e99a94c76f097bce341467896e63"
+  "control.everyControlEvent": "6ff392a306450a928a55365122a8dc9331a6e99a94c76f097bce341467896e63",
+  "ticket.everyTicketType": "90b5e6be0ad3b8321201d710a4b1ea1246533cea6b116fbfed5bd4602e1c2bec"
 }

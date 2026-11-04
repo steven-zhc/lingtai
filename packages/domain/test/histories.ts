@@ -1398,4 +1398,26 @@ const late_everyControlEvent = stamp(
   })(),
 )
 
-export const reducerFixtures = { control: { everyControlEvent: late_everyControlEvent } } as const
+/**
+ * The ticket reducer's fixture (#876): one event of each type it handles, taken from the ticket histories above
+ * in the order they first appear, on one stream. `histories.ticket.everyTicketEvent` is not this — it holds
+ * fewer types, and a frozen history cannot be added to.
+ */
+const late_everyTicketTypeOnOneStream = stamp(
+  (() => {
+    const seen = new Set<string>()
+    const picked: Envelope[] = []
+    for (const e of [...Object.values(histories.ticket), ...Object.values(lateHistories.ticket)].flat()) {
+      if (seen.has(e.type)) continue
+      seen.add(e.type)
+      picked.push(e)
+    }
+    const streamId = ticketStream(PROJECT, 9002)
+    return picked.map((e, i) => ({ ...e, streamId, version: i + 1 }))
+  })(),
+)
+
+export const reducerFixtures = {
+  control: { everyControlEvent: late_everyControlEvent },
+  ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
+} as const

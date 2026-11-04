@@ -1,3 +1,4 @@
+export { readState } from './snapshot-state.ts'
 export {
   claimTicket,
   conductorWorker,

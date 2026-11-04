@@ -27,12 +27,13 @@ import { inSpan } from '@lingtai/actions/spans'
  * it structurally, and a test satisfies it with four functions and no
  * network — which is the whole point of a caller naming its own requirement.
  */
-import { parseTicketStream, reduceTicket } from '@lingtai/domain'
+import { parseTicketStream, ticketReducer } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store'
+import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
 
 import { agentBranch, armPrefix } from './branches.ts'
 import { foreignLabels } from './labels.ts'
+import { readState } from './snapshot-state.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** What this needs of GitHub, and nothing more. */
@@ -447,15 +448,16 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
  * Never throws, like everything here: a stream that cannot be read edits
  * nothing and records nothing, and the next call tries again.
  */
-export async function editEndedWaits(options: {
-  store: EventStore
-  github: IssueChannel
-  ticketId: string
-}): Promise<void> {
+export async function editEndedWaits(
+  options: {
+    store: EventStore
+    github: IssueChannel
+    ticketId: string
+  } & SnapshotReadOptions,
+): Promise<void> {
   const { store, github, ticketId } = options
   try {
-    const events = await store.read(ticketId)
-    const state = reduceTicket(events)
+    const state = await readState(store, ticketReducer, ticketId, 'all', options)
     const ledger = state.github
     const edited = new Set<string>(ledger.edited)
     const posted = ledger.comments
