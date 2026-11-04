@@ -75,7 +75,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
 
 const AT = new Date('2026-09-09T12:00:00Z')
 
-/** `task()`'s own `taskId`, so a card's money is a lookup rather than a fold over no rows. */
+/** `task()`'s own `taskId`, so a card's money is a lookup rather than a reducer over no rows. */
 const BILL: MoneyBill = { reportedCents: 150, reportedRuns: 1, unknown: 0 }
 
 function take(
@@ -134,7 +134,7 @@ describe('the four lanes', () => {
     // Five states, four lanes. That every state is covered is the type's job —
     // `LANE_OF` is a `Record<TaskState, Lane>` — so what is checked here is the
     // part a type cannot: that `gates` and `running` are one lane, which is the
-    // fold #59 was missing when a task in `gates` appeared on no column at all.
+    // reduce #59 was missing when a task in `gates` appeared on no column at all.
     const board = take([
       task({ state: 'queued' }),
       task({ state: 'running' }),
@@ -315,7 +315,7 @@ function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow
 describe('spendByTicket', () => {
   /**
    * `ticket-89` ran twice before `spend` existed: no row at all for either
-   * attempt. `billOf([])` folds to an empty bill, which reads as nothing
+   * attempt. `billOf([])` reduces to an empty bill, which reads as nothing
    * spent — this reader took no fallback at all, so the card's cost pill
    * vanished rather than reading as unknown (`#498`'s review).
    */

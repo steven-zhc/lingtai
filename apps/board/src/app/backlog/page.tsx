@@ -4,11 +4,11 @@ import type { BacklogEntry } from '@lingtai/projector'
  * about each ([0038](../../../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5, `#137`).
  *
- * A read of `finding_backlog`, which is a fold like `task_view` — nothing on
- * this page writes to it but the fold. The two buttons append, through the same
- * functions `lingtai backlog` calls, and the next fold closes the entry.
+ * A read of `finding_backlog`, which is a reducer like `task_view` — nothing on
+ * this page writes to it but the reducer. The two buttons append, through the same
+ * functions `lingtai backlog` calls, and the next reduce closes the entry.
  *
- * **Read as it stands, and said so.** The page folds nothing: a daemon older
+ * **Read as it stands, and said so.** The page reduces nothing: a daemon older
  * than this projection follows `task_view` alone, so each render reads the table
  * and its lag (`@/lib/backlog`), and the chip says how far behind it is. It
  * catches up when something next appends with a projector, or on `lingtai

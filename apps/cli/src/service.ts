@@ -885,7 +885,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   }
   const unload = () => unloadJob(DAEMON_JOB)
 
-  /** Two answers to two questions, neither folded into the other. */
+  /** Two answers to two questions, neither reduced into the other. */
   const report = async (): Promise<number> => {
     log(`supervisor  (${platform === 'launchd' ? `launchctl, ${target}` : `systemctl --user, ${SYSTEMD_UNIT}`})`)
     const answer = askSupervisor(platform, exec, uid)
@@ -1118,7 +1118,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
     return code
   }
 
-  /** The board's two answers, beside the daemon's two and folded into neither. */
+  /** The board's two answers, beside the daemon's two and reduced into neither. */
   const reportBoard = async (): Promise<number> => {
     log(
       `supervisor  (${platform === 'launchd' ? `launchctl, ${boardTarget}` : `systemctl --user, ${BOARD_SYSTEMD_UNIT}`})`,

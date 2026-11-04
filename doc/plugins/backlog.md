@@ -24,7 +24,7 @@ Two literals that cannot see each other fix the bar: `verdictFor`
 *blocker-or-major*, and `backlogProjection` (`packages/projector/src/backlog.ts`)
 decides what is **filed**, off a literal `minor`. `decideBacklog`
 (`packages/conductor/src/backlog.ts`) is that comparison as a function. **Both take
-the value or neither does**: changing only the fold's still gets `failed` for a
+the value or neither does**: changing only the reducer's still gets `failed` for a
 major and buys the round, and reads as honoured.
 
 A person decides what happens to a filed finding with `lingtai backlog` or the
@@ -51,7 +51,7 @@ There is no recipe that uses it, so there is nothing real to copy. **What a pers
 can write is the default, and it resolves nowhere** — the refusal below is the
 example. The two places the bar is set are in code:
 
-- the fold's literal, `packages/projector/src/backlog.ts`
+- the reducer's literal, `packages/projector/src/backlog.ts`
 - the refusal's hard-coded bar, `verdictFor` in `packages/actions/src/agent-action.ts`
 
 Neither is a recipe line, and editing one alone is the failure described above.

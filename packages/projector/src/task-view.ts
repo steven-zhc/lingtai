@@ -12,7 +12,7 @@
  * it is read from the event stream when somebody opens one task. A list view
  * and a detail view have opposite economics — the list is read constantly and
  * needs to be cheap, the detail is read rarely by one person about one task,
- * and folding a few dozen events on the spot is imperceptible. Building a table
+ * and reducing a few dozen events on the spot is imperceptible. Building a table
  * for the second is paying continuously for an occasional read.
  *
  * The old `board` projection carried all of it, and the card grew heavy for
@@ -51,8 +51,8 @@ import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
 import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   agentBranchOf,
-  applyRun,
-  applyTicket,
+  reduceRunEvent,
+  reduceTicketEvent,
   decodeRun,
   decodeTicket,
   emptyRun,
@@ -73,7 +73,7 @@ import type { Projection, ProjectionContext } from './store.ts'
 /**
  * Where a task is.
  *
- * Every one of these now comes from a fold — `queued` used to be written
+ * Every one of these now comes from a reducer — `queued` used to be written
  * straight into the table by `syncQueued`, with no event behind it, which is
  * why a queue change reached nobody (#56). A task is `queued` because the log
  * says it was released or unblocked, or because it has no row at all and
@@ -163,7 +163,7 @@ export const taskViewProjection: Projection = {
         -- what with. WaitResolved.note, which no column held before #147:
         -- a rebuild could say what was asked and never what was decided.
         -- Assignment, not a list, so a replay lands on the same value; the
-        -- whole history is the fold's (TicketState.answers). Kept across a
+        -- whole history is the reducer's (TicketState.answers). Kept across a
         -- claim and a landing, because a decision outlives the attempt at it.
         answer       jsonb,
 
@@ -211,7 +211,7 @@ export const taskViewProjection: Projection = {
 
         updated_seq  bigint not null,
 
-        -- The ticket reduce (applyTicket), stored as encodeTicket writes it.
+        -- The ticket reduce (reduceTicketEvent), stored as encodeTicket writes it.
         -- Every one-stream column above is read off it (#834). No default: a
         -- table built before this is refused by the shape check until rebuilt.
         ticket       jsonb not null
@@ -225,7 +225,7 @@ export const taskViewProjection: Projection = {
       create table if not exists task_view_run (
         run_id  text primary key,
         task_id text,
-        -- The run reduce (applyRun) as encodeRun writes it (#844).
+        -- The run reduce (reduceRunEvent) as encodeRun writes it (#844).
         run     jsonb not null
       )`)
 
@@ -247,12 +247,12 @@ export const taskViewProjection: Projection = {
     await ctx.query('drop table if exists task_view_ticket')
   },
 
-  async apply(events, ctx) {
+  async reduce(events, ctx) {
     // One cache per call (#844): every read goes through it, every touched row is written once at the end.
     const cache = new Cache(ctx)
     for (const event of events) {
-      if (isTicketStream(event.streamId)) await applyTicketEvent(cache, event)
-      else if (isPassStream(event.streamId)) await applyRunEvent(cache, event)
+      if (isTicketStream(event.streamId)) await projectTicketEvent(cache, event)
+      else if (isPassStream(event.streamId)) await projectRunEvent(cache, event)
     }
     await cache.flush()
   },
@@ -268,7 +268,7 @@ export const taskViewProjection: Projection = {
  * hyphens survive — which every one of them does.
  */
 function splitTaskId(taskId: string): { project: string; issue: string } {
-  // A projection must fold anything the log holds, including an id it cannot
+  // A projection must reduce anything the log holds, including an id it cannot
   // parse — hence the fallback rather than a null the caller has to handle.
   return parseTicketStream(taskId) ?? { project: taskId.replace(/^wi-/, ''), issue: '' }
 }
@@ -480,7 +480,7 @@ interface RunEntry {
 }
 
 /**
- * Every stored state one `apply` call touches (#844). Both reduces live here, so a ticket event
+ * Every stored state one `reduce` call touches (#844). Both reduces live here, so a ticket event
  * mid-batch computes `rowOf` from the run's current state and not from a stale row.
  */
 class Cache {
@@ -667,7 +667,7 @@ function touch(entry: TaskEntry, event: Envelope): void {
  * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in `seq` order,
  * so there is no per-row `seq` guard and no lock ordering between the tables.
  */
-async function applyRunEvent(cache: Cache, event: Envelope): Promise<void> {
+async function projectRunEvent(cache: Cache, event: Envelope): Promise<void> {
   const runId = event.streamId
   const entry = await cache.run(runId, true)
   if (event.type === 'RunStarted') entry.taskId = (event.data as PayloadOf<'RunStarted'>).ticketId
@@ -675,7 +675,7 @@ async function applyRunEvent(cache: Cache, event: Envelope): Promise<void> {
   const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
 
   const runBefore = entry.run
-  entry.run = applyRun(entry.run, event)
+  entry.run = reduceRunEvent(entry.run, event)
   entry.dirty = true
 
   if (task === null || entry.taskId === null || task.where !== 'row') return
@@ -686,7 +686,7 @@ async function applyRunEvent(cache: Cache, event: Envelope): Promise<void> {
   if (note !== null || JSON.stringify(was) !== JSON.stringify(now)) touch(task, event)
 }
 
-async function applyTicketEvent(cache: Cache, event: Envelope): Promise<void> {
+async function projectTicketEvent(cache: Cache, event: Envelope): Promise<void> {
   const taskId = event.streamId
   const entry = await cache.task(taskId)
   const before = entry.ticket
@@ -696,7 +696,7 @@ async function applyTicketEvent(cache: Cache, event: Envelope): Promise<void> {
     run.taskId = taskId
     run.dirty = true
   }
-  const after = applyTicket(before, event)
+  const after = reduceTicketEvent(before, event)
   entry.ticket = after
   entry.dirty = true
 
@@ -834,7 +834,7 @@ export interface TaskCard {
  * lifecycle, so a stale pair is not expected; the check stays because the board
  * must not draw a wait for a row that is not waiting.
  *
- * Throws, naming the task, on the one combination the fold can never write:
+ * Throws, naming the task, on the one combination the reducer can never write:
  * `state === 'waiting'` with no reason. `state` is only ever set to
  * `'waiting'` in the same statement that sets `wait_reason` (`WaitStarted`),
  * so a row here either predates this column or has been tampered with — both
@@ -1015,7 +1015,7 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
  * so a project whose last card has aged out loses its name here too rather than
  * offering a filter that leads to an empty board.
  *
- * Its own query rather than a fold over a filtered read, because that is the
+ * Its own query rather than a reducer over a filtered read, because that is the
  * one question a filtered read cannot answer: narrowing to one project is what
  * removes the evidence that the others exist. And not the registered list
  * either — **a card can outlive its project** (#86), so a repository that has

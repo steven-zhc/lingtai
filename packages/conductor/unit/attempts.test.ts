@@ -7,7 +7,7 @@
  * rather than by throwing.
  *
  * Unit, under `--project unit`: deciding what an attempt is told is a
- * fold over envelopes, and a decision that needed a database would be the wrong
+ * reduce over envelopes, and a decision that needed a database would be the wrong
  * shape.
  */
 import { readFileSync } from 'node:fs'
@@ -120,7 +120,7 @@ describe('priorAttempts', () => {
   })
 
   /**
-   * The ticket's first criterion, at the level of the fold: how many attempts
+   * The ticket's first criterion, at the level of the reducer: how many attempts
    * there were and what ended each. `TicketClaimed` ×N is what `attempts: N`
    * on a card counts, so it is what this counts.
    */

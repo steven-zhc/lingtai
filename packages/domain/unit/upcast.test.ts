@@ -228,7 +228,7 @@ describe('WaitTriaged', () => {
  * **What is asserted here now is that all nine are gone** (`#247`).
  * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 spends
  * that history by *resetting* the log rather than upcasting it;
- * `the-pipeline.md`'s T5b folded it into
+ * `the-pipeline.md`'s T5b reduced it into
  * [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and T5
  * cut it. A store with no rows holds none at version 1, so the nine versions
  * and the nine steps came down together — which is the only shape this was

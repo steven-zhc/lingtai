@@ -430,10 +430,10 @@ describe('resolveWait', () => {
           { _tag: 'Restart', restart: 1 },
           { _tag: 'ByPerson', waitId },
         ])
-        const folded = reduceTicket(events)
+        const reduced = reduceTicket(events)
         expect(before).toBe(1)
-        expect(folded.restarts).toHaveLength(before)
-        expect(folded.lifecycle.status).toBe('backlog')
+        expect(reduced.restarts).toHaveLength(before)
+        expect(reduced.lifecycle.status).toBe('backlog')
       },
     )
 
@@ -1219,14 +1219,14 @@ describe('resolveWait', () => {
     const run = aRun('pass-12')
     await seed(store, 'pass-12', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
 
-    const folded = reduceRun(await store.read('pass-12'))
-    expect(refusingOn(folded, SHA)).toEqual([])
+    const reduced = reduceRun(await store.read('pass-12'))
+    expect(refusingOn(reduced, SHA)).toEqual([])
   })
 
   it('refusingOn lists a commit that produced no head on the approved sha', () => {
     // D1 (#821): `Completed` with `head: null` did not finish, so an approval must waive it by name.
-    const folded = reduceRun(histories.run.commitCompletedNoHead)
-    expect(refusingOn(folded, 'sha-1')).toEqual(['implement:keep'])
+    const reduced = reduceRun(histories.run.commitCompletedNoHead)
+    expect(refusingOn(reduced, 'sha-1')).toEqual(['implement:keep'])
   })
 
   /**

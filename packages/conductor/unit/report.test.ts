@@ -117,7 +117,7 @@ describe('the survival curve', () => {
     expect(steps.map((s) => s.survival)).toEqual([expect.closeTo(2 / 3), expect.closeTo(1 / 3)])
   })
 
-  it('folds reviews past the sixth into one 7+ step and leaves steps 1-6 alone', () => {
+  it('reduces reviews past the sixth into one 7+ step and leaves steps 1-6 alone', () => {
     const tickets = [
       ...[1, 2, 3, 4, 5, 6, 7, 9, 12].map((m) => ticket({ reviews: reviewsOf(m, true) })),
       ticket({ reviews: reviewsOf(34, false) }),

@@ -32,7 +32,7 @@ function errorMessage(err: unknown): string {
 /**
  * The exact text `upsertSection` puts between the markers for `key`, trimmed
  * — what `writeSection` looks for on the read-back. Built from `text` with
- * `\r\n` already folded to `\n`, because the read-back body is folded the
+ * `\r\n` already reduced to `\n`, because the read-back body is reduced the
  * same way before the search: a `text` that itself carries CRLF must still
  * match its own normalized reflection.
  */

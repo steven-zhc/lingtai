@@ -7,7 +7,7 @@
  * question — and a row that is glanced at can afford one thing to learn to
  * read, not two ([the-bar.md](../../../../doc/design/the-bar.md)).
  *
- * So the two are folded here, into a dot and at most one sentence. **Green and
+ * So the two are reduced here, into a dot and at most one sentence. **Green and
  * silent is the whole of the ordinary case**; anything else says what is wrong
  * and what to do about it, because a health indicator that reports a fault and
  * not the remedy is one you have to go and look something up for.
@@ -20,7 +20,7 @@
  * rendered in, because a chip does not know what its neighbour is doing.
  *
  * Pure, and its own file, for two reasons. `live.tsx` is a client component and
- * `health.ts` next door reaches for the projection and the beacon — a fold
+ * `health.ts` next door reaches for the projection and the beacon — a reducer
  * shared between them cannot live in either. And the ordering is the thing a
  * later edit can silently get wrong, so it is asserted directly.
  */
@@ -90,7 +90,7 @@ function beating(health: Health): string {
  * Worst first: the first true one wins.
  *
  * A dead stream beats everything, because nothing under it can be trusted. A
- * projection that is behind with nobody folding it beats stale code, because
+ * projection that is behind with nobody reducing it beats stale code, because
  * the board is then lying about the thing the code would be doing. Everything
  * else is a variety of *fine, and here is the detail*.
  */
@@ -99,7 +99,7 @@ export function bearing(
   board: Health | null,
   code: CodeNews | null,
 ): Bearing {
-  // The whole sentence carries both facts wherever there are two, so folding
+  // The whole sentence carries both facts wherever there are two, so reducing
   // the chips did not make either unreachable. Every branch below goes through
   // it, including the two that are about the stream rather than the board: the
   // currency is a server prop and is known whether or not the socket is up, and
@@ -153,7 +153,7 @@ export function bearing(
     return {
       tone: 'idle',
       label: 'no board yet',
-      why: 'nothing has been folded yet — run: lingtai daemon',
+      why: 'nothing has been reduced yet — run: lingtai daemon',
       title: also(`task_view has never been built${predates(board)}`),
     }
   }

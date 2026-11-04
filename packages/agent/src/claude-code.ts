@@ -132,7 +132,7 @@ interface ClaudeResult {
    * `{"claude-sonnet-5":{"inputTokens":2,"outputTokens":19,
    * "cacheReadInputTokens":24352,"cacheCreationInputTokens":39338,
    * "costUSD":0.1624164,…}}`. A call can bill more than one model, and each
-   * entry's tokens can only be priced at that model's own rate — folding every
+   * entry's tokens can only be priced at that model's own rate — reducing every
    * key under the model the recipe asked for would price a smaller model's
    * tokens at a larger one's rates.
    */

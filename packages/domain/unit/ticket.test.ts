@@ -144,7 +144,7 @@ describe('reduceTicket', () => {
    *
    * `runId: null` was written into the type and never into the log: all three
    * appenders ran inside a pass. `lingtai ask` is the first that does not, so
-   * the fold has to accept a wait that belongs to no run — with no claim before
+   * the reducer has to accept a wait that belongs to no run — with no claim before
    * it and nothing in `runs` — and a replay of the answer has to be able to say
    * what the answer was.
    */
@@ -202,7 +202,7 @@ describe('reduceTicket', () => {
    * `held at the merge gate` and `conflict: agent/112 does not merge into
    * develop` were both `WorkItemBlocked` with a string, and they are opposite
    * kinds of thing: one wants a person's judgement, the other wants a diagnosis
-   * nobody had written. A fold that cannot distinguish them cannot let a card
+   * nobody had written. A reducer that cannot distinguish them cannot let a card
    * offer a default action, which is the whole of what the ticket asked for.
    */
   it('tells a judgement apart from a failure needing acknowledgement', () => {
@@ -314,7 +314,7 @@ describe('reduceTicket', () => {
    *
    * Since #502 the arm's own branch/head/findings are not repeated on the
    * work item — they are on the previous run's own stream, which the next
-   * prompt already reads (`attempts.ts`'s `lastRun`) — so what this fold owes
+   * prompt already reads (`attempts.ts`'s `lastRun`) — so what this reduce owes
    * is the count and which run each restart followed.
    */
   it('counts the approaches a ticket abandoned, from the release that follows each one', () => {

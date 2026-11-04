@@ -491,7 +491,7 @@ export async function editEndedWaits(options: {
  * Everything one state change implies for an issue, in the order the outbox
  * used to send it.
  *
- * The outbox folded events in `seq` order, so a comment appended beside its
+ * The outbox reduced events in `seq` order, so a comment appended beside its
  * `EndActionsResolved` went out first and the end point's own labels went out
  * second. That order is kept: it is the difference between an issue that ends
  * up closed and one that ends up closed and then reopened by a label write.

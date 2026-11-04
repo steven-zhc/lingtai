@@ -5,7 +5,7 @@
  * The chip used to report whether the SSE socket was open, which is the one
  * thing that was never in doubt on the morning it lied: socket open, chip
  * green, board frozen for the whole of a `lingtai run` (`#64`). An open socket
- * says events are arriving; it says nothing about whether anything folded them.
+ * says events are arriving; it says nothing about whether anything reduced them.
  *
  * So this reads the facts that actually decide it. **Lag** is the
  * projection's distance from the head of the log. **The beacon** is the whole
@@ -67,7 +67,7 @@ export async function readHealth(): Promise<Health> {
     // the check cannot come to different answers about one row — which is the
     // shape of `#64`. `starting` counts as `up` here and reads as *catching
     // up* rather than *nobody is coming*, because a daemon that is reconciling
-    // is a daemon that is about to fold: the lag it has is temporary, and
+    // is a daemon that is about to reduce: the lag it has is temporary, and
     // `#144` is the ticket about calling it dead.
     const beat = lastBeat(status)
     return {

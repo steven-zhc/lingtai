@@ -20,7 +20,7 @@
  *
  * A daemon that is killed mid-run leaves two things behind, and neither repairs
  * itself. The **claim** does not lapse — 0027 deleted the lease that pretended
- * it did — so `task_view` folds it as `running` for ever, and the queue only
+ * it did — so `task_view` reduces it as `running` for ever, and the queue only
  * offers what the log says is queued. That is the third check, and what makes
  * it decidable is the lock rather than a clock: this process holds
  * `lingtai:daemon`, and #93 made that lock the thing every conductor takes, so
@@ -105,10 +105,10 @@ function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => P
  * `store` when a caller named one, and otherwise the log the injected
  * `daemonStore` carries — which is what `DaemonStore.events` is for
  * (`store.ts`). The process-wide store is the last resort and not the second,
- * because finding stream ids in one log and folding them out of another does
+ * because finding stream ids in one log and reducing them out of another does
  * not fail, it answers *nothing is wrong*: `streams()` returns `ticket-p-117` from
  * the store it was given, `read("ticket-p-117")` goes to Postgres and comes back
- * empty, the fold is not `claimed`, and `releaseForeignClaims` reports no
+ * empty, the reducer is not `claimed`, and `releaseForeignClaims` reports no
  * orphaned claims at all. The dead daemon's claim then holds the ticket out of
  * circulation for ever, which is #87 with the repair for #87 installed.
  */
@@ -171,7 +171,7 @@ export interface ReconcileOptions {
    *
    * Beside `store` rather than instead of it: `store` is the log this pass
    * reads and appends through, and this is the one question about the log that
-   * `EventStore` does not answer — *which streams should I fold at all*.
+   * `EventStore` does not answer — *which streams should I reduce at all*.
    *
    * Given without `store`, the log read is the one this carries (`logOf`), and
    * it is handed on to `convergeIssues` so that both halves of a pass ask the
@@ -396,7 +396,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
  *
  * **Reported, never repaired here.** Since `#66` every process that appends
  * holds a projector, so a lag at startup means the mechanism is not running or
- * has stopped — and a reconcile that quietly folded the backlog would repair
+ * has stopped — and a reconcile that quietly reduced the backlog would repair
  * the symptom and hide that. The one thing this must not do is make a broken
  * projector look like a working one.
  */
@@ -429,15 +429,15 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * the first millisecond as on the thousandth.
  *
  * Without it a killed daemon takes an item out of circulation permanently:
- * `task_view` folds a claim as `running`, `selectRunnable` offers nothing that
+ * `task_view` reduces a claim as `running`, `selectRunnable` offers nothing that
  * is not `queued`, and a claim does not lapse. #87 is what that looks like — a
  * ticket held by `local:23673` for a process that had already died with the
  * conductor that spawned it.
  *
- * The release is an **event**. A projection is a fold and cannot read a clock,
+ * The release is an **event**. A projection is a reducer and cannot read a clock,
  * so `running` versus `queued` must never depend on `now()`; if it did,
  * `lingtai projection rebuild task_view` would disagree with the incremental
- * fold about the same log. Appending is also what makes the repair visible: the
+ * reduce about the same log. Appending is also what makes the repair visible: the
  * card moves, and `Reconciled` says why it moved.
  *
  * **Only at startup, and that is not a limitation.** A claim can be orphaned

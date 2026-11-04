@@ -40,7 +40,7 @@ import {
 /**
  * Re-exported so that everything about *the document an attempt is handed* has
  * one door. The board writes `PromptEdited.hash` with it and never reaches past
- * this module into the fold that quotes earlier attempts.
+ * this module into the reducer that quotes earlier attempts.
  */
 export { editHash } from './attempts.ts'
 

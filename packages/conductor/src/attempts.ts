@@ -535,7 +535,7 @@ function digest(text: string): string {
 /**
  * The block a `PromptEdited` puts in front of the next attempt.
  *
- * Its own block rather than folded into the failure history, because it is a
+ * Its own block rather than reduced into the failure history, because it is a
  * different kind of thing: the history is what earlier attempts *did*, and this
  * is what a person is asking *this one* to do. Naming who asked is what makes
  * it an instruction rather than a stray paragraph.
@@ -567,7 +567,7 @@ It applies to this attempt only. Anything meant to last belongs in the ticket.`
  *
  * The filter cannot tell `answer()` from `requeue()` by the block — both end
  * one with no run — so what keeps a requeue's note out of this block is
- * `requeue()` writing it `withdrawn` (`approve.ts`), which the fold keeps no
+ * `requeue()` writing it `withdrawn` (`approve.ts`), which the reducer keeps no
  * answer for. Drop that flag and a requeue's why becomes a decision here.
  *
  * **Durable, unlike `humanBrief`.** An edit is for one attempt; a decision about

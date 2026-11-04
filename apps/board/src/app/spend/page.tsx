@@ -70,7 +70,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
         <span className="sep" />
         <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
         <span className="sep" />
-        {/* `backlog/page.tsx`'s own chip, for the same reason: a fold that
+        {/* `backlog/page.tsx`'s own chip, for the same reason: a reducer that
             failed or never ran reads identically to a board on which nothing
             was spent unless something here says so (`#498`'s review). */}
         <span className={`chip ${chip.tone}`} title={chip.title}>

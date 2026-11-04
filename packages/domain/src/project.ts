@@ -38,7 +38,7 @@ export interface ProjectState {
    * The refusal a conductor's pass last recorded, while nothing has recovered
    * from it (#148). Null is *not refusing*, whether nothing ever was or a
    * `ProjectRecovered` followed. The seq and time are the event's, so a reader
-   * can say *since when* without the fold reading a clock (0027).
+   * can say *since when* without the reducer reading a clock (0027).
    */
   refused: RecordedRefusal | null
 
@@ -46,7 +46,7 @@ export interface ProjectState {
   lastSeq: bigint | null
 }
 
-/** A `ProjectRefused` as the fold keeps it: the payload, and when it was recorded. */
+/** A `ProjectRefused` as the reducer keeps it: the payload, and when it was recorded. */
 export type RecordedRefusal = PayloadOf<'ProjectRefused'> & { seq: bigint; at: Date }
 
 export const emptyProject: ProjectState = {
@@ -60,7 +60,7 @@ export const emptyProject: ProjectState = {
   lastSeq: null,
 }
 
-export function applyProject(state: ProjectState, event: Envelope): ProjectState {
+export function reduceProjectEvent(state: ProjectState, event: Envelope): ProjectState {
   const at = { version: event.version, lastSeq: event.seq }
 
   switch (event.type) {
@@ -69,7 +69,7 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
      *
      * It records everything a `Recheck` needs and deliberately not
      * `configHash`: that field is what `isRegistered` reads, and it may only
-     * arrive with a recipe that was actually read. So the fold that follows
+     * arrive with a recipe that was actually read. So the reducer that follows
      * this event is a project the board can name, list and act on, and one
      * `loadProjects()` does not return.
      */
@@ -107,7 +107,7 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
 }
 
 export function reduceProject(events: readonly Envelope[]): ProjectState {
-  return events.reduce(applyProject, emptyProject)
+  return events.reduce(reduceProjectEvent, emptyProject)
 }
 
 /**
@@ -135,7 +135,7 @@ export function isRegistered(state: ProjectState): boolean {
  * writes the recipe on this machine and records the project only through the
  * App's installation on the repository, refusing without one. What can still
  * keep it here is what `lingtai add` checks — the installation's permissions,
- * the recipe, an installation removed since. The fold cannot know which, and
+ * the recipe, an installation removed since. The reducer cannot know which, and
  * does not have to — it only draws the line.
  *
  * The complement of `isRegistered` over the streams that exist, and it is that

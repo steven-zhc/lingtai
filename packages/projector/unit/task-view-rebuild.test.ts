@@ -1,5 +1,5 @@
 /**
- * The pin for #480: `task_view` rebuilds to the same rows once the fold
+ * The pin for #480: `task_view` rebuilds to the same rows once the reducer
  * derives through the reduces' states as it did while it matched the old event
  * types and `Hold` directly.
  *
@@ -21,14 +21,14 @@
  * change, which is the check that the ticket's rule and the old per-event writes agree. The `run` column
  * of `task_view_run` is not in the pin either.
  *
- * If this test goes red now, the fold changed — inspect the changed values rather
+ * If this test goes red now, the reducer changed — inspect the changed values rather
  * than regenerating the pin, and name the rule that explains each row.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
- * the real fold path, skipping WAL, touching no file and reading no `$HOME`,
+ * the real reduce path, skipping WAL, touching no file and reading no `$HOME`,
  * so it is unit under 0060 §1. Every existing `task_view` test is integration
  * and Postgres-only (`integration/task-view.test.ts`), and nothing in
- * `pnpm test` folds `task_view` today — this file is the only check inside
+ * `pnpm test` reduces `task_view` today — this file is the only check inside
  * the pass.
  *
  * **The stream is built once, at module scope.** `makeStream` takes its seq
@@ -255,7 +255,7 @@ const afterApprovalGranted = events.length
 
 // ---- row 15: a fix round opened, round 1 then round 2 ---------------------
 // `FixRequested`'s `of` denominator is gone with the event itself (#502):
-// a round is folded off `PassRouted`'s stored offer/reply/decision now, and
+// a round is reduced off `PassRouted`'s stored offer/reply/decision now, and
 // carries no ceiling of its own.
 const roundsStream = makeStream('ticket-pin-rounds')
 const roundsRun = aRun('pass-pin-rounds')
@@ -447,7 +447,7 @@ events.push(
 
 // ---- row 28: #509 — a continuation re-claims the same run; attempts stays 1 ----
 // `continueTicket` appends an ordinary `TicketClaimed` onto a run already
-// holding the item (`claim.ts:150-152`), approved twice over. The fold must
+// holding the item (`claim.ts:150-152`), approved twice over. The reducer must
 // not count either re-claim as a fresh attempt.
 const continuedStream = makeStream('ticket-pin-continued')
 const continuedRun = aRun('pass-pin-continued')
@@ -546,12 +546,12 @@ function taskOf(rows: readonly ProjectionRow[], taskId: string): ProjectionRow |
   return rows.find((r) => r.task_id === taskId)
 }
 
-async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: ProjectionRow[] }> {
+async function reduce(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: ProjectionRow[] }> {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.apply(events.slice(0, upTo), ctx))
+    await store.transact((ctx) => taskViewProjection.reduce(events.slice(0, upTo), ctx))
     return await store.transact(async (ctx) => ({
       // Every column but `ticket`: the stored reduce grows with `TicketState`, and a new field must not churn this pin (#834).
       tasks: (await ctx.query('select * from task_view order by task_id')).map(({ ticket: _ticket, ...row }) => row),
@@ -565,29 +565,29 @@ async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Proje
 
 describe('task_view rebuilds through the stored states exactly as it did through the direct matches', () => {
   it('produces the same final rows for every Hold kind and every rerouted event', async () => {
-    const { tasks, runs } = await fold(events.length)
+    const { tasks, runs } = await reduce(events.length)
     expect(tasks).toMatchSnapshot('final task_view rows')
     expect(runs).toMatchSnapshot('final task_view_run rows')
   })
 
   it("names a round by its number alone, since FixRequested's own denominator is gone (#502)", async () => {
-    const before = await fold(afterRoundOne)
+    const before = await reduce(afterRoundOne)
     expect(taskOf(before.tasks, 'ticket-pin-rounds')).toMatchObject({
       note: 'fixing round 1',
       state: 'running',
     })
 
-    const after = await fold(afterRoundTwo)
+    const after = await reduce(afterRoundTwo)
     expect(taskOf(after.tasks, 'ticket-pin-rounds')).toMatchObject({
       note: 'fixing round 2',
     })
   })
 
   it('carries the sha a sign-off is about only while one is open', async () => {
-    const requested = await fold(afterApprovalRequested)
+    const requested = await reduce(afterApprovalRequested)
     expect(taskOf(requested.tasks, 'ticket-pin-approval')).toMatchObject({ awaiting_sha: SHA })
 
-    const granted = await fold(afterApprovalGranted)
+    const granted = await reduce(afterApprovalGranted)
     // `#465`: the row leaves the waiting lane with no sha. `state:
     // 'approved'` (#510), never `'running'` and never `'queued'`: not
     // `'queued'` since `selectRunnable` reads `'queued'` as *the queue may
@@ -601,7 +601,7 @@ describe('task_view rebuilds through the stored states exactly as it did through
   })
 
   it("leaves a granted sign-off's own verdict `asked`, since nothing re-records the action until the run that owns it continues (0120 §6, #465)", async () => {
-    const granted = await fold(afterApprovalGranted)
+    const granted = await reduce(afterApprovalGranted)
     const row = taskOf(granted.tasks, 'ticket-pin-approval') as { verdicts: string }
     expect(JSON.parse(row.verdicts)).toMatchObject({ 'pass-pin-approval:merge:human': 'asked' })
   })
@@ -613,7 +613,7 @@ describe('task_view rebuilds through the stored states exactly as it did through
    * different run id (the restart below) may move it.
    */
   it('does not count a continuation re-claiming the same run as a fresh attempt', async () => {
-    const { tasks } = await fold(afterSecondContinuation)
+    const { tasks } = await reduce(afterSecondContinuation)
     expect(taskOf(tasks, 'ticket-pin-continued')).toMatchObject({
       attempts: 1,
       run_id: continuedRun.runId,
@@ -622,7 +622,7 @@ describe('task_view rebuilds through the stored states exactly as it did through
   })
 
   it('still counts a claim naming a new run after a release as a fresh attempt', async () => {
-    const { tasks } = await fold(afterContinuedRestart)
+    const { tasks } = await reduce(afterContinuedRestart)
     expect(taskOf(tasks, 'ticket-pin-continued')).toMatchObject({
       attempts: 2,
       run_id: continuedRestartRunId,
@@ -641,13 +641,13 @@ describe('task_view rebuilds through the stored states exactly as it did through
    * may not follow it lands.
    */
   it('counts a restart off the release that spends it, not the route that decided it', async () => {
-    const restarted = await fold(afterRestarted)
+    const restarted = await reduce(afterRestarted)
     expect(taskOf(restarted.tasks, 'ticket-pin-restart')).toMatchObject({
       state: 'running',
       restarts: 0,
     })
 
-    const released = await fold(afterReleased)
+    const released = await reduce(afterReleased)
     const row = taskOf(released.tasks, 'ticket-pin-restart') as {
       state: string
       restarts: number
@@ -658,8 +658,8 @@ describe('task_view rebuilds through the stored states exactly as it did through
     expect(row.note).toContain('restart 1 of 2')
   })
 
-  it('folds every Step* verdict the same key:verdict pair the old direct matches wrote', async () => {
-    const { tasks } = await fold(events.length)
+  it('reduces every Step* verdict the same key:verdict pair the old direct matches wrote', async () => {
+    const { tasks } = await reduce(events.length)
 
     expect(taskOf(tasks, 'ticket-pin-steppassed')).toMatchObject({
       verdicts: JSON.stringify({ 'pass-pin-steppassed:review:reviewer': 'passed' }),
@@ -679,7 +679,7 @@ describe('task_view rebuilds through the stored states exactly as it did through
   })
 
   it('writes RunFailed as the note beside the StepDidNotFinish it explains', async () => {
-    const { tasks } = await fold(events.length)
+    const { tasks } = await reduce(events.length)
 
     const row = taskOf(tasks, 'ticket-pin-didnotfinish')
     expect(row).toMatchObject({
@@ -689,11 +689,11 @@ describe('task_view rebuilds through the stored states exactly as it did through
   })
 
   it('clears the run a release ended, and keeps it while a wait on that run stands (#844)', async () => {
-    const { tasks } = await fold(events.length)
+    const { tasks } = await reduce(events.length)
     expect(taskOf(tasks, 'ticket-pin-askafterrelease')).toMatchObject({ run_id: null })
     expect(taskOf(tasks, 'ticket-pin-closeafterrelease')).toMatchObject({ run_id: null })
 
-    const waiting = await fold(whileRequeueWaits)
+    const waiting = await reduce(whileRequeueWaits)
     expect(taskOf(waiting.tasks, 'ticket-pin-requeueofrunwait')).toMatchObject({
       run_id: 'pass-pin-requeueofrunwait',
     })

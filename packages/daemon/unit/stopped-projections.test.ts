@@ -39,7 +39,7 @@ function fakes(opts: { throwAtStart?: readonly string[]; shape?: string; checkpo
       async start() {
         if (opts.shape === p.name) throw new ProjectionShapeError(p.name, [])
         if (opts.throwAtStart?.includes(p.name)) {
-          failure = new Error(`${p.name} fold`)
+          failure = new Error(`${p.name} reduce`)
           onError(failure, 'handler')
           throw new Error('subscription stopped before it caught up')
         }
@@ -74,7 +74,9 @@ describe('a stopped projection', () => {
     })
     expect(started.ok).toBe(true)
     if (!started.ok) return
-    expect(started.daemon.stoppedProjections).toEqual([{ name: 'spend', checkpoint: 41n, error: 'Error: spend fold' }])
+    expect(started.daemon.stoppedProjections).toEqual([
+      { name: 'spend', checkpoint: 41n, error: 'Error: spend reduce' },
+    ])
     started.daemon.stop()
     expect(await started.daemon.stopped).toBe('asked')
   })

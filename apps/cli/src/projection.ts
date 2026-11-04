@@ -117,7 +117,7 @@ export interface RebuildUnderLockOptions extends RebuildProjectionOptions {
  * conductor lock, or a refusal that names who does (0100 §13).
  *
  * **One writer per projection, and a rebuild is a writer.** It drops the table,
- * rewinds the checkpoint and replays, so a daemon folding beside it would
+ * rewinds the checkpoint and replays, so a daemon reducing beside it would
  * race the replay. The lock is taken here, in the command's body, and **not
  * inside `rebuildProjection`**: `rates.ts` calls that from the daemon and from
  * `lingtai run`, which already hold the lock, and a second `tryLock` there

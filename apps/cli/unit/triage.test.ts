@@ -1218,7 +1218,7 @@ describe('waitTriage', () => {
     expect(prompt).toContain('1 file changed, 2 insertions(+)')
   })
 
-  it('takes the last PassRouted and the last RunRefsPublished off the folded run', async () => {
+  it('takes the last PassRouted and the last RunRefsPublished off the reduced run', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 8)
     const runId = 'pass-8'

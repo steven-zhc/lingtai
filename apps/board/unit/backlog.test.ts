@@ -1,6 +1,6 @@
 /**
  * The backlog page's chip (`#137`): *nothing open* is only ever said about a
- * backlog that was brought to the head. A table nobody built, or a fold that
+ * backlog that was brought to the head. A table nobody built, or a reducer that
  * failed, reads as empty — and must not render as though it were.
  */
 import { describe, expect, it } from 'vitest'
@@ -12,7 +12,7 @@ describe("the backlog's currency", () => {
     expect(backlogChip({ lag: 0 })).toMatchObject({ current: true, label: 'current' })
   })
 
-  it('is not current when the fold failed, and names the repair', () => {
+  it('is not current when the reducer failed, and names the repair', () => {
     const chip = backlogChip({ lag: null, error: 'relation "checkpoints" does not exist' })
     expect(chip).toMatchObject({ current: false, tone: 'warn' })
     expect(chip.title).toContain('lingtai projection rebuild finding_backlog')

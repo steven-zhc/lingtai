@@ -9,7 +9,7 @@
  * **a backlog a person triages in batches, where accepting one opens an
  * issue.**
  *
- * **It is a fold and nothing else.** No command writes here. An entry exists
+ * **It is a reducer and nothing else.** No command writes here. An entry exists
  * because a passing gate's assessment carried a minor — read off `StepEnded`
  * through `findingsRaisedOf` (`@lingtai/domain`, #481) — it is closed because
  * a `FindingAccepted` or `FindingDeclined` says so, and an accepted one names
@@ -31,7 +31,7 @@
  * fixing agent is handed.
  */
 import type { Finding, FindingState, PayloadOf } from '@lingtai/domain'
-import { applyFinding, findingKey, findingsRaisedOf, isBacklogStream, parseTicketStream } from '@lingtai/domain'
+import { reduceFindingEvent, findingKey, findingsRaisedOf, isBacklogStream, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection } from './store.ts'
@@ -46,7 +46,7 @@ interface DecisionRow {
 }
 
 /**
- * The row as the fold's state. Only what a rule of `applyFinding` reads is
+ * The row as the reducer's state. Only what a rule of `reduceFindingEvent` reads is
  * real — the status, and whether an issue is recorded; the rest is a
  * placeholder, because the update takes its values from the event and never
  * from this (and the row keeps no labels or proposal seq).
@@ -157,13 +157,13 @@ export const backlogProjection: Projection = {
     await ctx.query('drop table if exists finding_backlog_run')
   },
 
-  async apply(events, ctx) {
+  async reduce(events, ctx) {
     for (const event of events) {
       const seq = event.seq.toString()
 
       if (isBacklogStream(event.streamId)) {
         // Read the row again for every event: an earlier event of this batch
-        // has already updated it, and the fold must see that.
+        // has already updated it, and the reducer must see that.
         const d = event.data as { project: string; key: string }
         const [row] = await ctx.query<DecisionRow>(
           `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
@@ -172,7 +172,7 @@ export const backlogProjection: Projection = {
         // A finding nothing raised has no row to be wrong about.
         if (!row) continue
         const before = findingOfRow(row, d)
-        const after = applyFinding(before, event)
+        const after = reduceFindingEvent(before, event)
         if (before.status === 'open' && after.status === 'accepted') {
           const a = event.data as PayloadOf<'FindingAccepted'>
           await ctx.query(

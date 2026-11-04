@@ -1112,10 +1112,10 @@ describe('every step × kind cell runs or refuses', () => {
     // hand a value to — both file references, so they go red if either moves.
     expect(why).toContain('packages/projector/src/backlog.ts')
     expect(why).toContain('packages/conductor/src/backlog.ts')
-    // **And the half a reader of the fold alone would miss.** The bar is one
-    // comparison written in two packages: the fold decides what is *filed*, and
+    // **And the half a reader of the reducer alone would miss.** The bar is one
+    // comparison written in two packages: the reducer decides what is *filed*, and
     // `verdictFor` decides what *refuses*. An implementer who follows this
-    // refusal, replaces the fold's literal and stops leaves `verdictFor`
+    // refusal, replaces the reducer's literal and stops leaves `verdictFor`
     // returning `failed` for a major — `StepFailed`, no filing, a fix round
     // bought — under a recipe that reads as honoured. The refusal has to name
     // it, so this asserts it does.
@@ -1161,7 +1161,7 @@ describe('every step × kind cell runs or refuses', () => {
       // a run whose findings are all filed has no refusal to buy one with.
       expect(decideBacklog(filed, bar).buysARound, bar).toBe(false)
     }
-    // And the default is today's fold: a `minor` is filed, a `major` is not.
+    // And the default is today's reducer: a `minor` is filed, a `major` is not.
     expect(decideBacklog([finding('minor')]).buysARound).toBe(false)
     expect(decideBacklog([finding('major')]).buysARound).toBe(true)
   })

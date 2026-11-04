@@ -123,7 +123,7 @@ describe('addBill and totalBill', () => {
     expect(addBill(a, b)).toEqual({ reportedCents: 150, reportedRuns: 2, estimates: [0.5, 0.25], unknown: 3 })
   })
 
-  it('folds every purpose into one bill', () => {
+  it('reduces every purpose into one bill', () => {
     const bills = billOf([
       row({ round: 0, costUsd: 1 }),
       row({ round: 1, costUsd: 2 }),
@@ -198,7 +198,7 @@ describe('unknownBill and withNoSpendFallback', () => {
 
   /**
    * A ticket like `ticket-lingtai-89` whose runs predate `RunSpent`: `billOf`
-   * folds its (empty) rows to five empty bills, which reads as nothing spent
+   * reduces its (empty) rows to five empty bills, which reads as nothing spent
    * rather than as unknown. `withNoSpendFallback` is the one place every
    * reader (the card, `/spend`'s ledger) takes that fallback, credited to
    * Work since neither carries a per-attempt repair flag to split it by.
@@ -249,7 +249,7 @@ describe('unknownBill and withNoSpendFallback', () => {
    * `#509`'s own arithmetic: a continuation's `Action` rows carry the same
    * `pass` as the attempt they continue, so `accounted` stays 1 across both
    * approvals. The bug was `task_view.attempts` reading 2 for this ticket —
-   * fixed in the fold, not here — so this pins that the fallback would have
+   * fixed in the reducer, not here — so this pins that the fallback would have
    * added a phantom unknown run had the count stayed wrong.
    */
   it('adds no unknown run when attempts agrees with the one pass that reported, but does once attempts over-counts', () => {
@@ -267,18 +267,18 @@ describe('unknownBill and withNoSpendFallback', () => {
 
 describe('spendChip', () => {
   /**
-   * `loadBoard`'s empty-tasks path never attempts the fold, so it has no lag
-   * to report — a fact that used to be indistinguishable from a fold that ran
+   * `loadBoard`'s empty-tasks path never attempts the reducer, so it has no lag
+   * to report — a fact that used to be indistinguishable from a reducer that ran
    * and could not read its lag, which sent an operator to rebuild a
    * projection nothing had asked anything of (`#498`'s review).
    */
-  it('reads a skipped fold as nothing spent, never as a failure', () => {
+  it('reads a skipped reduce as nothing spent, never as a failure', () => {
     const chip = spendChip({ lag: null, skipped: true })
     expect(chip).toMatchObject({ current: true, tone: 'idle', label: 'nothing spent' })
     expect(chip.title).not.toContain('rebuild')
   })
 
-  it('still reads a bare null lag as a failure, when the fold was not skipped', () => {
+  it('still reads a bare null lag as a failure, when the reducer was not skipped', () => {
     const chip = spendChip({ lag: null })
     expect(chip).toMatchObject({ current: false, tone: 'warn', label: 'unknown' })
   })

@@ -6,7 +6,7 @@ import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
  * What a queued item is waiting for, and what happens if you press the button.
  *
  * **`queued` is the one state no event carries.** An issue nobody has run has
- * no stream, so there is nothing to fold — being queued is a fact about GitHub
+ * no stream, so there is nothing to reduce — being queued is a fact about GitHub
  * and not about the log ([0012](../../../../doc/decisions-archive/0012-one-task-view.md),
  * `board.ts`). The board's Queued column has asked GitHub since 0022 deleted
  * the cache; this asks the same question about one item, because the detail
@@ -117,7 +117,7 @@ const NOT_OFFERED: Record<SkipReason, string> = {
 /**
  * Where one item stands in the queue, and what taking it would run.
  *
- * Only ever built for an item the fold calls `queued`. Every other state is
+ * Only ever built for an item the reducer calls `queued`. Every other state is
  * describing something that is running or over, and neither the order nor the
  * backoff says anything about those.
  */
@@ -200,14 +200,14 @@ export function planOf(
  * `lastAttemptAt`, which counts a continuation of an unclaimed run as an
  * attempt (D11) — rather than
  * read back off `task_view`: the projection writes `last_attempt_at` from the
- * claim's own timestamp, so this fold and that row cannot disagree (the
+ * claim's own timestamp, so this reduce and that row cannot disagree (the
  * projection learns `TicketContinued` in its own ticket under #681). `repair
  * Pending` is always `false` since #502 — nothing buys a repair since `#143`,
  * and the event the old exemption read (`RepairRequested`) is gone from the
  * catalogue with the log reset this ticket's merge runs, so there is no log
  * left for a pending repair to be read off. The *rule* is still imported —
  * this supplies its arguments and nothing else, which is the split every
- * fold in `task.ts` makes.
+ * reduce in `task.ts` makes.
  */
 export function backoffOf(own: readonly Envelope[], backoffMs: number, now: number = Date.now()): Date | null {
   return heldUntil({ lastAttemptAt: reduceTicket(own).lastAttemptAt, repairPending: false }, backoffMs, now)

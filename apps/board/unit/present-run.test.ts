@@ -8,10 +8,10 @@ import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
-import { foldRun, presentRun } from '../src/lib/task.ts'
+import { presentRunEvents, presentRun } from '../src/lib/task.ts'
 
 const claim: TicketClaim = { runId: 'run-1', at: new Date('2026-08-01T00:00:00.000Z'), ended: null }
-const view = (events: readonly Envelope[]) => foldRun(claim, 1, events)
+const view = (events: readonly Envelope[]) => presentRunEvents(claim, 1, events)
 const stepOf = (events: readonly Envelope[], prefix: string) =>
   view(events).steps.find((s) => s.step.startsWith(prefix))
 

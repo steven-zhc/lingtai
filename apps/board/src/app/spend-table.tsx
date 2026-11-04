@@ -12,7 +12,7 @@ import { billText, PURPOSES, totalBill, type Purpose } from '@/lib/spend'
 
 const PURPOSE_LABEL: Record<Purpose, string> = {
   Work: 'Work',
-  // Its own column and never folded into the one beside it: a default-on
+  // Its own column and never reduced into the one beside it: a default-on
   // agent whose spend is added to the work's is an invisible bill (#84).
   Answering: 'Answering',
   Judge: 'Judge',

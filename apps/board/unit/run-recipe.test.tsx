@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { Attempt, RECORD_TABS } from '../src/app/task/[id]/page.tsx'
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from '../src/lib/recipe.ts'
-import { foldRun, type RunView } from '../src/lib/task.ts'
+import { presentRunEvents, type RunView } from '../src/lib/task.ts'
 
 const RECIPE = `
 version: 2
@@ -68,7 +68,7 @@ const claim: TicketClaim = { runId: RUN, at: new Date('2026-09-16T09:59:00.000Z'
 
 /** A finished run, with `StepsResolved` naming `configHash` — or with none. */
 function runWith(configHash: string | null): RunView {
-  return foldRun(claim, 1, [
+  return presentRunEvents(claim, 1, [
     e('RunStarted', { baseSha: BASE, configHash: configHash ?? 'unrelated' }),
     ...(configHash === null
       ? []

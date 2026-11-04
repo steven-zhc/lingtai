@@ -108,7 +108,7 @@ export interface AnswerOptions {
   question?: string
   /**
    * The wait the caller was shown, and is resolving — checked against the
-   * one currently open rather than trusted from the fold (#465), the same
+   * one currently open rather than trusted from the reducer (#465), the same
    * reason `question` above is. Omitted by the CLI, which reads and resolves
    * inside one command; the board always sends it.
    */
@@ -121,7 +121,7 @@ export interface AnswerOptions {
  * Answers a question asked before a run, and hands the item back to the queue.
  *
  * The same event `requeue` appends — resolving the wait, whose `note` is the
- * answer — and the fold keeps it, so a replay can say what was decided and
+ * answer — and the reducer keeps it, so a replay can say what was decided and
  * every later attempt's prompt carries it. A question that should not have been
  * asked is withdrawn instead — `requeue()`, which writes the unblock
  * `withdrawn` and keeps no answer.

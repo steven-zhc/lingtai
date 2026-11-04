@@ -1074,7 +1074,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * is what `Ceilings.restartsLeft` is.
      */
     const before = yield* Effect.promise(() => store.read(ticketId))
-    const folded = reduceTicket(before)
+    const reduced = reduceTicket(before)
 
     /**
      * **Resuming a held run, read fresh off the log rather than trusted from
@@ -1088,13 +1088,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      */
     const continuation = yield* Effect.promise(async () => {
       if (options.continuing === undefined) return null
-      if (folded.lifecycle.status !== 'approved' || folded.lifecycle.runId !== options.continuing.runId) return null
-      const { waitId: approvedWaitId, onSha: approvedOnSha } = folded.lifecycle
+      if (reduced.lifecycle.status !== 'approved' || reduced.lifecycle.runId !== options.continuing.runId) return null
+      const { waitId: approvedWaitId, onSha: approvedOnSha } = reduced.lifecycle
       const reason = waitsOf(before).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
       const runEvents = await store.read(options.continuing.runId)
       const runState = reduceRun(runEvents)
-      const granted = folded.lifecycle.grantRef !== undefined
+      const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const priorGrant = waitsOf(before).some(
@@ -1116,7 +1116,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * other stops the pass again, and a continuation that remembered
          * only the wait it was itself answering let the first run again
          * unwaived on this very visit, which refused again the same way,
-         * forever. `waivedActionsAt` (`@lingtai/domain/wait`) folds over
+         * forever. `waivedActionsAt` (`@lingtai/domain/wait`) reduces over
          * every `Approve` this item has ever recorded for this run, so both
          * come back together.
          */
@@ -1125,7 +1125,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // The wait this continuation resumes: a fresh UUID per wait, so it is
         // what tells one continuation's judge from the next one's (#580).
         resumedWaitId: approvedWaitId,
-        ...(granted ? { grantRef: folded.lifecycle.grantRef } : {}),
+        ...(granted ? { grantRef: reduced.lifecycle.grantRef } : {}),
         // Only a granted lap: it is one round long, so this reaches the round
         // the person paid for, on the advice of the wait they granted it on (#643).
         ...(granted && grantedAdviceOf(before, adviceWaitId) !== undefined
@@ -1184,7 +1184,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      */
     const cwd = worktreePath(home, project, runId)
 
-    const edit = folded.pendingPrompt
+    const edit = reduced.pendingPrompt
     if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
     // **Not a new attempt — but only for a genuine continuation** (#465). A
     // continuation's own `TicketClaimed` is already on `before`, blocked by
@@ -1240,7 +1240,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const ceilings: Ceilings = {
       rounds: ceiling.rounds,
       restarts: ceiling.restarts,
-      restartsSpent: folded.restarts.length,
+      restartsSpent: reduced.restarts.length,
     }
 
     let released = false
@@ -1833,7 +1833,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * **Why a keep was attempted and left nothing, when it was** (`#468`).
        * `null` on the two outcomes that need no account — a clean tree, and a
        * keep that succeeded — so this is only ever read where a dirty tree's
-       * fate would otherwise go unrecorded anywhere durable: folded into
+       * fate would otherwise go unrecorded anywhere durable: reduced into
        * `RunRefsPublished.detail` by `withWipFailure`, below, never left to the
        * run log alone (0034 §8: a trace, never a record).
        */
@@ -2097,7 +2097,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             wip = { sha: head, parent: wipParent.parent, stoppedBy: wipParent.stoppedBy }
           }
           // **Why a keep found nothing to publish, when it did not** (`#468`):
-          // folded into whichever `RunRefsPublished` row this call ends up
+          // reduced into whichever `RunRefsPublished` row this call ends up
           // writing, so a failed `git add` or `git commit` reaches somewhere
           // durable and not only `runLog.note` (0034 §8 — a trace, never a
           // record).
@@ -2149,8 +2149,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             await dropKept()
             // `headSha` is `head` (the arm's own) only where `branchCarries`
             // is `false` (`doc/design/468.md`) — a typed field, not a
-            // sentence folded into `detail` for the reader to guess the same
-            // thing from. `withWipFailure` folds in a failed keep too, though
+            // sentence reduced into `detail` for the reader to guess the same
+            // thing from. `withWipFailure` reduces in a failed keep too, though
             // the two never coincide: a WIP failure leaves `branchHead` at
             // `head`, so `branchCarries` is `true` there.
             //
@@ -2600,7 +2600,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * sentence** (`#495`, 0110 *Consequences*). `PassRouted.why` is what a
        * person reads beside the arriving step's detail, and a judgement with
        * no price on it is the reading `#98` is about; there is still no
-       * `JudgeAsked` to fold — the route is already the record of what was
+       * `JudgeAsked` to reduce — the route is already the record of what was
        * decided, and what it spent is a `RunSpent` beside it.
        */
       const askTheAgent = (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> =>
@@ -2702,7 +2702,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
         // **Who was asked is part of what it cost** (`#314`). This string is
         // still the whole record of the *decision* — there is no `JudgeAsked`
-        // to fold — and a `judge:` bought from a cheap model is one whose
+        // to reduce — and a `judge:` bought from a cheap model is one whose
         // model has to be readable on `PassRouted.why` afterwards, or the
         // saving is unprovable.
         const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? '' : `, $${outcome.costUsd.toFixed(2)}`}`
@@ -2751,7 +2751,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const chose = chosenIn(outcome.text)
         if (chose === null) {
           // `#462`: a judge's own unreadable answer is `Judged.unreadable`
-          // now, not folded into `held`'s `next: 'waiting'` — it becomes
+          // now, not reduced into `held`'s `next: 'waiting'` — it becomes
           // `JudgeReply.Unreadable` in `replyFor`, which `decideRoute` reads
           // as `UnreadableReply` rather than as a destination somebody chose.
           markFailed()
@@ -3971,7 +3971,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // round's commit and evidence now** — `runStep`'s wrapper around this
         // dispatch writes it once the pipeline reads `fixed` back through
         // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
-        // spend is never folded into a step's own outcome (0110).
+        // spend is never reduced into a step's own outcome (0110).
         await appendNow(runId, [
           runSpentFrom(
             fixed,
@@ -4049,7 +4049,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * The three things a brief is made of reach it three ways, and all three
        * are already facts somebody else made: the ticket is what `claim`'s
        * `queue:` action took and this closure is holding, and the design and the
-       * *why again* are folds over the visit list that `runStep` puts on the
+       * *why again* are reduces over the visit list that `runStep` puts on the
        * context (`designOn`, `sentBackTo` in `pass.ts`). Nothing is remembered
        * twice.
        *
@@ -4560,7 +4560,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
       if (restarted && armIsUp) {
-        const restart = folded.restarts.length + 1
+        const restart = reduced.restarts.length + 1
         const reason = restartReason({
           action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,

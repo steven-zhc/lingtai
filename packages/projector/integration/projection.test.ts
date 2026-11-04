@@ -53,7 +53,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
    * A projection that exists only here.
    *
    * These tests are about the *runner* — catch-up, checkpoints, rebuild
-   * determinism, a failing apply — and not about any particular projection. They
+   * determinism, a failing reduce — and not about any particular projection. They
    * used `guard_trips`, which coupled the store's tests to a projection that was
    * later deleted outright (ADR 0016 §6) and took a day's worth of machinery
    * coverage with it. Owning the subject here means the next deletion cannot.
@@ -74,7 +74,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
     async reset(ctx) {
       await ctx.query(`drop table if exists ${TEST_TABLE}`)
     },
-    async apply(events, ctx) {
+    async reduce(events, ctx) {
       for (const event of events) {
         if (event.type !== 'RunTouchedFile') continue
         const d = event.data as { path: string }
@@ -92,7 +92,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
    *
    * Two counts rather than one, and that is the point of the test: "how often"
    * and "across how many runs" are different questions, and a projection makes
-   * both a plain `select` instead of a fold over thousands of events.
+   * both a plain `select` instead of a reducer over thousands of events.
    */
   async function touchesByPath(): Promise<{ path: string; trips: number; runs: number }[]> {
     return direct((c) =>
@@ -258,7 +258,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
 
     /**
      * The property that makes a projection's shape cheap to change. If these two
-     * ever differ, `apply` depends on something other than the events — and the
+     * ever differ, `reduce` depends on something other than the events — and the
      * "just truncate and replay" story is false.
      */
     it('rebuild produces the same table as the incremental path', async () => {
@@ -305,7 +305,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       const rm = tally.find((t) => t.path === 'rm -rf')
       expect(rm).toBeDefined()
       // Three touches across two runs — the shape of question a projection makes
-      // a plain `select` instead of a fold over thousands of events.
+      // a plain `select` instead of a reducer over thousands of events.
       expect(rm!.trips).toBeGreaterThanOrEqual(3)
       expect(rm!.runs).toBeGreaterThanOrEqual(2)
     })
@@ -324,7 +324,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
         async reset(ctx) {
           await ctx.query('truncate table lingtai_test_boom')
         },
-        async apply(events: readonly Envelope[], ctx) {
+        async reduce(events: readonly Envelope[], ctx) {
           for (const e of events) {
             if ((e.data as { path?: string }).path === 'poison') {
               throw new Error('this projection cannot handle that')

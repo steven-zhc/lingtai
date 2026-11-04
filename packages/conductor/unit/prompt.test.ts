@@ -7,7 +7,7 @@
  * not the one that runs; so what is asserted is that one function produces
  * both, that a person's sentence reaches it, and that the version says so.
  *
- * Unit, under `--project unit`: this is a fold over envelopes plus three
+ * Unit, under `--project unit`: this is a reducer over envelopes plus three
  * string joins, and a composition that needed a database would be the wrong
  * shape.
  */

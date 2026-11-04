@@ -27,7 +27,7 @@ import type { TriageStatus, WaitReason } from '@lingtai/domain/wait'
  * said anything — so *"attempt 2 left no branch; I am reading main"* appears
  * whether or not the answer mentions it. `cannot` is the assistant's own list
  * of what a command would have been needed for, and it is shown at the same
- * weight as the answer rather than folded into it: `#89` cost two attempts
+ * weight as the answer rather than reduced into it: `#89` cost two attempts
  * because an inference was presented as a finding, and this is the page that
  * exists so that does not happen again.
  *
@@ -120,20 +120,20 @@ const HELD: Record<NonNullable<DiscussionView['held']>, string> = {
   none: 'closed',
 }
 
-/** A question this page sent, and how many turns the fold held when it was sent. */
+/** A question this page sent, and how many turns the reducer held when it was sent. */
 export interface Echo {
   question: string
   turns: number
 }
 
 /**
- * The question to echo, or null once the fold holds it.
+ * The question to echo, or null once the reducer holds it.
  *
  * **The person sees their own words land before the log does** (#172). The
  * append is what makes a question real, and it is a round trip and then a
  * re-render away; a box that shows nothing in between reads as a button that did
  * nothing, and the answer to that is to press it again. So the words are shown
- * the moment Ask is pressed, and stop being shown the moment the fold has one
+ * the moment Ask is pressed, and stop being shown the moment the reducer has one
  * more turn than it had then — which is the question, arrived, in its place.
  * Not matched on its text: the same question asked twice is two turns.
  */
@@ -327,7 +327,7 @@ function Thinking({ chatId }: { chatId: string }) {
 }
 
 /**
- * A question this page has sent and the fold does not hold yet. See `echoing`.
+ * A question this page has sent and the reducer does not hold yet. See `echoing`.
  *
  * Says where it is and nothing else: *asking* while the append is in flight,
  * *on the log* once it has returned. What happens to it after that is the
@@ -358,7 +358,7 @@ export function Echoed({ question, busy, following = true }: { question: string;
  *
  * `Enter` asks and `Shift+Enter` is a newline — and `Enter` answers to exactly
  * the guard the button's `disabled` does, because **the failure here costs
- * money**: while `asking…` the fold does not have the conversation yet, so
+ * money**: while `asking…` the reducer does not have the conversation yet, so
  * `open` is null and an `askDiscussion` without a `chatId` opens a second
  * discussion and buys a second agent. An `Enter` that finishes an IME
  * composition is the composition's, not a question — and Safari says so only
@@ -500,7 +500,7 @@ export function Discussion({
    * off: which chats, how many turns each, which of them are answered, and
    * whether a chat has been concluded.
    *
-   * The live trace inside a turn is not in here: it is client state this fold
+   * The live trace inside a turn is not in here: it is client state this reduce
    * never sees, and it has its own bounded scroller (`.chattrace`) that pins
    * itself. What it *does* change is this pane's height — a trace box mounting
    * under an unanswered turn grows the turn by up to 9rem — and that is the
@@ -534,7 +534,7 @@ export function Discussion({
   /**
    * Where the pair starts, handed to `.spair` as `--pair-top` (#173). The pair
    * sits under the bar, the state, the subject, the why and the moves, so a row
-   * as tall as the viewport would put this box's input under the fold and the
+   * as tall as the viewport would put this box's input under the reducer and the
    * moves above it off the top the moment you scrolled to type. The row is the
    * room *under* the moves instead, and CSS alone cannot know how tall they are.
    * Measured again when anything on the page changes size.
@@ -782,7 +782,7 @@ export function Discussion({
                 {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
               </div>
             ))}
-            {/* A first question opens a conversation the fold does not have yet. */}
+            {/* A first question opens a conversation the reducer does not have yet. */}
             {echoed !== null && open === null ? (
               <div className="chatlog">
                 <Echoed question={echoed} busy={busy} following={following} />

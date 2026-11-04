@@ -1,4 +1,4 @@
-/** `splitProgressOf` (#608): the state of a split write, folded off the parent's stream. */
+/** `splitProgressOf` (#608): the state of a split write, reduced off the parent's stream. */
 import { describe, expect, it } from 'vitest'
 
 import type { WaitId } from '../src/action.ts'

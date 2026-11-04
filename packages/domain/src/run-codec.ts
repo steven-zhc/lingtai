@@ -8,7 +8,7 @@
  * themselves, so a shape is defined once. No registry, no version.
  *
  * The first projection to store a run's state is `task_view`, so this lands
- * with it (ADR 0124 §1: a fold's codec lands with the first projection that
+ * with it (ADR 0124 §1: a reducer's codec lands with the first projection that
  * stores its state).
  */
 import { z } from 'zod'
@@ -55,7 +55,7 @@ const Lifecycle = z.discriminatedUnion('status', [
 ])
 
 // Keys in the order the reduce writes them, so a decoded state encodes to the same text as one that never
-// left memory: an incremental fold and a rebuild then store identical rows.
+// left memory: an incremental reduce and a rebuild then store identical rows.
 const StepState = z.strictObject({
   step: z.string(),
   onSha: z.string(),
@@ -111,7 +111,7 @@ export class RunCodecError extends Error {
   override readonly name = 'RunCodecError'
 }
 
-/** 0124 §1's codec for this fold. `bigint` as a string, `Date` as ISO, absent and `null` kept apart. */
+/** 0124 §1's codec for this reduce. `bigint` as a string, `Date` as ISO, absent and `null` kept apart. */
 export function encodeRun(state: RunState): string {
   return JSON.stringify(state, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))
 }

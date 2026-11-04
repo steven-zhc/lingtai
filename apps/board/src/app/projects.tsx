@@ -41,7 +41,7 @@
  * apart in both directions: a board with an App and no repository yet wants
  * the picker, and a board with neither wants step 0. `page.tsx` reads
  * `hasGitHubAuth()` and hands the answer down — `app` means GitHub is reachable
- * (an App, or the `gh` login), not that an App exists — so this stays a fold over its
+ * (an App, or the `gh` login), not that an App exists — so this stays a reducer over its
  * arguments and all three states are assertable without a configured App.
  */
 import Link from 'next/link'
@@ -51,7 +51,7 @@ import Link from 'next/link'
  *
  * Exported and pure for #101's reason: what this claims — *every state can
  * reach the wizard*, *the target follows the App* — are claims about markup,
- * and a fold alone cannot catch a state that renders without the link.
+ * and a reducer alone cannot catch a state that renders without the link.
  */
 export function Projects({ filters, only, app }: { filters: string[]; only: string | undefined; app: boolean }) {
   // Step 0 is create the App, install it, add a repository; once the App

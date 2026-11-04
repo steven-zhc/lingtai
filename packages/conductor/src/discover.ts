@@ -86,7 +86,7 @@ export type TicketSource = Pick<Tickets, 'listOpenIssues' | 'getIssue'>
  * failed to resolve, so the project offered nothing at all instead of offering
  * the kinds it did name.
  *
- * Matched case-insensitively, with whitespace folded to a hyphen, so a recipe
+ * Matched case-insensitively, with whitespace reduced to a hyphen, so a recipe
  * saying `tech-debt` takes an issue labelled `Tech Debt`. Earlier in `kinds`
  * wins when an issue carries two.
  *
@@ -104,7 +104,7 @@ export function kindOf(issue: TicketListing, kinds: readonly string[]): string |
  *
  * Separate from `kindOf` only because the label carries the repository's own
  * colour for that kind (#85) and the matching rule must not be written twice:
- * a second loop that folded whitespace differently would colour a card by a
+ * a second loop that reduced whitespace differently would colour a card by a
  * label the queue did not prioritise it by.
  */
 export function kindLabelOf(

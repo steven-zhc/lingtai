@@ -5,7 +5,7 @@
  * passes, *appended ⊆ declared* and never equality — an event no fixture reaches
  * (`RunContextExhausted`) is declared all the same.
  *
- * **Which step was active** is folded from the log alone, with no change to
+ * **Which step was active** is reduced from the log alone, with no change to
  * production code: envelopes of every stream sorted by `seq` (one counter in
  * `memoryStore`), the step starting at `claim` and moving at each `StepStarted`.
  * `claim`, `end` and routing visits write no `StepStarted` (`pass.ts:1388`), and

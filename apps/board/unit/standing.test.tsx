@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * whole of it* — and about the degradation #83 requires: a block with no
  * diagnosis renders as it does today rather than breaking.
  *
- * The fold is settled by envelopes, the way every fold in `task.ts` is. The
+ * The reducer is settled by envelopes, the way every reduce in `task.ts` is. The
  * rendering is asserted on the markup, for the reason #101 established: the
  * question was never a fact about the payload, it appears in the render.
  */
@@ -27,7 +27,7 @@ import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   currentTriageStatus,
   currentWaitWant,
-  foldRun,
+  presentRunEvents,
   savedFixWork,
   standingOf,
   type StandingView,
@@ -242,8 +242,8 @@ describe('the state, and how long it has held', () => {
 
   it('names the attempt that produced the state, and how many there have been', () => {
     const runs = [
-      foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, []),
-      foldRun(claim(RUN_2, '2026-09-08T06:00:00.000Z'), 2, []),
+      presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, []),
+      presentRunEvents(claim(RUN_2, '2026-09-08T06:00:00.000Z'), 2, []),
     ]
     const standing = standingOf(
       [
@@ -275,7 +275,7 @@ describe('the state, and how long it has held', () => {
 
 describe('the evidence', () => {
   it('carries one line and names the attempt that holds the whole of it', () => {
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
       e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
@@ -321,12 +321,12 @@ describe('the evidence', () => {
    * the gate, says nothing judged the diff, and calls nothing a refusal.
    */
   it("names a step that never ran, rather than an earlier attempt's refusal", () => {
-    const one = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const one = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
       e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
-    const two = foldRun(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
+    const two = presentRunEvents(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_2, 'proposed', 0, [
         verdictAction('build', 'ok', 'accepted'),
@@ -365,12 +365,12 @@ describe('the evidence', () => {
    * One `StepDidNotFinish`, because the action is run once (`#234`).
    */
   it("names a step that did not finish, rather than an earlier attempt's refusal", () => {
-    const one = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const one = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
       e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
-    const two = foldRun(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
+    const two = presentRunEvents(claim(RUN_2, '2026-09-08T04:00:00.000Z'), 2, [
       e(RUN_2, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_2, 'proposed', 0, [
         verdictAction('build', 'ok', 'accepted'),
@@ -402,7 +402,7 @@ describe('the evidence', () => {
   /**
    * The same attempt, two rounds: a refusal the fixer answered, then the quota.
    *
-   * `foldRun` keeps one entry per gate for the whole attempt, so round 1's
+   * `presentRunEvents` keeps one entry per gate for the whole attempt, so round 1's
    * `proposed:test` refusal is still there when round 2's review never runs —
    * and `test` never runs again to replace it. Looking for a refusal first put
    * that stale line, about a commit that is no longer the head, where the quota
@@ -410,7 +410,7 @@ describe('the evidence', () => {
    */
   it("names the step that never ran over an earlier round's refusal in the same attempt", () => {
     const FIXED = 'c'.repeat(40)
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_1, 'proposed', 0, [
         verdictAction('review', 'ok', 'accepted'),
@@ -435,7 +435,7 @@ describe('the evidence', () => {
    * verdict landed. `#89`'s `error_max_turns` is exactly this.
    */
   it("falls back to the attempt's own outcome when no step ever reported", () => {
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunStarted', { baseSha: SHA }),
       e(RUN_1, 'RunFailed', { kind: 'error_max_turns' }),
     ])
@@ -451,7 +451,7 @@ describe('the evidence', () => {
   })
 
   it('steps at nothing when there is nothing that went wrong to step at', () => {
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunStarted', { baseSha: SHA }),
       e(RUN_1, 'RunFinished', { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
     ])
@@ -470,14 +470,14 @@ describe('the evidence', () => {
    * top, *in attempt 1 ↓* on the evidence.
    */
   it('walks back to the attempt that refused when the named one refused nothing', () => {
-    const first = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const first = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'RunProposedCompletion', { headSha: SHA }),
       ...stepEnded(RUN_1, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
       e(RUN_1, 'RunFinished', { turns: 41, durationMs: 600_000, exitCode: 2 }),
     ])
     // The repair, from a log written before `#143` retired the purchase: it
     // finished, cleanly, and produced nothing.
-    const repair = foldRun({ runId: RUN_2, at: new Date('2026-09-08T06:00:00.000Z'), ended: null }, 2, [
+    const repair = presentRunEvents({ runId: RUN_2, at: new Date('2026-09-08T06:00:00.000Z'), ended: null }, 2, [
       e(RUN_2, 'RunStarted', { baseSha: SHA }),
       e(RUN_2, 'RunFinished', { turns: 5, durationMs: 60_000, exitCode: 0 }),
     ])
@@ -514,7 +514,7 @@ describe('the evidence', () => {
  * `WorkItemBlocked.question` is a sentence with a gate's tail appended to it, and
  * a `<p>` collapses its newlines: the block opened with `pnpm -r typecheck` and
  * fifteen workspace projects announcing themselves, flattened into one
- * paragraph. The clip is in the fold rather than in CSS, because a log shortened
+ * paragraph. The clip is in the reducer rather than in CSS, because a log shortened
  * by a rule is still a log rendered as prose.
  */
 describe('the question', () => {
@@ -592,7 +592,7 @@ describe('the move the block ends in', () => {
   it('sends the sha the run is asking about, not the one it produced', () => {
     // #92: they differ the moment a branch is repaired and approval re-requested
     // on a new head, and sending the wrong one refuses what the CLI accepts.
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       ...stepEnded(RUN_1, 'proposed', 0, [signoffAction('human', 'approve?', 'b'.repeat(40))]),
       e(RUN_1, 'RunProducedDiff', { headSha: SHA, branch: 'agent/89', files: 2, insertions: 9, deletions: 1 }),
     ])
@@ -607,7 +607,7 @@ describe('the move the block ends in', () => {
    * Approve refuses every click. The block must not offer one.
    */
   it('has nothing to approve once the approval was spent', () => {
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'ApprovalRequested', { step: 'merge', action: 'human', onSha: SHA }),
       e(RUN_1, 'ApprovalGranted', { step: 'merge', action: 'human', onSha: SHA, by: 'human:steven' }),
     ])
@@ -617,7 +617,7 @@ describe('the move the block ends in', () => {
   })
 
   it('asks nothing of anybody while a run is still in flight', () => {
-    const run = foldRun(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+    const run = presentRunEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'ApprovalRequested', { step: 'proposed', action: 'human', onSha: SHA }),
     ])
     const standing = standingOf([e(ITEM, 'TicketClaimed', { runId: RUN_1 })], [run])
@@ -792,7 +792,7 @@ describe('the block, rendered', () => {
         }),
       ],
       [
-        foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
+        presentRunEvents(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
           ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
         ]),
@@ -835,7 +835,7 @@ describe('the block, rendered', () => {
         }),
       ],
       [
-        foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
+        presentRunEvents(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
           ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('build', TAIL, 'refused')]),
         ]),
@@ -875,7 +875,7 @@ describe('the block, rendered', () => {
         }),
       ],
       [
-        foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
+        presentRunEvents(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
           ...stepEnded(RUN_2, 'proposed', 0, [
             // `agent-gate.ts`'s `summarise` and its turns line.
@@ -922,7 +922,7 @@ describe('the block, rendered', () => {
         }),
       ],
       [
-        foldRun(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
+        presentRunEvents(claim(RUN_2, '2026-09-08T03:00:00.000Z'), 1, [
           e(RUN_2, 'RunStarted', { baseSha: SHA }),
           ...stepEnded(RUN_2, 'proposed', 0, [verdictAction('test', '', 'refused')]),
         ]),
@@ -1177,7 +1177,7 @@ describe('the block, rendered', () => {
   /**
    * #111 §2: the block opened with an entire build log flattened into a
    * sentence, because `<p>` collapses newlines and the question was handed over
-   * verbatim. The fold clips it; this is the assertion that the render does not
+   * verbatim. The reducer clips it; this is the assertion that the render does not
    * put it back.
    */
   it('never renders a log as prose', () => {

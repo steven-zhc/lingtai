@@ -145,10 +145,10 @@ export function GET(request: Request): Response {
             }
             // `id:` is what comes back as Last-Event-ID. The payload is
             // deliberately thin — the board re-reads the projection rather than
-            // trying to fold events client-side, so this only has to say
+            // trying to reduce events client-side, so this only has to say
             // *something changed* and how far the client has got.
             send(`id: ${frame.seq}\nevent: append\ndata: ${JSON.stringify(frame)}\n\n`)
-            // After the burst, not during it. The projector is folding these
+            // After the burst, not during it. The projector is reducing these
             // as they arrive, so the lag worth reporting is the one left when
             // the writing stops.
             clearTimeout(healthSoon)

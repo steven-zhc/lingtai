@@ -101,7 +101,7 @@ export interface ProjectionRunnerOptions {
   /** The store alone, overriding `log.store`. A test's recorder. */
   store?: EventStore
   /**
-   * Where the fold lands, and the checkpoint with it.
+   * Where the reducer lands, and the checkpoint with it.
    *
    * **Nothing chooses here.** Left out, this is whatever `choose.ts` opens from
    * `~/.lingtai/config.yml` — one place, read once (#179). It is an argument so
@@ -132,7 +132,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
   const { projection } = options
   const mine = options.into === undefined
   /**
-   * Where the fold lands: the caller's store, or the one this machine wrote
+   * Where the reducer lands: the caller's store, or the one this machine wrote
    * down — **opened at first use and not at construction**.
    *
    * Lazily because reading the choice is asynchronous (`choose.ts` reaches the
@@ -155,7 +155,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     if (!last) return
     const store = await landing()
     await store.transact(async (ctx: ProjectionContext) => {
-      await projection.apply(events, ctx)
+      await projection.reduce(events, ctx)
       // The whole point: this is not a separate write. Fenced on `cursor`, so a
       // rebuild in any process that rewound the checkpoint refuses this batch
       // rather than have it carried to the head past unfolded history.

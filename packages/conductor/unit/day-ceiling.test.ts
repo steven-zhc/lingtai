@@ -15,7 +15,7 @@ import {
 } from '../src/day-ceiling.ts'
 
 const now = new Date(2026, 9, 26, 14, 0, 0)
-/** A row as the fold stored it: `estimatedUsd` null is unknown. */
+/** A row as the reducer stored it: `estimatedUsd` null is unknown. */
 const today = (costUsd: number | null, estimatedUsd: number | null = null, estimateFetched = false): DayRow => ({
   at: new Date(2026, 9, 26, 9, 0, 0),
   costUsd,
@@ -133,7 +133,7 @@ describe('dayCeilingPause', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
   })
 
-  it('writes the pause with its cause, which is what the fold reads', async () => {
+  it('writes the pause with its cause, which is what the reducer reads', async () => {
     const store = createMemoryEventStore()
     await check([today(60)], store)
     const [pause] = await store.read(CONTROL_STREAM)
@@ -324,7 +324,7 @@ describe('unknownWhy', () => {
     expect(day.unknownWhy).toEqual([])
   })
 
-  it('names no model for a row a later snapshot prices, since which one the fold lacked is not known', () => {
+  it('names no model for a row a later snapshot prices, since which one the reducer lacked is not known', () => {
     const rate = { mode: '', from: '2026-10-01', input: 1, output: 2, cacheRead: null, cacheWrite: null }
     const snapshot: RateRow[] = [
       { model: 'model-a', ...rate },

@@ -53,7 +53,7 @@ describe('usageFromModelUsage', () => {
    * asked for.** A call that billed a second, smaller model would otherwise
    * have that model's tokens priced at the first model's rate.
    */
-  it('keeps two billed models as two entries rather than folding them together', () => {
+  it('keeps two billed models as two entries rather than reducing them together', () => {
     const usage = usageFromModelUsage({
       'claude-opus-5-5': { inputTokens: 2, outputTokens: 4 },
       'claude-haiku-4-5': { inputTokens: 100, outputTokens: 1 },

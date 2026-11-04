@@ -197,7 +197,7 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
  * the one that did not is the one whose length a model chose.
  *
  * An event is read far more often than it is written: `task_view` and
- * `finding_backlog` are folds, so an unbounded string is carried again on every
+ * `finding_backlog` are reduces, so an unbounded string is carried again on every
  * rebuild.
  *
  * **These numbers and not `runtime.budget.evidence`**, which is a different

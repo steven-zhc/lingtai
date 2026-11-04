@@ -31,10 +31,10 @@ import {
 import { allowedResolutions, triageStatus, type RunRef, type TriageStatus, type WaitReason } from '@lingtai/domain/wait'
 import { hasGitHubAuth } from '@lingtai/env'
 /**
- * One task, folded from its streams on demand.
+ * One task, reduced from its streams on demand.
  *
  * Nothing here is maintained in a table. A detail view is read rarely, by one
- * person, about one task — folding a few dozen events on the spot is
+ * person, about one task — reducing a few dozen events on the spot is
  * imperceptible, and it means what this shows can change without a migration or
  * a rebuild ([0012](../../../../doc/decisions-archive/0012-one-task-view.md)).
  *
@@ -60,10 +60,10 @@ import { hasGitHubAuth } from '@lingtai/env'
  * It also asks GitHub one question — what the ticket says — for the same
  * reason the board's Queued column does (`board.ts`): the issue body and its
  * labels are facts about GitHub and not about the log, so there is nothing to
- * fold for them. That question is allowed to fail, and its failure is a line
+ * reduce for them. That question is allowed to fail, and its failure is a line
  * on the page rather than an absence (#76).
  *
- * The folds below take envelopes and return plain data, so what this page
+ * The reducers below take envelopes and return plain data, so what this page
  * *says* about a run is testable without a database — the same split
  * `history.ts` makes one level down.
  */
@@ -277,15 +277,15 @@ export interface RunView {
   /**
    * The recipe the page shows beside this attempt's gate actions, and whether
    * it is provably this run's — see `RunRecipe`. Absent where nothing asked:
-   * a fold on its own has no GitHub to ask, and `loadTask` fills it in.
+   * a reducer on its own has no GitHub to ask, and `loadTask` fills it in.
    */
   recipe?: RunRecipe
   /** From `RunFinished`. Null until it lands, and for a run that never got there. */
   turns: number | null
   /**
-   * Every purpose's bill folded into one, over the `spend` rows whose `pass`
-   * is this run's own stream (`#498`). `foldRun` cannot read it — there is no
-   * database inside a pure fold — so it returns an empty bill here and
+   * Every purpose's bill reduced into one, over the `spend` rows whose `pass`
+   * is this run's own stream (`#498`). `presentRunEvents` cannot read it — there is no
+   * database inside a pure reduce — so it returns an empty bill here and
    * `loadTask` fills it in, the same way it fills in `recipe`.
    */
   costUsd: Bill
@@ -301,7 +301,7 @@ export interface RunView {
    * Not `headSha`, which is what the run *produced*: a branch repaired and
    * approval re-requested moves this and leaves that where it was, and sending
    * the wrong one is an Approve that refuses what `lingtai approve` accepts
-   * (#92). The same rule `task_view.awaiting_sha` folds, read off the run's own
+   * (#92). The same rule `task_view.awaiting_sha` reduces, read off the run's own
    * stream because that is where the approval events land.
    */
   awaitingSha: string | null
@@ -311,14 +311,14 @@ export interface RunView {
    * one verdict per action, and the phase in flight with its bound. Null for a
    * claim whose stream is empty: there is no start to measure from.
    *
-   * **`progress.ts`'s fold, and not one of this file's.** This used to be
-   * `points: PointView[]`, a second fold over the same events that had
+   * **`progress.ts`'s reduce, and not one of this file's.** This used to be
+   * `points: PointView[]`, a second reduce over the same events that had
    * `skipped`, *has verdicts* and *fewer verdicts than planned* — and so no
    * `running` and no `never-ran`. It cited 0016 §4 and could not keep it: a
    * point configured and never run arrived as `N pending`, the word for *not
    * reached yet* (#189). With the rail on this page `PointView` had no reader
    * left that `RunProgress` does not serve better, so it went rather than
-   * stayed a second opinion — two folds over one stream is how they came
+   * stayed a second opinion — two reduces over one stream is how they came
    * apart.
    */
   progress: RunProgress | null
@@ -334,7 +334,7 @@ export interface RunView {
  *
  * **Five bills, not two.** *Answering* is apart from *Work* for the reason
  * the board keeps it apart (#84): a repair was default-on and spent an agent
- * without being asked again, so folding the two into one figure is exactly
+ * without being asked again, so reducing the two into one figure is exactly
  * the invisible bill. *Judge* and *Triage* are new here — `task_view` never
  * carried either — and *Discussion* is apart from the attempts' for the
  * reason it always was: discussions come out of the same budget, and 0033 §4
@@ -382,7 +382,7 @@ export interface Deciding {
 export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed' | 'approved'
 
 /**
- * The word the page draws for a state. `blocked` is the fold's value for an item
+ * The word the page draws for a state. `blocked` is the reducer's value for an item
  * a person must answer, and drawn big it read as a fault on a pass that was held
  * for approval exactly as the recipe asked — the page's own prose already says
  * `waiting on you` (`whoWaits`). A `Record`, so a seventh state cannot fall back
@@ -415,7 +415,7 @@ export function stateWord(state: StandingState): string {
  * second is not an annotation on the first — *blocked* and *blocked for four
  * days* are different facts, and only the second is an emergency.
  *
- * Folded from the item's own stream through `applyTicket`, so the word here
+ * Reduced from the item's own stream through `reduceTicketEvent`, so the word here
  * is the aggregate's and not a second opinion about it. What the log cannot
  * say — the diagnosis, the recommendation — is null until #83 writes one, and
  * the block renders without it.
@@ -531,13 +531,13 @@ export interface StandingView {
   /**
    * How many approaches this ticket has abandoned, and the ceiling of the
    * arm that bought it — `item.restarts.length` and the last record's `of`,
-   * read off `applyTicket` rather than refolded here (`#415`).
+   * read off `reduceTicketEvent` rather than re-reduced here (`#415`).
    *
    * The same two numbers `TaskCard.restarts`/`.restartsOf` carry, so the
    * page's own `held` line and the board's cannot word one ticket's budget
    * two ways. **`restartsOf` is zero regardless of `restarts`, since `#502`**
    * — `TicketReleased{cause: Restart}` carries `{after, restart}` alone, so
-   * there is no ceiling left on any event for this fold to read, however
+   * there is no ceiling left on any event for this reduce to read, however
    * many times the ticket has restarted. `describeArm` (#504) no longer
    * reads this column at all — every caller passes the recipe's own
    * `limits.restarts` as the ceiling directly — and `describeHeld` falls
@@ -637,7 +637,7 @@ function refusalOn(run: RunView): Deciding | null {
    * red line at the top of a page whose actual answer is that the account ran
    * out. The line says nothing judged the diff, and names no refusal.
    *
-   * **Before the refusals, not after.** `foldRun` keeps one entry per gate for
+   * **Before the refusals, not after.** `presentRunEvents` keeps one entry per gate for
    * the whole attempt, so a `failed` from an earlier round of the same pass is
    * still in `run.gates` — about a commit that is no longer the head. A gate
    * that never ran is always the last thing a pass did (the pipeline and the
@@ -760,7 +760,7 @@ function whoWaits(life: TicketLifecycle): string {
     case 'blocked':
       // The two a person can tell apart at a glance (#147): nothing has run, or
       // a run is holding something. `describeWait` words the card's chip the
-      // same way; this page has the fold rather than the row, so it asks it.
+      // same way; this page has the reducer rather than the row, so it asks it.
       if (life.reason._tag === 'OwnQuestion') return 'waiting for your answer'
       return 'waiting on you'
     case 'claimed':
@@ -781,7 +781,7 @@ function whoWaits(life: TicketLifecycle): string {
 /**
  * The state, since when, and which attempt produced it. See `StandingView`.
  *
- * Pure, and given the runs rather than reading them, for the reason every fold
+ * Pure, and given the runs rather than reading them, for the reason every reduce
  * in this file is: what the page *says* about a stopped item is settled by
  * envelopes and nothing else.
  */
@@ -811,7 +811,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
       })
     : null
   const raw = words?.diagnosis?.raw ?? null
-  // The last person's move and what followed it are the fold's (`TicketState.lastMove`), not a rescan.
+  // The last person's move and what followed it are the reducer's (`TicketState.lastMove`), not a rescan.
   const m = item.lastMove
   const live = m !== null && m.current
   const closed = live && m.then?.kind === 'closed' && life.status === 'closed' && m.resolution._tag === 'Close'
@@ -954,7 +954,7 @@ export interface TaskDetail {
    * Where it is in line and what taking it would run — and null in every other
    * state.
    *
-   * The one thing on this page that is not a fold, for the reason the board's
+   * The one thing on this page that is not a reducer, for the reason the board's
    * Queued column is not one: an issue nobody has run has no stream, so being
    * queued is a fact about GitHub (0012). See `queued.ts`.
    */
@@ -1025,12 +1025,12 @@ export interface DiscussionView {
 }
 
 /**
- * One `chat-<id>` stream, folded.
+ * One `chat-<id>` stream, reduced.
  *
- * Pure, like every other fold here, so what the panel *says* about a
+ * Pure, like every other reduce here, so what the panel *says* about a
  * conversation is testable without a database.
  */
-export function foldChat(chatId: string, events: readonly Envelope[], held: DiscussionView['held']): DiscussionView {
+export function presentChat(chatId: string, events: readonly Envelope[], held: DiscussionView['held']): DiscussionView {
   const chat = reduceChat(events)
   return {
     chatId,
@@ -1084,7 +1084,7 @@ export function chatIdsFor(
 /**
  * One attempt, drawn from the run's `RunState` and the claim that opened it.
  *
- * There is no second fold of the run stream here: `reduceRun` is the one, and
+ * There is no second reducer of the run stream here: `reduceRun` is the one, and
  * this is a drawing of what it holds. Joined from outside are the claim (when
  * it was opened, why it was released) and `progress`, which needs the recipe's
  * plan and whether this attempt landed — neither is on the stream.
@@ -1120,7 +1120,7 @@ export function presentRun(
     headSha: state.headSha,
     configHash: state.resolved?.configHash ?? null,
     turns: state.receipt?.turns ?? null,
-    // Filled in by `loadTask`, from `spend` — this fold has no database to
+    // Filled in by `loadTask`, from `spend` — this reduce has no database to
     // read it off (0110 §13: `RunFinished` stopped being a spend source).
     costUsd: emptyBill(),
     durationMs: state.receipt?.durationMs ?? null,
@@ -1144,7 +1144,7 @@ export function presentRun(
 }
 
 /** `presentRun` for a caller holding events rather than a state. */
-export function foldRun(
+export function presentRunEvents(
   claim: TicketClaim,
   attempt: number,
   run: readonly Envelope[],
@@ -1207,7 +1207,7 @@ function outcomeOf(state: DomainRunState, claim: TicketClaim, held: boolean, bra
  *
  * **A run that contributed not one `Action` row is unknown, never free**
  * (0110 §7): `ticket-lingtai-89`'s two attempts predate `RunSpent`, so `rows` is
- * empty and `billOf([])` folds to five empty bills — which reads as nothing
+ * empty and `billOf([])` reduces to five empty bills — which reads as nothing
  * spent, the defect this ticket exists to remove. Credited to Work, the
  * purpose `billOf` gives a row that did arrive.
  */
@@ -1349,9 +1349,9 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
   if (!parsed) return null
   const { project, issue } = parsed
 
-  const folded = reduceTicket(own)
-  const { title, kind } = folded
-  const labels = [...folded.labels]
+  const reduced = reduceTicket(own)
+  const { title, kind } = reduced
+  const labels = [...reduced.labels]
 
   const state = await loadProject(project).catch(() => null)
   const base = { project, ref: issue, title, kind, labels, compareUrl: null as string | null }
@@ -1530,7 +1530,7 @@ export function currentWaitWant(own: readonly Envelope[], standing: StandingView
   return status._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
 }
 
-/** A projected triage belongs on the page only while it names the folded current wait. */
+/** A projected triage belongs on the page only while it names the reduced current wait. */
 export function currentTriageStatus(
   standing: StandingView,
   card: Pick<TaskCard, 'wait' | 'triage' | 'triageHeadSha'> | null,
@@ -1575,13 +1575,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // database reads and the other is two calls to GitHub, and the page waits for
   // the slower of the two instead of for both.
   //
-  // The control stream is read for the seven types the fold handles only: it
+  // The control stream is read for the seven types the reducer handles only: it
   // also holds a `Reconciled` per daemon start, 22 KB each and never read here
   // (#796). It is here
   // because a discussion that has not been concluded exists only as a request
   // on it — the work item learns about the conversation when it ends (0033 §6).
   // `spend` beside the rest, for the same reason: this ticket's whole bill,
-  // read once rather than per run or per discussion (`#498`). Folded to the
+  // read once rather than per run or per discussion (`#498`). Reduced to the
   // head first, the way `loadBoard`'s card read does — a bare read left the
   // task page and the board reading two different currencies of the same
   // money (`#498`'s review).
@@ -1604,15 +1604,15 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // been asked rather than before. See `exists`.
   if (!exists(own, ticket)) return null
 
-  // Each stream is folded once; everything below draws from these states.
+  // Each stream is reduced once; everything below draws from these states.
   const states = claims.map((_, i) => reduceRun(streams[i] ?? []))
   // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
   const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
-  const folded = claims.map((c, i) =>
+  const reduced = claims.map((c, i) =>
     presentRun(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
   )
-  const attempts = new Map(folded.map((r) => [r.runId, r.attempt]))
+  const attempts = new Map(reduced.map((r) => [r.runId, r.attempt]))
 
   const conductor = reduceControl(control)
   const chats = chatIdsFor(conductor.discussions, ticketState.discussions, taskId)
@@ -1622,9 +1622,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
           desc: String(chats.length),
         })
       : []
-  const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
+  const discussions = chats.map((c, i) => presentChat(c.chatId, chatStreams[i] ?? [], c.held))
 
-  const foldedStanding = standingOf(own, folded)
+  const foldedStanding = standingOf(own, reduced)
   const keptAt = foldedStanding.unpushed?.keptAt
   const unpushedMirror =
     keptAt?._tag === 'Mirror' && ticket !== null
@@ -1747,22 +1747,22 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     (standing.state === 'running' || standing.state === 'blocked') && ticket !== null
       ? timed('next.plan', () => planFor(ticket.project))
       : undefined,
-    ticket !== null ? recipesFor(ticket.project, folded) : new Map<string, RunRecipe>(),
+    ticket !== null ? recipesFor(ticket.project, reduced) : new Map<string, RunRecipe>(),
   ])
   const plan = planAndLimits?.plan
   const limits = planAndLimits?.limits ?? null
 
-  // The last attempt folded again with what only this function holds. **Only
+  // The last attempt reduced again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
   // released or refused, and its later points recorded nothing because nothing
   // should have run in them — the same line `RailCandidate.over` holds, and
   // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
-  const last = folded.length - 1
+  const last = reduced.length - 1
   const landed = standing.state === 'landed'
   const runs = (
     last >= 0 && (landed || plan !== undefined)
-      ? folded.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
-      : folded
+      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
+      : reduced
   ).map((r) => {
     const recipe = recipes.get(r.runId)
     // This attempt's own spend: the rows whose `pass` is this run's stream —
@@ -1775,7 +1775,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     return recipe ? { ...r, recipe, costUsd } : { ...r, costUsd }
   })
 
-  // The run the state names, folded with the recipe's bounds above — the same
+  // The run the state names, reduced with the recipe's bounds above — the same
   // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
   // is nothing to spend yet, or the run that is running will not say.
   const named = runs.find((r) => r.runId === standing.runId)?.progress ?? null

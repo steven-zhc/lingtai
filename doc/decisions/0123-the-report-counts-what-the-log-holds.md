@@ -6,7 +6,7 @@ The report says, for a window of time and a project, how many tickets the
 pipeline resolved, and for each landed ticket how many passes, fix rounds and
 waits it took, how long the machine worked on it and what it cost. It also lists
 the tickets that went round most, and where each one's money went. Every number is read
-from events already on the log, folded into one row per ticket by a
+from events already on the log, reduced into one row per ticket by a
 projection, `ticket_report`, so the report page only aggregates rows. No event
 is written for the report. Time spent waiting on a person is not counted. The
 explanation of such a ticket is assembled from recorded facts and costs
@@ -126,7 +126,7 @@ The operator's decisions in epic #648 are the inputs here.
    - **spend in the window: every run whose `at` falls inside it**, whatever
      its ticket's outcome, read from `spend` by run day, the same basis as the
      spend-per-day chart, so the tile is the sum of the chart's bars. The kind
-     filter narrows it by the kind `spend` recorded on each run when it folded
+     filter narrows it by the kind `spend` recorded on each run when it reduced
      it (0110 §11): a ticket relabelled between passes has its spend split
      across its kinds, which is rare and accepted. Money spent
      on work that never landed is in it, which is the number an operator most
@@ -138,7 +138,7 @@ The operator's decisions in epic #648 are the inputs here.
      the window, from `spend` by the kind it recorded per run. Kinds converge
      differently: on 2026-10-27, 15% of landed `feature` tickets needed 5 or
      more rounds against 0% of `tech-debt`;
-   - the unknown count beside every dollar figure, never folded into it as zero
+   - the unknown count beside every dollar figure, never reduced into it as zero
      (0110 §5, 0122 §5). Unreported rows are priced when a rate card exists
      (#645) and shown as estimated, never as reported.
 
@@ -160,7 +160,7 @@ The operator's decisions in epic #648 are the inputs here.
    The sentence is a template filled from the table above. No model writes it,
    and nothing in it is a claim the facts beside it cannot check.
 
-5. **Lessons are not the report's.** Numbers are a fold of the log; a judgement
+5. **Lessons are not the report's.** Numbers are a reducer of the log; a judgement
    about what to learn from a ticket is paid work. That work is an optional
    agent plugin at `end:` (a *retro*), off unless a recipe declares it, which
    reads a landed ticket's record and writes its observations. Its design, what
@@ -173,16 +173,16 @@ The operator's decisions in epic #648 are the inputs here.
    facts of §2 (outcome and its time, passes, fix rounds, reviews with their
    rounds, times and blocking counts, waits with their
    reasons and resolutions, machine time, cost by purpose, unknown count, and
-   the time of every pass, so a window can place an open ticket). It is a fold
+   the time of every pass, so a window can place an open ticket). It is a reducer
    and nothing else, kept current by the projector every appending process
    already holds (0022), and corrected only by
-   `lingtai projection rebuild ticket_report`. **It folds the log itself and
+   `lingtai projection rebuild ticket_report`. **It reduces the log itself and
    never reads another projection's table**, for the reason `spend` gives (`spend.ts:22-24`):
-   each projection is at its own checkpoint. So it folds `RunSpent` directly,
+   each projection is at its own checkpoint. So it reduces `RunSpent` directly,
    linking each to its ticket by the same rule `spend` uses (the pass stream's
    claim, the ticket stream, a discussion's request), and the two can be rebuilt
    apart. **Money is stored, as 0110 §5 allows**: per ticket and per purpose,
-   the reported `costUsd` summed, the estimate summed (priced in this fold at
+   the reported `costUsd` summed, the estimate summed (priced in this reduce at
    the rate of each run's own day), and the count of runs with neither, three
    columns never added into one. **Spend by day is `spend`'s question and spend
    per ticket is this one's**: the window's spend tile and the spend-per-day
@@ -192,7 +192,7 @@ The operator's decisions in epic #648 are the inputs here.
    **A second fetch on the same day may replace that day's price**
    (`mergeSnapshot`, `packages/domain/src/rate-card.ts:231`), which happens
    only when a conductor restarts on a day the upstream price changed. Rows
-   already folded keep the earlier estimate and a rebuild would use the later
+   already reduced keep the earlier estimate and a rebuild would use the later
    one. That is accepted: an estimate is not a bill, and rebuilding everything
    for it is not worth the time. The board's `/report` page and `lingtai
    report` aggregate its rows (and `spend`'s, for spend by day) for the window
@@ -236,7 +236,7 @@ The operator's decisions in epic #648 are the inputs here.
   does not. *Passes* measures how often the pipeline had to start over or be
   helped, not how many restarts it chose.
 - One more projection means a table, a checkpoint and a rebuild on both stores
-  (Postgres and SQLite), and a fold that has to be kept in step with the events
+  (Postgres and SQLite), and a reducer that has to be kept in step with the events
   it reads. That is the price of a report page that does not read the whole log
   on every request.
 - Changing what a fact counts is a code change plus one rebuild, never a
@@ -261,7 +261,7 @@ does not extend it: where the mockup and this text differ, this text is the
 decision. In particular it prices runs from before a model's first fetched price
 at that first price, which is #678 and not yet built; it puts a ticket's whole
 cost on its landing day, where §6 takes spend per day from `spend` by each run's
-day; it counts an approval's continuation as a pass; and it folds the Triage and
+day; it counts an approval's continuation as a pass; and it reduces the Triage and
 Discussion purposes into one series to keep the chart to four colours.
 
 ---

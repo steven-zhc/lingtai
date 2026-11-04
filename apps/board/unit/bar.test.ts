@@ -6,7 +6,7 @@
  * #86, `0025 §2`, #64, #98 — and none of those arguments was about the row
  * ([the-bar.md](../../../doc/design/the-bar.md)).
  *
- * Two things are asserted here rather than in the page, because both are folds
+ * Two things are asserted here rather than in the page, because both are reduces
  * and neither is a matter of taste. **The health dot is one indicator over two
  * independent facts**, and the thing a later edit can silently get wrong is the
  * order they are weighed in and whether the one that loses is still reachable.
@@ -48,12 +48,12 @@ const level: CodeNews = {
 }
 
 /**
- * Every branch of the fold, once — the list the two properties below are
+ * Every branch of the reducer, once — the list the two properties below are
  * quantified over.
  *
  * Written out rather than generated, so adding a branch to `bearing()` without
  * adding it here is a visible omission in a diff. The two at the top are the
- * ones a fold loses first, because they are about the stream and the fold is
+ * ones a reducer loses first, because they are about the stream and the reducer is
  * about the board: nothing in them mentions the daemon, and that is exactly why
  * they stopped carrying what it is running.
  */
@@ -82,7 +82,7 @@ describe('the health dot', () => {
   })
 
   /**
-   * `#64` and `#98` were two chips and are one dot. Folding them must not make
+   * `#64` and `#98` were two chips and are one dot. Reducing them must not make
    * either unreachable, so whichever is not the headline is in the title —
    * which is the property that is easy to drop and impossible to see.
    */
@@ -104,7 +104,7 @@ describe('the health dot', () => {
   })
 
   /**
-   * Worst first. A projection nobody is folding is the board lying about the
+   * Worst first. A projection nobody is reducing is the board lying about the
    * very thing the newer code would be doing, so it beats stale code — and it
    * still says how to fix it.
    */
@@ -150,9 +150,9 @@ describe('the health dot', () => {
    * stream and a board that has not answered yet are exactly when somebody
    * wants to know what the daemon is running, and they are the two the old
    * separate `Stale` chip still rendered in — a chip does not know what its
-   * neighbour is doing, and a fold does.
+   * neighbour is doing, and a reducer does.
    *
-   * This is the property the fold can lose in silence: the title is on hover,
+   * This is the property the reducer can lose in silence: the title is on hover,
    * so nothing on screen changes when a branch stops carrying it.
    */
   it("keeps the daemon's code reachable in every state, not only the ones about it", () => {
@@ -422,7 +422,7 @@ describe('the spend the bar handed to a page', () => {
    * **What is printed adds up.** Three repositories at $0.005 each print $0.01
    * apiece; a footer summed over the cards and rounded on its own prints $0.01
    * too — under a column that reads $0.03. The page's comment said that could
-   * not happen, and it could, because the rows and the footer were two folds.
+   * not happen, and it could, because the rows and the footer were two reduces.
    * They are one now, because `billOf` rounds each row to the cent exactly
    * once, whichever way the rows are grouped.
    */

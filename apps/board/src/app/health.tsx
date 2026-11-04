@@ -9,7 +9,7 @@
  * ([the-bar.md](../../../../doc/design/the-bar.md)), and two boxes for one
  * question is two things to learn to read on a rail that is glanced at.
  *
- * They are one dot now. Neither fact is folded *away*: `bearing.ts` keeps both
+ * They are one dot now. Neither fact is reduced *away*: `bearing.ts` keeps both
  * in the title in every state, and whichever one is wrong is the sentence
  * beside the dot. What is gone is the second box.
  *

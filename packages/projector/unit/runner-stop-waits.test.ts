@@ -29,7 +29,7 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
       name: 'probe',
       create: async () => {},
       reset: async () => {},
-      apply: async (events) => {
+      reduce: async (events) => {
         entered()
         await hold
         applied.push(...events.map((e) => e.seq))

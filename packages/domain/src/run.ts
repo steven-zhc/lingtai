@@ -25,8 +25,8 @@ import type { Finding, Step } from './vocabulary.ts'
  * `never-ran` is not a verdict about the diff, and is here because the absence
  * of one has to be readable ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)
  * §1, one layer up). The gate's agent never started — a quota, a signed-out
- * runtime — so nothing was judged. Folding it into `failed` is what `#133` is
- * about; folding it into `passed` would be worse.
+ * runtime — so nothing was judged. Reducing it into `failed` is what `#133` is
+ * about; reducing it into `passed` would be worse.
  *
  * `did-not-finish` is the neighbouring absence
  * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1): the
@@ -148,7 +148,7 @@ export interface RunState {
    * which — whether the run is over is `lifecycle`'s to say.
    */
   step: { step: Step; round: number; since: Date } | null
-  /** The `at` of the first event folded, whatever its type. Set once. */
+  /** The `at` of the first event reduced, whatever its type. Set once. */
   openedAt: Date | null
   /** The `at` of the last `RunStarted`. */
   agentStartedAt: Date | null
@@ -376,7 +376,7 @@ function stepStateOf(key: string, action: Reached): StepState {
   }
 }
 
-export function applyRun(state: RunState, event: Envelope): RunState {
+export function reduceRunEvent(state: RunState, event: Envelope): RunState {
   const at = { version: event.version, lastSeq: event.seq, openedAt: state.openedAt ?? event.at }
 
   switch (event.type) {
@@ -587,5 +587,5 @@ export function savedHeadOf(state: RunState): SavedHead {
 }
 
 export function reduceRun(events: readonly Envelope[]): RunState {
-  return events.reduce(applyRun, emptyRun)
+  return events.reduce(reduceRunEvent, emptyRun)
 }

@@ -13,11 +13,11 @@
  * exactly: an interface, two implementations beside each other, and a contract
  * (`test/contract.ts`) that neither of them owns deciding whether they agree.
  *
- * ## The beacon is not a fold, and that is the whole reason this is its own file
+ * ## The beacon is not a reducer, and that is the whole reason this is its own file
  *
  * `control.ts` says it: `daemon_status` is *the only mutable operational state
  * in the system*. Everything else Lingtai keeps is append-only — the log — or a
- * fold of it — the projections. **The beacon is written over.**
+ * reducer of it — the projections. **The beacon is written over.**
  *
  * So the contract here asserts what a mutable row has to be true about, and
  * none of it transfers from the event store's:
@@ -54,7 +54,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 /**
  * A projection that stopped alone, as the beacon carries it (#839).
  *
- * The checkpoint is the exact fact: every event up to it is folded, none after.
+ * The checkpoint is the exact fact: every event up to it is reduced, none after.
  * `null` where the read that would have dated it failed — an undated entry says
  * more than a missing one.
  */
@@ -149,8 +149,8 @@ export interface Beat {
  *
  * `reconcile` wants the work items some conductor has claimed, within the
  * projects it knows; `converge` wants every work item the log has moved at all.
- * Both are *find the streams*, and neither is a fold — they exist so that the
- * fold that follows reads a handful of streams rather than the whole log.
+ * Both are *find the streams*, and neither is a reducer — they exist so that the
+ * reduce that follows reads a handful of streams rather than the whole log.
  */
 export interface StreamQuery {
   /** `ticket-lingtai-%` — matched as SQL `like`, so `%` is the wildcard. */
@@ -160,7 +160,7 @@ export interface StreamQuery {
 }
 
 /**
- * Everything the daemon reads and writes that is not a fold: the beacon, the
+ * Everything the daemon reads and writes that is not a reducer: the beacon, the
  * log its control stream lives in, and the two questions it asks of that log
  * which `EventStore` does not answer.
  */

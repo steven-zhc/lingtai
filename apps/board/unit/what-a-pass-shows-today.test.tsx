@@ -68,9 +68,9 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * is `[]` for this run; `loadTask` reads a run's own stream
  * only through `streams = claims.map((c) => eventStore.read(c.runId))`
  * (`task.ts:1485`), so that stream is never read, and `progressOf` is never
- * called for it either (`task.ts:1541-1542` gates on `folded.length - 1 >=
- * 0`, and `folded = claims.map(...)` is `[]`). `history: groupHistory([...own,
- * ...streams.flat()], attempts)` (`task.ts:1578`) therefore folds `own`
+ * called for it either (`task.ts:1541-1542` gates on `reduced.length - 1 >=
+ * 0`, and `reduced = claims.map(...)` is `[]`). `history: groupHistory([...own,
+ * ...streams.flat()], attempts)` (`task.ts:1578`) therefore reduces `own`
  * alone — empty for rows 15 and 15b, whose item stream carries nothing of
  * this run's (row 15b's item stream does carry a `TicketClaimed`, but by
  * `pass-somebody-else`, left out here per the note on `RUN_15b` below rather
@@ -80,7 +80,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * for this run — either would pin a page view this ending never produces.
  *
  * **Rows 4 and 16 pin no strip either, for the same reason.** Both items end
- * on `TicketReleased`, which `ticket.ts:329` folds to `lifecycle.status:
+ * on `TicketReleased`, which `ticket.ts:329` reduces to `lifecycle.status:
  * 'backlog'` and `standingOf` reports as `'queued'` (`task.ts:692`).
  * `loadTask` calls `planFor` only for `'running'` or `'blocked'`
  * (`task.ts:1525-1527`), so `plan` stays `undefined`; `landed` is `false`

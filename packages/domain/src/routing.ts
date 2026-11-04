@@ -265,7 +265,7 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
 /**
  * **0120 §3's `decideRoute`: a reply read against the offer it answers, and
  * only that offer.** Never the policy or what was spent — those are already
- * folded into `available`/`unavailable`, and re-reading them here would be a
+ * reduced into `available`/`unavailable`, and re-reading them here would be a
  * second judgement of the ceiling `offerFor` already made.
  */
 export function decideRoute(offer: RouteOffer, reply: JudgeReply): RouteDecision {

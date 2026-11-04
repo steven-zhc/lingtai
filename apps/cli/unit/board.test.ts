@@ -373,7 +373,7 @@ describe('lingtai board restart', () => {
 })
 
 describe('lingtai board status', () => {
-  it('answers three questions and folds none of them into another', async () => {
+  it('answers three questions and reduces none of them into another', async () => {
     const w = world({ holder: `board on ${PORT} pid 500 on mac`, answering: async () => URL, keeper: () => KEPT })
     expect(await w.go('status')).toBe(0)
     const said = w.out.join('\n')

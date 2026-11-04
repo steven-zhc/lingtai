@@ -96,7 +96,7 @@ export interface SplitTicketOptions {
   by: string
   /**
    * This board process's id, for `SplitStarted`: a writer whose instance is not
-   * the asker's has gone, and the fold reads it as interrupted. Make it once per
+   * the asker's has gone, and the reducer reads it as interrupted. Make it once per
    * process and cache it on `globalThis` — a module-level `randomUUID()` is
    * re-evaluated by Next's dev HMR, and a running write would read as
    * interrupted to its own page.

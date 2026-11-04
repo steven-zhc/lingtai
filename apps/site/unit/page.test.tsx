@@ -21,7 +21,7 @@ async function prose(): Promise<string> {
   return page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 }
 
-/** The source with its line breaks and indentation folded to single spaces, so a sentence can be looked for whole. */
+/** The source with its line breaks and indentation reduced to single spaces, so a sentence can be looked for whole. */
 const flat = (s: string) => s.replace(/\s+/g, ' ')
 
 /** Everything above the kicker that opens the books; the whole text when that kicker is absent. */

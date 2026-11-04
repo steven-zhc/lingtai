@@ -60,7 +60,7 @@ export interface ApproveOptions {
   note?: string
   /**
    * The wait the caller was shown, and is resolving — checked against the
-   * one currently open rather than trusted from the fold (#465, #508).
+   * one currently open rather than trusted from the reducer (#465, #508).
    *
    * **Required, and `'open'` is not the same as omitting it.** A board card
    * always sends the concrete id it rendered (`StandingView.waitId`), so two
@@ -175,8 +175,8 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     // The `WaitStarted` this approval already answered is still on the
     // stream — `waitsOf` matches it by `waitId`, never by position — so the
     // continuation is read the same way the first approval read it.
-    const fold = waitsOf(events).find((w) => w.waitId === waitId)!
-    const continuation = continuationOf(fold.reason, stepOutcomesOf(runEvents))!
+    const reduce = waitsOf(events).find((w) => w.waitId === waitId)!
+    const continuation = continuationOf(reduce.reason, stepOutcomesOf(runEvents))!
     log(`approved ${onSha.slice(0, 7)} by ${options.by} — rescheduled to continue at ${continuation.step}`)
     return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
   }
@@ -192,7 +192,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   const block = item.lifecycle
   // **The wait check, before the sha check — same reason as the `approved`
   // branch above** (#508). A continuation that stops at a *new* wait moves
-  // the lifecycle straight back to `blocked` (`WaitStarted`'s own fold), so a
+  // the lifecycle straight back to `blocked` (`WaitStarted`'s own reduce), so a
   // stale `approved` card's click lands here, not in the branch above — this
   // is the check the finding is actually about.
   if (options.waitId !== 'open' && options.waitId !== block.waitId) {
@@ -220,7 +220,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
    * **The sha an approval is about.** `run.lifecycle.onSha` for a declared
    * `human:`/`--no-merge` signoff, and for every other wait that offers
    * `Approve`, `run.headSha` — both reach here through the same `StepEnded`
-   * fold (`run.ts`).
+   * reduce (`run.ts`).
    */
   const onSha: string | null =
     run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : run.headSha !== null ? run.headSha : null
@@ -308,11 +308,11 @@ export async function requeue(options: {
   issue: number
   by: string
   /**
-   * Why, on the record — optional (#424). A requeue of a run's block folds into
+   * Why, on the record — optional (#424). A requeue of a run's block reduces into
    * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
    * `answersBrief` keeps only the ones with `runId === null`
    * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
-   * the fold keeps no answer for. So an optional note here never reaches a
+   * the reducer keeps no answer for. So an optional note here never reaches a
    * later attempt's prompt, unlike `answer()`'s.
    */
   note: string
@@ -367,10 +367,10 @@ export async function requeueHolding(
     }
   }
   // **A block no run holds is a question about the ticket (#147), and a requeue
-  // withdraws it rather than answering it.** The fold keeps whatever note ends
+  // withdraws it rather than answering it.** The reducer keeps whatever note ends
   // such a block as a decision and carries it into every later prompt
   // (`answersBrief`), so a requeue's why — *asked by mistake, ignore* — is
-  // written `withdrawn`, which the fold keeps nothing of. Answering is
+  // written `withdrawn`, which the reducer keeps nothing of. Answering is
   // `answer()`'s. Refusing here instead left a mistaken question no way out
   // but an answer every attempt would be told.
   //

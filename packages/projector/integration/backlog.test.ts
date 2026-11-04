@@ -87,7 +87,7 @@ async function rebuild(): Promise<void> {
   }
 }
 
-async function fold(): Promise<void> {
+async function reduce(): Promise<void> {
   const runner = createProjectionRunner({ projection: backlogProjection, store })
   try {
     await runner.start()
@@ -111,7 +111,7 @@ beforeAll(async () => {
   ])
   // A failing gate's findings go to a fix round, not here.
   await attempt(2, 1, [minor('on a failing gate', 5)], 'refused')
-  await fold()
+  await reduce()
 
   // The second attempt says the first thing again, lines moved and spacing changed.
   await attempt(1, 2, [minor('The name  shadows an import', 14)])
@@ -148,11 +148,11 @@ beforeAll(async () => {
       },
     },
   ])
-  await fold()
+  await reduce()
 
   // A third attempt, after both decisions, says both things again.
   await attempt(1, 3, [minor('the error message is vague', 22), minor('the name shadows an import', 11)])
-  await fold()
+  await reduce()
 }, 120_000)
 
 describe('finding_backlog', () => {

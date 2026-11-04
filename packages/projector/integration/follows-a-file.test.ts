@@ -1,7 +1,7 @@
 /**
  * A projection that follows a log with no `LISTEN`/`NOTIFY` behind it (#221).
  *
- * `integration/sqlite.test.ts` proves the *fold* works on a file: it catches up, it
+ * `integration/sqlite.test.ts` proves the *reduce* works on a file: it catches up, it
  * rebuilds, it reads the board back. What it does not prove is that anything
  * ever tells it to look — and until now nothing did. #178 built
  * `createPollingWaker` and its contract; **nothing selected it**, so every
@@ -63,7 +63,7 @@ describe('a projection on a machine with no Postgres', () => {
     const into = createSqliteProjectionStore(openSqliteProjections(path))
     const project = `esctest${crypto.randomUUID().slice(0, 6)}`
 
-    // A log and a place to fold into. Nothing names a waker, and nothing names
+    // A log and a place to reduce into. Nothing names a waker, and nothing names
     // a store: if the choice were still made beside the log, this would be a
     // `LISTEN` against nothing.
     const runner = createProjectionRunner({ projection: taskViewProjection, log, into })

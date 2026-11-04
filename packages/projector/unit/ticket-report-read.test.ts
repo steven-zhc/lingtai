@@ -1,5 +1,5 @@
 /**
- * `ProjectionStore.ticketReport` (#690): rows folded through an in-memory
+ * `ProjectionStore.ticketReport` (#690): rows reduced through an in-memory
  * SQLite file read back as `TicketReportRow`s, unit under 0060 §1. The Postgres
  * twin shares `ticketReportRowOf`, the one mapper, but its query is not run by
  * any test: `test/contract.ts` has no `ticketReport` case.
@@ -16,14 +16,14 @@ const claim = (ticket: string, runId: string, kind: string | null, m: number): E
   makeStream(ticket)('TicketClaimed', { runId, worker: 'local:1', title: null, kind }, { at: at(m) })
 
 describe('ProjectionStore.ticketReport', () => {
-  it('reads folded rows back typed, narrowed by project and ordered by ticket', async () => {
+  it('reads reduced rows back typed, narrowed by project and ordered by ticket', async () => {
     const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
     try {
       const projection = ticketReportProjectionWith({ snapshot: () => [] })
       expect(await store.ticketReport({})).toEqual([])
       await store.transact((ctx) => projection.create(ctx))
       await store.transact((ctx) =>
-        projection.apply([claim('ticket-b-2', 'pass-b-2', 'bug', 0), claim('ticket-a-1', 'pass-a-1', null, 1)], ctx),
+        projection.reduce([claim('ticket-b-2', 'pass-b-2', 'bug', 0), claim('ticket-a-1', 'pass-a-1', null, 1)], ctx),
       )
       const all = await store.ticketReport({})
       expect(all.map((r) => r.ticket)).toEqual(['ticket-a-1', 'ticket-b-2'])
@@ -45,7 +45,7 @@ describe('ProjectionStore.ticketReport', () => {
       await store.transact((ctx) => projection.create(ctx))
       const t = makeStream('ticket-a-3')
       await store.transact((ctx) =>
-        projection.apply(
+        projection.reduce(
           [
             t('TicketClaimed', { runId: 'pass-a-3', worker: 'local:1', title: null, kind: 'bug' }, { at: at(0) }),
             t('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(5) }),

@@ -38,7 +38,7 @@ say what code it is running and who started it.
    `shutdown`, `now <project> --issue <n>` and a restart's withdrawal are events
    on the `ctl-conductor` stream (`ConductorPaused`, `ConductorResumed`,
    `ConductorShutdownRequested`, `ConductorShutdownWithdrawn`, `RunRequested`).
-   `reduceControl` in `packages/domain/src/control.ts` folds them. Liveness is the
+   `reduceControl` in `packages/domain/src/control.ts` reduces them. Liveness is the
    **beacon**: one overwritten row in `daemon_status`, written every
    `HEARTBEAT_MS` (5 s) and treated as stale after three missed beats. It carries
    `pid`, `host`, `startedAt`, `lastSeenAt`, `state` (`up`, `draining`,
@@ -47,13 +47,13 @@ say what code it is running and who started it.
 
 3. **A control signal applies to the daemon running when it was appended.** Before
    it takes the lock, a daemon reads `controlWatermark`, the length of
-   `ctl-conductor`, and from then on folds only events above that point
+   `ctl-conductor`, and from then on reduces only events above that point
    (`readControl(store, since)`). It reads the watermark first and takes the lock
    second, so a request appended after the lock is held is always above the
    watermark. As a result, a `shutdown` or a `pause` stops the daemon it was aimed
    at and never the next one, and `lingtai start` needs nothing lifted first.
    `lingtai run` is the exception: it takes no ticket while a pause stands. The
-   board, `doctor` and `status` fold the whole stream, because they report what is
+   board, `doctor` and `status` reduce the whole stream, because they report what is
    standing now. **One pause narrows this** (`#405`): a `ConductorPaused` the
    conductor appends over a tier the setup cannot provide carries
    `holdsAcrossStarts`, and `readControl` obeys it whatever a daemon's own
@@ -185,7 +185,7 @@ say what code it is running and who started it.
 - Who started the conductor, when, and from which commit is a question the log
   answers. A commit named there is one that can still be fetched.
 - `ConductorStarted.handoff` and `ConductorShutdownWithdrawn.handoff` stay in the
-  schema so that older events still parse. Nothing writes them, and the fold reads
+  schema so that older events still parse. Nothing writes them, and the reducer reads
   them as nothing.
 - The lock depends on `node:sqlite`, on the Node 0101 names. The
   lock's tests run on Linux and macOS both.

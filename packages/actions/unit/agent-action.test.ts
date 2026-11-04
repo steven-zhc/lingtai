@@ -1472,7 +1472,7 @@ describe('the design step asks about undecided edges', () => {
  * `design` that is the whole document, at `review` whatever the answer was.
  *
  * **Asserted on the event and not on the result**, because the event is the
- * thing that outlives this: `task_view` and `finding_backlog` are folds, so an
+ * thing that outlives this: `task_view` and `finding_backlog` are reduces, so an
  * unbounded string is replayed on every rebuild, for as long as the log exists.
  *
  * The three properties together, because two of them without the third is a
@@ -1597,7 +1597,7 @@ describe("an agent's evidence on the log", () => {
  * Asserted through `runActionPipeline`, never on the bare `ActionResult`:
  * `spent` is the action's own half of the claim, and the event the pipeline
  * turns it into — with `step`, `name` and `round` attached — is the half a
- * person or a fold actually reads.
+ * person or a reducer actually reads.
  */
 describe('RunSpent, on every branch (#494)', () => {
   const runSpentEvents = (events: readonly ActionEvent[]): Extract<ActionEvent, { type: 'RunSpent' }>[] =>

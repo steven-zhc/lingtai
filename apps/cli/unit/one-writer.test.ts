@@ -7,7 +7,7 @@
  * The list below is every `src/` file that contains `createProjectionRunner(`,
  * each with why it may. It is compared for **equality**, so a file that drops
  * off the list fails too and the list cannot go stale. Adding a line is a
- * decision a reviewer sees. `apps/board/unit/read-not-fold.test.ts` holds the
+ * decision a reviewer sees. `apps/board/unit/read-not-reduce.test.ts` holds the
  * board to none at all.
  */
 import { readdirSync, readFileSync } from 'node:fs'

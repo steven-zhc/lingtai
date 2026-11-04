@@ -941,7 +941,7 @@ describe('the table of refusals', () => {
    * `EADDRINUSE`, and nothing ever answers. The daemon drained, started and
    * recorded its start through all of that.
    *
-   * `service start` folded both legs into one number and `restartSupervised`
+   * `service start` reduced both legs into one number and `restartSupervised`
    * read it as the conductor's: it returned there, so the record was never read
    * back, `startRefusals` never ran, no confirmation was printed, and `lingtai
    * restart` exited non-zero over a daemon that is up, supervised and claiming

@@ -199,7 +199,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  *
  * **A `TicketContinued { runId, worker }` of its own (0109 §5), checked at
  * the same expected version a claim is.** It carries no title and no kind, and
- * the fold reads it as a continuation by its type (`claims.ts`), so the run
+ * the reducer reads it as a continuation by its type (`claims.ts`), so the run
  * already in `runs` is not claimed a second time. A close or a second
  * decision landing between the approval and this call is a
  * `ConcurrencyError` the version check catches on its own; `wrong-run` and

@@ -543,7 +543,7 @@ describe('a claim that took nothing writes nothing', () => {
  * that handler answers with `release("unexpected failure: …")`. `releaseTicket`
  * reads the stream and appends unconditionally (`claim.ts:137`), so on a pass
  * whose item another conductor claimed a second earlier an ENOSPC here appended
- * `TicketReleased{runId: <this run>}` to that conductor's live item, folded it
+ * `TicketReleased{runId: <this run>}` to that conductor's live item, reduced it
  * to `backlog`, and wrote `lingtai:queued` over its `lingtai:working` while its
  * agent was still working — after which `selectRunnable` hands it to a third
  * pass. The `claim` branch's `released = true` guards declines the pass *reports*;

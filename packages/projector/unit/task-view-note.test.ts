@@ -6,8 +6,8 @@
 import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   agentBranchOf,
-  applyRun,
-  applyTicket,
+  reduceRunEvent,
+  reduceTicketEvent,
   emptyRun,
   emptyTicket,
   parseTicketStream,
@@ -36,12 +36,12 @@ import { runNoteOf, taskViewProjection, ticketNoteOf } from '../src/task-view.ts
 const TICKET = ticketStream('proj', 4501)
 const branch = agentBranchOf('4501')
 
-/** The ticket note at each event, folded from `emptyTicket`. */
+/** The ticket note at each event, reduced from `emptyTicket`. */
 function ticketNotes(events: readonly Envelope[]) {
   let state: TicketState = emptyTicket
   return events.map((e) => {
     const before = state
-    state = applyTicket(before, e)
+    state = reduceTicketEvent(before, e)
     return ticketNoteOf(before, state)
   })
 }
@@ -50,7 +50,7 @@ function runNotes(events: readonly Envelope[]) {
   let state: RunState = emptyRun
   return events.map((e) => {
     const before = state
-    state = applyRun(before, e)
+    state = reduceRunEvent(before, e)
     return runNoteOf(before, state)
   })
 }
@@ -67,7 +67,7 @@ async function withStore<T>(
     await store.transact((ctx) => taskViewProjection.create(ctx))
     return await store.transact(async (ctx) =>
       fn(
-        (batch) => taskViewProjection.apply(batch, ctx),
+        (batch) => taskViewProjection.reduce(batch, ctx),
         () => ctx.query('select * from task_view order by task_id'),
       ),
     )

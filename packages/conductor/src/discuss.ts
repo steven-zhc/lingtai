@@ -62,7 +62,7 @@
  *
  * **What it cost is `RunSpent`'s alone, since #502 (0110 §9/§13).** Every
  * ending still appends one `RunSpent` per process that returned an outcome
- * (`#496`), which the `spend` projection folds; `DiscussionAnswered` carries
+ * (`#496`), which the `spend` projection reduces; `DiscussionAnswered` carries
  * no dollar figure of its own any more, and `held.costUsd` below is the
  * caller's own in-memory receipt, not a second write of the same fact.
  */

@@ -127,9 +127,9 @@ export async function readBacklogListing(
   const all = options.all === true
   let behind: string | undefined
   // Lag first, rows second (as the board's `currentSpend` does): a conductor
-  // that folds between the two makes the rows newer than the lag that certifies
+  // that reduces between the two makes the rows newer than the lag that certifies
   // them, where the other order would certify stale rows as current. This reads
-  // and never folds — the conductor lock's holder is the only writer (0100 §13).
+  // and never reduces — the conductor lock's holder is the only writer (0100 §13).
   try {
     const { lag } = await (deps.readLag ?? readLag)('finding_backlog')
     if (Number(lag) > 0) behind = `finding_backlog is ${lag} behind`
@@ -219,9 +219,9 @@ export interface BacklogDecision {
 
 /**
  * Says the conductor's answer, and what the CLI knows that the conductor does
- * not. A finding raised moments ago may not be folded yet, and `readEntry`
+ * not. A finding raised moments ago may not be reduced yet, and `readEntry`
  * reads the row (`packages/conductor/src/backlog.ts`), so *no backlog entry*
- * can mean *not folded*: when `finding_backlog` is behind, say so. Matched on
+ * can mean *not reduced*: when `finding_backlog` is behind, say so. Matched on
  * the sentence because the conductor gives no reason code, and its wording is
  * not this ticket's to change.
  */
@@ -234,7 +234,7 @@ async function finish(
   if (!r.ok && r.detail.startsWith('no backlog entry ')) {
     try {
       const { lag } = await lagOf('finding_backlog')
-      if (Number(lag) > 0) log(`finding_backlog is ${lag} behind; it folds when a conductor runs`)
+      if (Number(lag) > 0) log(`finding_backlog is ${lag} behind; it reduces when a conductor runs`)
     } catch {
       // A refusal that already explains itself does not grow a second failure.
     }

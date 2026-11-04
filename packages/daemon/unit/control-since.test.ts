@@ -1,5 +1,5 @@
 /**
- * **One pause ignores `since`** (`#405`). A daemon folds the control stream
+ * **One pause ignores `since`** (`#405`). A daemon reduces the control stream
  * only from its own watermark on (0102 §3, `readControl(store, since)`), so a
  * `ConductorPaused` appended before a restart is invisible to the daemon that
  * starts after it — correct for every ordinary pause, because a restart is a

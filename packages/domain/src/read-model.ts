@@ -1,7 +1,7 @@
 /**
  * The read model: pure functions that decode 0120's and 0118's events
  * directly (#502, 0120 phase 2) — `StepOutcome`, the route, `WaitReason`/
- * `Resolution` and the release cause are no longer folded from today's wire
+ * `Resolution` and the release cause are no longer reduced from today's wire
  * shape, because the wire shape is theirs now.
  *
  * Each function takes one item's slice of the log — its own events together
@@ -9,7 +9,7 @@
  * order — rather than one stream, because the facts each needs are spread
  * across all three. Every function is correct on any superset of that
  * slice: it filters by `type` and keys by `runId`/`streamId`, which is also
- * what the projections see, since they fold in global `seq` order too.
+ * what the projections see, since they reduce in global `seq` order too.
  */
 import { isReached, type Reached, type StepOutcome, type WaitId } from './action.ts'
 import type { Envelope } from './envelope.ts'
@@ -55,7 +55,7 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
 
 // --------------------------------------------------------------- routesOf ----
 
-/** One `PassRouted` folded to 0120 §3's `RouteDecision` and the move it actually made. */
+/** One `PassRouted` reduced to 0120 §3's `RouteDecision` and the move it actually made. */
 export type RoutedPass = {
   readonly runId: string
   readonly from: Step
@@ -80,7 +80,7 @@ export function routesOf(events: readonly Envelope[]): RoutedPass[] {
 
 // ---------------------------------------------------------------- waitsOf ----
 
-/** One `WaitStarted` folded to its `WaitReason`, with its own `Resolution` once one lands — matched by `waitId`, never by position. */
+/** One `WaitStarted` reduced to its `WaitReason`, with its own `Resolution` once one lands — matched by `waitId`, never by position. */
 export type WaitFold = { readonly waitId: WaitId; readonly reason: WaitReason; readonly resolution: Resolution | null }
 
 /** Every wait on the slice, with the resolution naming its `waitId`, if any — a read of `reduceTicket(events).waits`. */
@@ -118,7 +118,7 @@ export function triageFactsOf(events: readonly Envelope[], waitId: WaitId): Tria
 
 // --------------------------------------------------------- releaseCauseOf ----
 
-/** One `TicketReleased` folded to its cause — the event's own `cause` field, verbatim. */
+/** One `TicketReleased` reduced to its cause — the event's own `cause` field, verbatim. */
 export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause | null> {
   return events.filter((e) => e.type === 'TicketReleased').map((e) => (e.data as PayloadOf<'TicketReleased'>).cause)
 }
@@ -126,7 +126,7 @@ export function releaseCauseOf(events: readonly Envelope[]): Array<ReleaseCause 
 // -------------------------------------------------------- findingsRaisedOf ----
 
 /**
- * What `finding_backlog` (`packages/projector/src/backlog.ts`) folds off a
+ * What `finding_backlog` (`packages/projector/src/backlog.ts`) reduces off a
  * passing gate's own verdict. One `StepEnded` may answer several — one per
  * `verdict`-yield action that `Completed{accepted}`.
  */
@@ -160,7 +160,7 @@ export function findingsRaisedOf(event: Envelope): FindingsRaised[] {
 // -------------------------------------------------------------- boardFactOf ----
 
 /**
- * What the board's history, progress strip and task fold read off one event
+ * What the board's history, progress strip and task reduce read off one event
  * at a time — never `stepOutcomesOf`/`routesOf`/`waitsOf`/`releaseCauseOf`,
  * for `findingsRaisedOf`'s own reasons above, and never `task_view`'s `RunState`
  * reduce: that answers for `task_view` and the two can disagree about one event.

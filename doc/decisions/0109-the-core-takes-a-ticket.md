@@ -111,7 +111,7 @@ run.
    `TicketClaimed` with `title: null` and `kind: null` whose `runId` an earlier
    `TicketClaimed` on the same stream already carries. They are not rewritten
    and cannot be upcast, because 0100 §4's upcaster changes one payload of one
-   type and never sees the stream around it. Every fold that reads claims
+   type and never sees the stream around it. Every reduce that reads claims
    applies one rule instead: **a `TicketClaimed` whose `runId` was already
    claimed on its stream is read as a `TicketContinued`.** The rule is
    structural, needs no text read, and is the only place the old form is
@@ -195,7 +195,7 @@ run.
     refuses and closes nothing. It works from any non-terminal state; a run in
     flight finishes on its own and the item does not go back to the queue.
     Nothing reopens a closed item, so wanting the work again means a new ticket.
-    **That holds in every fold of the ticket**, because there is one
+    **That holds in every reducer of the ticket**, because there is one
     ([0101](0101-typescript-packages-effect-unbuilt.md) §4): a claim, an unblock or
     a requeue after `TicketClosed` changes nothing about its lifecycle (#151), in
     the conductor, on the board, in `task_view` and in `ticket_report` alike. A

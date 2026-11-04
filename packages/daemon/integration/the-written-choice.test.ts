@@ -79,7 +79,7 @@ function said<T>(ran: Ran): T {
 /**
  * **`store: sqlite`, end to end, with no network at all.**
  *
- * An append, a projection folding it, the cards `lingtai status` and the board
+ * An append, a projection reducing it, the cards `lingtai status` and the board
  * both read, the lag the health dot reports, and a beacon beating — one
  * process, one file, and `net.Socket.prototype.connect` replaced by a refusal
  * before anything is imported. A Postgres path is a TCP connect, so "no
@@ -87,7 +87,7 @@ function said<T>(ran: Ran): T {
  * thrown.
  */
 describe('a machine that wrote sqlite', () => {
-  it('appends, folds, renders and beats, without opening a socket', () => {
+  it('appends, reduces, renders and beats, without opening a socket', () => {
     const script = `
       import net from "node:net";
       import tls from "node:tls";
@@ -129,7 +129,7 @@ describe('a machine that wrote sqlite', () => {
         cards: cards.map((c) => c.title),
         state: status?.state ?? null,
         pid: status?.pid ?? null,
-        folded: lags.some((l) => l.name === taskViewProjection.name),
+        reduced: lags.some((l) => l.name === taskViewProjection.name),
         streams: streams.length,
       }));
     `
@@ -138,18 +138,18 @@ describe('a machine that wrote sqlite', () => {
       cards: string[]
       state: string | null
       pid: number | null
-      folded: boolean
+      reduced: boolean
       streams: number
     }>(ran)
 
-    // The board's card, out of the projection, out of the fold, out of the log.
+    // The board's card, out of the projection, out of the reducer, out of the log.
     expect(read.cards).toEqual(['a card with no server behind it'])
     // The beacon's row, which is what the health dot and `lingtai doctor` read.
     expect(read.state).toBe('up')
     expect(read.pid).toBeGreaterThan(0)
     // The lag the same dot reports, and the questions that are not a stream
     // read — `LogQueries`, the third face of a log (#221).
-    expect(read.folded).toBe(true)
+    expect(read.reduced).toBe(true)
     expect(read.streams).toBe(1)
     // And all of it is in the one file the choice named.
     expect(existsSync(join(ran.home, 'lingtai.db'))).toBe(true)
@@ -227,12 +227,12 @@ describe('a machine that wrote postgres', () => {
         const session = log.waker("probe").open({ nudge() {}, lost() {} });
         try { await session.ready; } finally { session.close(); }
       });
-      const fold = await at(() => projections.lags());
+      const reduce = await at(() => projections.lags());
       const beacon = await at(() => daemon.status());
       await projections.close().catch(() => {});
 
       console.log(JSON.stringify({
-        store, queries, waker, fold, beacon,
+        store, queries, waker, reduce, beacon,
         sqlite: process.moduleLoadList.filter((m) => m.includes("sqlite")),
       }));
     `
@@ -241,7 +241,7 @@ describe('a machine that wrote postgres', () => {
     store: number[]
     queries: number[]
     waker: number[]
-    fold: number[]
+    reduce: number[]
     beacon: number[]
     sqlite: string[]
   }
@@ -257,12 +257,12 @@ describe('a machine that wrote postgres', () => {
 
     // The boundary, stated as what the process loaded.
     expect(read.sqlite).toEqual([])
-    // The log's three faces (#221), the fold, and the beacon — each at the port
+    // The log's three faces (#221), the reducer, and the beacon — each at the port
     // the file named, none of them anywhere else.
     only(read.store, 5599, "the log's store")
     only(read.queries, 5599, "the log's queries")
     only(read.waker, 5599, "the log's waker")
-    only(read.fold, 5599, 'the projections')
+    only(read.reduce, 5599, 'the projections')
     only(read.beacon, 5599, 'the beacon')
   }, 90_000)
 
@@ -292,7 +292,7 @@ describe('a machine that wrote postgres', () => {
     only(read.waker, 5600, "the log's waker")
     only(read.store, 5599, "the log's store")
     only(read.queries, 5599, "the log's queries")
-    only(read.fold, 5599, 'the projections')
+    only(read.reduce, 5599, 'the projections')
     only(read.beacon, 5599, 'the beacon')
   }, 90_000)
 })

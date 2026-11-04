@@ -1,6 +1,6 @@
 /**
  * The read half of the fetched rate snapshot (#658), here and not in
- * `@lingtai/conductor` because the `spend` fold prices from it (#679) and the
+ * `@lingtai/conductor` because the `spend` reduce prices from it (#679) and the
  * conductor depends on this package, not the other way round.
  *
  * Reading only: the fetch and the write stay in `conductor/src/rate-snapshot.ts`,

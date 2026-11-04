@@ -28,7 +28,7 @@
  * Nothing here is resumed and nothing is remembered between toggles.
  *
  * **It never says how the run went.** The row's own pill already carries that,
- * folded from `events`; the log is a trace and not a record (0034 §8). What
+ * reduced from `events`; the log is a trace and not a record (0034 §8). What
  * `end` says is that there is no more to come.
  *
  * No colour, on purpose — `#107` owns the vocabulary for every surface, and the
@@ -126,7 +126,7 @@ export function reported(state: TailState, awaited: boolean, asks: number): Tail
  * before it opens its own. A follower that stopped at `removed` sat on that
  * leftover's deletion for the whole of the new answer and never saw its trace.
  * So it asks again — the turn being on screen at all means no answer has been
- * folded, and when one is, the task page re-renders (`Follow`, in `live.tsx` —
+ * reduced, and when one is, the task page re-renders (`Follow`, in `live.tsx` —
  * not the board's `Live`, which only `/` mounts) and this follower is gone.
  */
 export function asksAgain(state: TailState, awaited: boolean): boolean {
@@ -262,7 +262,7 @@ export function RunLog({
   /**
    * Whether this attempt is still going, in which case the log opens with it.
    *
-   * Decided by the page from the fold — `run.outcome.state` — and not asked of
+   * Decided by the page from the reducer — `run.outcome.state` — and not asked of
    * this component, which knows about a file and never about a run (0034 §8).
    */
   live?: boolean

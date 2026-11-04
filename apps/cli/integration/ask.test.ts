@@ -41,7 +41,7 @@ let store: EventStore
  * append it just made — a daemon is what guarantees that in production, and
  * this test has none.
  */
-async function fold(): Promise<void> {
+async function reduce(): Promise<void> {
   const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
     await runner.start()
@@ -81,13 +81,13 @@ describe('lingtai ask / answer', () => {
     })
     expect(reduceTicket(events).lifecycle.status).toBe('blocked')
 
-    await fold()
+    await reduce()
     const listed: string[] = []
     await status({ project: PROJECT }, (l) => listed.push(l))
     const out = listed.join('\n')
     expect(out).toContain(QUESTION)
     expect(out).toContain('waiting for your answer')
-    // Printed, not counted: the queue line does not fold it into "waiting on you".
+    // Printed, not counted: the queue line does not reduce it into "waiting on you".
     expect(out).not.toMatch(/\d+ waiting on you/)
   })
 
@@ -104,7 +104,7 @@ describe('lingtai ask / answer', () => {
   })
 
   /**
-   * The fold keeps whatever note ends a block with no run as a decision, and
+   * The reducer keeps whatever note ends a block with no run as a decision, and
    * every later prompt carries it. So a requeue's why must not become one — but
    * a question asked by mistake still has to have a way out that is not an
    * answer, or *asked by mistake, ignore* is what the agent is told to build.
@@ -136,7 +136,7 @@ describe('lingtai ask / answer', () => {
     expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which design?' }, () => {})).toBe(0)
   })
 
-  it('answers on the record, and the fold keeps what the answer was', async () => {
+  it('answers on the record, and the reducer keeps what the answer was', async () => {
     const said: string[] = []
     expect(await answerCommand({ project: PROJECT, issue: ASKED, text: CHOICE }, (l) => said.push(l))).toBe(0)
 

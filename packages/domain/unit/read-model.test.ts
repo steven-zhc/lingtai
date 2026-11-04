@@ -1,6 +1,6 @@
 /**
  * The read model, since #502 (0120 phase 2): each function decodes a 0120/
- * 0118 event directly rather than folding it back out of today's wire shape,
+ * 0118 event directly rather than reducing it back out of today's wire shape,
  * so what used to be an exhaustive reconstruction (the old `#473`-era
  * `read-model.test.ts`, ~2100 lines) is now a thin pass-through — these
  * cases pin that pass-through, not a second copy of the writer's logic.
@@ -275,7 +275,7 @@ describe('boardFactOf', () => {
 })
 
 describe('aClaim', () => {
-  it('writes a TicketClaimed that releaseCauseOf and the claim fold both see', () => {
+  it('writes a TicketClaimed that releaseCauseOf and the claim reduce both see', () => {
     const item = makeStream('ticket-1')
     const events = aClaim(item, 'pass-1')
     expect(events[0]!.type).toBe('TicketClaimed')

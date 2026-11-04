@@ -292,7 +292,7 @@ describe('a conductor that replaces a dead one', () => {
     await build()
 
     const offered = [{ ref: '87', title: 'three claims, the last orphaned', kind: 'bug' }]
-    // Out of circulation: `task_view` folds a claim as `running`, and the queue
+    // Out of circulation: `task_view` reduces a claim as `running`, and the queue
     // offers nothing that is not `queued`. `backoffMs: 0` so the only thing
     // being tested is the claim — a blind retry is 0028's subject, not this one.
     expect(await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).toEqual([])

@@ -3,7 +3,7 @@
  *
  * **One process writes each projection: the one holding the conductor lock.**
  * A command that appends — `requeue`, `close`, `ask`, `end`, … — holds no
- * projector, so what it did reaches the board when a conductor folds it. With
+ * projector, so what it did reaches the board when a conductor reduces it. With
  * no conductor up that is never, until one starts; this is the one line that
  * says so. It is a note and never a verdict: it goes to `progress`, so `--json`
  * stdout is unchanged, and nothing here can fail the command.
@@ -62,7 +62,7 @@ export type ConductorNote = (world?: ConductorNoteWorld) => Promise<string | nul
 
 /**
  * The line to print after an append, or null when a conductor holds the lock
- * and so will fold it. A holder that cannot be read is *could not tell*, never
+ * and so will reduce it. A holder that cannot be read is *could not tell*, never
  * *no conductor*. Never throws.
  */
 export const conductorNote: ConductorNote = async (world = {}) => {

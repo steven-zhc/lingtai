@@ -3,7 +3,7 @@ import { reduceTicket } from '@lingtai/domain'
  * The subtraction: what GitHub offers, minus what the log says is claimed.
  *
  * Lives beside `selectRunnable` rather than beside the projection it reads.
- * The fold is `projector`'s and is tested there; the *decision* about what to
+ * The reducer is `projector`'s and is tested there; the *decision* about what to
  * take next is the conductor's, and this is that decision — the seam 0022 drew
  * between a projection and a caller that reads one.
  */

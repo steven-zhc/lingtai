@@ -1438,7 +1438,7 @@ export type BacklogBar = z.infer<typeof BacklogBar>
  * Something downstream has to say what a severity costs, and today that is two
  * somethings nobody can name, configure or replace: `verdictFor`
  * (`packages/actions/src/agent-action.ts`), which says what refuses, and a
- * literal `minor` in the fold (`packages/projector/src/backlog.ts`), which says
+ * literal `minor` in the reducer (`packages/projector/src/backlog.ts`), which says
  * what is filed. The value this plugin carries has to reach both, and
  * `CALLED_DIRECTLY.backlog` below is where that is said to whoever wires it.
  * Nearly half of what a reviewer says arrives at or below the bar —
@@ -1465,7 +1465,7 @@ export type BacklogBar = z.infer<typeof BacklogBar>
  * minor raised in round 2 is the same entry: `findingKey`
  * (`packages/domain/src/backlog.ts:24`) is over the ticket, the step, the
  * action, the file and the normalised claim — **no run, no round, no sha** —
- * and the fold writes `on conflict (project, key) do nothing`
+ * and the reducer writes `on conflict (project, key) do nothing`
  * (`packages/projector/src/backlog.ts:162`). A knob over a property that
  * already holds is a knob whose only reachable value is the one it has.
  */
@@ -1474,7 +1474,7 @@ export const backlogPlugin = definePlugin('backlog', {
     /** At or below this, a finding is filed and buys no round. `minor` today. */
     backlog: BacklogBar.default('minor'),
   },
-  /** No step reads it — the bar is a literal in two folds. `CALLED_DIRECTLY.backlog` says where. */
+  /** No step reads it — the bar is a literal in two reduces. `CALLED_DIRECTLY.backlog` says where. */
   at: {},
 })
 
@@ -1946,9 +1946,9 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     '`backlogProjection` in `packages/projector/src/backlog.ts` decides what is **filed**, off a literal ' +
     '`minor`. They are one comparison written twice, in two packages that cannot see each other, and ' +
     '`decideBacklog` in `packages/conductor/src/backlog.ts` is that comparison as a function a recipe ' +
-    "will hand its own value. **Both halves take it or neither does**: a step that replaces the fold's " +
+    "will hand its own value. **Both halves take it or neither does**: a step that replaces the reducer's " +
     'literal alone still gets `failed` out of `verdictFor` for a major, still records a refusal, and the ' +
-    'fold files only out of a passing step — so a recipe that said a major costs nothing would buy a fix ' +
+    'reduce files only out of a passing step — so a recipe that said a major costs nothing would buy a fix ' +
     'round exactly as it does today, and read as honoured. What a person then does with a filed one is ' +
     '`acceptFinding` and ' +
     `\`declineFinding\` in the same module, which \`lingtai backlog\` and the board both call. ${FILES_AND_ROUTES_NOTHING}`,

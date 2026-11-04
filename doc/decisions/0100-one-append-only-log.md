@@ -30,7 +30,7 @@ same URL can be visible from a checkout and invisible to a daemon started from
 2. **Everything is the loop, a projection, a subscriber, or a snapshot.** The loop appends
    events and takes one item at a time. A projection reads the log, writes a
    derived table and holds no truth. A subscriber reads the log and acts outside
-   the system without blocking it. A snapshot is one stream's fold saved at a
+   the system without blocking it. A snapshot is one stream's reducer saved at a
    version, a cache that any reader may ignore or discard
    ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md)). A component that fits none of the four is
    questioned before it is built. Lingtai's own `lingtai:*` status labels on
@@ -127,7 +127,7 @@ same URL can be visible from a checkout and invisible to a daemon started from
     carries nothing and may be late, duplicated or spurious; a subscriber drains
     everything after its checkpoint, and the conductor's sweep runs regardless.
 
-13. **Projections are folds, rebuilt by replay.** Each projection has its own
+13. **Projections are reduces, rebuilt by replay.** Each projection has its own
     tables and a `checkpoints` row: `task_view` (the board) and
     `finding_backlog` (minor findings). A projection reads only the log — every
     timestamp it stores comes from `event.at` — so dropping it and replaying

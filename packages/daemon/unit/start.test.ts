@@ -57,7 +57,7 @@ describe('startDaemon', () => {
   })
 
   /**
-   * #451. The guard runs ahead of both: a log too old to fold has to be
+   * #451. The guard runs ahead of both: a log too old to reduce has to be
    * caught before the watermark is read or the lock is taken, because a
    * refusal that already holds the lock is a daemon somebody else has to
    * notice is not conducting.

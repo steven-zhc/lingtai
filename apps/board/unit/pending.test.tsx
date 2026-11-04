@@ -12,9 +12,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * recipe could not be mistaken for a repository with nothing to do.
  *
  * So the two halves below are the two things the ticket says must not break.
- * The first is about who gets asked, which is a fold and is where the failure
+ * The first is about who gets asked, which is a reducer and is where the failure
  * would actually be. The second is about what a reader sees, which is the
- * markup, for the reason `#101` established — the fold alone could not have
+ * markup, for the reason `#101` established — the reducer alone could not have
  * caught it.
  */
 import { describe, expect, it } from 'vitest'

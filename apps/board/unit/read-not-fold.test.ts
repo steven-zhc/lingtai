@@ -38,7 +38,7 @@ it('starts no projection runner anywhere in apps/board/src', () => {
 })
 
 describe('currentSpend', () => {
-  it('returns the rows and the lag without folding', async () => {
+  it('returns the rows and the lag without reducing', async () => {
     projector.readLag.mockResolvedValue({ lag: 5n })
     const rows = [{ ticket: 't' }]
     projector.readSpend.mockResolvedValue(rows)
@@ -87,11 +87,11 @@ it('currentReport reads each lag once', async () => {
   expect(projector.readLag.mock.calls.map((c) => c[0]).toSorted()).toEqual(['spend', 'ticket_report'])
 })
 
-it('no behind-N title says a reload folds', () => {
+it('no behind-N title says a reload reduces', () => {
   const titles = [
     spendChip({ lag: 3 }).title,
     reportChip({ ticketReport: { lag: 3 }, spend: { lag: 0 } }).title,
     backlogChip({ lag: 3 }).title,
   ]
-  for (const t of titles) expect(t).not.toContain('reload to fold')
+  for (const t of titles) expect(t).not.toContain('reload to reduce')
 })

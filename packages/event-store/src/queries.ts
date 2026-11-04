@@ -20,7 +20,7 @@
  *
  * ## The comparison happens in the database, and that is the whole design
  *
- * Every question here is *a fold that would be wrong to do in the process*. The
+ * Every question here is *a reducer that would be wrong to do in the process*. The
  * end audit compares every plan the log holds against every resolution, and a
  * `StepsResolved` carries the actions resolved at all ten steps. Answering it
  * by reading those rows out and comparing them here would transfer — and zod-
@@ -106,7 +106,7 @@ export interface LogQueries {
    * Every stream whose id starts with `prefix`, in id order.
    *
    * `loadProjects` is this over `prj-`: a handful of projects with a handful of
-   * events each is a stream to fold rather than a projection to maintain, and
+   * events each is a stream to reduce rather than a projection to maintain, and
    * the only thing missing from `EventStore` is being told which ones exist.
    */
   projectStreams(prefix: string): Promise<string[]>
@@ -155,7 +155,7 @@ export interface LogQueries {
    * has to look past to find the first row that would throw. Named by type
    * rather than by stream, for the same reason `typeCounts` is: the guard
    * does not know which streams hold a `WaitStarted` and asking it to
-   * find out first would be the fold it exists to avoid.
+   * find out first would be the reducer it exists to avoid.
    */
   rowsOfType(type: EventType): Promise<TypeRow[]>
 

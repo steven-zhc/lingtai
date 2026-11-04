@@ -117,7 +117,7 @@ overwritten is there is not asking.
 **And `GitHubAppCreated` says an App was minted, never that one is configured.**
 The record is appended the moment the conversion returns — before the key file
 and before the env file — precisely so that a write which fails leaves
-something durable behind it. Folded into *configured*, it therefore reported
+something durable behind it. Reduced into *configured*, it therefore reported
 exactly the creations that did *not* finish as Apps a restart would pick up:
 the key write failed, the page said *created here — run `lingtai restart`*, and
 the restart found `LINGTAI_GITHUB_APP_ID` unset and changed nothing.

@@ -6,7 +6,7 @@ import type { TicketClaim } from '@lingtai/domain'
  * Each wait is `test/waits.ts`'s own fixture — the same events
  * `waiting-card.test.tsx` pins the card against — split by stream (envelopes
  * on the ticket's own stream are `own`, everything else is a run's) and
- * folded through the real `standingOf`/`foldRun` the task page itself reads,
+ * reduced through the real `standingOf`/`presentRunEvents` the task page itself reads,
  * then rendered with `<Standing>`. What is pinned here is *which* controls
  * are on the row, checked against `allowedResolutions` directly: a mismatch
  * between what the domain says a wait allows and what the row actually draws
@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Standing } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { foldRun, standingOf } from '../src/lib/task.ts'
+import { presentRunEvents, standingOf } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
 
 const OUTGOING: OutgoingView = {
@@ -51,14 +51,14 @@ function splitByStream(
   return { own, runs }
 }
 
-/** `standingOf`, fed exactly what `loadTask` would fold for this fixture's events. */
+/** `standingOf`, fed exactly what `loadTask` would reduce for this fixture's events. */
 function standingFor(fx: WaitFixture) {
   const { own, runs } = splitByStream(fx.taskId, fx.events)
-  const folded = [...runs.entries()].map(([runId, events], i) => {
+  const reduced = [...runs.entries()].map(([runId, events], i) => {
     const claim: TicketClaim = { runId, at: events[0]?.at ?? new Date(0), ended: null }
-    return foldRun(claim, i + 1, events)
+    return presentRunEvents(claim, i + 1, events)
   })
-  return standingOf(own, folded)
+  return standingOf(own, reduced)
 }
 
 const render = (fx: WaitFixture, outgoing: OutgoingView | null) =>

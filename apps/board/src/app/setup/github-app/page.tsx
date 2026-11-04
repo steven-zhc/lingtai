@@ -43,7 +43,7 @@ export default async function GitHubApp() {
  * Exported and separate for the reason `TaskBody` is: what this page claims —
  * *an App already configured is never offered a second one*, *the key is a path
  * and never bytes*, *no screen names a restart* — are claims about the markup,
- * and #101 is the ticket that settled that a fold alone cannot catch one.
+ * and #101 is the ticket that settled that a reducer alone cannot catch one.
  */
 export function GitHubAppScreen({ offer }: { offer: Offer }) {
   const outcome = offer.outcome

@@ -48,7 +48,7 @@ export function backlogChip(c: BacklogCurrency): {
     return { current: false, label: 'unknown', tone: 'warn', title: `could not read the backlog's lag — ${repair}` }
   }
   if (c.lag === 0) return { current: true, label: 'current', tone: 'live', title: 'finding_backlog is at the head' }
-  // Appends the follower has not folded yet are the ordinary case on a busy log.
+  // Appends the follower has not reduced yet are the ordinary case on a busy log.
   return {
     current: false,
     label: `behind ${c.lag}`,

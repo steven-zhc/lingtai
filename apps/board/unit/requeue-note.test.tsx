@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
  * `Requeue` serves three moves off one submit button — Answer, Withdraw and
  * Back to the queue — and only the first writes an `AnswerRecord` a later
  * attempt's prompt keeps (`attempts.ts:572`). Withdraw and Back to the queue
- * both go through `requeueCard` → `requeue()`, whose note the fold either
+ * both go through `requeueCard` → `requeue()`, whose note the reducer either
  * discards (`withdrawn`) or never reads as an answer, so a person who
  * answered through triage already is not asked to restate it. Asserted at the
  * source, the way `close.test.tsx` pins `Close`'s own disable rule: there is

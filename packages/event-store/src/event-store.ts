@@ -241,8 +241,8 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
   // type still sitting in old rows, or this build is older than the writer
   // (`#490` — see `LogPredatesHoldError`'s own docstring for which).
   // `logPredatesHold` is the pre-flight that is supposed to catch this before
-  // any fold reaches here; this is the same refusal for whichever caller
-  // folds the log first.
+  // any reduce reaches here; this is the same refusal for whichever caller
+  // reduces the log first.
   if (!isEventType(row.type)) throw new LogPredatesHoldError(row.seq, { name: row.type })
 
   let data: unknown
@@ -273,12 +273,12 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
 }
 
 /**
- * The first reason this build cannot fold the whole log, or `null` (#451,
+ * The first reason this build cannot reduce the whole log, or `null` (#451,
  * `#490`). Daemon start, `lingtai doctor`, `lingtai projection rebuild`
- * each call this before they fold the whole log, so a
+ * each call this before they reduce the whole log, so a
  * person is told what is wrong instead of watching a parse stack come out of
  * whichever one ran first — `decodeRow`'s own catch above throws the same
- * error for anything that folds the log without asking first.
+ * error for anything that reduces the log without asking first.
  *
  * A stored `type` this build's catalogue does not carry at all disqualifies
  * a log, caught from `typeCounts()` rather than a row — either a type

@@ -11,7 +11,7 @@
  * in their head (§5).
  *
  * Asserted on the markup for the reason `#101` established: these are facts
- * about what a reader is shown, not about the fold.
+ * about what a reader is shown, not about the reducer.
  */
 import type { SpendRow } from '@lingtai/projector'
 import { renderToStaticMarkup } from 'react-dom/server'

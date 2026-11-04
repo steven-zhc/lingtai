@@ -1,10 +1,10 @@
 /**
  * `task_view` reads its one-stream columns off the ticket reduce (#834): each
- * cell where it used to disagree with `applyTicket` (D5, D6) over the histories
+ * cell where it used to disagree with `reduceTicketEvent` (D5, D6) over the histories
  * #798 built for it, the `verifying` overlay, and the rows a ticket event may make.
  *
  * `createSqliteProjectionStore(openSqliteProjections(':memory:'))` — the real
- * fold path, touching no file, so unit under 0060 §1. Every history below is
+ * reduce path, touching no file, so unit under 0060 §1. Every history below is
  * built at module scope by `@lingtai/domain/test/histories`, whose `seq` and `at`
  * are hash-locked, so nothing here builds one.
  */
@@ -31,7 +31,7 @@ async function withStore<T>(
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    return await store.transact(async (ctx) => fn((batch) => taskViewProjection.apply(batch, ctx), ctx))
+    return await store.transact(async (ctx) => fn((batch) => taskViewProjection.reduce(batch, ctx), ctx))
   } finally {
     db.close()
   }

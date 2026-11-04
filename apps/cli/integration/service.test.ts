@@ -1164,7 +1164,7 @@ describe('status', () => {
   it.skipIf(!platformFor(process.platform))(
     'as `lingtai service status` really wires it, prints an unreachable beacon as unread, never as no daemon having run',
     async () => {
-      // Through lingtai.ts, not an injected `liveness`: doctor's liveness folds
+      // Through lingtai.ts, not an injected `liveness`: doctor's liveness reduces
       // an unreadable beacon into "no daemon has run", and only the wiring
       // there keeps that answer out of this command. The supervisor is a
       // script on PATH; the database is a port nothing listens on.
@@ -1530,7 +1530,7 @@ describe('one command to stop, one to start', () => {
 
 /**
  * The second job (#187). The board is supervised beside the conductor, and the
- * two are never folded into one answer: a board that is up beside a daemon
+ * two are never reduced into one answer: a board that is up beside a daemon
  * launchd respawns every thirty seconds is the state a single word would hide.
  */
 describe('two jobs', () => {

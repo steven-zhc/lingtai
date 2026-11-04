@@ -306,7 +306,7 @@ export async function runReport(
   }
   const { query } = parsed
 
-  // Said, not repaired: this command appends nothing and folds nothing.
+  // Said, not repaired: this command appends nothing and reduces nothing.
   let lag: ReturnType<typeof describeLags>
   try {
     lag = describeLags(await (ports.lags ?? (() => projectionLag()))())

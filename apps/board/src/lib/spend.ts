@@ -19,8 +19,8 @@
  * **Every row goes to exactly one of three arms, and only one of them is
  * money.** `costUsd !== null` is *reported*, counted in cents once and never
  * recomputed from a float a second time (`ledger`'s own rule, carried here).
- * Otherwise the row carries the fold's stored *estimate* (`estimatedUsd`, 0110 §5) — shown
- * beside the total and never folded into it (0110 §7). Anything left over is
+ * Otherwise the row carries the reducer's stored *estimate* (`estimatedUsd`, 0110 §5) — shown
+ * beside the total and never reduced into it (0110 §7). Anything left over is
  * *unknown*, and **no path through this file prints `$0.00` for a bill that has
  * an unknown run in it.** A total is a floor (0110 §2) and every reader says so.
  */
@@ -69,7 +69,7 @@ export function unknownBill(count: number): Bill {
   return { reportedCents: 0, reportedRuns: 0, estimates: [], unknown: count }
 }
 
-/** Every purpose's bill, folded into one — what a single figure on a card or a row shows. */
+/** Every purpose's bill, reduced into one — what a single figure on a card or a row shows. */
 export function totalBill(bills: Readonly<Record<Purpose, Bill>>): Bill {
   return PURPOSES.reduce((sum, p) => addBill(sum, bills[p]), emptyBill())
 }
@@ -93,7 +93,7 @@ export function addBills(
  * A ticket (or a card) known to have run — `attempts` claims, at least one —
  * but whose attempts did not each contribute an `Action` row is unknown,
  * never free (0110 §7): a ticket like `ticket-lingtai-89` that predates
- * `RunSpent` folds `billOf` to five empty bills otherwise, and an empty bill
+ * `RunSpent` reduces `billOf` to five empty bills otherwise, and an empty bill
  * reads as nothing spent.
  *
  * **Counted per attempt, by distinct `pass`, never by "does any purpose have
@@ -131,7 +131,7 @@ function purposeOf(row: SpendRow): Purpose {
 
 /**
  * Every row, sorted into its purpose and then into reported, estimated or
- * unknown — the one fold every reader in this directory goes through.
+ * unknown — the one reduce every reader in this directory goes through.
  */
 export function billOf(rows: readonly SpendRow[]): Record<Purpose, Bill> {
   const bills = emptyBills()
@@ -164,7 +164,7 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`
  * | >0 | >0 | `$3.10 + 2 unknown` |
  * | 0 | >0 | `unknown (2 runs)` |
  *
- * An estimate (`#208`) follows as `~$x est.` and never folds into the
+ * An estimate (`#208`) follows as `~$x est.` and never reduces into the
  * reported figure — including on a bill with no reported figure and no
  * unknown run at all, which is the one arm with nothing else to lead it: a
  * row priced entirely by the rate card still has to print its estimate, and
@@ -224,7 +224,7 @@ export async function lagOf(name: string): Promise<SpendCurrency> {
 /**
  * Read `spend` from its table and say how far behind it is. The board holds
  * no projector: the conductor lock's holder is the only writer of `spend`
- * (0100 §13), as it is of `task_view`, so a page reports the lag rather than folding it away.
+ * (0100 §13), as it is of `task_view`, so a page reports the lag rather than reducing it away.
  * A table nobody built reads as no rows with `lag = head` — *behind N*.
  */
 export async function currentSpend(
@@ -239,7 +239,7 @@ export async function currentSpend(
   return { rows, currency }
 }
 
-/** What the bar says about `spend`'s currency — `backlogChip`'s own shape, for the same reason: a fold nobody reports on is a figure nobody can trust. */
+/** What the bar says about `spend`'s currency — `backlogChip`'s own shape, for the same reason: a reducer nobody reports on is a figure nobody can trust. */
 export function spendChip(c: SpendCurrency): {
   current: boolean
   label: string
@@ -256,7 +256,7 @@ export function spendChip(c: SpendCurrency): {
     }
   }
   if (c.skipped) {
-    return { current: true, label: 'nothing spent', tone: 'idle', title: 'no card on this board has spend to fold' }
+    return { current: true, label: 'nothing spent', tone: 'idle', title: 'no card on this board has spend to reduce' }
   }
   if (c.lag === null) {
     return { current: false, label: 'unknown', tone: 'warn', title: `could not read spend's lag — ${repair}` }

@@ -246,7 +246,7 @@ export function stopNeeds(stop: FixStop): 'judgement' | 'acknowledgement' {
  *
  * **The name outlives every sentence** (`#197`). The headline is a card's, the
  * question is a notification's, and both are read once; this is the key the
- * projection folds a gate row under (`proposed:<action>`) and the word
+ * projection reduces a gate row under (`proposed:<action>`) and the word
  * `lingtai status` and the board's history print beside the point for ever. It
  * was `disagreement` whatever ended the pass, so `#187`'s rate limit is a row
  * on the board literally named *disagreement*, one line above a question saying
@@ -587,7 +587,7 @@ export type GrantedAdvice =
  * another wait's advice, an earlier attempt's, any other cause, an empty list
  * and a conflict with no `Divergent` hunk (a `Mechanical` one carries no
  * question) are all none. `triageFactsOf` keeps 0118 §3's latest-attempt rule,
- * so this does not write a second fold.
+ * so this does not write a second reduce.
  */
 export function grantedAdviceOf(events: readonly Envelope[], waitId: WaitId): GrantedAdvice | undefined {
   const { result } = triageFactsOf(events, waitId)
@@ -1155,8 +1155,8 @@ export function diagnoseDisagreement(input: {
  * Declared here rather than imported from `@lingtai/domain` for the reason
  * `PromptBudget` is declared in `attempts.ts`: this module is pure decisions
  * and prose, and what it needs of a restart record is the fields that go on a
- * card, not the fold that produced them. `RestartRecord` satisfies it
- * structurally, so the conductor passes the fold's own values straight through.
+ * card, not the reducer that produced them. `RestartRecord` satisfies it
+ * structurally, so the conductor passes the reducer's own values straight through.
  */
 export interface RestartArm {
   restart: number

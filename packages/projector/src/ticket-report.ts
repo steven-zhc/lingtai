@@ -2,7 +2,7 @@
  * `ticket_report` — one row per ticket with the facts the report needs
  * ([0123](../../../doc/decisions/0123-the-report-counts-what-the-log-holds.md) §2, #687).
  *
- * **It folds the log itself and never reads another projection's table** (0123
+ * **It reduces the log itself and never reads another projection's table** (0123
  * §6): the stream links it needs are its own (`ticket_report_stream`), for
  * `spend.ts`'s reason — another projection's table is at another projection's
  * checkpoint. Everything else lives on the ticket's row, so a batch boundary or
@@ -10,10 +10,10 @@
  *
  * ## The rules
  *
- * - **A pass is one of the ticket reduce's `claims`** (`applyTicket`, 0109 §5), and
+ * - **A pass is one of the ticket reduce's `claims`** (`reduceTicketEvent`, 0109 §5), and
  *   a continuation is not. `ticket_state` is the stored `TicketState`, and
  *   `outcome`, `passes`, `kind` and `waits` are read off it, never reduced here
- *   (D4, D6). **A change to what `applyTicket` returns makes stored rows stale**:
+ *   (D4, D6). **A change to what `reduceTicketEvent` returns makes stored rows stale**:
  *   `decodeTicket` refuses them by name, and §4.5's runbook rebuilds this table.
  *   A claim or continuation opens an interval of machine time only where the
  *   reduce holds that run, so a claim `closed` absorbed opens none.
@@ -99,12 +99,12 @@ interface OpenInterval {
 }
 
 /**
- * A `ticket_report` row, as the fold holds it. What the report reads about the
+ * A `ticket_report` row, as the reducer holds it. What the report reads about the
  * lifecycle is derived from `ticketState` on every save, so none of it is kept here.
  */
 interface State {
   ticket: string
-  /** The ticket reduce (`applyTicket`) for this stream. `emptyTicket` until a ticket-stream event arrives. */
+  /** The ticket reduce (`reduceTicketEvent`) for this stream. `emptyTicket` until a ticket-stream event arrives. */
   ticketState: TicketState
   machineMs: number
   intervalsEmpty: number
@@ -124,7 +124,7 @@ const json = <T>(value: unknown, fallback: T): T => {
 
 /**
  * A `ticket_report` row as a reader sees it: what `report()` in the conductor
- * takes, less the fold's own bookkeeping (`claims`, `rounds`, `open_intervals`).
+ * takes, less the reducer's own bookkeeping (`claims`, `rounds`, `open_intervals`).
  * Declared here because the conductor depends on this package.
  */
 export interface TicketReportRow {
@@ -365,7 +365,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
     await ctx.query('drop table if exists ticket_report_stream')
   },
 
-  async apply(events, ctx) {
+  async reduce(events, ctx) {
     let snapshot: readonly RateRow[] | null = null
 
     for (const event of events) {

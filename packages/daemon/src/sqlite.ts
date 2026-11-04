@@ -90,7 +90,7 @@ const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
  * with the beacon's table beside `events`.
  *
  * **`PRAGMA case_sensitive_like` is not a detail.** `streams()` is given SQL
- * `like` patterns, and SQLite's `LIKE` folds ASCII case while Postgres's does
+ * `like` patterns, and SQLite's `LIKE` reduces ASCII case while Postgres's does
  * not — so without this a store would match `WI-lingtai-1` where the other
  * would not, and the two implementations would disagree about which work items
  * a reconcile looks at. The contract asserts the Postgres behaviour and this is

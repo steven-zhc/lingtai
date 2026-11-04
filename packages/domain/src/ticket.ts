@@ -141,8 +141,8 @@ export type TicketLifecycle =
   | { status: 'backlog' }
   /**
    * Held. There is no expiry in this shape and that is the whole of 0027: a
-   * fold cannot read a clock, so a lifecycle that lapsed on its own would make
-   * `lingtai projection rebuild task_view` disagree with the incremental fold.
+   * reduce cannot read a clock, so a lifecycle that lapsed on its own would make
+   * `lingtai projection rebuild task_view` disagree with the incremental reduce.
    * What returns a claim is a `TicketReleased`, appended by a conductor that
    * holds the lock.
    */
@@ -244,7 +244,7 @@ export interface GitHubLedger {
   readonly edited: readonly WaitId[]
   /** The last `WaitStarted`'s wait id. */
   readonly lastWait: WaitId | null
-  /** `lastWait` as it stood when the last `body` write was folded: the wait that write came after. */
+  /** `lastWait` as it stood when the last `body` write was reduced: the wait that write came after. */
   readonly bodyAfterWait: WaitId | null
 }
 
@@ -286,7 +286,7 @@ export interface TicketState {
   claims: readonly TicketClaim[]
   /** The `at` of the last claim or continuation, an unclaimed run's continuation included (D11). */
   lastAttemptAt: Date | null
-  /** The `at` of the last lifecycle event the fold applied, else of the stream's first event (D11). */
+  /** The `at` of the last lifecycle event the reducer applied, else of the stream's first event (D11). */
   since: Date | null
   /**
    * The last person's move on a wait, and what followed it (#831). The board's
@@ -357,7 +357,7 @@ export interface TicketState {
 
   /**
    * What Lingtai wrote to GitHub (`IssueUpdated`/`IssueUpdateFailed`). These
-   * are not lifecycle events, so they fold on a closed ticket too.
+   * are not lifecycle events, so they reduce on a closed ticket too.
    */
   github: GitHubLedger
 
@@ -367,7 +367,7 @@ export interface TicketState {
   /**
    * Every chat held on this ticket, in the order each was first held, with its
    * latest outcome (#843). Not a lifecycle fact, so a closed ticket keeps
-   * folding it too.
+   * reducing it too.
    */
   discussions: readonly TicketDiscussion[]
 
@@ -423,7 +423,7 @@ function endClaim(claims: readonly TicketClaim[], runId: string, ended: AttemptE
   return claims.map((c) => (c.runId === runId ? { ...c, ended } : c))
 }
 
-export function applyTicket(prior: TicketState, event: Envelope): TicketState {
+export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketState {
   // D4: a ticket's project and issue are its stream's, whatever the event.
   const own = prior.project === null && isTicketStream(event.streamId) ? parseTicketStream(event.streamId) : null
   const waits = reduceWaits(prior.waits, event)
@@ -519,7 +519,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
         // It used to consume a *pending repair* here too, and that clause is the
         // one `#143` deleted. `RepairRequested` is retired, so nothing puts a
         // repair on an item and no claim can become one — a log that still holds
-        // the event folds through the default below and changes nothing but the
+        // the event reduces through the default below and changes nothing but the
         // version.
         pendingPrompt: null,
         // A `TicketContinued` has no title or kind, and a claim that carries
@@ -632,7 +632,7 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
 
     case 'WaitResolved': {
       const d = event.data as PayloadOf<'WaitResolved'>
-      // The answer is kept, and that is the whole of #147's fold change: this
+      // The answer is kept, and that is the whole of #147's reducer change: this
       // case used to return to the backlog and drop `note` on the floor, so the
       // log held the decision and no state, projection or prompt could say it.
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
@@ -760,5 +760,5 @@ export function applyTicket(prior: TicketState, event: Envelope): TicketState {
 }
 
 export function reduceTicket(events: readonly Envelope[]): TicketState {
-  return events.reduce(applyTicket, emptyTicket)
+  return events.reduce(reduceTicketEvent, emptyTicket)
 }

@@ -17,14 +17,14 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  *
  * **Why this is a second read, when `task_view` is the one projection.** 0012's
  * rule is that a *list* is cheap, and this does not make it less so: what a
- * fold wants is the thing that changes every second, which is the worst
+ * reduce wants is the thing that changes every second, which is the worst
  * possible shape for a table. It is the same trade the Queued column already
  * makes by asking GitHub on render, and the same one the task page makes by
- * folding a detail on demand. A phase that fails to be read costs its own card
+ * reducing a detail on demand. A phase that fails to be read costs its own card
  * its detail and not the board.
  *
  * **What keeps it cheap is a bound, and the bound is not in this file.** Three
- * lanes fold since #170 — Running, Waiting and the Landed rows the lane draws
+ * lanes reduce since #170 — Running, Waiting and the Landed rows the lane draws
  * open — and only the first of them is small by nature, at a card per
  * conductor. The other two are cut to `WAITING_RAILS` and `LANDED_OPEN` by
  * `board.ts`'s `railCandidates`, which is pure and tested for exactly that. So
@@ -83,7 +83,7 @@ export type StepState =
   | 'passed'
   | 'failed'
   /**
-   * **Nothing judged this diff here**, which this fold now reaches two ways.
+   * **Nothing judged this diff here**, which this reduce now reaches two ways.
    * One state, because it is one sentence to a reader and one bug to an
    * operator — but the two differ in what there is to read, so a consumer that
    * wants the account has to know which it has.
@@ -272,7 +272,7 @@ function stateOf(
    *
    * Both halves, because the rule below is meant to be the strict comparison
    * and not a looser one: the plan is the `StepsResolved` the run was given, so
-   * a run whose stream has none accuses nothing — and here such a run is folded
+   * a run whose stream has none accuses nothing — and here such a run is reduced
    * against the recipe being read *now*, which may not be the one it got.
    * Calling a point that recipe configures `never-ran` would invent Lingtai's
    * bug out of a recipe the run never saw.
@@ -313,7 +313,7 @@ function stateOf(
   //
   // **Every step but `end`**, and the exclusion is a fact about where the
   // record lives: `end`'s is `EndActionsResolved` on the *work item's* stream
-  // (`end-step.ts`), and this fold reads the run's. A silent
+  // (`end-step.ts`), and this reduce reads the run's. A silent
   // `end` here is a question this stream cannot answer, not a step that did not
   // run — `lingtai doctor` has its own check for that one, against the stream
   // that holds it.
@@ -342,7 +342,7 @@ function stateOf(
  * `laneWaitedAt`, `step.since`) and the recorded plan (`resolved`); this picks
  * the labels and budgets, which are the board's.
  *
- * Returns null for a state nothing has been folded into — a run whose first
+ * Returns null for a state nothing has been reduced into — a run whose first
  * event has not landed has no progress to describe, and a card saying `0s`
  * about one would be inventing a start.
  */

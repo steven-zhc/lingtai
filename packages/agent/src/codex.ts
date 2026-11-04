@@ -297,7 +297,7 @@ interface CodexEvent {
 }
 
 /**
- * What the stream said, as a fold over its lines.
+ * What the stream said, as a reducer over its lines.
  *
  * Pure, and exported, because `pnpm test` is the `build` gate and runs the
  * **unit** project only: a test that spawns a stand-in binary is in the
@@ -689,8 +689,8 @@ function inlineToml(v: unknown): string {
   return String(v)
 }
 
-/** One line, folded in. Everything the receipt knows is decided here. */
-function foldLine(receipt: Tally, line: string): void {
+/** One line, reduced in. Everything the receipt knows is decided here. */
+function tallyLine(receipt: Tally, line: string): void {
   const t = line.trim()
   if (!t.startsWith('{')) return
   let event: CodexEvent
@@ -737,12 +737,12 @@ function foldLine(receipt: Tally, line: string): void {
 
 export function codexOutcome(lines: readonly string[]): CodexReceipt {
   const receipt = emptyTally()
-  for (const line of lines) foldLine(receipt, line)
+  for (const line of lines) tallyLine(receipt, line)
   return receipt
 }
 
 /**
- * The same fold, **over a stream that is never all in memory at once**.
+ * The same reduce, **over a stream that is never all in memory at once**.
  *
  * `run()` used to keep the last `RECEIPT_TAIL_CHARS` of stdout and hand
  * `codexOutcome` that window at close, the way `claude-code.ts` does. That is
@@ -756,7 +756,7 @@ export function codexOutcome(lines: readonly string[]): CodexReceipt {
  * recorded a spend that did not happen, and nothing anywhere said the number was
  * a fragment.
  *
- * So the fold happens **as the bytes arrive** and the window is gone. What is
+ * So the reducer happens **as the bytes arrive** and the window is gone. What is
  * still bounded is the *tail kept for a failure's detail*, which is a quotation
  * and not an accounting.
  */
@@ -766,7 +766,7 @@ export interface CodexAccount {
   /**
    * No more is coming.
    *
-   * An unterminated final line is folded rather than dropped: mid-stream a
+   * An unterminated final line is reduced rather than dropped: mid-stream a
    * fragment is a fragment, but at close it is the last thing the runtime said,
    * and a `turn.completed` without a trailing newline is a receipt.
    */
@@ -783,11 +783,11 @@ export function codexAccount(): CodexAccount {
       pending += text
       const lines = pending.split('\n')
       pending = lines.pop() ?? ''
-      for (const line of lines) foldLine(receipt, line)
+      for (const line of lines) tallyLine(receipt, line)
     },
     end() {
       if (pending === '') return
-      foldLine(receipt, pending)
+      tallyLine(receipt, pending)
       pending = ''
     },
     get receipt(): CodexReceipt {
@@ -1477,7 +1477,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         })
 
         /**
-         * The receipt, **folded as the bytes arrive** — see `codexAccount`.
+         * The receipt, **reduced as the bytes arrive** — see `codexAccount`.
          *
          * Not read off a tail at close: this accounting is cumulative, so a
          * window would drop `thread.started` and most of the turns on any run
@@ -1577,7 +1577,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             // spent every turn it had taken, and `RunFinished.turns` is what
             // `attempts.ts` tells a person it cost — `0 turn(s)` beside a
             // two-hour timeout is the audit record disagreeing with what
-            // happened that folding this receipt was for. `claude-code.ts` writes
+            // happened that reducing this receipt was for. `claude-code.ts` writes
             // zero here honestly, because `parseResult` only ever sees a receipt
             // at the end and zero there means *no receipt*; here the number was
             // measured as the bytes arrived.

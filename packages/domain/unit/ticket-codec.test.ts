@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/index.ts'
-import { applyTicket, decodeTicket, emptyTicket, encodeTicket } from '../src/index.ts'
+import { reduceTicketEvent, decodeTicket, emptyTicket, encodeTicket } from '../src/index.ts'
 import { histories, lateHistories, scenarios } from '../test/histories.ts'
 
 const streams: [string, readonly Envelope[]][] = [
@@ -25,7 +25,7 @@ describe('decodeTicket(encodeTicket(s))', () => {
       let s = emptyTicket
       expect(decodeTicket(encodeTicket(s), 'ticket_report')).toStrictEqual(s)
       for (const event of events) {
-        s = applyTicket(s, event)
+        s = reduceTicketEvent(s, event)
         expect(decodeTicket(encodeTicket(s), 'ticket_report')).toStrictEqual(s)
         expect(decodeTicket(JSON.parse(encodeTicket(s)), 'ticket_report')).toStrictEqual(s)
       }
@@ -33,14 +33,14 @@ describe('decodeTicket(encodeTicket(s))', () => {
   }
 
   it('keeps lastSeq a bigint and holds it as a string', () => {
-    const s = streams.flatMap(([, e]) => e).reduce(applyTicket, emptyTicket)
+    const s = streams.flatMap(([, e]) => e).reduce(reduceTicketEvent, emptyTicket)
     expect(typeof s.lastSeq).toBe('bigint')
     expect(typeof JSON.parse(encodeTicket(s)).lastSeq).toBe('string')
   })
 })
 
 describe('decodeTicket refuses another shape', () => {
-  const good = JSON.parse(encodeTicket(streams.flatMap(([, e]) => e).reduce(applyTicket, emptyTicket)))
+  const good = JSON.parse(encodeTicket(streams.flatMap(([, e]) => e).reduce(reduceTicketEvent, emptyTicket)))
 
   it('names the field and the rebuild when a field is missing', () => {
     const { waits: _waits, ...rest } = good
@@ -56,7 +56,7 @@ describe('decodeTicket refuses another shape', () => {
   })
 
   it('refuses a field the nested event schemas would strip', () => {
-    const withWait = streams.flatMap(([, e]) => e).reduce(applyTicket, emptyTicket)
+    const withWait = streams.flatMap(([, e]) => e).reduce(reduceTicketEvent, emptyTicket)
     expect(withWait.waits.length).toBeGreaterThan(0)
     const bad = structuredClone(good)
     bad.waits[0].reason.fromAnotherShape = 1

@@ -44,7 +44,7 @@ describe('reduceRun', () => {
 
   /**
    * The prompt is the one input to a run that is not reconstructible from
-   * anything else (#88), so the fold carries it rather than only counting it.
+   * anything else (#88), so the reducer carries it rather than only counting it.
    */
   it('carries the prompt itself, and still counts them', () => {
     const e = makeStream('pass-01JY')
@@ -160,7 +160,7 @@ describe('reduceRun', () => {
   /**
    * **The verdict that is not one** (`#133`).
    *
-   * A gate whose agent never started judged nothing, and the fold has to say
+   * A gate whose agent never started judged nothing, and the reducer has to say
    * that rather than the two things it is not. `failed` puts a refusal of this
    * diff on the record where none was made — which is what happened — and
    * leaving it at `running`, which is what no third event at all would mean,

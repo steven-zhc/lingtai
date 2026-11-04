@@ -72,7 +72,7 @@ export function serviceOptions(): ServiceOptions {
     // own word for being up, which a job the supervisor has loaded is not.
     board: boardOptions(),
     // A read that throws, so a beacon that could not be read says so.
-    // Doctor folds that into "no daemon has run", and here it would be the
+    // Doctor reduces that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
     // a second one could fail where this succeeded.
     liveness: async () => (await daemonLiveness(() => readStatus())).detail,
@@ -563,7 +563,7 @@ export async function daemonCommand(
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.
       paused: claiming,
-      // And a shutdown in the same breath, from the same fold (0030 §2). The
+      // And a shutdown in the same breath, from the same reduce (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
         const control = await readControl(undefined, since)
@@ -633,7 +633,7 @@ export async function daemonCommand(
         }
       },
     })
-    // **Scoped, like the loop's** (`#159`). It used to fold the whole stream,
+    // **Scoped, like the loop's** (`#159`). It used to reduce the whole stream,
     // so a daemon that had just started announced a pause from before it
     // existed and then took work anyway — the report and the loop disagreeing
     // about the same question, which is worse than either answer.
@@ -729,7 +729,7 @@ export async function daemonCommand(
  *
  * **Holds no projector**, like every command but the lock holder (0100 §13):
  * the daemon it addresses is the only writer, and an emergency control must not
- * queue behind a fold.
+ * queue behind a reducer.
  */
 export async function controlCommand(
   verb: 'pause' | 'resume' | 'shutdown',

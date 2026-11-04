@@ -69,7 +69,7 @@ function keyOf(entry: UsageEntry): string {
 }
 
 /**
- * Every combination this project adds usage through: Codex's fold per
+ * Every combination this project adds usage through: Codex's reducer per
  * `turn.completed`, a discussion's rounds, and a conversation's whole spend.
  * One hand-written sum outside this function is where a `?? 0` creeps in and
  * turns an absence into a free lunch.

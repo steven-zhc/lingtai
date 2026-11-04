@@ -11,7 +11,7 @@ import type { EventStore } from '@lingtai/event-store'
  * second copy of the rule — one that dropped the status and run check would
  * continue a ticket twice.
  *
- * The fold defaults an absent `runId` or `issue` to `''`; `Number('')` is `0`,
+ * The reducer defaults an absent `runId` or `issue` to `''`; `Number('')` is `0`,
  * which would read a stream nobody owns, so such a row is not owed.
  */
 export async function stillOwed(

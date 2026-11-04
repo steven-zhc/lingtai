@@ -314,7 +314,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
     '[not offered]',
     'Waiting on you',
     '#609',
-    'waiting for your answer: which approach should I take?', // one line, whitespace folded
+    'waiting for your answer: which approach should I take?', // one line, whitespace reduced
     'the gate refused',
     'lingtai answer lingtai --issue 609 "<choice>"   (or the board)',
   ])('prints %s', (fact) => {

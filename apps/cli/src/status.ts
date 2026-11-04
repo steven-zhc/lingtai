@@ -226,7 +226,7 @@ export interface StatusRun {
 }
 
 /**
- * The step a run is inside: `RunState.step` off its folded stream (D12). A failed read throws — it
+ * The step a run is inside: `RunState.step` off its reduced stream (D12). A failed read throws — it
  * is not "no step".
  */
 async function lastStep(runId: string): Promise<StatusRun['step']> {
@@ -316,7 +316,7 @@ export interface StatusReport {
   spendUnknown?: { reason: string; runs: number }[]
 }
 
-/** `verifying` folds into `running`: from an operator's seat they are the same fact. */
+/** `verifying` reduces into `running`: from an operator's seat they are the same fact. */
 const NAMES: Record<string, string> = {
   running: 'running',
   verifying: 'running',
@@ -570,7 +570,7 @@ export function renderStatus(
       ),
     )
 
-    // `verifying` folds into `running`. A row with a wait is in the Waiting section, not counted twice (#147).
+    // `verifying` reduces into `running`. A row with a wait is in the Waiting section, not counted twice (#147).
     const elsewhere = new Map<string, number>()
     for (const t of p.known) {
       if (t.state === 'queued' || t.wait !== null) continue

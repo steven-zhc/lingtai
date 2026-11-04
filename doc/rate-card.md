@@ -12,7 +12,7 @@ the copy equal to this file, so a row appended to one and not the other fails it
 reported and, where the runtime reported it, the dollars it reported — never a
 figure derived from one by the other. Money is computed where it is displayed,
 from the event's own counts and its own occurrence time, read against the rows
-below. A reducer may not read this file: a fold that did would disagree with
+below. A reducer may not read this file: a reducer that did would disagree with
 `lingtai projection rebuild` the day a price moved, silently, which is 0073 §5's
 whole argument.
 
@@ -151,12 +151,12 @@ of time and later rows take over from their own date. The shipped card's dates
 are real price changes and keep the strict rule above.
 
 **This file always wins** for a model it lists, and a user cannot edit the
-snapshot's prices. Pricing reads the snapshot and never the network, and the estimate is stored when the `spend` row is folded, at the rate in force on the run's own day (`estimated_usd`, `estimate_fetched`) — readers sum the stored columns and none prices. The
+snapshot's prices. Pricing reads the snapshot and never the network, and the estimate is stored when the `spend` row is reduced, at the rate in force on the run's own day (`estimated_usd`, `estimate_fetched`) — readers sum the stored columns and none prices. The
 `/spend` page's *today* line and table say `(N at fetched LiteLLM prices)` for an
 estimate that used it; every other estimate reads `~$X est.` with no note. `lingtai doctor`'s
 `rates:` line says when it was last fetched and why a fetch failed.
 
-**A model that gains its first price rebuilds `spend`** (#680): runs of it were folded
+**A model that gains its first price rebuilds `spend`** (#680): runs of it were reduced
 unpriced, so the refresh that prices it replays the projection and every row is priced by
 its own day (*priced gpt-6-astra; spend rebuilt* on the `rates:` line). A refresh that only
 changes the price of a model already priced rebuilds nothing. While it replays, the daily

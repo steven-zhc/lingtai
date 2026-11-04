@@ -561,8 +561,8 @@ PassRouted { runId, offer: RouteOffer, reply: JudgeReply, decision: RouteDecisio
 - **What is not recorded.** `Advance` is told by the next `StepStarted`. The
   other results of `nextOf` land through the events that already carry them:
   `WaitStarted` (0118), `TicketReleased`, `TicketLanded`. Rounds spent are
-  folded from the run's `PassRouted`; restarts spent from the work item's
-  `TicketReleased{cause: Restart}`, so neither fold reads another stream.
+  reduced from the run's `PassRouted`; restarts spent from the work item's
+  `TicketReleased{cause: Restart}`, so neither reduce reads another stream.
 - **`TicketReleased` carries a `cause`**: `Restart{restart}`,
   `NeverStarted{scope}`, `ByPerson{waitId}` or `ClaimUnconfirmed`. Restarts
   are counted on the work item today (`conduct.ts:946`, from `PassRestarted`,
@@ -571,7 +571,7 @@ PassRouted { runId, offer: RouteOffer, reply: JudgeReply, decision: RouteDecisio
   a person's requeue does not, as today.
 - **The merged sha is in three places**: `StepEnded`'s `Integrated`,
   `IntegrationSucceeded` on the integration stream, `TicketLanded` on the
-  work item. Each stream's fold needs its own, the same code writes all three,
+  work item. Each stream's reducer needs its own, the same code writes all three,
   and they are not one append, so where they disagree `StepEnded` is right.
 
 What every existing event becomes is the appendix.
@@ -624,7 +624,7 @@ value into today's payload; the adapters are the only place both shapes
 exist, each says so in its comment.
 
 **Readers move before the switch, through a read model.** A pure read model
-folds today's events into the new types (`StepOutcome`, the route,
+reduces today's events into the new types (`StepOutcome`, the route,
 `WaitReason` and `Resolution`, the release cause), and test builders are the
 only way a test makes an event. The projections, the board, the CLI and the
 daemon then move onto the new types one ticket at a time, each green and none
@@ -635,7 +635,7 @@ new types; at the switch only the read model and the builders change.
 **Phase 2: one ticket switches the stored events and resets the log.** The
 stored shape cannot change in halves, because a log holding both shapes has no
 reader. So one ticket makes the writers append the appendix's events, makes
-the read model decode them instead of folding the old ones, deletes the
+the read model decode them instead of reducing the old ones, deletes the
 adapters and the old schemas, and resets the log with the old-log guard
 (#451) and the reset steps (#448). Before 1.0 a stored shape changes by a
 reset, not an upcaster. It starts only when phase 1 and the reader moves are

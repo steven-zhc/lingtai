@@ -136,7 +136,7 @@ import { versionFacts } from './version.ts'
  * `warn` is not a weak `fail`. It means **nothing is wrong and you should know
  * anyway** — the case the vocabulary had no room for until something needed to
  * report what it could see but not control (`settings: other sources`, ADR 0016
- * §6). Folding that into `ok` hides it in a wall of green; folding it into
+ * §6). Reducing that into `ok` hides it in a wall of green; reducing it into
  * `fail` makes doctor red for a file everybody has, and a check that is always
  * red is a check nobody reads.
  *
@@ -721,7 +721,7 @@ export function stoppedProjections(
       if (!status || !lastBeat(status).up) return { name, status: 'ok', detail: 'no daemon is running' }
       const list = status.stoppedProjections
       if (list === null) return { name, status: 'ok', detail: 'the running daemon predates this check' }
-      if (list.length === 0) return { name, status: 'ok', detail: 'every projection the daemon follows is folding' }
+      if (list.length === 0) return { name, status: 'ok', detail: 'every projection the daemon follows is reducing' }
       return {
         name,
         status: 'fail',
@@ -747,7 +747,7 @@ export function stoppedProjections(
 
 /**
  * `url` refines a Postgres connection and never picks the store: left out, this
- * folds through the one this machine wrote down (#179), which is what lets a
+ * reduces through the one this machine wrote down (#179), which is what lets a
  * file-backed machine have this row at all.
  */
 export async function projections(
@@ -1174,7 +1174,7 @@ export interface DoctorReport {
    * apart ([#214](https://github.com/steven-zhc/lingtai/issues/214)): *not
    * implemented yet* is a fact about Lingtai and reads the same on every
    * machine, while *not checked here* is a fact about the machine in front of
-   * you, and folding the two made `0 failed` the only thing the last line said
+   * you, and reducing the two made `0 failed` the only thing the last line said
    * about a machine whose log had never been opened.
    */
   notChecked: number
@@ -1196,14 +1196,14 @@ export interface DoctorReport {
  * legitimate state, and `lingtai run` still works by hand. What would be a failure
  * is not being able to tell.
  *
- * `read` is the beacon read, and doctor's own folds a failure into "no daemon
+ * `read` is the beacon read, and doctor's own reduces a failure into "no daemon
  * has run". `lingtai service status` passes one that throws, so the read it
  * reports is the read that failed rather than a second one on another
  * connection.
  */
 export async function daemonLiveness(
   read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
-  /** The control fold. Doctor's own swallows a failure; the suite passes a memory store's. */
+  /** The control reduce. Doctor's own swallows a failure; the suite passes a memory store's. */
   readPause: () => Promise<Awaited<ReturnType<typeof readControl>> | null> = () => readControl().catch(() => null),
 ): Promise<CheckResult> {
   const status = await read()
@@ -1253,7 +1253,7 @@ export async function daemonLiveness(
 
   // `draining` says stopping; what it is stopping *for* is the pass, and the
   // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
-  // was what this said for both, which is the folding #77 argued against.
+  // was what this said for both, which is the reducing #77 argued against.
   // A task_view that cannot be read is said so, never passed off as no passes (#640).
   let held: string[] | null = []
   if (beat.state === 'draining' || beat.state === 'up') held = await readTasks().then(heldPasses, () => null)
@@ -1673,7 +1673,7 @@ export async function readableTypes(queries: LogQueries): Promise<CheckResult> {
 /**
  * Whether the log holds a wait written before #445's reset of its payload, or
  * a stored `type` this build's catalogue does not carry at all — the same
- * guard daemon start and `lingtai projection rebuild` run before they fold
+ * guard daemon start and `lingtai projection rebuild` run before they reduce
  * the log at all (#451). The second condition is also what `readableTypes`
  * above catches, but that row's own detail never says which of the two
  * things it means; this row's `detail` is `LogPredatesHoldError`'s own
@@ -2245,7 +2245,7 @@ export function limitsRow(project: string, recipe: Recipe, capabilities: Runtime
   // `wall` is named at `runtime.agent`, because no edit to the recipe clears
   // it. `turns` also clears by being written `unbounded` (`#547`), and `usd`
   // has no default (recipe.ts), so it clears by deleting the line that
-  // declared it — each named here rather than folded into "name a runtime",
+  // declared it — each named here rather than reduced into "name a runtime",
   // which is not the only lever for either.
   const namedIgnored = ignored.filter((limit) => limit !== 'usd')
   const unboundedWay = ignored.includes('turns')
@@ -2988,12 +2988,12 @@ export function seaRow(node: string, version: string, probe: SeaProbe): CheckRes
  * environment never reaches the operator's file.
  *
  * **`load` is the other half of that, and it is one seam rather than four**
- * (`#242`). Every row that folds projects — the refusals, the recipes, the
+ * (`#242`). Every row that reduces projects — the refusals, the recipes, the
  * declared environment, the base — reads the log for *which* projects and this
  * machine's `~/.lingtai/<project>/recipe.yml` for what governs each one. On the
  * operator's machine those two agree. A caller that swaps the log without
  * swapping the home has made them disagree, and the rows then report on a
- * machine nobody has: `apps/cli/integration/doctor.test.ts`'s *is green* folded
+ * machine nobody has: `apps/cli/integration/doctor.test.ts`'s *is green* reduced
  * a `ProjectOnboarded` that a sibling test had appended to the shared test log
  * and looked for its recipe in the real `$HOME`, where a throwaway
  * `esctest…` project's recipe has never existed. Eight problems, four projects,
@@ -3086,7 +3086,7 @@ export async function runDoctor(
    *
    * `environment` is a report on the Postgres pair, and on this machine there
    * is no pair. Pushed unconditionally, it failed a machine `lingtai init` had
-   * just set up correctly — one that appends, folds `task_view`, renders the
+   * just set up correctly — one that appends, reduces `task_view`, renders the
    * cards and beats the beacon
    * (`packages/daemon/integration/the-written-choice.test.ts`) — by the name of a
    * variable it is right not to have, and named giving a Postgres URL as the
@@ -3189,7 +3189,7 @@ export async function runDoctor(
     await step('projection shapes', async () => results.push(await projectionShapes(pooled)))
     await step('stopped projections', () => stoppedProjections().then((r) => void results.push(r)))
     await step('the daemon', async () => results.push(await daemonLiveness()))
-    // Beside liveness, never folded into it: up and current are two facts, and
+    // Beside liveness, never reduced into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
     await step('daemon currency', async () => results.push(await daemonCurrency()))
     await step('spend', async () => results.push(await spendToday()))

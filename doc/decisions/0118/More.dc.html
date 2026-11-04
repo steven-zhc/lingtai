@@ -54,7 +54,7 @@ code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
 <div class="ctx">
 <div><span class="k" style="color: #5e6e74">Problem</span><p>The backlog is one flat list; forty minors from three steps read as noise.</p></div>
 <div><span class="k" style="color: #5e6e74">Want</span><p>Minors are grouped under the step that raised them, newest step first.</p></div>
-<div><span class="k" style="color: #9c5a08">Watch out</span><p>The fold must not change; grouping is display only.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>The reducer must not change; grouping is display only.</p></div>
 </div>
 <div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{r1}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
 <span class="m" style="font-size: 12px; color: #3a4a50">design asked · nothing judged yet · 0/3 rounds · 2 restarts left</span>
@@ -73,7 +73,7 @@ code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
 <sc-if value="{{own1}}" hint-placeholder-val="{{ false }}">
 <textarea aria-label="Your own answer" rows="2" placeholder="every attempt at this ticket is told this" style="padding: 10px 12px; border: 1px solid #b9d9da; background: #ffffff; font: 13.5px 'IBM Plex Sans', sans-serif"></textarea>
 </sc-if>
-<div class="disc"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up — does the fold already know the step?"><button type="button">Ask</button></div>
+<div class="disc"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up — does the reducer already know the step?"><button type="button">Ask</button></div>
 </div>
 
 <div class="moves">

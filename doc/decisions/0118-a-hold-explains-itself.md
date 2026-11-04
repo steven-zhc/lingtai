@@ -36,7 +36,7 @@ attempt verbatim, as `{{body}}` in the brief
 Discussion and triage are not the same thing, though. A discussion is a place
 for a person to think with an agent. What comes out of it is the person's own
 resolution (approve, requeue or close), and that resolution already has its event. The
-conversation itself decides nothing and needs no fold. Triage is different. It
+conversation itself decides nothing and needs no reduce. Triage is different. It
 is an analysis Lingtai pays for unasked, and its recommendation is a fact the
 board has to show on a card and the log has to keep. Then _what the agent
 advised_ and _what the person chose_ sit side by side.
@@ -56,7 +56,7 @@ Two more things put a card in the lane, and neither is a fourth kind. **Waiting
 with no block** (`RunAwaitingInput` and a bare `RunFailed` leave `blocked`
 false, `packages/projector/src/task-view.ts:447-566`) is a state that should
 not exist. `DispatchRefused` moves nothing into this lane since `#405`: the
-refusal is the pass's rather than this item's, so the fold leaves an item that
+refusal is the pass's rather than this item's, so the reducer leaves an item that
 was merely queued `queued` and the conductor pauses instead — and leaves an
 item already in this lane on a question exactly as it was, because only a
 person's answer may lift that. **Unpushed work** (the branch did
@@ -366,9 +366,9 @@ which kind a wait was got inferred again in each place that needed it, from
      or approved one. Where the panel says triage on a wait, a queued ticket's
      says why it is not moving — once, with the last pass's refusal whole and
      named as the last pass — and a running ticket's is the run log. What the
-     next pass will do at each step is folded into the rail, one cell under
+     next pass will do at each step is reduced into the rail, one cell under
      each step, not drawn as a second list of the same ten steps. The
-     prompt that will be sent is folded by default beside Discussion, because
+     prompt that will be sent is reduced by default beside Discussion, because
      the opening above and the Ticket record already say it.
      [design/queued-page.html](../design/queued-page.html) is the drawing.
    - **The card** on the board carries the number, the title, the rail and its
@@ -617,7 +617,7 @@ which kind a wait was got inferred again in each place that needed it, from
    and the head the branch is at now. A triage that finishes after the person has acted
    is still recorded, for its cost, and shown nowhere.
 
-10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It keeps the head that attempt read beside the result, for §9's line. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a fold never reads. The board, which has both, derives the status from the wait's `WaitReason` and those facts by §1's order, through one pure function, `triageStatus`, the same one the daemon starts triage by. Adding the columns is a rebuild:
+10. **The card reads triage from `task_view`.** The projection keeps the facts for the current wait: the latest `TriageStarted`'s attempt and start time, and that attempt's `TriageResult` whole. It keeps the head that attempt read beside the result, for §9's line. It cannot keep a `TriageStatus`, because two of its cases depend on the recipe and the running daemon, which a reducer never reads. The board, which has both, derives the status from the wait's `WaitReason` and those facts by §1's order, through one pure function, `triageStatus`, the same one the daemon starts triage by. Adding the columns is a rebuild:
     `lingtai projection rebuild task_view`.
 
 11. **A wait is resolved by its own id, and an approval continues the run.**
@@ -666,7 +666,7 @@ which kind a wait was got inferred again in each place that needed it, from
     - **`Close` here only ends a wait.** `lingtai close` closes any ticket,
       waiting or not, and still writes `TicketClosed`; a waiting ticket
       closed also gets its `WaitResolved{Close}`.
-    - **What a resolution makes of the ticket is one fold's answer**, the
+    - **What a resolution makes of the ticket is one reduce's answer**, the
       ticket's, in `@lingtai/domain` ([0101](0101-typescript-packages-effect-unbuilt.md) §4),
       and the card, the page, `task_view` and the queue read that one answer:
       - after `GrantFixRound` the ticket is **`approved`** — a person has let a
@@ -677,7 +677,7 @@ which kind a wait was got inferred again in each place that needed it, from
       - the answer recorded for a wait is worded from the resolution's own
         `reason` (§6), never from a note another event may have overwritten
         while the wait stood; `Close` and `GrantFixRound` record no answer.
-      The queue takes only what this fold calls `queued`, so a ticket approved
+      The queue takes only what this reduce calls `queued`, so a ticket approved
       for a round, or chosen to close, is not taken again.
 
 12. **A split is written from the page, and its parent closes with its

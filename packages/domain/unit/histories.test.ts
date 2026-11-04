@@ -1,9 +1,9 @@
 /**
- * The fixed histories (#798) are the input every one-fold ticket folds, so this
+ * The fixed histories (#798) are the input every one-reduce ticket reduces, so this
  * holds what they contain, that they are well-formed, and that none ever changes.
  *
  * The case labels are read from source with the TypeScript compiler, as
- * `effect-ratchet.test.ts` reads it, so a fold that gains an event type fails
+ * `effect-ratchet.test.ts` reads it, so a reducer that gains an event type fails
  * here until a history covers it.
  *
  * The test never writes `histories.hashes.json`: a red prints the entries to
@@ -83,13 +83,13 @@ describe('coverage', () => {
     })
   }
 
-  it('COVERS holds every catalogue case label of applyRun, applyTicket, applyControl, applyChat and applyFinding', () => {
+  it('COVERS holds every catalogue case label of reduceRunEvent, reduceTicketEvent, reduceControlEvent, reduceChatEvent and reduceFindingEvent', () => {
     const missing = (labels: Set<string>, covered: readonly string[]) => [...labels].filter((l) => !covered.includes(l))
-    expect(missing(caseLabels('run.ts', 'applyRun'), COVERS.run)).toEqual([])
-    expect(missing(caseLabels('ticket.ts', 'applyTicket'), COVERS.ticket)).toEqual([])
-    expect(missing(caseLabels('control.ts', 'applyControl'), COVERS.control)).toEqual([])
-    expect(missing(caseLabels('chat.ts', 'applyChat'), COVERS.chat)).toEqual([])
-    expect(missing(caseLabels('backlog.ts', 'applyFinding'), COVERS.finding)).toEqual([])
+    expect(missing(caseLabels('run.ts', 'reduceRunEvent'), COVERS.run)).toEqual([])
+    expect(missing(caseLabels('ticket.ts', 'reduceTicketEvent'), COVERS.ticket)).toEqual([])
+    expect(missing(caseLabels('control.ts', 'reduceControlEvent'), COVERS.control)).toEqual([])
+    expect(missing(caseLabels('chat.ts', 'reduceChatEvent'), COVERS.chat)).toEqual([])
+    expect(missing(caseLabels('backlog.ts', 'reduceFindingEvent'), COVERS.finding)).toEqual([])
   })
 
   it('COVERS.control is CONTROL_FOLD_TYPES', () => {
@@ -97,7 +97,7 @@ describe('coverage', () => {
   })
 })
 
-describe('the histories fold', () => {
+describe('the histories reduce', () => {
   for (const h of singles.filter((s) => s.kind === 'run')) it(`run.${h.name}`, () => void reduceRun(h.events))
   for (const h of singles.filter((s) => s.kind === 'ticket')) it(`ticket.${h.name}`, () => void reduceTicket(h.events))
   for (const h of singles.filter((s) => s.kind === 'chat')) it(`chat.${h.name}`, () => void reduceChat(h.events))
@@ -146,7 +146,7 @@ describe('shape', () => {
   }
 })
 
-describe('the cells that tell the old folds from the new', () => {
+describe('the cells that tell the old reduces from the new', () => {
   const CELLS = [
     'run.commitCompletedNoHead', // 1
     'run.worktreeNotDone', // 2
@@ -192,7 +192,7 @@ describe('the hash lock', () => {
   })
 })
 
-describe('the finding fold', () => {
+describe('the finding reduce', () => {
   const f = histories.finding
   const at = (events: readonly Envelope[]) => reduceFinding(events)
 

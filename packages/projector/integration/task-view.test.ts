@@ -203,7 +203,7 @@ async function seed(): Promise<void> {
   await append(run(2), [
     started(2),
     // `RunFinished.costUsd` is gone (#502, 0110 §9) — spend has one source,
-    // `RunSpent`, read at display time, not folded into this row.
+    // `RunSpent`, read at display time, not reduced into this row.
     { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 63, durationMs: 100 } },
   ])
 
@@ -268,7 +268,7 @@ async function seed(): Promise<void> {
 
   // 6 — attempt 1 passed a gate and was then killed from outside. Attempt 2
   //     arrives in `secondAttempt`, after the rebuild, so the window this is
-  //     about is folded the way production folds it.
+  //     about is reduced the way production reduces it.
   await append(wi(6), [discovered(6, 'killed, then run again'), claimedWith(attempt(6, 'a'))])
   await append(attempt(6, 'a'), [started(6), ...passed(attempt(6, 'a'), 'prepared', 'install', 'sha-6a')])
 
@@ -507,7 +507,7 @@ async function seed(): Promise<void> {
 
   // 13 — a round in flight, so the note has to say which round *of how many*.
   //      `FixRequested.of` is what makes that readable off the log: a
-  //      projection is a fold and may not read the recipe the ceiling is in.
+  //      projection is a reducer and may not read the recipe the ceiling is in.
   await append(wi(13), [discovered(13, 'patching, round one'), claimed(13)])
   {
     const run13 = aRun(run(13))
@@ -530,7 +530,7 @@ async function seed(): Promise<void> {
           ],
         })
         .map(toAppend),
-      // `FixRequested`/`FixApplied` are gone (#502) — a round is folded off
+      // `FixRequested`/`FixApplied` are gone (#502) — a round is reduced off
       // `PassRouted`'s stored offer/reply/decision now, and its cost is an
       // `Action`-shaped `RunSpent`.
       ...aRoute(run13, { offer: fixRoundOffer(1), reply: fixLinesReply, decision: fixLinesDecision }).map(toAppend),
@@ -546,7 +546,7 @@ async function seed(): Promise<void> {
         costUsd: 0.75,
       }),
       // `RunFinished.costUsd` is gone (#502) — spend is read at display time
-      // off `RunSpent`, never folded into this column.
+      // off `RunSpent`, never reduced into this column.
       { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10 } },
     ])
   }
@@ -643,7 +643,7 @@ async function seed(): Promise<void> {
   }
 }
 
-/** Appended after the rebuild, so `fold` is what folds it. */
+/** Appended after the rebuild, so `reduce` is what reduces it. */
 async function secondAttempt(): Promise<void> {
   await append(wi(6), [released(attempt(6, 'a'), KILLED)])
   await append(wi(6), [claimedWith(attempt(6, 'b'))])
@@ -660,7 +660,7 @@ async function build(): Promise<void> {
 }
 
 /** Forward from the checkpoint, which is what a live projector does. */
-async function fold(): Promise<void> {
+async function reduce(): Promise<void> {
   const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
     await runner.start()
@@ -682,10 +682,10 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
     store = createEventStore(client)
     await seed()
     await build()
-    // Half the history is rebuilt and half is folded forward, so the rebuild case
+    // Half the history is rebuilt and half is reduced forward, so the rebuild case
     // below compares the two paths rather than a rebuild against itself.
     await secondAttempt()
-    await fold()
+    await reduce()
   }, 120_000)
 
   afterAll(async () => {
@@ -1031,7 +1031,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
      * changing a projection would stop being "rebuild it".
      *
      * `before` is genuinely the two paths mixed: `beforeAll` rebuilds most of the
-     * history and then folds the rest forward from the checkpoint. That is what
+     * history and then reduces the rest forward from the checkpoint. That is what
      * makes this a claim about the incremental path and not a rebuild compared
      * with itself — and it is the claim the run-scoped gate keys have to survive,
      * since assignment into a keyed map is the only reason a replay lands on the

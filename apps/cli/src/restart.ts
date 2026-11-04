@@ -451,7 +451,7 @@ export async function openDaemon(
     start: () => Promise<DaemonStart>
     /** What this process loaded, read once the lock is held. */
     code: () => Promise<CodeVersion>
-    /** The whole control stream, folded. */
+    /** The whole control stream, reduced. */
     control: () => Promise<Pick<ControlState, 'shutdown'>>
     log: (line: string) => void
   },
@@ -670,7 +670,7 @@ export interface RestartFacts {
   holder: () => Promise<string | null>
   /** Whether a beacon is fresh. Throws when it could not be read. */
   daemonUp: () => Promise<boolean>
-  /** The whole control stream, folded. */
+  /** The whole control stream, reduced. */
   control: () => Promise<Pick<ControlState, 'shutdown'>>
   inFlight: () => Promise<string[]>
   ask: (by: string, reason: string, timeoutMs: number | null, force: boolean) => Promise<Asking>
@@ -954,7 +954,7 @@ export async function prepareRestart(
       )
     }
     // The decision and the append are one write: the plan read no standing
-    // request, but one may have landed since, and the fold keeps only the
+    // request, but one may have landed since, and the reducer keeps only the
     // newest — so appending over it would make this restart's later
     // withdrawal lift somebody else's drain with no event withdrawing it.
     const asked = await facts.ask(by, `restarting: ${args.reason}`, drainTimeoutMs, force)
@@ -1096,7 +1096,7 @@ export async function prepareRestart(
  *
  * **There is no handoff.** 0042 §8 carried the checked commit and this person's
  * name to the supervisor's daemon in the withdrawal, for it to claim — and
- * since #159 that daemon folds nothing appended before it started, so it never
+ * since #159 that daemon reduces nothing appended before it started, so it never
  * read one. Two attempts to keep that machinery produced the same five
  * asymmetries with the terminal path (#167). What replaces it is nothing new:
  *

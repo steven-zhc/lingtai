@@ -1,5 +1,5 @@
 /**
- * `reduceChat` (D7, D14): one fold of a `chat-` stream, read by the board, the
+ * `reduceChat` (D7, D14): one reducer of a `chat-` stream, read by the board, the
  * conductor's brief and the CLI's loop.
  */
 import { describe, expect, it } from 'vitest'

@@ -1,4 +1,4 @@
-# 0110 — Spend: every paid call appends one `RunSpent`, the `spend` projection holds them, and an estimate is folded at the price of the run's own day
+# 0110 — Spend: every paid call appends one `RunSpent`, the `spend` projection holds them, and an estimate is reduced at the price of the run's own day
 
 **Status** accepted · 2026-10-01, revised 2026-10-18 and 2026-10-28 (§5: projections store estimates)
 
@@ -9,10 +9,10 @@ what the run consumed, in two parts: the dollars the runtime itself reported
 with the model and mode needed to price them. `costUsd` is always written, and
 `null` when the runtime did not say; every token field is optional, and absent
 means the same. Neither is ever zero for _not said_. The `spend` projection
-folds one row per `RunSpent`. Lingtai never computes money on the way into the
+reduces one row per `RunSpent`. Lingtai never computes money on the way into the
 log: an event carries what the runtime said and nothing priced. A projection
 may store money, as facts of its own, kept apart: the dollars the runtime
-reported, and an estimate priced in the fold from the row's counts at the rate
+reported, and an estimate priced in the reducer from the row's counts at the rate
 in force on the run's own day, from [`doc/rate-card.md`](../rate-card.md) and
 the dated snapshot behind it. A reader then sums stored columns.
 
@@ -130,19 +130,19 @@ about something else are the three whose spend is not recorded.
 
 5. **An event never carries a price; a projection may store an estimate, kept
    apart from what was reported.** An event records what the runtime said. A
-   fold that prices a run reads the event, the shipped card and the dated
+   reduce that prices a run reads the event, the shipped card and the dated
    snapshot, and nothing else: no clock and no network. It prices at the rate in
    force on the run's own `at`, so a price that changes later never moves a row
-   already folded, and a rebuild gives the same figure, with one accepted
+   already reduced, and a rebuild gives the same figure, with one accepted
    exception below. It stores, per row,
    `cost_usd` (the runtime's own `costUsd`, `null` when not said), and
    `estimated_usd` with whether the snapshot was used (`null` when it could not
    be priced). The two are never added into one column, and a row with neither
    is unknown, never `0`.
 
-   **A model that gains its first price re-folds what stored an estimate.** The
+   **A model that gains its first price re-reduces what stored an estimate.** The
    one way a stored estimate goes stale that is repaired is a run of a model that had no row when
-   it was folded. So when a snapshot refresh prices a model that had none, the
+   it was reduced. So when a snapshot refresh prices a model that had none, the
    projections that store estimates (`spend` and `ticket_report`, 0123) are
    rebuilt, and every row is priced again by its own day. A price that only
    changes, for a model already priced, rebuilds nothing.
@@ -150,7 +150,7 @@ about something else are the three whose spend is not recorded.
    **Accepted exception: a same-day replacement.** A second fetch on the same
    UTC day replaces that day's row (`mergeSnapshot`,
    `packages/domain/src/rate-card.ts:231`), which happens only when a conductor
-   restarts on a day the upstream price changed. Rows already folded keep the
+   restarts on a day the upstream price changed. Rows already reduced keep the
    earlier estimate, and a rebuild would give the later one. Nothing is
    rebuilt for it: an estimate is not a bill, and a full rebuild for this
    case is not worth its time (0123 §6).
@@ -168,7 +168,7 @@ about something else are the three whose spend is not recorded.
 
 7. **`/spend` shows the `spend` projection, split by purpose.**
    `apps/board/src/app/spend/page.tsx` shows one row per project, with the
-   purposes read off `for` and never folded together, each total kept apart by
+   purposes read off `for` and never reduced together, each total kept apart by
    the rule below. The recipe limits that authorised the spend are shown beneath
    the bill.
 
@@ -233,7 +233,7 @@ about something else are the three whose spend is not recorded.
     and `round`, `runtime`, `turns`, `duration_ms`, `cost_usd` and `usage`
     (jsonb), the estimate of decision 5 (`estimated_usd` and
     `estimate_fetched`), and `kind`, the ticket's kind as its run's claim
-    carried it when the row was folded (0123 §3). The fold fills `ticket` from the pass stream's `RunStarted`, the
+    carried it when the row was reduced (0123 §3). The reducer fills `ticket` from the pass stream's `RunStarted`, the
     ticket stream itself, or the discussion's `DiscussionRequested`, each of
     which it has read by then. A card's total, `/spend`'s rows and the task
     page's list of calls are all queries over it. It is a row per run, not a
@@ -254,7 +254,7 @@ about something else are the three whose spend is not recorded.
     events ([0120](0120-a-reason-is-a-type.md)'s phase 2, #502), and are gone
     with it (#506 dropped the columns). `TriageAgent` never carried them: a
     triage agent's cost is a `RunSpent` and nothing else
-    ([0118](0118-a-hold-explains-itself.md) §3). The `spend` fold reads
+    ([0118](0118-a-hold-explains-itself.md) §3). The `spend` reduce reads
     `RunSpent` and no other event, and the card, `/spend` and the task page
     all read `spend`. What the old fields recorded before the reset is not
     carried into `spend`: the reset forgot it with the rest of the log.

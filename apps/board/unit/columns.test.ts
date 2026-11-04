@@ -97,7 +97,7 @@ describe("the board's columns", () => {
 
     expect(queued?.cards).toEqual([])
     expect(queued?.problems).toEqual([{ project: 'lingtai', reason: 'source.kinds.3: Invalid option' }])
-    // Only Queued. Every other column is a fold of the log, which cannot fail
+    // Only Queued. Every other column is a reducer of the log, which cannot fail
     // to be asked.
     expect(columns.filter((c) => c.problems !== undefined).map((c) => c.id)).toEqual(['queued'])
   })

@@ -111,7 +111,7 @@ implements them, and a host wires the two together.
 | Decides · no I/O of its own | Touches the world · one thing each |
 |---|---|
 | **`conductor`** the order of one pass, and the ports it needs | **`event-store`** SQLite or Postgres: append with a version, subscribe from a seq |
-| **`actions`** what runs at a point, and what its verdict means | **`projector`** the fold, and the checkpoint in the same transaction |
+| **`actions`** what runs at a point, and what its verdict means | **`projector`** the reducer, and the checkpoint in the same transaction |
 | **`agent-env`** what the agent's environment holds | **`github`** the App, the token, issues and labels |
 | **`recipe`** what the managed repository asked for | **`repo`** git: the mirror, the worktree, the merge lane |
 | **`domain`** the vocabulary: event types, streams, reducers | **`agent`** starting the process, hearing it back on the socket |
@@ -130,7 +130,7 @@ work.
 There are **four projections**, `task_view` (the board), `finding_backlog`
 (the minors passing gates raised), `spend` and `ticket_report`, and each is rebuilt on its own with
 `lingtai projection rebuild <name>` — one rebuild per projection. Anything else
-you want to know is folded from the log on demand.
+you want to know is reduced from the log on demand.
 
 ## Status
 

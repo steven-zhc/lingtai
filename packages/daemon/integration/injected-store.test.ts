@@ -4,11 +4,11 @@
  * `DaemonStore` answers two questions about the log — *which streams* and *how
  * far has it got* — and names the log itself, `events`. A caller that supplies
  * one and no `store` is naming one system, and a pass that took the ids from it
- * and folded them out of the process-wide Postgres would be reading two.
+ * and reduced them out of the process-wide Postgres would be reading two.
  *
  * **That failure is silent, which is why it is asserted here rather than left
  * to the reader.** `read()` of a stream the log does not hold is not an error,
- * it is `[]`; `[]` folds to a work item that is not claimed; and a claim check
+ * it is `[]`; `[]` reduces to a work item that is not claimed; and a claim check
  * over ids from another log reports *nothing is wrong* about every one of them.
  * The claim of a killed daemon then holds its ticket at `running` for ever,
  * which is #87 with the repair for #87 installed and looking healthy.
@@ -108,7 +108,7 @@ async function logWithAClaim(): Promise<EventStore> {
 }
 
 describe("a pass given a store reads that store's log", () => {
-  it('folds the claim out of the log the stream id came from', async () => {
+  it('reduces the claim out of the log the stream id came from', async () => {
     const events = await logWithAClaim()
     const { store, asked } = recordingStore(events, [CLAIMED])
 
@@ -119,8 +119,8 @@ describe("a pass given a store reads that store's log", () => {
       dryRun: true,
     })
 
-    // Asked this store, and folded this store's log. Reading the process-wide
-    // Postgres instead returns `[]` for `ticket-pureproj-117`, and an empty fold is
+    // Asked this store, and reduced this store's log. Reading the process-wide
+    // Postgres instead returns `[]` for `ticket-pureproj-117`, and an empty reduce is
     // not `claimed` — so the orphan is reported as no orphan at all.
     expect(asked).toEqual([{ prefixes: [`ticket-${PROJECT}-%`], types: ['TicketClaimed', 'TicketContinued'] }])
     expect(findings.map((f) => f.stream)).toEqual([CLAIMED])

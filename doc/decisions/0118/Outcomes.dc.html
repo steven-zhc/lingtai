@@ -117,8 +117,8 @@ git switch agent/393</pre>
 </div>
 <h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">The projector skips an event when two appends share a millisecond</h1>
 <div class="ctx">
-<div><span class="k" style="color: #5e6e74">Problem</span><p>The checkpoint is a timestamp, so the second of two events in one millisecond is never folded.</p></div>
-<div><span class="k" style="color: #5e6e74">Want</span><p>Every appended event is folded exactly once, whatever its timestamp.</p></div>
+<div><span class="k" style="color: #5e6e74">Problem</span><p>The checkpoint is a timestamp, so the second of two events in one millisecond is never reduced.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>Every appended event is reduced exactly once, whatever its timestamp.</p></div>
 <div><span class="k" style="color: #9c5a08">Watch out</span><p>A projection is corrected by rebuild, never by hand.</p></div>
 </div>
 <div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
@@ -315,7 +315,7 @@ class Component extends DCLogic {
       ],
       rounds: [
         { n: 'r1', text: 'Same-ms skip → fixed with a ≥ comparison.' },
-        { n: 'r2', text: 'First event folded twice → fixed with an in-memory seen-set.' },
+        { n: 'r2', text: 'First event reduced twice → fixed with an in-memory seen-set.' },
         { n: 'r3', text: 'The seen-set is lost on restart; the skip returns after a crash.' }
       ],
       passes: [

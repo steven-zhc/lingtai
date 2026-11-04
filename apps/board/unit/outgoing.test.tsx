@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * keeps hand-written prose from passing for something Lingtai composed.
  *
  * The rendering is asserted on the markup for the reason `#101` established:
- * these are facts about what a reader is shown, not about the fold.
+ * these are facts about what a reader is shown, not about the reducer.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -52,7 +52,7 @@ describe('what an edit did to the prompt', () => {
 
 describe('the box, rendered', () => {
   /**
-   * The document itself, not a summary of it, and open when not `folded`. The
+   * The document itself, not a summary of it, and open when not `reduced`. The
    * whole complaint is that the prompt was composed by the system, never shown,
    * and could not be changed.
    */
@@ -122,14 +122,14 @@ describe('the box, rendered', () => {
   })
 })
 
-describe('folded', () => {
+describe('reduced', () => {
   /**
-   * Queued and approved pages fold the prompt (0118 §2). That Edit opens the
-   * fold is client state, which `renderToStaticMarkup` cannot click: unchecked
+   * Queued and approved pages reduce the prompt (0118 §2). That Edit opens the
+   * reduce is client state, which `renderToStaticMarkup` cannot click: unchecked
    * at unit level.
    */
   it('closes the text behind a summary carrying its size, with Edit outside', () => {
-    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} folded />)
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} reduced />)
 
     expect(html).toContain('<details')
     expect(html).not.toContain('<details open')
@@ -140,8 +140,8 @@ describe('folded', () => {
     expect(html.split(`${VIEW.text.length} bytes`)).toHaveLength(2)
   })
 
-  it('keeps the attempt chip and the version outside the fold', () => {
-    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} folded />)
+  it('keeps the attempt chip and the version outside the reducer', () => {
+    const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} reduced />)
     const before = html.slice(0, html.indexOf('<details'))
 
     expect(before).toContain('attempt 3 only')
@@ -150,7 +150,7 @@ describe('folded', () => {
 
   it('is unchanged when the prompt cannot be composed', () => {
     const html = renderToStaticMarkup(
-      <Outgoing taskId="t" outgoing={{ ...VIEW, text: '', problem: 'bad kinds' }} folded />,
+      <Outgoing taskId="t" outgoing={{ ...VIEW, text: '', problem: 'bad kinds' }} reduced />,
     )
 
     expect(html).toContain('bad kinds')

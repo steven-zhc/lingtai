@@ -851,7 +851,7 @@ describe('parseResult', () => {
  * **The Codex adapter, only where it touches the filesystem.**
  *
  * It was *"the Codex stub"* and asserted that `run()` rejected, naming `#34`. It
- * runs now, and everything about it that is a pure function — the receipt fold,
+ * runs now, and everything about it that is a pure function — the receipt reduce,
  * the argv, the hook translation, the capabilities — is in
  * `unit/codex.test.ts`, where `pnpm test` and therefore the `build` gate can
  * reach it. What is left here is the one thing that is not: reading the wiring

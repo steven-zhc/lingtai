@@ -63,7 +63,7 @@ import {
  * A run that never started is an account-wide condition, so it stops the
  * conductor rather than backing off the item that met it
  * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3). That
- * pause is the only one that carries an expiry, and the expiry is folded rather
+ * pause is the only one that carries an expiry, and the expiry is reduced rather
  * than acted on: `reduceControl` reports the conductor as unpaused once it is
  * past, so the resume needs no timer, no second event, and nobody awake.
  *
@@ -79,9 +79,9 @@ import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
 import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore, type StoppedProjection } from './store.ts'
 
-// The stream name, the state and the fold moved to `@lingtai/domain` when
+// The stream name, the state and the reducer moved to `@lingtai/domain` when
 // `conductor` needed to ask whether the conductor is already paused (0031 §3)
-// — `daemon` depends on `conductor`, so the fold could not stay here. What
+// — `daemon` depends on `conductor`, so the reducer could not stay here. What
 // stays here is what it always was: the I/O, and the commands that append.
 export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from '@lingtai/domain'
 
@@ -93,7 +93,7 @@ export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from '@lingta
 export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus } from './store.ts'
 
 /**
- * Folds the control stream. Cheap: it is a handful of events, not a history.
+ * Reduces the control stream. Cheap: it is a handful of events, not a history.
  *
  * **`since` is what scopes a signal to one daemon** (`#159`). A conductor reads
  * the stream from where it was when the conductor started, so a pause or a
@@ -104,7 +104,7 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * started and stopped by `start`/`shutdown`, and `pause`/`resume` say what the
  * process that is running should do.
  *
- * Every other caller — the board, `doctor`, `status` — passes nothing and folds
+ * Every other caller — the board, `doctor`, `status` — passes nothing and reduces
  * the whole stream, because they are answering *what is standing now* rather
  * than *what am I being told*.
  *
@@ -114,8 +114,8 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * the same setup, so the new daemon must meet the same pause rather than take
  * work until it refuses the same ticket again. `holdsAcrossStarts` marks
  * exactly that pause (and only that one; `standDownConductor`'s does not carry
- * it). The scoped fold is read first, as every other signal is; only when it is
- * not already paused is the whole stream folded too, and only a holding,
+ * it). The scoped reduce is read first, as every other signal is; only when it is
+ * not already paused is the whole stream reduced too, and only a holding,
  * marked pause there changes the answer — a person's own pause written before
  * the watermark is still invisible here, which is 0102 §3 doing what it has
  * always done.
@@ -200,7 +200,7 @@ export type Asking =
 /**
  * Ask for a drain only if none stands, as one write.
  *
- * The fold keeps the newest request and nothing else, so a request appended
+ * The reducer keeps the newest request and nothing else, so a request appended
  * over a standing one hides it — and a caller that later withdraws its own by
  * version would then lift the one it hid, with no event withdrawing that. A
  * read that found nothing followed by `requestShutdown` is exactly that race:
@@ -326,7 +326,7 @@ export type Withdrawal =
  * **Still called, and why** (#167): `lingtai restart` and `lingtai service
  * shutdown` withdraw the request they made once it has done its work. Not so
  * the next daemon can start — since #159 that daemon never reads a request
- * older than itself — but because the request otherwise stands in the fold for
+ * older than itself — but because the request otherwise stands in the reducer for
  * ever: the board's chip, `lingtai status` and every refusal that asks *has
  * somebody asked this system to stop* would go on saying yes about a stop that
  * finished. `ConductorResumed` would lift it too, and a pause with it, which is
@@ -368,7 +368,7 @@ export async function withdrawShutdown(
 /**
  * What the conductor is holding right now, as `project#issue`.
  *
- * A claim folds as `running`, and an approval folds as `approved` (#510) —
+ * A claim reduces as `running`, and an approval reduces as `approved` (#510) —
  * so this list only ever names a pass a conductor is actually holding, never
  * an approved item still waiting for `continueTicket` to claim it.
  *

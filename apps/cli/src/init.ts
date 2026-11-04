@@ -91,7 +91,7 @@
  * asked of the runtime; whether it is paid for is not asked at all.
  *
  * **This now reads and writes the log, for the project question (#394).** The
- * local branch folds every `prj-*` stream (`world.projects()` →
+ * local branch reduces every `prj-*` stream (`world.projects()` →
  * `loadAllProjects()`) and appends `ProjectConfigured` (`world.registerLocal()`
  * → `addLocal`), so `@lingtai/conductor/onboard` and `@lingtai/conductor/projects`
  * are imported statically at the top of this file, same as `first-project.ts`'s

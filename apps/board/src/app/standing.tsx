@@ -353,7 +353,7 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
  *
  * **Those two sit side by side above ~64rem**, the prompt first, and **the
  * moves above both** (#152). One stack left a third of a 1440 viewport empty
- * and put the discussion below the fold of the thing it is a conversation
+ * and put the discussion below the reducer of the thing it is a conversation
  * about; under the pair, a pane that grew pushed the button you were deciding
  * with off the screen, and above it nothing the pair does can move them. DOM
  * order is reading order is tab order, so nothing is reordered by CSS.
@@ -463,7 +463,7 @@ export function Standing({
   taskId: string
   discussions: DiscussionView[]
   /**
-   * Every closed conversation's own total, already folded — `task.totals.byPurpose.Discussion`,
+   * Every closed conversation's own total, already reduced — `task.totals.byPurpose.Discussion`,
    * `spend`'s Discussion rows for this ticket — so the box's meter agrees with
    * the Attempts label's split rather than summing a figure per
    * conversation itself (`#498`).
@@ -488,10 +488,10 @@ export function Standing({
    *
    * **The card said it and the page could not** (#189): which point, how long
    * it has been there, and what bounds it, on the page about that one run. It
-   * was a list of the five points inside a closed attempt, off a fold with no
+   * was a list of the five points inside a closed attempt, off a reducer with no
    * state for *running*, so nothing was lit and `N pending` covered both *not
    * reached* and *never ran*. The same `Rail` the card draws, from the same
-   * fold, and its clock ticks here because `Follow` re-renders on an append
+   * reduce, and its clock ticks here because `Follow` re-renders on an append
    * (#172). Null for a run with nothing on its stream yet.
    */
   progress?: RunProgress | null
@@ -516,7 +516,7 @@ export function Standing({
   const inLine = queued === null ? null : place(queued)
   // 0118 §1's own answer to *which controls does this wait allow*, and the
   // only thing the moves row below reads to decide (#442). `[]` where there
-  // is no reason to read — a wait that could not be folded, or no wait at all
+  // is no reason to read — a wait that could not be reduced, or no wait at all
   // — so every move below is drawn as absent rather than guessed at.
   const allowed = standing.reason === null ? [] : allowedResolutions(standing.reason)
   // There is a document to send exactly when there is one to show. `problem` is
@@ -1088,9 +1088,9 @@ export function Standing({
                 // sentence typed and not staged is otherwise lost to the click that
                 // was meant to send it.
                 sendable={acting && standing.state === 'blocked' && sendable !== null}
-                // Folded where the opening above already says it; open on blocked,
+                // Reduced where the opening above already says it; open on blocked,
                 // where Send is the move.
-                folded={standing.state === 'queued' || standing.state === 'approved'}
+                reduced={standing.state === 'queued' || standing.state === 'approved'}
               />
             ) : null}
 
@@ -1179,7 +1179,7 @@ export function Coords({
       ) : null}
       {/* Whose fact this is. `queued` is the one state that is not in the log,
           so a page that stated it without saying where it came from would be
-          claiming a fold it did not make (0012). */}
+          claiming a reducer it did not make (0012). */}
       {queued !== null && queued.problem === null && queued.notOffered === null ? <span>offered by GitHub</span> : null}
       {/* The coordinate is the pointer: which attempt produced this state, and
           the way down to it. `of N` because the number alone reads as the whole

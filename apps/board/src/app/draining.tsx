@@ -6,7 +6,7 @@
  * moves it the code we merged?* (`health.tsx`), `paused.tsx` answers *is
  * anything going to move?* — and a daemon that has been told to stop is
  * current, unpaused and up to date while it finishes the last pass it will ever
- * run. Folding that into `up` is the same mistake #77 made with `paused`: one
+ * run. Reducing that into `up` is the same mistake #77 made with `paused`: one
  * word cannot carry independent answers.
  *
  * It names the ticket because *stopping* and *stopping, finishing lingtai#94*

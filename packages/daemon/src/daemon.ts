@@ -22,7 +22,7 @@
  *
  * A projection whose handler throws stops with its checkpoint intact. Said on
  * the beacon (`stoppedProjections`) and in `lingtai doctor`, and the daemon
- * keeps conducting: a fold bug in `spend` must not take every project's work
+ * keeps conducting: a reducer bug in `spend` must not take every project's work
  * down with it, nor loop under the supervisor — the bad event is the first thing
  * catch-up reads, so a restart would throw on it again (#839). `task_view`
  * stops alone like the rest, and the conductor takes no new claim while it is
@@ -72,7 +72,7 @@ export interface DaemonOptions {
   predatesHold?: () => Promise<LogPredatesHoldError | null>
   /** Told of each runner as it starts, so the process can stand one down around a rebuild (#680). */
   onRunner?: (projection: Projection, runner: ProjectionRunner) => void
-  /** `createProjectionRunner`. Replaceable so a fold that throws can be staged without a database (#839). */
+  /** `createProjectionRunner`. Replaceable so a reducer that throws can be staged without a database (#839). */
   runnerFor?: (projection: Projection, onError: (error: unknown, phase: string) => void) => ProjectionRunner
 }
 
@@ -127,7 +127,7 @@ export interface Daemon {
   /** Resolves when the daemon stops, with why. */
   readonly stopped: Promise<StopReason>
   stop(): void
-  /** Projections whose handler threw and which stopped alone. Empty while every one folds. */
+  /** Projections whose handler threw and which stopped alone. Empty while every one reduces. */
   readonly stoppedProjections: readonly StoppedProjection[]
 }
 
@@ -144,7 +144,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
 
   // **Before the watermark and before the lock** (#451). A refusal here takes
   // no lock and reads no control stream — the two are read by the pattern this
-  // function already follows for `watermark`, and a log too old to fold has to
+  // function already follows for `watermark`, and a log too old to reduce has to
   // be caught before either does any work against it.
   const predates = await (options.predatesHold ?? (async () => logPredatesHold((await processLog()).queries)))()
   if (predates) return { ok: false, reason: 'log-predates-hold', detail: predates.message }

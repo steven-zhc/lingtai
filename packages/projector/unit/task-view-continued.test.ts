@@ -1,5 +1,5 @@
 /**
- * #684: `task_view` folds a `TicketContinued` exactly as it folds the old-form
+ * #684: `task_view` reduces a `TicketContinued` exactly as it reduces the old-form
  * continuation (a `TicketClaimed` re-claiming a run the row is already on), and
  * `attempts` still counts an approved-and-continued ticket once (#509).
  *
@@ -49,12 +49,12 @@ function streamOf(name: string, reclaim: Reclaim) {
   return { afterSecond, afterRestart, runId: run.runId, restartRunId, taskId: `ticket-pin-${name}` }
 }
 
-async function fold(events: Envelope[], taskId: string) {
+async function reduce(events: Envelope[], taskId: string) {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
     await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.apply(events, ctx))
+    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
     return await store.transact(async (ctx) => {
       const rows = await ctx.query<ProjectionRow>('select * from task_view')
       const runs = await ctx.query<ProjectionRow>('select * from task_view_run order by run_id')
@@ -69,13 +69,13 @@ async function fold(events: Envelope[], taskId: string) {
 const stable = (row: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(row).filter(([k]) => !VOLATILE.includes(k)))
 
-describe('task_view folds TicketContinued as the old-form continuation (#684)', () => {
+describe('task_view reduces TicketContinued as the old-form continuation (#684)', () => {
   const old = streamOf('cont-old', oldForm)
   const neu = streamOf('cont-new', continued)
 
   it('gives identical rows, and one attempt after the second continuation', async () => {
-    const a = await fold(old.afterSecond, old.taskId)
-    const b = await fold(neu.afterSecond, neu.taskId)
+    const a = await reduce(old.afterSecond, old.taskId)
+    const b = await reduce(neu.afterSecond, neu.taskId)
     expect(a.row).toMatchObject({ attempts: 1, state: 'running', run_id: old.runId })
     expect(b.row).toMatchObject({ attempts: 1, state: 'running', run_id: neu.runId })
     expect(stable(b.row)).toEqual({ ...stable(a.row), run_id: neu.runId, verdicts: expect.anything() })
@@ -83,8 +83,8 @@ describe('task_view folds TicketContinued as the old-form continuation (#684)', 
   })
 
   it('still counts a claim on a new run after a release as the second attempt', async () => {
-    const a = await fold(old.afterRestart, old.taskId)
-    const b = await fold(neu.afterRestart, neu.taskId)
+    const a = await reduce(old.afterRestart, old.taskId)
+    const b = await reduce(neu.afterRestart, neu.taskId)
     expect(a.row).toMatchObject({ attempts: 2, run_id: old.restartRunId })
     expect(b.row).toMatchObject({ attempts: 2, run_id: neu.restartRunId })
   })

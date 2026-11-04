@@ -42,7 +42,7 @@ plugin is a red test rather than something somebody has to remember.
 
 `backlog` is the row worth reading twice. It is in the closed set and it has a
 field, and its `at` is `{}` — *no step reads it; the bar is a literal in two
-folds* — so a recipe that writes it anywhere is refused, by a sentence naming
+reduces* — so a recipe that writes it anywhere is refused, by a sentence naming
 where that code is called instead. Naming a thing is not wiring it.
 
 ## What "may be declared at" means

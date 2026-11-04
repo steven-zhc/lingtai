@@ -273,7 +273,7 @@ describe('the work loop', () => {
    *
    * A pause is asked before every pass and never cached, so a quota pause lands
    * on the pass after the run that met it and nothing else is taken. And
-   * because the *expiry* is folded rather than acted on, the loop needs no
+   * because the *expiry* is reduced rather than acted on, the loop needs no
    * timer for the resume — the same question, asked again, simply answers
    * differently once the reset has gone by. That is the twelve minutes 0031 is
    * replacing: nobody has to type `lingtai resume`.
@@ -438,7 +438,7 @@ describe('the work loop', () => {
 
   it('takes nothing while a pause holds, and takes work again when it lifts by itself', async () => {
     let passes = 0
-    // Stands in for `reduceControl` reaching the expiry: the same fold, asked
+    // Stands in for `reduceControl` reaching the expiry: the same reduce, asked
     // twice, over a clock that moved.
     let lifted = false
 

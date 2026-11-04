@@ -480,7 +480,7 @@ export async function run(
 
         // Where this project's tickets actually live — the client itself for
         // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`
-        // folds that choice back into one object so `runOnce` and `runQueue`
+        // reduces that choice back into one object so `runOnce` and `runQueue`
         // keep taking one client; the refs, `fileAt`, the branch and the token
         // still go to GitHub either way.
         const tickets = yield* Effect.tryPromise({

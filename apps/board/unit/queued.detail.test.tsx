@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * still has none.
  *
  * Every card in the Queued column 404'd, because `queued` is the one state no
- * event carries: an issue nobody has run has no stream, `loadTask` folded
+ * event carries: an issue nobody has run has no stream, `loadTask` reduced
  * nothing, and the route called `notFound()`. **Two facts were being flattened
  * into one 404** — *it does not exist* and *I have not touched it* — and the
  * page gave the first when it meant the second (#113).
@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * about the page that exists once they are: where it is in line, what is
  * holding it, and what pressing the button runs.
  *
- * The folds are pure and exported for exactly this, the split every fold in
+ * The reducers are pure and exported for exactly this, the split every reduce in
  * `task.ts` makes; the rendering is asserted on the markup for the reason #101
  * established — these are facts about what a reader is shown.
  */
@@ -175,7 +175,7 @@ describe('what is holding it', () => {
   })
 })
 
-describe("the backoff, folded from the item's own stream", () => {
+describe("the backoff, reduced from the item's own stream", () => {
   const HOUR = 3_600_000
   const now = Date.parse('2026-09-09T04:12:15Z')
 

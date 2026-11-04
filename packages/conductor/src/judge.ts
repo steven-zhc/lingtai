@@ -184,7 +184,7 @@ export type Destination = (typeof DESTINATIONS)[number]
  * The two counts are held by the loop that spends them rather than read back
  * off the log, which is sound for `roundsSpent` for `FixInput`'s reason — a
  * pass is one `runOnce` and a counter cannot outlive what it bounds — and for
- * `restartsSpent` because that one *is* folded from the log
+ * `restartsSpent` because that one *is* reduced from the log
  * (`TicketState.restarts`), and is passed in here as a number so that this
  * module stays a decision with no reader in it.
  */

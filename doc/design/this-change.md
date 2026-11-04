@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | new | `packages/agent/src/runtimes.ts` — the `RuntimeId → factory` table, ~40 lines |
-| grows | `packages/agent/src/codex.ts` — `run()`, `invocation()`, and a pure receipt fold beside them |
+| grows | `packages/agent/src/codex.ts` — `run()`, `invocation()`, and a pure receipt reduce beside them |
 | corrected | `packages/agent/src/runtime.ts` — `meetsTier`, see §3 |
 | reads the table | `conduct.ts:131`, `run.ts:235`, `discuss.ts:256`, `doctor.ts:695`, `doctor.ts:1464`, `doctor.ts:1523`, `projects.ts:128`, `propose.ts:320` |
 
@@ -119,7 +119,7 @@ The unit half can carry all of this, and should:
 
 - **the table walk** — for every `RuntimeId.options` entry: a row exists, and `RUNTIMES[id]().capabilities.id === id`. A key that disagrees with its row is the silent pick 0046 §3 forbids, one level below where `agentRefusal` catches it.
 - **the third runtime** — the ticket's box. A test cannot add a member to a zod enum, so make the claim structurally instead: assert that `signedInHere`'s probe list and `propose`'s preference order are both *derived* from `RuntimeId.options`/`RUNTIMES` and not written out, and add a type-level assertion that `RUNTIMES` is exhaustive over `RuntimeId`. Those two together are what "nothing outside the enum and the table had to change" actually means, and they fail on the day somebody writes a list by hand.
-- **the receipt fold** — `codexOutcome` against fixture JSONL: a clean run, a run with no receipt, a run cut mid-line, and the one that matters — **a failed run whose stream gave no turn count is `crash` and never `never-started`** (§4).
+- **the receipt reduce** — `codexOutcome` against fixture JSONL: a clean run, a run with no receipt, a run cut mid-line, and the one that matters — **a failed run whose stream gave no turn count is `crash` and never `never-started`** (§4).
 - **`meetsTier`** — `{ providesTier: "sandboxed", canFailClosed: false }` does **not** meet `guarded`, and `missingForTier` answers `["pre-tool-use-interception"]`. That test is the whole of §3's correction and it is three lines.
 - **`invocation()`** — the exact argv, including that `-s workspace-write` is present and `--dangerously-bypass-approvals-and-sandbox` is not.
 
