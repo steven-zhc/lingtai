@@ -36,6 +36,8 @@ export const ON_POSTGRES: Record<string, string> = {
     'only one case — readAttempt()/drop() read and clean task_view with a raw, Postgres-only pg.Client',
   'packages/conductor/integration/db-tickets.test.ts':
     'the Postgres DDL for tickets and ticket_comments — timestamptz and BIGSERIAL — and dbTickets, including a real concurrent-createIssue race',
+  'packages/event-store/integration/snapshots.test.ts':
+    'the Postgres stream_snapshots DDL, jsonb state and the conditional upsert',
 }
 
 /**

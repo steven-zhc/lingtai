@@ -109,17 +109,22 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    board writing at once leave the newest; a slow writer that finishes late
    changes nothing.
 
-8. **A snapshot belongs to one log, named by its epoch.** When a log is created it
-   writes a random **epoch id**, once, beside `events`; every snapshot stores the
-   epoch it was reduced from, and a snapshot from another epoch is void. A reset
+8. **A snapshot belongs to one log, named by its epoch.** A log's **epoch** is
+   derived from its lowest-`seq` event, as `<seq>@<at>`; it is never stored, and a
+   log with no events has none. Emptying `events` gives a new epoch and restoring
+   the same events gives the same one. Every snapshot stores the epoch it was
+   reduced from — read before the stream — and a snapshot from another epoch is
+   void: `latest` answers none for it and `put` replaces it at any version. A reset
    ([0100](0100-one-append-only-log.md) §5) is a new epoch, and its procedure in
    `doc/operating.md` also empties the snapshot table — the epoch is what keeps a
    forgotten step from returning a pre-reset state (a pause, a standing shutdown),
    not the step itself.
 
 9. **Snapshots live beside the log, in every store, and are disposable.** One
-   table in the same database as `events`, in the Postgres store (a Prisma-planned
-   migration), the SQLite store and the in-memory store, all held to the event
+   table, `stream_snapshots`, in the same database as `events`, created on first
+   use with `CREATE TABLE IF NOT EXISTS` the way `tickets` is — `createSchema`
+   leaves an existing log alone (`schema.ts`), so a migration would never reach
+   it — in the Postgres store, the SQLite store and the in-memory store, all held to the event
    store's contract suite (0100 §6). The reducer registry lives in `@lingtai/domain`
    and the storage in `@lingtai/event-store`, which already depends on it.
    Deleting every row is always safe. `lingtai doctor` reports how many

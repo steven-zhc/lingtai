@@ -31,7 +31,8 @@
  * place to land instead of three.
  */
 import type { EventStore } from './event-store.ts'
-import { createPostgresLogQueries, type LogQueries } from './queries.ts'
+import { createPostgresLogQueries, createPostgresTicketSql, type LogQueries } from './queries.ts'
+import { createSqlSnapshotStore, type SnapshotStore } from './snapshots.ts'
 import { createPostgresWaker, type Waker } from './wake.ts'
 
 // Re-exported so that a caller holding a log names one submodule and not three.
@@ -50,6 +51,8 @@ export interface Log {
   readonly store: EventStore
   /** The questions that are not a stream read. */
   readonly queries: LogQueries
+  /** Cached reducer states for this log's streams (0124, #868). */
+  readonly snapshots: SnapshotStore
   /**
    * A waker for one subscriber. `name` reaches Postgres's `application_name`
    * and means nothing to a poll — a waker promises *something changed, go
@@ -77,6 +80,7 @@ export function createPostgresLog(options: PostgresLogOptions): Log {
   return {
     store: options.store,
     queries,
+    snapshots: createSqlSnapshotStore(createPostgresTicketSql(options.url === undefined ? {} : { url: options.url })),
     waker(name) {
       return createPostgresWaker({
         ...(name === undefined ? {} : { name }),
