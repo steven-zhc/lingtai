@@ -131,10 +131,15 @@ describe('a stopped projection', () => {
     )
   })
 
-  it('a shape drift at start still refuses', async () => {
+  it('a shape drift at start stops that projection alone and the daemon comes up', async () => {
     const { runnerFor } = fakes({ shape: 'spend' })
-    await expect(startDaemon({ ...base, projections: [projection('spend')], runnerFor })).rejects.toBeInstanceOf(
-      ProjectionShapeError,
-    )
+    const result = await startDaemon({
+      ...base,
+      projections: [projection('spend'), projection('task_view')],
+      runnerFor,
+    })
+    if (!result.ok) throw new Error('the daemon should have come up')
+    expect(result.daemon.stoppedProjections.map((s) => s.name)).toEqual(['spend'])
+    await result.daemon.stop()
   })
 })

@@ -264,9 +264,13 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
         if (err instanceof ProjectionShapeError)
           tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
         // A handler error during catch-up, which is what a restart under the
-        // supervisor meets first: stop that projection and bring the daemon up.
-        if (!(err instanceof ProjectionShapeError) && runner.failure !== null) {
-          await dated(recordStopped(projection.name, () => runner, runner.failure))
+        // supervisor meets first, and a shape that has drifted from its table
+        // (a rebuild not yet run after a column was dropped, 0100 §13): stop that
+        // projection alone and bring the daemon up with the rest (#839).
+        if (err instanceof ProjectionShapeError || runner.failure !== null) {
+          await dated(
+            recordStopped(projection.name, () => runner, err instanceof ProjectionShapeError ? err : runner.failure),
+          )
           options.onRunner?.(projection, runner)
           continue
         }

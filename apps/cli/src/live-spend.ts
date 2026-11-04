@@ -10,20 +10,60 @@ import { spendProjection, ticketReportProjection } from '@lingtai/projector'
 /** The runners this process is following with, so a rebuild can stand them down (#680). */
 export const liveSpend = new Set<ProjectionRunner>()
 
+/** Starts in flight: a runner reads its checkpoint inside `start()`, so a rebuild must wait for these. */
+const starting = new Set<Promise<unknown>>()
+
+/** Set while a rebuild holds the live runners; a start waits on it rather than reading a rewound checkpoint. */
+let standingDown: Promise<void> | null = null
+
 /**
  * Stops every live `spend` runner in this process and returns what starts them
  * again: a rebuild rewinds the checkpoint they share, and a runner that commits
- * meanwhile would carry it past events the replay has not folded.
+ * meanwhile would carry it past events the replay has not folded. A runner
+ * still starting is waited for first, and one that starts during the hold waits
+ * for `resume` (`startLive`).
  */
 export async function holdLiveSpend(): Promise<() => Promise<void>> {
+  let open = (): void => {}
+  const mine = new Promise<void>((resolve) => (open = resolve))
+  const previous = standingDown
+  standingDown = mine
+  await previous
+  await Promise.allSettled(starting)
   const held = [...liveSpend].filter((r) => r.running)
   await Promise.all(held.map((r) => r.stop()))
   return async () => {
-    for (const r of held) if (liveSpend.has(r)) await r.start().catch(() => {})
+    try {
+      for (const r of held) if (liveSpend.has(r)) await r.start().catch(() => {})
+    } finally {
+      if (standingDown === mine) standingDown = null
+      open()
+    }
   }
 }
 
 /** Registers a runner that follows `spend` so `holdLiveSpend` can stand it down. */
 export function trackLiveSpend(projection: Projection, runner: ProjectionRunner): void {
   if (projection.name === spendProjection.name || projection.name === ticketReportProjection.name) liveSpend.add(runner)
+}
+
+/**
+ * Starts a runner so a rebuild cannot miss it: registered before `start()` reads
+ * its checkpoint, started only when no rebuild is standing runners down, and counted as
+ * starting until it has caught up. A start that throws is unregistered.
+ */
+export function startLive(projection: Projection, runner: ProjectionRunner): Promise<void> {
+  const begin = (): Promise<void> => {
+    if (standingDown !== null) return standingDown.then(begin)
+    trackLiveSpend(projection, runner)
+    const started = runner.start()
+    starting.add(started)
+    return started
+      .catch((err: unknown) => {
+        liveSpend.delete(runner)
+        throw err
+      })
+      .finally(() => starting.delete(started))
+  }
+  return begin()
 }

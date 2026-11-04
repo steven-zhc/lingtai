@@ -26,7 +26,7 @@ import {
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
 
-import { liveSpend, trackLiveSpend } from './live-spend.ts'
+import { liveSpend, startLive } from './live-spend.ts'
 
 /**
  * The guard #451 put in front of daemon start, `lingtai doctor` and `lingtai
@@ -67,8 +67,7 @@ async function followSecondary(
   }
   const runner = runnerFor(projection)
   try {
-    await runner.start()
-    trackLiveSpend(projection, runner)
+    await startLive(projection, runner)
     return runner
   } catch (err) {
     log(`${projection.name} will not follow this run: ${(err as Error).message}`)

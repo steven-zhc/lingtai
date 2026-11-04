@@ -37,3 +37,51 @@ describe('holdLiveSpend (#680)', () => {
     expect(calls).toEqual(['stop spend', 'start spend'])
   })
 })
+
+describe('a runner still starting when a rebuild holds the live runners (#860)', () => {
+  it('is waited for before the hold returns, and a start during the hold waits for resume', async () => {
+    const { spendProjection } = await import('@lingtai/projector')
+    const { holdLiveSpend, startLive } = await import('../src/live-spend.ts')
+    const calls: string[] = []
+    let finishStart: () => void = () => {}
+    let running = false
+    const slow = {
+      get running() {
+        return running
+      },
+      start: () =>
+        new Promise<void>((resolve) => {
+          calls.push('slow:start')
+          if (calls.filter((c) => c === 'slow:start').length > 1) return resolve()
+          finishStart = () => {
+            running = true
+            resolve()
+          }
+        }),
+      stop: async () => {
+        running = false
+        calls.push('slow:stop')
+      },
+    } as never
+    const late = {
+      running: false,
+      start: async () => void calls.push('late:start'),
+      stop: async () => {},
+    } as never
+
+    const starting = startLive(spendProjection, slow)
+    const held = holdLiveSpend()
+    const lateStart = startLive(spendProjection, late)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(calls).toEqual(['slow:start'])
+    finishStart()
+    const resume = await held
+    await starting
+    expect(calls).toEqual(['slow:start', 'slow:stop'])
+    await new Promise((r) => setTimeout(r, 10))
+    expect(calls).not.toContain('late:start')
+    await resume()
+    await lateStart
+    expect(calls).toContain('late:start')
+  })
+})
