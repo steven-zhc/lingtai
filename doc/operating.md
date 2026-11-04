@@ -2083,6 +2083,9 @@ pg_dump --format=custom --table=events --table=checkpoints \
 chmod 600 ~/.lingtai/archive/lingtai-*.dump
 ```
 
+`stream_snapshots` is not dumped: it is a cache of folds of `events`, not worth
+keeping ([0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) §9).
+
 `pg_dump`'s own major version has to be at least the server's, or the dump
 refuses before it writes anything.
 
@@ -2236,6 +2239,14 @@ touch `tickets` or `ticket_comments`** — same reason as the SQLite file: they
 imitate an outside issue system and the log reset is not about them. Run this
 against the direct URL, never the pooler.
 
+**A reset needs no step for `stream_snapshots`.** Every row names the event it
+was reduced to, and that event goes with `events`, so no row can be returned
+afterwards ([0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) §8,
+#869). Emptying the table too (`delete from stream_snapshots;`, or `truncate
+table stream_snapshots;` on Postgres) is optional and safe; it only clears rows
+`lingtai doctor`'s `snapshots` row would otherwise report. It is never
+`tickets` or `ticket_comments`, which stay untouched as above.
+
 ### After
 
 **A pause cannot hold off a daemon that has not started yet — keep the daemon
@@ -2387,6 +2398,13 @@ keeps going. If the replay does not finish, `lingtai doctor`'s `rates:` line
 warns and names `lingtai projection rebuild spend`.
 
 ### One reduce per stream (#797)
+
+**A raised reducer version needs only a restart** (snapshots,
+[0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md)). A snapshot
+row at another version is never asked for, so the first read reduces from
+version 1 and the old rows stay; `lingtai doctor`'s `snapshots` row reports
+them as `info`. This is the opposite of a projection's stored state, which
+needs a rebuild.
 
 Nine tickets of this epic changed what a projection stores or how it reduces,
 and each entry below says which. They are listed in the order they landed. **If

@@ -314,7 +314,7 @@ multi-project — **not for scale**. So:
 
 - **No message broker.** A Postgres table with a global `seq` plus `NOTIFY` is the bus.
 - **No separate read database.** CQRS here means two sets of tables in one database.
-- **No snapshots.** Streams are short. Add them when a replay exceeds a second, which will not happen.
+- **Snapshots are a cache, not a store.** A stream's reduced state is saved every fifth event and read as snapshot plus tail, because a replay of `ctl-conductor` took up to 3.3 s on a busy board; any row can be deleted ([0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md)).
 - **No sagas or process managers.** The scheduler is a loop over the `queue` projection.
 - **No general workflow engine.** Gates are one ordered list per project. Branching waits for a second project that needs it.
 - **No configuration UI.** YAML plus `lingtai doctor`. Configuration changes when a project is onboarded, not daily.
