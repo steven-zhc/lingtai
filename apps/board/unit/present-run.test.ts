@@ -17,13 +17,13 @@ const stepOf = (events: readonly Envelope[], prefix: string) =>
 
 describe('presentRun', () => {
   it('D2: a verdict on an older head reads stale', () => {
-    expect(stepOf(histories.run.verdictOnOlderHead, 'review:cold')?.current).toBe(false)
+    expect(stepOf(histories.run.verdictOnOlderHead, 'review:cold')?.stale).toBe(true)
   })
 
   it('D2: steps before build make the head and never read stale', () => {
     const events = lateHistories.run.implementThenReviewed
-    expect(stepOf(events, 'implement:')?.current).toBe(true)
-    expect(stepOf(events, 'review:')?.current).toBe(false)
+    expect(stepOf(events, 'implement:')?.stale).toBe(false)
+    expect(stepOf(events, 'review:')?.stale).toBe(true)
   })
 
   it('D3: a requested signoff is cleared by a later lifecycle event', () => {

@@ -33,9 +33,9 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
 ## Decision
 
 1. **A reducer is declared once, in step form, with a version and a codec.** A reducer
-   that may be snapshotted is `{ name, version, initial, apply(state, envelope),
+   that may be snapshotted is `{ name, version, initial, reduceEvent(state, envelope),
    encode, decode }` in `@lingtai/domain`, and the whole-history reducer is
-   `events.reduce(apply, initial)` — one definition, so the snapshot path, the
+   `events.reduce(reduceEvent, initial)` — one definition, so the snapshot path, the
    full path, the board and the projector cannot drift. `encode`/`decode` carry
    what JSON does not: `bigint` (`lastSeq`, a refusal's `seq`), `Date`, and the
    difference between an absent key and `null`. A unit test per reduce asserts
@@ -62,7 +62,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
 3. **A reducer's version is raised by hand, and an append-only table holds it.**
    `version` is an integer the reducer's author raises whenever the reducer's result
    for some history would change. Each reduce keeps a fixture history that contains
-   every event type its `apply` handles, and a committed table of
+   every event type its `reduceEvent` handles, and a committed table of
    `version → hash of the encoded result`, to which rows are only ever added. A
    result whose hash differs from the row for the current version fails the
    test, naming the reducer: changing the expected value without raising the version
@@ -141,7 +141,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
 - Reading a stream's state costs one snapshot row and at most a commit interval
   of events for every reader that reads through it — the board first, the daemon
   once its reads move (§10).
-- A reducer is one definition with `apply`, a codec and, where time matters, an
+- A reducer is one definition with `reduceEvent`, a codec and, where time matters, an
   evaluation; changing its behaviour means raising its version, and the hash table
   makes forgetting that a failing test.
 - Event payloads stop being versioned. A field that would once have been an
@@ -154,7 +154,7 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
   `control.ts:84-98`) only grow, so its snapshot does too; pruning them is a reducer
   change with a version bump, decided on its own.
 - Projections are unchanged in role: they answer questions across streams; where
-  a projection reduces one stream's part of a row, it calls the same domain `apply`
+  a projection reduces one stream's part of a row, it calls the same domain `reduceEvent`
   ([0101](0101-typescript-packages-effect-unbuilt.md) §4).
 
 ---

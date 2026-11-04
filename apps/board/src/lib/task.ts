@@ -123,11 +123,11 @@ export interface StepVerdict {
   step: string
   state: string
   /**
-   * False when the verdict was made against a commit that is no longer the
+   * True when the verdict was made against a commit that is no longer the
    * head. A force-push revokes nothing; it makes every verdict about a
    * different diff.
    */
-  current: boolean
+  stale: boolean
   evidence: string | null
   findings: Finding[]
 }
@@ -1104,12 +1104,15 @@ export function presentRun(
     const name = s.step.slice(0, s.step.indexOf(':'))
     // Steps before `build` make the head, so their `onSha` is the commit they
     // started on and is never the final head (D2).
-    const current =
-      STEPS.indexOf(name as (typeof STEPS)[number]) < build || state.headSha === null || s.onSha === state.headSha
-    return { step: s.step, state: s.verdict, current, evidence: s.evidence, findings: [...s.findings] }
+    const stale = !(
+      STEPS.indexOf(name as (typeof STEPS)[number]) < build ||
+      state.headSha === null ||
+      s.onSha === state.headSha
+    )
+    return { step: s.step, state: s.verdict, stale, evidence: s.evidence, findings: [...s.findings] }
   })
   if (state.step !== null) {
-    steps.push({ step: `${state.step.step}:`, state: 'running', current: true, evidence: null, findings: [] })
+    steps.push({ step: `${state.step.step}:`, state: 'running', stale: false, evidence: null, findings: [] })
   }
 
   return {

@@ -83,7 +83,7 @@ footer { color: var(--muted); font-size: .88rem; }
 
 <header>
   <h1>One reduce per stream：最终逻辑说明</h1>
-  <p>0.12 的主题叫「一本账」（one set of books），对应 epic #797。本文是英文规格书 <code>doc/design/one-fold-per-stream.md</code> 的中文导读（文件名保留旧词 reduce，内容已改用 reduce），说明这项工作做完后系统怎么运作。更新于 2026-11-03（晚）：术语统一成 reduce / reducer、attempt、stale；加入「一份实现」和「按 seq 去重」两条原则，以及由此新增的 #842–#848 和 attempt 改名票。</p>
+  <p>0.12 的主题叫「一本账」（one set of books），对应 epic #797。本文是英文规格书 <code>doc/design/one-fold-per-stream.md</code> 的中文导读（文件名保留旧词 fold，内容已改用 reduce），说明这项工作做完后系统怎么运作。更新于 2026-11-03（晚）：术语统一成 reduce / reducer、attempt、stale；加入「一份实现」和「按 seq 去重」两条原则，以及由此新增的 #842–#848 和 attempt 改名票。</p>
 </header>
 
 <section>
@@ -225,7 +225,7 @@ footer { color: var(--muted); font-size: .88rem; }
   <ul>
     <li><b>#846 收尾票</b>：提交一份剩余事件分支的白名单。每条按文件、函数、事件类型、次数登记，并写明类别（join / reaction / select）和理由。测试会让不在名单上的分支失败，也会让名单里已经不存在的条目失败。<code>runSubject</code> 和 <code>groupHistory</code> 改成读 <code>RunState.ticketId</code>；D1–D16 每条决策都要有对应的命名测试。</li>
     <li><b>#847 文档票</b>：改正 reference 和 operating guide 里已经不对的句子，每次 rebuild 写一条升级说明。已经定稿的文案不动。</li>
-    <li><b>#848 改名票</b>：<code>applyX</code> → <code>reduceXEvent</code>；投影接口 <code>Projection.apply</code> → <code>reduce</code>；<code>presentRunEvents</code> → <code>presentRunEvents</code>，<code>presentChat</code> → <code>presentChat</code> 等；verdict 的 <code>current</code> → <code>stale</code>（取反）；注释和文档里的 reduce 都改成 reduce。脚本改名的那个 commit 加进 <code>.git-blame-ignore-revs</code>，手工修改另起一个 commit。排在最后。</li>
+    <li><b>#848 改名票</b>：<code>applyX</code> → <code>reduceXEvent</code>；投影接口 <code>Projection.apply</code> → <code>reduce</code>；<code>foldRun</code> → <code>presentRunEvents</code>，<code>foldChat</code> → <code>presentChat</code> 等；verdict 的 <code>current</code> → <code>stale</code>（取反）；注释和文档里的 reduce 都改成 reduce。脚本改名的那个 commit 加进 <code>.git-blame-ignore-revs</code>，手工修改另起一个 commit。排在最后。</li>
     <li><b>attempt 改名票（#849–#858）</b>：排在 #848 之后，一张接一张：#849 domain（<code>RunState</code> → <code>AttemptState</code>、<code>reduceRun</code> → <code>reduceAttempt</code>）；#850 conductor（<code>runPass</code> → <code>runAttempt</code>，主循环的一圈叫 turn）；#851 board、CLI、site 的名字；#852/#853 用户看得到的文字（hero 和 slogan 不动）；#854 文件改名加跳转（<code>the-attempt.html</code>、<code>one-reduce-per-stream.md</code>）；#855–#858 文档、ADR 正文和设计文档。只改声明的名字和文件名，事件名、payload 字段、<code>--json</code> 键、投影的列都不改，所以不需要 rebuild。</li>
     <li><b>snapshot</b>：0124 的缓存，放在 0.12 之后。</li>
   </ul>

@@ -4,7 +4,7 @@ This is the plan for [0101](../decisions/0101-typescript-packages-effect-unbuilt
 *a stream's reducer exists once, here*, and for
 [0124](../decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md), which says the same
 thing: *"the reducer exists once, in `@lingtai/domain`"*, and *"where a projection reduces
-one stream's part of a row, it calls the same domain `apply`"*.
+one stream's part of a row, it calls the same domain `reduceEvent`"*.
 
 The survey is read-only. It was made on 2026-10-31 at `690dbbbb` and re-checked at
 `4fa71683`, which is after #796 landed. #796 added one line near the top of
@@ -34,7 +34,7 @@ flowchart TB
   LOG[("events — the only truth<br/>append-only; an event never changes:<br/>a payload only gains optional fields,<br/>anything else is a new type")]
 
   subgraph DOMAIN["@lingtai/domain — one reduce per stream"]
-    F["control · ticket · run · project ·<br/>integration · chat · finding<br/>{ name, version, initial, apply, encode, decode }"]
+    F["control · ticket · run · project ·<br/>integration · chat · finding<br/>{ name, version, initial, reduceEvent, encode, decode }"]
   end
 
   SNAP[("snapshots — a cache, safe to delete<br/>key: stream, reduce name, reduce version<br/>holds: stream version, last seq, log epoch")]
@@ -60,8 +60,8 @@ flowchart TB
   S -->|found| V{"reduce version current<br/>and log epoch the same?"}
   V -->|no: void| FULL
   V -->|yes| TAIL["read the stream from the snapshot's version"]
-  TAIL --> FOLD["decode the snapshot, reduce the tail with apply"]
-  FULL --> FOLD0["reduce every event with apply"]
+  TAIL --> FOLD["decode the snapshot, reduce the tail with reduceEvent"]
+  FULL --> FOLD0["reduce every event with reduceEvent"]
   FOLD --> NOW["evaluate what depends on now<br/>(a pause that lifts at until)"]
   FOLD0 --> NOW
   NOW --> OUT["the state — the same answer either way"]
@@ -500,7 +500,7 @@ changes it.
 
 1. The 0124 §2 split: a reducer with no `now`, plus `evaluateControl(state, now)` for the
    `until` lapse (the block at the end of `reduceControl`). Today `reduceControl` builds
-   its state in a loop and has no `apply`, so it becomes `reduceControlEvent` first. It
+   its state in a loop and has no `reduceEvent`, so it becomes `reduceControlEvent` first. It
    still reads only `CONTROL_FOLD_TYPES` (#796).
 2. A ceiling cause (D8): an optional typed `cause` on `ConductorPaused`.
    `ConductorPaused` is already in `CONTROL_FOLD_TYPES`, so the list does not change.
@@ -572,7 +572,7 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 11r-b | **task_view's note.** The sentence of the latest transition of either state; `cardFactOf` goes | P3 (note) | 11r-a | rebuild, runbook; the transient integration notes go |
 | 17 | **Nothing else reduces a stream.** A committed list of the event-type branches left outside domain (joins, reactions, selects), and a test that fails on any branch not on it; `RunState.ticketId` readers; a named test per decision | U2 | all above | — |
 | 18 | **Documentation.** The reference and the operating guide, and an upgrade note per rebuild | — | all above | — |
-| 19 | **One word.** `applyX` → `reduceXEvent`, `Projection.apply` → `reduce`, and *reduce* → *reduce* in names, comments and docs | — | last | — |
+| 19 | **One word.** `applyX` → `reduceXEvent`, `Projection.apply` → `reduce`, and *fold* → *reduce* in names, comments and docs | — | last | — |
 | 20 | **The word is attempt** (D20). Ten tickets, #849–#858: domain, conductor and board/CLI names; package and app strings; the renamed documents with redirects; the docs, ADR bodies and living designs. Nothing the log or a projection stores is renamed | — | 19 | — |
 | — | Snapshots, with 0124's registry, codec and version table | last | all | not in 0.12 |
 
