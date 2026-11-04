@@ -31,7 +31,7 @@
  * fixing agent is handed.
  */
 import type { Finding, FindingState, PayloadOf } from '@lingtai/domain'
-import { applyFinding, findingKey, findingsRaisedOf, parseTicketStream } from '@lingtai/domain'
+import { applyFinding, findingKey, findingsRaisedOf, isBacklogStream, parseTicketStream } from '@lingtai/domain'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection } from './store.ts'
@@ -161,6 +161,46 @@ export const backlogProjection: Projection = {
     for (const event of events) {
       const seq = event.seq.toString()
 
+      if (isBacklogStream(event.streamId)) {
+        // Read the row again for every event: an earlier event of this batch
+        // has already updated it, and the fold must see that.
+        const d = event.data as { project: string; key: string }
+        const [row] = await ctx.query<DecisionRow>(
+          `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
+          [d.project, d.key],
+        )
+        // A finding nothing raised has no row to be wrong about.
+        if (!row) continue
+        const before = findingOfRow(row, d)
+        const after = applyFinding(before, event)
+        if (before.status === 'open' && after.status === 'accepted') {
+          const a = event.data as PayloadOf<'FindingAccepted'>
+          await ctx.query(
+            `update finding_backlog
+             set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
+           where project = $1 and key = $2`,
+            [a.project, a.key, a.by, event.at, seq, a.kind],
+          )
+        } else if (before.status === 'open' && after.status === 'declined') {
+          const x = event.data as PayloadOf<'FindingDeclined'>
+          await ctx.query(
+            `update finding_backlog
+             set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
+                 reason = $6
+           where project = $1 and key = $2`,
+            [x.project, x.key, x.by, event.at, seq, x.reason],
+          )
+        } else if (after !== before) {
+          const p = event.data as PayloadOf<'FindingProposed'>
+          await ctx.query(
+            `update finding_backlog set proposed_ref = $3, proposed_url = $4
+           where project = $1 and key = $2`,
+            [p.project, p.key, p.externalRef, p.url],
+          )
+        }
+        continue
+      }
+
       switch (event.type) {
         case 'RunStarted': {
           const d = event.data as PayloadOf<'RunStarted'>
@@ -169,48 +209,6 @@ export const backlogProjection: Projection = {
              on conflict (run_id) do nothing`,
             [event.streamId, d.ticketId],
           )
-          break
-        }
-
-        case 'FindingAccepted':
-        case 'FindingProposed':
-        case 'FindingDeclined': {
-          // Read the row again for every event: an earlier event of this batch
-          // has already updated it, and the fold must see that.
-          const d = event.data as { project: string; key: string }
-          const [row] = await ctx.query<DecisionRow>(
-            `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
-            [d.project, d.key],
-          )
-          // A finding nothing raised has no row to be wrong about.
-          if (!row) break
-          const before = findingOfRow(row, d)
-          const after = applyFinding(before, event)
-          if (before.status === 'open' && after.status === 'accepted') {
-            const a = event.data as PayloadOf<'FindingAccepted'>
-            await ctx.query(
-              `update finding_backlog
-                 set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
-               where project = $1 and key = $2`,
-              [a.project, a.key, a.by, event.at, seq, a.kind],
-            )
-          } else if (before.status === 'open' && after.status === 'declined') {
-            const x = event.data as PayloadOf<'FindingDeclined'>
-            await ctx.query(
-              `update finding_backlog
-                 set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
-                     reason = $6
-               where project = $1 and key = $2`,
-              [x.project, x.key, x.by, event.at, seq, x.reason],
-            )
-          } else if (after !== before) {
-            const p = event.data as PayloadOf<'FindingProposed'>
-            await ctx.query(
-              `update finding_backlog set proposed_ref = $3, proposed_url = $4
-               where project = $1 and key = $2`,
-              [p.project, p.key, p.externalRef, p.url],
-            )
-          }
           break
         }
 

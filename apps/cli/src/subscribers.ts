@@ -37,7 +37,7 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  */
 import { runnableEnv, extensionEnv, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { type Envelope, isPassStream, type PayloadOf, ticketOf } from '@lingtai/domain'
+import { type Envelope, isPassStream, reduceRun, ticketOf } from '@lingtai/domain'
 import { BOARD_PORT, boardUrl } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 
@@ -90,16 +90,10 @@ export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
  * which rejects with it, and `work-loop.ts`'s boundary records it.
  */
 async function runSubject(streamId: string, store: EventStore): Promise<EventSubject | null> {
-  const events = await store.read(streamId)
-  for (const event of events) {
-    if (event.type !== 'RunStarted') continue
-    const named = ticketOf({
-      streamId,
-      data: event.data as PayloadOf<'RunStarted'>,
-    })
-    return named === null ? null : subjectOf(named.project, named.issue)
-  }
-  return null
+  const { ticketId } = reduceRun(await store.read(streamId))
+  if (ticketId === null) return null
+  const named = ticketOf({ streamId, data: { ticketId } })
+  return named === null ? null : subjectOf(named.project, named.issue)
 }
 
 /**
