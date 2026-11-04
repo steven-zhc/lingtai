@@ -153,21 +153,8 @@ replacing an issue's set, and the label is `agent:hold` or there is no button:
 `source.exclude` is free-form, and a recipe that excludes only `wontfix` gets
 no offer rather than that word stamped across twelve bug reports.
 
-## stream — 7 prefixes, unbounded instances
-
-The events about one thing, in order. The **prefixes** are a closed set,
-validated by regex in `packages/domain/src/envelope.ts`. The streams themselves
-are not — one per work item, run, lane and project, forever.
-
-| Prefix | One per | Example |
-|---|---|---|
-| `ticket-` | work item (ticket) | `ticket-nextloom-ai-admin-156` |
-| `pass-` | run (one attempt) | `pass-75b80f13-9f88-48cf-b4d2-79b9779f47cf` |
-| `int-` | integration lane, per base branch | `int-nextloom-ai-admin-develop` |
-| `prj-` | project | `prj-nextloom-ai-admin` |
-| `ctl-` | control | `ctl-conductor`, `ctl-github-app` |
-| `chat-` | discussion about one work item | `chat-8f21…` |
-| `ext-` | extension | `ext-subscribers` (the only one so far) |
+<!-- streams:begin -->
+<!-- streams:end -->
 
 `ctl-github-app` is the installation's App and holds one event per creation
 (`#169`). It is beside `ctl-conductor` rather than on it because the daemon
