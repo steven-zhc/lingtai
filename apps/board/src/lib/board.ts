@@ -3,16 +3,18 @@ import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe, loadAllProjects } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import { readStatus } from '@lingtai/daemon/control'
 import {
   CONFLICT_ROUND_HUNKS,
+  type AttemptState,
   type BlockDiagnosis,
   type ProjectState,
   type WaitId,
   agentBranchOf,
   isPending,
   isRegistered,
-  reduceAttempt,
+  attemptReducer,
   waitWords,
 } from '@lingtai/domain'
 import {
@@ -22,7 +24,7 @@ import {
   type Resolution,
   type TriageStatus,
 } from '@lingtai/domain/wait'
-import { eventStore } from '@lingtai/event-store'
+import { eventStore, log } from '@lingtai/event-store'
 import type { SpendRow } from '@lingtai/projector'
 /**
  * The board's data: one table, plus one question put to GitHub.
@@ -61,7 +63,8 @@ import {
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
-import { savedFixWork } from './saved-fix-work.ts'
+import { savedFixWorkFromState } from './saved-fix-work.ts'
+import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
   addBills,
   billOf,
@@ -1015,29 +1018,31 @@ async function laneProgress(
       (t.triage.result.resolution === 'GrantFixRound' ||
         (t.triage.result.cause._tag === 'ConflictingHunks' && t.triage.result.cause.total <= CONFLICT_ROUND_HUNKS)),
   )
-  const headOf = (task: TaskCard, events: Awaited<ReturnType<typeof eventStore.read>>) => {
-    const saved = task.wait === null ? null : savedFixWork(task.runId as string, events)
+  const headOf = (task: TaskCard, state: AttemptState) => {
+    const saved = task.wait === null ? null : savedFixWorkFromState(task.runId as string, state)
     return saved !== null && 'head' in saved ? saved.head : null
   }
+  // Both branches need only the attempt's state, so it is read through a snapshot (0124, #878). The board
+  // offers snapshots through its writer; one lookup for all the cards.
+  const read = { snapshots: log.snapshots, writer: await boardWriterOrNone() }
   const reduced = await Promise.all([
     ...railed.map(async ({ task, over }) => {
       try {
-        const events = await eventStore.read(task.runId as string)
+        const state = await readState(eventStore, attemptReducer, task.runId as string, 'all', read)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        const state = reduceAttempt(events)
         const progress = progressOf(state, plans.get(task.project), over)
         // The rounds ride only where the rail does: a stream with no progress has no held line.
         const opened = progress === null ? null : state.roundsOpened
-        return [task.taskId, progress, headOf(task, events), opened] as const
+        return [task.taskId, progress, headOf(task, state), opened] as const
       } catch {
         return [task.taskId, null, null, null] as const
       }
     }),
     ...headOnly.map(async (task) => {
       try {
-        const events = await eventStore.read(task.runId as string)
-        return [task.taskId, null, headOf(task, events), null] as const
+        const state = await readState(eventStore, attemptReducer, task.runId as string, 'all', read)
+        return [task.taskId, null, headOf(task, state), null] as const
       } catch {
         return [task.taskId, null, null, null] as const
       }

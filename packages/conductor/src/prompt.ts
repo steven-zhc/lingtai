@@ -23,7 +23,7 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceAttempt, reduceTicket, type Envelope, type TicketState } from '@lingtai/domain'
+import { reduceAttempt, reduceTicket, type AttemptState, type Envelope, type TicketState } from '@lingtai/domain'
 import type { StepAction } from '@lingtai/recipe'
 
 import type { ArmsOnOrigin } from './arms.ts'
@@ -94,7 +94,9 @@ export interface NextPrompt {
  * `lastRun` is the previous attempt's own stream, and `null` means *it was not
  * read*. That distinction is the one `PriorAttempt.outcome` already makes and
  * it is not cosmetic: an empty array says the attempt committed nothing, which
- * `attemptBrief` prints in as many words, and null says nobody looked.
+ * `attemptBrief` prints in as many words, and null says nobody looked. An
+ * `AttemptState` is the same stream already reduced (read through a snapshot,
+ * #878) and gives the same text.
  */
 export function nextPrompt(input: {
   /** The template's own version, `ticket@1924`. */
@@ -103,7 +105,7 @@ export function nextPrompt(input: {
   /** The work item's own events, before the claim this prompt is for. */
   item: readonly Envelope[] | { readonly state: TicketState; readonly streamId: string | null }
   /** The previous attempt's stream, or null when there is no previous attempt. */
-  lastRun: readonly Envelope[] | null
+  lastRun: readonly Envelope[] | AttemptState | null
   /**
    * The ticket's arms `origin` holds (`armsOnOrigin`), so a row can name where
    * that attempt's commits are (#315). Null is *nobody asked*, and names none.
@@ -118,7 +120,10 @@ export function nextPrompt(input: {
 
   const previous = attempts[attempts.length - 1]
   if (previous && input.lastRun !== null) {
-    previous.outcome = attemptOutcome(reduceAttempt(input.lastRun), input.budget)
+    previous.outcome = attemptOutcome(
+      Array.isArray(input.lastRun) ? reduceAttempt(input.lastRun as readonly Envelope[]) : (input.lastRun as AttemptState),
+      input.budget,
+    )
   }
 
   // Two blocks and not one. The history is what every second attempt has; the

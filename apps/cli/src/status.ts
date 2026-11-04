@@ -21,9 +21,10 @@ import {
   type ClientFor,
   type RecipeFor,
 } from '@lingtai/conductor'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   agentBranchOf,
-  reduceAttempt,
+  attemptReducer,
   savedHeadOf,
   waitWords,
   type ProjectState,
@@ -32,7 +33,7 @@ import {
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { paint, stateInk } from '@lingtai/env/colour'
-import { eventStore } from '@lingtai/event-store'
+import { eventStore, log } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
@@ -193,6 +194,9 @@ export interface StatusReading {
   savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHeadReading>
 }
 
+/** A run's state through the log's snapshots. Read-only: a short command offers none (0124 §5, #878). */
+const attemptOf = (runId: string) => readState(eventStore, attemptReducer, runId, 'all', { snapshots: log.snapshots })
+
 /**
  * Whether the run's last `RunRefsPublished` left a clean head to continue, and
  * the remote ref still points at it — the precondition `GrantFixRound` is
@@ -206,7 +210,7 @@ async function hasSavedHead(
   clientFor: ClientFor = githubClientFor,
 ): Promise<SavedHeadReading> {
   try {
-    return await readingOf(savedHeadOf(reduceAttempt(await eventStore.read(runId))), project, clientFor)
+    return await readingOf(savedHeadOf(await attemptOf(runId)), project, clientFor)
   } catch (e) {
     return { unreadable: e instanceof Error ? e.message : String(e) }
   }
@@ -237,7 +241,7 @@ export interface StatusAttempt {
  * is not "no step".
  */
 async function lastStep(runId: string): Promise<StatusAttempt['step']> {
-  return reduceAttempt(await eventStore.read(runId)).step
+  return (await attemptOf(runId)).step
 }
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */

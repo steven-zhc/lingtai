@@ -538,7 +538,7 @@ export async function daemonCommand(
     const declared = await createSubscriberSet({
       filters,
       reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
-      subject: createSubjectResolver(),
+      subject: createSubjectResolver(undefined, { writer: writer ?? undefined }),
       // The daemon's own directory. There is no worktree for an event — it is
       // not about a diff — and a subscriber that wants one has to make it.
       cwd: process.cwd(),

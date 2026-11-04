@@ -28,7 +28,7 @@ import {
   parsePayload,
   parseTicketStream,
   type PayloadOf,
-  reduceAttempt,
+  attemptReducer,
   ticketReducer,
   type AttemptState,
   savedHeadOf,
@@ -304,7 +304,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
 
   let resolution = options.resolution
   if (resolution._tag === 'GrantFixRound') {
-    const saved = await savedHead(store, ticketId, block.runId)
+    const saved = await savedHead(store, ticketId, block.runId, { snapshots: options.snapshots, writer: options.writer })
     if (!saved.ok) return saved
     const { head, ref } = saved
     if (resolution.onSha && matchHead(resolution.onSha, head) !== 'match') {
@@ -410,9 +410,10 @@ async function savedHead(
   store: EventStore,
   ticketId: string,
   runId: string | null,
+  read: SnapshotReadOptions = {},
 ): Promise<Refused | { ok: true; head: string; ref: string }> {
   if (runId === null) return { ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' }
-  const saved = savedHeadOf(reduceAttempt(await store.read(runId)))
+  const saved = savedHeadOf(await readState(store, attemptReducer, runId, 'all', read))
   switch (saved._tag) {
     case 'Saved':
       return { ok: true, head: saved.head, ref: saved.ref }
@@ -499,7 +500,10 @@ async function checkApprove(
       detail: `${ticketId} has no run to approve — nothing was resolved.`,
     }
   }
-  const run = reduceAttempt(await store.read(runId))
+  const run = await readState(store, attemptReducer, runId, 'all', {
+    snapshots: options.snapshots,
+    writer: options.writer,
+  })
 
   const current =
     run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : run.headSha !== null ? run.headSha : null
