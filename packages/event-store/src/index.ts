@@ -25,6 +25,7 @@ export {
   type SnapshotKey,
   type SnapshotStore,
 } from './snapshots.ts'
+export { readThroughSnapshot, type SnapshotReadOptions } from './snapshot-read.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {
   type EndedOutcome,

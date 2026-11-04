@@ -40,7 +40,10 @@ import {
   waitWords,
 } from '@lingtai/domain'
 import {
+  CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
+  controlReducer,
+  evaluateControl,
   type ReleaseCause,
   type AttemptState,
   type RuntimeId,
@@ -48,7 +51,6 @@ import {
   type ToAppend,
   attemptIdOf,
   attemptStream,
-  reduceControl,
   reduceAttempt,
   reduceTicket,
   stepOutcomesOf,
@@ -67,7 +69,7 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log as theLog, readThroughSnapshot } from '@lingtai/event-store'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -663,6 +665,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const host = yield* AgentHost
 
     const store = options.store ?? eventStore
+    // The default log's snapshots belong to the default store; a store passed in has none of its own.
+    const controlSnapshots = options.store === undefined ? theLog.snapshots : undefined
     const home = options.home ?? stateDir()
     const log = options.log ?? (() => {})
     const project = options.project.project!
@@ -954,25 +958,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       holdsAcrossStarts: boolean
       cause: Extract<PauseCause, 'setup' | 'account-limit'>
     }): Effect.Effect<{ kind: 'appended' } | { kind: 'already-paused'; reason: string | null } | { kind: 'failed' }> =>
-      Effect.promise(async () => {
-        const events = await store.read(CONTROL_STREAM)
-        const control = reduceControl(events)
+      Effect.gen(function* () {
+        // Head first, then the state, then the append at that head: an event landing between
+        // them fails the append rather than being decided over. A failure is a defect, as it
+        // was inside `Effect.promise`, so the `catchAllDefect` below still answers it.
+        const head = yield* Effect.promise(() => store.head(CONTROL_STREAM))
+        const state = yield* readThroughSnapshot(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
+          snapshots: controlSnapshots,
+        }).pipe(Effect.orDie)
+        const control = evaluateControl(state, new Date())
         if (control.paused) {
           return { kind: 'already-paused' as const, reason: control.reason }
         }
-        await store.append(CONTROL_STREAM, events.length, [
-          {
-            type: 'ConductorPaused',
-            actor: 'conductor',
-            data: parsePayload('ConductorPaused', {
-              by: 'lingtai',
-              reason: input.reason,
-              until: input.until,
-              holdsAcrossStarts: input.holdsAcrossStarts,
-              cause: input.cause,
-            }),
-          },
-        ])
+        yield* Effect.promise(() =>
+          store.append(CONTROL_STREAM, head, [
+            {
+              type: 'ConductorPaused',
+              actor: 'conductor',
+              data: parsePayload('ConductorPaused', {
+                by: 'lingtai',
+                reason: input.reason,
+                until: input.until,
+                holdsAcrossStarts: input.holdsAcrossStarts,
+                cause: input.cause,
+              }),
+            },
+          ]),
+        )
         return { kind: 'appended' as const }
       }).pipe(
         // A pause that would not append must not replace the reason the run
