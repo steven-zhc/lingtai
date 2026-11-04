@@ -30,7 +30,7 @@ not merely asserted by 0118.
 
 ## The three appenders
 
-- `packages/conductor/src/conduct.ts:3547-3565` is the pass. Its question and
+- `packages/conductor/src/conduct.ts:3547-3565` is the attempt. Its question and
   `needs` come from `whatIsWaitingOnYou` (`:3195-3309`), called from `blocked()`
   (`:3184-3193`), which appends the `unpushed` sentence where there is one, as
   a trailing parenthetical (`:3139`, `:3184-3193`).
@@ -67,7 +67,7 @@ not merely asserted by 0118.
 
 **A review whose rounds ran out.** This is one `WorkItemBlocked`, not a
 variant of its own — which `Judgement`/`Failure` row it lands in depends on
-*which step the pass last visited*, not on whether a review ever ran:
+*which step the attempt last visited*, not on whether a review ever ran:
 
 - **Last arrival was `findings`** (`review` passed carrying findings, and
   `proposed`'s way-through judged them). `BUILT_IN_FOR.findings` is `null`
@@ -121,7 +121,7 @@ this tree as its own thing:
   branches on it, but that is the old fix loop's own return type.
   `conduct.ts:181` imports only `fixBrief` from `fix.ts` — confirmed by grep: no
   other import, and no call anywhere in `conduct.ts` reaches a `'declined'`
-  value. **The pass itself never produces one.**
+  value. **The attempt itself never produces one.**
 - A first `implement` that commits nothing and a re-entered fix round that
   declines are two different code paths, with different appends.
   `conduct.ts:2792` — `if (head === startedAt) return { stopped: 'the agent
@@ -178,7 +178,7 @@ this tree:
 - splitting a ticket into chained tickets;
 - merging the base into the branch with a conflict's resolution.
 
-Each changes what a pass may buy
+Each changes what an attempt may buy
 ([0108](../decisions/0108-a-refusal-buys-a-round.md)); each is #426's
 own ticket to decide, not this one's.
 
@@ -231,7 +231,7 @@ own ticket to decide, not this one's.
 
 3. **Is the repair half of `pass.ts:930-931` still live?** `alsoHeldAtMerge()`
    (`conduct.ts:2330-2349`) still injects a `human:` action at `merge` when
-   `repairOf !== null`. `repairOf` **is** set on every pass —
+   `repairOf !== null`. `repairOf` **is** set on every attempt —
    `conduct.ts:908`: `const repairOf = retiredRepairPending(before)` — so a
    grep of `repairOf = ` finds a live assignment, not an absent one; *nothing
    on this tree sets `repairOf`* is the wrong premise. What
@@ -294,11 +294,11 @@ own ticket to decide, not this one's.
    — the item goes back to the queue with that event as the record, and there
    is still no `WorkItemBlocked`. A runtime missing the recipe's tier is
    `DispatchRefused` (`conduct.ts:826-841`), which 0118 itself already
-   excludes from the lane (`:58-59`, *"the refusal is the pass's rather than
+   excludes from the lane (`:58-59`, *"the refusal is the attempt's rather than
    this item's... the conductor pauses instead"*) and which `task-view.ts:450-501`
    confirms writes `state: 'queued'`, never `'waiting'` — and, since #405,
    that refusal also pauses the conductor itself (`conduct.ts:826-860`,
-   `pauseConductorOnce({until: null, ...})`) rather than letting the pass move
+   `pauseConductorOnce({until: null, ...})`) rather than letting the attempt move
    on to the next queued item, so the item is left Queued until a person runs
    `lingtai resume`. The only `Failure` "setup" row with a
    real producer today is the per-item one in the Hold table above — `admit`
@@ -338,7 +338,7 @@ own ticket to decide, not this one's.
     is not the same thing as a review that passed. Today's code offers
     `approve` anyway, because the only test `conduct.ts:3299-3302` runs is
     `findings.length === 0`, and both arrivals leave `findings` empty for the
-    same reason a clean pass would — `conduct.ts` cannot tell *review passed*
+    same reason a clean attempt would — `conduct.ts` cannot tell *review passed*
     apart from *review had nothing to say* once it is looking only at the
     `findings` array. Whether `recommendedMove(Routed{findings}, ...)` should
     answer `none` on these two arrivals specifically — which would need

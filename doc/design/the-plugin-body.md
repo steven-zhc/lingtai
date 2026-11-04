@@ -114,14 +114,14 @@ tells an author their plugin *lives in the tree: `packages/recipe/src/` beside
 the twelve that exist*, so the page has picked a side; the package graph has not
 been moved to match it.
 
-**Two ways, and they are opposite.** Either the pass's type vocabulary moves
+**Two ways, and they are opposite.** Either the attempt's type vocabulary moves
 *down* into `@lingtai/recipe` — the endings and `Destination` are plain data over
 `Step` and cost nothing, but `ActionContext` drags `RunTrace` and
 `@lingtai/agent` behind it — or the twelve declarations move *up* out of
-`@lingtai/recipe` into a package that can see the pass, which means `StepMap` and
+`@lingtai/recipe` into a package that can see the attempt, which means `StepMap` and
 `actionsAt` stop being module-level schemas bound to `PLUGINS` and become
 functions of a plugin set. The second matches the layering (`recipe` is the
-schema package; the pass is above it) and is the bigger diff, because
+schema package; the attempt is above it) and is the bigger diff, because
 `RecipeFile` is built on `StepMap`.
 
 ## 4. `judge:` at `proposed` asks the same three questions, and answers two of them
@@ -213,7 +213,7 @@ like a step's own function was only that `admit`'s body used to call it.
 **`queue:` was the sixth and `#269` settled it the same way**, and it is the
 sharper case of the two because it runs where there is *nothing yet*: a
 `QueueActionDeps` and an `ActionResult` like the rest, at a step whose
-`ActionContext` has no work item to be about — `onSha` is the base the pass came
+`ActionContext` has no work item to be about — `onSha` is the base the attempt came
 in on and `cwd` is a directory nothing has cut. So *an action needs a worktree* was
 never in the contract either, and what made the take look like a step's own
 function was only that `claim`'s body used to call it. **`merge:` had left before
@@ -285,7 +285,7 @@ and by the runtime.
 
 **`#267`'s *watch out* is landable on its own, and it is landed.** 0064 §7's
 other half — *the plugin chooses; the workflow still bounds what the choice
-costs* — is the pass's and touches no plugin: `onOffer` answers an `Offer` of
+costs* — is the attempt's and touches no plugin: `onOffer` answers an `Offer` of
 `reachable` and `affordable`, `ceilingFor` reads which ceiling the subtraction
 between them was, and the sentence a person gets names it. That had to be true
 **before** a plugin could return any destination, and it is the half a plugin
@@ -309,8 +309,8 @@ machine — `lingtai` and `nextloom-ai-admin`.
 **The sequence is *code, restart, paste*, and the restart is not optional.**
 `PLUGINS` and each plugin's `at` are module constants the daemon loaded at start
 (0010: *the source runs unbuilt* removes the build, not the restart), while the
-recipe is read on every pass. So a recipe naming a plugin at a step the running
-daemon's `at` does not carry is refused at resolve — **every** pass, until it
+recipe is read on every attempt. So a recipe naming a plugin at a step the running
+daemon's `at` does not carry is refused at resolve — **every** attempt, until it
 restarts, which is `conduct.ts` answering `stage: "recipe"` and taking nothing
 at all.
 

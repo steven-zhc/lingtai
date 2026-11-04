@@ -112,7 +112,7 @@ Two of the chips were renamed when
 [0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and the
 quotes above say the new names: `$N repair` became `$N answering` — the figure
 is `spend`'s round 1 and above `Action` rows (#498, read through
-`BoardCard.repairCostUsd`) and covers every round a pass buys — and
+`BoardCard.repairCostUsd`) and covers every round an attempt buys — and
 `<project>: repairs ×1` became `<project>: rounds ×2`, with `passCeiling`'s
 sentence as its title. Neither rename touched the argument.
 

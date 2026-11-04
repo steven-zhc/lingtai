@@ -21,7 +21,7 @@ the width the column actually gives a card.
 eight minutes in had just started. `#84` separated what answering a refusal
 costs from what the work costs, because answering is default-on and reducing it
 in makes an invisible bill. `0039 §3` renamed that chip from *repair* to
-*answering*, because the column holds every round a pass bought and only one of
+*answering*, because the column holds every round an attempt bought and only one of
 them was ever a repair. `#113` made the age absent rather than invented on a
 ticket the log has never moved. `#95` turned *whether* into *when*. `#100` split
 the three things a Queued card can be. `0040 §3` put *which arm* beside *how
@@ -140,7 +140,7 @@ for an operator to do.
 against itself** (`#296`). The hatch is the same and says the same thing; what the
 tone carries is the row above it — *two different things for an operator to do* —
 and here the two are `look at this, it broke` and `answer this`. A rail that drew
-them alike put *this is Lingtai's bug* over a pass that was working and waiting, in
+them alike put *this is Lingtai's bug* over an attempt that was working and waiting, in
 the one colour on the card that means something is wrong. The name above the
 segment moves with it: `--held`, not `--fail`.
 
@@ -233,7 +233,7 @@ at a step that cannot have one.
 The fourth is `nothing running`, and it is the one the run's own stream cannot
 name. *In flight between two steps* and *stopped, by something that is not on
 this stream* reduce identically — no phase, no refusal — so **the lane settles
-which**, exactly as it settles the elapsed pill. A pass the merge lane refused
+which**, exactly as it settles the elapsed pill. An attempt the merge lane refused
 is that card: `IntegrationRefused` goes to the integration lane's stream, the
 board never reads it, and the rail above the sentence is a run that passed every
 step it reached.
@@ -312,7 +312,7 @@ is the one this design already got wrong once.
 - [0016 §4](../decisions-archive/0016-the-settled-model.md) — a configured step that
   silently does not run is Lingtai's bug.
 - [0058 §3](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) — the ten
-  steps, and why five could not draw the pass.
+  steps, and why five could not draw the attempt.
 - [0061 §5](../decisions-archive/0061-the-recipe-is-the-pipeline.md) — the file may omit
   a step; the resolved recipe may not, and the board draws all ten.
 - [0040](../decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) — rounds

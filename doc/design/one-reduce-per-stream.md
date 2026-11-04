@@ -102,7 +102,7 @@ depends on when a snapshot happened to be written.
 ### Where the code runs
 
 Backend code that does IO is an Effect (0101 §6); `Effect.runPromise` runs only at a
-host's edge. An Effect span is an OpenTelemetry span, so a pass is one trace (#791).
+host's edge. An Effect span is an OpenTelemetry span, so an attempt is one trace (#791).
 The reducer itself is pure and stays in `domain`, outside Effect. Order: #797 (this
 plan, with 0124's snapshots last), then #790's projector, `pass.ts` and daemon rows.
 
@@ -272,7 +272,7 @@ Where task_view and `reduceTicket` disagree on lifecycle today (D5, D6):
 **`ticket-report.ts` (16).**
 
 - Per ticket:
-  - claim/continue 358-375 (passes, `passTimes`, `claims`, and `kind` only from
+  - claim/continue 358-375 (`passes`, `passTimes`, `claims`, and `kind` only from
     `TicketClaimed`, 369);
   - `TicketLanded` 387;
   - `TicketClosed` 396, which never overrides landed (400);
@@ -539,7 +539,7 @@ store (0124 §1 as edited on 2026-11-02).
 final shape, moves **every** reader of that piece onto it, and deletes the code it
 replaces in the same diff. No ticket leaves a domain field nobody reads, a
 projection column nobody reads, or a copy of an old reduce. A slice too large for one
-pass is split along the state it adds, never into "add it" then "use it".
+attempt is split along the state it adds, never into "add it" then "use it".
 
 The *covers* column names the rows of the old table (R/C/P, still used by §2 and
 §6) that each ticket absorbs. The rows that remove a disagreement between the board
@@ -568,7 +568,7 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 16 | **The finding reduce.** Domain's backlog-finding reduce; `finding_backlog`'s status and `conductor/backlog.ts` read it | R9c, P4 | — | rebuild, runbook |
 | 7b | **A ticket's waits.** `TicketState.waits` (§2.3 item 7); every reader of a wait moves onto it | U3 | — | — |
 | 7c | **A ticket's discussions.** `TicketState.discussions`; the board's `chatIdsFor` | U1 | — | — |
-| 11r-a | **task_view's run half is the run reduce.** Each pass's `RunState` is stored (a run codec) and a pure `rowOf(ticket, run)` derives the run columns | P3 (run) | 11 | rebuild, runbook; a new claim shows no head |
+| 11r-a | **task_view's run half is the run reduce.** Each attempt's `RunState` is stored (a run codec) and a pure `rowOf(ticket, run)` derives the run columns | P3 (run) | 11 | rebuild, runbook; a new claim shows no head |
 | 11r-b | **task_view's note.** The sentence of the latest transition of either state; `cardFactOf` goes | P3 (note) | 11r-a | rebuild, runbook; the transient integration notes go |
 | 17 | **Nothing else reduces a stream.** A committed list of the event-type branches left outside domain (joins, reactions, selects), and a test that fails on any branch not on it; `RunState.ticketId` readers; a named test per decision | U2 | all above | — |
 | 18 | **Documentation.** The reference and the operating guide, and an upgrade note per rebuild | — | all above | — |
