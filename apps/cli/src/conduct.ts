@@ -46,6 +46,7 @@ import { type ControlState, type ProjectState, turnTransition, projectStream, re
 import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
+import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
@@ -63,6 +64,8 @@ const root = repoRoot()
 export interface ConductOptions {
   /** False holds every item at the merge instead of landing it. */
   merge?: boolean
+  /** The daemon's snapshot writer, offered the once-per-pass control read (0124 §5). */
+  controlWriter?: Pick<SnapshotWriter, 'offer'>
   hookBinary?: string
   promptPath?: string
   /** How many items one pass may take. One, so completion drives the loop. */
@@ -573,7 +576,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
 
   // Read once for the whole pass. A request that arrives mid-pass is answered
   // by the next one — which the append itself triggers.
-  const control = await readControl()
+  const control = await readControl(undefined, 0, options.controlWriter ? { writer: options.controlWriter } : {})
 
   const registered = await loadProjects()
   const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)

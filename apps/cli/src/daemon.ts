@@ -29,11 +29,13 @@ import {
   startDaemon,
   notTakingWork,
   type CodeVersion,
+  type ControlState,
   type ShutdownRequest,
 } from '@lingtai/daemon'
 import { BOARD_PORT, boardOrigin } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 
@@ -180,6 +182,18 @@ export function startLine(
 }
 
 /**
+ * The daemon's control reads of the default log, built once: the writer it holds
+ * is passed here and nowhere else, and the store is always the default one, so a
+ * read of a store passed in can never be handed this writer (0124 §5).
+ */
+export function daemonControlRead(
+  writer: Pick<SnapshotWriter, 'offer'> | null,
+  read: typeof readControl = readControl,
+): (since?: number) => Promise<ControlState> {
+  return (since = 0) => read(undefined, since, writer ? { writer } : {})
+}
+
+/**
  * `lingtai daemon` — the process that holds the long-lived work.
  *
  * The follower used to live in this file, which meant nothing held it unless
@@ -211,7 +225,10 @@ export async function daemonCommand(
    * `lingtai start` goes quiet. Errors and what a person must act on are not trace.
    */
   verbose = true,
+  /** The snapshot writer held for this daemon's lifetime; only the default log's control reads are given it. */
+  writer: Pick<SnapshotWriter, 'offer'> | null = null,
 ): Promise<number> {
+  const controlRead = daemonControlRead(writer)
   const trace = verbose ? (line: string) => console.log(line) : () => {}
   await startTracing()
   // The lock, the status table, the code this process loaded, and — for a
@@ -539,7 +556,7 @@ export async function daemonCommand(
     const claiming = (): Promise<string | null> => {
       const before = notTakingWork(started.daemon.stoppedProjections)
       if (before !== null) return Promise.resolve(before)
-      return pausedSentence({ control: () => readControl(undefined, since) }).then(
+      return pausedSentence({ control: () => controlRead(since) }).then(
         (paused) => notTakingWork(started.daemon.stoppedProjections) ?? paused,
       )
     }
@@ -566,7 +583,7 @@ export async function daemonCommand(
       // And a shutdown in the same breath, from the same reduce (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
-        const control = await readControl(undefined, since)
+        const control = await controlRead(since)
         asked = control.shutdown
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
@@ -599,6 +616,7 @@ export async function daemonCommand(
         const recipes = new Map<string, Triage | null>()
         const outcome = await conductorTurn({
           merge: !('no-merge' in flags),
+          controlWriter: writer ?? undefined,
           // The commit read at startup, so a refusal on the log says which
           // process refused (#148).
           codeSha: code.sha,
@@ -644,7 +662,7 @@ export async function daemonCommand(
     // — and that is the whole of what is worth printing here. `lingtai status`
     // keeps the unscoped read, because it answers *what is standing* rather
     // than *what will this process do*.
-    const control = await readControl(undefined, since)
+    const control = await controlRead(since)
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
@@ -678,7 +696,7 @@ export async function daemonCommand(
     // the honest shape of "finish what you are holding" for a daemon holding
     // nothing.
     const hearShutdown = async (): Promise<void> => {
-      const control = await readControl().catch(() => null)
+      const control = await controlRead().catch(() => null)
       if (control) await noteStart(control)
       const standing = control?.shutdown ?? null
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs)
@@ -825,15 +843,24 @@ export async function controlCommand(
  * and otherwise `prepareRestart` refuses, drains and waits and the start is
  * `lingtai start`'s own.
  */
-export async function restartCommand(args: RestartArgs, steps: Steps): Promise<number> {
+export async function restartCommand(
+  args: RestartArgs,
+  steps: Steps,
+  writer: Pick<SnapshotWriter, 'offer'> | null = null,
+): Promise<number> {
   let started = false
   let code: number
   try {
-    code = await restartSteps(args, steps, (sha) => {
-      started = true
-      steps.end()
-      console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
-    })
+    code = await restartSteps(
+      args,
+      steps,
+      (sha) => {
+        started = true
+        steps.end()
+        console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
+      },
+      writer,
+    )
   } finally {
     // A refusal or drain returns with a spinner still live, and a throw must not leave it animating.
     if (!started) steps.end()
@@ -844,7 +871,12 @@ export async function restartCommand(args: RestartArgs, steps: Steps): Promise<n
   return code
 }
 
-async function restartSteps(args: RestartArgs, steps: Steps, restarted: (sha: string | null) => void): Promise<number> {
+async function restartSteps(
+  args: RestartArgs,
+  steps: Steps,
+  restarted: (sha: string | null) => void,
+  writer: Pick<SnapshotWriter, 'offer'> | null,
+): Promise<number> {
   // Asked before anything stops, like every other refusal. Under launchd or
   // systemd the start is the supervisor's: a daemon started here would be a
   // conductor in a terminal beside the one it keeps (0042 §8).
@@ -893,5 +925,5 @@ async function restartSteps(args: RestartArgs, steps: Steps, restarted: (sha: st
     ...(args.noMerge ? { 'no-merge': '' } : {}),
   }
   steps.begin('starting')
-  return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true)
+  return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true, writer)
 }
