@@ -1,9 +1,17 @@
-import { reduceAttempt, reduceTicket, stepOutcomesOf, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
+import {
+  reduceAttempt,
+  stepOutcomesOf,
+  ticketReducer,
+  waitsFromState,
+  type WaitId,
+  ticketStream,
+} from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log as processLog, type SnapshotReadOptions } from '@lingtai/event-store'
 
 import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
+import { readState } from './snapshot-state.ts'
 
 /**
  * Granting the approval a held run is waiting for (#465).
@@ -34,7 +42,7 @@ export async function deciding<T>(ticketId: string, busy: () => T, act: () => Pr
   }
 }
 
-export interface ApproveOptions {
+export interface ApproveOptions extends SnapshotReadOptions {
   project: string
   issue: number
   /** Only `refSha` is read, for the branch check `resolveWaitHolding` makes — see its own `client`. */
@@ -102,7 +110,14 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
-    () => approveHolding(options, ticketId),
+    () =>
+      approveHolding(
+        {
+          ...options,
+          snapshots: options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined),
+        },
+        ticketId,
+      ),
   )
 }
 
@@ -117,8 +132,8 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   const store = options.store ?? eventStore
   const log = options.log ?? (() => {})
 
-  const events = await store.read(ticketId)
-  const item = reduceTicket(events)
+  const read: SnapshotReadOptions = { snapshots: options.snapshots, writer: options.writer }
+  const item = await readState(store, ticketReducer, ticketId, 'all', read)
 
   // **The way out of a continuation `resolveWaitHolding` could not schedule**
   // (#465). `WaitResolved{Approve}` already committed — the lifecycle is
@@ -164,6 +179,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
         note: options.note,
         client: options.client,
         store,
+        ...read,
       },
       ticketId,
     )
@@ -175,7 +191,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     // The `WaitStarted` this approval already answered is still on the
     // stream — `waitsOf` matches it by `waitId`, never by position — so the
     // continuation is read the same way the first approval read it.
-    const reduce = waitsOf(events).find((w) => w.waitId === waitId)!
+    const reduce = waitsFromState(item).find((w) => w.waitId === waitId)!
     const continuation = continuationOf(reduce.reason, stepOutcomesOf(runEvents))!
     log(`approved ${onSha.slice(0, 7)} by ${options.by} — rescheduled to continue at ${continuation.step}`)
     return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
@@ -268,6 +284,7 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
       note: options.note,
       client: options.client,
       store,
+      ...read,
     },
     ticketId,
   )
@@ -303,31 +320,34 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
  * block left behind. A decision here does not need a network round trip to
  * count.
  */
-export async function requeue(options: {
-  project: string
-  issue: number
-  by: string
-  /**
-   * Why, on the record — optional (#424). A requeue of a run's block reduces into
-   * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
-   * `answersBrief` keeps only the ones with `runId === null`
-   * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
-   * the reducer keeps no answer for. So an optional note here never reaches a
-   * later attempt's prompt, unlike `answer()`'s.
-   */
-  note: string
-  /**
-   * What to do with a question asked before any run: withdraw it (the default,
-   * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
-   * refuses — it checks first, but a `lingtai ask` landing between that check
-   * and this read would otherwise be withdrawn under a note about a document.
-   */
-  onQuestion?: 'withdraw' | 'refuse'
-  /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
-  waitId?: WaitId
-  store?: EventStore
-}): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
+export async function requeue(
+  options: {
+    project: string
+    issue: number
+    by: string
+    /**
+     * Why, on the record — optional (#424). A requeue of a run's block reduces into
+     * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
+     * `answersBrief` keeps only the ones with `runId === null`
+     * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
+     * the reducer keeps no answer for. So an optional note here never reaches a
+     * later attempt's prompt, unlike `answer()`'s.
+     */
+    note: string
+    /**
+     * What to do with a question asked before any run: withdraw it (the default,
+     * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
+     * refuses — it checks first, but a `lingtai ask` landing between that check
+     * and this read would otherwise be withdrawn under a note about a document.
+     */
+    onQuestion?: 'withdraw' | 'refuse'
+    /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
+    waitId?: WaitId
+    store?: EventStore
+  } & SnapshotReadOptions,
+): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
   const store = options.store ?? eventStore
+  const snapshots = options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
 
   // **Never while an approval is acting on the item** (#150). Requeue sits
@@ -344,7 +364,7 @@ export async function requeue(options: {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    () => requeueHolding(options, store, ticketId),
+    () => requeueHolding(options, store, ticketId, { snapshots, writer: options.writer }),
   )
 }
 
@@ -353,9 +373,9 @@ export async function requeueHolding(
   options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse'; waitId?: WaitId },
   store: EventStore,
   ticketId: string,
+  read: SnapshotReadOptions = {},
 ): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
-  const events = await store.read(ticketId)
-  const item = reduceTicket(events)
+  const item = await readState(store, ticketReducer, ticketId, 'all', read)
   if (item.lifecycle.status !== 'blocked') {
     // Saying which state it is in, for the reason `approve` does: "not blocked"
     // sends somebody nowhere, and "it is already running" answers the question.
@@ -399,6 +419,7 @@ export async function requeueHolding(
       by: options.by,
       note,
       store,
+      ...read,
     },
     ticketId,
   )

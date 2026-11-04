@@ -359,6 +359,7 @@ export async function daemonCommand(
     projections: PROJECTIONS.map((p) => p.name),
     projects: registered,
     github: { projects: registered, clients },
+    writer: writer ?? undefined,
   }).catch((err: unknown) => {
     // Reported, never fatal. Refusing to start because a directory could not be
     // removed would turn a mess into an outage.
@@ -515,7 +516,7 @@ export async function daemonCommand(
         project,
         triage,
         triageHashes,
-        daemonTriagePorts(daemonStartedAt, (line) => console.log(line)),
+        daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined),
       )
     } catch (err) {
       console.error(`triage catch-up ${project}: ${(err as Error).message}`)
@@ -575,7 +576,7 @@ export async function daemonCommand(
       triage: (event) =>
         onWaitStarted(
           event,
-          daemonTriagePorts(daemonStartedAt, (line) => console.log(line)),
+          daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined),
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.

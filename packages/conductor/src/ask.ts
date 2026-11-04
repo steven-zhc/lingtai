@@ -21,12 +21,13 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceTicket, waitsOf, type WaitId, ticketStream } from '@lingtai/domain'
+import { parsePayload, ticketReducer, waitsFromState, type WaitId, ticketStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotReadOptions } from '@lingtai/event-store'
 
 import { deciding } from './approve.ts'
 import { resolveWaitHolding } from './resolve-wait.ts'
+import { readState } from './snapshot-state.ts'
 
 export interface AskOutcome {
   ok: boolean
@@ -44,21 +45,24 @@ export interface AskOutcome {
  * blocked item is already asking something; a second question would replace
  * the first unanswered, and the union has room for one.
  */
-export async function ask(options: {
-  project: string
-  issue: number
-  question: string
-  by: string
-  store?: EventStore
-}): Promise<AskOutcome> {
+export async function ask(
+  options: {
+    project: string
+    issue: number
+    question: string
+    by: string
+    store?: EventStore
+  } & SnapshotReadOptions,
+): Promise<AskOutcome> {
   const store = options.store ?? eventStore
+  const snapshots = options.snapshots ?? (options.store === undefined ? log.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
 
   if (!options.question.trim()) {
     return { ok: false, ticketId, reason: 'blank', detail: 'a question needs a question' }
   }
 
-  const item = reduceTicket(await store.read(ticketId))
+  const item = await readState(store, ticketReducer, ticketId, 'all', { snapshots, writer: options.writer })
   if (item.lifecycle.status !== 'backlog') {
     // The state it is in, for the reason `requeue` names it: "cannot ask" sends
     // nobody anywhere, and "it is already running" answers why.
@@ -93,7 +97,7 @@ export async function ask(options: {
   return { ok: true, ticketId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
 }
 
-export interface AnswerOptions {
+export interface AnswerOptions extends SnapshotReadOptions {
   project: string
   issue: number
   answer: string
@@ -134,6 +138,7 @@ export interface AnswerOptions {
  */
 export async function answer(options: AnswerOptions): Promise<AskOutcome> {
   const store = options.store ?? eventStore
+  const snapshots = options.snapshots ?? (options.store === undefined ? log.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
   if (!options.answer.trim()) {
     return { ok: false, ticketId, reason: 'blank', detail: 'an answer needs an answer' }
@@ -146,7 +151,7 @@ export async function answer(options: AnswerOptions): Promise<AskOutcome> {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
-    () => answerHolding(options, store, ticketId),
+    () => answerHolding(options, store, ticketId, { snapshots, writer: options.writer }),
   )
 }
 
@@ -156,9 +161,13 @@ export async function answer(options: AnswerOptions): Promise<AskOutcome> {
  * cannot be unit-tested — this function underneath it can. `index.ts` does not
  * re-export it.
  */
-export async function answerHolding(options: AnswerOptions, store: EventStore, ticketId: string): Promise<AskOutcome> {
-  const events = await store.read(ticketId)
-  const item = reduceTicket(events)
+export async function answerHolding(
+  options: AnswerOptions,
+  store: EventStore,
+  ticketId: string,
+  read: SnapshotReadOptions = {},
+): Promise<AskOutcome> {
+  const item = await readState(store, ticketReducer, ticketId, 'all', read)
   if (item.lifecycle.status !== 'blocked') {
     return {
       ok: false,
@@ -171,7 +180,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
   // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
   // — every other wait carries a run, which is exactly `life.runId !== null`
   // today: a hold with no `run` field is `Question`'s alone.
-  const wait = waitsOf(events).at(-1)
+  const wait = waitsFromState(item).at(-1)
   if (wait === undefined) {
     return { ok: false, ticketId, reason: 'not-asking', detail: `${ticketId} is not asking anything` }
   }
@@ -209,6 +218,7 @@ export async function answerHolding(options: AnswerOptions, store: EventStore, t
       by: options.by,
       note: options.answer,
       store,
+      ...read,
     },
     ticketId,
   )

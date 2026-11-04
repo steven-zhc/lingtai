@@ -10,13 +10,14 @@
  * `editBodyAndRequeueHolding` is what decides, from `writeSection`'s own
  * result, whether `resolveWaitHolding` is called at all.
  */
-import { reduceTicket, ticketStream, type WaitId } from '@lingtai/domain'
+import { ticketReducer, ticketStream, type WaitId } from '@lingtai/domain'
 import { allowedResolutions, requeueNote } from '@lingtai/domain/wait'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log, type SnapshotReadOptions } from '@lingtai/event-store'
 
 import { deciding } from './approve.ts'
 import { upsertSection } from './body-section.ts'
 import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
+import { readState } from './snapshot-state.ts'
 import { record, split, tellGitHub, type IssueChannel } from './tell.ts'
 import { BodyChanged } from './ticket-store.ts'
 
@@ -141,7 +142,7 @@ export interface EditBodyAndRequeueResult {
   detail: string
 }
 
-export interface EditBodyAndRequeueOptions {
+export interface EditBodyAndRequeueOptions extends SnapshotReadOptions {
   project: string
   issue: number
   waitId: WaitId
@@ -173,7 +174,11 @@ export async function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Pr
       written: false,
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    () => editBodyAndRequeueHolding(options, store, ticketId),
+    () =>
+      editBodyAndRequeueHolding(options, store, ticketId, {
+        snapshots: options.snapshots ?? (options.store === undefined ? log.snapshots : undefined),
+        writer: options.writer,
+      }),
   )
 }
 
@@ -182,10 +187,11 @@ export async function editBodyAndRequeueHolding(
   options: EditBodyAndRequeueOptions,
   store: EventStore,
   ticketId: string,
+  read: SnapshotReadOptions = {},
 ): Promise<EditBodyAndRequeueResult> {
   // **Refuse before writing** (0118 §6): a body edited for a refusal it was
   // always going to get is a body changed for nothing.
-  const item = reduceTicket(await store.read(ticketId))
+  const item = await readState(store, ticketReducer, ticketId, 'all', read)
   if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
     return {
       ok: false,
@@ -222,11 +228,12 @@ export async function editBodyAndRequeueHolding(
       // just written, so it cannot go stale against an edited answer (0118 §6).
       note: options.note?.trim() ? options.note : requeueNote(options.text),
       store,
+      ...read,
     },
     ticketId,
   )
   if (!resolved.ok) {
-    const now = reduceTicket(await store.read(ticketId))
+    const now = await readState(store, ticketReducer, ticketId, 'all', read)
     return {
       ok: false,
       ticketId,

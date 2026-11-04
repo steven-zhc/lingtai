@@ -45,6 +45,7 @@ import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import { splitTicket, type SplitPlanInput } from '@lingtai/conductor/split-ticket'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
@@ -52,8 +53,8 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
-  reduceTicket,
-  waitsOf,
+  ticketReducer,
+  waitsFromState,
   type WaitId,
   ticketStream,
 } from '@lingtai/domain'
@@ -61,7 +62,7 @@ import { isPending, isRegistered } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
-import { eventStore } from '@lingtai/event-store'
+import { eventStore, log } from '@lingtai/event-store'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
@@ -73,6 +74,8 @@ import { actor } from '@/lib/actor'
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
 import { runSplit, splitInstance } from '@/lib/split-instance'
+
+import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 
 async function project(name: string) {
   const state = await loadProject(name)
@@ -127,6 +130,7 @@ export async function approveCard(input: {
     }
 
     const result = await approve({
+      writer: await boardWriterOrNone(),
       project: input.project,
       issue: input.issue,
       client,
@@ -179,6 +183,7 @@ export async function continueFixingCard(input: {
           : null
     if (client === null) return { ok: false, detail: 'no GitHub App configured' }
     const result = await resolveWait({
+      writer: await boardWriterOrNone(),
       ticketId: ticketStream(input.project, input.issue),
       issue: input.issue,
       waitId: input.waitId,
@@ -227,6 +232,7 @@ export async function answerCard(input: {
       }
     }
     const result = await answer({
+      writer: await boardWriterOrNone(),
       project: input.project,
       issue: input.issue,
       by: actor(),
@@ -270,6 +276,7 @@ export async function requeueCard(input: {
       }
     }
     const result = await requeue({
+      writer: await boardWriterOrNone(),
       project: input.project,
       issue: input.issue,
       by: actor(),
@@ -302,6 +309,7 @@ export async function editBodyAndRequeueCard(input: {
     const state = await project(input.project)
     const { client } = await projectClient(state)
     const result = await editBodyAndRequeue({
+      writer: await boardWriterOrNone(),
       ...input,
       by: actor(),
       github: client,
@@ -711,9 +719,12 @@ export async function sendAttempt(input: {
     // withdraw it nor to answer it. The page offers Answer there instead.
     // Mirrors `answer()`'s own read (`ask.ts`): only an `OwnQuestion` offers
     // `AnswerQuestion`, and only a wait with no run is one.
-    const events = await eventStore.read(input.taskId)
-    const life = reduceTicket(events).lifecycle
-    const wait = waitsOf(events).at(-1)
+    const state = await readState(eventStore, ticketReducer, input.taskId, 'all', {
+      snapshots: log.snapshots,
+      writer: await boardWriterOrNone(),
+    })
+    const life = state.lifecycle
+    const wait = waitsFromState(state).at(-1)
     if (life.status === 'blocked' && wait !== undefined && allowedResolutions(wait.reason).includes('AnswerQuestion')) {
       return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` }
     }
@@ -728,6 +739,7 @@ export async function sendAttempt(input: {
     }
 
     const result = await requeue({
+      writer: await boardWriterOrNone(),
       project: parsed.project,
       issue: Number(parsed.issue),
       by,

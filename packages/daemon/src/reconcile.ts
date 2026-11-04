@@ -73,9 +73,10 @@ import { promisify } from 'node:util'
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { reduceTicket, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
+import { readState } from '@lingtai/conductor/snapshot-state'
+import { reduceTicket, ticketReducer, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
 import { paint } from '@lingtai/env/colour'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log as processLog, type SnapshotReadOptions } from '@lingtai/event-store'
 import { projectionLag } from '@lingtai/projector'
 
 import { withDaemonStore } from './choose.ts'
@@ -117,6 +118,16 @@ function logOf(options: ReconcileOptions): EventStore {
 }
 
 /**
+ * The snapshots a pass reads tickets through (0124 §5): the process log's own, and only when `logOf` fell back to
+ * that log. A store passed in, or a daemon store's, has none of its own — pairing it with these would be the
+ * wrong-log mistake `logOf` describes.
+ */
+function readOf(options: ReconcileOptions): SnapshotReadOptions {
+  const own = options.store === undefined && options.daemonStore === undefined
+  return { snapshots: own ? processLog.snapshots : undefined, writer: options.writer }
+}
+
+/**
  * What was done about a divergence.
  *
  * A free-form string in the event (`Reconciled.findings[].action`), so this
@@ -144,6 +155,8 @@ export interface ReconcileOptions {
    */
   dryRun?: boolean
   store?: EventStore
+  /** Offered every ticket snapshot a read produces. The daemon passes its own; doctor's dry run passes none. */
+  writer?: SnapshotReadOptions['writer']
   /**
    * What this conductor calls itself, as `claim.ts` would write it.
    *
@@ -265,7 +278,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
         continue
       }
 
-      const task = reduceTicket(await store.read(taskId).catch(() => []))
+      const task = await readState(store, ticketReducer, taskId, 'all', readOf(options)).catch(() => reduceTicket([]))
       const life = task.lifecycle
       const live = life.status === 'claimed' && life.runId === runId && !abandoned.has(taskId)
 
@@ -373,7 +386,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
         continue
       }
 
-      const task = reduceTicket(await store.read(taskId).catch(() => []))
+      const task = await readState(store, ticketReducer, taskId, 'all', readOf(options)).catch(() => reduceTicket([]))
       // Landed and nothing else. `blocked` is a question somebody has to
       // answer, and the log is half of what they answer it with.
       if (task.lifecycle.status !== 'landed') continue
@@ -471,7 +484,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
 
   const findings: Finding[] = []
   for (const ticketId of streams) {
-    const item = reduceTicket(await store.read(ticketId).catch(() => []))
+    const item = await readState(store, ticketReducer, ticketId, 'all', readOf(options)).catch(() => reduceTicket([]))
     const life = item.lifecycle
     if (life.status !== 'claimed') continue
     if (life.worker === worker) continue
@@ -647,8 +660,8 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         // conductor could have claimed the item itself, and releasing a live
         // claim is a far worse outcome than leaving a dead one — the same rule
         // the worktree check follows for the same reason.
-        const events = await store.read(f.stream)
-        const life = reduceTicket(events).lifecycle
+        const state = await readState(store, ticketReducer, f.stream, 'all', readOf(options))
+        const life = state.lifecycle
         const mine = options.worker ?? conductorWorker()
         if (life.status !== 'claimed' || life.worker === mine) {
           f.action = 'reported'
@@ -665,7 +678,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         const fate = await killWorker(life.worker)
         f.actual = `${f.actual} — ${fate}`
         log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
-        await store.append(f.stream, events.length, [
+        await store.append(f.stream, state.version, [
           {
             type: 'TicketReleased',
             actor: 'conductor',

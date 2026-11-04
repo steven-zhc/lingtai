@@ -45,7 +45,14 @@ function fixture() {
     return added
   })
   const deps: CatchUpTriagePorts = {
-    store: { read: async (stream) => streams.get(stream) ?? [], append },
+    store: {
+      read: async (stream) => streams.get(stream) ?? [],
+      // The ticket read is 'all' and never asks for types; a test that reaches here has read the wrong way.
+      readTypes: async () => {
+        throw new Error('readTypes is not part of the ticket read')
+      },
+      append,
+    },
     readTasks: async () => cards,
     baseSha: async () => 'base-sha',
     daemonStartedAt: async () => startedAt,
