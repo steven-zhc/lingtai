@@ -9,8 +9,19 @@
  * exactly one value: `ticket-pin-dispatch`'s `updated_seq`, 28 -> 27, because a
  * `DispatchRefused` on a blocked ticket moves no derived column and so leaves the
  * card's age alone ("an event that moves no derived column does not move it").
- * The `ticket` column itself is not in the pin: it grows with `TicketState`. If
- * this test goes red now, the fold changed — inspect the changed values rather
+ * The `ticket` column itself is not in the pin: it grows with `TicketState`.
+ *
+ * **#844 regenerated it once more**, when the run columns became `rowOf(ticket, run)`. It moved one
+ * value: `ticket-pin-continued`'s `verdicts`, `{"pass-pin-continued:merge:human":"asked"}` -> `{}`, because
+ * the row names the restart's new run and a card holds the named run's steps only (`readTasks` already
+ * showed none of the old run's). The other rules #844 changes have no fixture here — they are the
+ * `lateScenarios` in `task-view-run.test.ts`: a new run starts with no head, files or turns (and no base
+ * between its claim and its `RunStarted`); `awaiting_sha` holds only while a signoff is asked on this
+ * attempt; a signoff's `StepEnded` reads `running` until its `WaitStarted`. The `run_id` rows did not
+ * change, which is the check that the ticket's rule and the old per-event writes agree. The `run` column
+ * of `task_view_run` is not in the pin either.
+ *
+ * If this test goes red now, the fold changed — inspect the changed values rather
  * than regenerating the pin, and name the rule that explains each row.
  *
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))` —
@@ -544,7 +555,8 @@ async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Proje
     return await store.transact(async (ctx) => ({
       // Every column but `ticket`: the stored reduce grows with `TicketState`, and a new field must not churn this pin (#834).
       tasks: (await ctx.query('select * from task_view order by task_id')).map(({ ticket: _ticket, ...row }) => row),
-      runs: await ctx.query('select * from task_view_run order by run_id'),
+      // The stored run reduce is left out for the same reason (#844).
+      runs: (await ctx.query('select * from task_view_run order by run_id')).map(({ run: _run, ...row }) => row),
     }))
   } finally {
     db.close()

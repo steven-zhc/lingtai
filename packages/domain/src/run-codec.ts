@@ -63,14 +63,16 @@ const StepFinding = z.strictObject({
   severity: z.enum(SEVERITIES),
 })
 
+// Keys in the order the reduce writes them, so a decoded state encodes to the same text as one that never
+// left memory: an incremental fold and a rebuild then store identical rows.
 const StepState = z.strictObject({
   step: z.string(),
-  verdict: z.enum(['passed', 'failed', 'never-ran', 'did-not-finish', 'asked', 'waived']),
   onSha: z.string(),
-  evidence: z.string().nullable(),
-  findings: z.array(StepFinding),
   by: z.string().nullable(),
   reason: z.string().nullable(),
+  verdict: z.enum(['passed', 'failed', 'never-ran', 'did-not-finish', 'asked', 'waived']),
+  evidence: z.string().nullable(),
+  findings: z.array(StepFinding),
 })
 
 const StoredRun = z.strictObject({
@@ -84,6 +86,8 @@ const StoredRun = z.strictObject({
   invocation: Invocation.nullable(),
   headSha: z.string().nullable(),
   produced: RunProducedDiff.nullable(),
+  failure: z.strictObject({ kind: z.enum(RUN_FAILURE_KINDS), detail: z.string() }).nullable(),
+  refusal: z.strictObject({ key: z.string(), evidence: z.string(), findings: z.array(Finding) }).nullable(),
   touched: z.array(z.strictObject({ path: z.string(), op: z.enum(['edit', 'write', 'delete']) })),
   compactedAtTurns: z.array(z.number()),
   prompts: z.number(),
@@ -103,8 +107,6 @@ const StoredRun = z.strictObject({
     .nullable(),
   implementRound: z.number(),
   roundsOpened: z.array(z.number()),
-  failure: z.strictObject({ kind: z.enum(RUN_FAILURE_KINDS), detail: z.string() }).nullable(),
-  refusal: z.strictObject({ key: z.string(), evidence: z.string(), findings: z.array(Finding) }).nullable(),
   receipt: z.strictObject({ exitCode: z.number(), turns: z.number(), durationMs: z.number() }).nullable(),
   route: PassRouted.nullable(),
   published: RunRefsPublished.nullable(),

@@ -286,7 +286,7 @@ exports[`task_view rebuilds through cardFactOf exactly as it did through the dir
     "turns": null,
     "updated_at": "2026-08-31T12:00:00.000Z",
     "updated_seq": 61,
-    "verdicts": "{"pass-pin-continued:merge:human":"asked"}",
+    "verdicts": "{}",
     "wait_id": null,
     "wait_reason": null,
   },

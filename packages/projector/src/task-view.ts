@@ -48,10 +48,18 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import type { Envelope, TicketLifecycle, TicketState } from '@lingtai/domain'
+import type { Envelope, RunState, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
+  applyRun,
+  applyTicket,
   cardFactOf,
+  decodeRun,
+  decodeTicket,
+  emptyRun,
+  emptyTicket,
+  encodeRun,
   encodeTicket,
+  isPassStream,
   isTicketStream,
   parseTicketStream,
   waitBranchOf,
@@ -62,7 +70,6 @@ import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
-import { reduceStoredTicket } from './ticket-row.ts'
 
 /**
  * Where a task is.
@@ -218,7 +225,9 @@ export const taskViewProjection: Projection = {
     await ctx.query(`
       create table if not exists task_view_run (
         run_id  text primary key,
-        task_id text not null
+        task_id text,
+        -- The run reduce (applyRun) as encodeRun writes it (#844).
+        run     jsonb not null
       )`)
 
     // A ticket's reduce while it has no task_view row (#834): a prompt edit on
@@ -240,192 +249,21 @@ export const taskViewProjection: Projection = {
   },
 
   async apply(events, ctx) {
+    // One cache per call (#844): every read goes through it, every touched row is written once at the end.
+    const cache = new Cache(ctx)
     for (const event of events) {
-      const seq = event.seq.toString()
-      const at = event.at
-
-      // A ticket's own stream is one reduce (applyTicket) and one write (#834, 0124 §1).
-      if (isTicketStream(event.streamId)) {
-        await applyTicketEvent(ctx, event)
-        continue
-      }
-
-      switch (event.type) {
-        // ---- the run's stream ----
-
-        case 'RunStarted': {
-          const d = event.data as PayloadOf<'RunStarted'>
-          await linkRun(ctx, event.streamId, d.ticketId)
-          // No state: the claim before it already said running (#834).
-          await viaRun(ctx, event.streamId, seq, at, { run_id: event.streamId, base_sha: d.baseSha })
-          break
-        }
-
-        case 'RunAwaitingInput': {
-          // Claude's `Notification` hook appends this (`hook-socket.ts`), the
-          // hook answers `{ allow: true }`, and the run carries on — nothing
-          // reads the event back. It is a note on the card, never a hold.
-          const d = event.data as PayloadOf<'RunAwaitingInput'>
-          await viaRun(ctx, event.streamId, seq, at, { note: d.prompt })
-          break
-        }
-
-        case 'RunProducedDiff': {
-          const d = event.data as PayloadOf<'RunProducedDiff'>
-          await viaRun(ctx, event.streamId, seq, at, {
-            head_sha: d.headSha,
-            files: d.files,
-            insertions: d.insertions,
-            deletions: d.deletions,
-          })
-          break
-        }
-
-        /**
-         * **`verifying`, and it was `gates` until `#247`.** The column beside
-         * it became `verdicts` and the four counts lost their prefix under
-         * `#250`, because each of those names a thing that survives
-         * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md);
-         * this one names a *phase*, and `#249` left it standing because the
-         * phase had no word — `proposed` is a step rather than a phase, and
-         * `steps` says nothing.
-         *
-         * The word the ten steps give it is what the pass does between an
-         * agent proposing completion and an item landing: `build`, `review`,
-         * and the lane's own re-verify against the base as it now stands. It is
-         * the same word `RefusalReason`'s `verify-failed` carries, which is the
-         * one way this phase ends badly and is not a conflict.
-         *
-         * **It is a stored value, so `lingtai projection rebuild task_view` is
-         * what an existing table needs** — and the reset means there is no such
-         * table to carry. `LABEL_STATES`, `labelsFor`, `stateInk` and the
-         * board's `COLUMN_OF` move with it.
-         */
-        case 'RunProposedCompletion': {
-          const d = event.data as PayloadOf<'RunProposedCompletion'>
-          // The running -> verifying overlay, and only that move (#834): the head is
-          // written either way, the state only for a row still on this run and running.
-          await viaRun(ctx, event.streamId, seq, at, { head_sha: d.headSha })
-          await viaRun(
-            ctx,
-            event.streamId,
-            seq,
-            at,
-            { state: 'verifying' },
-            { state: 'running', runId: event.streamId },
-          )
-          break
-        }
-
-        /**
-         * Turns only. `RunFinished.costUsd` is gone (#502, 0110 §9) — spend
-         * has one source, `RunSpent`, and `task_view` has no column for it at
-         * all since `#506`: `spend.ts`'s own projection, read at display time,
-         * is where a total now comes from (0110's *tokens on the event, money
-         * at display*).
-         */
-        case 'RunFinished': {
-          const d = event.data as PayloadOf<'RunFinished'>
-          await viaRun(ctx, event.streamId, seq, at, { turns: d.turns })
-          break
-        }
-
-        // ---- the integration lane ----
-
-        case 'IntegrationRefused': {
-          // A block does not always follow — the merge lane's own `verify-failed`
-          // path can write a fix round's `running` instead (`conduct.ts`). Every
-          // way out writes its own state, so this leaves `state` alone rather
-          // than guessing which one is coming.
-          const d = event.data as PayloadOf<'IntegrationRefused'>
-          await set(ctx, d.ticketId, seq, at, {
-            note: `${d.reason}: ${d.detail}`,
-            // The approval, if there was one, has been spent on this attempt.
-            // The run is back to `gating` and `approve()` refuses it — so the
-            // card must stop offering a button that cannot work (#84).
-            awaiting_sha: null,
-          })
-          break
-        }
-
-        case 'IntegrationSucceeded': {
-          const d = event.data as PayloadOf<'IntegrationSucceeded'>
-          // No state, no closed_at, no wait column (#834): TicketLanded, appended in
-          // the same pass, is what lands the ticket, and the reduce says so.
-          await set(ctx, d.ticketId, seq, at, { note: d.mergeCommit, awaiting_sha: null })
-          break
-        }
-
-        /**
-         * Every type 0120's appendix retires or reshapes, and the one `Hold`
-         * match — `cardFactOf` is the one place left that still names an old
-         * event type or a `Hold`, and #464's switch to the stored read model
-         * changes that function and leaves this file untouched (the design
-         * for #480).
-         */
-        default: {
-          for (const fact of cardFactOf(event)) {
-            switch (fact._tag) {
-              // Keyed `run:point:action`. The point is there because two points
-              // can run an action of the same name; the run is there because two
-              // attempts can run the same point, and without it the second
-              // silently inherited the first's verdicts (#78).
-              case 'Verdict': {
-                await setStep(ctx, event.streamId, seq, at, fact.key, fact.verdict)
-                if (fact.approval?._tag === 'Requested') {
-                  // A `WaitStarted` always follows — the conductor's own
-                  // request sits inside the `if` that guards it, and a plugin's
-                  // `heldAt` reaches the same unconditional append
-                  // (`conduct.ts`, `pass.ts`) — so `state` is left for that
-                  // event to write.
-                  await viaRun(ctx, event.streamId, seq, at, {
-                    note: fact.approval.question,
-                    // The card may offer Approve, and this is the sha it must
-                    // send: the one the run is asking about, not the one it
-                    // produced. A re-request on a repaired head moves this and
-                    // leaves `head_sha` where it was, which is the divergence
-                    // #92 is about.
-                    awaiting_sha: fact.approval.onSha,
-                  })
-                }
-                // Granted and revoked are gone as their own events (#502): an
-                // approval is `WaitResolved{Approve}` now, handled in that case
-                // below, and nothing writes a revocation any more.
-                break
-              }
-
-              /**
-               * A fix is bought, so it is noted — never priced here. Since
-               * `#506` a round's own cost is read off `spend` at display time
-               * (0110's *tokens on the event, money at display*), and
-               * `task_view` has no column to fold `RoundSpent` into.
-               */
-              case 'RoundOpened': {
-                // `of` is gone with `FixRequested` (#502): the round is named
-                // without a denominator rather than as `round 2 of 0`.
-                const note =
-                  fact.findings > 0
-                    ? `fixing round ${fact.round}: ${fact.findings} finding(s)`
-                    : `fixing round ${fact.round}`
-                // The note either way; running only back from the verifying overlay (#834).
-                await viaRun(ctx, event.streamId, seq, at, { note })
-                await viaRun(ctx, event.streamId, seq, at, { state: 'running' }, { state: 'verifying' })
-                break
-              }
-
-              case 'RunEnded':
-                // Always followed by a `WaitStarted` or a release back to
-                // `queued` (`conduct.ts`) — this is the note for the moment
-                // before either lands, and it leaves `state` for whichever one
-                // writes it.
-                await viaRun(ctx, event.streamId, seq, at, { note: `${fact.kind}: ${fact.detail}` })
-                break
-            }
-          }
-          break
-        }
+      if (isTicketStream(event.streamId)) await applyTicketEvent(cache, event)
+      else if (isPassStream(event.streamId)) await applyRunEvent(cache, event)
+      else if (event.type === 'IntegrationRefused' || event.type === 'IntegrationSucceeded') {
+        // The lane's outcome is a note on the card. A block does not always follow, so `state` is the reduce's alone.
+        const d = event.data as PayloadOf<'IntegrationRefused'> & PayloadOf<'IntegrationSucceeded'>
+        const entry = await cache.task(d.ticketId)
+        if (entry.where !== 'row') continue
+        entry.note = event.type === 'IntegrationRefused' ? `${d.reason}: ${d.detail}` : d.mergeCommit
+        touch(entry, event)
       }
     }
+    await cache.flush()
   },
 }
 
@@ -442,14 +280,6 @@ function splitTaskId(taskId: string): { project: string; issue: string } {
   // A projection must fold anything the log holds, including an id it cannot
   // parse — hence the fallback rather than a null the caller has to handle.
   return parseTicketStream(taskId) ?? { project: taskId.replace(/^wi-/, ''), issue: '' }
-}
-
-async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): Promise<void> {
-  await ctx.query(
-    `insert into task_view_run (run_id, task_id) values ($1, $2)
-     on conflict (run_id) do update set task_id = excluded.task_id`,
-    [runId, taskId],
-  )
 }
 
 /**
@@ -566,201 +396,323 @@ function noteOf(event: Envelope, after: TicketState, lifecycleMoved: boolean): {
   }
 }
 
-/**
- * One event on a ticket's stream: reduce it once, and write what the reduce says (#834).
- *
- * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in
- * `seq` order, so each event is a plain read, a reduce and a write. There is no per-row
- * `seq` guard and no lock ordering between `task_view` and `task_view_ticket`.
- *
- * **State moves only when the lifecycle does**, asked of the two reduces and never of the
- * row: the row's `state` may be the run stream's `verifying` overlay, which an edit to the
- * prompt must not write `running` back over.
- */
-async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promise<void> {
-  const taskId = event.streamId
-  if (event.type === 'TicketClaimed' || event.type === 'TicketContinued') {
-    await linkRun(ctx, (event.data as PayloadOf<'TicketClaimed'>).runId, taskId)
-  }
-
-  const [row] = await ctx.query<{ ticket: unknown }>('select ticket from task_view where task_id = $1', [taskId])
-  const stored = row
-    ? row.ticket
-    : (await ctx.query<{ ticket: unknown }>('select ticket from task_view_ticket where task_id = $1', [taskId]))[0]
-        ?.ticket
-  const { before, after } = reduceStoredTicket(stored, event, 'task_view')
-  const seq = event.seq.toString()
-  const encoded = encodeTicket(after)
-
-  if (!row && !MAKES_THE_ROW.has(event.type)) {
-    await ctx.query(
-      `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
-       on conflict (task_id) do update set ticket = excluded.ticket`,
-      [taskId, encoded],
-    )
-    return
-  }
-
-  const was = derive(taskId, before)
-  const now = derive(taskId, after)
-  const derivedChanged = JSON.stringify(was) !== JSON.stringify(now)
-  const lifecycleMoved = JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)
-  const note = noteOf(event, after, lifecycleMoved)
-  // A release lands on a backlog ticket when a WaitResolved already moved it there: the lifecycle and every
-  // derived column are unchanged, and the release still ends the run and gives the card its reason.
-  const releases = event.type === 'TicketReleased' && after.lifecycle.status === 'backlog'
-  const touched =
-    derivedChanged || releases || (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
-  const isClaim = event.type === 'TicketClaimed' || event.type === 'TicketContinued'
-  const runId = isClaim && after.lifecycle.status === 'claimed' ? after.lifecycle.runId : null
-  const clearsRun = releases
-
-  const params: unknown[] = []
-  const p = (value: unknown, cast: string): string => {
-    params.push(value)
-    return `$${params.length}${cast}`
-  }
-  const flag = (on: boolean): string => `${p(on ? 1 : 0, '::int')} = 1`
-  const id = p(taskId, '::text')
-  const seqPh = p(seq, '::bigint')
-  const moved = flag(lifecycleMoved)
-  const writeNote = flag(touched && note !== null)
-  const writeTouched = flag(touched)
-  const setsRun = flag(runId !== null)
-  const clearsRunFlag = flag(clearsRun)
-  // The approval a wait asked for is spent when the wait ends, and a claim, a landing or a close ends
-  // whatever was asked. A wait that *starts* leaves it: the verdict that asked came first.
-  const endsAsk =
-    (was.wait_id !== now.wait_id && now.wait_id === null) ||
-    (derivedChanged &&
-      (isClaim || event.type === 'TicketClosed' || event.type === 'TicketLanded' || event.type === 'WaitResolved'))
-  const clearsAwaiting = flag(endsAsk)
-  const runPh = p(runId, '::text')
-
-  // [column, value placeholder, flag that keeps the row's own value when false]
-  const cols: [string, string, string?][] = [
-    ['project', p(now.project, '::text')],
-    ['issue', p(now.issue, '::text')],
-    ['title', p(now.title, '::text')],
-    ['kind', p(now.kind, '::text')],
-    ['state', p(now.state, '::text'), moved],
-    ['note', p(note?.value ?? null, '::text'), writeNote],
-    ['wait_id', p(now.wait_id, '::text')],
-    ['wait_reason', p(now.wait_reason, '::jsonb')],
-    ['triage_attempt', p(now.triage_attempt, '::int')],
-    ['triage_started_at', p(now.triage_started_at, '::timestamptz')],
-    ['triage_result', p(now.triage_result, '::jsonb')],
-    ['triage_head_sha', p(now.triage_head_sha, '::text')],
-    ['answer', p(now.answer, '::jsonb')],
-    ['split', p(now.split, '::jsonb')],
-    ['closed_at', p(now.closed_at, '::timestamptz')],
-    ['attempts', p(now.attempts, '::int')],
-    ['last_attempt_at', p(now.last_attempt_at, '::timestamptz')],
-    ['restarts', p(now.restarts, '::int')],
-    ['ticket', p(encoded, '::jsonb')],
-    ['updated_at', p(event.at, '::timestamptz'), writeTouched],
-    ['updated_seq', seqPh, writeTouched],
-  ]
-  const sets = [
-    ...cols.map(([name, ph, keep]) =>
-      keep ? `${name} = case when ${keep} then ${ph} else task_view.${name} end` : `${name} = ${ph}`,
-    ),
-    `run_id = case when ${setsRun} then ${runPh} when ${clearsRunFlag} then null else task_view.run_id end`,
-    `awaiting_sha = case when ${clearsAwaiting} then null else task_view.awaiting_sha end`,
-  ].join(', ')
-
-  if (row && !MAKES_THE_ROW.has(event.type)) {
-    await ctx.query(`update task_view set ${sets} where task_id = ${id}`, params)
-    return
-  }
-
-  await ctx.query(
-    `insert into task_view (task_id, run_id, ${cols.map(([name]) => name).join(', ')})
-     values (${id}, ${runPh}, ${cols.map(([, ph]) => ph).join(', ')})
-     on conflict (task_id) do update set ${sets}`,
-    params,
-  )
-  // The state lives in exactly one place at a time: it is in the row now.
-  await ctx.query('delete from task_view_ticket where task_id = $1', [taskId])
+/** The run's columns, a pure function of the ticket's reduce and the latest run's (#844). */
+export interface RunColumns {
+  state: TaskState
+  run_id: string | null
+  base_sha: string | null
+  head_sha: string | null
+  files: number | null
+  insertions: number | null
+  deletions: number | null
+  turns: number | null
+  verdicts: string
+  awaiting_sha: string | null
 }
 
 /**
- * Updates a row by task id.
+ * The row's run columns. `run` is the state of `ticket.runs.at(-1)`, or null when none is stored yet.
  *
- * `updated_seq` guards a replay: events arrive in seq order, so a write carrying
- * an earlier seq is a bug rather than something to apply.
+ * `state` is the ticket's, except `verifying`: a claimed ticket whose run proposed completion and has opened
+ * no fix round since (`RunProposedCompletion` is appended by the first dispatch only, and `RoundOpened`
+ * puts the pass back to `running` for good).
  */
-async function set(
-  ctx: ProjectionContext,
-  taskId: string,
-  seq: string,
-  at: Date,
-  values: Record<string, unknown>,
-  only?: { state: TaskState; runId?: string },
-): Promise<void> {
-  const entries = Object.entries(values)
-  const sets = entries.map(([k], i) => `${k} = $${i + 4}`).join(', ')
-  const guard: unknown[] = []
-  let where = ''
-  if (only) {
-    guard.push(only.state)
-    where += ` and state = $${entries.length + 4}`
-    if (only.runId !== undefined) {
-      guard.push(only.runId)
-      where += ` and run_id = $${entries.length + 5}`
+export function rowOf(ticket: TicketState, run: RunState | null): RunColumns {
+  const runId = ticket.runs.at(-1) ?? null
+  const l = ticket.lifecycle
+  const verifying =
+    run !== null &&
+    l.status === 'claimed' &&
+    l.runId === runId &&
+    run.lifecycle.status === 'gating' &&
+    run.roundsOpened.length === 0
+  // The run a release ended is not the card's any more: that is what scopes the verdict pills (#78).
+  const released = ticket.claims.findLast((c) => c.runId === runId)?.ended?.kind === 'released'
+  const verdicts: Record<string, string> = {}
+  if (run !== null && runId !== null)
+    for (const [key, s] of Object.entries(run.steps)) verdicts[`${runId}:${key}`] = s.verdict
+  // An approval is offered only while a signoff is asked on this attempt: the request must be newer than
+  // the last claim or continuation (#829), or a continued run refused at the lane would offer a spent sha.
+  const asks =
+    run !== null &&
+    run.lifecycle.status === 'awaiting-approval' &&
+    l.status === 'blocked' &&
+    l.runId === runId &&
+    run.askedAt !== null &&
+    (ticket.lastAttemptAt === null || run.askedAt.getTime() >= ticket.lastAttemptAt.getTime())
+  return {
+    state: verifying ? 'verifying' : taskStateOf(l),
+    run_id: released ? null : runId,
+    base_sha: run?.baseSha ?? null,
+    head_sha: run?.headSha ?? null,
+    files: run?.produced?.files ?? null,
+    insertions: run?.produced?.insertions ?? null,
+    deletions: run?.produced?.deletions ?? null,
+    turns: run?.receipt?.turns ?? null,
+    verdicts: JSON.stringify(verdicts),
+    awaiting_sha: asks && run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : null,
+  }
+}
+
+type Columns = Derived & RunColumns
+
+interface TaskEntry {
+  /** `row`: in `task_view`. `staged`: in `task_view_ticket`. `none`: neither yet. */
+  where: 'row' | 'staged' | 'none'
+  ticket: TicketState
+  note: string | null
+  updatedAt: Date
+  updatedSeq: bigint
+  /** Moved off `staged` by this call: the staging row is deleted at the flush. */
+  wasStaged: boolean
+  dirty: boolean
+}
+
+interface RunEntry {
+  taskId: string | null
+  run: RunState
+  dirty: boolean
+}
+
+/**
+ * Every stored state one `apply` call touches (#844). Both reduces live here, so a ticket event
+ * mid-batch computes `rowOf` from the run's current state and not from a stale row.
+ */
+class Cache {
+  readonly tasks = new Map<string, TaskEntry>()
+  readonly runs = new Map<string, RunEntry>()
+  private readonly missing = new Set<string>()
+
+  constructor(private readonly ctx: ProjectionContext) {}
+
+  async task(taskId: string): Promise<TaskEntry> {
+    const hit = this.tasks.get(taskId)
+    if (hit) return hit
+    const [row] = await this.ctx.query<Record<string, unknown>>(
+      'select ticket, note, updated_at, updated_seq from task_view where task_id = $1',
+      [taskId],
+    )
+    let entry: TaskEntry
+    if (row) {
+      entry = {
+        where: 'row',
+        ticket: decodeTicket(row.ticket, 'task_view', taskId),
+        note: (row.note as string | null) ?? null,
+        updatedAt: new Date(row.updated_at as string | Date),
+        updatedSeq: BigInt(String(row.updated_seq)),
+        wasStaged: false,
+        dirty: false,
+      }
+    } else {
+      const [staged] = await this.ctx.query<{ ticket: unknown }>(
+        'select ticket from task_view_ticket where task_id = $1',
+        [taskId],
+      )
+      entry = {
+        where: staged ? 'staged' : 'none',
+        ticket: staged ? decodeTicket(staged.ticket, 'task_view', taskId) : emptyTicket,
+        note: null,
+        updatedAt: new Date(0),
+        updatedSeq: 0n,
+        wasStaged: false,
+        dirty: false,
+      }
+    }
+    this.tasks.set(taskId, entry)
+    const latest = entry.ticket.runs.at(-1)
+    if (latest !== undefined) await this.run(latest, false)
+    return entry
+  }
+
+  /** The run's entry, created from `emptyRun` when it has no row (`create`) or left absent (`peek`). */
+  run(runId: string, create: true): Promise<RunEntry>
+  run(runId: string, create: false): Promise<RunEntry | undefined>
+  async run(runId: string, create: boolean): Promise<RunEntry | undefined> {
+    const hit = this.runs.get(runId)
+    if (hit) return hit
+    if (!this.missing.has(runId)) {
+      const [row] = await this.ctx.query<{ task_id: string | null; run: unknown }>(
+        'select task_id, run from task_view_run where run_id = $1',
+        [runId],
+      )
+      if (row) {
+        const entry = { taskId: row.task_id, run: decodeRun(row.run, 'task_view', runId), dirty: false }
+        this.runs.set(runId, entry)
+        return entry
+      }
+      this.missing.add(runId)
+    }
+    if (!create) return undefined
+    const entry = { taskId: null, run: emptyRun, dirty: true }
+    this.runs.set(runId, entry)
+    return entry
+  }
+
+  /** The row's whole column set as the cache holds it now, or null for a ticket that has no row. */
+  columns(taskId: string, entry: TaskEntry): Columns | null {
+    if (entry.where !== 'row') return null
+    return this.columnsOf(taskId, entry.ticket)
+  }
+
+  /** Reads the latest run from memory: `task` loads it with the ticket, and a claim links it before this is asked. */
+  columnsOf(taskId: string, ticket: TicketState): Columns {
+    const latest = ticket.runs.at(-1)
+    const run = latest === undefined ? undefined : this.runs.get(latest)
+    return { ...derive(taskId, ticket), ...rowOf(ticket, run?.run ?? null) }
+  }
+
+  async flush(): Promise<void> {
+    for (const [runId, e] of this.runs) {
+      if (!e.dirty) continue
+      await this.ctx.query(
+        `insert into task_view_run (run_id, task_id, run) values ($1, $2, $3::jsonb)
+         on conflict (run_id) do update set task_id = excluded.task_id, run = excluded.run`,
+        [runId, e.taskId, encodeRun(e.run)],
+      )
+    }
+    for (const [taskId, e] of this.tasks) {
+      if (!e.dirty) continue
+      const encoded = encodeTicket(e.ticket)
+      if (e.where === 'staged' || e.where === 'none') {
+        await this.ctx.query(
+          `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
+           on conflict (task_id) do update set ticket = excluded.ticket`,
+          [taskId, encoded],
+        )
+        continue
+      }
+      const cols = this.columns(taskId, e)
+      const c = cols!
+      const row: [string, unknown, string][] = [
+        ['project', c.project, '::text'],
+        ['issue', c.issue, '::text'],
+        ['title', c.title, '::text'],
+        ['kind', c.kind, '::text'],
+        ['state', c.state, '::text'],
+        ['note', e.note, '::text'],
+        ['run_id', c.run_id, '::text'],
+        ['turns', c.turns, '::int'],
+        ['base_sha', c.base_sha, '::text'],
+        ['head_sha', c.head_sha, '::text'],
+        ['files', c.files, '::int'],
+        ['insertions', c.insertions, '::int'],
+        ['deletions', c.deletions, '::int'],
+        ['verdicts', c.verdicts, '::jsonb'],
+        ['awaiting_sha', c.awaiting_sha, '::text'],
+        ['wait_id', c.wait_id, '::text'],
+        ['wait_reason', c.wait_reason, '::jsonb'],
+        ['triage_attempt', c.triage_attempt, '::int'],
+        ['triage_started_at', c.triage_started_at, '::timestamptz'],
+        ['triage_result', c.triage_result, '::jsonb'],
+        ['triage_head_sha', c.triage_head_sha, '::text'],
+        ['answer', c.answer, '::jsonb'],
+        ['split', c.split, '::jsonb'],
+        ['closed_at', c.closed_at, '::timestamptz'],
+        ['attempts', c.attempts, '::int'],
+        ['last_attempt_at', c.last_attempt_at, '::timestamptz'],
+        ['restarts', c.restarts, '::int'],
+        ['updated_at', e.updatedAt, '::timestamptz'],
+        ['updated_seq', e.updatedSeq.toString(), '::bigint'],
+        ['ticket', encoded, '::jsonb'],
+      ]
+      await this.ctx.query(
+        `insert into task_view (task_id, ${row.map(([n]) => n).join(', ')})
+         values ($1::text, ${row.map(([, , cast], i) => `$${i + 2}${cast}`).join(', ')})
+         on conflict (task_id) do update set ${row.map(([n]) => `${n} = excluded.${n}`).join(', ')}`,
+        [taskId, ...row.map(([, v]) => v)],
+      )
+      if (e.wasStaged) await this.ctx.query('delete from task_view_ticket where task_id = $1', [taskId])
     }
   }
-  await ctx.query(
-    `update task_view set ${sets}, updated_at = $3, updated_seq = $2::bigint
-     where task_id = $1 and updated_seq <= $2::bigint${where}`,
-    [taskId, seq, at, ...entries.map(([, v]) => v), ...guard],
-  )
 }
 
-/** The same, for an event that arrived on a run's stream. */
-async function viaRun(
-  ctx: ProjectionContext,
-  runId: string,
-  seq: string,
-  at: Date,
-  values: Record<string, unknown>,
-  only?: { state: TaskState; runId?: string },
-): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
-  const taskId = rows[0]?.task_id
-  // A run whose start was never seen has no row to update. That is a gap in the
-  // log, not a reason to invent a task.
-  if (taskId) await set(ctx, taskId, seq, at, values, only)
+/** The card's line a run event writes, or null. The note stays per event until #845. */
+function runNoteOf(event: Envelope): string | null {
+  if (event.type === 'RunAwaitingInput') return (event.data as PayloadOf<'RunAwaitingInput'>).prompt
+  let note: string | null = null
+  for (const fact of cardFactOf(event)) {
+    // A signoff request is the question on the card. Granted and revoked are `WaitResolved{Approve}` now (#502).
+    if (fact._tag === 'Verdict' && fact.approval?._tag === 'Requested') note = fact.approval.question
+    // `of` is gone with `FixRequested` (#502): the round is named without a denominator.
+    else if (fact._tag === 'RoundOpened')
+      note =
+        fact.findings > 0 ? `fixing round ${fact.round}: ${fact.findings} finding(s)` : `fixing round ${fact.round}`
+    // Always followed by a `WaitStarted` or a release back to `queued`: the note for the moment before either.
+    else if (fact._tag === 'RunEnded') note = `${fact.kind}: ${fact.detail}`
+  }
+  return note
+}
+
+function touch(entry: TaskEntry, event: Envelope): void {
+  entry.updatedAt = event.at
+  entry.updatedSeq = event.seq
+  entry.dirty = true
 }
 
 /**
- * Assignment into a keyed map, so replaying is idempotent without a guard.
+ * One event on either half: reduce it into its own state, read the other, compute the row, write what
+ * changed (#844).
  *
- * The run is part of the key, not just the lookup: the cell a verdict lands in
- * belongs to the attempt that produced it, so a later attempt starts on a fresh
- * set rather than overwriting a dead one. `readTasks` then shows the cells
- * belonging to the run the row names, and nothing else.
+ * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in `seq` order,
+ * so there is no per-row `seq` guard and no lock ordering between the tables.
  */
-async function setStep(
-  ctx: ProjectionContext,
-  runId: string,
-  seq: string,
-  at: Date,
-  step: string,
-  verdict: string,
-): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
-  const taskId = rows[0]?.task_id
-  if (!taskId) return
-  const key = `${runId}:${step}`
-  await ctx.query(
-    `update task_view
-     set verdicts = verdicts || jsonb_build_object($3::text, $4::text),
-         updated_at = $5,
-         updated_seq = greatest(updated_seq, $2::bigint)
-     where task_id = $1`,
-    [taskId, seq, key, verdict, at],
-  )
+async function applyRunEvent(cache: Cache, event: Envelope): Promise<void> {
+  const runId = event.streamId
+  const entry = await cache.run(runId, true)
+  if (event.type === 'RunStarted') entry.taskId = (event.data as PayloadOf<'RunStarted'>).ticketId
+  const task = entry.taskId === null ? null : await cache.task(entry.taskId)
+  const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
+
+  entry.run = applyRun(entry.run, event)
+  entry.dirty = true
+
+  if (task === null || entry.taskId === null || task.where !== 'row') return
+  const now = cache.columns(entry.taskId, task)
+  const note = runNoteOf(event)
+  if (note !== null) task.note = note
+  if (note !== null || JSON.stringify(was) !== JSON.stringify(now)) touch(task, event)
+}
+
+async function applyTicketEvent(cache: Cache, event: Envelope): Promise<void> {
+  const taskId = event.streamId
+  const entry = await cache.task(taskId)
+  const before = entry.ticket
+  const was = cache.columns(taskId, entry)
+  if (event.type === 'TicketClaimed' || event.type === 'TicketContinued') {
+    const run = await cache.run((event.data as PayloadOf<'TicketClaimed'>).runId, true)
+    run.taskId = taskId
+    run.dirty = true
+  }
+  const after = applyTicket(before, event)
+  entry.ticket = after
+  entry.dirty = true
+
+  if (entry.where !== 'row' && !MAKES_THE_ROW.has(event.type)) {
+    entry.where = 'staged'
+    return
+  }
+
+  const now = cache.columnsOf(taskId, after)
+  const lifecycleMoved = JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)
+  const note = noteOf(event, after, lifecycleMoved)
+  if (entry.where !== 'row') {
+    // The event that makes the row: it moves out of staging, whole, and the card's age starts here.
+    entry.wasStaged = entry.where === 'staged'
+    entry.where = 'row'
+    entry.note = note?.value ?? null
+    touch(entry, event)
+    return
+  }
+  // A release lands on a backlog ticket when a WaitResolved already moved it there: the lifecycle and every
+  // derived column are unchanged, and the release still gives the card its reason.
+  const releases = event.type === 'TicketReleased' && after.lifecycle.status === 'backlog'
+  const touched =
+    JSON.stringify(was) !== JSON.stringify(now) ||
+    releases ||
+    (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
+  if (!touched) return
+  if (note !== null) entry.note = note.value
+  touch(entry, event)
 }
 
 // ------------------------------------------------------------------ read ----
