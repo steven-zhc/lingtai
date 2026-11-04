@@ -1,4 +1,4 @@
-# 0102 — The conductor and the daemon: one process holds the work, a file lock makes it the only one, and stopping drains the turn
+# 0102 — The conductor and the daemon: one process holds the work, a file lock makes it the only one, and stopping drains the attempt
 
 **Status** accepted · 2026-10-01
 

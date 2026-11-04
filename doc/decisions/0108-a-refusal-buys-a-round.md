@@ -40,7 +40,7 @@ fixes the bounds and the endings that router works inside.
    `packages/repo/src/worktree.ts`), and its scope encloses the merge lane.
    Detached is what makes that possible: no worktree has `agent/<n>` checked out,
    so the lane can fetch and update it. Every refusal therefore happens while the
-   work is still on disk, and a new run is the answer only to an attempt that ended.
+   work is still on disk, and a new attempt is the answer only to an attempt that ended.
 
 3. **A refusal is answered in that worktree, carrying its own evidence — one
    round.** A round is `implement` again with `fixBrief` (`packages/conductor/src/fix.ts`)

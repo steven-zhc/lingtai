@@ -83,7 +83,7 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 
     triage 目前还没有调度；有了以后，它就是第七种，追加 `RunSpent { for: Triage }`。新增一个启动付费进程的地方，只追加 `RunSpent`，不改动任何其他事件。
 
-11. **`spend` projection 每个 `RunSpent` 一行**：`seq`、`at`、`ticket`、`pass`（不在尝试事件流上时为 null）、`for` 及其 `step`、`action` 和 `round`、`runtime`、`turns`、`duration_ms`、`cost_usd` 和 `usage`（jsonb），以及第 5 条的估价：`estimated_usd` 和 `estimate_fetched`，以及 `kind`：折叠这一行时，这次运行所属的领取带的票的类型（0123 §3）。折叠从 pass 事件流的 `RunStarted`、票事件流本身，或者讨论的 `DiscussionRequested` 填入 `ticket`，这些到那时它都已经读过了。卡片上的总数、`/spend` 的各行和任务页上的调用列表，都是对它的查询。它是每次运行一行，而不是每张票一个总数，因为估价（第 5 条）需要每次运行的模型、token 和时间，也因为每天的花费是对它的一个查询。
+11. **`spend` projection 每个 `RunSpent` 一行**：`seq`、`at`、`ticket`、`pass`（不在尝试事件流上时为 null）、`for` 及其 `step`、`action` 和 `round`、`runtime`、`turns`、`duration_ms`、`cost_usd` 和 `usage`（jsonb），以及第 5 条的估价：`estimated_usd` 和 `estimate_fetched`，以及 `kind`：折叠这一行时，这次运行所属的领取带的票的类型（0123 §3）。折叠从尝试事件流的 `RunStarted`、票事件流本身，或者讨论的 `DiscussionRequested` 填入 `ticket`，这些到那时它都已经读过了。卡片上的总数、`/spend` 的各行和任务页上的调用列表，都是对它的查询。它是每次运行一行，而不是每张票一个总数，因为估价（第 5 条）需要每次运行的模型、token 和时间，也因为每天的花费是对它的一个查询。
 
 12. **上限属于 runtime，不读日志上的任何东西。**
     `runtime.limits.usd` 限制一次运行，由 runtime（`--max-budget-usd`）按它自己的计数执行，和 `turns`、`wall` 一样。Lingtai 不对每次尝试或每张票执行美元上限。它自己唯一的上限是每日上限，触发时暂停领取新工作，不杀掉任何东西（[0122](../0122-several-passes-share-one-conductor.md) §5）。

@@ -97,7 +97,7 @@ never report a fault.
    through: an attempt that sailed past has a recorded decision saying so, and
    that visit is where `review`'s findings are judged.
 
-7. **The workflow computes the offer; the judge picks from it.** `onOffer` in
+7. **The workflow computes the offer; the judge picks from it.** `offerFor` in
    `packages/domain/src/routing.ts` (mirrored by `stepsOnOffer` in `packages/conductor/src/judge.ts`)
    works out which destinations are *reachable* from where the attempt got to, then
    which are *affordable* against two ceilings — `rounds` per attempt and `restarts`
@@ -119,7 +119,7 @@ never report a fault.
 
 8. **Judges are declared at `proposed`, one per direction.** `judge:` is legal
    only at `proposed`. The direction (`JudgeWhen`) is read off the arriving
-   ending by `directionOf` in `packages/conductor/src/proposed-route.ts`: `red` (any
+   ending by `whenOf` in `packages/conductor/src/proposed-route.ts`: `red` (any
    refusal before `merge`), `verify-failed` and `conflict` (from the merge lane),
    `needs-input` (an `asked` ending) and `findings` (`review`'s, judged on the way
    through). `judgeDeclaredAt` takes the first entry whose `when:` matches. A
