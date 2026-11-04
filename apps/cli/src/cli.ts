@@ -6,6 +6,7 @@
 import { Args, Command, Options } from '@effect/cli'
 import * as NodeContext from '@effect/platform-node/NodeContext'
 import { coloured, paint } from '@lingtai/env/colour'
+import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { Console, Effect } from 'effect'
 
 import type { BoardVerb } from './board.ts'
@@ -1036,23 +1037,41 @@ const startFlags = {
   noColor,
 }
 
+/**
+ * One snapshot writer for as long as the daemon runs (0124 §5), acquired in the CLI's own
+ * Effect and closed when the command returns. The imports stay dynamic like every heavy one here.
+ */
+function withDaemonWriter(run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect.Effect<void>): Effect.Effect<void> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const { log } = yield* Effect.promise(() => import('@lingtai/event-store'))
+      const { makeSnapshotWriter } = yield* Effect.promise(() => import('@lingtai/event-store/snapshot-writer'))
+      const writer = yield* makeSnapshotWriter(log.snapshots, (line) => console.error(line))
+      yield* run(writer)
+    }),
+  )
+}
+
 function startCommand(name: 'start' | 'daemon') {
   return Command.make(name, startFlags, (args) =>
-    daemonHandler(args, async () => {
-      const { daemonCommand } = await import('./daemon.ts')
-      const flags: Record<string, string> = {
-        ...(args.noConduct ? { 'no-conduct': '' } : {}),
-        ...(args.noMerge ? { 'no-merge': '' } : {}),
-      }
-      // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
-      // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
-      return daemonCommand(
-        flags,
-        null,
-        name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
-        startIsVerbose(name, args.verbose),
-      )
-    }),
+    withDaemonWriter((writer) =>
+      daemonHandler(args, async () => {
+        const { daemonCommand } = await import('./daemon.ts')
+        const flags: Record<string, string> = {
+          ...(args.noConduct ? { 'no-conduct': '' } : {}),
+          ...(args.noMerge ? { 'no-merge': '' } : {}),
+        }
+        // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
+        // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
+        return daemonCommand(
+          flags,
+          null,
+          name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
+          startIsVerbose(name, args.verbose),
+          writer,
+        )
+      }),
+    ),
   ).pipe(Command.withDescription(definitionOf(name).task))
 }
 
@@ -1109,10 +1128,12 @@ const restart = Command.make(
     noColor,
   },
   (args) =>
-    daemonHandler(args, async () => {
-      const { restartCommand } = await import('./daemon.ts')
-      return restartCommand(restartArgs!, createSteps(console.log))
-    }),
+    withDaemonWriter((writer) =>
+      daemonHandler(args, async () => {
+        const { restartCommand } = await import('./daemon.ts')
+        return restartCommand(restartArgs!, createSteps(console.log), writer)
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('restart').task))
 
 /** The `service` verbs, with their closing line (#622): `✓ <done>` on 0, `✗ not <verb>` otherwise. */
