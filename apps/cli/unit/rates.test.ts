@@ -120,3 +120,42 @@ describe('a runner being released when a rebuild holds the live runners (#860)',
     await resume()
   })
 })
+
+describe('a runner released while a rebuild is already waiting to hold (#860)', () => {
+  it('is still waited for, though it left the registry after the hold began', async () => {
+    const { spendProjection } = await import('@lingtai/projector')
+    const { holdLiveSpend, startLive, releaseLive } = await import('../src/live-spend.ts')
+    let finishStart: () => void = () => {}
+    let finishClose: () => void = () => {}
+    const slow = {
+      running: false,
+      start: () => new Promise<void>((resolve) => (finishStart = resolve)),
+      stop: async () => {},
+      close: async () => {},
+    } as never
+    const other = {
+      running: true,
+      start: async () => {},
+      stop: async () => {},
+      close: () => new Promise<void>((resolve) => (finishClose = resolve)),
+    } as never
+    await startLive(spendProjection, other)
+    const starting = startLive(spendProjection, slow)
+    let held = false
+    const hold = holdLiveSpend().then((resume) => {
+      held = true
+      return resume
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    // The hold is parked on `starting`; now the other runner is released.
+    const releasing = releaseLive(other)
+    finishStart()
+    await starting
+    await new Promise((r) => setTimeout(r, 10))
+    expect(held).toBe(false)
+    finishClose()
+    await releasing
+    const resume = await hold
+    await resume()
+  })
+})

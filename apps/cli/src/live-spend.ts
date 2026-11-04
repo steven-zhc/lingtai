@@ -44,8 +44,11 @@ export async function holdLiveSpend(): Promise<() => Promise<void>> {
   const previous = standingDown
   standingDown = mine
   await previous
-  await Promise.allSettled(starting)
-  await Promise.allSettled(closing)
+  // Re-read both sets after every await: a release during the wait moves a runner
+  // out of `liveSpend` and into `closing`, so a snapshot taken before it would
+  // miss that runner in both. The scan below follows the last await with nothing
+  // between them.
+  while (starting.size > 0 || closing.size > 0) await Promise.allSettled([...starting, ...closing])
   const held = [...liveSpend].filter((r) => r.running)
   await Promise.all(held.map((r) => r.stop()))
   return async () => {
