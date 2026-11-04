@@ -5,7 +5,7 @@ import { isSea } from 'node:sea'
 import { pathToFileURL } from 'node:url'
 import { constants, Script } from 'node:vm'
 
-import { boardPort, machineOtlpEndpoint, repoRoot } from '@lingtai/env'
+import { boardHost, boardOrigin, boardPort, boardReachHost, machineOtlpEndpoint, repoRoot } from '@lingtai/env'
 import type { FileLocker, HeldLock } from '@lingtai/env/lock'
 
 import { symbol, keyValues, heading } from './output.ts'
@@ -35,8 +35,8 @@ export function boardEntry(dir: string): string {
  * mistaken for it (#394 reuses this for `lingtai add`, which starts no board
  * of its own and must find one already running or refuse by name).
  */
-export async function boardAt(port: number): Promise<string | null> {
-  const url = `http://127.0.0.1:${port}`
+export async function boardAt(port: number, reach: string): Promise<string | null> {
+  const url = boardOrigin(reach, port)
   try {
     const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
     return (await res.text()).includes('<title>Lingtai</title>') ? url : null
@@ -82,9 +82,11 @@ export function builtBoardDir(self: string = import.meta.filename, root: string 
  * one thing, about the board's port. The conductor is not held up by the UI's
  * port, so the refusal is carried as a fact for the board's own leg to report.
  */
-export function boardPortOrWhy(env: NodeJS.ProcessEnv = process.env): { port: number } | { why: string } {
+export function boardPortOrWhy(
+  env: NodeJS.ProcessEnv = process.env,
+): { port: number; reach: string } | { why: string } {
   try {
-    return { port: boardPort(env) }
+    return { port: boardPort(env), reach: boardReachHost(boardHost(env)) }
   } catch (err) {
     return { why: (err as Error).message }
   }
@@ -130,12 +132,13 @@ export async function serveBoard(options: BoardOptions): Promise<void> {
   // A bad telemetry endpoint is refused by name before anything is loaded (#775).
   machineOtlpEndpoint()
   await portIsFree(options.host, options.port)
+  const reach = boardReachHost(options.host)
   process.env['PORT'] = String(options.port)
   process.env['HOSTNAME'] = options.host
   process.env['NEXT_MANUAL_SIG_HANDLE'] = '1'
   try {
     await importFile(pathToFileURL(entry).href)
-    await listening(options.host, options.port)
+    await listening(reach, options.port)
   } finally {
     delete process.env['NEXT_MANUAL_SIG_HANDLE']
   }
@@ -370,7 +373,10 @@ export interface BoardCommand {
 }
 
 export interface BoardWorld {
+  /** Where the board listens (`board.host`). Never format a URL or connect to it. */
   host: string
+  /** Where to reach it — a link, a probe — from `boardReachHost(host)`. */
+  reach: string
   /** The Lingtai home this board serves (#767): the path, and as a person reads it (`~` for `$HOME`). */
   home: { path: string; shown: string }
   /** Whether that home has nothing set up — `nothingSetUp` over its store choice and its `config.yml`. */
@@ -456,7 +462,7 @@ export async function readBoardStatus(command: Pick<BoardCommand, 'port'>, world
   }
   return {
     port: command.port,
-    url: `http://${world.host}:${command.port}`,
+    url: boardOrigin(world.reach, command.port),
     portSetIn: world.whereThePortIsSet,
     serving,
     answering,
@@ -523,7 +529,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
     world.error(refused ? line : `${symbol.fail()} ${line}`)
     refused = true
   }
-  const url = `http://${world.host}:${command.port}`
+  const url = boardOrigin(world.reach, command.port)
 
   /** Where the port is set, said at every refusal the port causes. */
   const sayWhereThePortIsSet = (): void => error(`the port is ${world.whereThePortIsSet}`)
@@ -549,7 +555,7 @@ export async function boardCommand(command: BoardCommand, world: BoardWorld): Pr
       const answers = await world.answering(command.port).catch(() => null)
       error(
         answers === null
-          ? `${world.host}:${command.port} is held by something that is not a Lingtai board — nothing was started`
+          ? `${world.reach}:${command.port} is held by something that is not a Lingtai board — nothing was started`
           : `a board is already on ${command.port} — ${answers}. It is not this machine's, since no lock names it`,
       )
       sayWhereThePortIsSet()

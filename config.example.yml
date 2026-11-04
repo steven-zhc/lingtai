@@ -73,6 +73,11 @@ board:
   # 17820 when absent. Not in 32768–65535, which the kernel hands out as
   # ephemeral ports.
   port: 17820
+  # The address the board listens on: every address (0.0.0.0) when absent, so it
+  # can be opened from another device. There is no authentication (0111 §2);
+  # 127.0.0.1 keeps it to this machine. An IP literal — a hostname is refused.
+  # Read when the board starts: changing it is a restart of the board.
+  # host: 0.0.0.0
 
 # --- telemetry --------------------------------------------------------------
 # Absent by default, and nothing leaves the machine without it.

@@ -4,7 +4,7 @@ import { connect } from 'node:net'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 
-import { boardPort, nothingSetUp, shownHome, stateDir, storeChoice } from '@lingtai/env'
+import { boardPort, boardReachHost, nothingSetUp, shownHome, stateDir, storeChoice } from '@lingtai/env'
 import { createFileLocker } from '@lingtai/env/lock'
 
 import { boardAt, serveBoard, type BoardWorld } from './board.ts'
@@ -16,16 +16,18 @@ import { BOARD_JOB, keeper } from './service.ts'
  * its port. Here and not in `lingtai.ts` because `cli.ts` loads it, and importing
  * `lingtai.ts` runs `main`.
  */
-export function liveBoardWorld(): BoardWorld {
+export function liveBoardWorld(host: string): BoardWorld {
+  const reach = boardReachHost(host)
   return {
-    host: '127.0.0.1',
+    host,
+    reach,
     hostname: hostname(),
     home: { path: stateDir(), shown: shownHome() },
     notSetUp: () => nothingSetUp(storeChoice(), existsSync(join(stateDir(), 'config.yml'))),
-    answering: boardAt,
+    answering: (port) => boardAt(port, reach),
     bound: (port) =>
       new Promise<boolean>((resolve) => {
-        const socket = connect(port, '127.0.0.1')
+        const socket = connect(port, reach)
         socket.once('connect', () => {
           socket.destroy()
           resolve(true)

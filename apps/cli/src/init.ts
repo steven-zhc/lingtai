@@ -117,7 +117,10 @@ import {
   type MachineFile,
   type StoreChoice,
   type StoreChosen,
+  boardHost,
+  boardOrigin,
   boardPort,
+  boardReachHost,
   describeStore,
   githubAuthElectionFrom,
   machineFileFrom,
@@ -1227,9 +1230,22 @@ export function liveInitWorld(): InitWorld {
     ...(refusal('', interactivity(false)) === null ? { gh: liveGh } : {}),
     appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal),
-    boardAt,
+    // A host that is not an address is refused by `board` below, by name; the
+    // probe asks loopback meanwhile rather than throw from a lookup.
+    boardAt: (port) => {
+      let reach = '127.0.0.1'
+      try {
+        reach = boardReachHost(boardHost())
+      } catch {}
+      return boardAt(port, reach)
+    },
     board: async (port) => {
-      const host = '127.0.0.1'
+      let host: string
+      try {
+        host = boardHost()
+      } catch (err) {
+        return { refused: (err as Error).message }
+      }
       // The same lock `lingtai board start` takes (#187), and for the same
       // reason: a board this process serves and no lock names is one that
       // `lingtai board status` calls nobody's and `lingtai board stop` cannot
@@ -1257,7 +1273,7 @@ export function liveInitWorld(): InitWorld {
         kept = null
         return { refused: (err as Error).message }
       }
-      return { url: `http://${host}:${port}` }
+      return { url: boardOrigin(boardReachHost(host), port) }
     },
     open: (url) =>
       new Promise((resolve) => {

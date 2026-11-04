@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -849,6 +850,81 @@ export function machineBoardPort(
 }
 
 /**
+ * `board.host`, the address every board of this machine's listens on, or
+ * undefined where nothing names one (0111 §2). `LINGTAI_BOARD_HOST` exported,
+ * over the key in `~/.lingtai/config.yml`.
+ *
+ * **An IP literal and nothing else**: a hostname is refused by name, not
+ * resolved, and so is an empty string — an exported `LINGTAI_BOARD_HOST=''` is a
+ * value somebody wrote, not an absent one. The value is an address and not a
+ * secret, so the refusal quotes it. A file that cannot be read is refused too,
+ * never answered with the default.
+ */
+export function machineBoardHost(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): string | undefined {
+  // The provider drops an empty variable as unset, so the one written down as
+  // empty is caught here: it is a value somebody wrote, and not an absent one.
+  if (from[`${PREFIX}BOARD_HOST`] === '') {
+    throw new Error(
+      `${PREFIX}BOARD_HOST is empty, which is not an IP address, so no address was read — ` +
+        `unset it to have the default, ${BOARD_HOST}`,
+    )
+  }
+  const host = Config.option(Config.nested(Config.string('host'), 'board'))
+  const exported = readConfig(host, environmentProvider(from))
+  if (Either.isLeft(exported)) {
+    throw new Error(`${PREFIX}BOARD_HOST could not be read, so no address was read: ${exported.left}`)
+  }
+  if (Option.isSome(exported.right)) {
+    const v = exported.right.value
+    if (isIP(v) === 0) {
+      throw new Error(
+        `${PREFIX}BOARD_HOST is ${JSON.stringify(v)}, which is not an IP address, so no address was read — ` +
+          `unset it to have the default, ${BOARD_HOST}`,
+      )
+    }
+    return v
+  }
+  if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its board.host could not be read`)
+  const written = readConfig(host, file.provider)
+  if (Either.isLeft(written)) {
+    throw new Error(
+      `${file.path} sets board.host to something that could not be read, so no address was read: ${written.left} — ` +
+        `take that line out to have the default, ${BOARD_HOST}`,
+    )
+  }
+  if (Option.isSome(written.right) && isIP(written.right.value) === 0) {
+    throw new Error(
+      `${file.path} sets board.host to ${JSON.stringify(written.right.value)}, which is not an IP address, so no address was read — ` +
+        `take that line out to have the default, ${BOARD_HOST}`,
+    )
+  }
+  return Option.getOrUndefined(written.right)
+}
+
+/** Every address: where a board listens when nothing says otherwise (0111 §2). */
+export const BOARD_HOST = '0.0.0.0'
+
+/** The address the board listens on: the file's, else every address. */
+export function boardHost(from: NodeJS.ProcessEnv = process.env, file?: MachineFile): string {
+  return machineBoardHost(from, file) ?? BOARD_HOST
+}
+
+/** Where to reach a board that listens on `host`: loopback for either wildcard, else the address itself (0111 §2). */
+export function boardReachHost(host: string): string {
+  if (host === '0.0.0.0') return '127.0.0.1'
+  if (host === '::') return '::1'
+  return host
+}
+
+/** `http://host:port`, an IPv6 host bracketed. The only place a board's URL is formatted. */
+export function boardOrigin(host: string, port: number): string {
+  return `http://${isIP(host) === 6 ? `[${host}]` : host}:${port}`
+}
+
+/**
  * `telemetry.otlp_endpoint`, the full OTLP/HTTP traces URL, or undefined where
  * nothing names one (#775). `LINGTAI_TELEMETRY_OTLP_ENDPOINT` exported, over the
  * key in `~/.lingtai/config.yml`.
@@ -924,9 +1000,12 @@ export function boardPort(from: NodeJS.ProcessEnv = process.env, file?: MachineF
   return machineBoardPort(from, file) ?? BOARD_PORT
 }
 
-/** Where the board answers, for a link somebody clicks. Loopback: 0008 gave it no authentication. */
+/**
+ * Where the board answers, for a link somebody clicks: loopback when it serves
+ * every address, the address itself when `board.host` names one (0111 §2).
+ */
 export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
-  return `http://127.0.0.1:${boardPort(from)}`
+  return boardOrigin(boardReachHost(boardHost(from)), boardPort(from))
 }
 
 /**
