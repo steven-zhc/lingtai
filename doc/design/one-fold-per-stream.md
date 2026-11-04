@@ -559,6 +559,7 @@ and the conductor come first: 1, then 2–4 (4 reads what 2 and 3 add), 6, 5, th
 | 8 | **What a ticket is.** `title`/`kind` from `TicketClaimed`, and `project`/`externalRef` from the stream id (D4). The board's `ticketFieldsOf` reads them | R6, C7 | — | domain's answer question names the agent branch again (§2.3) |
 | 9 | **A ticket's last move.** `TicketState.lastMove`. The board's `standingOf` reads it and `since` | R5, C8 | 7 | — |
 | 10 | **What Lingtai wrote to GitHub.** The ledger on `TicketState` (D9). The board's `bodyOutcome`, `converge.ts` and `tell.ts`'s comment half read it | R9, C13 | — | — |
+| 11w | **One writer per projection** (D18). Only the conductor-lock holder runs projection runners; `withProjector` and the CLI's own runners go, a command that shows its own write waits for the checkpoint, and the per-row `seq` guards go | D18 | — | the board lags while no conductor is up; 0100 §13 |
 | 11 | **task_view is the ticket fold.** The row stores its ticket's `TicketState` (12's codec), and `state` and `answer` come from it, with D5's four cells and D6 at once. **One rebuild** | P3a–f | 7, 8, 12 | the queue's input moves (`queue.ts:97`, `inFlight`). Runbook (§4) |
 | 12 | **ticket_report is the ticket fold.** It lands the ticket fold's codec and stores `TicketState` in the row (0124 §1); outcome, passes, claims, waits and `kind` come from it. The reopen after a close goes (D6). It gains a rebuild pin, in `backlog-rebuild.test.ts`'s shape | P2 | 7, 8, 9, 10, 7b, 7c (the state's final shape) | rebuild, runbook |
 | 13 | **spend's kind.** `spend_kind` from a stored `TicketState.kind` | P1 | 12 | rebuild, runbook |
@@ -711,11 +712,19 @@ scrubbed and cited by issue number, not seq.
   it in the row and calls the same reduce; only pure joins, reactions and selects
   stay as event-type branches outside domain, and ticket 17 commits that list. When
   sharing makes a call awkward, the call is optimised, never the rule copied.
-- **D18. Delivery is at-least-once, so a stored state dedupes by `seq`** (the
-  operator, 2026-11-03). Two runners share one checkpoint and can each deliver an
-  event; an event whose `seq` is not above the stored state's `lastSeq` is skipped
-  before the reduce. It looks at nothing else, so a sequence no writer makes still
-  throws (#822, #838).
+- **D18. Each projection has one writer** (the operator, 2026-11-03). A projection is a
+  read model: events land in the log first, and the projection is reduced from them
+  asynchronously, by one process, in `seq` order, with its checkpoint advanced in the
+  same transaction. That process is the one holding the conductor lock (the daemon or
+  `lingtai run`); every other process appends and reads, and a command that must show
+  its own write waits for the checkpoint to reach that event's `seq`. With no conductor
+  up, the projections stand still and the health dot's lag says so. So there is no
+  second runner to dedupe against, no lock between runners and no per-row `seq` guard:
+  a batch that fails rolls back with its checkpoint and is redelivered whole. 0022 §4's
+  *two projectors on one log is safe by construction* held only while every write was
+  an idempotent overwrite; a stored state is read, reduced and written back, and two
+  runners doing that raced (#838's double delivery, #834's deadlocks). Ticket 11w makes
+  it so and removes the `seq` guards #833 and #838 added.
 - **D19. The word is *reduce*** (the operator, 2026-11-03; `doc/glossary.md`).
   `reduceRunEvent(state, event)` for one event, `reduceRun(events)` for a stream. This
   document says *fold* where it was written before; ticket 19 renames it.
