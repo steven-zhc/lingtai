@@ -441,7 +441,7 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2). **The product, not the
     // three numbers**, because the product is what an operator is deciding about (0039 §3).
-    ['a pass', attemptCeiling(filter.limits)],
+    ['an attempt', attemptCeiling(filter.limits)],
     // In the recipe's own words, for the same reason: the backoff decides when
     // this project spends money again (#95).
     ['retries', `after ${backoffOf(filter.recipe)}, unless a repair is pending`],

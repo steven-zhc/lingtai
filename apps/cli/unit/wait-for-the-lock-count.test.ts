@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { waitForTheLock } from '../src/restart.ts'
 
 describe('waitForTheLock names every pass still in flight', () => {
-  it('says 2 passes, and then one', async () => {
+  it('says 2 attempts, and then one', async () => {
     const lines: string[] = []
     let asks = 0
     let reads = 0
@@ -15,7 +15,7 @@ describe('waitForTheLock names every pass still in flight', () => {
       sayEveryMs: 0,
     })
     expect(waited).toBe('free')
-    expect(lines[0]).toContain('finishing 2 passes: lingtai#1, lingtai#2')
+    expect(lines[0]).toContain('finishing 2 attempts: lingtai#1, lingtai#2')
     expect(lines[1]).toContain('finishing lingtai#2')
     expect(lines[1]).not.toContain('passes')
   })

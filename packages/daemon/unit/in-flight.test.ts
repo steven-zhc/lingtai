@@ -65,6 +65,6 @@ describe('describeInFlight', () => {
   })
 
   it('counts two or more', () => {
-    expect(describeInFlight(['lingtai#94', 'lingtai#95'])).toBe('finishing 2 passes: lingtai#94, lingtai#95')
+    expect(describeInFlight(['lingtai#94', 'lingtai#95'])).toBe('finishing 2 attempts: lingtai#94, lingtai#95')
   })
 })

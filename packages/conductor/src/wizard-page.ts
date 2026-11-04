@@ -842,7 +842,7 @@ export function saidFor(state: WizardState): Record<string, string> {
     'steps.merge': `${DECISIONS[0]!.question} ${mergeConsequence(state.draft)}`,
   }
   const limits = limitsSentence(state.draft.limits)
-  if (limits.ok) said['runtime.limits'] = `A pass: ${limits.sentence}.`
+  if (limits.ok) said['runtime.limits'] = `An attempt: ${limits.sentence}.`
   return said
 }
 

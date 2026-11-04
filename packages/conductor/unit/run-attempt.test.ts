@@ -533,7 +533,7 @@ describe('four steps may refuse, and the other six may not', () => {
         ending: 'did-not-finish',
         because: 'threw',
         detail: expect.stringContaining(
-          'the `merge` step routed the pass to `implement`, and no body may route any more',
+          'the `merge` step routed the attempt to `implement`, and no body may route any more',
         ),
       },
     })
@@ -832,7 +832,7 @@ describe('every step that does not pass arrives at proposed', () => {
         to: 'waiting',
         why:
           'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, ' +
-          'so the pass is held for a person rather than the workflow choosing from `implement`, ' +
+          'so the attempt is held for a person rather than the workflow choosing from `implement`, ' +
           '`waiting` on its own (0061 §3)',
         ceiling: null,
       },
@@ -2809,7 +2809,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
         ending: 'did-not-finish',
         because: 'threw',
         detail: expect.stringContaining(
-          'the `end` step has 1 effect(s) declared — "close it" — and this pass has no body',
+          'the `end` step has 1 effect(s) declared — "close it" — and this attempt has no body',
         ),
       },
     })

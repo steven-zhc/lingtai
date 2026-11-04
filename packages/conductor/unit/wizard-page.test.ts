@@ -269,7 +269,7 @@ describe('limits', () => {
       ok: true,
       sentence: attemptCeiling({ turns: 300, wall: '1h', wallMs: 3_600_000, rounds: 2, restarts: 1 }),
     })
-    expect(said.ok && said.sentence).toContain('at most 2 passes, 6 agent runs and 6h')
+    expect(said.ok && said.sentence).toContain('at most 2 attempts, 6 agent runs and 6h')
   })
 
   it('names a dial that does not make a sentence, and will not finish on it', () => {

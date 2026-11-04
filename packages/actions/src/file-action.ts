@@ -192,7 +192,7 @@ export function sizeOf(document: string): string {
 function notThisTicketsPath(written: string, ref: string, why: string): string {
   return (
     `the design was not kept: \`${written}\` is \`${ref}\`'s path, and that is not a path inside the ` +
-    `worktree — ${why}. A \`file:\` expands \`{{issue}}\` into the ticket's ref when the pass runs, and ` +
+    `worktree — ${why}. A \`file:\` expands \`{{issue}}\` into the ticket's ref when the attempt runs, and ` +
     'asks the same question of the answer that the recipe was asked of the string (0066 §6)'
   )
 }

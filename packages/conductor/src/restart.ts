@@ -101,7 +101,9 @@ export function decideRestart(input: RestartInput): RestartDecision {
   const no = (why: string): RestartDecision => ({ restart: false, why })
 
   if (restarts === 0) {
-    return no("this project's recipe hands a pass whose rounds are spent to a person " + '(runtime.limits.restarts: 0)')
+    return no(
+      "this project's recipe hands an attempt whose rounds are spent to a person " + '(runtime.limits.restarts: 0)',
+    )
   }
 
   /**

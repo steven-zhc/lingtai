@@ -271,7 +271,7 @@ ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decis
       ? `You may ask for files ${input.roundsLeft} more time(s) before you have to answer.`
       : 'You have no reading left. Answer with the JSON answer shape, using what you have.'
 
-  return `You are triaging one held ticket. A pass over it stopped, and nobody has
+  return `You are triaging one held ticket. An attempt at it stopped, and nobody has
 looked at it yet. Name why it stopped, in one of six shapes, and recommend one
 resolution. You are not fixing anything and you are not deciding anything — a
 person reads what you say and decides.

@@ -161,7 +161,7 @@ describe('whether a refusal buys an agent', () => {
     expect(decideFix({ refusal: refusal(), rounds: 1, roundsSpent: 1 })).toEqual({
       fix: false,
       rule: 'spent',
-      why: expect.stringContaining('ceiling of 1 round(s) for this pass'),
+      why: expect.stringContaining('ceiling of 1 round(s) for this attempt'),
     })
     // And a recipe that raised it gets the rounds it asked for.
     expect(decideFix({ refusal: refusal(), rounds: 2, roundsSpent: 1 })).toEqual({
@@ -265,7 +265,7 @@ describe('what the fixer is told', () => {
    */
   it('names the same bar the implementer is held to, and tells the fixer not to wait on anything slower', () => {
     expect(brief).toContain('pnpm typecheck && pnpm test')
-    expect(brief).toContain('the whole of what this pass asks you to run')
+    expect(brief).toContain('the whole of what this attempt asks you to run')
     expect(brief).toContain('There is no later turn')
     expect(brief).toMatch(/once you have changed anything, commit it before you verify/i)
   })
@@ -769,7 +769,7 @@ describe('the headline says what stopped the pass', () => {
         findings: [finding(), finding({ severity: 'major' })],
         rounds,
         refusals,
-        why: 'the ceiling of 3 round(s) for this pass is spent, and the review action still refuses',
+        why: 'the ceiling of 3 round(s) for this attempt is spent, and the review action still refuses',
         stop: { ended: 'spent' },
       }).what
 
@@ -1055,7 +1055,7 @@ describe('the headline says what stopped the pass', () => {
           evidence: 'error TS2345: argument of type',
           rounds,
           refusals,
-          why: 'the ceiling of 3 round(s) for this pass is spent, and the build action still refuses',
+          why: 'the ceiling of 3 round(s) for this attempt is spent, and the build action still refuses',
           stop: { ended: 'spent' },
         }).what
 
@@ -1458,7 +1458,7 @@ describe('what a person is shown when the restarts are over too', () => {
       findings: [finding()],
       rounds: 3,
       refusals: 3,
-      why: 'the ceiling of 3 round(s) for this pass is spent, and the review action still refuses',
+      why: 'the ceiling of 3 round(s) for this attempt is spent, and the review action still refuses',
       stop: { ended: 'spent' },
     })
 

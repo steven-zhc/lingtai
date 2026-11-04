@@ -247,7 +247,7 @@ describe('reduceTicket', () => {
       failure.lifecycle.status === 'blocked' && waitWords(failure.lifecycle.reason).diagnosis?.recommendation,
     ).toEqual({
       action: 'requeue',
-      why: 'the lane was busy rather than wrong — the next pass merges it',
+      why: 'the lane was busy rather than wrong — the next attempt merges it',
     })
     // The raw failure survives the summary. A sentence that hides the git
     // output would be worse than the git output.

@@ -228,6 +228,7 @@ describe('a refusal, read for a person', () => {
   it('never tells a person that raising the rounds would have helped', () => {
     for (const reason of REASONS) {
       expect(read(reason).done, reason).not.toContain('runtime.limits.rounds')
+      expect(read(reason).done, reason).not.toContain('inside the attempt')
       expect(read(reason).done, reason).not.toContain('inside the pass')
     }
   })

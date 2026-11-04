@@ -278,7 +278,7 @@ describe('askLanding', () => {
       { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
     ])
     expect(resolved.steps.proposed).toEqual([
-      { name: 'hold every pass', human: "Land this? The setup was answered 'hold'." },
+      { name: 'hold every attempt', human: "Land this? The setup was answered 'hold'." },
     ])
   })
 

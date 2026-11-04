@@ -409,7 +409,7 @@ function sentenceOf(t: {
     : t.cost.unknown > 0
       ? 'cost unknown'
       : 'no cost'
-  const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'pass', 'passes')]
+  const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'attempt')]
   if (t.waits.length > 0) {
     const counts = new Map<string, number>()
     for (const w of t.waits) counts.set(w.reason, (counts.get(w.reason) ?? 0) + 1)

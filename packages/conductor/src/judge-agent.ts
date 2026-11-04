@@ -48,7 +48,7 @@ import type { Destination } from './run-attempt.ts'
  * nothing offers, which is six sentences nobody would ever check.
  */
 const MEANS: Partial<Record<Destination, string>> = {
-  waiting: 'stop the pass and put this to a person, with your reasoning on the card',
+  waiting: 'stop the attempt and put this to a person, with your reasoning on the card',
   implement:
     'another round in the worktree that is already cut, with what refused — for when the diff ' +
     'is the right approach and some of its lines are wrong',

@@ -389,7 +389,7 @@ describe('describeFilter', () => {
     // (0025 §2), and a line that only appears when it is on is not that.
     // The product and not the numbers: what an operator is deciding about is
     // what one pass of this project can cost (0039 §3).
-    expect(lines[3]).toContain('a pass       up to 3 agent runs')
+    expect(lines[3]).toContain('an attempt   up to 3 agent runs')
     // And for the same reason again: the backoff decides when this project
     // spends money next, and it was in none of the four places that describe a
     // project (#95).
@@ -483,7 +483,7 @@ describe('what a pass may spend', () => {
 
     expect(once).toContain('up to 3 agent runs')
     expect(once).toContain('up to 1 restart(s)')
-    expect(once).toContain('at most 2 passes, 6 agent runs and 6h')
+    expect(once).toContain('at most 2 attempts, 6 agent runs and 6h')
   })
 
   /**
@@ -521,7 +521,7 @@ describe('what a pass may spend', () => {
     expect(attemptCeiling({ ...defaults, steps: [] })).toBe(attemptCeiling(defaults))
     expect(attemptCeiling(defaults)).toBe(
       'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
-        'it. 2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you ' +
+        'it. 2h and 300 turns each, so at most 6h. An attempt whose rounds are spent goes to you ' +
         '(runtime.limits.restarts: 0)',
     )
   })
@@ -561,7 +561,7 @@ describe('what a pass may spend in dollars', () => {
   it('is byte-identical to the pre-#370 sentence when usd is absent', () => {
     expect(attemptCeiling(limits(2))).toBe(
       'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
-        'it. 1h and 150 turns each, so at most 3h. A pass whose rounds are spent goes to you ' +
+        'it. 1h and 150 turns each, so at most 3h. An attempt whose rounds are spent goes to you ' +
         '(runtime.limits.restarts: 0)',
     )
   })
@@ -583,7 +583,7 @@ describe('what a pass may spend in dollars', () => {
 
   it('multiplies again for the passes a restart can buy', () => {
     const said = attemptCeiling({ ...limits(2, 1), usd: 12 })
-    expect(said).toContain('at most 2 passes, 6 agent runs and 6h and $72')
+    expect(said).toContain('at most 2 attempts, 6 agent runs and 6h and $72')
   })
 })
 

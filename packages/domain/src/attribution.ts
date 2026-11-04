@@ -329,7 +329,7 @@ const REFUSAL_READING: Record<
     says: ({ branch, base }) => `another integration held the merge lane, so ${branch} was not merged into ${base}.`,
     move: {
       action: 'requeue',
-      why: 'the lane was busy rather than wrong — the next pass merges it',
+      why: 'the lane was busy rather than wrong — the next attempt merges it',
     },
   },
   unexpected: {

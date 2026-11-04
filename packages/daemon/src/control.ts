@@ -397,7 +397,7 @@ export async function inFlight(url?: string): Promise<string[]> {
 export function describeInFlight(items: readonly string[]): string {
   if (items.length === 0) return 'nothing is in flight'
   if (items.length === 1) return `finishing ${items[0]}`
-  return `finishing ${items.length} passes: ${items.join(', ')}`
+  return `finishing ${items.length} attempts: ${items.join(', ')}`
 }
 
 export async function requestRun(

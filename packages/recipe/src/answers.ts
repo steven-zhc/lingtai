@@ -70,7 +70,9 @@ export function landingChanges(
   const proposed = currentProposed ?? []
   if (answer.land === 'hold') {
     if (proposed.some(isHumanEntry)) return []
-    return [{ path: ['steps', 'proposed'], value: [...proposed, { name: 'hold every pass', human: SETUP_HOLD_TEXT }] }]
+    return [
+      { path: ['steps', 'proposed'], value: [...proposed, { name: 'hold every attempt', human: SETUP_HOLD_TEXT }] },
+    ]
   }
   return landOnBranchChanges(answer.land, proposed, currentAdmit)
 }

@@ -1835,7 +1835,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // already excluded (nothing did): `#462`'s own fix round, finding 1.
     expect(result.routes[0]?.why).toBe(
       'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, so ' +
-        'the pass is held for a person rather than the workflow choosing from `implement`, ' +
+        'the attempt is held for a person rather than the workflow choosing from `implement`, ' +
         '`waiting` on its own (0061 §3)',
     )
     expect(result.end._tag).toBe('WaitOnPerson')

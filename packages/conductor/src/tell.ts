@@ -414,7 +414,7 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
     }
     case 'Requeue':
     case 'EditBodyAndRequeue':
-      return `${sentence('Requeued', by).replace(/\.$/, '')} — a new pass started.`
+      return `${sentence('Requeued', by).replace(/\.$/, '')} — a new attempt started.`
     case 'AnswerQuestion': {
       const name = who(by)
       return `${name === '' ? 'Answered' : `Answered by ${name}`}: \`${resolution.choice}\``

@@ -99,7 +99,7 @@ describe("the next attempt's prompt", () => {
     // beyond that one block.
     const text = renderPrompt(TEMPLATE, TICKET, [], next.failure)
     expect(text.startsWith('#104 — The control is the prompt\n\nthe body\n\n')).toBe(true)
-    expect(text).toContain('## What this pass checks, and what it does not')
+    expect(text).toContain('## What this attempt checks, and what it does not')
     expect(text).toMatch(/commit it before you verify/i)
   })
 
@@ -362,19 +362,19 @@ describe("the next attempt's prompt", () => {
       const text = renderPrompt(TEMPLATE, TICKET, ['pnpm typecheck && pnpm test'], '')
       expect(text).toContain('Run this before you finish')
       expect(text).toContain('pnpm typecheck && pnpm test')
-      expect(text).toContain('the whole of what this pass asks you to run')
+      expect(text).toContain('the whole of what this attempt asks you to run')
       expect(text).toContain('There is no later turn')
       expect(text).toMatch(/commit it before you verify/i)
     })
 
     it('is appended once when the template carries no {{checks}} slot', () => {
       const text = renderPrompt('#{{issue}}', TICKET, ['pnpm test'])
-      expect(text.match(/## What this pass checks, and what it does not/g)).toHaveLength(1)
+      expect(text.match(/## What this attempt checks, and what it does not/g)).toHaveLength(1)
     })
 
     it('renders in the slot, and not a second time, when the template has one', () => {
       const text = renderPrompt('#{{issue}}\n{{checks}}', TICKET, ['pnpm test'])
-      expect(text.match(/## What this pass checks/g)).toHaveLength(1)
+      expect(text.match(/## What this attempt checks/g)).toHaveLength(1)
     })
 
     /**
@@ -406,7 +406,7 @@ describe("the next attempt's prompt", () => {
     it('keeps step 4 its own numbered item in the real ticket template', async () => {
       const template = await readFile(`${repoRoot}prompts/ticket.md`, 'utf8')
       const text = renderPrompt(template, TICKET, ['pnpm typecheck && pnpm test'])
-      expect(text).toMatch(/against the bar below:\n\n## What this pass checks, and what it does not/)
+      expect(text).toMatch(/against the bar below:\n\n## What this attempt checks, and what it does not/)
       expect(text).toMatch(/\n\n4\. \*\*Commit as the work stands/)
     })
   })

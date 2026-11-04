@@ -535,7 +535,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         } catch (err) {
           // A pass that throws must not take the loop with it: the next
           // completion event is exactly when you want it to try again.
-          tell(`pass failed: ${(err as Error).message}`)
+          tell(`turn failed: ${(err as Error).message}`)
         }
         reason = 'completion'
       } while (again)
