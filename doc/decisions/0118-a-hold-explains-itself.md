@@ -276,8 +276,8 @@ which kind a wait was got inferred again in each place that needed it, from
      | `SetupRefused`                                                           | `Requeue`, `Close`                                                            | —                              |
      | `AgentCrashed` with a standing wait (#654)                               | that wait's resolutions on the unmoved head, plus `Requeue`, `Close`          | that wait's                    |
      - `BaseMoved` is held only after the system's own two merges of the base
-       are spent (0120 §3, #593); `Approve` continues at `merge` as a new attempt
-       whose count is zero, so it reads as _keep merging the base in_, and no
+       are spent (0120 §3, #593); `Approve` continues the same attempt at `merge`
+       with the count at zero, so it reads as _keep merging the base in_, and no
        fix round is granted — there is nothing wrong with the lines.
      - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
        sides with the reviewer.

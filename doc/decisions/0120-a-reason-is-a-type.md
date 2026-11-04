@@ -431,7 +431,7 @@ const routeNext: (
   constant, not a recipe knob: at most **2** per attempt (`BASE_MERGES_LIMIT`),
   after which `merge-base` is `unavailable{CeilingReached{base-merges}}` and
   only a person is left. `Approve` over that hold continues at `merge` as a
-  new attempt with the count at zero. Its built-in judge is `merge-the-base`,
+  continuation of the same attempt with the count at zero. Its built-in judge is `merge-the-base`,
   and `judge: merge-the-base` at any other `when:` is refused when the recipe
   resolves. The lane raises `base-moved` only when the textual trial merge is
   clean and the base's new commits touch a file the branch also changed — a

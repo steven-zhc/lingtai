@@ -14,8 +14,7 @@ nothing. What to learn from a ticket is a separate, optional step: an agent
 plugin at `end:`, decided in its own ADR.
 
 **Words.** A **ticket** is one `ticket-<project>-<n>` stream. An **attempt** is one
-claim of it, whatever started it: the queue, a restart, a requeue, or a granted
-round. A **continuation**, a held run going on after a person's approval, is
+claim of it, whatever started it: the queue, a restart or a requeue. A **continuation**, a held run going on after a person's approval or a granted round, is
 not a claim (0109 §5): it is `TicketContinued`, or, on the log written before
 that, a `TicketClaimed` whose `runId` was already claimed on its stream. A **fix round** is a paid run answering a refusal.
 A **wait** is one `WaitStarted` on the ticket's stream. The **window** is the
@@ -232,9 +231,9 @@ The operator's decisions in epic #648 are the inputs here.
 - An average over landings says nothing about tickets that did not land. That is
   why spend in the window covers every run, whatever its ticket's outcome, and
   closed tickets are counted beside the landed ones.
-- A requeue and a granted round each add an attempt; an approval's continuation
-  does not. *Attempts* measures how often the pipeline had to start over or be
-  helped, not how many restarts it chose.
+- A requeue adds an attempt; an approval's continuation and a granted round
+  do not. *Attempts* measures how often the pipeline had to start over, not how
+  many restarts it chose.
 - One more projection means a table, a checkpoint and a rebuild on both stores
   (Postgres and SQLite), and a reducer that has to be kept in step with the events
   it reads. That is the price of a report page that does not read the whole log
