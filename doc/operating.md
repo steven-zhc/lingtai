@@ -1588,8 +1588,10 @@ the reason Approve asks for.
 Everything else is one click away. The card's title opens `/task/<id>`, which
 folds that task's event stream on demand: each gate's verdict with its evidence,
 the reviewer's findings with their failure scenarios, the guard trips, and the
-raw history with every actor. Nothing on that page is maintained in a table — a
-detail view is read rarely, by one person, about one task.
+raw history with every actor. The task's own part is not maintained in a table —
+a detail view is read rarely, by one person, about one task. Two things beside it
+are read from tables: the Waiting-lane neighbours from `task_view`, and the
+spend lines from `spend`.
 
 The page updates itself: Postgres notifies on every append, the daemon advances
 the projection, and the board re-reads. When the conductor is paused the bar
@@ -2351,3 +2353,81 @@ inside the refresh, so a `shutdown` or `restart` waits for it. While it runs the
 daily ceiling answers *could not check* and takes no new work; a pass in flight
 keeps going. If the replay does not finish, `lingtai doctor`'s `rates:` line
 warns and names `lingtai projection rebuild spend`.
+
+### One fold per stream (#797)
+
+Nine tickets of this epic changed what a projection stores or how it reduces,
+and each entry below says which. They are listed in the order they landed. **If
+you are upgrading across all of them at once, run the steps once:** drain,
+merge, rebuild each of `task_view`, `ticket_report`, `spend` and
+`finding_backlog`, restart, restart the board. An entry that says "rebuild X"
+is satisfied by that one rebuild, not by one per ticket.
+
+The steps, in this order:
+
+1. `pnpm lingtai shutdown "why"`, and wait for the drain. It comes *before* the
+   rebuild: the drain asks `task_view` what is in flight, and a drain during a
+   rebuild is told nothing is.
+2. Merge.
+3. `pnpm lingtai projection rebuild <name>`, once per projection named below. It
+   drops the table and replays, and the board shows a partial table until the
+   replay finishes.
+4. `pnpm lingtai restart "picking up #…"`, with `lingtai doctor` green first.
+5. Restart the board, by its port (`:17820`). It holds a projector on the old
+   code, and its runner meets the new table until it restarts.
+
+Three things can be stale after the merge, and they are told apart by what
+`lingtai doctor` says. **A column was added**: `doctor` reports the projection as
+drifted and the runner refuses to start until it is rebuilt. **A stored
+`TicketState` or run no longer decodes**: the first event that touches an old
+row stops the runner with `the stored ticket state is not today's shape … run
+lingtai projection rebuild <name>`. **Only the rule changed**: `doctor` is green,
+nothing complains, and rows written before the merge keep their old answer until
+the rebuild. The entries say which.
+
+**#821 — a requested signoff reads `asked`; `task_view`.** The `verdicts` column
+is the same, so `doctor` says nothing. A signoff that had been requested was
+stored as `pending`; it reads `asked` once `task_view` is rebuilt, and a commit
+that recorded no head reads `did-not-finish` rather than `passed` in a run's
+state. Rebuild `task_view`.
+
+**#833 — `ticket_report` stores each ticket's state; a claim after a close
+reopens nothing.** The table has a new column (`ticket_state`), so `lingtai
+doctor` reports `ticket_report` as drifted and the runner refuses to start until
+it is rebuilt. A ticket a person closed and an agent then claimed stays closed in
+the report. Rebuild `ticket_report`.
+
+**#835 — a triage or discussion row's kind is the ticket's.** `spend` gains a
+table (`spend_ticket`) holding each ticket's stored state and drops the old
+`spend_kind`. `doctor` says nothing; until the rebuild a triage or discussion
+row's kind reads empty rather than wrong. Rebuild `spend`.
+
+**#838 — a finding's decision is `reduceFinding`'s.** `finding_backlog` gains a
+column (`last_seq`), so `doctor` reports it as drifted. The rebuild writes every
+finding's status from the one fold. Rebuild `finding_backlog`.
+
+**#834 — `task_view` takes the ticket's state: `approved` after a grant, Close
+`waiting`, `landed` only on `TicketLanded`.** `task_view` gains a column
+(`ticket`) and a table (`task_view_ticket`), so `doctor` reports it as drifted. A
+card whose fix round was granted leaves Queued, and `lingtai status` and the
+drain stop counting it as queued. A close stays `waiting` until `TicketClosed`
+lands, instead of showing `queued` for a moment. A merge alone no longer reads
+`landed`. The question beside an answer is worded from the resolution's reason.
+Rebuild `task_view`.
+
+**#844 — `task_view` stores each run's state.** `task_view_run` gains a column
+(`run`), so `doctor` reports it as drifted; a stored run that does not decode
+stops the runner with the same `rebuild task_view` instruction. The card's run
+part is the run's own fold. Rebuild `task_view`.
+
+**#845 — the card's note comes from the transition.** Only the rule changed:
+`doctor` is green. A repeated identical release, signoff request or failure no
+longer rewrites the note or moves the card's age, and an integration event alone
+touches nothing, so old rows keep a later `updated_seq` than a rebuild gives
+them. Rebuild `task_view` if you want the old rows to match.
+
+**#842 and #843 need no rebuild of their own.** They added `waits` and
+`discussions` to `TicketState`, and landed before any projection stored one (#833
+is the first), so there were no old rows to refuse. From #833 on, a change to
+`TicketState`'s shape makes every projection that stores it (`ticket_report`,
+`spend` and `task_view`) refuse its old rows by name until it is rebuilt.
