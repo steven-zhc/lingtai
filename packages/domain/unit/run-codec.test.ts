@@ -10,8 +10,8 @@ import { reduceAttemptEvent, decodeRun, emptyAttempt, encodeRun } from '../src/i
 import { histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
 
 const streams: [string, readonly Envelope[]][] = [
-  ...Object.entries(histories.run),
-  ...Object.entries(lateHistories.run),
+  ...Object.entries(histories.attempt),
+  ...Object.entries(lateHistories.attempt),
   ...Object.entries({ ...scenarios, ...lateScenarios }).flatMap(([name, s]) =>
     s.runs.map((events, i) => [`${name}.run${i}`, events] as [string, readonly Envelope[]]),
   ),

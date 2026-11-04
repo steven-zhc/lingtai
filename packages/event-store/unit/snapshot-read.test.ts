@@ -1,7 +1,14 @@
-import { CONTROL_FOLD_TYPES, CONTROL_STREAM, controlReducer, reduceAll, ticketReducer } from '@lingtai/domain'
-import { histories } from '@lingtai/domain/test/histories'
+import {
+  CONTROL_FOLD_TYPES,
+  CONTROL_STREAM,
+  attemptReducer,
+  controlReducer,
+  reduceAll,
+  ticketReducer,
+} from '@lingtai/domain'
+import { histories, lateHistories, reducerFixtures } from '@lingtai/domain/test/histories'
 import { Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ConcurrencyError } from '../src/event-store.ts'
 import { readThroughSnapshot } from '../src/snapshot-read.ts'
@@ -81,7 +88,7 @@ describe("readThroughSnapshot with 'all'", () => {
       0,
       ticketHistory.map((e) => ({ type: e.type, actor: e.actor, data: e.data }) as never),
     )
-    const ignored = histories.run.landedFirstTry.find((e) => e.type === 'RunStarted')!
+    const ignored = histories.attempt.landedFirstTry.find((e) => e.type === 'RunStarted')!
     await store.append(streamId, ticketHistory.length, [
       { type: ignored.type, actor: ignored.actor, data: ignored.data } as never,
     ])
@@ -115,5 +122,63 @@ describe("readThroughSnapshot with 'all'", () => {
     const event = { type: released.type, actor: released.actor, data: released.data } as never
     await store.append(streamId, first.version, [event])
     await expect(store.append(streamId, second.version, [event])).rejects.toBeInstanceOf(ConcurrencyError)
+  })
+})
+
+describe("readThroughSnapshot with 'all' over the attempt reducer", () => {
+  const every = [
+    ...Object.values(histories.attempt),
+    ...Object.values(lateHistories.attempt),
+    reducerFixtures.attempt.everyAttemptEvent,
+  ]
+
+  async function read(history: (typeof every)[number], n: number, plantAt: number | 'void' | 'undecodable') {
+    const store = createMemoryEventStore()
+    const streamId = history[0]!.streamId
+    await store.append(
+      streamId,
+      0,
+      history.slice(0, n).map((e) => ({ type: e.type, actor: e.actor, data: e.data }) as never),
+    )
+    const stored = await store.read(streamId)
+    const snapshots = createMemorySnapshotStore(store)
+    if (plantAt !== 'void') {
+      const at = stored[(plantAt === 'undecodable' ? n : plantAt) - 1]!
+      await snapshots.put({
+        streamId,
+        reducer: attemptReducer.name,
+        reducerVersion: attemptReducer.version,
+        streamVersion: at.version,
+        lastSeq: at.seq,
+        lastAt: at.at,
+        state: (plantAt === 'undecodable'
+          ? '{"nope":true}'
+          : attemptReducer.encode(reduceAll(attemptReducer, stored.slice(0, plantAt)))) as string,
+      })
+    }
+    const through = await Effect.runPromise(readThroughSnapshot(store, attemptReducer, streamId, 'all', { snapshots }))
+    return { through, whole: reduceAll(attemptReducer, stored) }
+  }
+
+  it('equals the whole reduce for every prefix, with every planted snapshot, a void one and an undecodable one', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      for (const history of every) {
+        for (let n = 1; n <= history.length; n++) {
+          for (const plantAt of ['void', 'undecodable', ...Array.from({ length: n }, (_, i) => i + 1)] as const) {
+            const { through, whole } = await read(history, n, plantAt)
+            expect(through, `${history[0]!.streamId} prefix ${n} snapshot ${plantAt}`).toEqual(whole)
+            expect(through.version).toBe(whole.version)
+            expect(through.lastSeq).toBe(whole.lastSeq)
+            expect(through.openedAt).toEqual(whole.openedAt)
+          }
+        }
+      }
+      const lines = error.mock.calls.map((c) => String(c[0]))
+      expect(lines.length).toBeGreaterThan(0)
+      expect(lines.filter((l) => l.includes('projection rebuild'))).toEqual([])
+    } finally {
+      error.mockRestore()
+    }
   })
 })

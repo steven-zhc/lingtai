@@ -28,7 +28,7 @@ import {
 import {
   parsePayload,
   parseTicketStream,
-  reduceAttempt,
+  attemptReducer,
   reduceTicket,
   ticketStream,
   triageFactsOf,
@@ -179,7 +179,7 @@ async function finishInterrupted(
       return
     const started = reduced.waits.findLast((w) => w.waitId === waitId)!.triage.started!
     const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
-    const headSha = runId === null ? null : reduceAttempt(await deps.store.read(runId)).headSha
+    const headSha = runId === null ? null : (await readState(deps.store, attemptReducer, runId, 'all', deps)).headSha
     const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
     try {
       await deps.store.append(ticketId, reduced.version, [
@@ -338,6 +338,8 @@ export function daemonTriagePorts(
       waitTriage(
         {
           store: eventStore,
+          snapshots: processLog.snapshots,
+          writer,
           runtime: createRuntime,
           mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
           issue: triageIssue(),
@@ -368,7 +370,7 @@ function clip(text: string): string {
   return text.length > TRIAGE_TEXT_MAX ? text.slice(0, TRIAGE_TEXT_MAX) : text
 }
 
-export interface TriagePorts {
+export interface TriagePorts extends SnapshotReadOptions {
   store: EventStore
   runtime(agent: DiscussAgent, options: { tools: 'none' | 'full' }): Runtime
   mirror: {
@@ -464,8 +466,7 @@ async function gatherEvidence(
   let head: string | null = null
   if (runId !== null) {
     // An unreadable run stream is not evidence that the attempt has no head.
-    const runEvents = await deps.store.read(runId)
-    const run = reduceAttempt(runEvents)
+    const run = await readState(deps.store, attemptReducer, runId, 'all', deps)
     routed = run.route
     published = run.published
     head = run.headSha

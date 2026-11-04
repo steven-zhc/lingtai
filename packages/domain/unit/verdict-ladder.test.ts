@@ -34,26 +34,26 @@ function agree(events: readonly Envelope[], key: string, verdict: keyof typeof B
 
 describe('the one verdict ladder', () => {
   it('D1: a commit that produced no head did not finish', () => {
-    agree(histories.run.commitCompletedNoHead, 'implement:keep', 'did-not-finish')
+    agree(histories.attempt.commitCompletedNoHead, 'implement:keep', 'did-not-finish')
   })
 
   it('D1: a worktree that was not done did not finish', () => {
-    agree(histories.run.worktreeNotDone, 'prepared:cut', 'did-not-finish')
+    agree(histories.attempt.worktreeNotDone, 'prepared:cut', 'did-not-finish')
   })
 
   it('D1: a requested signoff is asked', () => {
-    const events = histories.run.signoffRequestedThenLifecycle
+    const events = histories.attempt.signoffRequestedThenLifecycle
     const r = readers(events)
     expect(r.steps['proposed:human']).toBe('asked')
     expect(events.flatMap(boardFactOf).some((f) => f._tag === 'SignoffRequested')).toBe(true)
   })
 
   it('D1: an unreadable design answer failed', () => {
-    agree(histories.run.designAnswerUnreadable, 'design:draft', 'failed')
+    agree(histories.attempt.designAnswerUnreadable, 'design:draft', 'failed')
   })
 
   it('NotReached is skipped by every reader', () => {
-    const r = readers(histories.run.laterActionNotReached)
+    const r = readers(histories.attempt.laterActionNotReached)
     expect(Object.keys(r.steps)).toEqual(['build:test'])
     expect(Object.keys(r.board)).toEqual(['build:test'])
   })

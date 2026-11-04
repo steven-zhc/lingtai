@@ -17,29 +17,29 @@ const stepOf = (events: readonly Envelope[], prefix: string) =>
 
 describe('presentAttempt', () => {
   it('D2: a verdict on an older head reads stale', () => {
-    expect(stepOf(histories.run.verdictOnOlderHead, 'review:cold')?.stale).toBe(true)
+    expect(stepOf(histories.attempt.verdictOnOlderHead, 'review:cold')?.stale).toBe(true)
   })
 
   it('D2: steps before build make the head and never read stale', () => {
-    const events = lateHistories.run.implementThenReviewed
+    const events = lateHistories.attempt.implementThenReviewed
     expect(stepOf(events, 'implement:')?.stale).toBe(false)
     expect(stepOf(events, 'review:')?.stale).toBe(true)
   })
 
   it('D3: a requested signoff is cleared by a later lifecycle event', () => {
-    expect(view(histories.run.signoffRequestedThenLifecycle).awaitingSha).toBeNull()
+    expect(view(histories.attempt.signoffRequestedThenLifecycle).awaitingSha).toBeNull()
   })
 
   it('D3: a failure stays a failure', () => {
-    expect(view(histories.run.failedThenFinished).outcome.state).toBe('failed')
+    expect(view(histories.attempt.failedThenFinished).outcome.state).toBe('failed')
   })
 
   it('an asked step shows its question', () => {
-    expect(stepOf(histories.run.signoffRequestedThenLifecycle, 'proposed:human')?.evidence).toBe('ship it?')
+    expect(stepOf(histories.attempt.signoffRequestedThenLifecycle, 'proposed:human')?.evidence).toBe('ship it?')
   })
 
   it('draws the same view from a state as from the events', () => {
-    const events = histories.run.verdictOnOlderHead
+    const events = histories.attempt.verdictOnOlderHead
     const state = reduceAttempt(events)
     expect(presentAttempt(state, claim, 1, null)).toEqual({ ...view(events), progress: null })
   })

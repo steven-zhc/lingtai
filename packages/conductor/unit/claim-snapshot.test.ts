@@ -16,7 +16,7 @@ describe('claimTicket with a snapshot below the head', () => {
     const discovered = histories.ticket.claimedReleasedClaimedLanded.find((e) => e.type === 'TicketDiscovered')!
     // An event type `reduceTicketEvent` ignores, after the snapshot: the tail is not empty, and a read
     // filtered by type would come back without it, leaving `version` below the head.
-    const ignored = histories.run.landedFirstTry.find((e) => e.type === 'RunStarted')!
+    const ignored = histories.attempt.landedFirstTry.find((e) => e.type === 'RunStarted')!
     const seed = [discovered, ignored]
     await store.append(
       ticketId,

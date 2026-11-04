@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { emptyAttempt, reduceAttempt, savedHeadOf } from '../src/index.ts'
 import { lateHistories } from '../test/histories.ts'
 
-const head = (name: keyof typeof lateHistories.run) => savedHeadOf(reduceAttempt(lateHistories.run[name]))
+const head = (name: keyof typeof lateHistories.attempt) => savedHeadOf(reduceAttempt(lateHistories.attempt[name]))
 
 describe('savedHeadOf', () => {
   it('a clean published row is Saved', () => {
@@ -40,7 +40,7 @@ describe('savedHeadOf', () => {
   })
 
   it('a row without branchCarries is carried', () => {
-    const state = reduceAttempt(lateHistories.run.publishedClean)
+    const state = reduceAttempt(lateHistories.attempt.publishedClean)
     expect(state.published?.branchCarries).toBeUndefined()
     expect(savedHeadOf(state)._tag).toBe('Saved')
   })

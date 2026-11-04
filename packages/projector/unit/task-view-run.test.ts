@@ -128,7 +128,7 @@ describe('the run columns are rowOf(ticket, run)', () => {
       ['pass-s9403-a', f.tasks[0]!.task_id],
       ['pass-s9403-b', f.tasks[0]!.task_id],
     ])
-    const orphan = await reduce(histories.run.landedFirstTry)
+    const orphan = await reduce(histories.attempt.landedFirstTry)
     expect(orphan.tasks).toEqual([])
     expect(orphan.runs).toHaveLength(1)
     expect(orphan.runs[0]!.task_id).toBe('ticket-lingtai-9001')
@@ -139,8 +139,8 @@ describe('incremental against rebuild', () => {
   const streams: [string, Envelope[]][] = [
     ...Object.entries(scenarios).map(([n, s]) => [`scenario.${n}`, ordered(s)] as [string, Envelope[]]),
     ...Object.entries(lateScenarios).map(([n, s]) => [`scenario.${n}`, ordered(s)] as [string, Envelope[]]),
-    ...Object.entries(histories.run).map(([n, e]) => [`run.${n}`, [...e]] as [string, Envelope[]]),
-    ...Object.entries(lateHistories.run).map(([n, e]) => [`run.${n}`, [...e]] as [string, Envelope[]]),
+    ...Object.entries(histories.attempt).map(([n, e]) => [`run.${n}`, [...e]] as [string, Envelope[]]),
+    ...Object.entries(lateHistories.attempt).map(([n, e]) => [`run.${n}`, [...e]] as [string, Envelope[]]),
     ...Object.entries(histories.ticket).map(([n, e]) => [`ticket.${n}`, [...e]] as [string, Envelope[]]),
     ...Object.entries(lateHistories.ticket).map(([n, e]) => [`ticket.${n}`, [...e]] as [string, Envelope[]]),
   ]

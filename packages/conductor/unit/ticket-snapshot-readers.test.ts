@@ -89,7 +89,7 @@ describe('readers over a ticket snapshot planted below the head', () => {
       const ticketId = ticketStream(PROJECT, 1)
       // Discovery, then an event the ticket reducer ignores: `version` is only the head's if the tail was read.
       const discovered = histories.ticket.claimedReleasedClaimedLanded.find((e) => e.type === 'TicketDiscovered')!
-      const ignored = histories.run.landedFirstTry.find((e) => e.type === 'RunStarted')!
+      const ignored = histories.attempt.landedFirstTry.find((e) => e.type === 'RunStarted')!
       await seed(
         store,
         ticketId,

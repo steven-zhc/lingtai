@@ -52,6 +52,7 @@ import {
   attemptIdOf,
   attemptStream,
   reduceAttempt,
+  attemptReducer,
   ticketReducer,
   stepOutcomesOf,
   waitsFromState,
@@ -1227,7 +1228,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // fresh claim, with its own prior attempts to carry into the prompt like
     // any other.
     const previous = continuation !== null ? undefined : priorAttemptsFromState(reduced, ticketId).at(-1)
-    const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
+    // Only the attempt's state is needed, so it is read through a snapshot; a failure is a defect, as it was
+    // inside `Effect.promise`.
+    const lastRun = previous
+      ? yield* readThroughSnapshot(store, attemptReducer, previous.runId, 'all', ticketSnapshots).pipe(Effect.orDie)
+      : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
     const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null

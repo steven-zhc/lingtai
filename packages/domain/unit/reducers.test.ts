@@ -20,6 +20,7 @@ import versions from './reducer-versions.json' with { type: 'json' }
 const FIXTURE: Record<string, readonly Envelope[]> = {
   control: reducerFixtures.control.everyControlEvent,
   ticket: reducerFixtures.ticket.everyTicketType,
+  attempt: reducerFixtures.attempt.everyAttemptEvent,
 }
 
 function hashOver(reducer: Reducer<unknown>, events: readonly Envelope[]): string {

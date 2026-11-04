@@ -1,4 +1,4 @@
-import { reduceAttempt, savedHeadOf, type Envelope } from '@lingtai/domain'
+import { reduceAttempt, savedHeadOf, type AttemptState, type Envelope } from '@lingtai/domain'
 
 /**
  * The same published-head precondition the grant checks before its remote comparison.
@@ -10,7 +10,15 @@ export function savedFixWork(
   runId: string,
   events: readonly Envelope[],
 ): { head: string; ref: string } | { refusal: string } {
-  const saved = savedHeadOf(reduceAttempt(events))
+  return savedFixWorkFromState(runId, reduceAttempt(events))
+}
+
+/** `savedFixWork` for a reader that already holds the attempt's state (read through a snapshot, #878). */
+export function savedFixWorkFromState(
+  runId: string,
+  state: AttemptState,
+): { head: string; ref: string } | { refusal: string } {
+  const saved = savedHeadOf(state)
   switch (saved._tag) {
     case 'Saved':
       return { head: saved.head, ref: saved.ref }

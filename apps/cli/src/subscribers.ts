@@ -37,9 +37,10 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  */
 import { runnableEnv, extensionEnv, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { type Envelope, isAttemptStream, reduceAttempt, ticketOf } from '@lingtai/domain'
+import { readState } from '@lingtai/conductor/snapshot-state'
+import { attemptReducer, type Envelope, isAttemptStream, ticketOf } from '@lingtai/domain'
 import { BOARD_PORT, boardUrl } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, type SnapshotReadOptions, eventStore, log } from '@lingtai/event-store'
 
 /**
  * The board's address on the one machine this runs on
@@ -89,8 +90,12 @@ export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
  * prevent. The read's rejection is left to reach `createSubscriber`'s `deliver`,
  * which rejects with it, and `work-loop.ts`'s boundary records it.
  */
-async function runSubject(streamId: string, store: EventStore): Promise<EventSubject | null> {
-  const { ticketId } = reduceAttempt(await store.read(streamId))
+async function runSubject(
+  streamId: string,
+  store: EventStore,
+  options: SnapshotReadOptions,
+): Promise<EventSubject | null> {
+  const { ticketId } = await readState(store, attemptReducer, streamId, 'all', options)
   if (ticketId === null) return null
   const named = ticketOf({ streamId, data: { ticketId } })
   return named === null ? null : subjectOf(named.project, named.issue)
@@ -103,13 +108,17 @@ async function runSubject(streamId: string, store: EventStore): Promise<EventSub
  * Pure for everything but a run stream, which is the one case that has to ask.
  */
 export function createSubjectResolver(
-  store: EventStore = eventStore,
+  store?: EventStore,
+  options: SnapshotReadOptions = {},
 ): (event: Envelope) => Promise<EventSubject | null> {
+  // A store passed in has no snapshots of its own (0124 §5): only the default log's are read.
+  const read = { ...options, snapshots: options.snapshots ?? (store === undefined ? log.snapshots : undefined) }
+  const from = store ?? eventStore
   return async (event) => {
     const named = ticketOf(event)
     if (named !== null) return subjectOf(named.project, named.issue)
     if (!isAttemptStream(event.streamId)) return null
-    return runSubject(event.streamId, store)
+    return runSubject(event.streamId, from, read)
   }
 }
 
