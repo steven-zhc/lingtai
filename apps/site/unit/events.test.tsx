@@ -71,7 +71,7 @@ describe('/docs/events/', () => {
   })
 
   it('renders unmatched groups and entries hidden under a filter', () => {
-    const index = doc.events.map(({ name, group, at }) => ({ name, group, at }))
+    const index = doc.events.map(({ name, group, stream, at }) => ({ name, group, stream, at }))
     const entries = Object.fromEntries(doc.events.map((e) => [e.name, <i key={e.name}>{e.name}</i>]))
     const out = renderToStaticMarkup(
       <EventsFilter steps={[...STEPS]} index={index} entries={entries} initialFilter="review" />,
