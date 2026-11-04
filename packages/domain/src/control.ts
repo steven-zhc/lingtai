@@ -1,3 +1,4 @@
+import { decodeControl, encodeControl } from './control-codec.ts'
 /**
  * What the conductor has been told to do, reduced.
  *
@@ -16,6 +17,7 @@
 import type { Envelope } from './envelope.ts'
 import { PauseCause } from './events.ts'
 import type { EventType } from './events.ts'
+import { reduceAll, type Reducer } from './reducer.ts'
 
 /** One stream for the whole installation. Control is not per-project. */
 export const CONTROL_STREAM = 'ctl-conductor'
@@ -317,5 +319,18 @@ export function evaluateControl(state: ControlState, now: Date): ControlState {
  * holding.
  */
 export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  return evaluateControl(events.reduce(reduceControlEvent, emptyControl), now)
+  return evaluateControl(reduceAll(controlReducer, events), now)
+}
+
+/**
+ * The control reduce as a snapshottable reducer (0124 §1). Raise `version` when
+ * `reduceControlEvent`'s result over the fixture changes: `unit/reducers.test.ts`.
+ */
+export const controlReducer: Reducer<ControlState> = {
+  name: 'control',
+  version: 1,
+  initial: emptyControl,
+  reduceEvent: reduceControlEvent,
+  encode: encodeControl,
+  decode: decodeControl,
 }
