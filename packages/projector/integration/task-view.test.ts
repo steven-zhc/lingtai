@@ -580,8 +580,7 @@ async function seed(): Promise<void> {
     ])
     // `PassRestarted` is gone (#502): a restart decision writes `PassRouted`
     // on the run's own stream alone, and `restarts`/`restarts_of` — the
-    // denominator is gone with it — comes off that (`cardFactOf`'s
-    // `Restarted` fact carries only `restart`). The release that follows is
+    // denominator is gone with it — comes off that (`RunState.route`). The release that follows is
     // its own event, with its own reason and an explicit `cause` naming the
     // arm, rather than `aRoute` inferring one.
     await append(

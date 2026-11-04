@@ -4659,8 +4659,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * fallback (`run.headSha`) — which lets the click through once a
          * person has already found the control — but nothing upstream of
          * that ever turns the control on: `task_view.awaiting_sha` and
-         * `StandingView.awaitingSha` are written off `cardFactOf`'s
-         * `Verdict.approval`/`boardFactOf`'s `SignoffRequested`, both of
+         * `StandingView.awaitingSha` are written off the run's `RunState`
+         * (`task-view.ts`'s `rowOf`) and `boardFactOf`'s `SignoffRequested`, both of
          * which need a `signoff`-yield action with a live `requested` on
          * some `StepEnded`, and the router sending a pass here is not one —
          * it runs no action at all. So this appends one itself, on the run's

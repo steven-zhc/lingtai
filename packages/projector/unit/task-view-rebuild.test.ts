@@ -1,6 +1,6 @@
 /**
  * The pin for #480: `task_view` rebuilds to the same rows once the fold
- * dispatches through `cardFactOf` as it did while it matched the old event
+ * derives through the reduces' states as it did while it matched the old event
  * types and `Hold` directly.
  *
  * **Generated from the code before #480's rewrite, and regenerated once since.**
@@ -563,7 +563,7 @@ async function fold(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Proje
   }
 }
 
-describe('task_view rebuilds through cardFactOf exactly as it did through the direct matches', () => {
+describe('task_view rebuilds through the stored states exactly as it did through the direct matches', () => {
   it('produces the same final rows for every Hold kind and every rerouted event', async () => {
     const { tasks, runs } = await fold(events.length)
     expect(tasks).toMatchSnapshot('final task_view rows')

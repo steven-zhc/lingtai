@@ -20,7 +20,7 @@
  * for every caller, in `resolveWaitHolding`".
  *
  * Builders from `@lingtai/domain/test/events` only, and assertions through
- * `waitsOf`, `reduceTicket(...).answers` and `cardFactOf(...).card` — never
+ * `waitsOf`, `reduceTicket(...).answers` and `ticketNoteOf` — never
  * through a type name, so `#464`'s event-shape change leaves this file alone.
  */
 import { type Action, type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
