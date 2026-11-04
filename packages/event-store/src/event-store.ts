@@ -416,6 +416,7 @@ export function createEventStore(client: Db): EventStore {
     head: (streamId) =>
       Promise.resolve(
         client.orm.public.Event.where({ streamId })
+          .select('version')
           .orderBy((e) => e.version.desc())
           .limit(1)
           .all(),
