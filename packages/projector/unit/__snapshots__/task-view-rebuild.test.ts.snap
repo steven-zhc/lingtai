@@ -357,7 +357,7 @@ exports[`task_view rebuilds through cardFactOf exactly as it did through the dir
     "triage_started_at": null,
     "turns": null,
     "updated_at": "2026-08-31T12:00:00.000Z",
-    "updated_seq": 28,
+    "updated_seq": 27,
     "verdicts": "{}",
     "wait_id": "wait-15",
     "wait_reason": "{"_tag":"OwnQuestion","question":"which registry?","by":"steven"}",

@@ -48,11 +48,21 @@
  * names.
  */
 import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
-import { cardFactOf, parseTicketStream, waitBranchOf, waitWords, WaitId } from '@lingtai/domain'
+import type { Envelope, TicketLifecycle, TicketState } from '@lingtai/domain'
+import {
+  cardFactOf,
+  encodeTicket,
+  isTicketStream,
+  parseTicketStream,
+  waitBranchOf,
+  waitWords,
+  WaitId,
+} from '@lingtai/domain'
 import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 
 import { withProjectionStore } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
+import { reduceStoredTicket } from './ticket-row.ts'
 
 /**
  * Where a task is.
@@ -193,7 +203,12 @@ export const taskViewProjection: Projection = {
         restarts     int not null default 0,
         restarts_of  int not null default 0,
 
-        updated_seq  bigint not null
+        updated_seq  bigint not null,
+
+        -- The ticket reduce (applyTicket), stored as encodeTicket writes it.
+        -- Every one-stream column above is read off it (#834). No default: a
+        -- table built before this is refused by the shape check until rebuilt.
+        ticket       jsonb not null
       )`)
     await ctx.query('create index if not exists task_view_state_idx on task_view (project, state)')
     await ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
@@ -205,6 +220,15 @@ export const taskViewProjection: Projection = {
         run_id  text primary key,
         task_id text not null
       )`)
+
+    // A ticket's reduce while it has no task_view row (#834): a prompt edit on
+    // an untouched issue is not a card. The event that makes the row moves the
+    // state into it and deletes this one.
+    await ctx.query(`
+      create table if not exists task_view_ticket (
+        task_id    text primary key,
+        ticket     jsonb not null
+      )`)
   },
 
   async reset(ctx) {
@@ -212,6 +236,7 @@ export const taskViewProjection: Projection = {
     // `create table if not exists` would silently keep the old columns.
     await ctx.query('drop table if exists task_view')
     await ctx.query('drop table if exists task_view_run')
+    await ctx.query('drop table if exists task_view_ticket')
   },
 
   async apply(events, ctx) {
@@ -219,200 +244,20 @@ export const taskViewProjection: Projection = {
       const seq = event.seq.toString()
       const at = event.at
 
+      // A ticket's own stream is one reduce (applyTicket) and one write (#834, 0124 §1).
+      if (isTicketStream(event.streamId)) {
+        await applyTicketEvent(ctx, event)
+        continue
+      }
+
       switch (event.type) {
-        // ---- the task's own stream ----
-
-        /**
-         * Still handled, though nothing appends it any more (#41): the queue is
-         * read from GitHub now. Logs written before that change still contain
-         * these, and a projection that cannot replay its own history is not a
-         * projection.
-         */
-        case 'TicketDiscovered': {
-          const d = event.data as PayloadOf<'TicketDiscovered'>
-          await upsert(ctx, event.streamId, seq, at, {
-            project: d.project,
-            issue: d.externalRef,
-            title: d.title,
-            kind: d.kind,
-            state: 'queued',
-          })
-          break
-        }
-
-        // `TicketContinued` is a continuation by type (domain `claims.ts`) and folds
-        // as the old form does: a claim carrying no title or kind. The helper's
-        // `claimed` set is not used — the SQL in `upsert` decides from the row's
-        // own run_id whether this is a fresh attempt (#509), and survives a
-        // checkpoint where an in-memory set would not.
-        case 'TicketContinued':
-        case 'TicketClaimed': {
-          const d =
-            event.type === 'TicketContinued'
-              ? { ...(event.data as PayloadOf<'TicketContinued'>), title: null, kind: null }
-              : (event.data as PayloadOf<'TicketClaimed'>)
-          await linkRun(ctx, d.runId, event.streamId)
-          // The claim creates the row, not just updates it. With the queue out
-          // of the log there is no earlier event to have made one, so an UPDATE
-          // here would leave every running and landed task with no row after a
-          // rebuild — they would vanish from the board, and GitHub could not
-          // supply them because it only lists what is still open.
-          const { project, issue } = splitTaskId(event.streamId)
-          // One statement, counting the attempt as it goes. Two statements
-          // cannot work here: whichever runs first writes `updated_seq = seq`,
-          // and the second is guarded on `updated_seq` being lower, so the
-          // counter silently never moves. That is exactly the shape of bug
-          // that leaves a backoff looking implemented and doing nothing.
-          await upsert(ctx, event.streamId, seq, at, {
-            project,
-            issue,
-            title: d.title,
-            kind: d.kind,
-            state: 'running',
-            runId: d.runId,
-            attempt: true,
-          })
-          break
-        }
-
-        case 'TicketReleased': {
-          const d = event.data as PayloadOf<'TicketReleased'>
-          // The reason becomes the card's line. A release is an attempt that
-          // ended without landing, and it used to leave no mark at all: a run
-          // killed from outside fails no gate, so the card came back to Queued
-          // with nothing to say and read like work nobody had started (#78).
-          // Clearing `run_id` is also what scopes the gate pills — the card no
-          // longer names a run, so it shows no verdicts.
-          await set(ctx, event.streamId, seq, at, {
-            state: 'queued',
-            run_id: null,
-            note: d.reason,
-            wait_id: null,
-            wait_reason: null,
-            triage_attempt: null,
-            triage_started_at: null,
-            triage_result: null,
-            triage_head_sha: null,
-            // **The restart count's one writer** (0040, `#502`). `PassRouted`
-            // only decides a restart; this is the event `conduct.ts`'s own
-            // `armIsUp` guard withholds where the arm never reached origin, so
-            // counting here is what keeps this column and `work-item.restarts`
-            // — folded off the same event — from disagreeing.
-            ...(d.cause?._tag === 'Restart' ? { restarts: d.cause.restart } : {}),
-          })
-          break
-        }
-
-        case 'TicketSplit': {
-          const d = event.data as PayloadOf<'TicketSplit'>
-          await set(ctx, event.streamId, seq, at, {
-            split: JSON.stringify(d.children.map((c) => ({ key: c.key, number: c.number }))),
-          })
-          break
-        }
-
-        case 'TicketClosed': {
-          const d = event.data as PayloadOf<'TicketClosed'>
-          await set(ctx, event.streamId, seq, at, {
-            state: 'closed',
-            // The reason, where `landed` puts the merge commit: it is the whole
-            // of what happened, and the only thing anybody will have later.
-            note: d.reason,
-            closed_at: at,
-            awaiting_sha: null,
-            wait_id: null,
-            wait_reason: null,
-            triage_attempt: null,
-            triage_started_at: null,
-            triage_result: null,
-            triage_head_sha: null,
-          })
-          break
-        }
-
-        case 'TicketLanded': {
-          const d = event.data as PayloadOf<'TicketLanded'>
-          await set(ctx, event.streamId, seq, at, {
-            state: 'landed',
-            note: d.mergeCommit,
-            closed_at: at,
-            awaiting_sha: null,
-            wait_id: null,
-            wait_reason: null,
-            triage_attempt: null,
-            triage_started_at: null,
-            triage_result: null,
-            triage_head_sha: null,
-          })
-          break
-        }
-
-        case 'DispatchRefused': {
-          const d = event.data as PayloadOf<'DispatchRefused'>
-          // `queued` and not `waiting` (#405): the refusal is about the pass,
-          // not this item — `conduct.ts` pauses the conductor over it rather
-          // than asking a person about this one ticket — so the item is still
-          // what the queue should offer once the pause lifts.
-          //
-          // **Conditional on the standing hold.** Only `WaitResolved` may
-          // clear the wait, and only a person's answer may replace the
-          // question `note` holds — a dispatch refused on top of a block
-          // (`lingtai ask`, then a forced `lingtai run` under an unmet tier)
-          // is not an event about *this item*, so where `wait_reason` is present
-          // this leaves state, note and every hold column exactly as
-          // they were. Writing `state: 'queued'` and clearing the hold here
-          // regardless put `task_view` and the domain fold
-          // (`packages/domain/src/ticket.ts`, still `blocked`) in
-          // disagreement forever, and destroyed the question before any
-          // `WaitResolved` had answered it.
-          //
-          // An upsert, because this can be a task's first event: it refuses
-          // before anything is claimed, and nothing is appended when an issue
-          // is merely seen. An UPDATE would leave the refusal unreadable, which
-          // is the failure it exists to report.
-          const { project: p, issue: i } = splitTaskId(event.streamId)
-          await ctx.query(
-            `insert into task_view (task_id, project, issue, title, kind, state, note, updated_at, updated_seq)
-             values ($1, $2, $3, $4, $5, 'queued', $6, $7, $8::bigint)
-             on conflict (task_id) do update
-               set title = coalesce(excluded.title, task_view.title),
-                   kind = coalesce(excluded.kind, task_view.kind),
-                   state = case when task_view.wait_reason is not null then task_view.state else excluded.state end,
-                   note = case when task_view.wait_reason is not null then task_view.note else excluded.note end,
-                   awaiting_sha = case when task_view.wait_reason is not null then task_view.awaiting_sha else null end,
-                   wait_id = case when task_view.wait_reason is not null then task_view.wait_id else null end,
-                   wait_reason = case when task_view.wait_reason is not null then task_view.wait_reason else null end,
-                   triage_attempt = case when task_view.wait_reason is not null then task_view.triage_attempt else null end,
-                   triage_started_at = case when task_view.wait_reason is not null then task_view.triage_started_at else null end,
-                   triage_result = case when task_view.wait_reason is not null then task_view.triage_result else null end,
-                   triage_head_sha = case when task_view.wait_reason is not null then task_view.triage_head_sha else null end,
-                   updated_at = excluded.updated_at,
-                   updated_seq = excluded.updated_seq
-             where task_view.updated_seq < excluded.updated_seq`,
-            [
-              event.streamId,
-              p,
-              i,
-              null,
-              null,
-              `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,
-              at,
-              seq,
-            ],
-          )
-          break
-        }
-
         // ---- the run's stream ----
 
         case 'RunStarted': {
           const d = event.data as PayloadOf<'RunStarted'>
           await linkRun(ctx, event.streamId, d.ticketId)
-          await viaRun(ctx, event.streamId, seq, at, {
-            state: 'running',
-            run_id: event.streamId,
-            base_sha: d.baseSha,
-          })
+          // No state: the claim before it already said running (#834).
+          await viaRun(ctx, event.streamId, seq, at, { run_id: event.streamId, base_sha: d.baseSha })
           break
         }
 
@@ -458,7 +303,17 @@ export const taskViewProjection: Projection = {
          */
         case 'RunProposedCompletion': {
           const d = event.data as PayloadOf<'RunProposedCompletion'>
-          await viaRun(ctx, event.streamId, seq, at, { state: 'verifying', head_sha: d.headSha })
+          // The running -> verifying overlay, and only that move (#834): the head is
+          // written either way, the state only for a row still on this run and running.
+          await viaRun(ctx, event.streamId, seq, at, { head_sha: d.headSha })
+          await viaRun(
+            ctx,
+            event.streamId,
+            seq,
+            at,
+            { state: 'verifying' },
+            { state: 'running', runId: event.streamId },
+          )
           break
         }
 
@@ -495,18 +350,9 @@ export const taskViewProjection: Projection = {
 
         case 'IntegrationSucceeded': {
           const d = event.data as PayloadOf<'IntegrationSucceeded'>
-          await set(ctx, d.ticketId, seq, at, {
-            state: 'landed',
-            note: d.mergeCommit,
-            closed_at: at,
-            awaiting_sha: null,
-            wait_id: null,
-            wait_reason: null,
-            triage_attempt: null,
-            triage_started_at: null,
-            triage_result: null,
-            triage_head_sha: null,
-          })
+          // No state, no closed_at, no wait column (#834): TicketLanded, appended in
+          // the same pass, is what lands the ticket, and the reduce says so.
+          await set(ctx, d.ticketId, seq, at, { note: d.mergeCommit, awaiting_sha: null })
           break
         }
 
@@ -561,152 +407,11 @@ export const taskViewProjection: Projection = {
                   fact.findings > 0
                     ? `fixing round ${fact.round}: ${fact.findings} finding(s)`
                     : `fixing round ${fact.round}`
-                await viaRun(ctx, event.streamId, seq, at, { state: 'running', note })
+                // The note either way; running only back from the verifying overlay (#834).
+                await viaRun(ctx, event.streamId, seq, at, { note })
+                await viaRun(ctx, event.streamId, seq, at, { state: 'running' }, { state: 'verifying' })
                 break
               }
-
-              case 'WaitStarted': {
-                // An upsert, because since #147 this can be a task's first
-                // event: `lingtai ask` blocks an item before anything has
-                // claimed it, and an UPDATE would leave the question on no row
-                // — the board would not show it and the queue, which reads
-                // this table, would not pass the item over. The same reason
-                // `DispatchRefused` upserts.
-                const { project: p, issue: i } = splitTaskId(event.streamId)
-                await upsert(ctx, event.streamId, seq, at, {
-                  project: p,
-                  issue: i,
-                  title: null,
-                  kind: null,
-                  state: 'waiting',
-                })
-                // The reason is the source of the card's line (#443).
-                await set(ctx, event.streamId, seq, at, {
-                  state: 'waiting',
-                  note: waitWords(fact.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line,
-                  wait_id: fact.waitId,
-                  wait_reason: JSON.stringify(fact.reason),
-                  triage_attempt: null,
-                  triage_started_at: null,
-                  triage_result: null,
-                  triage_head_sha: null,
-                })
-                break
-              }
-
-              case 'TriageStarted':
-                await ctx.query(
-                  `update task_view
-                   set triage_attempt = $4::int, triage_started_at = $3,
-                       triage_result = null, triage_head_sha = null,
-                       updated_at = $3, updated_seq = $2::bigint
-                   where task_id = $1 and state = 'waiting' and wait_id = $5
-                     and (triage_attempt is null or triage_attempt < $4::int)
-                     and updated_seq <= $2::bigint`,
-                  [event.streamId, seq, at, fact.attempt, fact.waitId],
-                )
-                break
-
-              case 'WaitTriaged':
-                await ctx.query(
-                  `update task_view
-                   set triage_result = $4::jsonb, triage_head_sha = $5,
-                       updated_at = $3, updated_seq = $2::bigint
-                   where task_id = $1 and state = 'waiting' and wait_id = $6
-                     and triage_attempt = $7::int and updated_seq <= $2::bigint`,
-                  [event.streamId, seq, at, JSON.stringify(fact.result), fact.headSha, fact.waitId, fact.attempt],
-                )
-                break
-
-              case 'WaitResolved':
-                if (fact.resolution._tag === 'Approve') {
-                  // **Clears the hold rather than narrowly clearing `awaiting_sha`**
-                  // (#465). 0118's own work-item fold used to leave the
-                  // lifecycle alone on an Approve because what actually moved
-                  // the ticket on was the integration that followed,
-                  // synchronously, inside `approve.ts` — that integration is
-                  // gone, and the fold now moves the lifecycle to `approved`
-                  // (`ticket.ts`), so a row left `waiting` here would
-                  // disagree with it: the home board would keep rendering
-                  // Decide/Requeue over a question that is answered, and
-                  // `page.tsx` reads the current wait to decide that.
-                  //
-                  // `state: 'approved'`, not `'running'` and not `'queued'`
-                  // (#510). `selectRunnable` reads `state === 'queued'` as
-                  // *the queue may claim this* (`queue.ts`), and an approved
-                  // item is not the queue's to claim: `claimTicket` refuses
-                  // it by name (`not-claimable, status: approved`), and the
-                  // only way it moves is `continueTicket`, straight off the
-                  // ticket stream. It is not `'running'` either: nothing is
-                  // holding this row — no agent, no worktree, no claim — until
-                  // `continueTicket` appends the next `TicketClaimed`, which
-                  // folds it back to `'running'` below. `inFlight()`
-                  // (`@lingtai/daemon`'s `control.ts`) reads `running` as *a
-                  // conductor is holding this*, so an approval that folded as
-                  // `running` read as a pass in flight that did not exist.
-                  // `labelsFor('approved')` still gives the same GitHub label
-                  // as `running`/`verifying` (`@lingtai/conductor`'s
-                  // `labels.ts`), so this changes nothing a person sees on the
-                  // issue, only what the projection and `inFlight()` are told.
-                  await set(ctx, event.streamId, seq, at, {
-                    state: 'approved',
-                    note: 'approved — continues once a conductor is free',
-                    awaiting_sha: null,
-                    wait_id: null,
-                    wait_reason: null,
-                    triage_attempt: null,
-                    triage_started_at: null,
-                    triage_result: null,
-                    triage_head_sha: null,
-                  })
-                  break
-                }
-                // The answer, beside the question it answered — which is the
-                // row's `note` right up until this statement clears it, so
-                // both are written in one statement over the row rather than
-                // read back first. A question withdrawn was never answered, so
-                // the last answer stands — the standing reason says whether
-                // it was an `OwnQuestion`, and a `Requeue` on
-                // one of those is a person taking the question back rather
-                // than answering it (0118 §1); there is no `withdrawn` field
-                // on the event any more to read that off directly (#502).
-                const standing = await ctx.query<{ wait_reason: unknown }>(
-                  'select wait_reason from task_view where task_id = $1',
-                  [event.streamId],
-                )
-                const storedReason = standing[0]?.wait_reason
-                const ownQuestion =
-                  storedReason != null &&
-                  WaitReason.parse(typeof storedReason === 'string' ? JSON.parse(storedReason) : storedReason)._tag ===
-                    'OwnQuestion'
-                await ctx.query(
-                  `update task_view
-                 set answer = case when $6 = 1 then answer else jsonb_build_object(
-                       'question', case when wait_reason is not null then note end,
-                       'answer', $4::text,
-                       'by', $5::text) end,
-                     state = 'queued',
-                     note = null,
-                     awaiting_sha = null,
-                     wait_id = null,
-                     wait_reason = null,
-                     triage_attempt = null,
-                     triage_started_at = null,
-                     triage_result = null,
-                     triage_head_sha = null,
-                     updated_at = $3,
-                     updated_seq = $2::bigint
-                 where task_id = $1 and updated_seq <= $2::bigint`,
-                  [
-                    event.streamId,
-                    seq,
-                    at,
-                    fact.note,
-                    fact.by,
-                    ownQuestion && fact.resolution._tag === 'Requeue' ? 1 : 0,
-                  ],
-                )
-                break
 
               case 'RunEnded':
                 // Always followed by a `WaitStarted` or a release back to
@@ -748,77 +453,235 @@ async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): P
 }
 
 /**
- * Creates the row if it is not there, updates it if it is.
- *
- * Needed because no single event is guaranteed to come first. Today the claim
- * always is; a projection that assumed so would break the first time a task
- * acquired an event before it — and a rebuild of a partial log has to work.
+ * Where a ticket is, as the board's column and the queue's input say it (#834).
+ * The only place a `TicketLifecycle` becomes a `TaskState`.
  */
-async function upsert(
-  ctx: ProjectionContext,
-  taskId: string,
-  seq: string,
-  at: Date,
-  values: {
-    project: string
-    issue: string
-    /** Null when the caller does not know it. Never overwrites one that is known. */
-    title: string | null
-    kind: string | null
-    state: TaskState
-    runId?: string
-    /**
-     * True when this event is a claim, so the hold state can be reset. Set on
-     * every claim including a continuation's; the SQL decides from the row's
-     * own run_id whether the claim is a fresh attempt.
-     */
-    attempt?: boolean
-  },
-): Promise<void> {
-  const n = values.attempt ? 1 : 0
+export function taskStateOf(l: TicketLifecycle): TaskState {
+  switch (l.status) {
+    case 'backlog':
+      return 'queued'
+    case 'claimed':
+      return 'running'
+    case 'blocked':
+      return 'waiting'
+    case 'approved':
+      return 'approved'
+    case 'landed':
+      return 'landed'
+    case 'closed':
+      return 'closed'
+  }
+}
+
+/** The one-stream columns, read off a ticket's reduce. JSON columns are already text. */
+interface Derived {
+  project: string
+  issue: string
+  title: string | null
+  kind: string | null
+  state: TaskState
+  wait_id: string | null
+  wait_reason: string | null
+  triage_attempt: number | null
+  triage_started_at: Date | null
+  triage_result: string | null
+  triage_head_sha: string | null
+  answer: string | null
+  split: string | null
+  closed_at: Date | null
+  attempts: number
+  last_attempt_at: Date | null
+  restarts: number
+}
+
+function derive(taskId: string, t: TicketState): Derived {
+  const l = t.lifecycle
+  const fallback = t.project === null || t.externalRef === null ? splitTaskId(taskId) : null
+  // The current wait's entry: the last one carrying the wait the lifecycle names (t22, #842).
+  const wait = l.status === 'blocked' ? t.waits.filter((w) => w.waitId === l.waitId).at(-1) : undefined
+  const answer = t.answers.at(-1)
+  return {
+    project: t.project ?? fallback!.project,
+    issue: t.externalRef ?? fallback!.issue,
+    title: t.title,
+    kind: t.kind,
+    state: taskStateOf(l),
+    wait_id: l.status === 'blocked' ? l.waitId : null,
+    wait_reason: l.status === 'blocked' ? JSON.stringify(l.reason) : null,
+    triage_attempt: wait?.triage.started?.attempt ?? null,
+    triage_started_at: wait?.triage.started?.at ?? null,
+    triage_result: wait?.triage.result == null ? null : JSON.stringify(wait.triage.result),
+    triage_head_sha: wait?.triage.headSha ?? null,
+    answer:
+      answer === undefined ? null : JSON.stringify({ question: answer.question, answer: answer.answer, by: answer.by }),
+    split: t.split === null ? null : JSON.stringify(t.split.children.map((c) => ({ key: c.key, number: c.number }))),
+    closed_at: l.status === 'landed' || l.status === 'closed' ? t.since : null,
+    attempts: t.claims.length,
+    last_attempt_at: t.lastAttemptAt,
+    restarts: t.restarts.at(-1)?.restart ?? 0,
+  }
+}
+
+/** The events that make a `task_view` row; every other ticket-stream event reduces into the state alone. */
+const MAKES_THE_ROW: ReadonlySet<string> = new Set([
+  'TicketClaimed',
+  'TicketContinued',
+  'TicketDiscovered',
+  'DispatchRefused',
+  'WaitStarted',
+])
+
+/** The card's line for an event, or null when the event writes none. `value: null` clears it. */
+function noteOf(event: Envelope, after: TicketState, lifecycleMoved: boolean): { value: string | null } | null {
+  switch (event.type) {
+    case 'TicketClaimed':
+    case 'TicketContinued':
+      return { value: null }
+    case 'TicketReleased':
+      return { value: (event.data as PayloadOf<'TicketReleased'>).reason }
+    case 'TicketClosed':
+      return { value: (event.data as PayloadOf<'TicketClosed'>).reason }
+    case 'TicketLanded':
+      return { value: (event.data as PayloadOf<'TicketLanded'>).mergeCommit }
+    case 'DispatchRefused': {
+      if (after.lifecycle.status === 'blocked') return null
+      const d = event.data as PayloadOf<'DispatchRefused'>
+      return { value: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}` }
+    }
+    case 'WaitStarted': {
+      const d = event.data as PayloadOf<'WaitStarted'>
+      return { value: waitWords(d.reason, { branch: waitBranchOf(event), base: '', findings: [] }).line }
+    }
+    case 'WaitResolved': {
+      const d = event.data as PayloadOf<'WaitResolved'>
+      // Close leaves the wait standing (D5), so the question stays the card's line.
+      if (d.resolution._tag === 'Close' || !lifecycleMoved) return null
+      if (d.resolution._tag === 'Approve') return { value: 'approved — continues once a conductor is free' }
+      if (d.resolution._tag === 'GrantFixRound')
+        return { value: 'fix round granted — continues once a conductor is free' }
+      return { value: null }
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * One event on a ticket's stream: reduce it once, and write what the reduce says (#834).
+ *
+ * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in
+ * `seq` order, so each event is a plain read, a reduce and a write. There is no per-row
+ * `seq` guard and no lock ordering between `task_view` and `task_view_ticket`.
+ *
+ * **State moves only when the lifecycle does**, asked of the two reduces and never of the
+ * row: the row's `state` may be the run stream's `verifying` overlay, which an edit to the
+ * prompt must not write `running` back over.
+ */
+async function applyTicketEvent(ctx: ProjectionContext, event: Envelope): Promise<void> {
+  const taskId = event.streamId
+  if (event.type === 'TicketClaimed' || event.type === 'TicketContinued') {
+    await linkRun(ctx, (event.data as PayloadOf<'TicketClaimed'>).runId, taskId)
+  }
+
+  const [row] = await ctx.query<{ ticket: unknown }>('select ticket from task_view where task_id = $1', [taskId])
+  const stored = row
+    ? row.ticket
+    : (await ctx.query<{ ticket: unknown }>('select ticket from task_view_ticket where task_id = $1', [taskId]))[0]
+        ?.ticket
+  const { before, after } = reduceStoredTicket(stored, event, 'task_view')
+  const seq = event.seq.toString()
+  const encoded = encodeTicket(after)
+
+  if (!row && !MAKES_THE_ROW.has(event.type)) {
+    await ctx.query(
+      `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
+       on conflict (task_id) do update set ticket = excluded.ticket`,
+      [taskId, encoded],
+    )
+    return
+  }
+
+  const was = derive(taskId, before)
+  const now = derive(taskId, after)
+  const derivedChanged = JSON.stringify(was) !== JSON.stringify(now)
+  const lifecycleMoved = JSON.stringify(before.lifecycle) !== JSON.stringify(after.lifecycle)
+  const note = noteOf(event, after, lifecycleMoved)
+  // A release lands on a backlog ticket when a WaitResolved already moved it there: the lifecycle and every
+  // derived column are unchanged, and the release still ends the run and gives the card its reason.
+  const releases = event.type === 'TicketReleased' && after.lifecycle.status === 'backlog'
+  const touched =
+    derivedChanged || releases || (event.type === 'DispatchRefused' && after.lifecycle.status !== 'blocked')
+  const isClaim = event.type === 'TicketClaimed' || event.type === 'TicketContinued'
+  const runId = isClaim && after.lifecycle.status === 'claimed' ? after.lifecycle.runId : null
+  const clearsRun = releases
+
+  const params: unknown[] = []
+  const p = (value: unknown, cast: string): string => {
+    params.push(value)
+    return `$${params.length}${cast}`
+  }
+  const flag = (on: boolean): string => `${p(on ? 1 : 0, '::int')} = 1`
+  const id = p(taskId, '::text')
+  const seqPh = p(seq, '::bigint')
+  const moved = flag(lifecycleMoved)
+  const writeNote = flag(touched && note !== null)
+  const writeTouched = flag(touched)
+  const setsRun = flag(runId !== null)
+  const clearsRunFlag = flag(clearsRun)
+  // The approval a wait asked for is spent when the wait ends, and a claim, a landing or a close ends
+  // whatever was asked. A wait that *starts* leaves it: the verdict that asked came first.
+  const endsAsk =
+    (was.wait_id !== now.wait_id && now.wait_id === null) ||
+    (derivedChanged &&
+      (isClaim || event.type === 'TicketClosed' || event.type === 'TicketLanded' || event.type === 'WaitResolved'))
+  const clearsAwaiting = flag(endsAsk)
+  const runPh = p(runId, '::text')
+
+  // [column, value placeholder, flag that keeps the row's own value when false]
+  const cols: [string, string, string?][] = [
+    ['project', p(now.project, '::text')],
+    ['issue', p(now.issue, '::text')],
+    ['title', p(now.title, '::text')],
+    ['kind', p(now.kind, '::text')],
+    ['state', p(now.state, '::text'), moved],
+    ['note', p(note?.value ?? null, '::text'), writeNote],
+    ['wait_id', p(now.wait_id, '::text')],
+    ['wait_reason', p(now.wait_reason, '::jsonb')],
+    ['triage_attempt', p(now.triage_attempt, '::int')],
+    ['triage_started_at', p(now.triage_started_at, '::timestamptz')],
+    ['triage_result', p(now.triage_result, '::jsonb')],
+    ['triage_head_sha', p(now.triage_head_sha, '::text')],
+    ['answer', p(now.answer, '::jsonb')],
+    ['split', p(now.split, '::jsonb')],
+    ['closed_at', p(now.closed_at, '::timestamptz')],
+    ['attempts', p(now.attempts, '::int')],
+    ['last_attempt_at', p(now.last_attempt_at, '::timestamptz')],
+    ['restarts', p(now.restarts, '::int')],
+    ['ticket', p(encoded, '::jsonb')],
+    ['updated_at', p(event.at, '::timestamptz'), writeTouched],
+    ['updated_seq', seqPh, writeTouched],
+  ]
+  const sets = [
+    ...cols.map(([name, ph, keep]) =>
+      keep ? `${name} = case when ${keep} then ${ph} else task_view.${name} end` : `${name} = ${ph}`,
+    ),
+    `run_id = case when ${setsRun} then ${runPh} when ${clearsRunFlag} then null else task_view.run_id end`,
+    `awaiting_sha = case when ${clearsAwaiting} then null else task_view.awaiting_sha end`,
+  ].join(', ')
+
+  if (row && !MAKES_THE_ROW.has(event.type)) {
+    await ctx.query(`update task_view set ${sets} where task_id = ${id}`, params)
+    return
+  }
+
   await ctx.query(
-    // `coalesce` in both directions: a claim that carries no title must not
-    // replace a real one with `#155`, and a row created by a claim must still
-    // say something. Whoever knows the title wins, in either order of arrival.
-    `insert into task_view
-       (task_id, project, issue, title, kind, state, run_id, attempts, last_attempt_at,
-        updated_at, updated_seq)
-     values ($1, $2, $3, $4, $5, $6, $9, $10, case when $10::int > 0 then $7::timestamptz end, $7, $8::bigint)
-     on conflict (task_id) do update
-       set title = coalesce(excluded.title, task_view.title),
-           kind = coalesce(excluded.kind, task_view.kind),
-           state = excluded.state,
-           run_id = coalesce(excluded.run_id, task_view.run_id),
-           -- A continuation claims the same run again (continueTicket,
-           -- claim.ts:150-152): the row's own run_id is still that run, so
-           -- this counts a fresh attempt only when the claim names a run the
-           -- row was not already on. task_view_run is not the "seen" test --
-           -- linkRun runs before this upsert in the same case, so it is
-           -- always already written by the time this runs.
-           attempts = task_view.attempts
-             + case when $10::int > 0 and task_view.run_id is distinct from excluded.run_id then 1 else 0 end,
-           last_attempt_at = case when $10::int > 0 then excluded.updated_at else task_view.last_attempt_at end,
-           note = case when $10::int > 0 then null else task_view.note end,
-           -- A fresh attempt is nobody's question yet.
-           awaiting_sha = case when $10::int > 0 then null else task_view.awaiting_sha end,
-           wait_id = case when $10::int > 0 then null else task_view.wait_id end,
-           wait_reason = case when $10::int > 0 then null else task_view.wait_reason end,
-           triage_attempt = case when $10::int > 0 then null else task_view.triage_attempt end,
-           triage_started_at = case when $10::int > 0 then null else task_view.triage_started_at end,
-           triage_result = case when $10::int > 0 then null else task_view.triage_result end,
-           triage_head_sha = case when $10::int > 0 then null else task_view.triage_head_sha end,
-           -- The claim is what consumes a pending repair: this run *is* the
-           -- repair, and this records which run it was. Nothing reads it today:
-           -- spend comes from the spend table, rounds 1 and up. Only a retired RepairRequested sets one (#143), so
-           -- on a new ticket both lines leave the row as it was.
-           repair_run_id = case when $10::int > 0 and task_view.repair_pending
-                                then excluded.run_id else task_view.repair_run_id end,
-           repair_pending = case when $10::int > 0 then false else task_view.repair_pending end,
-           updated_at = excluded.updated_at,
-           updated_seq = excluded.updated_seq
-     where task_view.updated_seq < excluded.updated_seq`,
-    [taskId, values.project, values.issue, values.title, values.kind, values.state, at, seq, values.runId ?? null, n],
+    `insert into task_view (task_id, run_id, ${cols.map(([name]) => name).join(', ')})
+     values (${id}, ${runPh}, ${cols.map(([, ph]) => ph).join(', ')})
+     on conflict (task_id) do update set ${sets}`,
+    params,
   )
+  // The state lives in exactly one place at a time: it is in the row now.
+  await ctx.query('delete from task_view_ticket where task_id = $1', [taskId])
 }
 
 /**
@@ -833,13 +696,24 @@ async function set(
   seq: string,
   at: Date,
   values: Record<string, unknown>,
+  only?: { state: TaskState; runId?: string },
 ): Promise<void> {
   const entries = Object.entries(values)
   const sets = entries.map(([k], i) => `${k} = $${i + 4}`).join(', ')
+  const guard: unknown[] = []
+  let where = ''
+  if (only) {
+    guard.push(only.state)
+    where += ` and state = $${entries.length + 4}`
+    if (only.runId !== undefined) {
+      guard.push(only.runId)
+      where += ` and run_id = $${entries.length + 5}`
+    }
+  }
   await ctx.query(
     `update task_view set ${sets}, updated_at = $3, updated_seq = $2::bigint
-     where task_id = $1 and updated_seq <= $2::bigint`,
-    [taskId, seq, at, ...entries.map(([, v]) => v)],
+     where task_id = $1 and updated_seq <= $2::bigint${where}`,
+    [taskId, seq, at, ...entries.map(([, v]) => v), ...guard],
   )
 }
 
@@ -850,12 +724,13 @@ async function viaRun(
   seq: string,
   at: Date,
   values: Record<string, unknown>,
+  only?: { state: TaskState; runId?: string },
 ): Promise<void> {
   const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
   const taskId = rows[0]?.task_id
   // A run whose start was never seen has no row to update. That is a gap in the
   // log, not a reason to invent a task.
-  if (taskId) await set(ctx, taskId, seq, at, values)
+  if (taskId) await set(ctx, taskId, seq, at, values, only)
 }
 
 /**
@@ -997,9 +872,9 @@ export interface TaskCard {
  * refusal below.
  *
  * Returns `null` for every state but `'waiting'`, whatever the columns hold:
- * `TicketDiscovered`, `RunStarted` and `RunProposedCompletion` move `state`
- * off `'waiting'` without touching these columns (design note §1), so a row
- * mid-run can carry a stale `wait_id`/`wait_reason` that this must not read.
+ * Since #834 the wait columns are read off the ticket reduce and clear with the
+ * lifecycle, so a stale pair is not expected; the check stays because the board
+ * must not draw a wait for a row that is not waiting.
  *
  * Throws, naming the task, on the one combination the fold can never write:
  * `state === 'waiting'` with no reason. `state` is only ever set to

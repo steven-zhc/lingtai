@@ -214,6 +214,9 @@ describe('every way `waiting` is cleared clears wait_id and wait_reason with it'
         base: 'main',
         mergeCommit: 'c'.repeat(40),
       }),
+      // D5 (#834): IntegrationSucceeded alone lands nothing, so the wait stands until the
+      // TicketLanded appended in the same pass.
+      stream('TicketLanded', { mergeCommit: 'c'.repeat(40), base: 'main' }),
     ]
     await withFold(events, async (store) => {
       const row = await rowOf(store, 'ticket-wait-440-integrated')
