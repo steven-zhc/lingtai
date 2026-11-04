@@ -2,16 +2,15 @@ import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@l
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
-import { readStatus } from '@lingtai/daemon/control'
+import { readControl, readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
+  emptyControl,
+  evaluateControl,
   chatStream,
   reduceChat,
-  reduceControl,
   reduceTicket,
   splitProgressOf,
-  CONTROL_FOLD_TYPES,
-  CONTROL_STREAM,
   isAttemptStream,
   parseTicketStream,
   triageFactsOf,
@@ -98,6 +97,7 @@ import { outgoingFor, type OutgoingView } from './prompt.ts'
 import { queuedFor, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
+import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
   addBill,
   billHasAny,
@@ -1601,8 +1601,8 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
         })
       : Promise.resolve([] as Envelope[][]),
     loadTicket(taskId, own),
-    timed('events.control', () => eventStore.readTypes(CONTROL_STREAM, CONTROL_FOLD_TYPES)).catch(
-      () => [] as Envelope[],
+    timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
+      evaluateControl(emptyControl, new Date()),
     ),
     timed('spend.read', () => currentSpend({ ticket: taskId })),
     timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
@@ -1623,7 +1623,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   )
   const attempts = new Map(reduced.map((r) => [r.runId, r.attempt]))
 
-  const conductor = reduceControl(control)
+  const conductor = control
   const chats = chatIdsFor(conductor.discussions, ticketState.discussions, taskId)
   const chatStreams =
     chats.length > 0
