@@ -1360,3 +1360,42 @@ export const COVERS = {
   chat: ['DiscussionAsked', 'DiscussionAnswered'],
   finding: ['FindingProposed', 'FindingAccepted', 'FindingDeclined'],
 } as const satisfies Record<string, readonly EventType[]>
+
+// --------------------------------------------------- reducer fixtures ----
+
+/**
+ * What `reducer-versions.json` hashes (0124 §3, #867): one history per
+ * registered reducer, holding every type it handles. Frozen for a version — it
+ * changes only in the commit that raises the version and adds the row.
+ */
+const late_everyControlEvent = stamp(
+  (() => {
+    const c = makeStream(CONTROL_STREAM)
+    return [
+      c('ConductorPaused', { ...pause('2026-08-03T00:00:00.000Z', true), cause: 'day-ceiling' }),
+      c('ConductorResumed', { by: 'steven' }),
+      c('ConductorPaused', pause(HOLDING_UNTIL)),
+      c('ConductorShutdownRequested', { by: 'steven', reason: 'restart', timeoutMs: 60_000, force: false }),
+      c('ConductorShutdownWithdrawn', { by: 'steven', version: 4, reason: 'changed my mind', handoff: null }),
+      c('ConductorShutdownRequested', { by: 'steven', reason: 'for real', timeoutMs: null, force: true }),
+      c('RunRequested', { project: PROJECT, issue: '9002', by: 'steven' }),
+      c('ContinueRequested', { project: PROJECT, issue: '9002', runId: attemptStream('fixture'), by: 'steven' }),
+      c('DiscussionRequested', {
+        chatId: chatStream('9002-1'),
+        ticketId: ticketStream(PROJECT, 9002),
+        attempt: 1,
+        question: 'why this approach?',
+        by: 'steven',
+      }),
+      c('DiscussionRequested', {
+        chatId: chatStream('9002-2'),
+        ticketId: ticketStream(PROJECT, 9002),
+        attempt: null,
+        question: 'and before any attempt?',
+        by: 'steven',
+      }),
+    ]
+  })(),
+)
+
+export const reducerFixtures = { control: { everyControlEvent: late_everyControlEvent } } as const

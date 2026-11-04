@@ -28,7 +28,7 @@ import {
   reduceAttempt,
   reduceTicket,
 } from '../src/index.ts'
-import { COVERS, NOW, histories, lateHistories, lateScenarios, scenarios } from '../test/histories.ts'
+import { COVERS, NOW, histories, lateHistories, lateScenarios, reducerFixtures, scenarios } from '../test/histories.ts'
 import hashes from './histories.hashes.json'
 
 const src = (file: string) => fileURLToPath(new URL(`../src/${file}`, import.meta.url))
@@ -58,7 +58,11 @@ function caseLabels(file: string, fn: string): Set<string> {
   return labels
 }
 
-const singles = [...Object.entries(histories), ...Object.entries(lateHistories)].flatMap(([kind, byName]) =>
+const singles = [
+  ...Object.entries(histories),
+  ...Object.entries(lateHistories),
+  ...Object.entries(reducerFixtures),
+].flatMap(([kind, byName]) =>
   Object.entries(byName as Record<string, readonly Envelope[]>).map(([name, events]) => ({
     kind: kind as keyof typeof histories,
     name,
