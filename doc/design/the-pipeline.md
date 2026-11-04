@@ -33,7 +33,7 @@ Lingtai dispatched, one unheld ticket at a time.
    (buyRound, passCeiling)             claim — on the step each one bounds
 
    recipe: four sections               recipe: `steps:`, ten names, read down
-   per pass                            the file is the pipeline
+   per attempt                         the file is the pipeline
 
    the gate runs whatever              the gate runs unit tests; integration
    `pnpm test` runs                    runs after the merge, elsewhere
@@ -55,15 +55,15 @@ no flag, no dual-write, no bridge         one shape at a time, not two
 
 **It does not remove the size limit on a diff**, and that limit is the thing
 that actually shapes the plan below. It comes from the review loop, not from
-history: a pass is one agent inside `turns: 150`, read by a cold reviewer whose
+history: an attempt is one agent inside `turns: 150`, read by a cold reviewer whose
 refusal buys a fix round at ~31 turns and ~$3.40
 ([012 §3](../experiments/012-where-the-turns-go.md)).
 [#179](https://github.com/steven-zhc/lingtai/issues/179) is what a diff too big
-to hold in one reading costs: eleven passes, its findings landing on a
+to hold in one reading costs: eleven attempts, its findings landing on a
 different file each round.
 
 So the shape of the work was **not** surgery on the engine that was there —
-2961 lines in one file. It was: **write the new pass beside it, and delete
+2961 lines in one file. It was: **write the new attempt engine beside it, and delete
 it**, which `#256` did: `pass.ts`, `pass-steps.ts` and `conduct.ts` are what
 stand in its place. A clean cut is what makes that legal, and it is a better
 ticket in both directions — new code a reviewer reads against the ADR, then a
@@ -79,15 +79,15 @@ That is *run this step's plugins* and it does not change.
 
 ## 3. The order, and why it is this order
 
-**The recipe comes before the pass.** A step's behaviour *is* its plugins
+**The recipe comes before the attempt.** A step's behaviour *is* its plugins
 ([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2b), so the
-pass reads `recipe.steps[name]` and runs what it finds. Writing the pass before
+attempt reads `recipe.steps[name]` and runs what it finds. Writing the attempt before
 the schema means writing it twice.
 
 **The behaviour changes are not tickets.** *`build` is its own step*, *`review`
 returns findings*, *`proposed` routes*, *`merge` reports a reason*, *the
 ceilings are universal keys the workflow enforces* — under a migration each is a ticket.
-Under a clean cut they are simply what the new pass does, because it is written
+Under a clean cut they are simply what the new attempt does, because it is written
 from the ADR rather than bent towards it. **That is the largest saving here,
 and it is why the list below is shorter than the one a migration needs.**
 
@@ -98,7 +98,7 @@ and it is why the list below is shorter than the one a migration needs.**
                  T2   the eleven plugins, as one interface
                  T3   the recipe is `steps:`                     (0061)
 
-2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse  ✓ #253 #259
+2   the attempt  T4a  pass.ts — the skeleton and the steps that cannot refuse  ✓ #253 #259
                  T4b  pass.ts — build, review, proposed, merge             ✓ #254
                  T5   the conductor runs pass.ts; run-once.ts is deleted  ✓ #256
                  T5c  the citations of the deleted engine, re-pointed  ✓ #260
@@ -127,7 +127,7 @@ and it is why the list below is shorter than the one a migration needs.**
 `[bug, tech-debt, feature, documentation]` and the queue orders by kind and
 then by number, so an open `bug` or `tech-debt` is taken before any `feature`.
 **Chains go in GitHub's own *blocked by*, never in a ticket body** — it counts
-open blockers, so a ticket returns to the queue on its own the pass after its
+open blockers, so a ticket returns to the queue on its own the turn after its
 last blocker closes, with no hold to remove.
 
 ## 4. The tickets
@@ -159,7 +159,7 @@ value rather than declaring it again.*
 | what | The complete v2 file for this repository, every setting under its step per [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §4. Not an implementation — the target T3 is checked against. |
 | watch out | It is 0061's own test: **if the v2 file is not plainly easier to read than the v1 it replaces, the ADR was wrong** and this is where that shows, before any code is written. |
 | result | **It passes on shape** — 67 structural lines across two files become 79 in one, of which 17 are things neither v1 file can say at all (`proposed`'s five judges, `discuss`'s three numbers, the merge lane itself); take those out and it says the same in 62. **And it produced six v1 keys with no home named in 0061**, five of them small — `extends:`, `watch:`, `human:`, `tier`, `budget.evidence`/`attempts`, and `runtime.prompt`, which nothing reads and should be deleted rather than moved. |
-| **and one for T2** | **The plugin set is twelve, not eleven.** T2's list below omits `assignee:`, which 0061 §3's table places at `claim` and which `runtime.assignee` maps onto — so the matrix is 120 cells, and a plugin no list carries is a plugin no step refuses ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2). **Superseded 2026-09-24 by [0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3** (`#244`): `assignee` is a *field* of `queue:` rather than a plugin beside it, because the two answer one question and `discover.ts` applies them in one pass — so the set is eleven and the matrix is 110. The finding itself stands, and is what put the cell on somebody's desk to decide. |
+| **and one for T2** | **The plugin set is twelve, not eleven.** T2's list below omits `assignee:`, which 0061 §3's table places at `claim` and which `runtime.assignee` maps onto — so the matrix is 120 cells, and a plugin no list carries is a plugin no step refuses ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2). **Superseded 2026-09-24 by [0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3** (`#244`): `assignee` is a *field* of `queue:` rather than a plugin beside it, because the two answer one question and `discover.ts` applies them in one attempt — so the set is eleven and the matrix is 110. The finding itself stands, and is what put the cell on somebody's desk to decide. |
 | **the finding T3 needs** | **`runtime:` is the block the recipe/machine split is enforced on, and a v2 file does not have one.** `local.ts:394` refuses `agent`, `limits` and `assignee` by reading `raw["runtime"]`; under `steps:` that loop matches nothing and the split is silently gone, which is exactly 0016 §4's rule. `local.ts:403` writes the machine's values *into* `raw["runtime"]`, and under v2 they have to land in six places — five inside `steps:`, including `merge`'s and `design`'s agents, which this repository's own file writes neither of, and `discuss[0]` beside it — where they will read as though the file said them. 0061 §4 does not mention [0046](../decisions-archive/0046-lingtai-is-personal.md) §3. [`the-v2-recipe.md`](the-v2-recipe.md) §3.6 sets out the three ways out and which one happens if nobody chooses. |
 
 ### Phase 1 — the vocabulary
@@ -191,7 +191,7 @@ value rather than declaring it again.*
 | watch out | **Six v1 keys have no home in 0061 and this ticket cannot inherit that silence** ([`the-v2-recipe.md`](the-v2-recipe.md) §3). One of them decides the shape: `runtime:` is where the recipe/machine split is enforced (`local.ts:394`) and where the machine's values are written back in (`local.ts:403`), and **v2 has no `runtime:` block**, so both stop working without erroring. §3.6 names the three ways out; the third — keeping `runtime:` beside `steps:` — is what happens by default and is the one that kills 0061 §1. |
 | watch out | **`configHash` needs nothing** — `hashRecipe` is already `sha256(canonical(recipe))` over the whole resolved recipe (`resolve.ts:102`), so everything that moves is inside the hash by construction. Checked rather than assumed; do not add a second hashing path. |
 
-### Phase 2 — the pass
+### Phase 2 — the attempt
 
 | | |
 |---|---|
@@ -199,7 +199,7 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T3 |
 | what | The ten steps as data, driven by the recipe, **in a new file beside `run-once.ts`, wired to nothing.** This ticket does `claim`, `admit`, `prepared`, `design`, `implement`, `end`. |
-| watch out | **`design` may return an empty document and that is not a failure** — `implement` is handed the issue's own text and the design, and works from the issue when the design is empty, which is what every pass does today ([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3). No conditional step, no skip. And **`prepared` refuses** — a failed install is the cheapest refusal in the pass, and it reports to `proposed` like the rest. |
+| watch out | **`design` may return an empty document and that is not a failure** — `implement` is handed the issue's own text and the design, and works from the issue when the design is empty, which is what every attempt does today ([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3). No conditional step, no skip. And **`prepared` refuses** — a failed install is the cheapest refusal in the attempt, and it reports to `proposed` like the rest. |
 | watch out | Nothing calls it yet, so it lands on its own tests. That is deliberate: **a reviewer reads it against the ADR rather than against a diff**, which is the one reading a cold reviewer is good at. |
 
 | | |
@@ -209,11 +209,11 @@ value rather than declaring it again.*
 | blocked by | T4a |
 | what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions-archive/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
-| watch out | **The set of steps the workflow offers the judge depends on how far the pass got, not only on what is left to spend** — `prepared`'s refusal happens before any agent has run, so `implement` is not on offer there and a judge that knows nothing about `prepared` still cannot choose wrongly. A judge answers *which of these*, never *what is legal*. And the edge back to `claim` is a **requeue**: the item is released and a higher-priority ticket opened in the meantime goes first. |
+| watch out | **The set of steps the workflow offers the judge depends on how far the attempt got, not only on what is left to spend** — `prepared`'s refusal happens before any agent has run, so `implement` is not on offer there and a judge that knows nothing about `prepared` still cannot choose wrongly. A judge answers *which of these*, never *what is legal*. And the edge back to `claim` is a **requeue**: the item is released and a higher-priority ticket opened in the meantime goes first. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
 | result | **Three of the four are nothing beyond their plugins or one line, and the fourth is the whole ticket.** `build` and `review` are `run:` and `agent:` lists the loop already runs, so their bodies pass and their behaviour is the loop's: a `build` refusal goes to `proposed`, which is what skips `review`. `merge` wraps the lane and reports its two answers. `proposed` is where the work is — `directionOf` names which of `JudgeWhen`'s five arrived, `carriesACriterion` refuses to buy a round for a refusal with nothing in it, the recipe's judge is asked through `PassPorts.judge`, `BUILT_IN_FOR` answers the mechanical two without paying, and a person is the floor under all of it. |
-| the finding T5 needs | **`review` judges nothing only because `endingOf` says so, and that is not a body.** A reviewer that finds a blocker returns `failed`, and a body is never called after its own plugins did not pass — so *no verdict of its own* had to land in the pass's own verdict mapping, beside the sentence that says a `failed` at one of the four is a refusal. It is the one line of this ticket that is not in a body, and it is where a reader looks for the rule. |
-| the finding T5 needs | **`judge.ts`'s `Destination` and the pass's are two vocabularies for one idea**, and this ticket could not merge them: `judge.ts` has three values and calls a person `human`, where the pass offers `Step \| "waiting"` — `build` from `merge`, and the asking step back to itself, neither of which the three can say. So `BUILT_IN_FOR` is imported and `BUILT_IN`'s one rule is written again in the pass's words, pinned by a test that compares the two cell for cell. **T5 deletes `run-once.ts`, which is the only caller `judge.ts` was written for; the two sets come down to one in that commit.** |
+| the finding T5 needs | **`review` judges nothing only because `endingOf` says so, and that is not a body.** A reviewer that finds a blocker returns `failed`, and a body is never called after its own plugins did not pass — so *no verdict of its own* had to land in the attempt's own verdict mapping, beside the sentence that says a `failed` at one of the four is a refusal. It is the one line of this ticket that is not in a body, and it is where a reader looks for the rule. |
+| the finding T5 needs | **`judge.ts`'s `Destination` and the attempt's are two vocabularies for one idea**, and this ticket could not merge them: `judge.ts` has three values and calls a person `human`, where the attempt offers `Step \| "waiting"` — `build` from `merge`, and the asking step back to itself, neither of which the three can say. So `BUILT_IN_FOR` is imported and `BUILT_IN`'s one rule is written again in the attempt's words, pinned by a test that compares the two cell for cell. **T5 deletes `run-once.ts`, which is the only caller `judge.ts` was written for; the two sets come down to one in that commit.** |
 
 | | |
 |---|---|
@@ -229,10 +229,10 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T5b |
 | what | The wiring and the deletion. **The reset came out on 2026-09-25** and is not this: `pass.ts` and `pass-steps.ts` append no event type of their own, so nothing about the stored vocabulary changes when the conductor switches, and the reset now waits for a store that starts empty. Binding them would have tied two independent failure sources to one stop-the-world day. |
-| watch out | **The largest single risk in this plan, and it is a Lingtai-runs-on-Lingtai risk rather than a code one.** The daemon holds the code it started with (0010), so the pass that lands this is running the old one. Do not let this land unattended — it is the one ticket that should carry `agent:hold` until a person is at the keyboard, and **the pass that lands it must be followed by `pnpm lingtai restart`**: until then the conductor is running `run-once.ts` out of its own memory and the file it is running no longer exists on disk. |
-| watch out | **Answered on 2026-09-27 by T5d (`a417908`): this machine's recipe declares the build at `build:`, the cold reviewer at `review:`, and `proposed: []`. What follows is the state between `#256` and that, and is history.** `~/.lingtai/lingtai/recipe.yml` named `pnpm typecheck && pnpm test` and the cold reviewer as two `proposed:` actions, with `build:` and `review:` empty — which is what `run-once.ts` wanted, because `proposed` *was* the gate. It stopped being one: `proposed` is the router, `ARRIVE_AT_THE_ROUTER` does not include it, and a step whose own plugins refused has nothing to route — so a red `pnpm test` **stopped the pass for a person with no round bought**, where before it bought a ~$3.40 fix round. That was 0058 being right rather than the code being wrong. **And the obvious remedy was refused, so it must not have been attempted**: no plugin declared itself at `build` or at `review` (each plugin's own `at` since `#261`), so `resolveRecipe` refused a `run:` at `build` and an `agent:` at `review` by name and `conduct.ts` answered `stage: "recipe"` for every ticket — a machine whose `recipe.yml` was edited that way and then restarted took nothing at all until the two lines went back. **T5d** below is what made the edit legal, and the recipe was moved the same day. |
-| result | `conduct.ts` is the caller: the recipe, the environment and the tier are resolved above the pass and are the refusals that cost nothing; the eight `PassPorts` methods wrap `discover.ts`, `claim.ts`, `repo.provision`, the hook and the agent, `repo.integrate` and the store; `runPass`'s `actionsAt` is **one** `(step, actions)` seam where `run-once.ts` had four literal call sites, so the code now runs whatever the schema accepts at every step and `whyNoKindAt` is the only answer at both doors. 1579 lines of code became 1045. |
-| result | **Two ports answer *nothing is declared*, and that is truthful rather than a stub.** `KINDS_AT.design` is `[]` and `whyNoKindAt` refuses a `judge:` cell at all ten steps, so neither a design nor a judge can be written in a recipe today: `draft` returns `""` — which is 0058 §3's *does this need designing*, answered — and `judge` returns `noJudge`, which is what makes `BUILT_IN_FOR` answer `red` and `gate-failed` for nothing and a person the floor under the other three. T9 gives the first of them a body and nothing in the pass changes. **Both sentences are history now** — `judge:` since T5e (`#274`) and `draft` since T9 (`#265`), which deleted the port rather than giving it a body: the design is an `agent:` the recipe declares, and *nothing in the pass changes* held, because the step's default is still nothing. |
+| watch out | **The largest single risk in this plan, and it is a Lingtai-runs-on-Lingtai risk rather than a code one.** The daemon holds the code it started with (0010), so the attempt that lands this is running the old one. Do not let this land unattended — it is the one ticket that should carry `agent:hold` until a person is at the keyboard, and **the attempt that lands it must be followed by `pnpm lingtai restart`**: until then the conductor is running `run-once.ts` out of its own memory and the file it is running no longer exists on disk. |
+| watch out | **Answered on 2026-09-27 by T5d (`a417908`): this machine's recipe declares the build at `build:`, the cold reviewer at `review:`, and `proposed: []`. What follows is the state between `#256` and that, and is history.** `~/.lingtai/lingtai/recipe.yml` named `pnpm typecheck && pnpm test` and the cold reviewer as two `proposed:` actions, with `build:` and `review:` empty — which is what `run-once.ts` wanted, because `proposed` *was* the gate. It stopped being one: `proposed` is the router, `ARRIVE_AT_THE_ROUTER` does not include it, and a step whose own plugins refused has nothing to route — so a red `pnpm test` **stopped the attempt for a person with no round bought**, where before it bought a ~$3.40 fix round. That was 0058 being right rather than the code being wrong. **And the obvious remedy was refused, so it must not have been attempted**: no plugin declared itself at `build` or at `review` (each plugin's own `at` since `#261`), so `resolveRecipe` refused a `run:` at `build` and an `agent:` at `review` by name and `conduct.ts` answered `stage: "recipe"` for every ticket — a machine whose `recipe.yml` was edited that way and then restarted took nothing at all until the two lines went back. **T5d** below is what made the edit legal, and the recipe was moved the same day. |
+| result | `conduct.ts` is the caller: the recipe, the environment and the tier are resolved above the attempt and are the refusals that cost nothing; the eight `PassPorts` methods wrap `discover.ts`, `claim.ts`, `repo.provision`, the hook and the agent, `repo.integrate` and the store; `runPass`'s `actionsAt` is **one** `(step, actions)` seam where `run-once.ts` had four literal call sites, so the code now runs whatever the schema accepts at every step and `whyNoKindAt` is the only answer at both doors. 1579 lines of code became 1045. |
+| result | **Two ports answer *nothing is declared*, and that is truthful rather than a stub.** `KINDS_AT.design` is `[]` and `whyNoKindAt` refuses a `judge:` cell at all ten steps, so neither a design nor a judge can be written in a recipe today: `draft` returns `""` — which is 0058 §3's *does this need designing*, answered — and `judge` returns `noJudge`, which is what makes `BUILT_IN_FOR` answer `red` and `gate-failed` for nothing and a person the floor under the other three. T9 gives the first of them a body and nothing in the attempt changes. **Both sentences are history now** — `judge:` since T5e (`#274`) and `draft` since T9 (`#265`), which deleted the port rather than giving it a body: the design is an `agent:` the recipe declares, and *nothing in the attempt changes* held, because the step's default is still nothing. |
 | result | **`decideFix` and `decideRestart` are no longer consulted, and that is 0061 §3 rather than a loss.** *The workflow counts, the judge chooses*: `Ceilings` carries `rounds` and `restartsLeft`, `onOffer` puts `implement` and `claim` on the offer while each is left, and the judge answers *which of these*. What each of those two functions decided is now either the ceiling's arithmetic or the judge's answer. `fix.ts`'s `fixBrief` is still what writes a fix round's prompt. |
 | result | **`--no-merge` and a pre-`#143` repair are now the `human:` action they always were** (#20). Both inject a `createHumanAction` after `merge`'s declared list, so both ask for the same `ApprovalRequested` a declared person there asks for, through one mechanism — and the hold is bound to `onSha` like any other verdict. |
 | what it cost | **Two test files, and the claims in them.** `unit/run-once-against-fakes.test.ts` (1849 lines) and `integration/run-once.test.ts` (2385) asserted the five-gate-point engine; `unit/pass.test.ts` and `unit/pass-steps.test.ts` assert the decisions instead, against the loop that makes them. What had no home there is the pre-claim half, carried to `unit/conduct-before-the-claim.test.ts` — the recipe, the environment and the runtime, and *nothing was claimed and nothing was acquired*. `test/one-pass.ts`'s fixtures and both surviving integration tests are re-pointed. |
@@ -253,11 +253,11 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T5 |
 | what | Add two `at` keys — `build` to `runPlugin` and `review` to `agentPlugin` — and take the matching `WHERE_INSTEAD` entries out, so a recipe may declare the build at `build` and the cold reviewer at `review`. **Since `#261` this is two lines in one file**: there is no `KINDS_AT` row to open and no `doc/reference.md` matrix to keep in step, because a plugin declares the steps it serves (0064 §4). `conductor/unit/step-matrix.test.ts` walks every cell either way. The end of it is this machine's own `~/.lingtai/lingtai/recipe.yml` with the two actions at their own steps and `proposed:` holding only judges. |
-| what makes it now | **The refusal's stated reason stopped being true when `#256` landed.** It says *nothing runs a pipeline at `build` yet — the pass that runs it is that plan's next ticket*, and refuses on `#61`'s argument: an action at a step no code reaches would be resolved, recorded in `GatesResolved`, drawn on the board and never called. `runPass` resolves `actionsAt(step, actions)` at **all ten** steps, so that is no longer the shape of the risk — the rows are the only thing left refusing. |
+| what makes it now | **The refusal's stated reason stopped being true when `#256` landed.** It says *nothing runs a pipeline at `build` yet — the attempt that runs it is that plan's next ticket*, and refuses on `#61`'s argument: an action at a step no code reaches would be resolved, recorded in `GatesResolved`, drawn on the board and never called. `runPass` resolves `actionsAt(step, actions)` at **all ten** steps, so that is no longer the shape of the risk — the rows are the only thing left refusing. |
 | watch out | **It was the whole of what the recipe's `proposed:` cost** (T5's second watch-out): `proposed` is the router, a step whose own plugins refused has nothing to route, and a red `pnpm test` declared there reached a person with no round bought. This ticket is what made a red build buy its fix round again — `build` is one of `REFUSING_STEPS`. Until it landed, moving those lines by hand was the one thing not to do: the resolve refused them and the daemon then took nothing. |
 | watch out | **The rows are not `proposed`'s.** `human:` at `build` would be a person asked before anything was judged and `watch:` belongs where the diff is judged, so widening either row to `proposed`'s four is not the change — a plugin is opened at a step because that step's body does something with it. |
-| why now | The pass runs ten steps and the recipe can only describe five of them, which is the same gap read from the other side: a step the log, the board and `lingtai add` all name, that a person cannot configure. |
-| result | **It was the two `at` keys and nothing else in the pass.** `runPass` runs a step's declared actions through `runActionPipeline` *before* the body (`pass.ts:1443`), `pass.ts:166` makes every step but `end` a `"verdicts"` step, and `pass.ts:1460` returns the pipeline's ending without reaching the body — `prepared` is the proof rather than the argument, its body being `async () => ({ ending: "passed" })`, character for character what `build`'s and `review`'s are. `review` needed no new handling either: `pass.ts:1589` already read `if (spec.step === "review") return { ending: "passed" }`, a reviewer's `failed` being its findings and not a verdict about the step (0058 §3b). |
+| why now | The attempt runs ten steps and the recipe can only describe five of them, which is the same gap read from the other side: a step the log, the board and `lingtai add` all name, that a person cannot configure. |
+| result | **It was the two `at` keys and nothing else in the attempt.** `runPass` runs a step's declared actions through `runActionPipeline` *before* the body (`pass.ts:1443`), `pass.ts:166` makes every step but `end` a `"verdicts"` step, and `pass.ts:1460` returns the pipeline's ending without reaching the body — `prepared` is the proof rather than the argument, its body being `async () => ({ ending: "passed" })`, character for character what `build`'s and `review`'s are. `review` needed no new handling either: `pass.ts:1589` already read `if (spec.step === "review") return { ending: "passed" }`, a reviewer's `failed` being its findings and not a verdict about the step (0058 §3b). |
 | result | **What it cost was everything the move made false**, which the plan did not measure and two attempts at `#263` were refused for. `whyThatPair`'s three branches were all written for `prepared`, so an `agent:` at `build` was refused with *nothing has been committed at `prepared`*; the wizard page's own copy of *does anything check this diff* still read `steps.proposed`, and widening its read without moving its write would have relocated a build out of `build:` on the next Save; and eight prose sites said six of the ten steps are skipped. |
 | result | **`proposed:` held nothing but judges after it, and could hold none until [`#274`](https://github.com/steven-zhc/lingtai/issues/274).** `judgePlugin.at` was `{}`, so a refused review arrived at `proposed` as a routing arrival with no judge to read it. `#274` is **T5e** below and is landed: the key is open, `judgeDeclaredAt` reads the entry whose `when:` matches, and `proposed: []` in this machine's recipe is now a block a person can fill rather than one they are waiting for — still written out rather than absent, which is 0064 §5. |
 
@@ -266,7 +266,7 @@ value rather than declaring it again.*
 | **T5e** | `judge:` is declarable at `proposed`, so a refusal buys the fix round already paid for · **landed as `#274`** |
 | kind | `tech-debt` |
 | blocked by | T5d |
-| what | One `at` key — `proposed` on `judgePlugin` — plus the reader that makes it not `#61`: `judgeDeclaredAt` in `packages/conductor/src/judge.ts` takes the entry whose `when:` matches, and `conduct.ts`'s `ports.judge` hands it `recipe.steps.proposed`. The pass applies the built-in it names, so `chose` and the spent ceiling stay where `#271` put them. |
+| what | One `at` key — `proposed` on `judgePlugin` — plus the reader that makes it not `#61`: `judgeDeclaredAt` in `packages/conductor/src/judge.ts` takes the entry whose `when:` matches, and `conduct.ts`'s `ports.judge` hands it `recipe.steps.proposed`. The attempt applies the built-in it names, so `chose` and the spent ceiling stay where `#271` put them. |
 | what it cost | **$14.19, measured twice on consecutive tickets.** `#267` and `#263` each refused at the cold reviewer with findings and parked at `lingtai:waiting` with `runtime.limits.rounds: 3` unspent, because `proposed` answered `waiting` on every routing arrival — there was no judge to ask which way to go. Both were fixed by a person. |
 | watch out | **Two things had to be true and only one of them is this ticket.** The refusal has to *travel* — T5d, `ARRIVE_AT_THE_ROUTER` — and there has to be a judge to ask. An attempt that opened the key while the build and the reviewer were still at `proposed:` would have changed nothing at all. |
 | result | **`JudgeName` narrowed to the built-ins in the same diff.** It was the built-ins plus the runtimes, which cost nothing while every cell was refused; with the key open, `judge: claude-code` would resolve and never be called, because nothing dispatches an agent judge ([the-plugin-body.md](the-plugin-body.md) §5). So the loop is closed for `red` and `gate-failed`, and `findings` — the direction 0061 §3 measured at 231 refusals — still reaches a person unless a recipe sends it back to the same worktree. |
@@ -306,9 +306,9 @@ value rather than declaring it again.*
 | kind | `feature` |
 | blocked by | T5 |
 | what | The only one of the ten with no trace on the log today. |
-| why last | Five tickets have landed in one pass each after a design was written down; #179 without one took eleven. That is an anecdote, not a measurement — **it should be built when there is something to compare it against**, which is after the rest of this is running. |
+| why last | Five tickets have landed in one attempt each after a design was written down; #179 without one took eleven. That is an anecdote, not a measurement — **it should be built when there is something to compare it against**, which is after the rest of this is running. |
 | result | It arrived as one of [0065](../decisions-archive/0065-the-default-is-a-plugin.md) §4's two *new* keys rather than as a port's body: `agentPlugin.at` carries `design`, `createDraftAction` is what an `agent:` builds there — the cold reviewer would have returned `passed` on the empty diff `design` always has — and the body is `async () => ({ ending: "passed" })`. `ports.draft` is gone. |
-| result | **And the measurement this row asked for is still not bought, which is the point of the shape it landed in.** `defaultsAt` has no row for `design`: an unconfigured step runs nothing and `implement` is briefed with `""`, exactly as every pass before it. So the capability is declarable and costs nothing until somebody writes a block, and *with a design* and *without one* are two recipes on the same machine rather than two versions of the code. |
+| result | **And the measurement this row asked for is still not bought, which is the point of the shape it landed in.** `defaultsAt` has no row for `design`: an unconfigured step runs nothing and `implement` is briefed with `""`, exactly as every attempt before it. So the capability is declarable and costs nothing until somebody writes a block, and *with a design* and *without one* are two recipes on the same machine rather than two versions of the code. |
 
 ### Independent — the gate's contents ([0060](../decisions-archive/0060-the-gate-runs-unit-tests.md))
 
@@ -334,13 +334,13 @@ bail has nothing left to bail from.
 | **T11** | The full suite runs after the merge |
 | kind | `feature` |
 | blocked by | T10 |
-| what | A separate system, triggered by the merge into `main`, runs `integration`. A failure arrives as an issue with a `kind` label, which the queue takes on its next pass. |
+| what | A separate system, triggered by the merge into `main`, runs `integration`. A failure arrives as an issue with a `kind` label, which the queue takes on its next turn. |
 | watch out | **`LINGTAI_TEST_DATABASE_URL` must not go through a pooler** ([#157](https://github.com/steven-zhc/lingtai/issues/157)) — on the pooler the same suite went `30 passed → 10 failed → 31 passed` on one commit inside an hour. And **`LINGTAI_DATABASE_URL` is never given to it**: that is this system's own log. |
 | open | Whether that system opens the issue itself or a person does. The queue does not care; *who closes it* does. |
 
 ## 5. What is done when this is done
 
-- [ ] A person reads `~/.lingtai/<project>/recipe.yml` downward and has read the pass
+- [ ] A person reads `~/.lingtai/<project>/recipe.yml` downward and has read the attempt
 - [x] `run-once.ts` does not exist *(#256)*, and nothing outside
       `doc/decisions/` and `doc/experiments/` still cites it *(#260)*
 - [ ] The board's rail shows which of the ten steps a run is in, during a fix round included
@@ -351,7 +351,7 @@ bail has nothing left to bail from.
 - [ ] A plugin a step cannot run is refused when the recipe resolves, by name
 - [ ] **`doc/the-attempt.html` and its Chinese twin are redrawn from the code**,
       not before it. They draw 0039's five gate points today, which is accurate
-      and is not the decided shape; a banner says so until the pass they draw is
+      and is not the decided shape; a banner says so until the attempt they draw is
       the one that runs. `scripts/the-attempt.py` is the source — the HTML is
       generated
 - [ ] **No retired name survives** — not in an identifier, a type, an event
@@ -378,7 +378,7 @@ bail has nothing left to bail from.
       the test alone is `#58` again: rendered as resolved, executing nothing
 - [ ] **The two drawings say ten.** `#227` left them at five on purpose, and it
       is a redraw rather than a rename: `doc/architecture.html`'s prose moved
-      because its figure draws a *pass* and never enumerated the vocabulary,
+      because its figure draws an *attempt* and never enumerated the vocabulary,
       but `scripts/the-attempt.py` puts five nodes on a spine and says so in the
       subtitle, the caption and the figure's `alt` — so changing the count
       without moving the geometry would leave a page describing something it
