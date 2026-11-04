@@ -26,8 +26,9 @@ import { userInfo } from 'node:os'
 import { loadProject, requeue } from '@lingtai/conductor'
 import { editBodyAndRequeue, type IssueChannel } from '@lingtai/conductor/edit-body'
 import { projectClient } from '@lingtai/conductor/filter'
-import { reduceTicket, ticketStream } from '@lingtai/domain'
-import { eventStore, type EventStore } from '@lingtai/event-store'
+import { readState } from '@lingtai/conductor/snapshot-state'
+import { ticketReducer, ticketStream } from '@lingtai/domain'
+import { eventStore, log, type EventStore } from '@lingtai/event-store'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -75,7 +76,9 @@ export async function requeueVerdict(
     if (options.intoBody !== undefined) {
       const { client } = deps.client ? { client: deps.client } : await projectClient(project)
       const ticketId = ticketStream(options.project, options.issue)
-      const item = reduceTicket(await (deps.store ?? eventStore).read(ticketId))
+      const item = await readState(deps.store ?? eventStore, ticketReducer, ticketId, 'all', {
+        snapshots: deps.store === undefined ? log.snapshots : undefined,
+      })
       if (item.lifecycle.status !== 'blocked') {
         return refusal(1, 'not-blocked', `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was written`, {
           ticketId,

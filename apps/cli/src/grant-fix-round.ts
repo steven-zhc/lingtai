@@ -2,9 +2,10 @@ import { userInfo } from 'node:os'
 
 import { currentRecipe, loadProject, ownerlessClient, resolveWait } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
-import { reduceTicket, ticketStream } from '@lingtai/domain'
+import { readState } from '@lingtai/conductor/snapshot-state'
+import { ticketReducer, ticketStream } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
-import { eventStore } from '@lingtai/event-store'
+import { eventStore, log } from '@lingtai/event-store'
 
 import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
@@ -30,7 +31,7 @@ export async function grantFixRoundVerdict(
   }
   const append = async (): Promise<Answered> => {
     const ticketId = ticketStream(options.project, options.issue)
-    const item = reduceTicket(await eventStore.read(ticketId))
+    const item = await readState(eventStore, ticketReducer, ticketId, 'all', { snapshots: log.snapshots })
     if (
       item.lifecycle.status !== 'blocked' &&
       !(item.lifecycle.status === 'approved' && item.lifecycle.grantRef !== undefined)

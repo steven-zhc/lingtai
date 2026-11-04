@@ -17,6 +17,7 @@ import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -31,6 +32,8 @@ import {
   reduceTicket,
   ticketStream,
   triageFactsOf,
+  triageFactsFromState,
+  ticketReducer,
   MERGE_HUNKS_ONE_BY_ONE,
   TRIAGE_TEXT_MAX,
   type Envelope,
@@ -44,7 +47,13 @@ import {
   type TriageResult,
   type WaitReason,
 } from '@lingtai/domain/wait'
-import { ConcurrencyError, eventStore, type EventStore } from '@lingtai/event-store'
+import {
+  ConcurrencyError,
+  eventStore,
+  log as processLog,
+  type EventStore,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
 import { readTasks, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
 import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, type ConflictedPath } from '@lingtai/repo'
@@ -96,8 +105,8 @@ export interface TriageTriggerPorts {
   log?: (line: string) => void
 }
 
-export interface CatchUpTriagePorts {
-  store: Pick<EventStore, 'read' | 'append'>
+export interface CatchUpTriagePorts extends SnapshotReadOptions {
+  store: Pick<EventStore, 'read' | 'readTypes' | 'append'>
   readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
   baseSha(project: string): Promise<string | null>
   /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
@@ -121,11 +130,11 @@ export async function catchUpTriage(project: string, triage: Triage | null, deps
 }
 
 async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriagePorts, startedAt: Date): Promise<void> {
-  const events = await deps.store.read(ticketId)
-  const lifecycle = reduceTicket(events).lifecycle
+  const state = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
+  const lifecycle = state.lifecycle
   if (lifecycle.status !== 'blocked') return
   const { waitId, reason } = lifecycle
-  const status = triageStatus(reason, triageFactsOf(events, waitId), {
+  const status = triageStatus(reason, triageFactsFromState(state, waitId), {
     declared: true,
     daemonStartedAt: startedAt,
   })
@@ -134,10 +143,10 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
     { ticketId, waitId },
     async () => {
       // A person or the live subscriber may have answered this while it waited in the queue.
-      const latest = await deps.store.read(ticketId)
-      const current = reduceTicket(latest).lifecycle
+      const latest = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
+      const current = latest.lifecycle
       if (current.status !== 'blocked' || current.waitId !== waitId) return
-      const facts = triageFactsOf(latest, waitId)
+      const facts = triageFactsFromState(latest, waitId)
       const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
       if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
         const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
@@ -158,11 +167,10 @@ async function finishInterrupted(
   startedAt: Date,
 ): Promise<void> {
   for (let tries = 0; tries < 5; tries += 1) {
-    const events = await deps.store.read(ticketId)
-    const reduced = reduceTicket(events)
+    const reduced = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
     const lifecycle = reduced.lifecycle
     if (lifecycle.status !== 'blocked' || lifecycle.waitId !== waitId) return
-    const facts = triageFactsOf(events, waitId)
+    const facts = triageFactsFromState(reduced, waitId)
     if (
       facts.started === null ||
       facts.started.attempt < 2 ||
@@ -174,7 +182,7 @@ async function finishInterrupted(
     const headSha = runId === null ? null : reduceAttempt(await deps.store.read(runId)).headSha
     const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
     try {
-      await deps.store.append(ticketId, events.length, [
+      await deps.store.append(ticketId, reduced.version, [
         {
           type: 'WaitTriaged',
           actor: 'conductor',
@@ -308,9 +316,12 @@ export function triageIssue(
 export function daemonTriagePorts(
   daemonStartedAt: () => Promise<Date>,
   log: (line: string) => void,
+  writer?: SnapshotReadOptions['writer'],
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {
     store: eventStore,
+    snapshots: processLog.snapshots,
+    writer,
     daemonStartedAt,
     log,
     readTasks: (project) => readTasks({ project }),

@@ -29,7 +29,7 @@ import {
   parseTicketStream,
   type PayloadOf,
   reduceAttempt,
-  reduceTicket,
+  ticketReducer,
   type AttemptState,
   savedHeadOf,
   type ToAppend,
@@ -43,9 +43,10 @@ import {
   type WaitReason,
 } from '@lingtai/domain/wait'
 import { createFileLocker } from '@lingtai/env/lock'
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotReadOptions } from '@lingtai/event-store'
 
 import { agentBranch } from './branches.ts'
+import { readState } from './snapshot-state.ts'
 
 /**
  * The gates still refusing the sha an approval is about, by `point:action`.
@@ -110,7 +111,7 @@ export function describeReason(reason: WaitReason): string {
   return reason._tag === 'ProposedEscalated' ? `ProposedEscalated{${reason.proposal._tag}}` : reason._tag
 }
 
-export interface ResolveWaitOptions {
+export interface ResolveWaitOptions extends SnapshotReadOptions {
   ticketId: string
   /**
    * The GitHub issue number — read only for `Approve`'s branch check
@@ -175,7 +176,11 @@ export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveW
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
-    () => resolveWaitHolding(options, ticketId),
+    () =>
+      resolveWaitHolding(
+        { ...options, snapshots: options.snapshots ?? (options.store === undefined ? log.snapshots : undefined) },
+        ticketId,
+      ),
   )
 }
 
@@ -212,7 +217,10 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
       detail: `--if-head needs a commit SHA of at least 7 hex characters, not ${options.resolution.onSha} — nothing was resolved.`,
     }
 
-  const item = reduceTicket(await store.read(ticketId))
+  const item = await readState(store, ticketReducer, ticketId, 'all', {
+    snapshots: options.snapshots,
+    writer: options.writer,
+  })
 
   // **The way out of a continuation this call could not schedule**, read
   // before the `not-blocked` refusal below rather than instead of it (#465).

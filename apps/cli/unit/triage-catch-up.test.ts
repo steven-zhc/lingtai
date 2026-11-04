@@ -45,7 +45,14 @@ function fixture() {
     return added
   })
   const deps: CatchUpTriagePorts = {
-    store: { read: async (stream) => streams.get(stream) ?? [], append },
+    store: {
+      read: async (stream) => streams.get(stream) ?? [],
+      // The ticket read is 'all' and never asks for types; a test that reaches here has read the wrong way.
+      readTypes: async () => {
+        throw new Error('readTypes is not part of the ticket read')
+      },
+      append,
+    },
     readTasks: async () => cards,
     baseSha: async () => 'base-sha',
     daemonStartedAt: async () => startedAt,
@@ -212,6 +219,48 @@ describe('triage catch-up', () => {
     await catchUpTriage('lingtai', triage, f.deps)
     await drained()
     expect(f.append).toHaveBeenCalledOnce()
+  })
+
+  it('appends at the version it read: an event landing between the read and the append is refused, and the next try lands', async () => {
+    const f = fixture()
+    const wait = f.add(3)
+    for (const attempt of [1, 2]) {
+      wait.push(
+        wait.event(
+          'TriageStarted',
+          { waitId: wait.waitId, attempt, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+          { at: old },
+        ),
+      )
+    }
+    const real = f.deps.store.append
+    let raced = false
+    f.deps.store = {
+      ...f.deps.store,
+      append: (async (stream: string, version: number, entries: never) => {
+        if (!raced) {
+          raced = true
+          // Lands after the read the first try decided on; the reducer reads nothing of it.
+          wait.push(
+            wait.event('WaitTriaged', {
+              waitId: 'someone-else' as WaitId,
+              attempt: 1,
+              headSha: 'head',
+              result: { _tag: 'TriageFailed', why: 'failed' },
+              by: { _tag: 'Agent', runtime: 'claude-code', model: '' },
+            }),
+          )
+        }
+        return real(stream, version, entries)
+      }) as typeof real,
+    }
+    await catchUpTriage('lingtai', triage, f.deps)
+    await drained()
+    expect(f.append).toHaveBeenCalledTimes(2)
+    expect(f.append.mock.calls[0]![1]).toBe(3)
+    expect(f.append.mock.calls[1]![1]).toBe(4)
+    await expect(f.append.mock.results[0]!.value).rejects.toBeInstanceOf(ConcurrencyError)
+    expect(wait.events().at(-1)?.data).toMatchObject({ waitId: wait.waitId, attempt: 2 })
   })
 
   it('skips resolved waits, completed triage, and waits that need no triage', async () => {
