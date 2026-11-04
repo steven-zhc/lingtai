@@ -8,22 +8,22 @@ string to be parsed, never a combination of nullable fields, and never a
 matter of whether some variable happened to be set. Each variant carries the
 evidence that belongs to it.
 
-A pass is a chain of such values. A step ends as one `StepEnded` that carries
+An attempt is a chain of such values. A step ends as one `StepEnded` that carries
 every action the step declared. A step whose last action fell short either
-sends the pass to `proposed` with a `Proposal`, or ends it. At `proposed` a
+sends the attempt to `proposed` with a `Proposal`, or ends it. At `proposed` a
 judge picks one candidate from an offer the workflow built, and the choice is
 recorded with the offer and the reply. Whatever happens next is one
-`PassNext`. Every decision between two of these values is a pure function;
+`AttemptNext`. Every decision between two of these values is a pure function;
 the one effect in the middle, an agent judge's answer, sits between two of
 them and is never hidden inside one.
 
 ```mermaid
 flowchart LR
   X["Action<br/>one operation on the world<br/>typed by what it yields"] -->|"all of a step's actions"| A["StepOutcome<br/>(logged as StepEnded)"]
-  A -->|"nextOf: Propose"| B["Proposal<br/>why the pass is at proposed"]
+  A -->|"nextOf: Propose"| B["Proposal<br/>why the attempt is at proposed"]
   B -->|offerFor| O["RouteOffer<br/>candidates"]
   O -->|"decideRoute"| R["RouteDecision<br/>(logged as PassRouted)"]
-  R --> D["PassNext"]
+  R --> D["AttemptNext"]
   A -->|nextOf| D
   D --> E["WaitReason<br/>0118"]
 ```
@@ -40,17 +40,17 @@ Every recent design question about waits has been a reason that existed only
 as a combination of other fields:
 
 - **Why a step was refused** is a string: the conductor's `StepRefused`
-  carries `because: string` (`packages/conductor/src/pass.ts:291`).
-- **Whether the router sent a pass on** was read from whether `stoppedAt` was
+  carries `because: string` (`packages/conductor/src/run-attempt.ts:336`).
+- **Whether the router sent an attempt on** was read from whether `stoppedAt` was
   set, so a build that stayed red was recorded as a failure and unsatisfied
   findings as a judgement, though the router sent both to a person
   (`8a669849`).
-- **Why the pass reached the router** is `JudgeWhen`, a string enum, with
-  `unreadable` as a separate flag (`packages/conductor/src/pass-steps.ts:885`)
+- **Why the attempt reached the router** is `JudgeWhen`, a string enum, with
+  `unreadable` as a separate flag (`packages/conductor/src/attempt-steps.ts:377`)
   and the evidence travelling apart from both.
-- **Where the router sent the pass** is `Destination`, defined three times
+- **Where the router sent the attempt** is `Destination`, defined three times
   (`packages/domain/src/events.ts:1330`, `packages/conductor/src/judge.ts:179`,
-  `packages/conductor/src/pass.ts:434`).
+  `packages/conductor/src/run-attempt.ts:481`).
 - **How a fix round ended** is `FixApplied.headSha: string | null` with
   `failure: string | null`. A fixer that declined, one that crashed and one
   that hit a ceiling can only be told apart by combining the two, which is how
@@ -79,7 +79,7 @@ as a combination of other fields:
    `WaitOnPerson` and the event is `WaitStarted`. _Hold_ means only
    `agent:hold`. The step `proposed` is called `proposed`, never the router:
    what arrives there is a `Proposal`, what it does is route (a verb), and what
-   it chooses is a `PassNext`, the same type every other step's next move is.
+   it chooses is an `AttemptNext`, the same type every other step's next move is.
 6. **Decisions are pure functions; effects are in the shell.** A pure function
    reads no store, clock, git or process. The shell calls it and acts on the
    answer.
@@ -88,13 +88,13 @@ as a combination of other fields:
    two variants of one union loses one of them. Equally, orthogonal facts are
    never forced into exclusive variants to use a union.
 8. **Plugins are open; what an action yields is closed.** Plugins will keep
-   being added, and the types must not grow with them. The pass branches on a
+   being added, and the types must not grow with them. The attempt branches on a
    handful of things only: a verdict, a commit, a design, a question, a
    signoff, an integration. So an `Action` is typed by what it yields to its
    step, and the plugin is a string. A new plugin declares what it yields, and
    `nextOf`, `cleared` and `Proposal` do not change. A new yield is added only
-   when a plugin produces something the pass must branch on and no yield
-   covers, and then the pass's logic changes anyway. A plugin's own detail is
+   when a plugin produces something the attempt must branch on and no yield
+   covers, and then the attempt's logic changes anyway. A plugin's own detail is
    its `evidence`, never a type; a plugin cannot add a `WaitReason`, and its
    failures land on the existing ones by yield and step.
 
@@ -169,7 +169,7 @@ type Action = ActionBase &
       }
     | { yields: 'worktree'; result: { _tag: 'Completed'; head: string } | NotDone | NotReached }
     | { yields: 'merge'; result: { _tag: 'Completed'; integration: Integration } | NotReached }
-    | { yields: 'nothing'; result: { _tag: 'Completed' } | NotDone | NotReached } // did something; the pass asks only whether it did
+    | { yields: 'nothing'; result: { _tag: 'Completed' } | NotDone | NotReached } // did something; the attempt asks only whether it did
   )
 
 type StepOutcome = { step: Step; round: number; actions: Action[] } // every declared action, in order, the ones not run included
@@ -194,7 +194,7 @@ permissions ([0053](../decisions-archive/0053-the-recipe-chooses-the-agent-for-e
 [0054](../decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)),
 and _kind_ is already the plugin's name (`ActionKind`, `recipe.ts`).
 
-**Legality is two small tables.** Which yields a step accepts is the pass's
+**Legality is two small tables.** Which yields a step accepts is the attempt's
 own and closed:
 
 | Step      | Accepts                                                                       |
@@ -225,19 +225,19 @@ still walks every cell. `claim` and `end` are not in the table (§6), and a
 | `worktree`, `nothing` | `Completed`                                     |
 | `merge`               | `Completed` with `Integrated`                   |
 
-Not _passed_: a pass is already the noun for one ticket's way from claim to
-end. `Waived` exists only on `verdict` and `signoff`, the two things a person
+Not _passed_: that is already the verdict word, as in `StepPassed` and "the review passes".
+`Waived` exists only on `verdict` and `signoff`, the two things a person
 can approve past, and it replaces `StepWaived`.
 
 **At most one action in a step fails to clear.** The pipeline stops at the
-first one that does (`pass-steps.ts:719`) and the rest are `NotReached`, so
+first one that does (`attempt-steps.ts`) and the rest are `NotReached`, so
 the deciding action is the last one not `NotReached`; if it cleared, the step
 cleared, and a step with no actions cleared. Nothing stores a `decisive`
 field.
 
 **What carries forward is read from the actions.** The branch head is the
 last `head` in the step (a `run:` written after the agent at `implement`
-wins, as `pass.ts` has it today); the design is the step's last `Drafted` (a
+wins, as `run-attempt.ts` has it today); the design is the step's last `Drafted` (a
 `file:` after the agent wins, with its locator).
 
 **_Changed nothing_ is a fact about the step.** An `implement` whose actions
@@ -278,11 +278,11 @@ was running all the same. Spend is unaffected: each paid call appends its own
 `RunSpent` when it returns ([0110](0110-tokens-on-the-event-money-at-display.md)).
 
 **Spend has one source.** An `Action` carries no `usage`, no `costUsd` and no
-reference to its spend: its run's `RunSpent` is on the same pass stream with the
+reference to its spend: its run's `RunSpent` is on the same attempt stream with the
 same `step`, `name` and `round` (0110 §9). `RunFinished`'s and the other events'
 cost fields go in the reset, or every dollar is counted twice.
 
-### 2. `Proposal`: why the pass is at `proposed`
+### 2. `Proposal`: why the attempt is at `proposed`
 
 ```ts
 type Proposal =
@@ -342,7 +342,7 @@ read off the deciding action by step and yield, never by plugin:
 | any                             | `Interrupted{out-of-turns \| out-of-usd}`                         | `BudgetExhausted{from: step, kind, turns, costUsd, detail}`      |
 
 **Everything the work falls short on goes through `proposed`; only what has
-nothing to decide, or nobody able to decide it, ends the pass without a
+nothing to decide, or nobody able to decide it, ends the attempt without a
 proposal (§4).** `proposed`'s router is where a recipe author decides what a
 shortfall costs, with a `judge:` keyed by `when:`. A stop that skipped the
 router would silently disable those judges for that stop. A `human:` or
@@ -357,11 +357,11 @@ and retry, one for `SetupRefused` can restart, and one for
 counted in `restartsSpent` like any other.
 
 - **`review` refuses.** Today `review` refuses nothing and its findings are
-  judged on `proposed`'s way through (`pass-steps.ts:602`). A refusing
+  judged on `proposed`'s way through (`attempt-steps.ts`). A refusing
   reviewer now proposes `ReviewFindings` and the offer carries the restart, so
   the way-through judgement moves rather than being kept in two places.
 - **An unreadable answer is a proposal.** It reached a person before any
-  judge was asked (`pass-steps.ts:885`), so no `judge:` could be declared for
+  judge was asked (`attempt-steps.ts`), so no `judge:` could be declared for
   it. It now proposes `AnswerUnreadable`, and with nothing declared a person
   still gets it. `review`'s unreadable answer stops running `proposed`'s
   `human:` on its way to that person, like every other shortfall (#472).
@@ -374,8 +374,8 @@ counted in `restartsSpent` like any other.
 type CandidateId = string // 'fix-lines', 'restart', 'hand-to-person', …
 
 type CandidateNext =
-  | Extract<PassNext, { _tag: 'FixRound' }>
-  | Extract<PassNext, { _tag: 'MergeBase' }> // { toSha, merge }: the system merges the base in and the walk resumes at build (#593)
+  | Extract<AttemptNext, { _tag: 'FixRound' }>
+  | Extract<AttemptNext, { _tag: 'MergeBase' }> // { toSha, merge }: the system merges the base in and the walk resumes at build (#593)
   | { _tag: 'Requeued'; cause: Extract<RequeueCause, { _tag: 'Restart' }> }
   | { _tag: 'HandToPerson' } // a placeholder: the offer is built before there is a reason to hand over
 
@@ -383,7 +383,7 @@ type RouteCandidate = { id: CandidateId; next: CandidateNext } // next already c
 type ExcludedCandidate = {
   id: CandidateId
   because:
-    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds' } // pass.ts:973-974
+    | { _tag: 'CeilingReached'; ceiling: 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds' } // run-attempt.ts
     | { _tag: 'NoCriterion' } // nothing to hold an agent to (0038 §2)
 }
 type RouteOffer = { proposal: Proposal; available: RouteCandidate[]; unavailable: ExcludedCandidate[] }
@@ -408,30 +408,30 @@ const routeNext: (
   offer: RouteOffer,
   reply: JudgeReply,
   decision: RouteDecision,
-) => Extract<PassNext, { _tag: 'FixRound' | 'Requeued' | 'WaitOnPerson' }>
+) => Extract<AttemptNext, { _tag: 'FixRound' | 'Requeued' | 'WaitOnPerson' }>
 ```
 
 - **A judge picks an id from the offer**, never an arbitrary step. An answer
   outside the offer is `UnknownCandidate`; one the ceilings took out is
   `CandidateUnavailable`. That a `Selected` id is in `available` is data, so
   `decideRoute` guarantees it at run time and its exhaustive test pins it.
-- **The candidates** (`onOffer`, `pass.ts:925`): that step again, for an
+- **The candidates** (`onOffer`, `run-attempt.ts`): that step again, for an
   `InputNeeded`; `implement`, from `implement` and every step after it,
   including a conflict or a red re-verify at `merge`, for the agent to fix on
   the new base; a restart from the base, for `ReviewFindings` only; a person,
   always.
-- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per pass, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was.
+- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per attempt, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was.
 - **`merge-base` is the one candidate that sends `merge` back to `build`, and
   it spends no round** (#593). A `BaseMoved` is offered `merge-base`
   (`MergeBase{toSha, merge}`) and a person. Choosing it merges `toSha` into
-  the pass's own branch **with no agent** — the lane's trial merge just proved
+  the attempt's own branch **with no agent** — the lane's trial merge just proved
   it clean — moves `onSha` to the merge commit (the third mover of it, after
   `admit` and `implement`), and resumes at `build`, so `build`, `review`,
   `proposed` and `merge` run again on the merged code. It is bounded by a
-  constant, not a recipe knob: at most **2** per pass (`BASE_MERGES_LIMIT`),
+  constant, not a recipe knob: at most **2** per attempt (`BASE_MERGES_LIMIT`),
   after which `merge-base` is `unavailable{CeilingReached{base-merges}}` and
   only a person is left. `Approve` over that hold continues at `merge` as a
-  new pass with the count at zero. Its built-in judge is `merge-the-base`,
+  new attempt with the count at zero. Its built-in judge is `merge-the-base`,
   and `judge: merge-the-base` at any other `when:` is refused when the recipe
   resolves. The lane raises `base-moved` only when the textual trial merge is
   clean and the base's new commits touch a file the branch also changed — a
@@ -440,14 +440,14 @@ const routeNext: (
   left-out paths named) and its own diff is taken against `toSha` (#594); the
   next fix round drops that section.
 - **No other candidate sends `merge` back to `build`.** `onOffer` offers it today
-  for "a conflict an agent resolved" (`pass.ts:930`), and nothing resolves
+  for "a conflict an agent resolved" (`run-attempt.ts`), and nothing resolves
   conflicts: an unchanged branch goes green again and meets the same conflict.
   A conflict-resolving plugin can add it back (principle 8).
 - **No criterion, no judge.** For `ReviewEmpty`; for a `ReviewFindings` where
   no finding carries a failure scenario; and for a `BuildRed` or `VerifyRed`
   with no output — every paid candidate is `unavailable` with `NoCriterion`.
   When only a person is left the shell asks no judge: reply and decision are
-  both `NotAsked`. This is `judged`'s order today (`pass-steps.ts:837`):
+  both `NotAsked`. This is `judged`'s order today (`attempt-steps.ts`):
   readable first, a criterion second, a judge last.
 - **The budget is spent in `offerFor`.** An available candidate already
   carries `FixRound{to: 'implement', round: 3}`; `decideRoute` needs only the
@@ -464,16 +464,16 @@ const routeNext: (
   `NotAsked`. A person is never a judge: a person is where `WaitOnPerson`
   goes.
 
-### 4. `PassNext`: the next move, with what it spends
+### 4. `AttemptNext`: the next move, with what it spends
 
 ```ts
-type PassNext =
+type AttemptNext =
   | { _tag: 'Advance'; to: Step } // along the spine, spending nothing, carrying no reason
   | { _tag: 'Propose'; proposal: Proposal } // to proposed, which routes
-  | { _tag: 'FixRound'; to: 'design' | 'implement'; round: number } // back one step, spending this pass's round `round`
+  | { _tag: 'FixRound'; to: 'design' | 'implement'; round: number } // back one step, spending this attempt's round `round`
   | { _tag: 'Requeued'; cause: RequeueCause } // the claim released: terminal
   | { _tag: 'WaitOnPerson'; reason: WaitReason } // 0118: terminal
-  | { _tag: 'Landed'; integrated: string } // terminal; the mergeSha of this pass's Integrated
+  | { _tag: 'Landed'; integrated: string } // terminal; the mergeSha of this attempt's Integrated
 
 type RequeueCause =
   | { _tag: 'Restart'; restart: number } // proposed chose to start over, spending the item's restart `restart`
@@ -482,8 +482,8 @@ type RequeueCause =
 const nextOf: (
   outcome: StepOutcome,
   run: RunRef,
-) => Extract<PassNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
-const spentAfter: (spent: Spent, next: PassNext) => Spent
+) => Extract<AttemptNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
+const spentAfter: (spent: Spent, next: AttemptNext) => Spent
 ```
 
 `nextOf` never returns `FixRound`: a step that falls short proposes, and only
@@ -503,7 +503,7 @@ the same usage cap or login; retrying it is the scheduler's. A signoff is
 
 The eight lane refusals (§2's `MergeRefused`) are `dirty-base`, `unpushed-base`, `pending-migration`,
 `no-commits`, `push-rejected`, `base-protected`, `wip-commit` and `unexpected`
-(`pass-steps.ts:606`): they stop the lane before the diff is in doubt.
+(`attempt-steps.ts`): they stop the lane before the diff is in doubt.
 `base-protected` is the push refused by the base's own protection (`GH006`/`GH013`): a person's
 setting, owned by `person`, never retried (#662). `wip-commit` is the lane refusing a branch that carries a WIP commit
 `conduct.ts`'s own `keepUncommittedWork` made for a stopped run (`#468`) —
@@ -513,16 +513,16 @@ commit and not the agent's. `lane-busy` has not been written since #194
 cannot produce nothing: the drafter answers a document (`""` included), a
 question, or something unreadable (`agent-action.ts:964-1031`).
 
-- **Two ways to `proposed`.** Every pass whose review cleared passes through
+- **Two ways to `proposed`.** Every attempt whose review cleared passes through
   `proposed` with `Advance{to: 'proposed'}`, running what is declared there (a
   `human:` signoff). One whose step fell short arrives with
   `Propose{proposal}` and is routed, its reason in the value: going to route
   without saying why cannot be written. A routed visit runs none of
-  `proposed`'s declared plugins; if its judge sends the pass round again, the
+  `proposed`'s declared plugins; if its judge sends the attempt round again, the
   sign-off runs on the next spine visit, before `merge`.
 - **A restart is a requeue.** It releases the claim and puts the item back in
   the queue, the same terminal a run that never started reaches (`outcomeOf`,
-  `pass.ts:1245`), so it is `Requeued` with the restart in its cause.
+  `run-attempt.ts`), so it is `Requeued` with the restart in its cause.
 
 **Invariants**, fixed by tests rather than types:
 
@@ -532,14 +532,14 @@ question, or something unreadable (`agent-action.ts:964-1031`).
 - `Landed` comes only from a `merge` action's `Integrated`, never from
   everything before it having cleared.
 - A terminal (`Requeued`, `WaitOnPerson`, `Landed`) ends this call of
-  `runPass`: `end` runs after it and no step starts. A `WaitOnPerson` resolved
+  `runAttempt`: `end` runs after it and no step starts. A `WaitOnPerson` resolved
   by `Approve` continues the same run in a new call (§6).
 - `round` and `restart` are what was spent plus one, computed by `offerFor`,
   written into the candidate, and applied by `spentAfter` without a second
   judgement.
-- **Rounds count per pass, restarts per item** (`onOffer`'s _claim spends the
-  item's restart and each of the others spends one of this pass's rounds_).
-  A pass after a restart starts at round 0.
+- **Rounds count per attempt, restarts per item** (`onOffer`'s _claim spends the
+  item's restart and each of the others spends one of this attempt's rounds_).
+  An attempt after a restart starts at round 0.
 
 ### 5. Events
 
@@ -579,29 +579,29 @@ What every existing event becomes is the appendix.
 ### 6. The seam
 
 ```ts
-const runPass: (command: {
+const runAttempt: (command: {
   run: RunRef
   item: ClaimedItemRef
   recipe: ResolvedRecipe
   from?: { step: 'admit' } | { step: 'proposed' | 'merge'; approved: WaitId }
-}) => Effect<PassEnd>
-type PassEnd = Extract<PassNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
+}) => Effect<AttemptEnd>
+type AttemptEnd = Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
 ```
 
-- **When `runPass` returns, the terminal is on the log.** Callers no longer
+- **When `runAttempt` returns, the terminal is on the log.** Callers no longer
   call `offerFor`, `decideRoute`, `nextOf` or `spentAfter`, nor translate the
   result through `outcomeOf`; `PassResult.stoppedAt`, `rested` and
-  `outcomeOf` become one `PassEnd`. The functions are `runPass`'s own and are
+  `outcomeOf` become one `AttemptEnd`. The functions are `runAttempt`'s own and are
   unit-tested directly; their types are here because what they produce is
   logged.
-- **`claim` happens before `runPass`.** Its three declines (`passed-over`,
+- **`claim` happens before `runAttempt`.** Its three declines (`passed-over`,
   `not-claimed`, `claim-unconfirmed`) are none of the three terminals, and
   `conduct.ts:3249` special-cases them today. The conductor claims first and
-  calls `runPass` only with an item; the `queue:` plugin stays, outside
+  calls `runAttempt` only with an item; the `queue:` plugin stays, outside
   `StepOutcome`.
 - **`end` runs after the terminal and writes no `StepEnded`.** It is not a
   list of actions (`from-recipe.ts:406`); its fact is `EndActionsResolved`,
-  whose `outcome` derives from the `PassEnd`: `Landed` is landed, `Requeued`
+  whose `outcome` derives from the `AttemptEnd`: `Landed` is landed, `Requeued`
   failed, `WaitOnPerson` blocked. A wait resolved by `Close` is closed, and
   `close.ts` resolves `end` for it.
 - **An approval continues the run** at the step its wait arose at, with the
@@ -617,8 +617,8 @@ type PassEnd = Extract<PassNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' 
 and its function land with an exhaustive test, a small ticket each, chained
 with GitHub's _blocked by_: `Action` and `StepOutcome` with `cleared`;
 `Proposal` and `nextOf`; `RouteOffer`, `offerFor`, `decideRoute` and
-`routeNext`; `PassNext` and `spentAfter`; 0118's `WaitReason` and
-`allowedResolutions`. The pass calls them in place of its own branches. Where
+`routeNext`; `AttemptNext` and `spentAfter`; 0118's `WaitReason` and
+`allowedResolutions`. The attempt calls them in place of its own branches. Where
 it writes an event, a temporary **event-boundary adapter** turns the new
 value into today's payload; the adapters are the only place both shapes
 exist, each says so in its comment.
@@ -647,7 +647,7 @@ runs.
 
 ## Consequences
 
-- **The pass's branching moves into these functions.** `pass.ts` and
+- **The attempt's branching moves into these functions.** `run-attempt.ts` and
   `conduct.ts` keep the loop and the effects.
 - **`review` refuses, and `proposed`'s way through judges nothing.** The
   restart is offered for `ReviewFindings` at the route.
@@ -661,7 +661,7 @@ runs.
 
 ## Not decided here
 
-- **Who calls the continuing `runPass` after an approval**: the CLI, taking
+- **Who calls the continuing `runAttempt` after an approval**: the CLI, taking
   the lock, or the daemon. It is decided with the ticket that builds it.
 
 ## Not built yet
@@ -695,7 +695,7 @@ What each event becomes in phase 2.
 **Unchanged**: `RunAwaitingInput` (a runtime's own notification, written by
 the hook, `hook-socket.ts:249`, and read by nothing that decides),
 `TicketLanded`, `IntegrationAttempted`, `IntegrationSucceeded`,
-`StepsResolved`, `EndActionsResolved`, `DispatchRefused` (before `runPass`),
+`StepsResolved`, `EndActionsResolved`, `DispatchRefused` (before `runAttempt`),
 and the rest of `EVENTS`.
 
 ---

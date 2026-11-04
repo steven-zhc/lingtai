@@ -4,7 +4,7 @@
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (its title, triage's reading of
-what it wants, and the opening of the body, §2), then where the pass stopped and what is left to spend (taken
+what it wants, and the opening of the body, §2), then where the attempt stopped and what is left to spend (taken
 from the log, which costs nothing), then a triage band, then the resolutions, then
 the record. Triage is an agent the daemon runs when a wait is recorded. It
 names the cause of the wait, asks the questions only a person can answer, and
@@ -24,7 +24,7 @@ the code around it, because the card could not be acted on as written.
 
 The machinery that session used already exists, in Discussion
 (`apps/cli/src/discuss.ts`, `packages/conductor/src/discuss.ts`). It is
-answered by the daemon off the pass path, takes no claim and no lock
+answered by the daemon off the attempt path, takes no claim and no lock
 (`packages/daemon/src/work-loop.ts:225-243`), and reads files from the mirror at
 the base's and each attempt's head sha (`apps/cli/src/discuss.ts:148-213`), so
 it needs no worktree. Its answer is a JSON contract
@@ -56,12 +56,12 @@ Two more things put a card in the lane, and neither is a fourth kind. **Waiting
 with no block** (`RunAwaitingInput` and a bare `RunFailed` leave `blocked`
 false, `packages/projector/src/task-view.ts:447-566`) is a state that should
 not exist. `DispatchRefused` moves nothing into this lane since `#405`: the
-refusal is the pass's rather than this item's, so the reducer leaves an item that
+refusal is the attempt's rather than this item's, so the reducer leaves an item that
 was merely queued `queued` and the conductor pauses instead — and leaves an
 item already in this lane on a question exactly as it was, because only a
 person's answer may lift that. **Unpushed work** (the branch did
 not reach origin,
-and the worktree that holds it is removed when the pass
+and the worktree that holds it is removed when the attempt
 ends) can come on top of any wait that has a run. Today none of this is
 written down: the wait's event carried `needs`, `runId` and `diagnosis`, and
 which kind a wait was got inferred again in each place that needed it, from
@@ -136,10 +136,10 @@ which kind a wait was got inferred again in each place that needed it, from
      | { _tag: 'JudgeHandedOver'; why: string }
    ```
 
-   - **No pass builds the seven direct variants.** `FixerDisagrees`,
+   - **No attempt builds the seven direct variants.** `FixerDisagrees`,
      `NothingProduced`, `CheckRefused`, `MergeRefused`, `BudgetExhausted`,
      `SetupRefused` and `AnswerUnreadable` reach a person only inside
-     `ProposedEscalated` over a `Proposal` (`pass-next.ts`). They stay in the
+     `ProposedEscalated` over a `Proposal` (`attempt-next.ts`). They stay in the
      union, with their rows in `allowedResolutions` and their words in
      `waitWords`, so that a `WaitStarted` carrying one still parses and reads.
    - **The name is the page's.** The lane is _Waiting on you_ and its id is
@@ -148,7 +148,7 @@ which kind a wait was got inferred again in each place that needed it, from
      the page: a log or a CLI has no fixed reader. **_Hold_ means one thing,
      `agent:hold`**: a person keeping a queued ticket from being claimed, the
      opposite direction.
-   - **A wait is classified where the pass decides it**, never by which
+   - **A wait is classified where the attempt decides it**, never by which
      internal value happened to be set on the way. Two pure functions build a
      `WaitReason` from a run and nothing else does: `routeNext` for everything
      `proposed` hands to a person (`ProposedEscalated`, and `AgentQuestion` for
@@ -230,7 +230,7 @@ which kind a wait was got inferred again in each place that needed it, from
      type Dependency = { ticket: string; blockedBy: string } // child keys in the approved plan
      type Resolution =
        | { _tag: 'Approve'; onSha: string } // continue the run (§11); refused if the branch moved
-       | { _tag: 'Requeue' } // a new pass from the base
+       | { _tag: 'Requeue' } // a new attempt from the base
        | { _tag: 'EditBodyAndRequeue' } // write into the body, then requeue
        | { _tag: 'GrantFixRound'; onSha: string; ref: string } // one human-granted round on a recorded remote ref
        | { _tag: 'Split'; children: ChildTicket[]; blockedBy: Dependency[] } // approved tickets and chain
@@ -276,7 +276,7 @@ which kind a wait was got inferred again in each place that needed it, from
      | `SetupRefused`                                                           | `Requeue`, `Close`                                                            | —                              |
      | `AgentCrashed` with a standing wait (#654)                               | that wait's resolutions on the unmoved head, plus `Requeue`, `Close`          | that wait's                    |
      - `BaseMoved` is held only after the system's own two merges of the base
-       are spent (0120 §3, #593); `Approve` continues at `merge` as a new pass
+       are spent (0120 §3, #593); `Approve` continues at `merge` as a new attempt
        whose count is zero, so it reads as _keep merging the base in_, and no
        fix round is granted — there is nothing wrong with the lines.
      - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
@@ -362,11 +362,11 @@ which kind a wait was got inferred again in each place that needed it, from
      frame**, and only what fills the panel and the moves differs. The header
      is the number, the state and its age as one line, the title, and the
      opening; the rail is drawn under it in every one of these states — the
-     run in flight, live, on a running ticket, and the last pass on a queued
+     run in flight, live, on a running ticket, and the last attempt on a queued
      or approved one. Where the panel says triage on a wait, a queued ticket's
-     says why it is not moving — once, with the last pass's refusal whole and
-     named as the last pass — and a running ticket's is the run log. What the
-     next pass will do at each step is reduced into the rail, one cell under
+     says why it is not moving — once, with the last attempt's refusal whole and
+     named as the last attempt — and a running ticket's is the run log. What the
+     next attempt will do at each step is reduced into the rail, one cell under
      each step, not drawn as a second list of the same ten steps. The
      prompt that will be sent is reduced by default beside Discussion, because
      the opening above and the Ticket record already say it.
@@ -395,7 +395,7 @@ which kind a wait was got inferred again in each place that needed it, from
      `WaitTriaged`. A shell step calls the pure function and acts on its
      answer; a pure function never calls the shell.
    - After the wait's event, the daemon runs the triage agent the way it runs
-     a discussion: off the pass, without the lock. It reuses that code, not
+     a discussion: off the attempt, without the lock. It reuses that code, not
      that conversation. The recipe's `triage.tools` chooses between two routes:
      - **`none`, the default.** Reading the mirror, with no tools. Claude Code
        denies every tool; Codex reaches the model-only Responses route, billed
@@ -487,7 +487,7 @@ which kind a wait was got inferred again in each place that needed it, from
      - _merge by hand_ (`ConflictingHunks`): a conflict;
      - _try it again, narrower_ (`TicketTooBig`): the run did not finish, and
        either the body can save the next one what it spent its turns on, or
-       the ticket asks for more than one pass should do and is split into
+       the ticket asks for more than one attempt should do and is split into
        smaller tickets;
      - _fix the setup_ (`SetupBroken`): the repository or the machine refused
        before or around any agent's work, so no edit to the ticket can help,
@@ -506,7 +506,7 @@ which kind a wait was got inferred again in each place that needed it, from
    shows triage's reading and recommends what triage recommends; the judge's
    routing is not drawn as a second reading, and the person is not asked to
    pick between them.
-   - The judge's decision has already happened: it is why the pass stopped and
+   - The judge's decision has already happened: it is why the attempt stopped and
      the person is on this page. Shown again, it only competes for attention
      with the advice the person came to act on.
    - Triage knows more. The judge reads the reviewer's findings and the step's
@@ -528,10 +528,10 @@ which kind a wait was got inferred again in each place that needed it, from
      another write removed it, and an edit made in the moment between the
      read and the write can still be lost.
    - **The body is written first.** If the write fails, nothing is requeued
-     and the page keeps the text, so no pass ever starts without the answer.
+     and the page keeps the text, so no attempt ever starts without the answer.
      If the requeue is refused after the write, the page says what the item's
      state is now. The usual reason is that someone else already requeued it,
-     and then the next pass reads the body anyway.
+     and then the next attempt reads the body anyway.
    - The appended text is composed from the answers the person picked. It is
      editable, and it stops following the answers once it is edited.
    - The requeue's reason is written for the person from those answers. They
@@ -564,7 +564,7 @@ which kind a wait was got inferred again in each place that needed it, from
      what makes the close box start filled — still a box the person can
      clear, which still refuses.
 
-7. **A requeue keeps its meaning.** A person's `Requeue` is a new pass cut from
+7. **A requeue keeps its meaning.** A person's `Requeue` is a new attempt cut from
    the base, with the recipe's rounds again. It leaves the saved work behind;
    `GrantFixRound` instead continues that work for one paid `implement` round
    under §1 and 0108 §8. A requeue does not spend or refund an automatic
@@ -602,7 +602,7 @@ which kind a wait was got inferred again in each place that needed it, from
      the base moved on files the branch also changed (`base-moved`) is merged
      into the branch by the system, with no agent and no round spent; `build`
      and `review` then run again, and that review is shown what landed on those
-     paths (capped at 400 lines). That happens at most twice a pass
+     paths (capped at 400 lines). That happens at most twice an attempt
      (`BASE_MERGES_LIMIT`); the third is a wait (§1's `BaseMoved` row). A base
      that moved only elsewhere lands after the lane's `verify` on the merged
      tree, and a red `verify` there is `VerifyRed` and goes back to
@@ -644,7 +644,7 @@ which kind a wait was got inferred again in each place that needed it, from
       `WaitResolved` records
       the completed choice; a partial split cannot resolve the wait.
     - **An approval continues the same run** with
-      `runPass({…, from: {step, waive, roundsSpent, …}})`, at the step in §1's
+      `runAttempt({…, from: {step, waive, roundsSpent, …}})`, at the step in §1's
       table. `waive` is a list of `{name, waitId}`: every `Approve` this item
       recorded for that step, not only the latest, so two stopping actions in
       one step's list can both be got past; it applies on the step's first
@@ -656,9 +656,9 @@ which kind a wait was got inferred again in each place that needed it, from
       the same sha again and the approval loops. Continuing at `proposed`, the
       signoffs declared there are still asked: the person approved _no change_
       or _merge past the ceiling_, not them. From there it is an ordinary
-      pass: a `StepEnded`, then `Landed`, a new wait, or a route (a conflict
+      attempt: a `StepEnded`, then `Landed`, a new wait, or a route (a conflict
       after an approval routes as any conflict does), and `end` runs.
-    - Today `approve.ts:344` integrates on its own outside the pass, writing
+    - Today `approve.ts:344` integrates on its own outside the attempt, writing
       `StepWaived` and `ApprovalGranted` and then `TicketLanded` or
       `MergeRefused{afterApproval: true}`, and skips the checks declared at
       `merge`. Both go: a merge refused after an approval is a `MergeRefused`
@@ -760,9 +760,9 @@ which kind a wait was got inferred again in each place that needed it, from
 - **The log can answer how often the advice is taken, and that is not how good
   it is.** Adoption is one query over `WaitTriaged` and the resolution after it. How
   good the advice was is a different query, over what followed the resolution: did
-  the next pass land, or wait again, and for the same cause? Neither is part of
+  the next attempt land, or wait again, and for the same cause? Neither is part of
   this decision's build.
-- **Triage never delays the queue.** It runs beside the next pass, not inside
+- **Triage never delays the queue.** It runs beside the next attempt, not inside
   this one.
 - **The stopping step's own text becomes evidence**: the judge's `why`, git's words
   and the step's raw output. It sits in the record. It is no longer the message.
