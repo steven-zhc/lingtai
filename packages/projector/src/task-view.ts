@@ -483,7 +483,12 @@ class Cache {
   readonly runs = new Map<string, RunEntry>()
   private readonly missing = new Set<string>()
 
-  constructor(private readonly ctx: ProjectionContext) {}
+  private readonly ctx: ProjectionContext
+
+  // Not a parameter property: Node's strip-only TypeScript loader refuses that syntax.
+  constructor(ctx: ProjectionContext) {
+    this.ctx = ctx
+  }
 
   async task(taskId: string): Promise<TaskEntry> {
     const hit = this.tasks.get(taskId)

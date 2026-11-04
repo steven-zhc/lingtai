@@ -46,6 +46,28 @@ describe('decodeRun(encodeRun(s))', () => {
   })
 })
 
+describe('decodeRun keeps a finding’s optional fields', () => {
+  it('round-trips class and reachableBecause on a step finding', () => {
+    const base = streams.flatMap(([, e]) => e).reduce(applyRun, emptyRun)
+    const finding = { file: 'a.ts', line: 3, claim: 'c', failureScenario: 'f', severity: 'major' as const }
+    const s = {
+      ...base,
+      steps: {
+        'review:cold': {
+          step: 'review',
+          onSha: 'sha-1',
+          by: null,
+          reason: null,
+          verdict: 'failed' as const,
+          evidence: null,
+          findings: [{ ...finding, class: 'k', reachableBecause: 'r' }, finding],
+        },
+      },
+    }
+    expect(decodeRun(encodeRun(s), 'task_view')).toStrictEqual(s)
+  })
+})
+
 describe('decodeRun refuses another shape', () => {
   const good = JSON.parse(encodeRun(streams.flatMap(([, e]) => e).reduce(applyRun, emptyRun)))
 

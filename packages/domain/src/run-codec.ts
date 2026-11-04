@@ -23,7 +23,6 @@ import {
   RUN_FAILURE_KINDS,
   RuntimeId,
   Step,
-  SEVERITIES,
 } from './events.ts'
 import type { RunState } from './run.ts'
 import { firstDifference } from './ticket-codec.ts'
@@ -55,14 +54,6 @@ const Lifecycle = z.discriminatedUnion('status', [
   }),
 ])
 
-const StepFinding = z.strictObject({
-  file: z.string(),
-  line: z.number().nullable(),
-  claim: z.string(),
-  failureScenario: z.string(),
-  severity: z.enum(SEVERITIES),
-})
-
 // Keys in the order the reduce writes them, so a decoded state encodes to the same text as one that never
 // left memory: an incremental fold and a rebuild then store identical rows.
 const StepState = z.strictObject({
@@ -72,7 +63,7 @@ const StepState = z.strictObject({
   reason: z.string().nullable(),
   verdict: z.enum(['passed', 'failed', 'never-ran', 'did-not-finish', 'asked', 'waived']),
   evidence: z.string().nullable(),
-  findings: z.array(StepFinding),
+  findings: z.array(Finding),
 })
 
 const StoredRun = z.strictObject({
