@@ -28,8 +28,8 @@ or cut a new one from the base branch?**
 
 |                | Continues the saved branch                                                                                                                                      | Starts over from the base branch                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new pass. The recipe's `restarts` limit caps it.                                          |
-| **You**        | At the wait you choose **Approve and continue** or **Continue fixing current work**. The saved branch carries on.                                               | At the wait you choose **Start over from base** or **Add to the ticket and start over**. This is a **requeue**, and a new pass begins from the base.   |
+| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `restarts` limit caps it.                                          |
+| **You**        | At the wait you choose **Approve and continue** or **Continue fixing current work**. The saved branch carries on.                                               | At the wait you choose **Start over from base** or **Add to the ticket and start over**. This is a **requeue**, and a new attempt begins from the base.   |
 
 Some details that are easy to get wrong:
 
