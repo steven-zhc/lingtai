@@ -217,4 +217,32 @@ describe('runQueue with slots', () => {
     expect(result).not.toHaveProperty('started')
     expect(result.ran).toHaveLength(2)
   })
+
+  it('a stop that lands during the queue read hands nothing to a slot', async () => {
+    world.issues = [{ number: 1, body: fix('`a/one.ts`') }]
+    const slots = createSlots()
+    const handed: unknown[] = []
+    let asked = 0
+    const result = await Effect.runPromise(
+      runQueue({
+        project: { project: 'p' } as ProjectState,
+        client: client as never,
+        runtime: {} as Runtime,
+        hookBinary: '/nonexistent',
+        prompt: 'p',
+        recipe: {} as Recipe,
+        slots: { set: slots, limit: 2, started: (p) => handed.push(p) },
+        paused: async () => {
+          asked += 1
+          return asked === 1 ? null : 'task_view stopped'
+        },
+        log: () => {},
+      }).pipe(Effect.provide(Layer.merge(Layer.succeed(Repo, {} as never), Layer.succeed(AgentHost, {} as never)))),
+    )
+
+    expect(result.stopped).toBe('paused')
+    expect(handed).toEqual([])
+    expect(world.started).toEqual([])
+    expect(slots.of('p')).toEqual([])
+  })
 })
