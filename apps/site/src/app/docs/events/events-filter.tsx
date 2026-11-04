@@ -4,6 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
   byGroup,
+  byStream,
+  streamId,
+  parseBy,
+  type By,
   counts,
   groupId,
   matches,
@@ -40,6 +44,7 @@ export function EventsFilter({
   initialFilter?: string | null
 }) {
   const [filter, setFilter] = useState<string | null>(initialFilter)
+  const [by, setBy] = useState<By>('group')
   const article = useRef<HTMLElement>(null)
   const drawing = useRef<HTMLDivElement>(null)
 
@@ -63,6 +68,7 @@ export function EventsFilter({
       const target = index.find((e) => e.name === name)
       const next = target && !matches(target.at, fromUrl) ? null : fromUrl
       setFilter(next)
+      setBy(parseBy(window.location.search))
       if (next !== fromUrl) write(null)
       if (target) requestAnimationFrame(() => document.getElementById(name)?.scrollIntoView())
     }
@@ -75,8 +81,15 @@ export function EventsFilter({
     setFilter(next)
     write(next)
   }
+  const chooseBy = (next: By) => {
+    setBy(next)
+    writeBy(next)
+  }
   const toggle = (key: string) => choose(filter === key ? null : key)
 
+  const streams = byStream(index)
+  const firstStream = new Map<string, string>()
+  for (const [p, list] of streams) for (const e of list) if (!firstStream.has(e.name)) firstStream.set(e.name, p)
   const total = counts(index, steps)
   const groups = byGroup(index)
   const visible = new Set(shownGroups(index, filter))
@@ -126,38 +139,87 @@ export function EventsFilter({
             show all
           </button>
         </div>
-        {groups.map(([group, list]) => {
-          const hit = list.filter((e) => matches(e.at, filter))
-          return (
-            <section key={group} id={groupId(group)} className="ev-group" hidden={!visible.has(group)}>
-              <h2>
-                {group}{' '}
-                <span className="ev-count">{filter === null ? list.length : `${hit.length} of ${list.length}`}</span>
-              </h2>
-              {list.map((e) => (
-                <div key={e.name} hidden={!matches(e.at, filter)}>
-                  {entries[e.name]}
-                </div>
-              ))}
-            </section>
-          )
-        })}
+        <div className="ev-by" role="group" aria-label="List events">
+          {(['group', 'stream'] as const).map((mode) => (
+            <button key={mode} type="button" aria-pressed={by === mode} onClick={() => chooseBy(mode)}>
+              by {mode}
+            </button>
+          ))}
+        </div>
+        {by === 'stream' &&
+          streams.map(([prefix, list]) => {
+            const hit = list.filter((e) => matches(e.at, filter))
+            return (
+              <section key={prefix} id={streamId(prefix)} className="ev-group" hidden={hit.length === 0}>
+                <h2>
+                  <code>{prefix}</code>{' '}
+                  <span className="ev-count">{filter === null ? list.length : `${hit.length} of ${list.length}`}</span>
+                </h2>
+                {list.map((e) =>
+                  firstStream.get(e.name) === prefix ? (
+                    <div key={e.name} hidden={!matches(e.at, filter)}>
+                      {entries[e.name]}
+                    </div>
+                  ) : (
+                    <p key={e.name} className="ev-ref" hidden={!matches(e.at, filter)}>
+                      <a href={`#${e.name}`}>{e.name}</a> — also on <code>{firstStream.get(e.name)}</code>, listed there
+                    </p>
+                  ),
+                )}
+              </section>
+            )
+          })}
+        {by === 'group' &&
+          groups.map(([group, list]) => {
+            const hit = list.filter((e) => matches(e.at, filter))
+            return (
+              <section key={group} id={groupId(group)} className="ev-group" hidden={!visible.has(group)}>
+                <h2>
+                  {group}{' '}
+                  <span className="ev-count">{filter === null ? list.length : `${hit.length} of ${list.length}`}</span>
+                </h2>
+                {list.map((e) => (
+                  <div key={e.name} hidden={!matches(e.at, filter)}>
+                    {entries[e.name]}
+                  </div>
+                ))}
+              </section>
+            )
+          })}
         {after}
       </article>
       <nav className="contents" aria-label="Contents">
-        <p className="kicker">Groups</p>
+        <p className="kicker">{by === 'stream' ? 'Streams' : 'Groups'}</p>
         <ul>
-          {(filter === null ? groups.map(([g, l]) => [g, l, l] as const) : shown).map(([group, list, hit]) => (
-            <li key={group}>
-              <a href={`#${groupId(group)}`}>
-                {group} <span className="ev-count">{filter === null ? list.length : hit.length}</span>
-              </a>
-            </li>
-          ))}
+          {by === 'stream'
+            ? streams
+                .map(([prefix, list]) => [prefix, list, list.filter((e) => matches(e.at, filter))] as const)
+                .filter(([, , hit]) => hit.length > 0)
+                .map(([prefix, list, hit]) => (
+                  <li key={prefix}>
+                    <a href={`#${streamId(prefix)}`}>
+                      {prefix} <span className="ev-count">{filter === null ? list.length : hit.length}</span>
+                    </a>
+                  </li>
+                ))
+            : (filter === null ? groups.map(([g, l]) => [g, l, l] as const) : shown).map(([group, list, hit]) => (
+                <li key={group}>
+                  <a href={`#${groupId(group)}`}>
+                    {group} <span className="ev-count">{filter === null ? list.length : hit.length}</span>
+                  </a>
+                </li>
+              ))}
         </ul>
       </nav>
     </>
   )
+}
+
+function writeBy(by: By) {
+  const url = new URL(window.location.href)
+  if (by === 'group') url.searchParams.delete('by')
+  else url.searchParams.set('by', by)
+  window.history.replaceState(null, '', url)
 }
 
 function write(filter: string | null) {

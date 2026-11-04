@@ -330,6 +330,12 @@ describe('finding your way around one document', () => {
       headings.set(file, new Set(headingsOf(body).map((h) => h.id)))
     }
 
+    // `events.json#Name` is served as `/docs/events/#Name`: an entry's id, not a heading.
+    const manifest = JSON.parse(await readFile(path.join(docRoot, 'events.json'), 'utf8')) as {
+      events: { name: string }[]
+    }
+    const eventNames = new Set(manifest.events.map((e) => e.name))
+
     const dangling: string[] = []
     for (const file of files) {
       const body = await readFile(path.join(docRoot, file), 'utf8')
@@ -338,6 +344,10 @@ describe('finding your way around one document', () => {
         const resolved = resolveHref(file, href, (f) => files.includes(f))
         if (!resolved.startsWith('#') && !resolved.startsWith('/docs/')) continue
         const [route = '', anchor = ''] = resolved.split('#', 2)
+        if (route === '/docs/events/') {
+          if (!eventNames.has(anchor)) dangling.push(`${file} → ${href}`)
+          continue
+        }
         // `fileOf` back from the route, and not `${route}.md`: a directory's
         // `index.md` is served at the directory, so the arithmetic that assumed
         // one route per `.md` path would look for `plugins.md` and find nothing.

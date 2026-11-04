@@ -153,21 +153,31 @@ replacing an issue's set, and the label is `agent:hold` or there is no button:
 `source.exclude` is free-form, and a recipe that excludes only `wontfix` gets
 no offer rather than that word stamped across twelve bug reports.
 
-## stream — 7 prefixes, unbounded instances
+<!-- streams:begin -->
+## stream — 8 prefixes, unbounded instances
+
+Generated from `doc/events.json` by `pnpm events:generate` — edit `STREAMS` and `PREFIXES` in
+`packages/domain/scripts/events.ts`, not this.
 
 The events about one thing, in order. The **prefixes** are a closed set,
 validated by regex in `packages/domain/src/envelope.ts`. The streams themselves
-are not — one per work item, run, lane and project, forever.
+are not — one per work item, attempt, lane and project, forever.
 
-| Prefix | One per | Example |
-|---|---|---|
-| `ticket-` | work item (ticket) | `ticket-nextloom-ai-admin-156` |
-| `pass-` | run (one attempt) | `pass-75b80f13-9f88-48cf-b4d2-79b9779f47cf` |
-| `int-` | integration lane, per base branch | `int-nextloom-ai-admin-develop` |
-| `prj-` | project | `prj-nextloom-ai-admin` |
-| `ctl-` | control | `ctl-conductor`, `ctl-github-app` |
-| `chat-` | discussion about one work item | `chat-8f21…` |
-| `ext-` | extension | `ext-subscribers` (the only one so far) |
+| Prefix | One per | State | Event types |
+|---|---|---|---|
+| `ticket-` | issue, `ticket-{project}-{issue}` | [TicketState](glossary.md#the-log-and-its-states) | [TicketDiscovered](events.json#TicketDiscovered), [TicketClaimed](events.json#TicketClaimed), [TicketContinued](events.json#TicketContinued), [TicketReleased](events.json#TicketReleased), [WaitStarted](events.json#WaitStarted), [WaitResolved](events.json#WaitResolved), [TicketSplit](events.json#TicketSplit), [SplitStarted](events.json#SplitStarted), [SplitChildWritten](events.json#SplitChildWritten), [SplitLinkWritten](events.json#SplitLinkWritten), [SplitFailed](events.json#SplitFailed), [TicketLinked](events.json#TicketLinked) *(retired)*, [TicketLanded](events.json#TicketLanded), [TicketClosed](events.json#TicketClosed), [DispatchRefused](events.json#DispatchRefused), [RunSpent](events.json#RunSpent), [IssueUpdated](events.json#IssueUpdated), [IssueUpdateFailed](events.json#IssueUpdateFailed), [DiscussionHeld](events.json#DiscussionHeld), [PromptEdited](events.json#PromptEdited), [TriageStarted](events.json#TriageStarted), [WaitTriaged](events.json#WaitTriaged) |
+| `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [EndActionsResolved](events.json#EndActionsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) |
+| `int-` | base branch, `int-{project}-{base}` | [IntegrationState](glossary.md#the-log-and-its-states) | [IntegrationAttempted](events.json#IntegrationAttempted), [IntegrationRefused](events.json#IntegrationRefused), [IntegrationSucceeded](events.json#IntegrationSucceeded), [BaseChecked](events.json#BaseChecked) |
+| `prj-` | repository, `prj-{project}` | [ProjectState](glossary.md#the-log-and-its-states) | [ProjectOnboardingStarted](events.json#ProjectOnboardingStarted), [ProjectConfigured](events.json#ProjectConfigured), [ProjectRefused](events.json#ProjectRefused), [ProjectRecovered](events.json#ProjectRecovered) |
+| `ctl-` | control stream: `ctl-conductor` (one per machine) and `ctl-github-app` | [ControlState](glossary.md#the-log-and-its-states) (`ctl-conductor`); none for `ctl-github-app` | [ConductorPaused](events.json#ConductorPaused), [ConductorResumed](events.json#ConductorResumed), [ConductorShutdownRequested](events.json#ConductorShutdownRequested), [ConductorStarted](events.json#ConductorStarted), [ConductorShutdownWithdrawn](events.json#ConductorShutdownWithdrawn), [QueueChanged](events.json#QueueChanged), [RunRequested](events.json#RunRequested), [ContinueRequested](events.json#ContinueRequested), [DiscussionRequested](events.json#DiscussionRequested), [Reconciled](events.json#Reconciled), [GitHubAppCreated](events.json#GitHubAppCreated) |
+| `chat-` | discussion, `chat-…` | [ChatState](glossary.md#the-log-and-its-states) | [RunSpent](events.json#RunSpent), [DiscussionAsked](events.json#DiscussionAsked), [DiscussionAnswered](events.json#DiscussionAnswered) |
+| `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
+| `bkl-` | finding, `bkl-{project}-{key}` | [Finding state](glossary.md#the-log-and-its-states) | [FindingAccepted](events.json#FindingAccepted), [FindingProposed](events.json#FindingProposed), [FindingDeclined](events.json#FindingDeclined) |
+
+- [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`).
+
+On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [OutboxFailed](events.json#OutboxFailed) *(retired)*.
+<!-- streams:end -->
 
 `ctl-github-app` is the installation's App and holds one event per creation
 (`#169`). It is beside `ctl-conductor` rather than on it because the daemon

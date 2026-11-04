@@ -301,6 +301,96 @@ export const STREAMS = {
   PluginFailed: ['ext-'],
 } as const satisfies { readonly [T in EventType]: readonly StreamPrefix[] }
 
+/**
+ * What each stream prefix is, for the generated section of `doc/reference.md`
+ * (#859). `state` is the glossary's name for what the stream reduces to, or
+ * `null` for a stream nothing reduces. The `satisfies` makes `tsc` refuse a
+ * prefix with no row.
+ */
+export const PREFIXES = {
+  'ticket-': { onePer: 'issue, `ticket-{project}-{issue}`', state: 'TicketState' },
+  'pass-': { onePer: 'attempt, `pass-…`', state: 'AttemptState' },
+  'int-': { onePer: 'base branch, `int-{project}-{base}`', state: 'IntegrationState' },
+  'prj-': { onePer: 'repository, `prj-{project}`', state: 'ProjectState' },
+  'ctl-': {
+    onePer: 'control stream: `ctl-conductor` (one per machine) and `ctl-github-app`',
+    state: 'ControlState (`ctl-conductor`); none for `ctl-github-app`',
+  },
+  'chat-': { onePer: 'discussion, `chat-…`', state: 'ChatState' },
+  'ext-': { onePer: 'extension, `ext-subscribers` (the only one so far)', state: null },
+  'bkl-': { onePer: 'finding, `bkl-{project}-{key}`', state: 'Finding state' },
+} as const satisfies { readonly [P in StreamPrefix]: { readonly onePer: string; readonly state: string | null } }
+
+/** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
+export const MULTI: Partial<Record<EventType, string>> = {
+  RunSpent:
+    'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`)',
+}
+
+export const STREAMS_BEGIN = '<!-- streams:begin -->'
+export const STREAMS_END = '<!-- streams:end -->'
+const GLOSSARY_STATES = 'glossary.md#the-log-and-its-states'
+
+/** The text between the markers, heading included: a pure function of `doc/events.json`'s events. */
+export function renderStreams(doc: {
+  events: readonly { name: string; stream: readonly string[]; retired: boolean }[]
+}): string {
+  const prefixes = Object.keys(PREFIXES) as StreamPrefix[]
+  const link = (e: { name: string; retired: boolean }) =>
+    `[${e.name}](events.json#${e.name})${e.retired ? ' *(retired)*' : ''}`
+  const notes: string[] = []
+  for (const e of doc.events) {
+    const on = e.stream.length
+    const note = MULTI[e.name as EventType]
+    if (on >= 2 && note === undefined) throw new Error(`${e.name} is on ${on} prefixes and has no MULTI note`)
+    if (on < 2 && note !== undefined) throw new Error(`MULTI names ${e.name}, which is on ${on} prefixes`)
+    if (note !== undefined) notes.push(`- ${link(e)} is on ${e.stream.map((p) => `\`${p}\``).join(', ')} — ${note}.`)
+  }
+  for (const name of Object.keys(MULTI)) {
+    if (!doc.events.some((e) => e.name === name)) throw new Error(`MULTI names ${name}, which is not in the manifest`)
+  }
+  const rows = prefixes.map((p) => {
+    const { onePer, state } = PREFIXES[p]
+    const types = doc.events
+      .filter((e) => e.stream.includes(p))
+      .map(link)
+      .join(', ')
+    const st =
+      state === null
+        ? 'none'
+        : `[${state.split(' (')[0]}](${GLOSSARY_STATES})${state.includes(' (') ? ' (' + state.split(' (').slice(1).join(' (') : ''}`
+    return `| \`${p}\` | ${onePer} | ${st} | ${types} |`
+  })
+  const none = doc.events.filter((e) => e.stream.length === 0).map(link)
+  return [
+    `## stream — ${prefixes.length} prefixes, unbounded instances`,
+    '',
+    'Generated from `doc/events.json` by `pnpm events:generate` — edit `STREAMS` and `PREFIXES` in',
+    '`packages/domain/scripts/events.ts`, not this.',
+    '',
+    'The events about one thing, in order. The **prefixes** are a closed set,',
+    'validated by regex in `packages/domain/src/envelope.ts`. The streams themselves',
+    'are not — one per work item, attempt, lane and project, forever.',
+    '',
+    '| Prefix | One per | State | Event types |',
+    '|---|---|---|---|',
+    ...rows,
+    ...(notes.length ? ['', ...notes] : []),
+    ...(none.length ? ['', `On no stream: ${none.join(', ')}.`] : []),
+  ].join('\n')
+}
+
+/** Replaces the span between the markers; throws unless each occurs exactly once, `begin` first. */
+export function spliceStreams(markdown: string, section: string): string {
+  const count = (m: string) => markdown.split(m).length - 1
+  const b = markdown.indexOf(STREAMS_BEGIN)
+  const e = markdown.indexOf(STREAMS_END)
+  if (count(STREAMS_BEGIN) !== 1 || count(STREAMS_END) !== 1 || b > e) {
+    throw new Error(`doc/reference.md needs exactly one ${STREAMS_BEGIN} followed by one ${STREAMS_END}`)
+  }
+  return `${markdown.slice(0, b + STREAMS_BEGIN.length)}\n${section}\n${markdown.slice(e)}`
+}
+
 export type EventsDoc = {
   sha: string
   events: {
@@ -548,6 +638,11 @@ if (import.meta.main) {
         { cwd: snapshot, stdio: 'inherit' },
       )
       writeFileSync(join(root, 'doc', 'events.json'), readFileSync(out))
+      // Rendered here, not in the child: the snapshot holds no `doc/`.
+      const refPath = join(root, 'doc', 'reference.md')
+      const before = readFileSync(refPath, 'utf8')
+      const after = spliceStreams(before, renderStreams(JSON.parse(readFileSync(out, 'utf8')) as EventsDoc))
+      if (after !== before) writeFileSync(refPath, after)
     } finally {
       rmSync(snapshot, { recursive: true, force: true })
     }

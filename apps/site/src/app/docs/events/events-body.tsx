@@ -89,7 +89,7 @@ function Event({ event, doc }: { event: EventEntry; doc: EventsDoc }) {
 
 export function EventsBody({ doc }: { doc: EventsDoc }) {
   const entries = Object.fromEntries(doc.events.map((e) => [e.name, <Event key={e.name} event={e} doc={doc} />]))
-  const index = doc.events.map(({ name, group, at }) => ({ name, group, at }))
+  const index = doc.events.map(({ name, group, stream, at }) => ({ name, group, stream, at }))
   return (
     <EventsFilter
       steps={[...STEPS]}
@@ -103,8 +103,8 @@ export function EventsBody({ doc }: { doc: EventsDoc }) {
     >
       <h1>Events</h1>
       <p>
-        An attempt writes events as it goes. Pick a step to see the events it writes; every event is listed once, under
-        its group.
+        An attempt writes events as it goes. Pick a step to see the events it writes. Listed by group, every event
+        appears once, under its group; listed by stream, it appears under each stream prefix it is written on.
       </p>
     </EventsFilter>
   )
