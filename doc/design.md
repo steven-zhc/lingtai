@@ -13,7 +13,7 @@ log, every moment worth acting on already announces itself.
 | Moment | Old loop | Lingtai |
 |---|---|---|
 | A work item merged | sleep out the hour | `IntegrationSucceeded` → consider the next one now |
-| You approve on the board | invisible until the next pass | `ApprovalGranted` → enter the merge lane now |
+| You approve on the board | invisible until the next turn | `ApprovalGranted` → enter the merge lane now |
 | The agent is stuck waiting | burns to the 2h wall clock | `RunAwaitingInput` → the card lights up |
 | The agent trips the guard | stderr, unseen | `GuardTripped` → counted on the card |
 | Context gets compacted | invisible | `RunContextExhausted` → this item was scoped too large |

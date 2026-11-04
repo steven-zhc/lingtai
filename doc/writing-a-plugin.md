@@ -1,13 +1,13 @@
 # Writing a plugin
 
-A pass is ten steps, and **a step's behaviour is the plugins the recipe declares
+An attempt is ten steps, and **a step's behaviour is the plugins the recipe declares
 there**. This page is for somebody who wants to write one.
 
 > **This describes [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md),
 > which is accepted and half built.** `at` exists and **its keys are what make
 > you legal** — `definePlugin` takes it, the resolve reads it, and the refusals
 > below are the ones you get (`#261`). What is not built is the **values**: a
-> plugin's body is still `pass-steps.ts`'s hard-coded one, so the functions
+> plugin's body is still `attempt-steps.ts`'s hard-coded one, so the functions
 > written below are the shape being built towards rather than something a
 > plugin supplies today. Everything about *where* you may be declared is live;
 > everything about *what runs* is the next ticket — and the two tickets that
@@ -95,9 +95,9 @@ field.
 
 | step | also handed | may return | it is for |
 |---|---|---|---|
-| `claim` | — | pass · hold · did-not-finish · asked · never-ran | picking the ticket. **Its body is empty and `queue:` is what runs** (`#269`): **there is no work item yet**, so the `ActionContext` has none to be about — `onSha` is the base the pass came in on, `cwd` is a directory nothing has cut, and a plugin that assumed either does not compile |
+| `claim` | — | pass · hold · did-not-finish · asked · never-ran | picking the ticket. **Its body is empty and `queue:` is what runs** (`#269`): **there is no work item yet**, so the `ActionContext` has none to be about — `onSha` is the base the attempt came in on, `cwd` is a directory nothing has cut, and a plugin that assumed either does not compile |
 | `admit` | — | pass · hold · did-not-finish · asked · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
-| `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
+| `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the attempt |
 | `design` | — | pass · hold · did-not-finish · asked · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
 | `implement` | — | pass · hold · did-not-finish · asked · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did. **And `file-brief:` may be written before it** (`#301`), which is the one plugin anywhere that *reads* a locator: it resolves what a `file:` at `design` kept and hands the document to the entries after it. **And `run:` may be written after it** (`#390`): a mechanical fix-up that commits what it changed rather than keeping or judging it — its own exit code never refuses, because the step may not |
 | `build` | — | **+ refuse** | is it green. A red one skips `review` |
@@ -116,7 +116,7 @@ the one that routes     …those six,  + routed           (proposed)
 
 **That is `EndingAt<S>`, and it is a type rather than a rule you are asked to
 remember.** A `claim` body returning `refused` does not compile; only `proposed`
-can move the pass.
+can move the attempt.
 
 ### The five endings every step has
 
@@ -134,9 +134,9 @@ for the next agent to fix. A plugin that crashed and reported `refused` sends an
 agent to repair a defect that is not in the diff.
 
 **`asked` and `did-not-finish` are the other pair**, and they cost the same
-nothing — what separates them is where the pass goes. `asked` reaches `proposed`
+nothing — what separates them is where the attempt goes. `asked` reaches `proposed`
 carrying the question, and a judge answers it or a person does; `did-not-finish`
-stops the pass, because there is no question in it for anybody to answer. So
+stops the attempt, because there is no question in it for anybody to answer. So
 `detail` on an `asked` is *the question* and nothing else, and there is no
 `because`: *it asked* is the whole of the reason.
 
@@ -158,7 +158,7 @@ measurement (`#299`) — and
 | what happened | how you say it | what it costs |
 |---|---|---|
 | the recipe is wrong | **you say nothing** — the schema refused it | nothing: no claim, no worktree, no agent |
-| the destination was briefly unreachable | `did-not-finish` | the pass stops and the item waits for a person; no round, and no judge is asked |
+| the destination was briefly unreachable | `did-not-finish` | the attempt stops and the item waits for a person; no round, and no judge is asked |
 | the destination needs a person | `did-not-finish` with `because: NEEDS_INPUT` | reaches `proposed`: a person, or a `judge:` at `needs-input` — which may buy `design` again |
 
 **The rows are the same at the other end.** A destination has two — one that
@@ -173,8 +173,8 @@ resolves, and the plugin says so when it runs.
 lose.** A missing field, a path that is not a path, a destination named with no
 credentials: say it in the **schema**, and a recipe carrying it never resolves —
 so the daemon claims nothing until a person fixes the line. Check the same thing
-when your action *runs* and the same typo costs a whole pass: the ticket is
-claimed, a worktree is cut, the design agent is paid, and then the pass ends
+when your action *runs* and the same typo costs a whole attempt: the ticket is
+claimed, a worktree is cut, the design agent is paid, and then the attempt ends
 `blocked` — which takes the item **off the queue** and onto *Waiting on you*,
 where nothing brings it back. `outcomeOf` reads a `did-not-finish` as `blocked`,
 `conduct.ts` appends `WorkItemBlocked`, `task_view` reduces that to
@@ -198,7 +198,7 @@ rather than by running it again, and say in the ticket which one moved and why.
 **A round is bought at the router and not by refusing**, so *`design` may not
 refuse* ([0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3) settles
 nothing about what these cost, and the answer differs by row. Rows one and two
-buy nothing: one never reaches a pass at all, and a `did-not-finish` never
+buy nothing: one never reaches a attempt at all, and a `did-not-finish` never
 reaches the router, so there is no offer and nothing to spend. The third does
 reach it, and `onOffer("design", asked, …)` puts **`design` itself** on the offer
 while a round remains — nobody but the step that asked knows the question, so
@@ -235,12 +235,12 @@ it.
 A cut that did not happen answers `did-not-finish` and never `failed`: nothing has
 been written, so there is nothing to have judged, and `admit` is not one of the
 four steps that may refuse anyway. A cut that needs a person answers
-`needs-approval`, which reaches the pass as `held`.
+`needs-approval`, which reaches the attempt as `held`.
 
 ### `end` is the one that runs for effect
 
 Its plugins do not produce a verdict — they close an issue, write a label, delete
-a branch. `outcome` tells you which ending the pass came to rest on, so a plugin
+a branch. `outcome` tells you which ending the attempt came to rest on, so a plugin
 can act on `landed` and not on `blocked`. It **cannot refuse**: by the time it
 runs, what happened has happened.
 
@@ -270,9 +270,9 @@ runs, what happened has happened.
 
 4. **Restart the daemon — and only step 2 needs it.**
 
-   **The recipe is read on every pass**, so step 3 needs no restart: edit the
-   file and the next pass sees it. `conduct.ts` calls `currentRecipe` inside the
-   pass, and the hash in the log line — *recipe b54751468e38 from main* — is
+   **The recipe is read on every attempt**, so step 3 needs no restart: edit the
+   file and the next attempt sees it. `conduct.ts` calls `currentRecipe` inside the
+   attempt, and the hash in the log line — *recipe b54751468e38 from main* — is
    recomputed each time.
 
    **`PLUGINS` is not.** It is a module constant the daemon loaded when it
@@ -280,10 +280,10 @@ runs, what happened has happened.
    conductor has.
 
    **Which is why the order matters.** Declare a plugin the running daemon does
-   not know and the per-pass resolve refuses the whole recipe — *every* pass,
+   not know and the per-turn resolve refuses the whole recipe — *every* turn,
    until it restarts. So: land the code, restart, then edit the recipe.
 
-5. **Watch one pass.** `lingtai attach <runId>`, or the run log on the task page.
+5. **Watch one attempt.** `lingtai attach <runId>`, or the run log on the task page.
 
 ### Where it can go wrong, and what you will see
 
@@ -293,7 +293,7 @@ runs, what happened has happened.
 | In `PLUGINS`, no `at` for that step | *the "tell the channel" action is a "slack" at the "claim" step, and `slack:` does not implement `claim` — it serves `proposed`* |
 | In `PLUGINS`, and nothing implements that step | *… and no plugin implements `<step>` …*. **None of the ten is left since `#266`** gave `implement` an `agent:` — `design` was the second until `#265` and `claim` the third until `#269` — so this refusal is now only reachable by a caller that hands `whyNoKindAt` a plugin set of its own |
 | Two plugin keys in one entry | refused: an entry names exactly one |
-| Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no pass starts at all** until it restarts. Editing the recipe alone never needs one |
+| Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no attempt starts at all** until it restarts. Editing the recipe alone never needs one |
 
 ## A step-specific example: deciding where a refusal goes
 
@@ -321,7 +321,7 @@ proposed:
     judge: always-waiting
 ```
 
-`arriving === null` is the pass's own way through — nothing refused, so nothing
+`arriving === null` is the attempt's own way through — nothing refused, so nothing
 to route. Otherwise it names where to go, and `why` is what a person reads on the
 card.
 
@@ -330,7 +330,7 @@ card.
 `design` is declarable since `#265` and **its default is nothing**, which is the
 one place in the plugin system where *declared* and *omitted* are not two ways of
 getting a behaviour: omit it and no action runs, the step passes, and `implement`
-is briefed with `""` and works from the issue — which is what every pass did
+is briefed with `""` and works from the issue — which is what every attempt did
 before the key existed. So this is a block that buys something rather than one
 that re-states what you already had:
 
@@ -350,7 +350,7 @@ returns findings; at `design` there is no diff to read, so it is handed the
 ticket and answers with the document — including the empty one, which is the
 answer *this change needs no design* and is a pass rather than a skip.
 
-**What it costs is an agent run per pass**, and `runtime.limits` is the only
+**What it costs is an agent run per attempt**, and `runtime.limits` is the only
 thing that bounds it (0065 §7). A ticket whose shape is obvious from the issue
 pays for a document nobody reads, which is why the prompt this action is built
 with says an empty answer is the common one.
@@ -360,7 +360,7 @@ where it came from — in `{{design}}` where the prompt template has that placeh
 (`runtime.prompt`, or `prompts/ticket.md` where the recipe names none), appended
 after the template where it does not, and nothing at all where the document is
 empty. That is `{{failure}}`'s rule and it is here for the same reason: a template
-with no slot must not silently drop something a pass paid for. The heading says the
+with no slot must not silently drop something an attempt paid for. The heading says the
 ticket outranks the design where the two disagree, because the implementing agent
 has both.
 
@@ -384,7 +384,7 @@ editing the repository.
 **You choose the destination; you do not choose what it costs.**
 
 A route that spends is checked against the ceilings the recipe set — `rounds`
-for how many times a pass may send the agent back, `restarts` for how many passes
+for how many times an attempt may send the agent back, `restarts` for how many attempts
 one ticket may buy. A destination nobody can afford goes to a person **naming the
 ceiling that is spent**, whatever your plugin returned.
 
@@ -394,18 +394,18 @@ the money is somebody else's.
 
 **`waiting` is the one destination that costs nothing**, so it is never refused
 for budget. That is why it is the right answer both when you choose it and when a
-ceiling is spent — and the pass says which of the two happened.
+ceiling is spent — and the attempt says which of the two happened.
 
 ## What a plugin must not assume
 
 - **That it is the only action at its step.** A step runs everything the recipe
   declared there, in the order written.
-- **That it runs once.** A pass can visit a step several times — that is what a
+- **That it runs once.** An attempt can visit a step several times — that is what a
   fix round is — and `reached` is how you tell.
 - **That the head has not moved.** `context.onSha` is this visit's, and a fix
   round advances it.
-- **That its failure is the pass's.** Report the ending; the workflow decides
-  what the pass does with it.
+- **That its failure is the attempt's.** Report the ending; the workflow decides
+  what the attempt does with it.
 
 ## Related
 

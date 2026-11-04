@@ -141,7 +141,7 @@ belongs before it.
 **Status, 2026-09-02.** 2a, 2b, 2c and 2d are built, and **2a is verified**:
 admin #156 went queue → landed at `06e8bbe` (15 turns, $0.83) from one
 `lingtai now`, with no command issued after it, and the completion event drove the
-next pass by itself. See `doc/experiments/006-the-loop-closes-unattended.md`,
+next turn by itself. See `doc/experiments/006-the-loop-closes-unattended.md`,
 including the two defects the run found that no unit test had — `lingtai now` not
 running the issue it named, and the outbox deleting every label it did not put
 there.

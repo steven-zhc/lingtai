@@ -9,7 +9,7 @@
   is edited. If that ever stops being true, put the generator in scripts/ and say
   so at the top, the way the other two do.
 -->
-<title>Change What a Pass Does</title>
+<title>Change What an Attempt Does</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -292,7 +292,7 @@
 
 <header>
   <p class="eyebrow">Lingtai · for people who want it to do something else</p>
-  <h1>Change what a pass does</h1>
+  <h1>Change what an attempt does</h1>
   <p class="standfirst">Lingtai walks a ticket through ten steps. <strong>What happens at each of
     them is yours to decide</strong> — you write it as a plugin and declare it in your recipe.
     This page starts from the thing you want, not from the shape of the code.</p>
@@ -356,7 +356,7 @@
 <h2>One want, all the way through</h2>
 <p class="sub">“I want a Slack message when a ticket lands.”</p>
 
-<p>Nothing that exists does this, so it is a plugin. It runs for effect after the pass has come to
+<p>Nothing that exists does this, so it is a plugin. It runs for effect after the attempt has come to
   rest — that is the <code>end</code> step — and what you want to say depends on how the ticket
   ended, which <code>end</code> is the only step that knows.</p>
 
@@ -400,7 +400,7 @@
 
 <div class="legend">
   <span><i class="swatch" style="background:var(--dim)"></i> reports what happened</span>
-  <span><i class="swatch" style="background:var(--refuse)"></i> can stop the pass</span>
+  <span><i class="swatch" style="background:var(--refuse)"></i> can stop the attempt</span>
   <span><i class="swatch" style="background:var(--route)"></i> decides where it goes next</span>
 </div>
 
@@ -429,7 +429,7 @@
       <div class="name">prepared</div>
       <div class="for">Getting the tree workable — install, generate, whatever it needs.
         <b>The cheapest place to stop</b>: nothing has been paid for yet.</div>
-      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+      <div class="facts"><span class="tag ref">can stop the attempt</span></div>
     </div>
   </div>
   <div class="step">
@@ -456,7 +456,7 @@
       <div class="name">build</div>
       <div class="for">Is it green. <b>A red one skips the review</b> — no point paying an agent to
         read a diff that does not compile.</div>
-      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+      <div class="facts"><span class="tag ref">can stop the attempt</span></div>
     </div>
   </div>
   <div class="step">
@@ -487,7 +487,7 @@
       <div class="name">merge</div>
       <div class="for">Landing it. <b>Say why if it will not land</b> — usually somebody else's
         work landed first and the diff stopped being true.</div>
-      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+      <div class="facts"><span class="tag ref">can stop the attempt</span></div>
     </div>
   </div>
   <div class="step">
@@ -501,7 +501,7 @@
   </div>
 </div>
 
-<h2>What you tell the pass when you are done</h2>
+<h2>What you tell the attempt when you are done</h2>
 <p class="sub">Four things any step can say, and two more where they mean something.</p>
 
 <div class="scroll">
@@ -512,7 +512,7 @@
     <tr><td>held</td><td>a person is needed, and here is the question to ask them</td></tr>
     <tr><td>did-not-finish</td><td><b>you could not tell</b> — you crashed, timed out, never got an answer</td></tr>
     <tr><td>never-ran</td><td>you did not start at all</td></tr>
-    <tr><td>refused</td><td>you read it and it is wrong. <b>Only at the three that can stop the pass</b></td></tr>
+    <tr><td>refused</td><td>you read it and it is wrong. <b>Only at the three that can stop the attempt</b></td></tr>
     <tr><td>routed</td><td>go here next. <b>Only at <code>proposed</code></b></td></tr>
   </tbody>
 </table>
@@ -537,8 +537,8 @@
     judge: always-waiting</code></pre>
 
 <p><strong>What you do not choose is what it costs.</strong> Sending the work back spends another
-  round; your recipe says how many rounds a pass may buy and how many passes a ticket may buy. When
-  there is no budget left the pass comes to you anyway — <strong>and it tells you which limit ran
+  round; your recipe says how many rounds an attempt may buy and how many attempts a ticket may buy. When
+  there is no budget left the attempt comes to you anyway — <strong>and it tells you which limit ran
   out</strong>, rather than quietly doing something else.</p>
 
 <p class="note">That is the one thing that cannot be yours. A plugin free to send the work anywhere
@@ -568,10 +568,10 @@
   </li>
   <li>
     <h3>Restart — and only step 2 needs it</h3>
-    <p><strong>Editing your recipe never needs a restart.</strong> It is read fresh on every pass;
+    <p><strong>Editing your recipe never needs a restart.</strong> It is read fresh on every attempt;
       change it and the next one sees it.</p>
     <p><strong>New code does.</strong> The daemon holds the code it started with. So if you declare
-      a plugin it has not loaded, <em>every</em> pass is refused until it restarts — which looks
+      a plugin it has not loaded, <em>every</em> turn is refused until it restarts — which looks
       like the machine has died. <strong>Land the code, restart, then edit the recipe.</strong></p>
   </li>
   <li>
@@ -596,18 +596,18 @@
         steps it does serve.</td>
     </tr>
     <tr>
-      <td>the whole recipe is refused, every pass</td>
+      <td>the whole recipe is refused, every turn</td>
       <td>You edited the recipe before restarting. The daemon does not know this plugin yet.</td>
     </tr>
     <tr>
       <td>it runs twice</td>
-      <td>That is a fix round — a pass can visit a step more than once. Look at the history you
+      <td>That is a fix round — an attempt can visit a step more than once. Look at the history you
         were handed if you need to tell which visit you are on.</td>
     </tr>
     <tr>
       <td>it is declared and nothing happens</td>
       <td>This should be impossible: a plugin with no function for a step is refused before the
-        pass starts, never silently skipped.</td>
+        attempt starts, never silently skipped.</td>
     </tr>
   </tbody>
 </table>

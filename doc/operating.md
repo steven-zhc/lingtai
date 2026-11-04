@@ -131,7 +131,7 @@ Give the test database its schema the same way the main one gets it, with
 (#275): `.lingtai/config.yaml`'s `env.required` is `[]`, written out rather
 than left absent, because nothing the gate runs still needs it. But nothing
 reads that copy — the conducting machine's own
-`~/.lingtai/lingtai/recipe.yml` is what a pass actually resolves, and it still
+`~/.lingtai/lingtai/recipe.yml` is what an attempt actually resolves, and it still
 names `LINGTAI_TEST_DATABASE_URL` until somebody copies this block over by
 hand. **Without it, every run against this repository refuses by name before
 it claims anything** (0021). An operator who wants the `ON_POSTGRES` files
@@ -428,7 +428,7 @@ env:
   # writes.
   #
   # `required` means what it says: a name here with no value in any layer
-  # refuses this project for the whole pass, before an issue is claimed and
+  # refuses this project for the whole turn, before an issue is claimed and
   # before an agent is started.
   required:
     - LOCAL_DATABASE_URL
@@ -458,7 +458,7 @@ steps:
 
 **The recipe's `runtime:` block is the whole of how this project's work is run**:
 which runtime runs a step that names none (`agent`, `#372`), whose tickets it
-takes (`assignee`, `#373`) and what one of its passes may spend (`limits`,
+takes (`assignee`, `#373`) and what one of its attempts may spend (`limits`,
 `#375`). The machine file holds none of them.
 
 ```yaml
@@ -560,7 +560,7 @@ is **gone**, deleted with `#60`. The prefix is what made removing it safe, and
 see from the recipe was a guard nobody could audit from the repository it
 protects.
 
-**A declared name with no value refuses the whole project for that pass**, before
+**A declared name with no value refuses the whole project for that turn**, before
 the issue is claimed: no worktree, no agent, no money. This used to be a log
 line, and one run spent $0.97 over ten turns against a database it could not
 reach. See [0021](decisions-archive/0021-the-recipe-decides-the-environment.md), which
@@ -583,10 +583,10 @@ source:
 ```
 
 **The GitHub App is still required regardless.** `source.tickets: db` moves
-only the eight ticket verbs — not whether `lingtai add` or a pass can run at
+only the eight ticket verbs — not whether `lingtai add` or an attempt can run at
 all. `add()`'s second statement is `githubApp()`
 (`packages/conductor/src/onboard.ts:249`), which throws if
-`LINGTAI_GITHUB_APP_ID` is not set; every pass builds its client through
+`LINGTAI_GITHUB_APP_ID` is not set; every turn builds its client through
 `githubClientFor` (`packages/conductor/src/filter.ts:216-218`), which throws
 the same way before `ticketsFor` is ever reached; and `lingtai backlog
 accept` refuses by name (`apps/cli/src/backlog.ts:185`). There is no way to
@@ -624,7 +624,7 @@ says the work item is over. `lingtai close` is still how you end one.
 **What `db` does not do:**
 
 - No webhook. The daemon notices a new or changed ticket on its sweep (every
-  five minutes) or at the next pass completion — never at once.
+  five minutes) or at the next turn completion — never at once.
 - No web page. A ticket's `url` is always `null`, so a board card has no link.
 - No dependencies. `blockedBy` is always `0`; hold a chain by hand with
   `agent:hold`.
@@ -796,7 +796,7 @@ The queue orders by kind and then by number and knows nothing about a chain, so
 on, and an agent was dispatched against groundwork that did not exist (#131).
 Record a chain with GitHub's own **blocked by** on the issue, not as a table in
 a body: prose is for people and the queue cannot read it. Nothing is stored on
-this side — the ticket is offered again the pass after the last blocker closes,
+this side — the ticket is offered again the turn after the last blocker closes,
 exactly as removing `agent:hold` works.
 
 A closed blocker does not hold anything, and a repository whose GitHub reports
@@ -981,7 +981,7 @@ this run's. `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`
 and `approval_policy=never` stay as they are.
 
 **A config in a non-default directory.** `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
-are not in `RUNNABLE` (`packages/agent-env/src/index.ts:146`), so a pass drops
+are not in `RUNNABLE` (`packages/agent-env/src/index.ts:146`), so an agent run drops
 them and the runtime reads its default directory. Declare the name in the
 recipe's `env.required` and set it with `lingtai env set <project> <NAME>`
 (see above); the agent's environment is `runnableEnv({ ...env.values,
@@ -992,7 +992,7 @@ measured.
 
 - Linux without bubblewrap: the sandbox is unavailable there, and installing it
   is the user's runtime setup, not Lingtai's.
-- A full pass under the c4b sandbox. A commit from a Lingtai worktree writes
+- A full attempt under the c4b sandbox. A commit from a Lingtai worktree writes
   into the main checkout's `.git`, outside the worktree; whether Claude Code's
   sandbox allows that was not tried. If it does not, the agent fails visibly,
   which is the user's choice, as for any restriction that blocks its own work.
@@ -1037,7 +1037,7 @@ the lock.
 ```bash
 pnpm lingtai pause "the importer is flaky today"   # take nothing new
 pnpm lingtai resume
-pnpm lingtai shutdown "picking up #88"             # finish the pass, then stop
+pnpm lingtai shutdown "picking up #88"             # finish the attempt, then stop
 pnpm lingtai restart "picking up #88"              # …and start one again, checked
 pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
@@ -1049,8 +1049,8 @@ because a Stop button that means Pause is worse than no Stop button.
 
 **Shutdown is a pause the process does not come back from**
 ([0030](decisions-archive/0030-shutting-down-safely.md)). It appends and returns; the
-daemon reads it before its next pass, finishes the one in flight and exits. The
-boundary is the *pass* and not the agent — the gates, the merge lane and the
+daemon reads it before its next turn, finishes the attempt in flight and exits. The
+boundary is the *attempt* and not the agent — the gates, the merge lane and the
 `end` point all run after the agent exits — so a drain can take as long as the
 recipe's `runtime.limits.wall` (`1h` here, `2h` by default). The command says so
 rather than leaving it looking hung. There is no default timeout, deliberately:
@@ -1080,7 +1080,7 @@ system that is down and a person reading about why it may not come back up:
 - **a dirty worktree**, in the same refusal, for the same reason — code that no
   commit names.
 - **anything `lingtai doctor` failed on.** The failed checks are printed; the
-  thirty green ones are not. A failure whose own remedy is a restart — a pass
+  thirty green ones are not. A failure whose own remedy is a restart — an attempt
   refused by a process at a commit older than this checkout (#148) — is printed
   and does not refuse, since this is the command it asks for.
 - **a shutdown somebody else asked for**, because it is another person's
@@ -1101,13 +1101,13 @@ daemon in that terminal, unless a supervisor keeps one (below). **What makes
 it never two daemons is the lock, not the order of operations** — and losing the
 lock is not a daemon running. If anything takes it first, the restart starts
 nothing and exits non-zero: the winner may be a `lingtai run` that exits when its
-pass ends, or a copy something else started that read the drain before it was
+attempt ends, or a copy something else started that read the drain before it was
 withdrawn and drains straight back out, and either leaves no daemon. `lingtai
 doctor` says whether one is up; if none is, run `lingtai restart` again. Ctrl+C
 during the wait leaves the drain standing.
 
 The lock held with no fresh beacon is drained too, not just waited on: it is a
-`lingtai run`, which finishes its pass regardless, or a daemon whose beacon
+`lingtai run`, which finishes its attempt regardless, or a daemon whose beacon
 writes are failing, which would otherwise never exit. A lock or a beacon that
 could not be read refuses before anything is asked to stop.
 
@@ -1207,9 +1207,9 @@ pnpm lingtai board status --json   # the same three facts, for a script
 browser alone, which is what the supervisor's job passes. `--port <n>` serves
 this one run somewhere else.
 
-**The board gets `stop`, not `shutdown`.** `shutdown` means *finish the pass in
+**The board gets `stop`, not `shutdown`.** `shutdown` means *finish the attempt in
 flight*, and waits as long as `runtime.limits.wall` — an hour here. A board has
-no pass to finish, so a verb that waited for one would make you wait for
+no attempt to finish, so a verb that waited for one would make you wait for
 nothing, or read as though the conductor were draining when it was not.
 `lingtai board shutdown` does not exist and says so by name.
 
@@ -1334,7 +1334,7 @@ document (`conductor` and `board`, each with the supervisor's `lines` or why it
 could not be `unread`), and an unreadable supervisor is still that document, exiting 1.
 
 The board's two files carry none of the daemon's reasons. It detaches no agent,
-so its systemd unit leaves `KillMode` at the default; it finishes no pass, so
+so its systemd unit leaves `KillMode` at the default; it finishes no attempt, so
 neither file argues about a stop timeout. A generated file is the first thing
 anybody reads when a job did not come back, and the daemon's reasons would be
 false there.
@@ -1370,7 +1370,7 @@ started and prints *restarted … — the commit that was checked* — then says
 board is what did not come up, and where to start it alone. Reduced into one
 number it returned there instead: no confirmation, no checks, exit 1 over a
 daemon that is up and claiming tickets, and an operator told to drain a healthy
-one and wait out another pass for the same answer.
+one and wait out another attempt for the same answer.
 
 The two exits are `service`'s own: **3** is *the conductor did its half and the
 board's job would not stop*, **4** is *the conductor did its half and the board
@@ -1399,7 +1399,7 @@ that could not be read is printed as unread, and a `launchctl` that did not
 answer is printed as not answering, never as `not loaded`.
 
 `install` over a job the supervisor already has does not restart it, because
-that would signal the pass in flight. It writes the file and says when it takes
+that would signal the attempt in flight. It writes the file and says when it takes
 effect: launchd reads a plist only when it loads the job, so even a KeepAlive
 respawn keeps the old one; systemd has run `daemon-reload`, so the next start
 uses the new unit. `service restart` is what applies it now — on macOS
@@ -1409,7 +1409,7 @@ uses the new unit. `service restart` is what applies it now — on macOS
 **`shutdown` drains first and tells the supervisor last** (#174). The
 supervisor's own stop is a signal and a deadline — launchd SIGKILLs at its
 default `ExitTimeOut` of 20 seconds, systemd at `TimeoutStopSec`'s 90 — and a
-pass takes up to an hour. `service stop` used to send that signal: the daemon
+attempt takes up to an hour. `service stop` used to send that signal: the daemon
 began its drain and launchd killed the agent twenty seconds in. So `service
 shutdown` takes a place in the queue for the conductor lock, appends the request
 `lingtai shutdown` appends, waits until the lock is its own, and only then runs
@@ -1428,7 +1428,7 @@ A request already standing — anybody's, under your own name too — is
 refused and left alone, since the daemon running now may never read it. On a
 quiet daemon the wait is over at once. Ctrl+C during it tells the supervisor
 nothing and withdraws the request; a daemon that had already read it still
-exits after its pass, and the supervisor starts one that takes work, so run
+exits after its attempt, and the supervisor starts one that takes work, so run
 `service shutdown` again. `service stop` is gone and says so.
 
 `ExitTimeOut` and `TimeoutStopSec` are **deliberately left at their defaults.**
@@ -1522,11 +1522,11 @@ Nothing else in the system works that way, which is what makes it hard to see:
 
 | | lifetime | code |
 |---|---|---|
-| **daemon** — conductor, claim, hook socket, the pass, queue | one long-lived process | **frozen at startup** |
+| **daemon** — conductor, claim, hook socket, the attempt, queue | one long-lived process | **frozen at startup** |
 | `lingtai doctor` / `status` / `run` | fresh per invocation | current |
 | gates (`sh -c pnpm typecheck && pnpm test`) | fresh per invocation | current |
 | the board (`next dev`) | hot reload | current |
-| the recipe | read from `origin/main` each pass | current |
+| the recipe | read from `origin/main` each attempt | current |
 
 So a system left alone schedules with old logic, verifies with new code and
 reads new config — and that mix is worse than being uniformly stale. It cost 52
@@ -1634,11 +1634,11 @@ approve (`#150`): an item held for approval — after which an approval of the
 diff you sent back is refused, and while one is still merging the requeue is
 refused instead — or one
 that blocked — an integration that conflicted, a gate that failed for a reason
-that was never about the change — goes back to the queue, and the next pass cuts
+that was never about the change — goes back to the queue, and the next turn cuts
 a fresh branch from a base that has since moved. It refuses by naming the state
 the item is actually in, so *`ticket-lingtai-122` is claimed, not blocked* is the
 answer rather than "not blocked". `--note` is optional (`#424`): a requeue cuts
-a fresh pass with the recipe's own rounds again rather than overruling
+a fresh attempt with the recipe's own rounds again rather than overruling
 anything, and the actor is still recorded in `by`, so it is not anonymous
 either way. It appends the same `WorkItemUnblocked` the board's button does and
 makes no GitHub call — `reconcile` converges the label the block left behind.
@@ -1706,7 +1706,7 @@ pnpm lingtai run nextloom-ai-admin            # until nothing runnable is left
 **`--max` matters more than it looks.** Without it this drains the queue, and a
 queue you have not read is a bill you have not agreed to. Start bounded.
 
-A pass will not attempt the same work item twice, even though a failed run
+A turn will not attempt the same work item twice, even though a failed run
 releases it back into the queue — that is what stops a broken ticket from
 costing an agent call per lap. It stops with `exhausted` rather than `empty`
 when work remains that it has already tried, because those are different facts.
@@ -1719,7 +1719,7 @@ what the process did:
 ```
 
 **landed** the work item's stream says `TicketLanded` — by this run, or by
-the merge lane after somebody approved it on the board while the pass carried
+the merge lane after somebody approved it on the board while the attempt carried
 on. **held** it is blocked on a question a person now holds. **stopped** it
 ended, nothing landed, and nobody was asked anything. The exit code is non-zero
 only for that last count.
@@ -1733,8 +1733,8 @@ Every refusal names itself. The common ones:
 | `the GitHub App is not installed on …` | Step 3 above — install it on that repository. |
 | `the installation is missing permissions:` | Step 1's table; each gap is listed with what it has, what it needs and what it is for. |
 | `no recipe at ~/.lingtai/<project>/recipe.yml` | The recipe is yours and lives on this machine (0046 §3) — nothing is read from the repository, and nothing needs committing to it. The board's wizard writes a first one by reading the repository. |
-| `… names no runtime.agent — which one should run?` | Several runtimes are signed in and the recipe names none. Write `runtime.agent` in that project's recipe: it is the pass's own runtime, which a step's `agent:` overrides but does not replace, so it is needed even where every step names one. Lingtai does not pick one. |
-| `runtime: how a project's work is run is not configured in the machine file` | `~/.lingtai/config.yml` still has a `runtime:` or `projects:` section. Which runtime, whose tickets and what a pass may spend are each the recipe's (`#372`, `#373`, `#375`): move them into `~/.lingtai/<project>/recipe.yml` under `runtime:` and delete the section. Refused whole, rather than read as applied. |
+| `… names no runtime.agent — which one should run?` | Several runtimes are signed in and the recipe names none. Write `runtime.agent` in that project's recipe: it is the attempt's own runtime, which a step's `agent:` overrides but does not replace, so it is needed even where every step names one. Lingtai does not pick one. |
+| `runtime: how a project's work is run is not configured in the machine file` | `~/.lingtai/config.yml` still has a `runtime:` or `projects:` section. Which runtime, whose tickets and what an attempt may spend are each the recipe's (`#372`, `#373`, `#375`): move them into `~/.lingtai/<project>/recipe.yml` under `runtime:` and delete the section. Refused whole, rather than read as applied. |
 | `runtime: signed in — claude-code reports not signed in` | `lingtai doctor` asks in the environment a *run* gets, not yours. If you are signed in and this fails, that environment is missing something the credential store needs. `/login` will not help. |
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |
@@ -1742,11 +1742,11 @@ Every refusal names itself. The common ones:
 | `stopped at env: … declared in env.required and not set in ~/.lingtai/env/<project>.env` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. That file is the only place an agent's values come from — a name exported in your shell, or written in `~/.lingtai/config.yml`, never reaches it. |
 | `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions-archive/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
-| `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next pass asks GitHub again (#131). |
+| `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next turn asks GitHub again (#131). |
 | `stopped at prepare: the install action refused` | An action at the `prepared` point refused — usually dependencies that did not install in a fresh worktree. Nothing expensive ran; that is the point of failing here. |
 | `did not merge (stale): the card showed …` | The branch moved between reading and deciding. Reload and read it again. |
 | `a waiver needs a reason` | A waiver records who and why. Both, always. |
-| `stopped: exhausted — 1 run(s)` | The queue still has work; everything left has already been tried this pass. Not the same as `empty`. |
+| `stopped: exhausted — 1 run(s)` | The queue still has work; everything left has already been tried this turn. Not the same as `empty`. |
 
 ## The report page
 
@@ -1823,7 +1823,7 @@ Only `lingtai shutdown` appends and returns at once — a successful exit there
 means only that the request landed, never that the daemon is down.
 `lingtai service shutdown` is the one that waits: it queues for the conductor
 lock and does not unload the job until the drain finishes, so a successful
-exit there already means the daemon stopped — it is waiting on the pass in
+exit there already means the daemon stopped — it is waiting on the attempt in
 flight, not hung, and that wait can run as long as `runtime.limits.wall` (an
 hour, here). Either way, confirm against the daemon itself, not the command.
 Poll `lingtai doctor`'s **daemon: liveness** row until it reads `not running`
@@ -1833,7 +1833,7 @@ rather than `draining` or a beat within the last few seconds:
 pnpm lingtai doctor
 ```
 
-A pass that lands while the notes below are still being taken is exactly the
+An attempt that lands while the notes below are still being taken is exactly the
 gap this order closes, and it closes it only once that row says the daemon
 stopped.
 
@@ -1867,7 +1867,7 @@ it, add it in that project's `~/.lingtai/<project>/recipe.yml`: under
 field instead, rewriting all four of its fields together — `source.exclude`
 is then read by nothing, so editing it there changes nothing. Either way,
 labelling an issue before the matching line is edited changes nothing, and
-the queue offers it again next pass regardless.
+the queue offers it again next turn regardless.
 
 **The board is what the next two notes are read off, and `service shutdown`
 just stopped it.** The drain's `stopBoard` call is unconditional once the job
@@ -1885,7 +1885,7 @@ Read it for the two notes below, then take it down again —
 `pnpm lingtai board stop` — before moving on. Neither verb here touches the
 daemon or the supervisor: `board start` and `board stop` hold a lock of their
 own (`apps/cli/src/board.ts:218`), never the conductor's, so reading the board
-this way claims nothing and starts no pass.
+this way claims nothing and starts no attempt.
 
 **Note what is held, then hold it against the reset too.** A reset forgets
 which work items the log remembers as blocked, and the queue does not leave a
@@ -1896,7 +1896,7 @@ issue the board shows as held, before anything else:
 - read its ref, its `agent/<n>` branch (if any) and the question or diagnosis
   it is held on;
 - put `agent:hold` on the GitHub issue, so a queue running against the emptied
-  log does not offer it again the pass after the reset. [010](experiments/010-the-log-before-the-second-reset.md)
+  log does not offer it again the turn after the reset. [010](experiments/010-the-log-before-the-second-reset.md)
   is what skipping this looks like: *"the log no longer knew that #120, #155
   and #156 had landed, so the queue offered them again as runnable."*
 
@@ -1950,7 +1950,7 @@ is checked against `EVENTS` when the recipe resolves — `SubscribedEvent` in
 `packages/recipe/src/recipe.ts` refuses any entry that is not a name in the
 catalogue — so a recipe that still names a type the rename retired stops
 parsing the whole file, and `conduct.ts` answers `stage: "recipe"` for every
-ticket in that project from the next pass on. The repository's own copy of a
+ticket in that project from the next turn on. The repository's own copy of a
 subscriber list, if it has one, is edited by the same commit that renames the
 types; the recipe at `~/.lingtai/<project>/recipe.yml` is not — it is the one
 hand-written file per machine this page's own table above describes as
@@ -1963,7 +1963,7 @@ do.
 
 **Note every backlog decision too — a reset empties `finding_backlog` the
 same way.** `finding_backlog` is a reducer of this same log (#137): a decline is
-recorded there precisely so the next pass does not ask again, and an
+recorded there precisely so the next turn does not ask again, and an
 accepted-but-unopened entry lives there too. The reset forgets both, and this
 section's own *After* step rebuilds the projection to nothing. For every
 project noted above, before the reset:
@@ -2350,7 +2350,7 @@ writes.
 rate refresh prices a model that had no row, the conductor replays `spend`
 itself, so nothing needs running by hand. The replay is O(events) and runs
 inside the refresh, so a `shutdown` or `restart` waits for it. While it runs the
-daily ceiling answers *could not check* and takes no new work; a pass in flight
+daily ceiling answers *could not check* and takes no new work; an attempt in flight
 keeps going. If the replay does not finish, `lingtai doctor`'s `rates:` line
 warns and names `lingtai projection rebuild spend`.
 
