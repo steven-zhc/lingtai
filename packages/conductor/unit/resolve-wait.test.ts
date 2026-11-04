@@ -972,12 +972,12 @@ describe('resolveWait', () => {
       let readFailedOnce = false
       const flaky: EventStore = {
         ...store,
-        read: async (streamId, fromVersion) => {
+        head: async (streamId) => {
           if (streamId === CONTROL_STREAM && !readFailedOnce) {
             readFailedOnce = true
             throw new Error('connection terminated unexpectedly')
           }
-          return store.read(streamId, fromVersion)
+          return store.head(streamId)
         },
       }
 

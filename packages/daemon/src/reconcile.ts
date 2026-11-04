@@ -702,7 +702,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
     }
   }
 
-  const at = (await store.read(CONTROL_STREAM)).length
+  const at = await store.head(CONTROL_STREAM)
   await store.append(CONTROL_STREAM, at, [
     {
       type: 'Reconciled',

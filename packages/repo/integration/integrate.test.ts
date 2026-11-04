@@ -466,6 +466,7 @@ describe('integrate', () => {
     const unreachable: EventStore = {
       append: () => Promise.reject(dropped),
       read: () => Promise.reject(dropped),
+      head: () => Promise.reject(dropped),
       readTypes: () => Promise.reject(dropped),
       readAll: () => Promise.reject(dropped),
     }

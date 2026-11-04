@@ -450,7 +450,7 @@ async function requestContinuation(
   let lastError: unknown = null
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const at = (await store.read(CONTROL_STREAM)).length
+      const at = await store.head(CONTROL_STREAM)
       await store.append(CONTROL_STREAM, at, [
         {
           type: 'ContinueRequested',

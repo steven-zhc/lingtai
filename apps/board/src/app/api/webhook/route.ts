@@ -58,17 +58,18 @@ export async function POST(request: Request): Promise<Response> {
 
   if (!verdict.act) return new Response(`ignored: ${verdict.reason}`, { status: 200 })
 
-  const events = await eventStore.read(CONTROL_STREAM)
+  // The head is read before the events the decision rests on, so a delivery that
+  // lands in between makes the append fail rather than record a duplicate.
+  const at = await eventStore.head(CONTROL_STREAM)
+  const events = await eventStore.readTypes(CONTROL_STREAM, ['QueueChanged'])
   // GitHub retries on any non-2xx and re-sends the same delivery id. A repeat
   // is nearly harmless — the effect is "ask GitHub again" — but it still wakes
   // the conductor, and waking it four times for one issue is how a rate limit
   // is reached.
-  const seen = events.some(
-    (e) => e.type === 'QueueChanged' && (e.data as { delivery?: string }).delivery === verdict.delivery,
-  )
+  const seen = events.some((e) => (e.data as { delivery?: string }).delivery === verdict.delivery)
   if (seen) return new Response('already delivered', { status: 200 })
 
-  await eventStore.append(CONTROL_STREAM, events.length, [
+  await eventStore.append(CONTROL_STREAM, at, [
     {
       type: 'QueueChanged',
       actor: 'github',

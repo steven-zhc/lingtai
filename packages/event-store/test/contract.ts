@@ -149,6 +149,22 @@ export function describeEventStoreContract(
       expect(back.every((e) => e.streamId === mine)).toBe(true)
     })
 
+    describe('head', () => {
+      it('is 0 for a stream that does not exist', async () => {
+        expect(await (await store()).head(freshStream())).toBe(0)
+      })
+
+      it('equals read().length after a batch append, and ignores other streams', async () => {
+        const s = await store()
+        const id = freshStream()
+        await s.append(id, 0, [claimed('pass-1'), claimed('pass-2'), claimed('pass-3')])
+        expect(await s.head(id)).toBe(3)
+        expect(await s.head(id)).toBe((await s.read(id)).length)
+        await s.append(freshStream(), 0, [claimed('pass-4')])
+        expect(await s.head(id)).toBe(3)
+      })
+    })
+
     describe('readTypes', () => {
       const resumed = (by: string) => ({ type: 'ConductorResumed' as const, actor: 'conductor', data: { by } })
       const types = ['ConductorResumed'] as const
