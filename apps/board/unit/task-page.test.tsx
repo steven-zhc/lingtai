@@ -135,6 +135,7 @@ const task = (
     taskId: ITEM,
     waiting: { previous: null, next: null },
     inFlight: null,
+    startEstimate: null,
     unpushedMirror: null,
     standing: standingOf(own, runs),
     want: null,

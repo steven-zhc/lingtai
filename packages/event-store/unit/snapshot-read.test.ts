@@ -138,7 +138,20 @@ describe("readThroughSnapshot with 'all' over the attempt reducer", () => {
     await store.append(
       streamId,
       0,
-      history.slice(0, n).map((e) => ({ type: e.type, actor: e.actor, data: e.data }) as never),
+      // A store refuses the retired `PassRouted`; the same route is appended as a
+      // `ProposalRouted` that kept its evidence (`ended: null`).
+      history.slice(0, n).map((e) =>
+        e.type === 'PassRouted'
+          ? ({
+              type: 'ProposalRouted',
+              actor: e.actor,
+              data: {
+                ...(e.data as { offer: object }),
+                offer: { ...(e.data as { offer: object }).offer, ended: null },
+              },
+            } as never)
+          : ({ type: e.type, actor: e.actor, data: e.data } as never),
+      ),
     )
     const stored = await store.read(streamId)
     const snapshots = createMemorySnapshotStore(store)

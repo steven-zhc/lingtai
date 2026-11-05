@@ -475,7 +475,7 @@ describe('the block, for a ticket that has never run', () => {
  * and what is behind it are GitHub's; what is running is the log's.
  */
 describe('the queued panel', () => {
-  const FLIGHT: InFlight = { running: [{ project: 'lingtai', issue: '899' }], slots: 1 }
+  const FLIGHT: InFlight = { running: [{ project: 'lingtai', issue: '899', since: null }], slots: 1 }
   const panel = (queued: QueuedView | null, github?: Promise<TaskAnswer>, inFlight: InFlight | null = FLIGHT) =>
     renderToStaticMarkup(
       <Standing
@@ -509,6 +509,35 @@ describe('the queued panel', () => {
     expect(html).toContain('#120 · feature')
     expect(html).not.toContain('Where it is')
     expect(html).not.toContain('waiting for a conductor to take it')
+  })
+
+  it('draws the estimate under the sentence, with its inputs in the title', () => {
+    const NOW = Date.parse('2026-11-05T12:00:00Z')
+    const flight: InFlight = {
+      running: [{ project: 'lingtai', issue: '899', since: new Date(NOW - 10 * 60_000) }],
+      slots: 1,
+    }
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={NEVER_RUN}
+        project="lingtai"
+        issue={112}
+        taskId="ticket-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={{ ...QUEUED, position: 2, inLine: 2 }}
+        inFlight={flight}
+        startEstimate={{ typical: { ms: 40 * 60_000, count: 12 }, ceilingReached: false }}
+        now={NOW}
+      />,
+    )
+    // running ends in 30m, ticket 1 holds the slot until 70m: 70 minutes, about 1 hour.
+    expect(html).toContain('Estimate: likely to start in about 1 hour')
+    expect(html.indexOf('Estimate:')).toBeGreaterThan(html.indexOf('triage-summary'))
+    expect(html).toContain(
+      'median machine time of an attempt over the last 30 days: 40m (12 landed tickets) · 1 running, 1 slot · 1 ahead of it',
+    )
   })
 
   it('draws placeholders for what GitHub decides, and what is running at once', () => {

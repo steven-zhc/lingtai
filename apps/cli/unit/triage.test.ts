@@ -1250,9 +1250,9 @@ describe('waitTriage', () => {
       unavailable: [],
     }
     const routed = (why: string) =>
-      run('PassRouted', {
+      run('ProposalRouted', {
         runId,
-        offer,
+        offer: { ...offer, ended: null },
         reply: { _tag: 'Selected', candidate: 'hand-to-person', why },
         decision: { _tag: 'Selected', candidate: 'hand-to-person' },
       })

@@ -493,6 +493,7 @@ export async function preview(name: CaseName) {
     taskId: fixture.taskId,
     waiting: { previous: null, next: null },
     inFlight: null,
+    startEstimate: null,
     unpushedMirror: null,
     standing: { ...previewStanding, triageStatus: status },
     want: spec.result?._tag === 'TriageAdvised' ? spec.result.want : null,

@@ -17,7 +17,6 @@ import { emptyAttempt, reduceAttemptEvent, type AttemptState } from './attempt.t
 import {
   Finding,
   Invocation,
-  PassRouted,
   RunKeptUncommitted,
   RunProducedDiff,
   RunRefsPublished,
@@ -27,6 +26,7 @@ import {
 } from './events.ts'
 import { PromptRefEntry } from './prompt-ref.ts'
 import type { Reducer } from './reducer.ts'
+import { StoredRoute } from './routing.ts'
 import { firstDifference } from './ticket-codec.ts'
 
 const IsoDate = z.iso.datetime().transform((s) => new Date(s))
@@ -80,7 +80,15 @@ const StoredRun = z.strictObject({
   headSha: z.string().nullable(),
   produced: RunProducedDiff.nullable(),
   failure: z.strictObject({ kind: z.enum(RUN_FAILURE_KINDS), detail: z.string() }).nullable(),
-  refusal: z.strictObject({ key: z.string(), evidence: z.string(), findings: z.array(Finding) }).nullable(),
+  refusal: z
+    .strictObject({
+      key: z.string(),
+      evidence: z.string(),
+      findings: z.array(Finding),
+      endedVersion: z.number(),
+      action: z.string(),
+    })
+    .nullable(),
   touched: z.array(z.strictObject({ path: z.string(), op: z.enum(['edit', 'write', 'delete']) })),
   compactedAtTurns: z.array(z.number()),
   prompts: z.number(),
@@ -103,7 +111,7 @@ const StoredRun = z.strictObject({
   implementRound: z.number(),
   roundsOpened: z.array(z.number()),
   receipt: z.strictObject({ exitCode: z.number(), turns: z.number(), durationMs: z.number() }).nullable(),
-  route: PassRouted.nullable(),
+  route: StoredRoute.nullable(),
   published: RunRefsPublished.nullable(),
   kept: z.array(RunKeptUncommitted),
   version: z.number(),
@@ -159,7 +167,9 @@ export const attemptReducer: Reducer<AttemptState> = {
   name: 'attempt',
   // 2: a `RunPrompted` for implement round 0 now folds into `prompt` (#928); a
   // version-1 snapshot may have been cut by a reducer that ignored it.
-  version: 2,
+  // 3: a `ProposalRouted` folds like a `PassRouted` (#932), and `refusal` names
+  // the `StepEnded` version and action it came from.
+  version: 3,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

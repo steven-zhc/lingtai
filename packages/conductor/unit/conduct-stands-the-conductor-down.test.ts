@@ -465,7 +465,7 @@ describe('when an agent inside the pass produces no verdict', () => {
       decision: { _tag: 'Selected', candidate: 'fix-lines' },
       next: { _tag: 'FixRound', to: 'implement', round: 1 },
     })
-    const passRouted = run.find((e) => e.type === 'PassRouted')!.data as PayloadOf<'PassRouted'>
+    const passRouted = run.find((e) => e.type === 'ProposalRouted')!.data as PayloadOf<'ProposalRouted'>
     expect((passRouted.reply as { why: string }).why).toContain('same-worktree')
     // And the run that reached it was paid for, which is what makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.

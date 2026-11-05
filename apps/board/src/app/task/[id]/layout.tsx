@@ -188,6 +188,7 @@ export function TaskBody({
               : null
           }
           inFlight={task.inFlight}
+          startEstimate={task.startEstimate}
           want={task.want}
           compareUrl={task.ticket?.compareUrl ?? null}
           taskId={task.taskId}

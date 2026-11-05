@@ -126,10 +126,10 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "'IssueUpdateFailed', // the update threw",
   },
   {
-    event: 'PassRouted',
+    event: 'ProposalRouted',
     why: 'the event is built, then handed on',
     file: 'packages/conductor/src/conduct.ts',
-    anchor: "type: 'PassRouted' as const,",
+    anchor: "type: 'ProposalRouted' as const,",
   },
   {
     event: 'ProjectRecovered',
@@ -267,6 +267,7 @@ export const STREAMS = {
   IntegrationSucceeded: ['int-'],
   BaseChecked: ['int-'],
   PassRouted: ['pass-'],
+  ProposalRouted: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
   ConductorShutdownRequested: ['ctl-'],

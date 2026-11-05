@@ -25,6 +25,7 @@ import { z } from 'zod'
 import { StepOutcome, WaitId } from './action.ts'
 import { PromptRefEntry } from './prompt-ref.ts'
 import { JudgeWhen } from './proposal.ts'
+import { StoredProposal, copiedFieldsOf } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
 import { ChildTicket, Dependency } from './split.ts'
@@ -1428,16 +1429,9 @@ export const BaseChecked = z.object({
  * decision it chose from** (0120 §3, §5) — the one event this replaced
  * `FixRequested`, `PassRestarted` and `FixDeclined` with.
  *
- * `offer` depends on the recipe and the spend at that moment; `reply` on the
- * judge. Neither is a pure function of the other two, so both are stored.
- * `next` is not: a reader replays `routeNext(offer, reply, decision)`
- * (`@lingtai/domain`'s `routing.ts`) rather than trusting a fourth, derived
- * field to agree with the three it was derived from. `offer.proposal` could
- * be recomputed from the `StepEnded` before this, and is kept on the event
- * anyway, so a reader of `PassRouted` alone never has to walk back to it.
- * `offer.ended` names that `StepEnded` — its `version` on this stream and the
- * deciding action's name — or is `null` where none produced the proposal, and
- * absent on a route written before it (#931).
+ * **Retired by `ProposalRouted` (#932)**: it repeated the findings and command
+ * output of the `StepEnded` it routed, and 0100 §14 rules that copy out. It is
+ * kept for ever to be read, and `store.append` refuses it.
  *
  * A `Selected{candidate: 'restart'}` decision also appends
  * `TicketReleased{cause: Restart{restart}}` on the work item's stream, in
@@ -1450,7 +1444,7 @@ export const BaseChecked = z.object({
  * thing that knows the offer, the reply and the decision together, and
  * `conduct.ts` writes what it returns.
  *
- * @summary The step after review chose where the ticket goes next, and the log keeps what it was offered and why it chose.
+ * @summary No longer written: the step after review chose where the ticket goes next; `ProposalRouted` replaced it.
  */
 export const PassRouted = z.object({
   runId: z.string(),
@@ -1458,6 +1452,59 @@ export const PassRouted = z.object({
   reply: JudgeReply,
   decision: RouteDecision,
 })
+
+/**
+ * **`proposed` chose, and the log holds the offer, the reply and the decision
+ * it chose from** (0120 §3, §5) — `PassRouted` without the copy (#932).
+ *
+ * `offer` depends on the recipe and the spend at that moment; `reply` on the
+ * judge. Neither is a pure function of the other two, so both are stored.
+ * `next` is not: a reader replays `routeMove` / `routeNext` (`routing.ts`)
+ * rather than trusting a derived field.
+ *
+ * **The proposal's findings, command output and `said` are not repeated**
+ * (0100 §14): they are on the run's `StepEnded` that `offer.ended` names — its
+ * `version` on this stream and the deciding action's name — and a reader gets
+ * the full proposal from `resolveOffer`. Where no `StepEnded` produced the
+ * proposal (`ended: null`) the evidence has nowhere else to live, so the
+ * proposal is stored whole. A value a reducer needs in its own state (a
+ * `WaitStarted`'s reason) is the exception 0100 §14 names, and stays where it
+ * is read.
+ *
+ * A `Selected{candidate: 'restart'}` decision also appends
+ * `TicketReleased{cause: Restart{restart}}` on the work item's stream, in that
+ * order. On the **run's** stream, appended after the walk returns.
+ *
+ * @summary The step after review chose where the ticket goes next; the log keeps the offer, and names the StepEnded that holds the evidence.
+ */
+export const ProposalRouted = z
+  .object({
+    runId: z.string(),
+    offer: RouteOffer.extend({
+      proposal: StoredProposal,
+      ended: z.object({ version: z.number().int().positive(), action: z.string() }).nullable(),
+    }),
+    reply: JudgeReply,
+    decision: RouteDecision,
+  })
+  .superRefine((d, ctx) => {
+    const p = d.offer.proposal as Record<string, unknown>
+    const copied = copiedFieldsOf(d.offer.proposal._tag)
+    const present = copied.filter((f) => p[f] !== undefined)
+    // A route that names its `StepEnded` carries none of the copy; one that
+    // cannot carries all of it.
+    const ok = d.offer.ended === null ? present.length === copied.length : present.length === 0
+    if (!ok) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          d.offer.ended === null
+            ? `a ProposalRouted with no \`ended\` must carry ${copied.join('/')}`
+            : `a ProposalRouted that names its StepEnded must not repeat ${copied.join('/')}`,
+        path: ['offer', 'proposal'],
+      })
+    }
+  })
 
 // --------------------------------------------------------------- control ----
 
@@ -2373,6 +2420,7 @@ export const EVENTS = {
   IntegrationSucceeded,
   BaseChecked,
   PassRouted,
+  ProposalRouted,
   ConductorPaused,
   ConductorResumed,
   ConductorShutdownRequested,
@@ -2467,7 +2515,8 @@ export const EVENT_AT = {
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],
   BaseChecked: ['proposed', 'end'],
-  PassRouted: ['review', 'proposed', 'end'],
+  PassRouted: [],
+  ProposalRouted: ['review', 'proposed', 'end'],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
   ConductorShutdownRequested: ['outside'],
@@ -2533,7 +2582,12 @@ export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
  * things and only the second can be enforced: stop writing them, and keep
  * reading them for ever.
  */
-export const RETIRED: ReadonlySet<EventType> = new Set<EventType>(['OutboxDelivered', 'OutboxFailed', 'TicketLinked'])
+export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
+  'OutboxDelivered',
+  'OutboxFailed',
+  'TicketLinked',
+  'PassRouted',
+])
 
 export function isRetiredEventType(t: string): boolean {
   return isEventType(t) && RETIRED.has(t)

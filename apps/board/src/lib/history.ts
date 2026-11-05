@@ -30,8 +30,8 @@
  * Pure, and its own module for that reason: `task.ts` reaches the database and
  * GitHub, and what a row *says* is testable without either.
  */
-import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
-import { boardFactOf, fromOf, routeNext, waitWords } from '@lingtai/domain'
+import type { BoardFact, Envelope, EventType, PayloadOf, StepOutcome } from '@lingtai/domain'
+import { boardFactOf, fromOf, resolveOffer, routeMove, routeNext, waitWords } from '@lingtai/domain'
 import type { ClaimShape } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
@@ -104,6 +104,13 @@ export interface LineContext {
   branch?: string
   /** Set by `groupHistory` on a `TicketClaimed` / `TicketContinued`, which is the only place the stream before it is known. */
   claim?: ClaimShape
+  /**
+   * The `StepEnded` outcomes on this event's own stream, by version — what a
+   * `ProposalRouted` names its evidence by (0100 §14, #932). Set by
+   * `groupHistory`; a caller with only the one event has none, and a route that
+   * needs one then says the evidence was not found.
+   */
+  endedAt?: (version: number) => StepOutcome | undefined
 }
 
 /** What a formatter reads besides its payload; `unknown` collects the ids it could not name. */
@@ -448,30 +455,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * `packages/conductor`'s own reading of the offer and not this package's
    * to duplicate.
    */
-  PassRouted: (d, { branch }) => {
-    const data = d as unknown as PayloadOf<'PassRouted'>
-    const from = fromOf(data.offer.proposal)
-    const next = routeNext(data.offer, data.reply, data.decision, { runId: data.runId })
-    if (next._tag !== 'WaitOnPerson') {
-      // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
-      // reaching here with one is that mapping disagreeing with this one.
-      throw new Error(`PassRouted formatted as a wait, but routeNext answered ${next._tag}`)
-    }
-    // `PassRouted` is on the run's own stream, which carries no ticket id of
-    // its own — `branch` is `groupHistory`'s reading of that run's
-    // `RunStarted`, the one event on the stream that has one. Most
-    // `WaitReason`s never open on it at all (an agent's own question names
-    // no subject), so a missing branch is only a problem once `waitWords`
-    // actually reached for one — the one shape of sentence that does is
-    // `"${subjectOf} is waiting on you. …"`, and `subjectOf` reads as the
-    // empty string when `branch` is `''`. Falling back to the payload there,
-    // rather than rendering a sentence open on nothing, is rule 2.
-    const question = waitWords(next.reason, { branch: branch ?? '', base: '', findings: [] }).line
-    if (branch === undefined && question.trimStart().startsWith('is waiting on you')) {
-      throw new Error('PassRouted opens on a subject, but no branch was given')
-    }
-    return `${from} → waiting — ${clip(question)}`
-  },
+  PassRouted: routedLine,
+  ProposalRouted: routedLine,
 
   // -------------------------------------------------------------- control --
   // The commit is the row, not a detail under it. A start is the only moment a
@@ -572,6 +557,10 @@ type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { 
  * try/catch `FORMAT` gets, so a fact a formatter cannot fill (`WaitStarted`
  * with no `question` at all) falls to the fallback sentence.
  */
+/** Which `StepEnded` a route named and the reader was not given (#932). */
+const atVersion = (u: { version: number | null }): string =>
+  u.version === null ? '' : ` (StepEnded version ${u.version})`
+
 const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   StepEnded: (f) => {
     const head = stepAt({ step: f.step, action: f.action })
@@ -639,6 +628,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // so the destination a `for ${action}` clause used to name is still on the
   // page.
   RoundOpened: (f) => {
+    if (f.findingsUnknown !== undefined) return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}`
     const n = f.findings.length
     return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}`
   },
@@ -649,7 +639,10 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // own stream, which `attempts.ts`'s `lastRun` already reads (`TicketReleased`
   // is what used to repeat them here, and `#502`'s header says there is
   // nothing left for the release to repeat).
-  Restarted: (f) => `restart ${f.restart}`,
+  Restarted: (f) =>
+    f.evidenceUnknown === undefined
+      ? `restart ${f.restart}`
+      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}`,
 
   /**
    * Which kind of hold, then the question, then the move that was
@@ -691,6 +684,42 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
 }
 
 /**
+ * The row for a route that landed on a person, read the same whether the route
+ * kept the copy (`PassRouted`) or names its `StepEnded` (`ProposalRouted`,
+ * #932). A route whose `StepEnded` is not in the slice says so rather than
+ * showing an empty list.
+ */
+function routedLine(d: Payload, { branch, endedAt }: Reading): string {
+  const data = d as unknown as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
+  const from = fromOf(data.offer.proposal)
+  const move = routeMove(data.offer, data.reply, data.decision)
+  if (move._tag !== 'WaitOnPerson') {
+    // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
+    // reaching here with one is that mapping disagreeing with this one.
+    throw new Error(`a route formatted as a wait, but routeMove answered ${move._tag}`)
+  }
+  const resolved = resolveOffer(data.offer, endedAt ?? (() => undefined))
+  if (resolved._tag === 'Unresolved') {
+    return `${from} → waiting — the evidence was not found: ${resolved.why}`
+  }
+  const next = routeNext(resolved.offer, data.reply, data.decision, { runId: data.runId })
+  if (next._tag !== 'WaitOnPerson') {
+    throw new Error(`a route formatted as a wait, but routeNext answered ${next._tag}`)
+  }
+  // The run's own stream carries no ticket id — `branch` is `groupHistory`'s
+  // reading of that run's `RunStarted`. Most `WaitReason`s never open on it
+  // (an agent's own question names no subject), so a missing branch is only a
+  // problem once `waitWords` reaches for one: `"${subjectOf} is waiting on
+  // you. …"` reads as the empty string when `branch` is `''`. Falling back to
+  // the payload there, rather than rendering a sentence open on nothing, is rule 2.
+  const question = waitWords(next.reason, { branch: branch ?? '', base: '', findings: [] }).line
+  if (branch === undefined && question.trimStart().startsWith('is waiting on you')) {
+    throw new Error('a route opens on a subject, but no branch was given')
+  }
+  return `${from} → waiting — ${clip(question)}`
+}
+
+/**
  * What a row says, and the ids it could not name as an attempt of this ticket.
  * Never the empty string, and never the payload — see rule 2 above.
  *
@@ -708,7 +737,7 @@ function read(event: Envelope, ctx: LineContext): { said: string; unknown: strin
   const r: Reading = { ...ctx, streamId: event.streamId, unknown: new Set() }
   const done = (said: string) => ({ said, unknown: [...r.unknown] })
   try {
-    const facts = boardFactOf(event)
+    const facts = boardFactOf(event, ctx.endedAt ?? (() => undefined))
     // One event may answer several facts since #502 — a `StepEnded` names
     // one per action the step declared, and a `PassRouted` may open a round
     // and record a restart at once. One row still renders one sentence, so
