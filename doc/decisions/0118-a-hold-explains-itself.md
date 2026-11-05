@@ -334,7 +334,8 @@ which kind a wait was got inferred again in each place that needed it, from
      and advises nothing past `GrantFixRound` while the conflict is at most 5
      hunks (`CONFLICT_ROUND_HUNKS`): there `GrantFixRound` is recommended
      whatever resolution triage chose, shown beside triage's own words, and the
-     fix brief carries each divergent hunk's recommended answer. Above 5,
+     answers picked for its divergent hunks reach the round through the body
+     (§6). Above 5,
      triage's resolution stands. The person chooses before either
      action runs.
 
@@ -603,6 +604,18 @@ which kind a wait was got inferred again in each place that needed it, from
      and then the next attempt reads the body anyway.
    - The appended text is composed from the answers the person picked. It is
      editable, and it stops following the answers once it is edited.
+   - **A pick is the person's, so every resolution that sends an agent carries
+     it.** Triage's questions (an `UndecidedQuestion`'s, or a conflict's
+     divergent hunks') are drawn with triage's recommended answer already
+     chosen, and a resolution made without changing one accepts it. So
+     _Continue fixing_ and _Requeue_ write the same section as _Write it into
+     the body_ before they resolve, composed from the answers chosen, or the
+     recommended ones where the resolution was made without the questions in
+     front of the person (the home card, the CLI). An answer to one of
+     triage's questions reaches an agent only this way, as the body, never as a
+     second section of its brief; a `FixableLines` round's lines, which offer
+     no choice, are still the brief's own section.
+     _Approve_, _Split_ and _Close_ send no agent and write nothing.
    - The requeue's reason is written for the person from those answers. They
      are not asked for one.
    - **Which advice a resolution answered is derived, never written.** A
@@ -650,8 +663,9 @@ which kind a wait was got inferred again in each place that needed it, from
      recipe choice, not a built-in default for every repository. When this
      automatic path cannot finish, triage lists the hunks and a question for
      each hunk whose behavior differs on the two sides, for a person to read.
-     The question is carried by the hunk it is about. They are advice: nothing
-     picked there reaches the grant. The page also shows the wait's paths and
+     The question is carried by the hunk it is about. The answers chosen there
+     are written into the body when the round is granted (§6), so the fixer
+     reads them as the ticket. The page also shows the wait's paths and
      GitHub's compare view, or the two shas when no compare URL is known.
    - **A conflict is answered by `GrantFixRound` with the conflict brief.**
      The agent merges the latest base into the preserved branch, resolves the
