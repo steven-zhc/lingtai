@@ -23,8 +23,11 @@ import { describe, expect, it } from 'vitest'
 
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
+import { sinceText } from '../src/lib/progress.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import type { RunningPanelView } from '../src/lib/running.ts'
+
+const NOW = Date.parse('2026-11-05T00:00:13.000Z')
 import {
   currentTriageStatus,
   currentWaitWant,
@@ -1197,6 +1200,17 @@ describe('the block, rendered', () => {
       line: { kind: 'step', step: 'build', actions: ['pnpm test'] },
       ask: 'Nothing is needed from you.',
       then: ['review', 'merge'],
+      meters: {
+        runId: 'r1',
+        round: { since: '2026-11-05T00:00:00.000Z', budget: '1h', of: 'round 1 of 4' },
+        attempt: {
+          since: '2026-11-05T00:00:00.000Z',
+          turns: '0 turns in agent runs that have ended',
+          ceiling: 'at most 150 turns a run',
+          behind: null,
+        },
+        cost: { text: 'nothing billed yet: no agent run has ended', ceiling: 'at most $5.00 a run', behind: null },
+      },
     }
     const html = renderToStaticMarkup(
       <Standing
@@ -1208,6 +1222,7 @@ describe('the block, rendered', () => {
         discussions={[]}
         outgoing={null}
         queued={null}
+        now={NOW}
       />,
     )
     const panel = html.slice(html.indexOf('data-rank="running"'))
@@ -1215,6 +1230,13 @@ describe('the block, rendered', () => {
     expect(panel).toContain('Nothing is needed from you.')
     expect(panel).toContain('review → merge, unless a step sends it back.')
     expect(panel.indexOf('data-rank="discussion"')).toBeGreaterThan(0)
+    expect(panel).toContain('This round')
+    expect(panel).toContain('at most 150 turns a run')
+    expect(panel).toContain('at most $5.00 a run')
+    expect(panel).toContain('nothing billed yet')
+    expect(panel).not.toContain('$0.00')
+    // The server's markup is `sinceText(iso, serverNow)` — no clock read.
+    expect(panel).toContain(`>${sinceText('2026-11-05T00:00:00.000Z', NOW)}</span>`)
     expect(html).not.toContain('an agent is working')
     expect(html.match(/data-rank="discussion"/g)).toHaveLength(1)
     expect(html).not.toContain('data-rank="so-what"')

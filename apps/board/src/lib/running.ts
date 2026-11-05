@@ -1,6 +1,29 @@
+import { inWords } from '@lingtai/conductor/queue'
 import { SEVERITIES, STEPS, type Finding, type Step } from '@lingtai/domain'
+import type { SpendRow } from '@lingtai/projector'
 
+import { billOf, billText, grantedOf, spendChip, totalBill, type SpendCurrency } from './spend.ts'
 import type { AttemptView } from './task.ts'
+
+/** What only the caller that has read `spend` and the recipe can hand in. */
+export interface RunningContext {
+  rows: readonly SpendRow[]
+  currency: SpendCurrency
+  /** The recipe's rounds ceiling; null when unreadable. */
+  rounds: number | null
+}
+
+/**
+ * The three meters (#916): words, plus the ISO instants the clocks count from.
+ * **The ceilings are for one agent run, never the attempt** (0118 §2).
+ */
+export interface RunningMeters {
+  runId: string
+  /** The phase against its wall limit. Null between steps. */
+  round: { since: string; budget: string | null; of: string | null } | null
+  attempt: { since: string; turns: string; ceiling: string | null; behind: string | null }
+  cost: { text: string; ceiling: string | null; behind: string | null }
+}
 
 /** A running ticket's panel, as the page draws it (0118 §2). Pure: events in, words out. */
 export interface RunningPanelView {
@@ -16,6 +39,8 @@ export interface RunningPanelView {
   ask: string
   /** The steps left that the recipe puts something at. Null when no plan is recorded. */
   then: Step[] | null
+  /** Null where the caller had no spend or recipe to measure against. */
+  meters: RunningMeters | null
 }
 
 const stepOfKey = (key: string): string => key.slice(0, key.indexOf(':') === -1 ? undefined : key.indexOf(':'))
@@ -23,7 +48,45 @@ const stepOfKey = (key: string): string => key.slice(0, key.indexOf(':') === -1 
 const worstFirst = (findings: readonly Finding[]): Finding[] =>
   [...findings].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity))
 
-export function runningPanelOf(run: AttemptView): RunningPanelView {
+function metersOf(run: AttemptView, ctx: RunningContext): RunningMeters | null {
+  const progress = run.progress
+  if (progress === null || progress === undefined) return null
+  const now = progress.now
+  const stepNow = run.stepNow
+
+  let of: string | null = null
+  if (stepNow !== null && stepNow.step === 'implement' && stepNow.round > 0) {
+    const n = stepNow.round
+    of = grantedOf(ctx.rows).some((g) => g.round === n)
+      ? `round ${n}, granted`
+      : ctx.rounds === null || ctx.rounds <= 0
+        ? `round ${n}`
+        : `round ${n} of ${ctx.rounds}`
+  }
+
+  const chip = spendChip(ctx.currency)
+  const behind = chip.current ? null : chip.label
+  const turns = ctx.rows.reduce((a, r) => a + r.turns, 0)
+  const limits = run.limits
+  return {
+    runId: run.runId,
+    round: now === null ? null : { since: now.since, budget: now.budgetMs === null ? null : inWords(now.budgetMs), of },
+    attempt: {
+      since: progress.since,
+      turns: `${turns} turn${turns === 1 ? '' : 's'} in agent runs that have ended`,
+      ceiling: limits?.turns === undefined ? null : `at most ${limits.turns} turns a run`,
+      behind,
+    },
+    cost: {
+      text:
+        ctx.rows.length === 0 ? 'nothing billed yet: no agent run has ended' : billText(totalBill(billOf(ctx.rows))),
+      ceiling: limits?.usd === undefined ? null : `at most $${limits.usd.toFixed(2)} a run`,
+      behind,
+    },
+  }
+}
+
+export function runningPanelOf(run: AttemptView, ctx: RunningContext | null): RunningPanelView {
   const now = run.stepNow
   const steps = run.progress?.steps ?? []
   const fix = now !== null && now.step === 'implement' && now.round > 0
@@ -79,5 +142,6 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
     line,
     ask: 'Nothing is needed from you.',
     then: anyPlan ? left : null,
+    meters: ctx === null ? null : metersOf(run, ctx),
   }
 }

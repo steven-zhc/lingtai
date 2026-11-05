@@ -219,6 +219,15 @@ export function spentOf(roundsOpened: readonly number[], granted: Granted): numb
   return Math.max(0, ...roundsOpened.filter((r) => !grantedRounds.has(r)))
 }
 
+/**
+ * How long ago `iso` was, at `now` (ms). Pure, so the server's first render and
+ * the client's first render of `<Since>` print the same text; a `now` before
+ * `iso` is `0s`.
+ */
+export function sinceText(iso: string, now: number): string {
+  return elapsed(now - Date.parse(iso))
+}
+
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
 export const AGENT = 'agent'
 
