@@ -2362,7 +2362,8 @@ export const EVENT_AT = {
   TicketClosed: ['outside'],
   DispatchRefused: ['claim'],
   RunStarted: [...AGENT_STEPS],
-  RunPrompted: [...AGENT_STEPS],
+  // Beside `RunSpent` since #923: a prompt carries the `for` its cost does.
+  RunPrompted: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
   RunTouchedFile: [...AGENT_STEPS],
   RunContextExhausted: [...AGENT_STEPS],
   RunAwaitingInput: [...AGENT_STEPS],
