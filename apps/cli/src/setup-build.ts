@@ -240,9 +240,14 @@ async function printFound(
   if (onPath === undefined) return
   // The first word is the manager (`uv`, `poetry`, `pnpm`…). ruff, mypy and
   // pytest come from the project's environment after install, so they are not
-  // probed; a probe that throws says nothing.
-  const commands = [detected.install?.run, ...detected.build.map((b) => b.run)]
-  const tools = new Set(commands.flatMap((c) => (c === undefined ? [] : [c.split(' ')[0]!])))
+  // probed; Go's tools come from no such environment, so all of them are. An
+  // entry whose first word is a shell builtin names its tool. A probe that
+  // throws says nothing.
+  const commands = [
+    detected.install === null ? undefined : { tool: undefined, run: detected.install.run },
+    ...detected.build,
+  ]
+  const tools = new Set(commands.flatMap((c) => (c === undefined ? [] : [c.tool ?? c.run.split(' ')[0]!])))
   for (const tool of tools) {
     try {
       if (!(await onPath(tool))) {

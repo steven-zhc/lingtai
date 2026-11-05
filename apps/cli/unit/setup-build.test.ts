@@ -641,6 +641,21 @@ describe('the PATH note', () => {
     expect(lines.filter((l) => l.includes('not on this machine'))).toHaveLength(1)
   })
 
+  it('the gofmt check probes gofmt, not the builtin test', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = world([])
+    await askInstallAndBuild(
+      w,
+      input({
+        reader: reader({ 'go.mod': 'module x\n' }),
+        files,
+        onPath: async (tool: string) => tool !== 'gofmt',
+      }),
+    )
+    expect(lines).toContain("gofmt is not on this machine's PATH; the conductor runs these commands here")
+    expect(lines.some((l) => l.startsWith('test is not'))).toBe(false)
+  })
+
   it('a probe that throws logs nothing', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w, lines } = world([])

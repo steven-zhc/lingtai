@@ -370,3 +370,63 @@ describe('the Python detector', () => {
     expect(result.notes).toContain('Python is also at the root; Node was used')
   })
 })
+
+describe('the Go detector', () => {
+  const GO = { 'go.mod': 'module x\n' }
+  const run = (r: ReturnType<typeof detectSetup>) => r.then((x) => x.build.map((b) => b.run))
+
+  it('go.mod alone gives the install and three build commands, the format check failing on output', async () => {
+    const result = await detectSetup(reader(GO))
+    expect(result.install).toEqual({ run: 'go mod download', because: 'go.mod is at the root' })
+    expect(result.build.map((b) => b.run)).toEqual(['test -z "$(gofmt -l .)"', 'go vet ./...', 'go test ./...'])
+    expect(result.build[0]?.tool).toBe('gofmt')
+  })
+
+  it.each(['.golangci.yml', '.golangci.yaml', '.golangci.toml'])('%s adds golangci-lint run', async (file) => {
+    const text = file.endsWith('.toml') ? 'a = 1\n' : 'linters:\n  enable: [govet]\n'
+    const result = await detectSetup(reader({ ...GO, [file]: text }))
+    expect(result.build.map((b) => b.run)).toEqual([
+      'test -z "$(gofmt -l .)"',
+      'go vet ./...',
+      'golangci-lint run',
+      'go test ./...',
+    ])
+    expect(result.build[2]?.because).toBe(`${file} is at the root`)
+  })
+
+  it('two configs: the first is used and a note names the second', async () => {
+    const result = await detectSetup(reader({ ...GO, '.golangci.yml': 'a: 1\n', '.golangci.toml': 'a = 1\n' }))
+    expect(result.build.map((b) => b.name)).toContain('lint')
+    expect(result.notes).toContain('.golangci.toml is also at the root; .golangci.yml was used')
+  })
+
+  it('a config that does not parse gets a note and no lint', async () => {
+    const result = await detectSetup(reader({ ...GO, '.golangci.yml': 'a: [1\n' }))
+    expect(result.notes).toContain('.golangci.yml does not parse')
+    expect(result.build.map((b) => b.name)).not.toContain('lint')
+  })
+
+  it('has(go.mod) rejecting is could-not-tell', async () => {
+    const result = await detectSetup({
+      has: async () => {
+        throw new Error('no')
+      },
+      read: async () => null,
+    })
+    expect(result.install).toBeNull()
+    expect(result.notes).toContain('could not tell whether a Go module is at the root')
+  })
+
+  it('vendor/ keeps the install and adds a note', async () => {
+    const result = await detectSetup(reader({ ...GO, vendor: '' }))
+    expect(result.install?.run).toBe('go mod download')
+    expect(result.notes.some((n) => n.startsWith('vendor/ is at the root'))).toBe(true)
+    expect(await run(Promise.resolve(result))).toHaveLength(3)
+  })
+
+  it('package.json plus go.mod: Node is used and a note names Go', async () => {
+    const result = await detectSetup(reader({ ...GO, 'package.json': pkg({ test: 'x' }), 'package-lock.json': '' }))
+    expect(result.install?.run).not.toBe('go mod download')
+    expect(result.notes).toContain(`Go is also at the root; Node was used`)
+  })
+})

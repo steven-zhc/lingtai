@@ -61,7 +61,9 @@ the default). `--defaults` skips that trial unless `--check-build yes` is given.
 Setup suggests install and build commands from the stack it detects at the
 repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
 Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
-and its neighbours configure. A Python project with only `requirements.txt` gets
+and its neighbours configure, and Go from `go.mod` (`go mod download`, then a
+`gofmt`, `go vet` and `go test` check, plus `golangci-lint run` only with a
+`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root). A Python project with only `requirements.txt` gets
 a note asking you to type the install command, not a suggestion.
 
 Open one ticket. This writes a complete request to a file and opens the ticket
