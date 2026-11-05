@@ -447,3 +447,83 @@ describe('the Go detector', () => {
     expect(result.notes).toContain(`Go is also at the root; Node was used`)
   })
 })
+
+describe('detectSetup — Java', () => {
+  const rejecting = (bad: string, files: Record<string, string>): SetupReader => ({
+    has: async (path) => {
+      if (path === bad) throw new Error('no')
+      return path in files
+    },
+    read: async () => null,
+  })
+  const commands = (r: Awaited<ReturnType<typeof detectSetup>>) => [r.install?.run ?? '', ...r.build.map((b) => b.run)]
+
+  it('Maven without a wrapper', async () => {
+    const r = await detectSetup(reader({ 'pom.xml': '' }))
+    expect(r.install).toEqual({ run: 'mvn -B -q dependency:go-offline', because: 'pom.xml is at the root' })
+    expect(r.build.map((b) => b.run)).toEqual(['mvn -B test'])
+    expect(r.build[0]!.tool).toBeUndefined()
+  })
+
+  it('Maven with mvnw uses it and probes java', async () => {
+    const r = await detectSetup(reader({ 'pom.xml': '', mvnw: '' }))
+    expect(r.install?.run).toBe('./mvnw -B -q dependency:go-offline')
+    expect(r.install?.tool).toBe('java')
+    expect(r.build[0]).toMatchObject({ run: './mvnw -B test', tool: 'java' })
+  })
+
+  it.each(['build.gradle', 'build.gradle.kts'])('Gradle from %s, no separate install', async (file) => {
+    const r = await detectSetup(reader({ [file]: '' }))
+    expect(r.install).toBeNull()
+    expect(r.build.map((b) => b.run)).toEqual(['gradle test'])
+    expect(r.build[0]!.because).toBe(`${file} is at the root`)
+    expect(r.notes.some((n) => n.startsWith('Gradle has no separate install'))).toBe(true)
+  })
+
+  it('Gradle with gradlew uses it', async () => {
+    const r = await detectSetup(reader({ 'build.gradle.kts': '', gradlew: '' }))
+    expect(r.build[0]).toMatchObject({ run: './gradlew test', tool: 'java' })
+  })
+
+  it('pom.xml plus build.gradle: Gradle wins and a note names pom.xml', async () => {
+    const r = await detectSetup(reader({ 'pom.xml': '', 'build.gradle': '' }))
+    expect(r.build[0]!.run).toBe('gradle test')
+    expect(r.notes).toContain('pom.xml is also at the root; build.gradle was used')
+  })
+
+  it('never suggests verify or check', async () => {
+    const cases: Record<string, string>[] = [
+      { 'pom.xml': '' },
+      { 'pom.xml': '', mvnw: '' },
+      { 'build.gradle': '' },
+      { 'build.gradle': '', gradlew: '' },
+    ]
+    for (const files of cases) {
+      for (const c of commands(await detectSetup(reader(files)))) expect(c).not.toMatch(/\b(verify|check)\b/)
+    }
+  })
+
+  it('names the 15m default timeout', async () => {
+    const r = await detectSetup(reader({ 'pom.xml': '' }))
+    expect(r.notes.some((n) => n.includes('15m'))).toBe(true)
+  })
+
+  it('has(build.gradle) rejecting beside pom.xml suggests nothing', async () => {
+    const r = await detectSetup(rejecting('build.gradle', { 'pom.xml': '' }))
+    expect(r.install).toBeNull()
+    expect(r.build).toEqual([])
+    expect(r.notes).toContain('could not tell whether build.gradle is at the root')
+  })
+
+  it('has(mvnw) rejecting suggests nothing rather than mvn', async () => {
+    const r = await detectSetup(rejecting('mvnw', { 'pom.xml': '' }))
+    expect(r.install).toBeNull()
+    expect(r.build).toEqual([])
+    expect(r.notes).toContain('could not tell whether mvnw is at the root')
+  })
+
+  it('has(pom.xml) rejecting is could-not-tell', async () => {
+    const r = await detectSetup(rejecting('pom.xml', {}))
+    expect(r.notes).toContain('could not tell whether pom.xml is at the root')
+  })
+})

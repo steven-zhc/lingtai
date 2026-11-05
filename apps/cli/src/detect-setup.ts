@@ -42,7 +42,8 @@ export const EMPTY_SETUP_READER: SetupReader = {
 }
 
 export interface DetectedSetup {
-  install: { run: string; because: string } | null
+  /** `tool` as on `build`: a wrapper's is `java`, since `./mvnw` is never on PATH. */
+  install: { run: string; because: string; tool?: string } | null
   /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`). */
   build: { name: string; run: string; because: string; tool?: string }[]
   skipped: { script: string; why: string }[]
@@ -532,7 +533,84 @@ const goDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector]
+const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
+
+/**
+ * Maven or Gradle from the build file's existence alone. Nothing is read or
+ * parsed: pom.xml is XML and a Gradle script is a program, no parser for
+ * either is a dependency here, and a malformed one fails in #436's trial.
+ * Gradle wins when both are present, as the ticket says.
+ */
+const javaDetector: StackDetector = {
+  stack: 'Java',
+  async detect(reader) {
+    const notes: string[] = []
+    const none = (presence: 'absent' | 'unknown'): StackFinding => ({
+      presence,
+      install: null,
+      build: [],
+      skipped: [],
+      notes,
+    })
+    let gradle: string | null = null
+    let gradleUnknown: string | null = null
+    for (const file of GRADLE_FILES) {
+      const found = await hasOrUnknown(reader, file)
+      if (found === 'unknown') gradleUnknown ??= file
+      else if (found && gradle === null) gradle = file
+    }
+    const pom = await hasOrUnknown(reader, 'pom.xml')
+
+    let tool: 'Maven' | 'Gradle'
+    let because: string
+    if (gradle !== null) {
+      tool = 'Gradle'
+      because = `${gradle} is at the root`
+      if (pom === true) notes.push(`pom.xml is also at the root; ${gradle} was used`)
+    } else if (gradleUnknown !== null) {
+      // A Gradle file that may exist would decide, so pom.xml cannot stand in for it.
+      notes.push(`could not tell whether ${gradleUnknown} is at the root`)
+      return pom === true ? { ...none('absent'), presence: 'present' } : none('unknown')
+    } else if (pom === 'unknown') {
+      notes.push('could not tell whether pom.xml is at the root')
+      return none('unknown')
+    } else if (pom) {
+      tool = 'Maven'
+      because = 'pom.xml is at the root'
+    } else return none('absent')
+
+    const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
+    const wrapper = await hasOrUnknown(reader, wrapperName)
+    if (wrapper === 'unknown') {
+      notes.push(`could not tell whether ${wrapperName} is at the root`)
+      return { ...none('absent'), presence: 'present' }
+    }
+    const cmd = wrapper ? `./${wrapperName}` : tool === 'Maven' ? 'mvn' : 'gradle'
+    const java = wrapper ? { tool: 'java' } : {}
+    // `test`, never `verify` or `check`: those often run integration tests.
+    const build = [
+      {
+        name: 'test',
+        run: tool === 'Maven' ? `${cmd} -B test` : `${cmd} test`,
+        because,
+        ...java,
+      },
+    ]
+    if (tool === 'Gradle') notes.push(`Gradle has no separate install; ${cmd} test resolves dependencies itself`)
+    notes.push(
+      `a cold ${tool} build downloads its dependencies first and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out`,
+    )
+    return {
+      presence: 'present',
+      install: tool === 'Maven' ? { run: `${cmd} -B -q dependency:go-offline`, because, ...java } : null,
+      build,
+      skipped: [],
+      notes,
+    }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector, javaDetector]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present

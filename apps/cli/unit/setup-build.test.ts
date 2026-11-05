@@ -656,6 +656,21 @@ describe('the PATH note', () => {
     expect(lines.some((l) => l.startsWith('test is not'))).toBe(false)
   })
 
+  it('a Maven wrapper probes java, not ./mvnw', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w, lines } = world([])
+    await askInstallAndBuild(
+      w,
+      input({
+        reader: reader({ 'pom.xml': '', mvnw: '' }),
+        files,
+        onPath: async (tool: string) => tool !== 'java',
+      }),
+    )
+    expect(lines).toContain("java is not on this machine's PATH; the conductor runs these commands here")
+    expect(lines.some((l) => l.includes('mvnw'))).toBe(false)
+  })
+
   it('a probe that throws logs nothing', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w, lines } = world([])
