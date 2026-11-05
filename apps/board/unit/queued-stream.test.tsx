@@ -3,6 +3,8 @@
  * literal values: the fallback a reader sees while GitHub is being asked, and
  * the answer — for a queue, for one project's failure and for every project's.
  */
+import { readFileSync } from 'node:fs'
+
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -22,8 +24,8 @@ import type { BoardCard, GithubQueue } from '../src/lib/board.ts'
 const card = (project: string, ref: string) => ({ project, ref, taskId: `${project}-${ref}` }) as unknown as BoardCard
 
 /** Names the cards and whether *taken first* was marked, which is all the list is asked. */
-const list: ListQueued = (cards, showProject, markNext) =>
-  `[${cards.map((c) => c.taskId).join(',')}|projects=${showProject}|next=${markNext}]`
+const list: ListQueued = (cards, showProject, markNext, arriving) =>
+  `[${cards.map((c) => c.taskId).join(',')}|projects=${showProject}|next=${markNext}|arriving=${[...arriving].join(',')}]`
 
 const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   cards: [],
@@ -43,11 +45,12 @@ describe('the Queued column while GitHub is being asked', () => {
       logCards={[card('lingtai', '1')]}
       onBoard={new Set(['lingtai'])}
       list={list}
+      count={2}
     />,
   )
 
   it('shows the log’s cards at once, without a claim about what is taken first', () => {
-    expect(out).toContain('[lingtai-1|projects=false|next=false]')
+    expect(out).toContain('[lingtai-1|projects=false|next=false|arriving=]')
   })
 
   it('shows a recipe that will not read, which GitHub cannot change', () => {
@@ -57,13 +60,33 @@ describe('the Queued column while GitHub is being asked', () => {
   it('says GitHub is being asked, and never that the column is empty', () => {
     expect(out).toContain(ASKING_COLUMN)
     expect(ASKING_COLUMN).toBe('asking GitHub for runnable issues…')
-    expect(html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} />)).not.toContain(
-      'Nothing here',
-    )
+    expect(
+      html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} count={2} />),
+    ).not.toContain('Nothing here')
   })
 
   it('holds the count at the log’s, marked as unfinished', () => {
-    expect(html(<QueuedCountPending logCount={3} />)).toContain('3…')
+    const out = html(<QueuedCountPending logCount={3} />)
+    expect(out).toContain('3<span class="ct-pulse"')
+    expect(out).not.toContain('3…')
+  })
+
+  const fallback = (count: number) =>
+    html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} count={count} />)
+
+  it('draws as many card skeletons as it is told, under the label', () => {
+    expect(fallback(3).match(/class="sk-card"/g)).toHaveLength(3)
+    expect(fallback(3)).toContain(ASKING_COLUMN)
+    expect(fallback(0)).not.toContain('sk-card')
+    expect(fallback(0)).toContain(ASKING_COLUMN)
+  })
+
+  it('stops the skeleton, the pulse and the fade under reduced motion', () => {
+    const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
+    const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{ \.sk-bar[^}]*\}[^}]*\}/)?.[0] ?? ''
+    expect(block).toContain('.sk-bar')
+    expect(block).toContain('.card.arrive')
+    expect(block).toContain('animation: none')
   })
 })
 
@@ -83,7 +106,7 @@ describe('the Queued column once GitHub has answered', () => {
 
   it('draws the log’s cards and GitHub’s as one list, with the first marked', () => {
     const out = render(answer({ cards: [card('lingtai', '2')] }))
-    expect(out).toContain('[lingtai-1,lingtai-2|projects=false|next=true]')
+    expect(out).toContain('[lingtai-1,lingtai-2|projects=false|next=true|arriving=lingtai-2]')
     expect(out).not.toContain(ASKING_COLUMN)
   })
 

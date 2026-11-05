@@ -15,6 +15,8 @@ import { Fragment, type ReactNode } from 'react'
 
 import { queuedSegment, type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
 
+import { Skeleton } from './skeleton'
+
 export const ASKING_COLUMN = 'asking GitHub for runnable issues…'
 export const ASKING_BAR = 'asking GitHub…'
 
@@ -22,7 +24,15 @@ export const ASKING_BAR = 'asking GitHub…'
  * Draws the Queued cards. `markNext` is false while GitHub is still being
  * asked: *taken first* is a claim about GitHub's offer too, and is not known.
  */
-export type ListQueued = (cards: BoardCard[], showProject: boolean, markNext: boolean) => ReactNode
+export type ListQueued = (
+  cards: BoardCard[],
+  showProject: boolean,
+  markNext: boolean,
+  /** Task ids of the cards that have just arrived from GitHub, which fade in (#897). */
+  arriving: ReadonlySet<string>,
+) => ReactNode
+
+const NONE: ReadonlySet<string> = new Set()
 
 function Problems({ problems }: { problems: readonly QueueProblem[] }) {
   return (
@@ -42,17 +52,20 @@ export function QueuedFallback({
   logCards,
   onBoard,
   list,
+  count,
 }: {
   unreadable: readonly QueueProblem[]
   logCards: BoardCard[]
   onBoard: ReadonlySet<string>
   list: ListQueued
+  /** How many card skeletons to draw: what GitHub offered last time, from `skeletonCount`. */
+  count: number
 }) {
   return (
     <>
       <Problems problems={unreadable} />
-      {logCards.length > 0 ? list(logCards, onBoard.size > 1, false) : null}
-      <p className="empty asking">{ASKING_COLUMN}</p>
+      {logCards.length > 0 ? list(logCards, onBoard.size > 1, false, NONE) : null}
+      <Skeleton shape="card" count={count} label={ASKING_COLUMN} />
     </>
   )
 }
@@ -83,6 +96,7 @@ export function QueuedAnswered({
   // changing the others (#884): accepted.
   const projects = new Set([...onBoard, ...github.cards.map((c) => c.project)])
   const problems = [...unreadable, ...github.problems]
+  const arriving = new Set(github.cards.map((c) => c.taskId))
   return (
     <>
       <Problems problems={problems} />
@@ -94,14 +108,19 @@ export function QueuedAnswered({
       {cards.length === 0 && problems.length === 0
         ? empty
         : cards.length > 0
-          ? list(cards, projects.size > 1, true)
+          ? list(cards, projects.size > 1, true, arriving)
           : null}
     </>
   )
 }
 
 export function QueuedCountPending({ logCount }: { logCount: number }) {
-  return <span className="ct">{logCount}…</span>
+  return (
+    <span className="ct">
+      {logCount}
+      <span className="ct-pulse" aria-hidden="true" />
+    </span>
+  )
 }
 
 export function QueuedCountAnswered({ logCount, github }: { logCount: number; github: GithubQueue }) {

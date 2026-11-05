@@ -18,6 +18,7 @@ import {
   issueUrl,
   loadBoard,
   queuedStanding,
+  skeletonCount,
   type BoardCard,
   type GithubQueue,
   LANDED_OPEN,
@@ -182,10 +183,13 @@ export function Card({
   showProject,
   issue,
   paused,
+  arrive = false,
 }: {
   card: BoardCard
   showProject: boolean
   issue: string | null
+  /** Fades in: GitHub's card, newly on the board (#897). */
+  arrive?: boolean
   /**
    * Whether the conductor is taking anything at all — one fact about the whole
    * installation, and one of the three states a Queued card can be in (#100).
@@ -245,7 +249,7 @@ export function Card({
   // the bar, and two places saying it is the drift #100 already named.
   const arm = card.progress !== null && card.column !== 'running' ? null : card.arm
   return (
-    <article className={`card ${accent(card)}`}>
+    <article className={`card ${accent(card)}${arrive ? ' arrive' : ''}`}>
       {/* Reference and kind are one fact — which ticket — so they are one line.
           Split apart, the kind read as a status badge, which it is not. */}
       <span className="id">
@@ -552,6 +556,7 @@ function Queued({
   issue,
   paused,
   markNext = true,
+  arriving,
 }: {
   cards: BoardCard[]
   order: string[]
@@ -560,6 +565,8 @@ function Queued({
   paused: boolean
   /** False while GitHub is still being asked: which group is taken first is not known yet (#884). */
   markNext?: boolean
+  /** Cards that have just arrived from GitHub, which fade in (#897). */
+  arriving: ReadonlySet<string>
 }) {
   return (
     <>
@@ -573,7 +580,14 @@ function Queued({
             {group.next ? <span className="qnext"> — taken first</span> : null}
           </p>
           {group.cards.map((card) => (
-            <Card key={card.taskId} card={card} showProject={showProject} issue={issue(card)} paused={paused} />
+            <Card
+              key={card.taskId}
+              card={card}
+              showProject={showProject}
+              issue={issue(card)}
+              paused={paused}
+              arrive={arriving.has(card.taskId)}
+            />
           ))}
         </Fragment>
       ))}
@@ -917,7 +931,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       unreadable={col.problems ?? []}
                       logCards={col.cards}
                       onBoard={onBoard}
-                      list={(cards, showProject, markNext) => (
+                      count={skeletonCount(askable.map((f) => f.project))}
+                      list={(cards, showProject, markNext, arriving) => (
                         <Queued
                           cards={cards}
                           order={queueOrder}
@@ -925,6 +940,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                           issue={ticket}
                           paused={control.paused}
                           markNext={markNext}
+                          arriving={arriving}
                         />
                       )}
                     />
@@ -935,7 +951,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                     unreadable={queuedColumn?.problems ?? []}
                     logCards={col.cards}
                     onBoard={onBoard}
-                    list={(cards, showProject, markNext) => (
+                    list={(cards, showProject, markNext, arriving) => (
                       <Queued
                         cards={cards}
                         order={queueOrder}
@@ -943,6 +959,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                         issue={ticket}
                         paused={control.paused}
                         markNext={markNext}
+                        arriving={arriving}
                       />
                     )}
                     empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}

@@ -893,6 +893,38 @@ export function lastKindColor(project: string, kind: string): string | null {
   return lastKindColors.get(project)?.[kind] ?? null
 }
 
+/**
+ * How many cards GitHub offered each project at its last answer (#897), so the
+ * Queued column's skeletons can be as many as will replace them. Per process,
+ * like the colours above: a restart forgets it, and `skeletonCount` says 2.
+ */
+const lastOffered = new Map<string, number>()
+
+/** Forgets every count, so a test can start from *no answer seen*. */
+export function forgetSkeletonCounts(): void {
+  lastOffered.clear()
+}
+
+/** The most skeletons the column draws, and what it draws before any answer. */
+const SKELETON_MOST = 3
+const SKELETON_UNKNOWN = 2
+
+/**
+ * How many card skeletons to draw for the projects in view: what they offered
+ * last time, summed and capped at 3; 2 when none of them has answered yet.
+ */
+export function skeletonCount(projects: readonly string[]): number {
+  let sum = 0
+  let seen = false
+  for (const p of projects) {
+    const n = lastOffered.get(p)
+    if (n === undefined) continue
+    seen = true
+    sum += n
+  }
+  return seen ? Math.min(sum, SKELETON_MOST) : SKELETON_UNKNOWN
+}
+
 export interface GithubQueue {
   /** What GitHub offers that the log has no card for. */
   cards: BoardCard[]
@@ -953,6 +985,7 @@ export async function githubQueue(
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
     lastKindColors.set(filter.project, offered.kindColors)
+    const before = cards.length
     // The same two sentences `lingtai status` prints, from the same functions,
     // so the column and the terminal cannot count a held ticket differently.
     const passed = passedOver(offered.skipped)
@@ -1017,6 +1050,7 @@ export async function githubQueue(
         progress: null,
       })
     }
+    lastOffered.set(filter.project, cards.length - before)
   }
   return { cards, problems, notes, asked: askable.length, answered }
 }

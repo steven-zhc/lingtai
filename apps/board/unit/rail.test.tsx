@@ -1234,11 +1234,11 @@ describe('the motion', () => {
     body: m[2] ?? '',
   }))
 
-  it('moves the running segment and nothing else on the card', () => {
+  it('moves the running segment and, once on insertion, a card GitHub newly offers (#897)', () => {
     const moving = animated.filter((r) => !/animation:\s*none/.test(r.body))
     const onCard = moving.filter((r) => CARD_CLASSES.some((c) => new RegExp(`\\.${c}\\b`).test(r.selector)))
 
-    expect(onCard.map((r) => r.selector)).toEqual(['.scell.t-run'])
+    expect(onCard.map((r) => r.selector)).toEqual(['.scell.t-run', '.card.arrive'])
   })
 
   it('holds still for a reader who has asked it to', () => {
