@@ -230,7 +230,7 @@ import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
-import { chosenIn, judgePrompt } from './judge-agent.ts'
+import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
@@ -2716,6 +2716,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         let threw = false
         // Built once, for the prompt record and for the `RunSpent` below (#923).
         const judgeFor: SpentFor = { _tag: 'Judge', when: on.when }
+        const judgeParts = judgePromptParts(on)
         const judgePromptText = judgePrompt(on)
         const outcome = await Effect.runPromise(
           Effect.scoped(
@@ -2728,7 +2729,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 recordPrompt(
                   store,
                   runId,
-                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgePromptText },
+                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgeParts },
                   log,
                 ).then(() =>
                   dispatched
@@ -4005,7 +4006,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         stoppedBy = 'interrupted'
         // The brief and the `for`, built once: each is recorded before the dispatch
         // and then handed to it / to the `RunSpent` below (#923).
-        const fixComposed = composePrompt([
+        const fixParts: RecordPart[] = [
           ...fixBriefParts({
             refusal,
             round,
@@ -4029,8 +4030,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Appended as a part, never to the finished string, so no recorded offset
           // depends on where the text before it happened to end.
           ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-        ])
-        const fixPrompt = fixComposed.handed
+        ]
+        const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
         const fixFor: SpentFor = {
           _tag: 'Action',
           step: 'implement',
@@ -4043,7 +4044,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         await recordPrompt(
           store,
           runId,
-          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixComposed },
+          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixParts },
           log,
         )
         const fixed = await Effect.runPromise(

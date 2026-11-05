@@ -21,7 +21,7 @@ import type { ActionFinding } from '@lingtai/actions'
 import { describe, expect, it } from 'vitest'
 
 import type { Judging } from '../src/attempt-steps.ts'
-import { chosenIn, judgePrompt } from '../src/judge-agent.ts'
+import { chosenIn, judgePrompt, judgePromptParts } from '../src/judge-agent.ts'
 
 const BLOCKER: ActionFinding = {
   file: 'packages/conductor/src/conduct.ts',
@@ -154,5 +154,25 @@ describe('what it answered', () => {
       next: 'waiting',
       why: 'it gave no reason',
     })
+  })
+})
+
+describe('judgePromptParts (#928)', () => {
+  const text = (parts: ReturnType<typeof judgePromptParts>) =>
+    parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
+
+  it('is judgePrompt byte for byte, with the printed output as the one step part', () => {
+    const on = { ...ARRIVED, evidence: 'FAIL src/a.test.ts\n' }
+    const parts = judgePromptParts(on)
+    expect(text(parts)).toBe(judgePrompt(on))
+    expect(parts.filter((part) => typeof part !== 'string')).toEqual([
+      { text: 'FAIL src/a.test.ts\n', onStep: { field: 'evidence', trimmed: false } },
+    ])
+  })
+
+  it('has no step part when the step printed nothing, and the cut text when it printed too much', () => {
+    expect(judgePromptParts({ ...ARRIVED, evidence: '  ' }).every((part) => typeof part === 'string')).toBe(true)
+    const long = judgePromptParts({ ...ARRIVED, evidence: 'x'.repeat(9_000) })
+    expect(long.find((part) => typeof part !== 'string')).toMatchObject({ text: 'x'.repeat(8_000) })
   })
 })

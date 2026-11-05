@@ -34,6 +34,7 @@ import type { ActionFinding } from '@lingtai/actions'
 import { STEPS } from '@lingtai/domain'
 
 import type { Judging } from './attempt-steps.ts'
+import type { RecordPart } from './record-prompt.ts'
 import type { Destination } from './run-attempt.ts'
 
 /**
@@ -85,6 +86,27 @@ function said(finding: ActionFinding): string {
  * choosing from is what is left.
  */
 export function judgePrompt(on: Judging): string {
+  return judgeText(on, on.evidence.slice(0, 8_000))
+}
+
+const EVIDENCE_SLOT = '\u0000evidence\u0000'
+
+/**
+ * `judgePrompt` as parts (#928): the step's printed output is an `onStep` part, so
+ * the record points at the `StepEnded` that holds it when its evidence is exactly
+ * what was pasted, and writes it out when the 8,000-character cut left it
+ * shorter. The text handed is `judgePrompt`'s, byte for byte.
+ */
+export function judgePromptParts(on: Judging): RecordPart[] {
+  const evidence = on.evidence.slice(0, 8_000)
+  if (on.evidence.trim() === '') return [judgePrompt(on)]
+  const pieces = judgeText(on, EVIDENCE_SLOT).split(EVIDENCE_SLOT)
+  // A NUL in a finding would make more than one slot; then it is one plain string.
+  if (pieces.length !== 2) return [judgePrompt(on)]
+  return [pieces[0]!, { text: evidence, onStep: { field: 'evidence', trimmed: false } }, pieces[1]!]
+}
+
+function judgeText(on: Judging, evidence: string): string {
   const offered = on.offering.map((to) => `- \`${to}\` — ${MEANS[to] ?? `run the \`${to}\` step again`}`).join('\n')
   return `# Which step is next
 
@@ -103,7 +125,7 @@ ${
 ${
   on.evidence.trim() === ''
     ? 'The step printed nothing beyond that.'
-    : `What the step printed:\n\n\`\`\`\n${on.evidence.slice(0, 8_000)}\n\`\`\``
+    : `What the step printed:\n\n\`\`\`\n${evidence}\n\`\`\``
 }
 
 ## The choices
