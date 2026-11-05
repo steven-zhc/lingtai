@@ -39,6 +39,7 @@ import {
   WIP_COMMIT_PREFIX,
   integrationStream,
   parsePayload,
+  stripEvidence,
   waitWords,
   DIFF_FLAGS,
 } from '@lingtai/domain'
@@ -4436,19 +4437,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             await appendAt(
               runId,
               pass.routes.map((route) => ({
-                type: 'PassRouted' as const,
+                type: 'ProposalRouted' as const,
                 actor: 'conductor',
                 // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
-                // own doc on `PassRouted`) — the five derived fields
+                // own doc on `ProposalRouted`) — the five derived fields
                 // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
                 // for this file's own reading (the run-log line above,
                 // `restartReason`, `nextPrompt`'s brief) but are not stored a
                 // second time; a reader of the event replays `routeNext`.
-                data: parsePayload('PassRouted', {
+                data: parsePayload('ProposalRouted', {
                   runId,
                   // `ended` is the `StepEnded` the proposal was taken from, recorded
-                  // when it was emitted: this batch comes after every lap (#931).
-                  offer: { ...route.offer, ended: route.ended },
+                  // when it was emitted: this batch comes after every lap (#931). The
+                  // findings and output are on it, so a route that names it does not
+                  // repeat them (0100 §14, #932); one that cannot name it keeps them.
+                  offer: {
+                    ...route.offer,
+                    proposal: route.ended === null ? route.offer.proposal : stripEvidence(route.offer.proposal),
+                    ended: route.ended,
+                  },
                   reply: route.reply,
                   decision: route.decision,
                 }),
@@ -4457,7 +4464,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           } catch (defect) {
             const why = whyOf(defect)
             runLog.note('route', `the ${pass.routes.length} route(s) were not appended — ${why}`)
-            log(`PassRouted was refused by the store: ${why}`)
+            log(`ProposalRouted was refused by the store: ${why}`)
           }
         })
       }

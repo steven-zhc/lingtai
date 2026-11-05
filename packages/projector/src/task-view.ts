@@ -62,6 +62,7 @@ import {
   isAttemptStream,
   isTicketStream,
   parseTicketStream,
+  roundFindingsOf,
   waitWords,
   WaitId,
 } from '@lingtai/domain'
@@ -645,8 +646,7 @@ export function runNoteOf(before: AttemptState, after: AttemptState): string | n
   }
   if (after.roundsOpened.length > before.roundsOpened.length) {
     const round = after.roundsOpened.at(-1)!
-    const proposal = after.route?.offer.proposal
-    const findings = proposal?._tag === 'ReviewFindings' ? proposal.findings.length : 0
+    const findings = roundFindingsOf(after) ?? 0
     return findings > 0 ? `fixing round ${round}: ${findings} finding(s)` : `fixing round ${round}`
   }
   if (after.failure !== null && JSON.stringify(before.failure) !== JSON.stringify(after.failure))

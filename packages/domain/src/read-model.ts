@@ -12,12 +12,11 @@
  * what the projections see, since they reduce in global `seq` order too.
  */
 import { isReached, type Reached, type StepOutcome, type WaitId } from './action.ts'
-import type { AttemptNext } from './attempt-next.ts'
 import { verdictOf, type StepVerdict } from './attempt.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import { fromOf } from './proposal.ts'
-import { routeNext, type RouteDecision } from './routing.ts'
+import { resolveOffer, routeMove, type RouteDecision, type RouteMove } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import { reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
@@ -82,20 +81,21 @@ export type RoutedPass = {
   readonly runId: string
   readonly from: Step
   readonly decision: RouteDecision
-  readonly next: AttemptNext
+  readonly next: RouteMove
 }
 
 /** Every `PassRouted` on the slice, with `routeNext`'s own answer replayed from the stored offer, reply and decision. */
 export function routesOf(events: readonly Envelope[]): RoutedPass[] {
   return events
-    .filter((e) => e.type === 'PassRouted')
+    .filter((e) => e.type === 'PassRouted' || e.type === 'ProposalRouted')
     .map((e) => {
-      const data = e.data as PayloadOf<'PassRouted'>
+      const data = e.data as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
       return {
         runId: data.runId,
         from: fromOf(data.offer.proposal),
         decision: data.decision,
-        next: routeNext(data.offer, data.reply, data.decision, { runId: data.runId }),
+        // The move never depends on the evidence (#932), so no proposal is resolved.
+        next: routeMove(data.offer, data.reply, data.decision),
       }
     })
 }
@@ -230,8 +230,15 @@ export type BoardFact =
       readonly round: number
       readonly action: string
       readonly findings: readonly Finding[]
+      /** The findings could not be read: the route names a `StepEnded` the reader was not given (#932). `version` is the one it names. */
+      readonly findingsUnknown?: { readonly version: number | null }
     }
-  | { readonly _tag: 'Restarted'; readonly restart: number }
+  | {
+      readonly _tag: 'Restarted'
+      readonly restart: number
+      /** The route's evidence could not be read, as for `RoundOpened.findingsUnknown` (#932). */
+      readonly evidenceUnknown?: { readonly version: number | null }
+    }
   | {
       readonly _tag: 'WaitStarted'
       readonly question: string | undefined
@@ -276,7 +283,7 @@ function boardStepEndedOf(outcome: StepOutcome, action: Reached): Extract<BoardF
 }
 
 /** `boardFactOf`'s one entry point — see the section header for what it does and does not answer. */
-export function boardFactOf(event: Envelope): BoardFact[] {
+export function boardFactOf(event: Envelope, endedAt: (version: number) => StepOutcome | undefined): BoardFact[] {
   switch (event.type) {
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
@@ -298,16 +305,38 @@ export function boardFactOf(event: Envelope): BoardFact[] {
       return facts
     }
 
-    case 'PassRouted': {
-      const d = event.data as PayloadOf<'PassRouted'>
-      const next = routeNext(d.offer, d.reply, d.decision, { runId: d.runId })
+    case 'PassRouted':
+    case 'ProposalRouted': {
+      const d = event.data as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
+      const next = routeMove(d.offer, d.reply, d.decision)
       const facts: BoardFact[] = []
       if (next._tag === 'FixRound') {
-        const findings = d.offer.proposal._tag === 'ReviewFindings' ? d.offer.proposal.findings : []
-        facts.push({ _tag: 'RoundOpened', round: next.round, action: '', findings })
+        const resolved = resolveOffer(d.offer, endedAt)
+        if (resolved._tag === 'Unresolved') {
+          facts.push({
+            _tag: 'RoundOpened',
+            round: next.round,
+            action: '',
+            findings: [],
+            findingsUnknown: { version: resolved.version },
+          })
+        } else {
+          const p = resolved.offer.proposal
+          facts.push({
+            _tag: 'RoundOpened',
+            round: next.round,
+            action: '',
+            findings: p._tag === 'ReviewFindings' ? p.findings : [],
+          })
+        }
       }
       if (next._tag === 'Requeued' && next.cause._tag === 'Restart') {
-        facts.push({ _tag: 'Restarted', restart: next.cause.restart })
+        const resolved = resolveOffer(d.offer, endedAt)
+        facts.push(
+          resolved._tag === 'Unresolved'
+            ? { _tag: 'Restarted', restart: next.cause.restart, evidenceUnknown: { version: resolved.version } }
+            : { _tag: 'Restarted', restart: next.cause.restart },
+        )
       }
       return facts
     }

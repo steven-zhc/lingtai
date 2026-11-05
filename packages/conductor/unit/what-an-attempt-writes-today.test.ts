@@ -390,7 +390,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepEnded',
       'StepStarted',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
     ])
     expectEveryPromptBesideItsSpend(theRun(store)!, ['Action:review', 'Action:implement'])
     // **`FixApplied` is gone (#502): the fix round's own `StepEnded{step:
@@ -538,7 +538,7 @@ runtime:
       'StepEnded',
       'RunPrompted',
       'RunSpent',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
@@ -687,7 +687,7 @@ runtime:
       'StepEnded',
       'RunPrompted',
       'RunSpent',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'StepEnded',
       'RunRefsPublished',
@@ -721,29 +721,8 @@ runtime:
             excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
           },
         },
-        next: {
-          _tag: 'WaitOnPerson',
-          reason: {
-            _tag: 'ProposedEscalated',
-            run: { runId: runId2 },
-            proposal: {
-              _tag: 'ReviewFindings',
-              findings: [
-                {
-                  file: 'src/fix.ts',
-                  line: 12,
-                  claim: 'the approach cannot work',
-                  failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
-                  severity: 'blocker',
-                },
-              ],
-            },
-            because: {
-              _tag: 'CandidateUnavailable',
-              excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
-            },
-          },
-        },
+        // The move needs no proposal (#932): a person is waited on.
+        next: { _tag: 'WaitOnPerson' },
       },
     ])
   })
@@ -800,7 +779,7 @@ runtime:
       'RunFinished',
       'RunSpent',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
@@ -882,8 +861,8 @@ runtime:
       'RunPrompted',
       'RunSpent',
       'StepEnded',
-      'PassRouted',
-      'PassRouted',
+      'ProposalRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
@@ -1002,7 +981,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunPrompted',
       'RunSpent',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'StepEnded',
       'RunRefsPublished',
@@ -1083,7 +1062,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'StepStarted',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'StepEnded',
       'RunRefsPublished',
@@ -1190,7 +1169,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'StepStarted',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'StepEnded',
       'RunRefsPublished',
@@ -1288,7 +1267,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunPrompted',
       'RunSpent',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
@@ -1439,7 +1418,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepEnded',
       'RunPrompted',
       'RunSpent',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'StepEnded',
       'RunRefsPublished',
@@ -1683,7 +1662,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'RunFailed',
       'RunSpent',
       'StepEnded',
-      'PassRouted',
+      'ProposalRouted',
       'RunRefsPublished',
       'RunProducedDiff',
       'RunRefsPublished',

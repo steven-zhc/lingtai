@@ -21,7 +21,9 @@ const BOARD_ENDING = {
 function readers(events: readonly Envelope[]) {
   const steps = Object.fromEntries(Object.entries(reduceAttempt(events).steps).map(([k, s]) => [k, s.verdict]))
   const board = Object.fromEntries(
-    events.flatMap(boardFactOf).flatMap((f) => (f._tag === 'StepEnded' ? [[`${f.step}:${f.action}`, f] as const] : [])),
+    events
+      .flatMap((e) => boardFactOf(e, () => undefined))
+      .flatMap((f) => (f._tag === 'StepEnded' ? [[`${f.step}:${f.action}`, f] as const] : [])),
   )
   return { steps, board }
 }
@@ -45,7 +47,7 @@ describe('the one verdict ladder', () => {
     const events = histories.attempt.signoffRequestedThenLifecycle
     const r = readers(events)
     expect(r.steps['proposed:human']).toBe('asked')
-    expect(events.flatMap(boardFactOf).some((f) => f._tag === 'SignoffRequested')).toBe(true)
+    expect(events.flatMap((e) => boardFactOf(e, () => undefined)).some((f) => f._tag === 'SignoffRequested')).toBe(true)
   })
 
   it('D1: an unreadable design answer failed', () => {

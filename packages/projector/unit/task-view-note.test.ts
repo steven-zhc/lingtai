@@ -3,9 +3,11 @@
  * reduces' before and after decide it, and no event type does. Each row of the issue's table has a test
  * here, over real events reduced one at a time, and the scenarios read the stored row after every event.
  */
-import type { Envelope, AttemptState, TicketLifecycle, TicketState } from '@lingtai/domain'
+import type { Envelope, AttemptState, StepOutcome, TicketLifecycle, TicketState } from '@lingtai/domain'
 import {
   agentBranchOf,
+  decodeRun,
+  encodeRun,
   reduceAttemptEvent,
   reduceTicketEvent,
   emptyAttempt,
@@ -161,6 +163,78 @@ describe('ticketNoteOf: the transitions', () => {
       t('DispatchRefused', { requiredTier: 'sandboxed', runtime: 'claude-code', missing: ['a', 'b'] } as never),
     ])
     expect(notes[0]).toEqual({ value: 'needs sandboxed; claude-code is missing a, b' })
+  })
+})
+
+/** #932: the count on the card comes from the reducer's state, whether the route kept its findings or names them. */
+describe('runNoteOf: the findings a round was bought on', () => {
+  const findings = [1, 2, 3].map((n) => ({
+    file: 'a.ts',
+    line: n,
+    claim: `claim ${n}`,
+    failureScenario: 'it breaks',
+    severity: 'major' as const,
+  }))
+  const refused: StepOutcome = {
+    step: 'review',
+    round: 1,
+    actions: [
+      {
+        plugin: 'agent',
+        name: 'cold',
+        onSha: 'sha-1',
+        evidence: 'said',
+        yields: 'verdict',
+        result: { _tag: 'Completed', assessment: { verdict: 'refused', findings } },
+      } as never,
+    ],
+  }
+  const offerOf = (proposal: object, ended?: { version: number; action: string } | null) =>
+    ({
+      proposal,
+      available: [{ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 2 } }],
+      unavailable: [],
+      ...(ended === undefined ? {} : { ended }),
+    }) as never
+  const reply = { _tag: 'Selected', candidate: 'fix-lines', why: 'w' } as never
+  const decision = { _tag: 'Selected', candidate: 'fix-lines' } as never
+
+  const history = (type: 'PassRouted' | 'ProposalRouted') => {
+    const run = anAttempt('pass-note')
+    const ended = run.aStepEnded(refused)
+    const version = ended.at(-1)!.version
+    const offer =
+      type === 'PassRouted'
+        ? offerOf({ _tag: 'ReviewFindings', findings })
+        : offerOf({ _tag: 'ReviewFindings' }, { version, action: 'cold' })
+    const routed = run.event(type, { runId: run.runId, offer, reply, decision })
+    return { ended, routed }
+  }
+
+  for (const type of ['PassRouted', 'ProposalRouted'] as const) {
+    it(`reads fixing round 2: 3 finding(s) from a ${type}, in one reduce`, () => {
+      const { ended, routed } = history(type)
+      expect(runNotes([...ended, routed]).at(-1)).toBe('fixing round 2: 3 finding(s)')
+    })
+
+    it(`reads it from a snapshot taken after the StepEnded, for a ${type}`, () => {
+      const { ended, routed } = history(type)
+      let state: AttemptState = emptyAttempt
+      for (const e of ended) state = reduceAttemptEvent(state, e)
+      const restored = decodeRun(encodeRun(state), 'task_view')
+      expect(runNoteOf(restored, reduceAttemptEvent(restored, routed))).toBe('fixing round 2: 3 finding(s)')
+    })
+  }
+
+  it('shows no count, and no invented zero, when the route names a refusal the state does not hold', () => {
+    const run = anAttempt('pass-note')
+    const routed = run.event('ProposalRouted', {
+      runId: run.runId,
+      offer: offerOf({ _tag: 'ReviewFindings' }, { version: 99, action: 'cold' }),
+      reply,
+      decision,
+    })
+    expect(runNoteOf(emptyAttempt, reduceAttemptEvent(emptyAttempt, routed))).toBe('fixing round 2')
   })
 })
 

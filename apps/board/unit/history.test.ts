@@ -1,4 +1,4 @@
-import { decideRoute, EVENTS, offerFor, STEPS } from '@lingtai/domain'
+import { decideRoute, EVENTS, offerFor, STEPS, stripEvidence } from '@lingtai/domain'
 import type { Action, Envelope, EventType, Finding, JudgeReply, PayloadOf, Proposal, WaitId } from '@lingtai/domain'
 import { anOutcome, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -214,6 +214,14 @@ const SAMPLES = {
     {
       runId: RUN,
       offer: NOT_ASKED,
+      reply: { _tag: 'NotAsked' },
+      decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
+    },
+  ],
+  ProposalRouted: [
+    {
+      runId: RUN,
+      offer: { ...NOT_ASKED, ended: null },
       reply: { _tag: 'NotAsked' },
       decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
     },
@@ -508,6 +516,75 @@ describe('a line of history', () => {
     expect(said2).toContain('review → waiting')
     expect(said2).toContain('agent/7 is waiting on you')
     expect(said2).toContain('restarts` is spent')
+  })
+
+  /**
+   * **A route reads the same stored whole and stored by reference** (#932). The
+   * pair is one route: the `ProposalRouted` is the `PassRouted` put through the
+   * writer's own `stripEvidence`, with the `StepEnded` it names on the stream.
+   */
+  it('reads a route the same whether it kept its evidence or names its StepEnded', () => {
+    const output = 'tsc failed: 3 errors'
+    const buildRed: Proposal = { _tag: 'BuildRed', output }
+    const offer = offerFor(buildRed, { rounds: 0, restarts: 0 }, { rounds: 0, restarts: 0 })
+    const reply: JudgeReply = { _tag: 'NotAsked' }
+    const decision = decideRoute(offer, reply)
+    const outcome = {
+      step: 'build',
+      round: 0,
+      actions: [
+        {
+          plugin: 'run',
+          name: 'tests',
+          onSha: SHA,
+          evidence: output,
+          yields: 'verdict',
+          result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+        },
+      ],
+    } as never
+    const whole = summarise(e('PassRouted', { runId: 'pass-1', offer, reply, decision }), { branch: 'agent/7' })
+    const byReference = e('ProposalRouted', {
+      runId: 'pass-1',
+      offer: { ...offer, proposal: stripEvidence(buildRed), ended: { version: 3, action: 'tests' } },
+      reply,
+      decision,
+    })
+    expect(whole).toContain('tsc failed')
+    expect(summarise(byReference, { branch: 'agent/7', endedAt: (v) => (v === 3 ? outcome : undefined) })).toBe(whole)
+
+    // Its StepEnded is not in the slice: the move is said, the evidence is said to be missing, nothing throws.
+    const missing = summarise(byReference, { branch: 'agent/7', endedAt: () => undefined })
+    expect(missing).toContain('build → waiting')
+    expect(missing).toContain('version 3')
+    expect(missing).not.toContain('no findings')
+  })
+
+  it('names the missing StepEnded version for a fix-round and for a restart route', () => {
+    const f = { _tag: 'ReviewFindings' as const }
+    const base = { ...offerFor({ ...f, findings: [] }, { rounds: 0, restarts: 0 }, { rounds: 0, restarts: 0 }) }
+    const route = (candidate: string, next: object) => {
+      const offer = {
+        ...base,
+        proposal: f,
+        available: [{ id: candidate, next }, ...base.available.filter((c) => c.id === 'hand-to-person')],
+        ended: { version: 9, action: 'cold' },
+      } as never
+      return e('ProposalRouted', {
+        runId: 'pass-1',
+        offer,
+        reply: { _tag: 'Selected', candidate, why: 'w' },
+        decision: { _tag: 'Selected', candidate },
+      })
+    }
+    const fix = route('fix-lines', { _tag: 'FixRound', to: 'implement', round: 1 })
+    expect(summarise(fix, { branch: 'agent/7', endedAt: () => undefined })).toContain(
+      'round 1 — findings not found (StepEnded version 9)',
+    )
+    const restart = route('restart', { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } })
+    expect(summarise(restart, { branch: 'agent/7', endedAt: () => undefined })).toContain(
+      'restart 1 — evidence not found (StepEnded version 9)',
+    )
   })
 
   /**

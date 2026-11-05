@@ -27,6 +27,8 @@ import {
   type TicketLifecycle,
   approvalSha,
   reduceAttempt,
+  stepEndedsOf,
+  type StepOutcome,
   filesOf,
   STEPS,
   type AttemptState as DomainRunState,
@@ -1352,7 +1354,9 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
   // adds to the set.
   const claimedByStream = new Map<string, Set<string>>()
   const branchByRun = new Map<string, string>()
+  const endedByRun = new Map<string, (version: number) => StepOutcome | undefined>()
   for (const [streamId, own] of byRun) {
+    endedByRun.set(streamId, stepEndedsOf(own))
     const { ticketId } = reduceAttempt(own)
     const parsed = typeof ticketId === 'string' ? parseTicketStream(ticketId) : null
     if (parsed) branchByRun.set(streamId, agentBranchOf(parsed.issue))
@@ -1380,7 +1384,9 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       claimed.add((e.data as PayloadOf<'TicketClaimed'>).runId)
       claimedByStream.set(e.streamId, claimed)
     }
-    group.lines.push(toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim }))
+    group.lines.push(
+      toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim, endedAt: endedByRun.get(e.streamId) }),
+    )
     group.to = String(e.seq)
   }
 

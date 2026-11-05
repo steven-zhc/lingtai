@@ -21,8 +21,17 @@
  * process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Action, Envelope, JudgeReply, RouteDecision, RouteOffer, RunSpent, ToAppend } from '@lingtai/domain'
-import { cleared, waitWords, STEPS } from '@lingtai/domain'
+import type {
+  Action,
+  Envelope,
+  JudgeReply,
+  PayloadOf,
+  RouteDecision,
+  RouteOffer,
+  RunSpent,
+  ToAppend,
+} from '@lingtai/domain'
+import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, resolveSource, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -709,7 +718,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === 'PassRouted')) {
+        if (events.some((e) => e.type === 'ProposalRouted')) {
           throw new Error('terminating connection due to administrator command')
         }
         return store.append(streamId, expected, events) as Promise<Envelope[]>
@@ -764,7 +773,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // The row is not on the run's stream, and the run log says so in the words a
     // person reading a trace gets — which is all that was lost.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.map((e) => e.type)).not.toContain('PassRouted')
+    expect(run.map((e) => e.type)).not.toContain('ProposalRouted')
     expect(
       did.some((line) => line.startsWith('note route merge \u2192 implement:') && line.includes('same-worktree')),
     ).toBe(true)
@@ -1563,9 +1572,20 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // claim the arrow string used to.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed.map((row) => row.to)).toEqual(['implement', 'waiting'])
+    // What is written is a `ProposalRouted` (#932): the review-refused route
+    // carries no findings of its own, and names the `StepEnded` that holds them.
+    const stored = run.filter((e) => e.type === 'ProposalRouted').map((e) => e.data as PayloadOf<'ProposalRouted'>)
+    expect(stored[0]!.offer.proposal._tag).toBe('ReviewFindings')
+    expect('findings' in stored[0]!.offer.proposal).toBe(false)
+    expect(stored[0]!.offer.ended).not.toBeNull()
+    const resolved = resolveOffer(stored[0]!.offer, stepEndedsOf(run))
+    expect(resolved._tag).toBe('Resolved')
+    if (resolved._tag === 'Resolved' && resolved.offer.proposal._tag === 'ReviewFindings') {
+      expect(resolved.offer.proposal.findings.length).toBeGreaterThan(0)
+    }
     expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge')
     expect(routed[0]!.why).toContain('the recipe declares `judge: same-worktree`')
     expect(routed[0]!.ceiling).toBeNull()
@@ -1667,7 +1687,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed.map((row) => row.to)).toEqual(['implement', 'implement', 'waiting'])
     // The judge's own words are on the card, with what they cost beside them —
@@ -1698,7 +1718,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
         usage: [],
       })
     }
-    const passRoutedAt = byType.filter(({ e }) => e.type === 'PassRouted').map(({ i }) => i)
+    const passRoutedAt = byType.filter(({ e }) => e.type === 'ProposalRouted').map(({ i }) => i)
     expect(judgeSpent[0]!.i).toBeLessThan(passRoutedAt[0]!)
     expect(judgeSpent[1]!.i).toBeLessThan(passRoutedAt[1]!)
 
@@ -1754,7 +1774,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
 
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed).toHaveLength(1)
     expect(routed[0]!.to).toBe('waiting')
@@ -1811,7 +1831,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
 
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed).toHaveLength(1)
     expect(routed[0]!.to).toBe('waiting')
@@ -1866,7 +1886,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(judgeSpent[0]!.data).toMatchObject({ for: { _tag: 'Judge', when: 'findings' }, runtime: 'claude-code' })
 
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed).toHaveLength(1)
     expect(routed[0]!.to).toBe('waiting')
@@ -1933,7 +1953,7 @@ runtime:
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed).toHaveLength(1)
     expect(routed[0]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
@@ -2042,7 +2062,7 @@ runtime:
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed[0]).toMatchObject({ chose: 'build', to: 'waiting' })
 
@@ -2100,7 +2120,7 @@ runtime:
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed[0]).toMatchObject({ chose: 'claim', to: 'waiting', ceiling: 'restarts' })
     expect(routed[0]!.why).toContain('the judge chose `restart`, and `restarts` is spent')
@@ -2225,7 +2245,7 @@ runtime:
     expect(models).toEqual(['haiku'])
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const routed = run
-      .filter((e) => e.type === 'PassRouted')
+      .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed[0]!.why).toContain('claude-code (haiku)')
   })

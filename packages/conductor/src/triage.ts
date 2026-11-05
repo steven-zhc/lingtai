@@ -33,6 +33,7 @@ import {
   TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
   type PayloadOf,
+  type StoredRoute,
 } from '@lingtai/domain'
 import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 
@@ -60,7 +61,7 @@ export interface TriageEvidence {
   /** The wait itself, whole — rendered as a claim, never read field by field. */
   reason: WaitReason
   /** The last `PassRouted` for the run, if any. */
-  routed: PayloadOf<'PassRouted'> | null
+  routed: StoredRoute | null
   /** The run's last `RunRefsPublished`, if any — whether the branch reached origin, and its head. */
   published: PayloadOf<'RunRefsPublished'> | null
   /** A diff stat of the head against the base, or null where none could be read. */
