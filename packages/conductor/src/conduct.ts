@@ -7,6 +7,7 @@ import {
   type Action,
   type ActionContext,
   type CutAnswer,
+  type DiffRead,
   type KeptAnswer,
   type LandAnswer,
   type MergeStrategy,
@@ -38,6 +39,8 @@ import {
   integrationStream,
   parsePayload,
   waitWords,
+  DIFF_FLAGS,
+  composePrompt,
 } from '@lingtai/domain'
 import {
   CONTROL_FOLD_TYPES,
@@ -226,7 +229,7 @@ import { closeHolding } from './close.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
-import { fixBrief, grantedAdviceFromState } from './fix.ts'
+import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
@@ -1744,6 +1747,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const gitAsked = (args: string[]) => Effect.runPromise(Effect.either(gitHere(args)))
 
       /**
+       * `git diff <DIFF_FLAGS> from...HEAD`, the one spelling the reviewer, the
+       * fixer and the prompt resolver share (#927). Both ends are resolved to full
+       * shas **first** and the diff is run between those two, so the text and a
+       * reference to it describe the same pair even if `HEAD` moves; where either
+       * cannot be resolved the diff still runs as it always did and carries no shas,
+       * so its prompt writes it out.
+       */
+      const diffBetween = (from: string): Promise<DiffRead> => {
+        const shaOf = (rev: string): Promise<string | null> =>
+          gitAsked(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]).then((got) =>
+            Either.isLeft(got) ? null : got.right.trim() || null,
+          )
+        return Promise.all([shaOf(from), shaOf('HEAD')]).then(([a, b]) =>
+          a !== null && b !== null
+            ? gitOrDie(['diff', ...DIFF_FLAGS, `${a}...${b}`]).then((text) => ({ text, from: a, to: b }))
+            : gitOrDie(['diff', ...DIFF_FLAGS, `${from}...HEAD`]).then((text) => ({ text, from: null, to: null })),
+        )
+      }
+
+      /**
        * **Never `worktree.baseSha` on its own, once there is a continuation**
        * (#465) — `worktree.baseSha` is where this re-cut's tree was checked
        * out, the run's own prior head, and diffing against it is diffing a
@@ -2449,6 +2472,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ticketId,
           kind: runnable.kind,
           ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
+          // Both claims above were handed `body: issue.body`, so the event at this
+          // version holds exactly the string the prompts will paste (#927).
+          claimVersion: claim.claim.version,
         }
         // The issue says what the log says, from here on. Inline rather than
         // queued (0022): a call that does not land is written down and converged
@@ -3232,7 +3258,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * Read when the action runs and not here, so `took` is the claim this pass
        * made rather than whatever it was before `claim`.
        */
-      const issue = async () => took?.ticket ?? { ref: String(options.issue), title: '', body: '' }
+      const issue = async () =>
+        took === null
+          ? { ref: String(options.issue), title: '', body: '' }
+          : {
+              ...took.ticket,
+              ...(took.claimVersion === undefined
+                ? {}
+                : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+            }
 
       /**
        * What a declared plugin needs in order to run — the things only a caller
@@ -3250,19 +3284,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksFromState(reduced),
-          diff: async (from?: string) =>
-            // The format is fixed here, not by the user's git config: `hunksOf` strips
-            // `a/` and `b/`, which `diff.srcPrefix`, `diff.dstPrefix` or `diff.noprefix`
-            // would change, and an external driver or textconv filter is not unified.
-            gitOrDie([
-              'diff',
-              '--no-color',
-              '--no-ext-diff',
-              '--no-textconv',
-              '--src-prefix=a/',
-              '--dst-prefix=b/',
-              `${from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')}...HEAD`,
-            ]),
+          diff: async (from?: string) => diffBetween(from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
           landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
@@ -3947,27 +3969,41 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `baseShaOr`'s own comment: `tree.baseSha` is this re-cut's own
         // head, and a fixing agent briefed against its own starting point
         // would be shown nothing to fix.
-        const underReview = await gitOrDie(['diff', `${continuation?.diffBaseSha ?? tree.baseSha}...HEAD`])
+        // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
+        // two should be looking at the same change, and the two shas it ran between.
+        const underReview = await diffBetween(continuation?.diffBaseSha ?? tree.baseSha)
         // The same flag `firstDispatch` sets before its own dispatch, and for
         // the same reason (`#468`): an agent is running, and nothing has
         // judged what it leaves in the worktree if it is interrupted here.
         stoppedBy = 'interrupted'
         // The brief and the `for`, built once: each is recorded before the dispatch
         // and then handed to it / to the `RunSpent` below (#923).
-        const fixPrompt = alsoSays(
-          fixBrief({
+        const fixComposed = composePrompt([
+          ...fixBriefParts({
             refusal,
             round,
             of: ceiling.rounds,
             action: from,
-            diff: underReview,
+            diff: underReview.text,
+            ...(underReview.from === null || underReview.to === null
+              ? {}
+              : { diffAt: { from: underReview.from, to: underReview.to } }),
             diffBytes: recipe.runtime.budget.diff,
             checks: buildCommands(recipe.steps),
-            ticket: { title: brief.ticket.title, body: brief.ticket.body },
+            ticket: {
+              title: brief.ticket.title,
+              body: brief.ticket.body,
+              ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
+                ? {}
+                : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+            },
             ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
           }),
-          spec.prompt,
-        )
+          // Appended as a part, never to the finished string, so no recorded offset
+          // depends on where the text before it happened to end.
+          ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+        ])
+        const fixPrompt = fixComposed.handed
         const fixFor: SpentFor = {
           _tag: 'Action',
           step: 'implement',
@@ -3980,7 +4016,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         await recordPrompt(
           store,
           runId,
-          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixPrompt },
+          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixComposed },
           log,
         )
         const fixed = await Effect.runPromise(
