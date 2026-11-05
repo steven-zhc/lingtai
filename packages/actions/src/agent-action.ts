@@ -1059,6 +1059,40 @@ function reviewAnswer(
 export function buildDesignPrompt(
   spec: AgentActionSpec,
   issue: ReviewIssue,
+  again: SentBack | null = null,
+  asks: number = 0,
+): string {
+  return composePrompt(designPromptParts(spec, issue, again, asks)).handed
+}
+
+const BODY_SLOT = '\u0000body\u0000'
+
+/**
+ * `buildDesignPrompt` as parts (#928), the way `reviewPromptParts` is: the ticket
+ * body is a `TicketBody` part when the claim it was read from is known, so the
+ * record points at it instead of copying it. Concatenated, the parts are the
+ * string `buildDesignPrompt` returns. A body is never searched for: the template
+ * is written once with a slot where the body goes and split at it, and a prompt
+ * that cannot be split that way (a NUL in the recipe's own words) is one plain part.
+ */
+export function designPromptParts(
+  spec: AgentActionSpec,
+  issue: ReviewIssue,
+  again: SentBack | null = null,
+  asks: number = 0,
+): PromptPart[] {
+  const pieces = designText(spec, { ...issue, body: BODY_SLOT }, again, asks).split(BODY_SLOT)
+  if (pieces.length !== 2) return [designText(spec, issue, again, asks)]
+  const body: PromptPart =
+    issue.bodyAt === undefined
+      ? issue.body
+      : { text: issue.body, ref: { _tag: 'TicketBody', stream: issue.bodyAt.stream, version: issue.bodyAt.version } }
+  return [pieces[0]!, body, pieces[1]!]
+}
+
+function designText(
+  spec: AgentActionSpec,
+  issue: ReviewIssue,
   /**
    * Why this step is being run a second time, or null on the way through.
    *
@@ -1360,8 +1394,10 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
       // and it is null on every way through — which is every pass but one a
       // judge sent back here.
-      const prompt = buildDesignPrompt(spec, issue, context.again ?? null, deps.designAsks ?? 0)
-      await context.prompted?.(`design@${prompt.length}`, prompt)
+      const composed = composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0))
+      const prompt = composed.handed
+      // The body is a reference where the claim it came from is known (#928).
+      await context.prompted?.(`design@${prompt.length}`, composed)
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,

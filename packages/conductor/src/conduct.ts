@@ -40,7 +40,6 @@ import {
   parsePayload,
   waitWords,
   DIFF_FLAGS,
-  composePrompt,
 } from '@lingtai/domain'
 import {
   CONTROL_FOLD_TYPES,

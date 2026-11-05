@@ -59,7 +59,6 @@
  */
 import type { ActionFinding } from '@lingtai/actions'
 import {
-  composePrompt,
   type Envelope,
   type PromptPart,
   SEVERITIES,
