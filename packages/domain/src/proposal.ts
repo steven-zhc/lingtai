@@ -208,10 +208,72 @@ export const Proposal = z.discriminatedUnion('_tag', [
 export type Proposal = z.infer<typeof Proposal>
 
 /**
+ * **The evidence a stored route does not repeat** (0100 §14, #932): for each
+ * variant that carries any, the fields that are a copy of the deciding
+ * action's `evidence` (`output`, `said`) or its assessment's `findings` on the
+ * `StepEnded` the route names. A variant not listed is stored whole.
+ */
+const COPIED = {
+  BuildRed: ['output'],
+  ReviewFindings: ['findings'],
+  ReviewEmpty: ['said', 'findings'],
+  MergeConflict: ['output'],
+  VerifyRed: ['output'],
+  SetupRefused: ['output'],
+  CheckRefused: ['output'],
+  MergeRefused: ['output'],
+} as const satisfies Partial<Record<Proposal['_tag'], readonly string[]>>
+
+/** The copied fields of one variant, or none. */
+export function copiedFieldsOf(tag: Proposal['_tag']): readonly string[] {
+  return (COPIED as Partial<Record<string, readonly string[]>>)[tag] ?? []
+}
+
+/**
+ * `Proposal` as a route stores it: the same variants, with the fields in
+ * `COPIED` optional. Present on a route written before #932 (which kept the
+ * copy) and on one whose `StepEnded` could not be named (`ended: null`);
+ * absent on one that names its `StepEnded`.
+ */
+export const StoredProposal = z.discriminatedUnion('_tag', [
+  BuildRed.partial({ output: true }),
+  ReviewFindings.partial({ findings: true }),
+  ReviewEmpty.partial({ said: true, findings: true }),
+  InputNeeded,
+  MergeConflict.partial({ output: true }),
+  BaseMoved,
+  VerifyRed.partial({ output: true }),
+  SetupRefused.partial({ output: true }),
+  CheckRefused.partial({ output: true }),
+  AnswerUnreadable,
+  DiffTooLarge,
+  NothingProduced,
+  FixerDisagrees,
+  MergeRefused.partial({ output: true }),
+  BudgetExhausted,
+])
+export type StoredProposal = z.infer<typeof StoredProposal>
+
+/** Every `Proposal` variant is a `StoredProposal` variant — a new one added to the first and not the second fails here. */
+const _sameTags: [Proposal['_tag']] extends [StoredProposal['_tag']]
+  ? [StoredProposal['_tag']] extends [Proposal['_tag']]
+    ? true
+    : never
+  : never = true
+void _sameTags
+
+/** The proposal a route stores when it names its `StepEnded`: the copied fields removed. */
+export function stripEvidence(proposal: Proposal): StoredProposal {
+  const omit = copiedFieldsOf(proposal._tag)
+  if (omit.length === 0) return proposal
+  return Object.fromEntries(Object.entries(proposal).filter(([k]) => !omit.includes(k))) as StoredProposal
+}
+
+/**
  * The step a proposal came from (0120 §2's table). Every variant reachable
  * from more than one step carries its own `from`; the rest name one step.
  */
-export function fromOf(proposal: Proposal): Step {
+export function fromOf(proposal: StoredProposal): Step {
   switch (proposal._tag) {
     case 'BuildRed':
       return 'build'

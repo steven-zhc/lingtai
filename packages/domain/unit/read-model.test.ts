@@ -258,7 +258,7 @@ describe('boardFactOf', () => {
   it('answers a StepEnded fact per action, and loses no action to the step it belongs to', () => {
     const run = anAttempt('pass-1')
     const outcome: StepOutcome = { step: 'build', round: 0, actions: [verdict('pnpm test', 'sha-a', true)] }
-    const facts = run.aStepEnded(outcome).flatMap(boardFactOf)
+    const facts = run.aStepEnded(outcome).flatMap((e) => boardFactOf(e, () => undefined))
 
     expect(facts).toEqual([
       {
@@ -277,7 +277,7 @@ describe('boardFactOf', () => {
   it('answers WaitResolved with the resolution the person made', () => {
     const item = makeStream('ticket-1')
     const waitId = aWaitId()
-    const facts = aResolution(item, waitId, { _tag: 'Close' }, 'steven', 'no longer wanted').flatMap(boardFactOf)
+    const facts = aResolution(item, waitId, { _tag: 'Close' }, 'steven', 'no longer wanted').flatMap((e) => boardFactOf(e, () => undefined))
     expect(facts).toEqual([
       { _tag: 'WaitResolved', by: 'steven', note: 'no longer wanted', resolution: { _tag: 'Close' } },
     ])

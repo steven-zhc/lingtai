@@ -15,10 +15,10 @@
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */
-import { isReached, type Reached } from './action.ts'
+import { isReached, type Reached, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
-import { routeNext } from './routing.ts'
+import { routeMove, type StoredRoute } from './routing.ts'
 import type { Finding, Step } from './vocabulary.ts'
 
 /**
@@ -191,12 +191,19 @@ export interface AttemptState {
   /** The last `RunFailed`. Never cleared: a later `RunFinished` does not undo it (D3). */
   failure: { readonly kind: RunFailureKind; readonly detail: string } | null
   /** The last refused verdict, by `step:action` key. Not cleared by a later pass or a new head. */
-  refusal: { readonly key: string; readonly evidence: string; readonly findings: readonly Finding[] } | null
+  refusal: {
+    readonly key: string
+    readonly evidence: string
+    readonly findings: readonly Finding[]
+    /** The `StepEnded` that refused: its version on the stream and the action's name (#932). */
+    readonly endedVersion: number
+    readonly action: string
+  } | null
 
   receipt: { exitCode: number; turns: number; durationMs: number } | null
 
-  /** The last `PassRouted`, as written — the raw payload, not `routeNext`'s answer. */
-  route: PayloadOf<'PassRouted'> | null
+  /** The last `PassRouted` or `ProposalRouted`, as written — the raw payload, not `routeNext`'s answer. */
+  route: StoredRoute | null
   /** The last `RunRefsPublished`, whatever its outcome — a later `unrecorded` row replaces a `published` one. */
   published: PayloadOf<'RunRefsPublished'> | null
   /** Every `RunKeptUncommitted`, in order. */
@@ -509,9 +516,12 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     // A fix round's route reaches its round whichever step it names (`to`).
     // `routeNext` throws `ImpossibleRouteError` on a stored route it cannot
     // replay, as the projections already do; nothing here hides that.
-    case 'PassRouted': {
-      const d = event.data as PayloadOf<'PassRouted'>
-      const next = routeNext(d.offer, d.reply, d.decision, { runId: d.runId })
+    case 'PassRouted':
+    case 'ProposalRouted': {
+      const d = event.data as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
+      // The move needs no proposal, so a route whose evidence is on a `StepEnded`
+      // before a snapshot is still replayed (#932).
+      const next = routeMove(d.offer, d.reply, d.decision)
       return next._tag === 'FixRound'
         ? {
             ...state,
@@ -537,7 +547,13 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         ) {
           next = {
             ...next,
-            refusal: { key, evidence: action.evidence, findings: action.result.assessment.findings },
+            refusal: {
+              key,
+              evidence: action.evidence,
+              findings: action.result.assessment.findings,
+              endedVersion: event.version,
+              action: action.name,
+            },
           }
         }
         if (action.yields === 'signoff' && action.result._tag === 'Completed' && action.result.requested !== null) {
@@ -626,4 +642,32 @@ export function standingRefusal(state: AttemptState): NonNullable<AttemptState['
 
 export function reduceAttempt(events: readonly Envelope[]): AttemptState {
   return events.reduce(reduceAttemptEvent, emptyAttempt)
+}
+
+/**
+ * **How many findings the last route's round was bought on**, or `null` when it
+ * is not known (#932). A route that kept the copy answers from it. One that
+ * names its `StepEnded` answers from `refusal` when that is the refusal it
+ * names — the reducer never resolves from events, so a snapshot taken after the
+ * `StepEnded` changes nothing.
+ */
+export function roundFindingsOf(state: AttemptState): number | null {
+  const route = state.route
+  if (route === null) return null
+  const proposal = route.offer.proposal
+  if (proposal._tag !== 'ReviewFindings') return 0
+  if (proposal.findings !== undefined) return proposal.findings.length
+  const ended = route.offer.ended
+  const { refusal } = state
+  if (ended === null || ended === undefined || refusal === null) return null
+  return refusal.endedVersion === ended.version && refusal.action === ended.action ? refusal.findings.length : null
+}
+
+/** The run stream's `StepEnded` outcomes, keyed by their version on it — what `resolveOffer` reads. */
+export function stepEndedsOf(events: readonly Envelope[]): (version: number) => StepOutcome | undefined {
+  const byVersion = new Map<number, StepOutcome>()
+  for (const e of events) {
+    if (e.type === 'StepEnded') byVersion.set(e.version, (e.data as PayloadOf<'StepEnded'>).outcome)
+  }
+  return (version) => byVersion.get(version)
 }

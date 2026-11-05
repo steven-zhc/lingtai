@@ -40,6 +40,7 @@ import {
   type Envelope,
   type PayloadOf,
   type WaitId,
+  type StoredRoute,
 } from '@lingtai/domain'
 import {
   TRIAGE_ANSWER_JSON_SCHEMA,
@@ -462,7 +463,7 @@ async function gatherEvidence(
   const runIndex = runId === null ? -1 : reduceTicket(before).runs.indexOf(runId)
   const runAttempt = runId === null ? null : runIndex >= 0 ? runIndex + 1 : 1
 
-  let routed: PayloadOf<'PassRouted'> | null = null
+  let routed: StoredRoute | null = null
   let published: PayloadOf<'RunRefsPublished'> | null = null
   let head: string | null = null
   if (runId !== null) {

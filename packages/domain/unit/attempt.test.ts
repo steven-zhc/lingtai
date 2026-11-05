@@ -538,7 +538,7 @@ describe('filesOf and promptMeta (#828)', () => {
 })
 
 describe('standingRefusal (#935)', () => {
-  const refusal = { key: 'review:cold', evidence: 'e', findings: [] }
+  const refusal = { key: 'review:cold', evidence: 'e', findings: [], endedVersion: 1, action: 'cold' }
   const step = (verdict: string) => ({ 'review:cold': { step: 'review:cold', verdict } as never })
   it('is the refusal while its gate still fails', () => {
     expect(standingRefusal({ ...emptyAttempt, refusal, steps: step('failed') })).toEqual(refusal)
