@@ -2128,11 +2128,10 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* --- the record -----------------------------------------------------------
-   Rank 7 (#152, 0118 §2, #417). Everything the first screen does not need, as
-   five tabs — History, Diff, Findings, Attempts, Ticket — always those, in
-   that order, so the shape is learned once. One frame and a hairline under
-   the tab strip; every panel renders, and `[hidden]` is what keeps four of
-   them off screen rather than an unmount. */
+   Rank 7 (#152, 0118 §2, #885). Everything the first screen does not need, as
+   one tab per subject — the Ticket, then each attempt, newest first. One frame
+   and a hairline under the tab strip; every tab is a link to its own URL and
+   only the open one is in the page. */
 .record {
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -2154,11 +2153,37 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border-bottom: 2px solid transparent;
   color: var(--muted);
   cursor: pointer;
+  text-decoration: none;
 }
 .rtab:hover { color: var(--ink); }
 /* The selected tab, read off the same attribute a screen reader does rather
    than a class a click could forget to also set. */
-.rtab[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--accent); }
+.rtab[aria-current='page'] { color: var(--ink); border-bottom-color: var(--accent); }
+.rearlier { display: flex; flex-direction: column; }
+.rearlier > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  font-family: var(--mono);
+  color: var(--muted);
+  cursor: pointer;
+}
+.rearlierlist { display: flex; flex-direction: column; }
+/* One attempt's tab: a summary line, its steps, then five closed sections. */
+.atab { display: grid; gap: 0.6rem; }
+.asum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.7rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--ink);
+}
+.asechead { margin: 0.2rem 0 0; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+.asec > summary { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.15rem 0; font-size: 0.7rem; }
 .rname {
   font-size: 0.78rem;
   letter-spacing: 0.12em;

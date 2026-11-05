@@ -15,12 +15,14 @@ import {
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
+import Link from 'next/link'
 
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
+import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
 import { stateWord, type DiscussionView, type StandingView } from '@/lib/task'
 
 /** Blocked, queued, running and approved pages share one frame: the `swaiting-head` header. The page class and the header both read this. */
@@ -251,7 +253,15 @@ export function ticketOpening(body: string): { problem: string; want: string; wa
   return { problem, want, watchOut }
 }
 
-function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpening>; body: string | null }) {
+function TicketContext({
+  opening,
+  body,
+  taskId,
+}: {
+  opening: ReturnType<typeof ticketOpening>
+  body: string | null
+  taskId: string
+}) {
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className="topening">
@@ -277,7 +287,9 @@ function TicketContext({ opening, body }: { opening: ReturnType<typeof ticketOpe
             ))}
         </div>
       )}
-      <a href="#record-ticket">The whole ticket ↓</a>
+      <Link href={ticketTabPath(taskId)} scroll={false}>
+        The whole ticket ↓
+      </Link>
     </div>
   )
 }
@@ -701,7 +713,7 @@ export function Standing({
             {subject !== null ? (
               <div className="sticket">
                 {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-                <TicketContext opening={opening} body={body} />
+                <TicketContext opening={opening} body={body} taskId={taskId} />
               </div>
             ) : null}
             {progress !== null || queued !== null ? (
@@ -715,7 +727,7 @@ export function Standing({
               {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-            <TicketContext opening={opening} body={body} />
+            <TicketContext opening={opening} body={body} taskId={taskId} />
           </div>
         ) : null}
         {standing.afterMove ? (
@@ -851,7 +863,7 @@ export function Standing({
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
                 {standing.state === 'queued' ? (
-                  <LastAttempt deciding={standing.deciding} attempts={standing.attempts} />
+                  <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
                 ) : standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason
                     raw={raw}
@@ -860,6 +872,7 @@ export function Standing({
                     refused={standing.failed}
                     deciding={standing.deciding}
                     attempt={standing.attempt}
+                    taskId={taskId}
                   />
                 ) : null}
               </FollowedLog>
@@ -1185,9 +1198,14 @@ export function Coords({
           the way down to it. `of N` because the number alone reads as the whole
           story on an item that has had three (#102). */}
       {standing.attempt !== null ? (
-        <a className="sfrom sptr" href={`#attempt-${standing.attempt}`} title={standing.runId ?? undefined}>
+        <Link
+          className="sfrom sptr"
+          href={attemptTabPath(taskId, standing.attempt)}
+          scroll={false}
+          title={standing.runId ?? undefined}
+        >
           {standing.state === 'queued' ? 'after' : 'from'} attempt {standing.attempt} of {standing.attempts} ↓
-        </a>
+        </Link>
       ) : null}
     </span>
   )
@@ -1247,7 +1265,9 @@ function Reason({
   refused,
   deciding,
   attempt,
+  taskId,
 }: {
+  taskId: string
   /** `diagnosis.raw`: the failing gate's evidence, verbatim. */
   raw: string | null
   /** The gate that said it, or null when what refused was not a gate. */
@@ -1269,9 +1289,9 @@ function Reason({
         <span className="sstep">{deciding.source}</span>
         <span className="sline">{deciding.line}</span>
         {deciding.attempt !== attempt ? (
-          <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+          <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
             in attempt {deciding.attempt} ↓
-          </a>
+          </Link>
         ) : null}
       </p>
     )
@@ -1313,7 +1333,15 @@ function Reason({
  * The queued page's refusal: the last pass's, whole, and named as such. The
  * label drops "the last pass" when the refusal is an earlier attempt's.
  */
-function LastAttempt({ deciding, attempts }: { deciding: StandingView['deciding']; attempts: number }) {
+function LastAttempt({
+  deciding,
+  attempts,
+  taskId,
+}: {
+  deciding: StandingView['deciding']
+  attempts: number
+  taskId: string
+}) {
   if (deciding === null) return null
   const lead =
     deciding.attempt === attempts ? `the last attempt, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
@@ -1322,18 +1350,18 @@ function LastAttempt({ deciding, attempts }: { deciding: StandingView['deciding'
     return (
       <>
         <RawEvidence raw={deciding.evidence} said={label} />
-        <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+        <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
           ↓
-        </a>
+        </Link>
       </>
     )
   return (
     <p className="sevidence">
       <span className="sstep">{label}</span>
       <span className="sline">{deciding.line}</span>
-      <a className="sptr" href={`#attempt-${deciding.attempt}`}>
+      <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
         ↓
-      </a>
+      </Link>
     </p>
   )
 }

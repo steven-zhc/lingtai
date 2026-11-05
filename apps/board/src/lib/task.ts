@@ -81,6 +81,7 @@ import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
+import { cache } from 'react'
 
 import {
   emptyIfUnbuilt,
@@ -981,11 +982,11 @@ export interface TaskDetail {
    */
   spendCurrency: SpendCurrency
   /**
-   * Everything, in order, for the question a summary did not anticipate — and
-   * still the last thing on the page. Structure may lead a reader to it;
-   * nothing may replace it.
+   * How many events the ticket's own stream holds — the Ticket tab's fact, and
+   * what says a page has no history at all. The events themselves are read by
+   * the tab that shows them (#885).
    */
-  history: HistoryGroup[]
+  events: number
 }
 
 // ----------------------------------------------------------- discussions ----
@@ -1088,6 +1089,17 @@ export function chatIdsFor(
 }
 
 /**
+ * A path as the repository names it. The agent's file tools report absolute
+ * paths under the run's worktree, which is a place on one machine; a path not
+ * under it is shown as recorded rather than guessed at.
+ */
+export function relativeTo(worktree: string | null, path: string): string {
+  if (worktree === null || worktree === '') return path
+  const root = worktree.endsWith('/') ? worktree : `${worktree}/`
+  return path.startsWith(root) ? path.slice(root.length) : path
+}
+
+/**
  * One attempt, drawn from the run's `AttemptState` and the claim that opened it.
  *
  * There is no second reducer of the run stream here: `reduceAttempt` is the one, and
@@ -1134,7 +1146,7 @@ export function presentAttempt(
     costUsd: emptyBill(),
     durationMs: state.receipt?.durationMs ?? null,
     outcome: outcomeOf(state, claim, held, branch),
-    files: filesOf(state),
+    files: filesOf(state).map((f) => ({ ...f, path: relativeTo(state.worktree, f.path) })),
     diff:
       state.produced === null
         ? null
@@ -1571,8 +1583,23 @@ export function heldRunOf(life: TicketLifecycle): string | null {
   return life.status === 'blocked' ? life.runId : null
 }
 
-export async function loadTask(taskId: string): Promise<TaskDetail | null> {
-  const own = await timed('events.task', () => eventStore.read(taskId))
+/** The ticket's own stream, read once however many segments of one render ask (#885). */
+const readOwn = cache((taskId: string) => timed('events.task', () => eventStore.read(taskId)))
+
+/**
+ * What the layout and the open tab share: the ticket stream, every claim's
+ * stream, the spend rows, and the attempts reduced from them — `presentAttempt`,
+ * `standingOf`, the last attempt's `progressOf` with the recipe's plan, and each
+ * attempt's bill. **One function, so nothing is reduced a second way** (#885):
+ * `loadTask` and `loadAttemptTab` both call it.
+ *
+ * Keyed by the id string, because React's `cache` memoizes on argument identity
+ * and any array a caller built would never hit. The project comes from the id
+ * (`parseTicketStream`), never from `loadTicket`, so a tab reads no GitHub
+ * issue to learn it.
+ */
+export const readAttempts = cache(async (taskId: string) => {
+  const own = await readOwn(taskId)
 
   // Every claim, and not the last one. A task can be claimed several times —
   // `ticket-lingtai-87` three, `ticket-lingtai-89` twice — and each claim opens a stream
@@ -1580,38 +1607,19 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const ticketState = reduceTicket(own)
   const claims = ticketState.claims
 
-  // Beside the run streams rather than after them: one side is a handful of
-  // database reads and the other is two calls to GitHub, and the page waits for
-  // the slower of the two instead of for both.
-  //
-  // The control stream is read for the seven types the reducer handles only: it
-  // also holds a `Reconciled` per daemon start, 22 KB each and never read here
-  // (#796). It is here
-  // because a discussion that has not been concluded exists only as a request
-  // on it — the work item learns about the conversation when it ends (0033 §6).
-  // `spend` beside the rest, for the same reason: this ticket's whole bill,
-  // read once rather than per run or per discussion (`#498`). Reduced to the
-  // head first, the way `loadBoard`'s card read does — a bare read left the
-  // task page and the board reading two different currencies of the same
-  // money (`#498`'s review).
-  const [streams, ticket, control, spendFold, lane] = await Promise.all([
+  // `spend` beside the run streams: this ticket's whole bill, read once rather
+  // than per run or per discussion (`#498`). Reduced to the head first, the way
+  // `loadBoard`'s card read does — a bare read left the task page and the board
+  // reading two different currencies of the same money (`#498`'s review).
+  const [streams, spendFold] = await Promise.all([
     claims.length > 0
       ? timed('events.run', () => Promise.all(claims.map((c) => eventStore.read(c.runId))), {
           desc: String(claims.length),
         })
       : Promise.resolve([] as Envelope[][]),
-    loadTicket(taskId, own),
-    timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
-      evaluateControl(emptyControl, new Date()),
-    ),
     timed('spend.read', () => currentSpend({ ticket: taskId })),
-    timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])
   const spend = spendFold.rows
-
-  // **The only thing that decides a 404**, and it decides it after GitHub has
-  // been asked rather than before. See `exists`.
-  if (!exists(own, ticket)) return null
 
   // Each stream is reduced once; everything below draws from these states.
   const states = claims.map((_, i) => reduceAttempt(streams[i] ?? []))
@@ -1621,7 +1629,71 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   const reduced = claims.map((c, i) =>
     presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
   )
-  const attempts = new Map(reduced.map((r) => [r.runId, r.attempt]))
+  const standing = standingOf(own, reduced)
+
+  // `plan` where the item is running or blocked: a gate's bound is the
+  // recipe's, and a phase in flight or one that stopped mid-gate are the two
+  // readings with a denominator to draw — and the second is also `held`'s
+  // only source for a ceiling the run's own stream never named (`#415`). The
+  // project is the id's: `loadTicket` returns null exactly where
+  // `parseTicketStream` does.
+  const project = parseTicketStream(taskId)?.project ?? null
+  const planAndLimits =
+    (standing.state === 'running' || standing.state === 'blocked') && project !== null
+      ? await timed('next.plan', () => planFor(project))
+      : undefined
+  const plan = planAndLimits?.plan
+  const limits = planAndLimits?.limits ?? null
+
+  // The last attempt reduced again with what only this function holds. **Only
+  // the last**, and `over` only where the item landed: an earlier attempt was
+  // released or refused, and its later points recorded nothing because nothing
+  // should have run in them — the same line `RailCandidate.over` holds, and
+  // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
+  const last = reduced.length - 1
+  const landed = standing.state === 'landed'
+  const runs = (
+    last >= 0 && (landed || plan !== undefined)
+      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
+      : reduced
+  ).map((r) => {
+    // This attempt's own spend: the rows whose `pass` is this run's stream —
+    // `Action` and `Judge` both land there, because a dispatch within one
+    // pass appends to the pass's own stream (`spend.ts`, `@lingtai/projector`).
+    // An attempt that predates `RunSpent` contributes not one row, and that
+    // is unknown rather than free (0110 §7, `#498`'s review).
+    const rowsForRun = spend.filter((row) => row.pass === r.runId)
+    const costUsd = rowsForRun.length > 0 ? totalBill(billOf(rowsForRun)) : unknownBill(1)
+    return { ...r, costUsd }
+  })
+
+  return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
+})
+
+export async function loadTask(taskId: string): Promise<TaskDetail | null> {
+  // The control stream is read for the seven types the reducer handles only: it
+  // also holds a `Reconciled` per daemon start, 22 KB each and never read here
+  // (#796). It is here
+  // because a discussion that has not been concluded exists only as a request
+  // on it — the work item learns about the conversation when it ends (0033 §6).
+  //
+  // Beside the attempts rather than after them: one side is a handful of
+  // database reads and the other is two calls to GitHub, and the page waits for
+  // the slower of the two instead of for both.
+  const [shared, ticket, control, lane] = await Promise.all([
+    readAttempts(taskId),
+    readOwn(taskId).then((own) => loadTicket(taskId, own)),
+    timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
+      evaluateControl(emptyControl, new Date()),
+    ),
+    timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
+  ])
+  const { own, ticketState, claims, streams, states, spendFold, standing: foldedStanding, runs, limits } = shared
+  const spend = spendFold.rows
+
+  // **The only thing that decides a 404**, and it decides it after GitHub has
+  // been asked rather than before. See `exists`.
+  if (!exists(own, ticket)) return null
 
   const conductor = control
   const chats = chatIdsFor(conductor.discussions, ticketState.discussions, taskId)
@@ -1633,7 +1705,6 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       : []
   const discussions = chats.map((c, i) => presentChat(c.chatId, chatStreams[i] ?? [], c.held))
 
-  const foldedStanding = standingOf(own, reduced)
   const keptAt = foldedStanding.unpushed?.keptAt
   const unpushedMirror =
     keptAt?._tag === 'Mirror' && ticket !== null
@@ -1736,15 +1807,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // is possible: a run in flight has been handed its prompt already and a
   // landed item will never be handed another (0032 §5). `queued` where the item
   // is queued, which is the one state that is not in the log at all.
-  //
-  // `plan` where the item is running or blocked: a gate's bound is the
-  // recipe's, and a phase in flight or one that stopped mid-gate are the two
-  // readings with a denominator to draw — and the second is also `held`'s
-  // only source for a ceiling the run's own stream never named (`#415`). See
-  // `planFor`.
-  //
-  // `recipes` wherever there is an attempt to hang an action's command off.
-  const [outgoing, queued, planAndLimits, recipes] = await Promise.all([
+  const [outgoing, queued] = await Promise.all([
     standing.state === 'blocked' || standing.state === 'queued'
       ? timed('next.outgoing', () => outgoingFor({ own, streams, ticket }))
       : null,
@@ -1753,36 +1816,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
           queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused }),
         )
       : null,
-    (standing.state === 'running' || standing.state === 'blocked') && ticket !== null
-      ? timed('next.plan', () => planFor(ticket.project))
-      : undefined,
-    ticket !== null ? recipesFor(ticket.project, reduced) : new Map<string, AttemptRecipe>(),
   ])
-  const plan = planAndLimits?.plan
-  const limits = planAndLimits?.limits ?? null
-
-  // The last attempt reduced again with what only this function holds. **Only
-  // the last**, and `over` only where the item landed: an earlier attempt was
-  // released or refused, and its later points recorded nothing because nothing
-  // should have run in them — the same line `RailCandidate.over` holds, and
-  // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
-  const last = reduced.length - 1
-  const landed = standing.state === 'landed'
-  const runs = (
-    last >= 0 && (landed || plan !== undefined)
-      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
-      : reduced
-  ).map((r) => {
-    const recipe = recipes.get(r.runId)
-    // This attempt's own spend: the rows whose `pass` is this run's stream —
-    // `Action` and `Judge` both land there, because a dispatch within one
-    // pass appends to the pass's own stream (`spend.ts`, `@lingtai/projector`).
-    // An attempt that predates `RunSpent` contributes not one row, and that
-    // is unknown rather than free (0110 §7, `#498`'s review).
-    const rowsForRun = spend.filter((row) => row.pass === r.runId)
-    const costUsd = rowsForRun.length > 0 ? totalBill(billOf(rowsForRun)) : unknownBill(1)
-    return recipe ? { ...r, recipe, costUsd } : { ...r, costUsd }
-  })
 
   // The run the state names, reduced with the recipe's bounds above — the same
   // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
@@ -1818,11 +1852,59 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
-    // The chat streams are **not** in the history, and that is 0033 §6 read the
-    // other way round: the point of giving a conversation its own stream is
-    // that forty turns of exploration do not drown the thirty-six events this
-    // section exists to show. The ticket's own record that a discussion was held is here, and
-    // it is the two lines the ticket's history was promised to grow by.
-    history: groupHistory([...own, ...streams.flat()], attempts),
+    events: own.length,
   }
+}
+
+/** What one attempt's tab shows: the attempt, and the page's standing for the reasoning it may carry. */
+export interface AttemptTabDetail {
+  taskId: string
+  project: string
+  run: AttemptView
+  /** The folded standing — `diagnosis`, `saidBy`, `deciding` and `state` are all the tab reads. */
+  standing: StandingView
+  /** This attempt's stream, as history rows. */
+  events: HistoryLine[]
+}
+
+/**
+ * One attempt's tab, and nothing above the record (#885).
+ *
+ * **It never calls `loadTask`**, so a soft navigation between tabs reads no
+ * GitHub issue, no control stream, no triage and no queue: those belong to the
+ * layout, which Next does not re-render on a navigation. It shares
+ * `readAttempts` with the layout — the same reduction, one read each within a
+ * render — and adds the one thing only this tab shows, the recipe attempt `n`
+ * was given (`client.fileAt` is cached per sha). Null for an attempt this
+ * ticket does not have.
+ */
+export async function loadAttemptTab(taskId: string, n: number): Promise<AttemptTabDetail | null> {
+  const { runs, streams, standing } = await readAttempts(taskId)
+  const run = runs[n - 1]
+  if (run === undefined) return null
+  const project = parseTicketStream(taskId)?.project ?? null
+  const recipe = project === null ? undefined : (await recipesFor(project, [run])).get(run.runId)
+  const group = groupHistory(streams[n - 1] ?? [], new Map([[run.runId, n]]))[0]
+  return {
+    taskId,
+    project: project ?? '',
+    run: recipe ? { ...run, recipe } : run,
+    standing,
+    events: group?.lines ?? [],
+  }
+}
+
+/** The Ticket tab: the ticket as it was written, and the ticket stream's events. */
+export interface TicketTabDetail {
+  taskId: string
+  ticket: TicketView | null
+  events: HistoryLine[]
+}
+
+/** The Ticket tab's reads: the ticket stream, and the one GitHub issue (#885). */
+export async function loadTicketTab(taskId: string): Promise<TicketTabDetail | null> {
+  const own = await readOwn(taskId)
+  const ticket = await loadTicket(taskId, own)
+  if (!exists(own, ticket)) return null
+  return { taskId, ticket, events: groupHistory(own, new Map()).flatMap((g) => g.lines) }
 }
