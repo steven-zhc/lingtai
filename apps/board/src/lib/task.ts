@@ -330,6 +330,11 @@ export interface AttemptView {
   steps: StepVerdict[]
   /** The step in flight and the round it was entered on (`AttemptState.step`), ISO `since`. */
   stepNow: { step: Step; round: number; since: string } | null
+  /**
+   * What bounds **one agent run** of this attempt (`Invocation.limits`), not the
+   * attempt: null for a run whose `RunStarted` predates it.
+   */
+  limits: { turns?: number; wallMs: number; usd?: number } | null
   /** The refusal a fixer is still answering (`standingRefusal`), or null. */
   refusal: { key: string; evidence: string; findings: DomainFinding[] } | null
   /**
@@ -886,7 +891,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
         ? { result: body.outcome, detail: body.text }
         : null,
     triageStatus: null,
-    running: life.status === 'claimed' && run !== null ? runningPanelOf(run) : null,
+    running: life.status === 'claimed' && run !== null ? runningPanelOf(run, null) : null,
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
@@ -1200,6 +1205,7 @@ export function presentAttempt(
       state.step === null
         ? null
         : { step: state.step.step, round: state.step.round, since: state.step.since.toISOString() },
+    limits: state.invocation?.limits ?? null,
     refusal: refusalOf(state),
     progress,
   }
@@ -1757,7 +1763,14 @@ export const readAttempts = cache(async (taskId: string) => {
   // is drawn from `runs` and not from the `reduced` that `standingOf` saw.
   if (standing.running != null) {
     const enriched = runs.find((r) => r.runId === standing.runId)
-    standing.running = enriched === undefined ? null : runningPanelOf(enriched)
+    standing.running =
+      enriched === undefined
+        ? null
+        : runningPanelOf(enriched, {
+            rows: spend.filter((row) => row.pass === enriched.runId),
+            currency: spendFold.currency,
+            rounds: limits?.rounds ?? null,
+          })
   }
 
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }

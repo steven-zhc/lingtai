@@ -221,7 +221,50 @@ function QueuedBand({
   )
 }
 
-function RunningPanel({ view, discussion }: { view: RunningPanelView; discussion: ReactNode }) {
+function Meters({ m, serverNow }: { m: NonNullable<RunningPanelView['meters']>; serverNow: number }) {
+  return (
+    <dl className="meters">
+      {m.round === null ? null : (
+        <div className="meter" data-meter="round">
+          <dt>This round</dt>
+          <dd>
+            <Since key={`${m.runId}:${m.round.since}`} iso={m.round.since} serverNow={serverNow} />
+            {m.round.budget === null ? '' : ` of ${m.round.budget}`}
+            {m.round.of === null ? '' : ` · ${m.round.of}`}
+          </dd>
+          <dd className="sub">{m.round.budget === null ? 'no limit' : `at most ${m.round.budget}`}</dd>
+        </div>
+      )}
+      <div className="meter" data-meter="attempt">
+        <dt>The attempt so far</dt>
+        <dd>
+          <Since key={`${m.runId}:${m.attempt.since}`} iso={m.attempt.since} serverNow={serverNow} />
+          {` · ${m.attempt.turns}`}
+          {m.attempt.behind === null ? '' : ` (${m.attempt.behind})`}
+        </dd>
+        <dd className="sub">{m.attempt.ceiling ?? 'no limit'}</dd>
+      </div>
+      <div className="meter" data-meter="cost">
+        <dt>Cost so far</dt>
+        <dd>
+          {m.cost.text}
+          {m.cost.behind === null ? '' : ` (${m.cost.behind})`}
+        </dd>
+        <dd className="sub">{m.cost.ceiling ?? 'no limit'}</dd>
+      </div>
+    </dl>
+  )
+}
+
+function RunningPanel({
+  view,
+  discussion,
+  serverNow,
+}: {
+  view: RunningPanelView
+  discussion: ReactNode
+  serverNow: number
+}) {
   const { head, line } = view
   const chip = [head.step ?? 'between steps', head.round === null ? null : `fix round ${head.round}`]
     .filter((x) => x !== null)
@@ -251,6 +294,7 @@ function RunningPanel({ view, discussion }: { view: RunningPanelView; discussion
           <p className="triage-summary">{line.text}</p>
         )}
         <p className="triage-ask">{view.ask}</p>
+        {view.meters === null ? null : <Meters m={view.meters} serverNow={serverNow} />}
         {line.kind === 'fixing' ? (
           <ul className="findings">
             {line.findings.map((f, i) => (
@@ -368,6 +412,7 @@ import { DocumentBody } from './markdown.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
+import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
 import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
@@ -1359,7 +1404,7 @@ export function Standing({
         ) : null}
 
         {standing.state === 'running' && standing.running ? (
-          <RunningPanel view={standing.running} discussion={discussion} />
+          <RunningPanel view={standing.running} discussion={discussion} serverNow={now} />
         ) : null}
 
         {standing.state === 'blocked' ? (
