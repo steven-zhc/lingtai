@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
-import { CHAT_STREAM_PREFIX, ATTEMPT_STREAM_PREFIX, PROJECT_STREAM_PREFIX, TICKET_STREAM_PREFIX } from './streams.ts'
+import {
+  CHAT_STREAM_PREFIX,
+  ATTEMPT_STREAM_PREFIX,
+  PROJECT_STREAM_PREFIX,
+  RECIPE_STREAM_PREFIX,
+  TICKET_STREAM_PREFIX,
+} from './streams.ts'
 
 /**
  * What wraps every event. The store fills `seq` and `at`; everything else is
@@ -38,11 +44,11 @@ function noDash(prefix: string): string {
 /**
  * Built from the prefix constants that have one. `int`, `ctl`, `ext` and
  * `bkl` have no constant of their own ([streams.ts](./streams.ts)) and stay
- * literal here; the alternation order is otherwise unchanged, so this
- * pattern's `.source` is byte-identical to the one it replaced.
+ * literal here. `rcp` (#930) is appended last, so the alternation before it is
+ * unchanged.
  */
 export const STREAM_ID_PATTERN = new RegExp(
-  `^(${noDash(TICKET_STREAM_PREFIX)}|${noDash(ATTEMPT_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl)-[\\w.-]+$`,
+  `^(${noDash(TICKET_STREAM_PREFIX)}|${noDash(ATTEMPT_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl|${noDash(RECIPE_STREAM_PREFIX)})-[\\w.-]+$`,
 )
 
 export const StreamId = z.string().regex(
@@ -69,7 +75,7 @@ export const StreamId = z.string().regex(
   // event it failed on: the daemon follows the log while a run is appending
   // to that stream, so writing back to it would turn a notifier's bad day
   // into a `ConcurrencyError` in the middle of a run.
-  'streamId must be ticket-… (work item), pass-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)',
+  'streamId must be ticket-… (work item), pass-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension), bkl-… (backlog) or rcp-… (recorded recipe)',
 )
 
 export interface Envelope<T = unknown> {

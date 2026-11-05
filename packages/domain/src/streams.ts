@@ -92,6 +92,16 @@ export function chatStream(id: string): string {
   return id.startsWith(CHAT_STREAM_PREFIX) ? id : `${CHAT_STREAM_PREFIX}${id}`
 }
 
+export const RECIPE_STREAM_PREFIX = 'rcp-'
+
+/**
+ * `rcp-{configHash}` — the canonical recipe that hash names, recorded once
+ * (0100 §14). The hash is the content, so one stream serves every project.
+ */
+export function recipeStream(configHash: string): string {
+  return `${RECIPE_STREAM_PREFIX}${configHash}`
+}
+
 export const PROJECT_STREAM_PREFIX = 'prj-'
 
 /** `prj-{project}` — everything Lingtai was told about a repository. */

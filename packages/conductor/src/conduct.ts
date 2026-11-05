@@ -3700,6 +3700,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     },
                   ]),
                 )
+                // Before the plan that names its hash, and at version 0 (see
+                // `recordRecipe`); only a refusal other than "already there"
+                // is a defect, kept for the handler as `appendNow` keeps one.
+                yield* Effect.promise(async () => {
+                  try {
+                    await recordRecipe(store, resolved)
+                  } catch (defect) {
+                    unappended ??= defect
+                    throw defect
+                  }
+                })
                 yield* Effect.promise(() =>
                   appendNow(runId, [
                     {

@@ -1,5 +1,5 @@
 /**
- * The recipe a run was given, on `StepsResolved` (#191, ADR 0047).
+ * The recipe a run was given, recorded once per hash as `RecipeRecorded` (#191, ADR 0047, #930).
  *
  * Three promises 0047 makes, and each is a test here rather than a sentence
  * there, because each fails silently:
@@ -17,10 +17,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { parsePayload } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { RECIPE_PATH, type Recipe, hashRecipe, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { stepsResolved } from '../src/steps-resolved.ts'
+import { recipeRecorded, recordRecipe, stepsResolved } from '../src/steps-resolved.ts'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const OWN = readFileSync(join(ROOT, '.lingtai/config.yaml'), 'utf8')
@@ -60,13 +61,13 @@ function shuffled(value: unknown): unknown {
   )
 }
 
-describe('the recipe on StepsResolved', () => {
+describe('the recipe on RecipeRecorded', () => {
   it.each([
     ["this repository's own recipe", OWN],
     ['a recipe declaring every env surface', DECLARING],
   ])('is the body its configHash is the hash of — %s', async (_, source) => {
     const resolved = await resolve(source)
-    const payload = parsePayload('StepsResolved', stepsResolved('pass-1', resolved))
+    const payload = parsePayload('RecipeRecorded', recipeRecorded(resolved))
 
     expect(payload.recipe).toBeDefined()
     // Out through the log and back, keys in whatever order the store likes.
@@ -76,8 +77,8 @@ describe('the recipe on StepsResolved', () => {
   })
 
   it('changes when the recipe does, so the hash is proving something', async () => {
-    const before = stepsResolved('pass-1', await resolve(DECLARING))
-    const after = stepsResolved('pass-1', await resolve(DECLARING.replace('pnpm test', 'pnpm test:db')))
+    const before = recipeRecorded(await resolve(DECLARING))
+    const after = recipeRecorded(await resolve(DECLARING.replace('pnpm test', 'pnpm test:db')))
     expect(after.recipe).not.toEqual(before.recipe)
     expect(hashRecipe(before.recipe as unknown as Recipe)).not.toBe(after.configHash)
   })
@@ -101,11 +102,11 @@ describe('the recipe on StepsResolved', () => {
     Object.assign(process.env, values)
     try {
       for (const source of [DECLARING, OWN]) {
-        const appended = JSON.stringify(parsePayload('StepsResolved', stepsResolved('pass-1', await resolve(source))))
+        const appended = JSON.stringify(parsePayload('RecipeRecorded', recipeRecorded(await resolve(source))))
         for (const value of Object.values(values)) expect(appended).not.toContain(value)
         expect(appended).not.toContain('sentinel')
       }
-      const declaring = JSON.stringify(stepsResolved('pass-1', await resolve(DECLARING)))
+      const declaring = JSON.stringify(recipeRecorded(await resolve(DECLARING)))
       for (const name of ['SECRET_REQUIRED_URL', 'SECRET_ALLOWED_TOKEN', 'SECRET_DENIED_KEY', 'SECRET_ACTION_TOKEN']) {
         expect(declaring).toContain(name)
       }
@@ -115,6 +116,35 @@ describe('the recipe on StepsResolved', () => {
         else process.env[k] = v
       }
     }
+  })
+})
+
+describe('the plan and the stream', () => {
+  it('stepsResolved carries no recipe key, and a stored v4 event with one still parses', async () => {
+    const resolved = await resolve(DECLARING)
+    const plan = stepsResolved('pass-1', resolved)
+    expect('recipe' in plan).toBe(false)
+    expect(() => parsePayload('StepsResolved', plan)).not.toThrow()
+    const stored = { ...plan, recipe: recipeRecorded(resolved).recipe }
+    expect(parsePayload('StepsResolved', stored).recipe).toBeDefined()
+  })
+
+  it('records once per hash, still appends every plan, and gives a different recipe its own stream', async () => {
+    const store = createMemoryEventStore()
+    const a = await resolve(DECLARING)
+    const b = await resolve(DECLARING.replace('pnpm test', 'pnpm test:db'))
+    for (const run of ['pass-1', 'pass-2']) {
+      await recordRecipe(store, a)
+      await store.append(run, 0, [
+        { type: 'StepsResolved', actor: 'conductor', data: parsePayload('StepsResolved', stepsResolved(run, a)) },
+      ])
+    }
+    expect(await recordRecipe(store, a)).toBe('already')
+    expect(await store.read(`rcp-${a.configHash}`)).toHaveLength(1)
+    expect(await store.read('pass-1')).toHaveLength(1)
+    expect(await store.read('pass-2')).toHaveLength(1)
+    expect(await recordRecipe(store, b)).toBe('recorded')
+    expect(await store.read(`rcp-${b.configHash}`)).toHaveLength(1)
   })
 })
 
@@ -145,17 +175,21 @@ describe('nothing decides from the recorded recipe', () => {
     const field = String.raw`\s*(?:\?\.|\.|\[\s*["'\`])\s*recipe\b`
     // SQL: `data->'recipe'`, `data->>'recipe'`, `data #> '{recipe}'`.
     for (const m of src.matchAll(/->>?\s*'recipe'|#>>?\s*'\{recipe/g)) found.push(m[0])
-    if (!/["'`]StepsResolved["'`]/.test(src)) return found
+    const TYPE = String.raw`["'\`](?:StepsResolved|RecipeRecorded)["'\`]`
+    if (!new RegExp(TYPE).test(src)) return found
     // A parsed payload, read in place.
-    const parsed = new RegExp(String.raw`Payload\(\s*["'\`]StepsResolved["'\`][^;]*?\)` + field, 'g')
+    const parsed = new RegExp(String.raw`Payload\(\s*${TYPE}[^;]*?\)` + field, 'g')
     for (const m of src.matchAll(parsed)) found.push(m[0])
     // Anything bound on a line that names the event, then read — or destructured.
-    for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=[^;]*["'`]StepsResolved["'`]/g)) {
+    for (const m of src.matchAll(
+      /(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=[^;]*["'`](?:StepsResolved|RecipeRecorded)["'`]/g,
+    )) {
       const name = m[1]!
       const read = new RegExp(String.raw`\b${name}\b(?:\s*(?:\?\.|\.)\s*data)?` + field, 'g')
       for (const r of src.matchAll(read)) found.push(r[0])
     }
-    for (const m of src.matchAll(/\{[^{}]*\brecipe\b[^{}]*\}\s*=[^;]*["'`]StepsResolved["'`]/g)) found.push(m[0])
+    for (const m of src.matchAll(/\{[^{}]*\brecipe\b[^{}]*\}\s*=[^;]*["'`](?:StepsResolved|RecipeRecorded)["'`]/g))
+      found.push(m[0])
     return found
   }
 
@@ -165,6 +199,7 @@ describe('nothing decides from the recorded recipe', () => {
       `const plan = events.filter((e) => e.type === "StepsResolved").at(-1);\nuse(plan?.data.recipe);`,
       `const p = parsePayload("StepsResolved", row.data);\nuse(p["recipe"]);`,
       `const { recipe } = parsePayload("StepsResolved", row.data);`,
+      `const r = parsePayload("RecipeRecorded", row.data).recipe;`,
       `sql\`select data->'recipe' from events where type = 'StepsResolved'\``,
     ]
     for (const read of reads) expect(readsOfTheRecord(read), read).not.toEqual([])
