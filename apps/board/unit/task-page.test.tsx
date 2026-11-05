@@ -556,7 +556,17 @@ describe('a blocked task', () => {
     // The refusal is the attempt's: it is in that attempt's tab and not in the layout.
     expect(html).not.toContain('<pre class="sraw"')
     const tab = renderToStaticMarkup(
-      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+      <AttemptTab
+        detail={{
+          taskId: ITEM,
+          project: 'lingtai',
+          run: t.runs[0]!,
+          standing: t.standing,
+          events: [],
+          promptShown: null,
+          expanded: new Map(),
+        }}
+      />,
     )
     expect(tab).toContain('<details class="sreason" open=""')
     expect(tab).toContain(CRASH)
@@ -587,7 +597,17 @@ describe('a running task', () => {
     // And the attempt's own tab says so rather than opening a second one.
     const t = running()
     const tab = renderToStaticMarkup(
-      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+      <AttemptTab
+        detail={{
+          taskId: ITEM,
+          project: 'lingtai',
+          run: t.runs[0]!,
+          standing: t.standing,
+          events: [],
+          promptShown: null,
+          expanded: new Map(),
+        }}
+      />,
     )
     expect(tab).toContain('being followed at the top of this page')
     expect(tab).not.toContain('<details class="alog')
@@ -700,7 +720,17 @@ describe('the rail on the task page', () => {
   /** The attempt's tab: where the record draws its rail now (#885). */
   const record = (t: Page) =>
     renderToStaticMarkup(
-      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+      <AttemptTab
+        detail={{
+          taskId: ITEM,
+          project: 'lingtai',
+          run: t.runs[0]!,
+          standing: t.standing,
+          events: [],
+          promptShown: null,
+          expanded: new Map(),
+        }}
+      />,
     )
 
   /**
@@ -970,7 +1000,15 @@ describe('the Changes section (#729)', () => {
     ])
     const html = renderToStaticMarkup(
       <AttemptTab
-        detail={{ taskId: ITEM, project: 'lingtai', run: reduced, standing: task([], []).standing, events: [] }}
+        detail={{
+          taskId: ITEM,
+          project: 'lingtai',
+          run: reduced,
+          standing: task([], []).standing,
+          events: [],
+          promptShown: null,
+          expanded: new Map(),
+        }}
       />,
     )
     expect(html).toContain('2 files, +4 −2, on agent/2')

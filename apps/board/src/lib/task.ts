@@ -18,6 +18,7 @@ import {
   waitWords,
   type BlockDiagnosis,
   type Envelope,
+  type PromptRefEntry,
   type PayloadOf,
   type TicketClaim,
   type TicketDiscussion,
@@ -96,6 +97,7 @@ import {
   type AttemptLimitsView,
   type WaitingNeighbour,
 } from './board.ts'
+import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
@@ -1916,6 +1918,14 @@ export interface AttemptTabDetail {
   standing: StandingView
   /** This attempt's stream, as history rows. */
   events: HistoryLine[]
+  /**
+   * The implementer's prompt as handed (#933), where the record carries `refs`;
+   * null where it was recorded whole and `run.prompt.text` is already it. The
+   * promise never rejects and is not awaited by the loader.
+   */
+  promptShown: PromptShown | null
+  /** Every `RunPrompted` row in `events` that carries `refs`, keyed `${streamId}@${version}`. */
+  expanded: ReadonlyMap<string, PromptShown>
 }
 
 /**
@@ -1930,18 +1940,39 @@ export interface AttemptTabDetail {
  * ticket does not have.
  */
 export async function loadAttemptTab(taskId: string, n: number): Promise<AttemptTabDetail | null> {
-  const { runs, streams, standing } = await readAttempts(taskId)
+  const { runs, streams, standing, own, claims, states } = await readAttempts(taskId)
   const run = runs[n - 1]
   if (run === undefined) return null
   const project = parseTicketStream(taskId)?.project ?? null
   const recipe = project === null ? undefined : (await recipesFor(project, [run])).get(run.runId)
   const group = groupHistory(streams[n - 1] ?? [], new Map(runs.map((r, i) => [r.runId, i + 1])))[0]
+  const events = group?.lines ?? []
+
+  // Started, and not awaited: the tab is sent when the log has answered, and each
+  // prompt draws a placeholder until its own expansion arrives (#933). Every
+  // promise is one that never rejects (`expandRecorded`).
+  const held = new Map<string, readonly Envelope[]>([[taskId, own]])
+  claims.forEach((c, i) => held.set(c.runId, streams[i] ?? []))
+  const context = { project: project ?? '', streams: held }
+  const state = states[n - 1]
+  const promptShown = state?.prompt == null ? null : shownOf({ prompt: state.prompt, refs: state.promptRefs }, context)
+  const expanded = new Map<string, PromptShown>()
+  for (const line of events) {
+    const at = (streams[n - 1] ?? []).find((e) => e.streamId === line.streamId && e.version === line.version)
+    const d = at?.data as { prompt?: string | null; refs?: PromptRefEntry[] } | undefined
+    // By shape and not by type: only a prompt record carries both, and the reducer owns the type.
+    if (d === undefined || typeof d.prompt !== 'string' || !Array.isArray(d.refs)) continue
+    const shown = shownOf({ prompt: d.prompt, refs: d.refs }, context)
+    if (shown !== null) expanded.set(`${line.streamId}@${line.version}`, shown)
+  }
   return {
     taskId,
     project: project ?? '',
     run: recipe ? { ...run, recipe } : run,
     standing,
-    events: group?.lines ?? [],
+    events,
+    promptShown,
+    expanded,
   }
 }
 

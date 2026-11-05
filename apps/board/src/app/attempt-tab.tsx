@@ -11,6 +11,7 @@ import { HistoryRow } from './history-row.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Segs } from './rail.tsx'
 import { RunLog } from './run-log.tsx'
+import { ShownPrompt } from './shown-prompt.tsx'
 import { RawEvidence } from './standing.tsx'
 
 /**
@@ -153,9 +154,12 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
           <p className="empty">
             This attempt predates the prompt being recorded, so the log has its length and not the document (#88).
           </p>
+        ) : detail.promptShown !== null ? (
+          // The record stays raw in the event's payload (#88); what is drawn
+          // here is the prompt as handed, its markers expanded (#933).
+          <ShownPrompt shown={detail.promptShown.shown} lines={detail.promptShown.lines} />
         ) : (
-          // Raw, always. #88's justification is that the log holds the exact
-          // document the agent was given; `markdown.tsx` offers the reading.
+          // Recorded whole, so the record is already what was handed.
           <DocumentBody source="prompt" text={run.prompt.text} rawClass="hdoctext" />
         )}
       </details>
@@ -191,7 +195,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
             {detail.events.map((h) => (
               // Keyed by seq, which the store assigns and nothing reuses.
               <li key={h.seq}>
-                <HistoryRow line={h} />
+                <HistoryRow line={h} expanded={detail.expanded.get(`${h.streamId}@${h.version}`)} />
               </li>
             ))}
           </ol>
