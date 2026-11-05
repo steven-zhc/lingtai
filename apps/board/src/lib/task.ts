@@ -33,6 +33,9 @@ import {
   filesOf,
   STEPS,
   type AttemptState as DomainRunState,
+  standingRefusal,
+  type Step,
+  type Finding as DomainFinding,
 } from '@lingtai/domain'
 import {
   allowedResolutions,
@@ -107,6 +110,7 @@ import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './pr
 import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
 import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
+import { runningPanelOf, type RunningPanelView } from './running.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
@@ -324,6 +328,10 @@ export interface AttemptView {
    */
   awaitingSha: string | null
   steps: StepVerdict[]
+  /** The step in flight and the round it was entered on (`AttemptState.step`), ISO `since`. */
+  stepNow: { step: Step; round: number; since: string } | null
+  /** The refusal a fixer is still answering (`standingRefusal`), or null. */
+  refusal: { key: string; evidence: string; findings: DomainFinding[] } | null
   /**
    * Where this attempt got to, as the board's rail reads it — all ten steps,
    * one verdict per action, and the phase in flight with its bound. Null for a
@@ -456,6 +464,8 @@ export interface StandingView {
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
   triageStatus: TriageStatus | null
+  /** The running page's panel, only while the state is `running` and an attempt is named. */
+  running?: RunningPanelView | null
   /** A comparison with the local mirror, only for a completed current triage. */
   triageHeadLine?: string | null
   /** The split write the log shows for this wait, where Split is offered (#603). */
@@ -876,6 +886,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
         ? { result: body.outcome, detail: body.text }
         : null,
     triageStatus: null,
+    running: life.status === 'claimed' && run !== null ? runningPanelOf(run) : null,
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
@@ -1185,8 +1196,18 @@ export function presentAttempt(
     // The sha `lingtai approve` would approve (D3).
     awaitingSha: approvalSha(state),
     steps,
+    stepNow:
+      state.step === null
+        ? null
+        : { step: state.step.step, round: state.step.round, since: state.step.since.toISOString() },
+    refusal: refusalOf(state),
     progress,
   }
+}
+
+function refusalOf(state: DomainRunState): AttemptView['refusal'] {
+  const r = standingRefusal(state)
+  return r === undefined ? null : { key: r.key, evidence: r.evidence, findings: [...r.findings] }
 }
 
 /** `presentAttempt` for a caller holding events rather than a state. */
@@ -1731,6 +1752,13 @@ export const readAttempts = cache(async (taskId: string) => {
     const costUsd = rowsForRun.length > 0 ? totalBill(billOf(rowsForRun)) : unknownBill(1)
     return { ...r, costUsd }
   })
+
+  // The running panel reads the attempt with the recipe's plan folded in, so it
+  // is drawn from `runs` and not from the `reduced` that `standingOf` saw.
+  if (standing.running != null) {
+    const enriched = runs.find((r) => r.runId === standing.runId)
+    standing.running = enriched === undefined ? null : runningPanelOf(enriched)
+  }
 
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
 })

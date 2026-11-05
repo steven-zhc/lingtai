@@ -87,7 +87,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
           and silently did not run, and only one of those is our bug (ADR 0016
           §4, and 0061 §5 for the ten). Labelled, with nothing lit: where a run
           in flight is *now* is rank 2's to say, and this is the record. */}
-      {run.progress === null ? (
+      {followed ? null : run.progress === null ? (
         <p className="empty">Nothing is recorded for this attempt, so no step has been reached.</p>
       ) : (
         <div className="seq aseq">
@@ -177,11 +177,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
       {/* `RunLog` is its own `<details>`: a second one around it would close
           under the reader when a run ends. A running attempt's opens with it and
           follows; every other stays closed and reads nothing (#110, #132). */}
-      {followed ? (
-        <p className="empty">Its run log is being followed at the top of this page.</p>
-      ) : (
-        <RunLog runId={run.runId} live={running} />
-      )}
+      {followed ? null : <RunLog runId={run.runId} live={running} />}
 
       <details className="asec">
         <summary>

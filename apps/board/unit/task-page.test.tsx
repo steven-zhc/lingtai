@@ -626,7 +626,9 @@ describe('a running task', () => {
         }}
       />,
     )
-    expect(tab).toContain('being followed at the top of this page')
+    // The page's own log is rank 2; the tab neither follows it twice nor says so.
+    expect(tab).not.toContain('being followed at the top of this page')
+    expect(tab).not.toContain('class="seq aseq"')
     expect(tab).not.toContain('<details class="alog')
   })
 
@@ -904,7 +906,9 @@ describe('the rail on the task page', () => {
 
     // And the same stream on an item that did not land is only not reached yet:
     // `over` is the whole of the difference.
-    const midway = record(task(own.slice(0, 1), [presentAttemptEvents(claim, 1, events)]))
+    // The attempt in flight draws no rail in its tab (the header has it), so
+    // this reads the page's own rail.
+    const midway = page(task(own.slice(0, 1), [presentAttemptEvents(claim, 1, events)]))
     expect(midway).not.toContain('s-never-ran')
     expect(midway).toContain('class="seg s-pending"')
   })

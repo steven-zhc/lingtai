@@ -221,6 +221,65 @@ function QueuedBand({
   )
 }
 
+function RunningPanel({ view, discussion }: { view: RunningPanelView; discussion: ReactNode }) {
+  const { head, line } = view
+  const chip = [head.step ?? 'between steps', head.round === null ? null : `fix round ${head.round}`]
+    .filter((x) => x !== null)
+    .join(' · ')
+  return (
+    <div className="sreading sreading--advised">
+      <section className="triage-band triage-band--advised" data-rank="running">
+        <div className="triage-head">
+          <span className="triage-label">{head.label}</span>
+          <p className="triage-cause cause-chip">{chip}</p>
+        </div>
+        {line.kind === 'step' ? (
+          line.actions === null ? (
+            <p className="triage-summary">{UNREADABLE}</p>
+          ) : line.actions.length === 0 ? (
+            <ol className="planlist">
+              <li className="none">nothing configured at: {line.step}</li>
+            </ol>
+          ) : (
+            <ol className="planlist">
+              <PlanStep step={line.step} actions={line.actions} skipped={false} />
+            </ol>
+          )
+        ) : line.kind === 'between' ? (
+          <p className="triage-summary">Between steps.</p>
+        ) : (
+          <p className="triage-summary">{line.text}</p>
+        )}
+        <p className="triage-ask">{view.ask}</p>
+        {line.kind === 'fixing' ? (
+          <ul className="findings">
+            {line.findings.map((f, i) => (
+              <li key={i}>
+                <b>{f.severity}</b> <span className="mono">{f.line === null ? f.file : `${f.file}:${f.line}`}</span>{' '}
+                {f.claim}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {line.kind === 'refused' && line.evidence !== null && line.evidence !== '' ? (
+          <RawEvidence raw={line.evidence} said={null} />
+        ) : null}
+        <p className="triage-then">
+          <b>Then</b>{' '}
+          {view.then === null
+            ? UNREADABLE
+            : view.then.length === 0
+              ? 'nothing further is configured.'
+              : `${view.then.join(' → ')}, unless a step sends it back.`}
+        </p>
+      </section>
+      <div className="spair" data-rank="discussion">
+        {discussion}
+      </div>
+    </div>
+  )
+}
+
 function QueuedPanel({
   g,
   pending,
@@ -288,6 +347,7 @@ function QueuedPanel({
     </div>
   )
 }
+import type { RunningPanelView } from '@/lib/running'
 import { presentCause } from '@/lib/triage-cause'
 
 import { codeSpans } from './code-spans.tsx'
@@ -1068,7 +1128,7 @@ export function Standing({
   const quiet = waiting && advisedSurface
   const soWhatLine = () => {
     const text = soWhat(standing)
-    return quiet || text === null ? null : (
+    return quiet || text === null || standing.state === 'running' ? null : (
       <p className="sowhat" data-rank="so-what">
         {text}
       </p>
@@ -1296,6 +1356,10 @@ export function Standing({
           >
             <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
           </QueuedPanel>
+        ) : null}
+
+        {standing.state === 'running' && standing.running ? (
+          <RunningPanel view={standing.running} discussion={discussion} />
         ) : null}
 
         {standing.state === 'blocked' ? (
@@ -1588,7 +1652,7 @@ export function Standing({
               </Gh>
 
               {/* Discussion is offered in every state; only its placement changes. */}
-              {standing.state === 'blocked' ? null : discussion}
+              {standing.state === 'blocked' || standing.state === 'running' ? null : discussion}
             </div>
           )}
         </section>
