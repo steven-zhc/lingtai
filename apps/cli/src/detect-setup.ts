@@ -42,7 +42,8 @@ export const EMPTY_SETUP_READER: SetupReader = {
 }
 
 export interface DetectedSetup {
-  install: { run: string; because: string } | null
+  /** `tool` as on `build`: a wrapper's is `java`, since `./mvnw` is never on PATH. */
+  install: { run: string; because: string; tool?: string } | null
   /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`). */
   build: { name: string; run: string; because: string; tool?: string }[]
   skipped: { script: string; why: string }[]
@@ -532,7 +533,246 @@ const goDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector]
+const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
+
+const XML_NAME = /[\p{L}_:][\p{L}\p{N}._:-]*/uy
+const XML_ENTITY = /&(?:#[0-9]+|#x[0-9a-fA-F]+|[\p{L}_:][\p{L}\p{N}._:-]*);/uy
+
+/**
+ * Well-formedness only, no schema and no DTD: names, attributes (quoted, no
+ * duplicates), entity references, and every element closing in order under
+ * exactly one root. No XML parser is a dependency here, so this is a scanner
+ * over what is left after comments, CDATA, declarations and processing
+ * instructions. A literal `>` in text is legal and accepted.
+ */
+function xmlWellFormed(text: string): boolean {
+  const body = text
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, 'x')
+    .replace(/<\?[\s\S]*?\?>/g, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+  const name = (i: number): string | null => {
+    XML_NAME.lastIndex = i
+    const m = XML_NAME.exec(body)
+    return m === null ? null : m[0]
+  }
+  const stack: string[] = []
+  let roots = 0
+  let i = 0
+  while (i < body.length) {
+    const c = body[i]!
+    if (c === '&') {
+      XML_ENTITY.lastIndex = i
+      const m = XML_ENTITY.exec(body)
+      if (m === null) return false
+      if (stack.length === 0) return false
+      i += m[0].length
+    } else if (c !== '<') {
+      if (stack.length === 0 && !/\s/.test(c)) return false
+      i++
+    } else if (body[i + 1] === '/') {
+      const n = name(i + 2)
+      if (n === null) return false
+      i += 2 + n.length
+      while (/\s/.test(body[i] ?? '')) i++
+      if (body[i] !== '>' || stack.pop() !== n) return false
+      i++
+    } else {
+      const n = name(i + 1)
+      if (n === null) return false
+      if (stack.length === 0 && ++roots > 1) return false
+      i += 1 + n.length
+      const seen = new Set<string>()
+      for (;;) {
+        const gap = i
+        while (/\s/.test(body[i] ?? '')) i++
+        if (body[i] === '>' || body[i] === '/') break
+        const a = i > gap ? name(i) : null
+        if (a === null || seen.has(a)) return false
+        seen.add(a)
+        i += a.length
+        while (/\s/.test(body[i] ?? '')) i++
+        if (body[i] !== '=') return false
+        i++
+        while (/\s/.test(body[i] ?? '')) i++
+        const q = body[i]
+        if (q !== '"' && q !== "'") return false
+        const end = body.indexOf(q, i + 1)
+        if (end === -1) return false
+        const value = body.slice(i + 1, end)
+        if (value.includes('<')) return false
+        if (value.replace(/&(?:#[0-9]+|#x[0-9a-fA-F]+|[\p{L}_:][\p{L}\p{N}._:-]*);/gu, '').includes('&')) return false
+        i = end + 1
+      }
+      if (body[i] === '/') {
+        if (body[i + 1] !== '>') return false
+        i += 2
+      } else {
+        stack.push(n)
+        i++
+      }
+    }
+  }
+  return stack.length === 0 && roots === 1
+}
+
+/**
+ * A Gradle script is a program (Groovy or Kotlin) that only Gradle can parse.
+ * What can be told without it is lexical: brackets pair up outside strings
+ * (including Groovy slashy and dollar-slashy strings) and comments (Kotlin's
+ * nest, Groovy's do not), and nothing is left open at the end. It does not
+ * find a syntax error between balanced brackets.
+ */
+function gradleBalanced(text: string, kotlin: boolean): boolean {
+  const stack: string[] = []
+  const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
+  // A `/` opens a slashy string where an operand cannot precede it.
+  let prev = ''
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!
+    const wasPrev = prev
+    if (!/\s/.test(c)) prev = c
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++
+    } else if (c === '/' && text[i + 1] === '*') {
+      let depth = 1
+      i += 2
+      while (depth > 0) {
+        if (i >= text.length) return false
+        if (text.startsWith('*/', i)) {
+          depth--
+          i += 2
+        } else if (kotlin && text.startsWith('/*', i)) {
+          depth++
+          i += 2
+        } else i++
+      }
+      i--
+      prev = '*'
+    } else if (
+      !kotlin &&
+      (c === '/' || (c === '$' && text[i + 1] === '/')) &&
+      (c === '$' || wasPrev === '' || '=(,{[;:!&|?+-*%~<>'.includes(wasPrev))
+    ) {
+      const dollar = c === '$'
+      const close = dollar ? '/$' : '/'
+      i += dollar ? 2 : 1
+      for (; i < text.length && !text.startsWith(close, i); i++) {
+        if (text[i] === '\\' && !dollar) i++
+        else if (dollar && text[i] === '$') i++
+      }
+      if (i >= text.length) return false
+      i += close.length - 1
+      prev = '"'
+    } else if (c === '"' || c === "'") {
+      const triple = text.startsWith(c.repeat(3), i)
+      const close = triple ? c.repeat(3) : c
+      i += triple ? 3 : 1
+      for (; i < text.length && !text.startsWith(close, i); i++) {
+        if (text[i] === '\\') i++
+        else if (!triple && text[i] === '\n') return false
+      }
+      if (i >= text.length) return false
+      i += close.length - 1
+    } else if (c === '(' || c === '[' || c === '{') stack.push(c)
+    else if (c in pairs && stack.pop() !== pairs[c]) return false
+  }
+  return stack.length === 0
+}
+
+/**
+ * Maven or Gradle from the build file's existence, once it has been read and
+ * found to hold together: well-formed XML for pom.xml, lexically balanced
+ * brackets for a Gradle script (which only Gradle can truly parse — a subtler error fails
+ * in #436's trial). A file that cannot be read or does not hold together
+ * suggests nothing and says so. Gradle wins when both are present.
+ */
+const javaDetector: StackDetector = {
+  stack: 'Java',
+  async detect(reader) {
+    const notes: string[] = []
+    const none = (presence: 'absent' | 'unknown'): StackFinding => ({
+      presence,
+      install: null,
+      build: [],
+      skipped: [],
+      notes,
+    })
+    let gradle: string | null = null
+    let gradleUnknown: string | null = null
+    for (const file of GRADLE_FILES) {
+      const found = await hasOrUnknown(reader, file)
+      if (found === 'unknown') gradleUnknown ??= file
+      else if (found && gradle === null) gradle = file
+    }
+    const pom = await hasOrUnknown(reader, 'pom.xml')
+
+    let tool: 'Maven' | 'Gradle'
+    let because: string
+    if (gradle !== null) {
+      tool = 'Gradle'
+      because = `${gradle} is at the root`
+      if (pom === true) notes.push(`pom.xml is also at the root; ${gradle} was used`)
+    } else if (gradleUnknown !== null) {
+      // A Gradle file that may exist would decide, so pom.xml cannot stand in for it.
+      notes.push(`could not tell whether ${gradleUnknown} is at the root`)
+      return pom === true ? { ...none('absent'), presence: 'present' } : none('unknown')
+    } else if (pom === 'unknown') {
+      notes.push('could not tell whether pom.xml is at the root')
+      return none('unknown')
+    } else if (pom) {
+      tool = 'Maven'
+      because = 'pom.xml is at the root'
+    } else return none('absent')
+
+    const buildFile = tool === 'Maven' ? 'pom.xml' : gradle!
+    let text: string | null
+    try {
+      text = await reader.read(buildFile)
+    } catch {
+      text = null
+    }
+    if (text === null) {
+      notes.push(`${buildFile} could not be read`)
+      return { ...none('absent'), presence: 'present' }
+    }
+    if (!(tool === 'Maven' ? xmlWellFormed(text) : gradleBalanced(text, buildFile.endsWith('.kts')))) {
+      notes.push(`${buildFile} does not parse`)
+      return { ...none('absent'), presence: 'present' }
+    }
+
+    const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
+    const wrapper = await hasOrUnknown(reader, wrapperName)
+    if (wrapper === 'unknown') {
+      notes.push(`could not tell whether ${wrapperName} is at the root`)
+      return { ...none('absent'), presence: 'present' }
+    }
+    const cmd = wrapper ? `./${wrapperName}` : tool === 'Maven' ? 'mvn' : 'gradle'
+    const java = wrapper ? { tool: 'java' } : {}
+    // `test`, never `verify` or `check`: those often run integration tests.
+    const build = [
+      {
+        name: 'test',
+        run: tool === 'Maven' ? `${cmd} -B test` : `${cmd} test`,
+        because,
+        ...java,
+      },
+    ]
+    if (tool === 'Gradle') notes.push(`Gradle has no separate install; ${cmd} test resolves dependencies itself`)
+    notes.push(
+      `a cold ${tool} build downloads its dependencies first and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out`,
+    )
+    return {
+      presence: 'present',
+      install: tool === 'Maven' ? { run: `${cmd} -B -q dependency:go-offline`, because, ...java } : null,
+      build,
+      skipped: [],
+      notes,
+    }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector, javaDetector]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present
