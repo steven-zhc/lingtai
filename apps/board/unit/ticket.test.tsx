@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Ticket } from '../src/app/task/[id]/page.tsx'
+import { Ticket } from '../src/app/ticket-tab.tsx'
 import type { TicketView } from '../src/lib/task.ts'
 
 const TICKET: TicketView = {

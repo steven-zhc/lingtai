@@ -2,7 +2,7 @@ import type { TicketClaim } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
- * The attempt that is still going opens itself, and its log opens with it.
+ * The attempt that is still going has its log open, following.
  *
  * `#110` built the run log and the board's stream; the page hid it. `RunLog`
  * was rendered closed for every attempt for a reason that is right — a page
@@ -16,8 +16,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Attempt } from '../src/app/task/[id]/page.tsx'
 import { presentAttemptEvents } from '../src/lib/task.ts'
+import { Attempt } from '../test/attempt-tab.tsx'
 
 let seq = 0n
 
@@ -50,17 +50,16 @@ const finished = () =>
     e(RUN, 'RunFinished', { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
   ])
 
-const render = (run: ReturnType<typeof running>) =>
-  renderToStaticMarkup(<Attempt run={run} alone={false} deciding={false} />)
+const render = (run: ReturnType<typeof running>) => renderToStaticMarkup(<Attempt run={run} />)
 
 describe('the attempt in flight', () => {
   it('is open, and its log is open and following', () => {
     const html = render(running())
-    expect(html).toContain('id="attempt-2"')
-    // Both disclosures: the attempt, and the log inside it. The `details` for
-    // the log carries `open` because `RunLog` was told this run is live.
-    expect(html).toContain('<details class="attempt" id="attempt-2" open=""')
+    // The log is the section itself: `RunLog`'s own `<details>`, with no second
+    // one around it to close under the reader when the run ends. It carries
+    // `open` because `RunLog` was told this run is live.
     expect(html).toContain('<details class="alog" open=""')
+    expect(html).not.toContain('<details class="asec"><summary><span class="hdocname">run log')
   })
 
   /**
@@ -69,14 +68,13 @@ describe('the attempt in flight', () => {
    * on the same file.
    */
   it("points up to the page's own log when the item is running on it", () => {
-    const html = renderToStaticMarkup(<Attempt run={running()} alone={false} deciding={false} followed />)
+    const html = renderToStaticMarkup(<Attempt run={running()} followed />)
     expect(html).not.toContain('class="alog"')
     expect(html).toContain('being followed at the top of this page')
   })
 
   it('leaves every finished attempt closed, and reading nothing', () => {
     const html = render(finished())
-    expect(html).not.toContain('<details class="attempt" id="attempt-2" open=""')
     expect(html).not.toContain('<details class="alog" open=""')
     // The summary says so in as many words: no connection has been opened.
     expect(html).toContain('not reading')
@@ -96,7 +94,8 @@ describe('the attempt in flight', () => {
  */
 describe('the disclosure the page hands the server', () => {
   it('is open for a run in flight and shut for one that is over', () => {
-    expect(render(running())).toContain('<details class="attempt" id="attempt-2" open=""')
+    expect(render(running())).toContain('<details class="alog" open=""')
+    // Every section of a finished attempt is closed.
     expect(render(finished())).not.toContain('open=""')
   })
 })

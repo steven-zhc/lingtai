@@ -1111,7 +1111,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('href="#attempt-1"')
+    expect(html).toContain('href="/task/ticket-lingtai-112/attempt/1"')
     expect(html).toContain('in attempt 1')
   })
 
@@ -2002,7 +2002,7 @@ describe('the subject, at the top', () => {
     expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
     // No table to promote: the link alone, not a sentence saying so.
     expect(html).not.toContain('The ticket’s context is in the complete issue.')
-    expect(html).toContain('href="#record-ticket"')
+    expect(html).toContain('href="/task/ticket-lingtai-159/ticket"')
     expect(html).not.toContain('alert(1)')
     expect(ticketOpening('one\ntwo')).toBeNull()
   })
@@ -2042,7 +2042,7 @@ describe('the subject, at the top', () => {
     expect(html.indexOf('>Problem</h2>')).toBeLessThan(html.indexOf('>Want</h2>'))
     expect(html.indexOf('>Want</h2>')).toBeLessThan(html.indexOf('>Watch out</h2>'))
     expect(html.indexOf('>Watch out</h2>')).toBeLessThan(html.indexOf('data-rank="where"'))
-    expect(html).toContain('href="#record-ticket"')
+    expect(html).toContain('href="/task/ticket-lingtai-159/ticket"')
     const withoutWatch = renderToStaticMarkup(
       <Standing
         subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
@@ -2084,7 +2084,7 @@ describe('the subject, at the top', () => {
         queued={null}
       />,
     )
-    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="#record-ticket"'))
+    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="/task/ticket-lingtai-159/ticket"'))
     expect(context).toContain('>Problem</h2>')
     expect(context).toContain('>Want</h2>')
     expect(context).toContain('>Watch out</h2>')

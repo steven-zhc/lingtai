@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 
 import { Card } from '@/app/page.tsx'
-import { TaskBody } from '@/app/task/[id]/page.tsx'
+import { TaskBody } from '@/app/task/[id]/layout.tsx'
 
 import { CASES, PREVIEW_NOW, preview, type CaseName } from '../../../../../../test/visual-waiting.ts'
 
