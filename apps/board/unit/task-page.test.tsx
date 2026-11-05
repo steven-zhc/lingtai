@@ -1112,6 +1112,12 @@ describe('what a pending page cannot lose or hide', () => {
   it('keeps the log-backed block usable and readable while GitHub is pending', () => {
     const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
     expect(pending).not.toMatch(/\binert\b/)
+    // A fallback is replaced whole and not hydrated: its controls are disabled,
+    // so nothing can be typed into it and lost.
+    expect(pending).toMatch(/<fieldset[^>]*disabled/)
+    expect(renderToStaticMarkup(<TaskBody task={blocked()} github={blocked().github} />)).not.toContain(
+      '<fieldset disabled',
+    )
   })
 
   it('says why the opening is missing when GitHub failed for a touched ticket', () => {
