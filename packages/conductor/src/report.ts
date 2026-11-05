@@ -213,7 +213,7 @@ const dayKey = (d: Date): string =>
 const mean = (xs: readonly number[]): number | null =>
   xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length
 
-const median = (xs: readonly number[]): number | null => {
+export const median = (xs: readonly number[]): number | null => {
   if (xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
   const mid = s.length >> 1

@@ -31,6 +31,7 @@ import {
   type InFlight,
   type QueuedView,
 } from '@/lib/queued'
+import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
@@ -85,12 +86,16 @@ function QueuedBand({
   view,
   resolved,
   inFlight,
+  startEstimate,
+  now,
   project,
   children,
 }: {
   view: QueuedView | null
   resolved: boolean
   inFlight: InFlight | null
+  startEstimate: StartEstimate | null
+  now: number
   project: string | null
   children?: ReactNode
 }) {
@@ -98,6 +103,7 @@ function QueuedBand({
   const asking = <Skeleton shape="lines" count={1} label="asking GitHub…" />
   const hold = resolved && view !== null ? holding(view) : null
   const running = inFlight?.running ?? []
+  const estimate = resolved ? estimateLine(view, inFlight, startEstimate, now) : null
   return (
     <section className="triage-band triage-band--advised" data-rank="triage">
       <div className="triage-head">
@@ -118,6 +124,13 @@ function QueuedBand({
         </p>
       ) : (
         <div className="triage-summary">{asking}</div>
+      )}
+      {estimate === null ? null : estimate.kind === 'line' ? (
+        <p className="triage-estimate" title={estimate.title}>
+          {estimate.text}
+        </p>
+      ) : (
+        <p className="triage-estimate">{estimate.text}</p>
       )}
       {resolved && view !== null && view.problem === null && hold === null ? (
         <p className="triage-recommendation">Nothing is needed from you.</p>
@@ -180,6 +193,8 @@ function QueuedPanel({
   g,
   pending,
   inFlight,
+  startEstimate,
+  now,
   project,
   missing,
   children,
@@ -187,6 +202,8 @@ function QueuedPanel({
   g: Answered<TaskAnswer>
   pending: boolean
   inFlight: InFlight | null
+  startEstimate: StartEstimate | null
+  now: number
   project: string | null
   missing: (a: TaskAnswer) => boolean
   children: ReactNode
@@ -197,14 +214,21 @@ function QueuedPanel({
         g={g}
         pending={pending}
         fallback={
-          <QueuedBand view={null} resolved={false} inFlight={inFlight} project={project}>
+          <QueuedBand view={null} resolved={false} inFlight={inFlight} startEstimate={null} now={now} project={project}>
             {children}
           </QueuedBand>
         }
       >
         {(a) =>
           missing(a) ? null : (
-            <QueuedBand view={a.queued} resolved inFlight={inFlight} project={project}>
+            <QueuedBand
+              view={a.queued}
+              resolved
+              inFlight={inFlight}
+              startEstimate={startEstimate}
+              now={now}
+              project={project}
+            >
               {children}
             </QueuedBand>
           )
@@ -634,6 +658,7 @@ export function Standing({
   outgoing,
   queued,
   inFlight = null,
+  startEstimate = null,
   unknown,
   pending = false,
   untouched = false,
@@ -691,6 +716,8 @@ export function Standing({
   queued: QueuedView | null
   /** What the conductor is holding, from the log — never inside a GitHub boundary. Null in every state but queued. */
   inFlight?: InFlight | null
+  /** The log's half of the start estimate (#914); null in every state but queued. */
+  startEstimate?: StartEstimate | null
   /**
    * Why Lingtai cannot say whether this ticket exists at all, when it cannot.
    *
@@ -1202,7 +1229,15 @@ export function Standing({
         </section>
 
         {standing.state === 'queued' ? (
-          <QueuedPanel g={g} pending={pending} inFlight={inFlight} project={project} missing={missingOf}>
+          <QueuedPanel
+            g={g}
+            pending={pending}
+            inFlight={inFlight}
+            startEstimate={startEstimate}
+            now={now}
+            project={project}
+            missing={missingOf}
+          >
             <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
           </QueuedPanel>
         ) : null}
