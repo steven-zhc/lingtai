@@ -82,7 +82,7 @@ import { eventStore } from '@lingtai/event-store'
 import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
-import { ticketSourceOf } from '@lingtai/recipe/settings'
+import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 import { cache } from 'react'
 
@@ -1722,15 +1722,26 @@ export const readAttempts = cache(async (taskId: string) => {
 })
 
 /**
- * `inFlightOf` for a queued ticket only; an unreadable ceiling is unknown, not
- * one slot. **It reads no recipe** — that needs GitHub's installation lookup,
- * and this is the log's half (0118 §2) — so under a daily ceiling, where the
- * slots are the recipe's `concurrency`, it is null.
+ * `inFlightOf` for a queued ticket only; an unreadable ceiling or recipe is
+ * unknown, not one slot. The recipe is read (locally, through `projectFilter`)
+ * only under a daily ceiling, where the slots are its `concurrency`; without
+ * one the slots are 1 whatever it says.
  */
-function inFlightFor(state: string, lane: Awaited<ReturnType<typeof readTasks>>, project: string): InFlight | null {
+async function inFlightFor(
+  state: string,
+  lane: Awaited<ReturnType<typeof readTasks>>,
+  project: string,
+): Promise<InFlight | null> {
   if (state !== 'queued') return null
   try {
-    return inFlightOf(lane, project, undefined, machineDayCeiling() !== undefined)
+    const ceilingSet = machineDayCeiling() !== undefined
+    let concurrency: number | undefined
+    if (ceilingSet) {
+      const loaded = await loadProject(project).catch(() => null)
+      const filter = loaded ? await projectFilter(loaded) : null
+      if (filter?.ok) concurrency = concurrencyOf(filter.recipe)
+    }
+    return inFlightOf(lane, project, concurrency, ceilingSet)
   } catch {
     return null
   }
@@ -1888,7 +1899,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
-    inFlight: inFlightFor(standing.state, lane, ticket.project),
+    inFlight: await inFlightFor(standing.state, lane, ticket.project),
     events: own.length,
   }
 }
