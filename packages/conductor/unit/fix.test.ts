@@ -1623,7 +1623,6 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
 
   it('is the same brief with no advice, or an empty list', () => {
     expect(fixBrief({ ...base, advice: { on: 'lines', fixes: [] } })).toBe(fixBrief(base))
-    expect(fixBrief({ ...base, advice: { on: 'hunks', hunks: [] } })).toBe(fixBrief(base))
     expect(fixBrief({ ...base, advice: undefined })).toBe(fixBrief(base))
     expect(fixBrief(base)).not.toContain('granted this round')
   })
@@ -1679,7 +1678,7 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
       const mechanical = { _tag: 'Mechanical', path: 'apps/cli/src/status.ts', line: 3 }
       const conflict = (hunks: object[]) => advised({ _tag: 'ConflictingHunks', hunks, total: hunks.length })
 
-      it('carries each divergent hunk’s question and recommended answer into the brief', () => {
+      it('is none for divergent hunks too — their answers live in the body (#921)', () => {
         const w = aWaitId()
         const events = [
           ...aWait(item, { _tag: 'OwnQuestion', question: 'q', by: 'steven' }, w),
@@ -1687,22 +1686,8 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
           ...aTriaged(item, w, 1, conflict([divergent, mechanical])),
         ]
         const advice = grantedAdviceOf(events, w)
-        expect(advice).toEqual({
-          on: 'hunks',
-          hunks: [
-            {
-              path: 'apps/cli/src/lingtai.ts',
-              line: 40,
-              question: 'Where does daemonCommand live now?',
-              recommended: 'Move the two dayCeilingStop calls into daemon.ts',
-            },
-          ],
-        })
-        const brief = fixBrief({ ...briefBase, advice })
-        expect(brief).toContain('What the person who granted this round accepted')
-        expect(brief).toContain('`apps/cli/src/lingtai.ts:40` — Where does daemonCommand live now?')
-        expect(brief).toContain("Triage's answer: Move the two dayCeilingStop calls into daemon.ts")
-        expect(brief).not.toContain('status.ts')
+        expect(advice).toBeUndefined()
+        expect(fixBrief({ ...briefBase, advice })).not.toContain('What the person who granted this round accepted')
       })
 
       it('is none, and the brief unchanged, with only mechanical hunks or none listed', () => {

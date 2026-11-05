@@ -13,6 +13,7 @@ import { type EventStore, eventStore, log as processLog, type SnapshotReadOption
 
 import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
 import { readState } from './snapshot-state.ts'
+import type { IssueChannel } from './tell.ts'
 
 /**
  * Granting the approval a held run is waiting for (#465).
@@ -310,10 +311,11 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
  * from a base that has since moved, which for the commonest case — a conflict
  * nobody chose to repair — is the whole of the fix.
  *
- * No GitHub call. `labelsFor("queued")` is empty, so there is nothing to say
- * that is not already implied, and `reconcile` converges the label an earlier
- * block left behind. A decision here does not need a network round trip to
- * count.
+ * No GitHub call to say the item is queued: `labelsFor("queued")` is empty, so
+ * there is nothing to say that is not already implied, and `reconcile`
+ * converges the label an earlier block left behind. The one exception is a wait
+ * whose triage asked questions (#921): their answers are written into the body
+ * first, through `github`, and a failed write or a missing `github` refuses.
  */
 export async function requeue(
   options: {
@@ -338,9 +340,11 @@ export async function requeue(
     onQuestion?: 'withdraw' | 'refuse'
     /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
     waitId?: WaitId
+    /** Where the wait's triage answers are written before it requeues (#921). */
+    github?: IssueChannel
     store?: EventStore
   } & SnapshotReadOptions,
-): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
+): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }> {
   const store = options.store ?? eventStore
   const snapshots = options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
@@ -351,7 +355,7 @@ export async function requeue(
   // on an item a new run had claimed. The run is left as it is: an approval
   // that arrives after this reads the item, which is no longer holding it. See
   // `deciding`.
-  return deciding(
+  return deciding<Awaited<ReturnType<typeof requeueHolding>>>(
     ticketId,
     () => ({
       ok: false,
@@ -365,11 +369,17 @@ export async function requeue(
 
 /** Exported for the unit half alone — see `approveHolding`'s own comment. */
 export async function requeueHolding(
-  options: { by: string; note: string; onQuestion?: 'withdraw' | 'refuse'; waitId?: WaitId },
+  options: {
+    by: string
+    note: string
+    onQuestion?: 'withdraw' | 'refuse'
+    waitId?: WaitId
+    github?: IssueChannel
+  },
   store: EventStore,
   ticketId: string,
   read: SnapshotReadOptions = {},
-): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string }> {
+): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }> {
   const item = await readState(store, ticketReducer, ticketId, 'all', read)
   if (item.lifecycle.status !== 'blocked') {
     // Saying which state it is in, for the reason `approve` does: "not blocked"
@@ -413,13 +423,20 @@ export async function requeueHolding(
       resolution: { _tag: 'Requeue' },
       by: options.by,
       note,
+      github: options.github,
       store,
       ...read,
     },
     ticketId,
   )
   if (!resolved.ok) {
-    return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+    return {
+      ok: false,
+      ticketId,
+      reason: resolved.reason,
+      detail: resolved.detail,
+      ...(resolved.written ? { written: true } : {}),
+    }
   }
 
   return {

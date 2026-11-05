@@ -1,6 +1,6 @@
 import { userInfo } from 'node:os'
 
-import { currentRecipe, loadProject, ownerlessClient, resolveWait } from '@lingtai/conductor'
+import { currentRecipe, loadProject, ownerlessClient, resolveWait, type IssueChannel } from '@lingtai/conductor'
 import { projectClient } from '@lingtai/conductor/filter'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
@@ -19,7 +19,7 @@ export async function grantFixRoundVerdict(
   if (!project) {
     return refusal(1, 'no-project', `no project named "${options.project}"`)
   }
-  let client: { refSha(ref: string): Promise<string | null> }
+  let client: IssueChannel & { refSha(ref: string): Promise<string | null> }
   if (project.owner === null) {
     const resolved = await currentRecipe(project)
     client = (await ownerlessClient(project, resolved.recipe)).client
@@ -45,6 +45,7 @@ export async function grantFixRoundVerdict(
       resolution: { _tag: 'GrantFixRound', onSha: options.ifHead ?? '', ref: '' },
       by: `human:${userInfo().username}`,
       client,
+      github: client,
     })
     if (!result.ok) {
       return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })

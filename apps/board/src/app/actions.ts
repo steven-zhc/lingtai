@@ -83,6 +83,19 @@ async function project(name: string) {
   return state
 }
 
+/**
+ * Where a wait's triage answers are written (#921) — the ticket store of an
+ * ownerless project, GitHub otherwise. `undefined` when there is none, which
+ * only matters to a wait whose triage asked questions: `requeue` refuses that
+ * by name and is unchanged otherwise.
+ */
+async function answersChannel(name: string) {
+  const state = await loadProject(name)
+  if (!state) return undefined
+  if (state.owner === null) return (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+  return hasGitHubAuth() ? (await projectClient(state)).client : undefined
+}
+
 export async function approveCard(input: {
   project: string
   issue: number
@@ -190,6 +203,7 @@ export async function continueFixingCard(input: {
       resolution: { _tag: 'GrantFixRound', onSha: input.onSha, ref: '' },
       by: actor(),
       client,
+      github: client,
     })
     revalidatePath(`/task/${result.ticketId}`)
     revalidatePath('/')
@@ -282,6 +296,7 @@ export async function requeueCard(input: {
       by: actor(),
       note: input.note,
       waitId: input.waitId,
+      github: await answersChannel(input.project),
     })
 
     revalidatePath('/')
@@ -742,6 +757,7 @@ export async function sendAttempt(input: {
       writer: await boardWriterOrNone(),
       project: parsed.project,
       issue: Number(parsed.issue),
+      github: await answersChannel(parsed.project),
       by,
       // The system's own sentence rather than a field to fill in: the reason
       // is the document on screen, already on the log, and asking again would

@@ -17,17 +17,20 @@ import { userInfo } from 'node:os'
  * stream and nothing else, to no other stream, whichever side asked — a run
  * it sends back is left as it was, and nothing it does reads as a run
  * failing. It refuses, appending nothing, while an approval of the same item
- * is still merging (#150). Without `--into-body`, there is no GitHub call:
- * the event is the whole of the decision and `reconcile` converges the label
- * an earlier block left behind. With `--into-body`, the issue body is written
+ * is still merging (#150). Without `--into-body`, the event is the whole of the
+ * decision and `reconcile` converges the label an earlier block left behind —
+ * except that a wait whose triage asked questions has its answers written into
+ * the body first (#921), which needs the issue channel and refuses without one.
+ * With `--into-body`, the issue body is written
  * through the GitHub client before the wait is resolved. A refusal after that
  * write leaves the body changed and reports the item's current state.
  */
-import { loadProject, requeue } from '@lingtai/conductor'
+import { currentRecipe, loadProject, ownerlessClient, requeue } from '@lingtai/conductor'
 import { editBodyAndRequeue, type IssueChannel } from '@lingtai/conductor/edit-body'
 import { projectClient } from '@lingtai/conductor/filter'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
+import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log, type EventStore } from '@lingtai/event-store'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
@@ -96,7 +99,17 @@ export async function requeueVerdict(
       })
       return fromOutcome(outcome, { written: outcome.written })
     }
+    // Only needed when the wait's triage asked questions; with no GitHub App the
+    // requeue refuses by name in that case and is unchanged otherwise (#921).
+    const github =
+      deps.client ??
+      (project.owner === null
+        ? (await ownerlessClient(project, (await currentRecipe(project)).recipe)).client
+        : hasGitHubAuth()
+          ? (await projectClient(project)).client
+          : undefined)
     const outcome = await (deps.requeue ?? requeue)({
+      github,
       project: options.project,
       issue: options.issue,
       // The local account: a weak claim, but a true one, and the same one the

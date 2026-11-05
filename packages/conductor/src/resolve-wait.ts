@@ -30,6 +30,8 @@ import {
   type PayloadOf,
   attemptReducer,
   ticketReducer,
+  triageAnswersText,
+  triageFactsFromState,
   type AttemptState,
   savedHeadOf,
   type ToAppend,
@@ -47,6 +49,8 @@ import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotReadOp
 
 import { agentBranch } from './branches.ts'
 import { readState } from './snapshot-state.ts'
+import type { IssueChannel } from './tell.ts'
+import { writeSection } from './write-section.ts'
 
 /**
  * The gates still refusing the sha an approval is about, by `point:action`.
@@ -148,6 +152,13 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
    * cannot resolve the wait.
    */
   split?: unknown
+  /**
+   * Where the wait's triage answers are written (#921) — read only for
+   * `GrantFixRound` and `Requeue` on a wait whose triage asked questions.
+   */
+  github?: IssueChannel
+  /** A question's index in `triageQuestionsOf`'s order → the answer id picked. A missing index takes the recommended answer. */
+  picks?: Readonly<Record<number, string>>
   store?: EventStore
 }
 
@@ -164,7 +175,14 @@ export type ResolveWaitResult =
        */
       unscheduled?: string
     }
-  | { ok: false; ticketId: string; reason: string; detail: string }
+  | {
+      ok: false
+      ticketId: string
+      reason: string
+      detail: string
+      /** Set when the triage answers were written into the body before this refused. */
+      written?: boolean
+    }
 
 export async function resolveWait(options: ResolveWaitOptions): Promise<ResolveWaitResult> {
   const ticketId = options.ticketId
@@ -342,8 +360,61 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
     if (refused !== null) return refused
   }
 
+  // **The wait's triage answers go into the body before it resolves** (#921,
+  // 0118 §6): every refusal above has already returned, so a body is never
+  // written for a refusal it was always going to get. Never reached by the
+  // reschedule path, which returned earlier, nor by `EditBodyAndRequeue`, which
+  // wrote its own text.
+  let version = item.version
+  let written = false
+  if (resolution._tag === 'GrantFixRound' || resolution._tag === 'Requeue') {
+    const triage = triageFactsFromState(item, options.waitId).result
+    const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
+    if (answers !== null && !answers.ok)
+      return {
+        ok: false,
+        ticketId,
+        reason: 'stale',
+        detail: `${answers.detail} — nothing was written or resolved. Reload and read it again.`,
+      }
+    if (answers !== null && answers.text !== '') {
+      if (options.github === undefined)
+        return {
+          ok: false,
+          ticketId,
+          reason: 'no-github',
+          detail:
+            "the wait's triage answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.",
+        }
+      const result = await writeSection({
+        store,
+        github: options.github,
+        ticketId,
+        key: `${ticketId}/${options.waitId}`,
+        text: answers.text,
+      })
+      if (!result.written) return { ok: false, ticketId, reason: 'write-failed', detail: result.detail }
+      written = true
+      // The write recorded its own events on this stream, so the version read
+      // above is behind: read again, and check the wait is still the one open.
+      const fresh = await readState(store, ticketReducer, ticketId, 'all', {
+        snapshots: options.snapshots,
+        writer: options.writer,
+      })
+      if (fresh.lifecycle.status !== 'blocked' || fresh.lifecycle.waitId !== options.waitId)
+        return {
+          ok: false,
+          ticketId,
+          reason: 'not-blocked',
+          detail: `${ticketId} is not waiting on ${options.waitId} any more — the answers were written into the body, nothing was resolved.`,
+          written,
+        }
+      version = fresh.version
+    }
+  }
+
   try {
-    await store.append(ticketId, item.version, [
+    await store.append(ticketId, version, [
       ...(resolution._tag === 'Split'
         ? [{ type: 'TicketSplit', actor: options.by, data: parsePayload('TicketSplit', options.split) }]
         : []),
@@ -367,6 +438,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
       ticketId,
       reason: 'stale',
       detail: `${ticketId} moved while this was being resolved. Nothing was resolved — reload and read it again.`,
+      ...(written ? { written } : {}),
     }
   }
 
