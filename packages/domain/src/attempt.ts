@@ -264,6 +264,7 @@ export function verdictOf(action: Reached): StepVerdict {
         case 'Completed':
           return action.result.assessment.verdict === 'accepted' ? 'passed' : 'failed'
         case 'AnswerUnreadable':
+        case 'DiffTooLarge':
           return 'failed'
         case 'Interrupted':
           return 'did-not-finish'

@@ -10,6 +10,7 @@ import {
   chatStream,
   reduceChat,
   reduceTicket,
+  claimShapeOf,
   splitProgressOf,
   isAttemptStream,
   parseTicketStream,
@@ -17,6 +18,7 @@ import {
   waitWords,
   type BlockDiagnosis,
   type Envelope,
+  type PayloadOf,
   type TicketClaim,
   type TicketDiscussion,
   type SplitProgress,
@@ -1338,6 +1340,10 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
     if (own) own.push(e)
     else byRun.set(e.streamId, [e])
   }
+  // Which `runId`s each stream has claimed so far: a claim of one it already
+  // carried is a continuation (`claimShapeOf`), and only a `TicketClaimed`
+  // adds to the set.
+  const claimedByStream = new Map<string, Set<string>>()
   const branchByRun = new Map<string, string>()
   for (const [streamId, own] of byRun) {
     const { ticketId } = reduceAttempt(own)
@@ -1359,7 +1365,15 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       }
       groups.set(e.streamId, group)
     }
-    group.lines.push(toLine(e, branchByRun.get(e.streamId)))
+    const claimed = claimedByStream.get(e.streamId) ?? new Set<string>()
+    const claim = claimShapeOf(e, claimed) ?? undefined
+    // `claim` is answered for a `TicketClaimed` that is new to the stream and for
+    // nothing else, so it is exactly the case that adds to the set.
+    if (claim === 'claim') {
+      claimed.add((e.data as PayloadOf<'TicketClaimed'>).runId)
+      claimedByStream.set(e.streamId, claimed)
+    }
+    group.lines.push(toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim }))
     group.to = String(e.seq)
   }
 
@@ -1888,7 +1902,7 @@ export async function loadAttemptTab(taskId: string, n: number): Promise<Attempt
   if (run === undefined) return null
   const project = parseTicketStream(taskId)?.project ?? null
   const recipe = project === null ? undefined : (await recipesFor(project, [run])).get(run.runId)
-  const group = groupHistory(streams[n - 1] ?? [], new Map([[run.runId, n]]))[0]
+  const group = groupHistory(streams[n - 1] ?? [], new Map(runs.map((r, i) => [r.runId, i + 1])))[0]
   return {
     taskId,
     project: project ?? '',
@@ -1969,5 +1983,8 @@ export async function loadTicketTab(taskId: string): Promise<TicketTabDetail | n
   const own = await readOwn(taskId)
   const ticket = await loadTicketBase(taskId, own)
   if (ticket === null) return null
-  return { taskId, ticket, events: groupHistory(own, new Map()).flatMap((g) => g.lines) }
+  // The ticket stream's claims are what its `TicketClaimed` rows name, so the
+  // map is built from the same reduction `readAttempts` numbers the tabs by.
+  const attempts = new Map(reduceTicket(own).claims.map((c, i) => [c.runId, i + 1]))
+  return { taskId, ticket, events: groupHistory(own, attempts).flatMap((g) => g.lines) }
 }

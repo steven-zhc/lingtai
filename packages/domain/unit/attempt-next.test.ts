@@ -76,6 +76,14 @@ describe('nextOf: §2 Proposal table', () => {
     expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'ReviewFindings', findings } })
   })
 
+  it('review, verdict DiffTooLarge: Propose{DiffTooLarge{from, size, limit}}, not ReviewEmpty', () => {
+    const result = next(outcome('review', [action('verdict', { _tag: 'DiffTooLarge', size: 400_001, limit: 400_000 })]))
+    expect(result).toEqual({
+      _tag: 'Propose',
+      proposal: { _tag: 'DiffTooLarge', from: 'review', size: 400_001, limit: 400_000 },
+    })
+  })
+
   it('review, verdict Completed{refused}, none with a failure scenario: ReviewEmpty{said, findings}', () => {
     const findings = [finding({ failureScenario: '' }), finding({ failureScenario: '   ' })]
     const result = next(

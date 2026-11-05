@@ -1,5 +1,29 @@
 [
   {
+    "file": "apps/board/src/lib/history.ts",
+    "function": "whoOf",
+    "type": "RunSpent",
+    "count": 1,
+    "class": "reaction",
+    "reason": "Chooses the words an event's actor is shown in, because these run as `conductor`; keeps no state."
+  },
+  {
+    "file": "apps/board/src/lib/history.ts",
+    "function": "whoOf",
+    "type": "TriageStarted",
+    "count": 1,
+    "class": "reaction",
+    "reason": "Chooses the words an event's actor is shown in, because these run as `conductor`; keeps no state."
+  },
+  {
+    "file": "apps/board/src/lib/history.ts",
+    "function": "whoOf",
+    "type": "WaitTriaged",
+    "count": 1,
+    "class": "reaction",
+    "reason": "Chooses the words an event's actor is shown in, because these run as `conductor`; keeps no state."
+  },
+  {
     "file": "apps/board/src/lib/markdown.ts",
     "function": "sourceOfPayloadDocument",
     "type": "RunPrompted",

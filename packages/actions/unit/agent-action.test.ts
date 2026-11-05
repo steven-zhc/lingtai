@@ -1117,6 +1117,44 @@ describe('the action', () => {
     expect(runtime.seen).toHaveLength(0)
   })
 
+  describe('a diff longer than the reviewer reads whole (0108 §14)', () => {
+    const withDiff = (diff: string, runtime: ReturnType<typeof reviewer>, fetched: { n: number }) =>
+      createAgentAction(
+        { name: 'review', prompt: '' },
+        {
+          runtime,
+          issue: async () => {
+            fetched.n += 1
+            return ISSUE
+          },
+          diff: async () => diff,
+          restore: async () => ({ untouched: true as const }),
+          settingsPath: '/tmp/s.json',
+          limits: { turns: 1, wallMs: 1, diffBytes: 100 },
+        },
+      )
+
+    it('limit + 1 code units stops before the ticket is read or the reviewer dispatched', async () => {
+      const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+      const fetched = { n: 0 }
+      const result = await withDiff('x'.repeat(101), runtime, fetched).run(context)
+
+      expect(result.verdict).toBe('failed')
+      expect(result.findings).toEqual([])
+      expect(result.diffTooLarge).toEqual({ size: 101, limit: 100 })
+      expect(runtime.seen).toHaveLength(0)
+      expect(fetched.n).toBe(0)
+    })
+
+    it('exactly the limit is reviewed whole', async () => {
+      const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+      const result = await withDiff('x'.repeat(100), runtime, { n: 0 }).run(context)
+
+      expect(result.diffTooLarge).toBeUndefined()
+      expect(runtime.seen).toHaveLength(1)
+    })
+  })
+
   it('does not fetch the ticket when there is nothing to review', async () => {
     let fetched = 0
     const action = createAgentAction(

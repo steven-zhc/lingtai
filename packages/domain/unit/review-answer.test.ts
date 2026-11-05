@@ -20,9 +20,9 @@ describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
     expect(REVIEW_ANSWER_JSON_SCHEMA).not.toHaveProperty('$schema')
   })
 
-  it('requires every key at the top level — findings and about, both', () => {
-    expect(REVIEW_ANSWER_JSON_SCHEMA.required).toEqual(expect.arrayContaining(['findings', 'about']))
-    expect(REVIEW_ANSWER_JSON_SCHEMA.required).toHaveLength(2)
+  it('requires every key at the top level — findings, about and summary', () => {
+    expect(REVIEW_ANSWER_JSON_SCHEMA.required).toEqual(expect.arrayContaining(['findings', 'about', 'summary']))
+    expect(REVIEW_ANSWER_JSON_SCHEMA.required).toHaveLength(3)
   })
 
   it('refuses an unknown key at the top level', () => {
@@ -69,8 +69,14 @@ describe('REVIEW_ANSWER_JSON_SCHEMA', () => {
 
 describe('ReviewAnswer', () => {
   it('parses a schema-shaped answer, about included as null', () => {
-    const parsed = ReviewAnswer.parse({ findings: [], about: null })
-    expect(parsed).toEqual({ findings: [], about: null })
+    const parsed = ReviewAnswer.parse({ findings: [], about: null, summary: null })
+    expect(parsed).toEqual({ findings: [], about: null, summary: null })
+  })
+
+  it('accepts a summary string or null, and lists summary as nullable in the schema', () => {
+    expect(ReviewAnswer.parse({ findings: [], about: null, summary: 'Adds x.' }).summary).toBe('Adds x.')
+    const summary = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).summary as { type: string[] }
+    expect([...summary.type].sort()).toEqual(['null', 'string'])
   })
 
   it('parses a finding with a class, or a null one, in the answer', () => {
@@ -79,10 +85,15 @@ describe('ReviewAnswer', () => {
       ReviewAnswer.parse({
         findings: [{ ...base, class: 'a failed read taken as empty', reachableBecause: null }],
         about: null,
+        summary: null,
       }),
     ).toBeTruthy()
     expect(
-      ReviewAnswer.parse({ findings: [{ ...base, class: null, reachableBecause: null }], about: null }),
+      ReviewAnswer.parse({
+        findings: [{ ...base, class: null, reachableBecause: null }],
+        about: null,
+        summary: null,
+      }),
     ).toBeTruthy()
   })
 

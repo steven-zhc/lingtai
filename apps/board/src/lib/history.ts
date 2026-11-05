@@ -7,39 +7,50 @@
  * was not, so `StepsResolved` — the plan ADR 0016 §4 rests on — rendered as a
  * timestamp, a type name and nothing at all (#87).
  *
- * Two rules, and the second is the one that matters:
+ * Three rules, and the third is the one that holds the others:
  *
- *   1. A named formatter says the sentence: what happened, in the words
- *      somebody reading the log would use. Terse, because the payload is now
- *      genuinely one click below rather than merely promised to be.
- *   2. **The fallback is the payload, never the empty string.** A formatter
- *      that must learn forty types will always be behind the catalogue, so a
- *      type nobody has written a line for is exactly the one worth seeing raw.
- *      `describePayload` is what a new event type gets for free.
- *
- * `Partial<Record<EventType, …>>` and not a total record, deliberately. A total
- * one would make adding an event to `events.ts` break the board's typecheck,
- * which is the same "the renderer is behind the catalogue" failure wearing a
- * hat — and rule 2 is what makes being behind survivable. The keys are still
- * checked against the catalogue, so a formatter for a misspelled type does not
- * compile.
+ *   1. **Every event type has a sentence**, in the glossary's words
+ *      (`doc/glossary.md`, *Words on the board*): an attempt is `Attempt N`,
+ *      never a stream id or a run id; a path is relative to the repository; a
+ *      version string is not a caption. The type is shown beside it and the
+ *      fields one click further, so the sentence is the row.
+ *   2. **The fallback is a sentence that points into the open row** —
+ *      `recorded <Type>; open for its fields` — and never the payload printed
+ *      as `key=value`. It exists so that a formatter which throws on a payload
+ *      of a shape it does not know (an old schema version, a missing field)
+ *      costs a sentence and not the page.
+ *   3. **The catalogue test, not the type, holds rule 1.** `FORMAT` is a
+ *      `Partial<Record<EventType, …>>` on purpose: a total record would make
+ *      adding an event break the board's typecheck, and the types
+ *      `boardFactOf` owns are already sentences in `FACT_FORMAT`, which a total
+ *      `FORMAT` would write twice. `history.test.ts` renders a schema-valid
+ *      sample of every type in `EVENTS` and fails on one that falls back, so
+ *      being behind the catalogue is a red test rather than a blank row.
  *
  * Pure, and its own module for that reason: `task.ts` reaches the database and
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType, PayloadOf } from '@lingtai/domain'
-import { boardFactOf, fromOf, ATTEMPT_STREAM_PREFIX, routeNext, waitWords } from '@lingtai/domain'
+import { boardFactOf, fromOf, routeNext, waitWords } from '@lingtai/domain'
+import type { ClaimShape } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
+import { RESOLUTION_COPY } from './resolution-copy.ts'
+import { billText, unknownBill, type Bill } from './spend.ts'
 import { presentCause } from './triage-cause.ts'
 
 /** One row: the four columns, plus everything the disclosure shows. */
 export interface HistoryLine {
   at: string
   type: string
-  /** The actor, whole. Rendered short with this in the title (#87). */
+  /** The actor, whole. Shown as the `title` of `who` (#87). */
   actor: string
+  /** The actor in words: `conductor`, `Attempt 2's agent`, a person's name. */
+  who: string
+  /** The event as a sentence in the glossary's words. */
   summary: string
+  /** The ids the sentence could not name as an attempt of this ticket, for its `title`; empty otherwise. */
+  summaryTitle: string
   /** Global order. The thing a finding cites when it wants to be believed. */
   seq: string
   streamId: string
@@ -78,8 +89,75 @@ export interface PayloadDocument {
 }
 
 type Payload = Record<string, unknown>
-/** `branch` is the ticket's `agent/<n>`, when the caller has one to give — only `PassRouted` reads it. */
-type Formatter = (d: Payload, branch?: string) => string
+
+/**
+ * What a sentence needs from outside its own event.
+ *
+ * `attempts` maps an attempt's stream id (`pass-…`, which is also the `runId`
+ * a `TicketClaimed` carries and what follows `agent:` in an actor) to its
+ * number N on this ticket. It is required: an empty map is a bug in the loader,
+ * and the type checker is what finds the caller that forgot it.
+ */
+export interface LineContext {
+  attempts: ReadonlyMap<string, number>
+  /** The ticket's `agent/<n>`, when the caller has one to give — only `PassRouted` reads it. */
+  branch?: string
+  /** Set by `groupHistory` on a `TicketClaimed` / `TicketContinued`, which is the only place the stream before it is known. */
+  claim?: ClaimShape
+}
+
+/** What a formatter reads besides its payload; `unknown` collects the ids it could not name. */
+interface Reading extends LineContext {
+  streamId: string
+  unknown: Set<string>
+}
+type Formatter = (d: Payload, r: Reading) => string
+
+const OTHER_TICKET = 'another ticket'
+
+/** `Attempt N`, or `an attempt of another ticket` — the id goes to the row's `title`, never the text. */
+function attemptName(r: Reading, id: string): string {
+  const n = r.attempts.get(id)
+  if (n !== undefined) return `Attempt ${n}`
+  r.unknown.add(id)
+  return `an attempt of ${OTHER_TICKET}`
+}
+
+/** `Attempt N's agent`, or `an agent of another ticket`. */
+function attemptAgent(r: Reading, id: string): string {
+  const n = r.attempts.get(id)
+  if (n !== undefined) return `Attempt ${n}'s agent`
+  r.unknown.add(id)
+  return `an agent of ${OTHER_TICKET}`
+}
+
+/** A name for whoever `by` is: a person by name, an attempt's agent as `Attempt N's agent`. */
+function byName(r: Reading, by: string): string {
+  return by.startsWith('agent:') ? attemptAgent(r, by.slice('agent:'.length)) : personName(by)
+}
+
+/** `human:steven` → `steven`; anything else as it was written. */
+function personName(by: string): string {
+  return by.startsWith('human:') ? by.slice('human:'.length) : by
+}
+
+const upper = (s: string) => (s === '' ? s : s[0]!.toUpperCase() + s.slice(1))
+
+/** Everything up to and including `/worktrees/<project>/<stream id>/` is where the attempt happened to be checked out. */
+const WORKTREE_PREFIX = /^.*\/worktrees\/[^/]+\/[^/]+\//
+
+function repoPath(path: string): string {
+  return path.replace(WORKTREE_PREFIX, '')
+}
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`
+}
+
+/** What a row says when the sentence could not be built; the fields are in the open row. */
+function recorded(type: string): string {
+  return `recorded ${type}; open for its fields`
+}
 
 /**
  * How much free text a row carries before it is cut.
@@ -118,11 +196,6 @@ function sha(d: Payload, key: string, n = 7): string {
   return need(d, key).slice(0, n)
 }
 
-/** `pass-78db72ff-d659-…` → `78db72ff`. The same cut `TicketClaimed` made. */
-function runShort(d: Payload, key: string): string {
-  return need(d, key).slice(ATTEMPT_STREAM_PREFIX.length, ATTEMPT_STREAM_PREFIX.length + 8)
-}
-
 function list(v: unknown): string {
   return Array.isArray(v) ? v.map(String).join(', ') : String(v ?? '')
 }
@@ -138,21 +211,75 @@ function stepAt(d: Payload): string {
   return `${need(d, 'step')} · ${need(d, 'action')}`
 }
 
+/** `StepStarted` carries the step and the round and no action: it begins once per step (events.ts). */
+const stepStarted: Formatter = (d) => {
+  const round = typeof d['round'] === 'number' && d['round'] > 0 ? ` (round ${d['round']})` : ''
+  return `${need(d, 'step')} started${round}`
+}
+
+/** Who a `RunSpent` paid for, from its `for` — the same switch `who` reads. */
+function spentBy(d: Payload, r: Reading): string {
+  const spentFor = d['for'] as { _tag?: string; step?: string; name?: string } | undefined
+  switch (spentFor?._tag) {
+    case 'Action':
+      return `${attemptAgent(r, r.streamId)} (${spentFor.name ?? spentFor.step})`
+    case 'Judge':
+      return 'the judge'
+    case 'Triage':
+      return 'triage'
+    case 'Discussion':
+      return 'a discussion'
+    default:
+      throw new Error('no for')
+  }
+}
+
+/** `triage run 2` for an agent, `triage 2 (mechanical)` for the other arm. */
+function triageName(by: { _tag?: string }, attempt: string | number): string {
+  return by._tag === 'Agent' ? `Triage run ${attempt}` : `Triage ${attempt} (mechanical)`
+}
+
+function agentOf(by: { runtime?: string; model?: string }): string {
+  return by.runtime ? ` (${by.runtime}${by.model ? `, ${by.model}` : ''})` : ''
+}
+
 const FORMAT: Partial<Record<EventType, Formatter>> = {
   // ------------------------------------------------------------ work item --
   TicketDiscovered: (d) => `#${need(d, 'externalRef')} ${need(d, 'kind')} — ${clip(need(d, 'title'))}`,
-  TicketClaimed: (d) => `run ${runShort(d, 'runId')}`,
-  TicketReleased: (d) => `run ${runShort(d, 'runId')}: ${clip(need(d, 'reason'))}`,
+  // A claim whose run an earlier claim already carried is a continuation (`claimShapeOf`).
+  TicketClaimed: (d, r) =>
+    `${attemptName(r, need(d, 'runId'))} ${r.claim === 'continuation' ? 'continued' : 'claimed'}`,
+  TicketContinued: (d, r) => `${attemptName(r, need(d, 'runId'))} continued`,
+  TicketReleased: (d, r) => `${attemptName(r, need(d, 'runId'))} released: ${clip(need(d, 'reason'))}`,
+  TicketClosed: (d) => `Ticket closed by ${personName(need(d, 'by'))}: ${clip(d['reason'])}`,
+  TicketSplit: (d) => {
+    const children = Array.isArray(d['children']) ? (d['children'] as { number: number }[]) : []
+    if (children.length === 0) throw new Error('no children')
+    return `Ticket split into ${children.length} tickets: ${children.map((c) => `#${c.number}`).join(', ')}`
+  },
+  SplitStarted: (d) => {
+    const plan = d['plan'] as { children?: unknown[] } | undefined
+    if (!Array.isArray(plan?.children)) throw new Error('no plan')
+    return `Split started: ${plan.children.length} child ticket${plan.children.length === 1 ? '' : 's'} to write`
+  },
+  SplitChildWritten: (d) => `Child ticket #${need(d, 'number')} written`,
+  SplitLinkWritten: (d) => `Link written: ${need(d, 'ticket')} is blocked by ${need(d, 'blockedBy')}`,
+  SplitFailed: (d) => `Split failed at ${need(d, 'step')}: ${clip(d['detail'])}`,
   TicketLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
   TicketLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
   DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
 
   // ------------------------------------------------------------------ run --
-  // Four of the five fields it carries; the worktree path is in the payload.
-  RunStarted: (d) =>
-    `${need(d, 'runtime')} · ${need(d, 'model')} · base ${sha(d, 'baseSha')} · recipe ${sha(d, 'configHash', 12)}`,
-  RunPrompted: (d) => `${need(d, 'promptVersion')}, ${need(d, 'bytes')} bytes`,
-  RunTouchedFile: (d) => `${need(d, 'op')} ${need(d, 'path')}`,
+  // The runtime, the model (which a runtime may not name: `""`) and the base. The
+  // prompt version, the recipe hash and the worktree are in the fields.
+  RunStarted: (d, r) =>
+    `${attemptAgent(r, r.streamId)} started on ${need(d, 'runtime')}${d['model'] ? ` (${String(d['model'])})` : ''} from base ${sha(d, 'baseSha')}`,
+  // Its size; the version string is not a caption.
+  RunPrompted: (d, r) => `${attemptAgent(r, r.streamId)} was prompted (${need(d, 'bytes')} bytes)`,
+  RunTouchedFile: (d, r) => {
+    const verb = { edit: 'edited', write: 'wrote', delete: 'deleted' }[need(d, 'op')] ?? need(d, 'op')
+    return `${attemptAgent(r, r.streamId)} ${verb} ${repoPath(need(d, 'path'))}`
+  },
   RunContextExhausted: (d) => `compacted at turn ${need(d, 'turn')}`,
   RunAwaitingInput: (d) => clip(need(d, 'prompt')),
   RunProducedDiff: (d) => `${need(d, 'files')} files +${need(d, 'insertions')} −${need(d, 'deletions')}`,
@@ -254,12 +381,52 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     )
     return `${outcome}: ${said.join(' · ')}`
   },
-  StepStarted: stepAt,
+  StepStarted: stepStarted,
+  // Reached only when `boardFactOf` gave nothing: a step whose actions are
+  // none, or none reached. Said, because it was the commonest row to fall back.
+  StepEnded: (d) => {
+    const step = (d['outcome'] as { step?: string } | undefined)?.step
+    if (step === undefined) throw new Error('no step')
+    return `${step} ended with no action to run`
+  },
+  RunSpent: (d, r) => {
+    const turns = Number(d['turns'] ?? 0)
+    const bill: Bill =
+      typeof d['costUsd'] === 'number'
+        ? { reportedCents: Math.round(d['costUsd'] * 100), reportedRuns: 1, estimates: [], unknown: 0 }
+        : unknownBill(1)
+    return (
+      `${upper(spentBy(d, r))}: ${turns} turn${turns === 1 ? '' : 's'}, ${seconds(Number(d['durationMs'] ?? 0))}` +
+      ` · cost ${billText(bill)}`
+    )
+  },
 
   // ---------------------------------------------------------- integration --
   IntegrationAttempted: (d) => `${need(d, 'branch')} at ${sha(d, 'headSha')}`,
   IntegrationRefused: (d) => `${need(d, 'reason')}: ${clip(d['detail'])}`,
   IntegrationSucceeded: (d) => `${need(d, 'branch')} → ${need(d, 'base')} as ${sha(d, 'mergeCommit')}`,
+
+  // -------------------------------------------------------------- findings --
+  FindingProposed: (d, r) =>
+    `Finding ${need(d, 'key')} proposed by ${byName(r, need(d, 'by'))} as #${need(d, 'externalRef')}`,
+  FindingAccepted: (d, r) =>
+    `Finding ${need(d, 'key')} accepted by ${byName(r, need(d, 'by'))} as a ${need(d, 'kind')}`,
+  FindingDeclined: (d, r) => `Finding ${need(d, 'key')} declined by ${byName(r, need(d, 'by'))}: ${clip(d['reason'])}`,
+  MergeLaneWaited: (d) => {
+    const behind = d['behind'] as { issue?: string } | undefined
+    if (!behind?.issue) throw new Error('no behind')
+    return `Merge waited behind ${behind.issue}`
+  },
+  BaseChecked: (d) =>
+    `Base ${need(d, 'base')} at ${sha(d, 'baseSha')} ${d['ok'] === true ? 'passed' : 'failed'} ${need(d, 'command')}`,
+  ContinueRequested: (d, r) =>
+    `${personName(need(d, 'by'))} asked to continue ${attemptName(r, need(d, 'runId'))} of #${need(d, 'issue')}`,
+  ProjectOnboardingStarted: (d) =>
+    `${personName(need(d, 'by'))} started onboarding ${need(d, 'slug')} on ${need(d, 'base')}`,
+  ProjectRefused: (d) => `${need(d, 'project')} was refused: ${clip(d['detail'])}`,
+  ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
+  GitHubAppCreated: (d) => `GitHub App ${need(d, 'slug')} created`,
+  PluginFailed: (d) => `Plugin ${need(d, 'name')} failed on ${need(d, 'eventType')}: ${clip(d['reason'])}`,
 
   // ---------------------------------------------------------------- route --
   /**
@@ -278,7 +445,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * `packages/conductor`'s own reading of the offer and not this package's
    * to duplicate.
    */
-  PassRouted: (d, branch) => {
+  PassRouted: (d, { branch }) => {
     const data = d as unknown as PayloadOf<'PassRouted'>
     const from = fromOf(data.offer.proposal)
     const next = routeNext(data.offer, data.reply, data.decision, { runId: data.runId })
@@ -333,8 +500,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RunRequested: (d) => `${need(d, 'project')}#${need(d, 'issue')} by ${need(d, 'by')}`,
 
   // ---------------------------------------------------------- discussion --
-  DiscussionRequested: (d) => `${need(d, 'by')} asked: ${clip(need(d, 'question'))}`,
-  DiscussionAsked: (d) => `${need(d, 'by')}: ${clip(need(d, 'question'))}`,
+  DiscussionRequested: (d) => `${personName(need(d, 'by'))} asked: ${clip(need(d, 'question'))}`,
+  DiscussionAsked: (d) => `${personName(need(d, 'by'))}: ${clip(need(d, 'question'))}`,
   /**
    * The money and what could not be established, in that order.
    *
@@ -353,50 +520,54 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   },
   DiscussionHeld: (d) => {
     const cost = typeof d['costUsd'] === 'number' ? ` · $${d['costUsd'].toFixed(2)}` : ''
-    return `${need(d, 'chatId')} → ${need(d, 'outcome')}${cost}`
+    const outcome = { prompt: 'a prompt edit', ticket: 'a ticket edit', none: 'no change' }[need(d, 'outcome')]
+    return `Discussion ended with ${outcome ?? need(d, 'outcome')}${cost}`
   },
   // Blank is the removal, and the row says so — an edit taken back off the next
   // attempt is a decision somebody made, not the absence of one (#104).
   PromptEdited: (d) => {
     const text = String(d['text'] ?? '')
-    const hash = typeof d['hash'] === 'string' ? ` · human@${d['hash']}` : ''
-    const on = typeof d['basedOn'] === 'string' ? ` on ${d['basedOn']}` : ''
+    const by = personName(need(d, 'by'))
     return text.trim() === ''
-      ? `${need(d, 'by')} removed the edit from the next run${on}`
-      : `${need(d, 'by')} added ${text.length} bytes for the next run${on}${hash}`
+      ? `${by} removed the edit from the next attempt's prompt`
+      : `${by} added ${text.length} bytes to the next attempt's prompt`
   },
 
   // -------------------------------------------------------------- project --
   ProjectConfigured: (d) =>
     `${need(d, 'project')} recipe ${sha(d, 'configHash', 12)} from ${d['base'] ?? '(no base recorded)'}`,
-  Reconciled: (d) => {
+  Reconciled: (d, r) => {
     const findings = d['findings']
-    if (!Array.isArray(findings) || findings.length === 0) return 'nothing found'
+    if (!Array.isArray(findings) || findings.length === 0) return 'Reconciled: nothing found'
     const said = (findings as { stream: string; action: string }[])
       .slice(0, 3)
-      .map((f) => `${f.stream} ${f.action}`)
+      .map((f) => `${r.attempts.has(f.stream) ? attemptName(r, f.stream) : f.stream} ${f.action}`)
       .join(', ')
-    return findings.length > 3 ? `${findings.length} findings: ${said}, …` : said
+    return findings.length > 3
+      ? `Reconciled ${findings.length} findings: ${said}, …`
+      : `Reconciled ${findings.length} finding${findings.length === 1 ? '' : 's'}: ${said}`
   },
 
   // ---------------------------------------------------------------- triage --
+  // **`attempt` here counts triage's tries, not the ticket's attempts**, so it is
+  // never `Attempt N`. The model may be `""` (a runtime that names none), and
+  // that is a sentence without a model rather than a throw.
   TriageStarted: (d) => {
     const by = d['by']
     if (by === null || typeof by !== 'object') throw new Error('no by')
     const tagged = by as { _tag?: string; runtime?: string; model?: string }
-    const who = tagged._tag === 'Agent' ? `${need(tagged, 'runtime')}/${need(tagged, 'model')}` : 'mechanical'
-    return `attempt ${need(d, 'attempt')} · ${who}`
+    return `${triageName(tagged, need(d, 'attempt'))} started${tagged._tag === 'Agent' ? agentOf(tagged) : ''}`
   },
 }
 
-type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { _tag: Tag }>) => string
+type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { _tag: Tag }>, event: Payload) => string
 
 /**
  * The sentence for a `boardFactOf` fact — `summarise`'s first table, tried
  * before `FORMAT` above. One entry per `BoardFact` tag, so this is as total
  * as the fact type itself; `summarise` still wraps a call in the same
  * try/catch `FORMAT` gets, so a fact a formatter cannot fill (`WaitStarted`
- * with no `question` at all) falls to the raw payload exactly as before.
+ * with no `question` at all) falls to the fallback sentence.
  */
 const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   StepEnded: (f) => {
@@ -489,70 +660,50 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
    * `waitWords` (or, where that did not parse, read the v1/v2 fields
    * instead) — `question` is `undefined` only where neither had anything,
    * which this throws on, the same way `need` does, so `summarise` falls to
-   * `describePayload`.
+   * the fallback sentence.
    */
   WaitStarted: (f) => {
     if (f.question === undefined) throw new Error('no question')
-    const said = [f.needs ? `${f.needs}:` : null, clip(f.question)]
+    // The question already says what it asks for; the old `judgement:` /
+    // `acknowledgement:` prefix was the log's word for it, and the open row has it.
+    const said = [clip(f.question)]
     if (f.recommendation?.action) said.push(`— recommends ${f.recommendation.action}`)
-    return said.filter((s) => s !== null).join(' ')
+    return said.join(' ')
   },
   WaitResolved: (f) => {
     const note = clip(f.note)
     return note ? `${f.by}: ${note}` : f.by
   },
-  WaitTriaged: (f) => {
+  // **`attempt` is triage's try, not the ticket's** — see `FORMAT.TriageStarted`.
+  // The move is named by the board's own title for it, never by its tag.
+  WaitTriaged: (f, event) => {
+    const by = event['by']
+    const name = triageName(by !== null && typeof by === 'object' ? (by as { _tag?: string }) : {}, f.attempt)
     const result = f.result
-    if (result._tag === 'TriageFailed') return `attempt ${f.attempt} · failed: ${clip(result.why)}`
-    return `attempt ${f.attempt} · ${presentCause(result.cause).label} → ${result.resolution}: ${clip(result.summary)}`
+    if (result._tag === 'TriageFailed') return `${name} failed: ${clip(result.why)}`
+    return `${name} advised: ${RESOLUTION_COPY[result.resolution].title} — ${presentCause(result.cause).label}: ${clip(result.summary)}`
   },
 
   RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,
 }
 
 /**
- * A payload rendered as itself: every key, including the null ones.
+ * What a row says, and the ids it could not name as an attempt of this ticket.
+ * Never the empty string, and never the payload — see rule 2 above.
  *
- * The nulls stay because in this catalogue a null is a statement — "a v1 event
- * genuinely did not record this" — and dropping it would turn a fact into an
- * absence, which is the whole complaint one level down.
- */
-export function describePayload(data: unknown): string {
-  if (data === null || data === undefined) return '(no payload)'
-  if (typeof data !== 'object') return clip(data)
-  const entries = Object.entries(data as Payload)
-  if (entries.length === 0) return '(no payload)'
-  return clip(entries.map(([k, v]) => `${k}=${scalar(v)}`).join(' '), 240)
-}
-
-function scalar(v: unknown): string {
-  if (v === null) return 'null'
-  if (v === undefined) return 'undefined'
-  if (Array.isArray(v)) return `[${v.map(scalar).join(', ')}]`
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
-/**
- * What a row says. Never the empty string — see rule 2 above.
- *
- * A formatter that cannot fill its sentence yields to the payload: `need`
- * throws on a field that is not there, and an event of a shape this file does
- * not recognise is the one an operator most needs to see raw. It is also why
- * this is a reader that cannot break the page — a throw here costs a sentence,
- * not a render.
+ * A formatter that cannot fill its sentence yields to `recorded <Type>; open
+ * for its fields`: `need` throws on a field that is not there, and an event of
+ * a shape this file does not recognise is the one an operator most needs to
+ * open. It is also why this is a reader that cannot break the page — a throw
+ * here costs a sentence, not a render.
  *
  * `boardFactOf` is tried first: a type it owns answers through `FACT_FORMAT`,
- * and a type it does not own (`null`) falls to `FORMAT`, exactly as it did
- * before this read-model fact existed.
- *
- * `branch` is `groupHistory`'s reading of the run's own `RunStarted` — the
- * only subject `FORMAT.PassRouted` has, since `PassRouted` sits on a stream
- * with no ticket id of its own (#505). Optional so every other formatter,
- * and every existing caller, is unaffected.
+ * and a type it gives no fact for falls to `FORMAT`.
  */
-export function summarise(event: Envelope, branch?: string): string {
-  const data = event.data ?? {}
+function read(event: Envelope, ctx: LineContext): { said: string; unknown: string[] } {
+  const data = (event.data ?? {}) as Payload
+  const r: Reading = { ...ctx, streamId: event.streamId, unknown: new Set() }
+  const done = (said: string) => ({ said, unknown: [...r.unknown] })
   try {
     const facts = boardFactOf(event)
     // One event may answer several facts since #502 — a `StepEnded` names
@@ -561,40 +712,56 @@ export function summarise(event: Envelope, branch?: string): string {
     // this joins them in the order `boardFactOf` gave them.
     if (facts.length > 0) {
       const said = facts
-        .map((fact) => (FACT_FORMAT[fact._tag] as (f: typeof fact) => string)(fact).trim())
+        .map((fact) => (FACT_FORMAT[fact._tag] as (f: typeof fact, d: Payload) => string)(fact, data).trim())
         .filter((s) => s !== '')
         .join('; ')
-      return said || describePayload(data)
+      return done(said || recorded(event.type))
     }
   } catch {
-    // A malformed payload for a type `boardFactOf` owns — fall through to
-    // the payload, the same as a formatter that cannot fill its sentence.
-    return describePayload(data)
+    // A malformed payload for a type `boardFactOf` owns.
+    return done(recorded(event.type))
   }
   const format = FORMAT[event.type as EventType]
   if (format) {
     try {
-      const said = format(data as Payload, branch).trim()
-      if (said) return said
+      const said = format(data, r).trim()
+      if (said) return done(said)
     } catch {
-      // Fall through to the payload.
+      // Fall through to the fallback sentence.
     }
   }
-  return describePayload(data)
+  return done(recorded(event.type))
+}
+
+export function summarise(event: Envelope, ctx: LineContext): string {
+  return read(event, ctx).said
 }
 
 /**
- * The actor, short enough to stay in the actor column.
- *
- * `agent:pass-78db72ff-d659-4515-a5d3-150a0e8a3b33` is 46 characters against a
- * 9rem column, so it ran past the summary and read as the row's detail — which
- * is how `RunPrompted` came to look like an event whose content was its own
- * actor. The whole value goes in the row's `title`.
+ * The actor in words. Triage, the judge and a discussion all run as
+ * `conductor`, so they are named from the event, not the actor.
  */
-export function shortActor(actor: string): string {
-  const prefix = `agent:${ATTEMPT_STREAM_PREFIX}`
-  if (!actor.startsWith(prefix)) return actor
-  return `${prefix}${actor.slice(prefix.length, prefix.length + 8)}`
+function whoOf(event: Envelope, ctx: LineContext): string {
+  const { actor } = event
+  if (actor.startsWith('human:')) return personName(actor)
+  if (actor.startsWith('agent:')) {
+    const n = ctx.attempts.get(actor.slice('agent:'.length))
+    return n === undefined ? `an agent of ${OTHER_TICKET}` : `Attempt ${n}'s agent`
+  }
+  if (actor !== 'conductor') return actor
+  if (event.type === 'TriageStarted' || event.type === 'WaitTriaged') return 'triage'
+  if (event.type.startsWith('Discussion')) return 'a discussion'
+  if (event.type === 'RunSpent') {
+    switch ((event.data as { for?: { _tag?: string } } | null)?.for?._tag) {
+      case 'Judge':
+        return 'the judge'
+      case 'Triage':
+        return 'triage'
+      case 'Discussion':
+        return 'a discussion'
+    }
+  }
+  return actor
 }
 
 /** The payload as stored, for the disclosure under every row. */
@@ -668,14 +835,17 @@ export function splitPayload(data: unknown, type?: string): { raw: string; docum
   return { raw: rawPayload(lift(data ?? null, '')), documents }
 }
 
-/** One event, as a row. `branch` is `groupHistory`'s, passed through to `summarise`. */
-export function toLine(event: Envelope, branch?: string): HistoryLine {
+/** One event, as a row. */
+export function toLine(event: Envelope, ctx: LineContext): HistoryLine {
   const { raw, documents } = splitPayload(event.data, event.type)
+  const { said, unknown } = read(event, ctx)
   return {
     at: event.at.toISOString(),
     type: event.type,
     actor: event.actor,
-    summary: summarise(event, branch),
+    who: whoOf(event, ctx),
+    summary: said,
+    summaryTitle: unknown.join(' '),
     seq: String(event.seq),
     streamId: event.streamId,
     version: event.version,

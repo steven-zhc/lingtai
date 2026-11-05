@@ -152,6 +152,11 @@ const RULES = `## The rules
   finish (\`TicketTooBig\`).
 - **\`Split\` only with \`TicketTooBig\`, and only with its \`split\` plan.** The plan is
   advice a person edits; nothing is opened until they approve it.
+- **A \`DiffTooLarge\` wait is evidence for \`TicketTooBig\`** (0108 §14): the
+  reviewer was never run because the change was longer than it reads whole.
+  Advise \`Split\`, with its plan, only when the ticket really holds separable
+  work; a change that is large for one reason, such as a scripted rename across
+  many files, does not split, and is \`Requeue\` or \`EditBodyAndRequeue\`.
 - **Where the body does not say what the ticket wants**, answer \`"want": null\`
   and ask for it as an \`UndecidedQuestion\` (0118 §2, §3) — do not guess.`
 

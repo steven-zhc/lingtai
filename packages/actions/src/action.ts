@@ -121,6 +121,8 @@ export interface ActionResult {
    */
   evidence: string
   findings: ActionFinding[]
+  /** The cold reviewer's summary of the change, where it wrote one (0103 §3, #890). */
+  summary?: string
   /**
    * **Where this action left the worktree**, and absent on every kind that only
    * judged one (0065 §2, `#268`).
@@ -193,6 +195,14 @@ export interface ActionResult {
    * never whether a round is spent.
    */
   unreadable?: true
+  /**
+   * The diff was longer than the reviewer would read whole, so none was
+   * dispatched (0108 §14). `size` is `diff.length` and `limit` the
+   * `runtime.budget.diff` it was compared with, in the clip's own unit. The
+   * result is `failed` with no findings, which is what `ReviewEmpty` is — this
+   * field is how the conductor tells the two apart.
+   */
+  diffTooLarge?: { size: number; limit: number }
   /**
    * **Which of the two kinds of refusal this is, in the action's own word** —
    * `lines` or `approach` (`REFUSED_ABOUT`), and absent on every result that did
@@ -659,12 +669,16 @@ export interface PipelineResult {
     verdict: ActionVerdict
     evidence: string
     findings: ActionFinding[]
+    /** The reviewer's summary of the change, where it wrote one. `ActionResult.summary`. */
+    summary?: string
     /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
     head?: string
     /** Its own word for why it said no, where it has one. `ActionResult.because`. */
     because?: string
     /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
     unreadable?: true
+    /** That no reviewer was dispatched because the diff was too large. `ActionResult.diffTooLarge`. */
+    diffTooLarge?: { size: number; limit: number }
     /** Which kind of refusal it said this was, where it said. `ActionResult.about`. */
     about?: RefusedAbout
     /** The document it wrote, where it wrote one. `ActionResult.document`. */
@@ -862,6 +876,8 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
       // same reason.
       ...(result.head === undefined ? {} : { head: result.head }),
+      // Spread for `head`'s reason: no summary is an absent key (#890).
+      ...(result.summary === undefined ? {} : { summary: result.summary }),
       // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
       // same `?? "action-refused"` fallback: an explicit `undefined` would be a
       // kind claiming to have a word for its refusal and then not having one.
@@ -871,6 +887,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // explicit `undefined` would read the same to a program and differently to
       // a person (`#279`).
       ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+      ...(result.diffTooLarge === undefined ? {} : { diffTooLarge: result.diffTooLarge }),
       // Spread for `head`'s reason a third time, and here *absent* is the whole
       // value: a reviewer that did not classify its refusal and one that said
       // `lines` must never reduce into the same row, because the only thing this

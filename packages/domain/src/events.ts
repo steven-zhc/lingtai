@@ -1167,6 +1167,9 @@ export const ReviewAnswer = z
       Finding.extend({ class: z.string().nullable(), reachableBecause: z.string().nullable() }).strict(),
     ),
     about: z.enum(REFUSED_ABOUT).nullable(),
+    // Required but nullable, like `about` (0103 §3, #890): a short markdown
+    // summary of the whole change. A request, not a gate.
+    summary: z.string().nullable(),
   })
   .strict()
 export type ReviewAnswer = z.infer<typeof ReviewAnswer>

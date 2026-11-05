@@ -27,7 +27,7 @@ import { inSpan } from '@lingtai/actions/spans'
  * it structurally, and a test satisfies it with four functions and no
  * network — which is the whole point of a caller naming its own requirement.
  */
-import { parseTicketStream, ticketReducer } from '@lingtai/domain'
+import { landingCommentTriedOf, parseTicketStream, ticketReducer } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
 import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
 
@@ -490,6 +490,163 @@ export async function editEndedWaits(
 }
 
 /**
+ * Markdown with every word-initial `@` outside code made harmless: `@` then a
+ * zero-width joiner, so GitHub does not notify the person it names. Fenced
+ * blocks and inline code spans are left as written (`@types/node` in a span is
+ * not a mention).
+ */
+export function unmention(markdown: string): string {
+  const defuse = (text: string) => text.replace(/(^|[^\w])@(?=[\w-])/g, '$1@‍')
+  // Prose between fences: a backslash escapes the next character (so an escaped backtick opens
+  // nothing), and a code span runs to the next backtick run of its width within the same
+  // paragraph, across line breaks but not across a blank line.
+  const prose = (text: string): string => {
+    let out = ''
+    let plain = ''
+    let at = 0
+    while (at < text.length) {
+      const ch = text[at]!
+      if (ch === '\\') {
+        plain += text.slice(at, at + 2)
+        at += 2
+        continue
+      }
+      if (ch !== '`') {
+        plain += ch
+        at++
+        continue
+      }
+      let end = at
+      while (text[end] === '`') end++
+      const width = end - at
+      // A span cannot cross a block boundary: a blank line, or a line (indented at most three spaces)
+      // that opens a heading, quote, list item that may interrupt a paragraph (a bullet, or `1.`),
+      // thematic break or setext underline. An ATX heading's own line is the whole of its content.
+      const lineStart = text.lastIndexOf('\n', at - 1) + 1
+      const lineEndAt = text.indexOf('\n', end)
+      const heading = / {0,3}#{1,6}(?:[ \t]|$)/y
+      heading.lastIndex = lineStart
+      const inHeading = heading.test(text.slice(0, lineEndAt === -1 ? text.length : lineEndAt))
+      const brk = inHeading
+        ? (lineEndAt === -1 ? text.length : lineEndAt) - end
+        : text
+            .slice(end)
+            .search(
+              /\n(?:[ \t]*\n| {0,3}(?:#{1,6}(?:[ \t]|\n|$)|>|[-*+][ \t]+\S|1[.)][ \t]+\S|(?:[-*_][ \t]*){3,}(?:\n|$)|=+[ \t]*(?:\n|$)))/,
+            )
+      const limit = brk === -1 ? text.length : end + brk
+      let search = end
+      let found = -1
+      while (search < limit) {
+        const next = text.indexOf('`', search)
+        if (next === -1 || next >= limit) break
+        let stop = next
+        while (text[stop] === '`') stop++
+        if (stop - next === width) {
+          found = stop
+          break
+        }
+        search = stop
+      }
+      if (found === -1) {
+        plain += text.slice(at, end)
+        at = end
+        continue
+      }
+      out += defuse(plain) + text.slice(at, found)
+      plain = ''
+      at = found
+    }
+    return out + defuse(plain)
+  }
+  let out = ''
+  let buffer = ''
+  let fence: string | null = null
+  const lines = markdown.split('\n')
+  lines.forEach((line, i) => {
+    const nl = i < lines.length - 1 ? '\n' : ''
+    // A backtick fence's info string holds no backtick (else it is a code span's opener), and a
+    // closing fence is the fence and whitespace alone.
+    const m = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/.exec(line)
+    if (fence !== null) {
+      out += line + nl
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close !== null && close[1]!.startsWith(fence[0]!) && close[1]!.length >= fence.length) fence = null
+      return
+    }
+    if (m !== null) {
+      out += prose(buffer)
+      buffer = ''
+      fence = m[1]!
+      out += line + nl
+      return
+    }
+    buffer += line + nl
+  })
+  return out + prose(buffer)
+}
+
+/**
+ * The text with every local filesystem path replaced: an absolute path under a
+ * home, temp or system directory, a `~/` path, or a Windows user path. The
+ * reviewer writes about a diff in a worktree and may name where it lives; a
+ * comment on a public issue must not (#896).
+ */
+export function withoutLocalPaths(text: string): string {
+  // A home directory's name may hold spaces (`/Users/Alice Smith/`), so any run of characters up to the
+  // next separator is read as the name; a `file:` prefix (`file:/`, `file://`) is part of the path.
+  const name = '(?:[^\\n\\\\/`\'"()\\[\\]<>]+[\\\\/])?'
+  const rest = '[^\\s`\'")\\],;]*'
+  const unix = new RegExp(
+    `(?<![\\w.:/-])(?:file:(?:///?(?:localhost)?)?)?(?:/(?:Users|home)/${name}|/(?:private|var|tmp|root|opt)/|~/|\\$HOME/)${rest}`,
+    'g',
+  )
+  const windows = new RegExp(
+    `(?<![\\w])(?:file:/{1,3})?[A-Za-z]:[\\\\/](?:Users|Documents and Settings)[\\\\/]${name}${rest}`,
+    'g',
+  )
+  return text.replace(unix, '[local path]').replace(windows, '[local path]')
+}
+
+/** What a landing carries to its comment (#896). */
+export interface Landed {
+  mergeCommit: string
+  base: string
+  attempt: number
+  /** The landing run's last review's summary, or `null` when it gave none. */
+  summary: string | null
+}
+
+/** The comment a landing posts: where it landed, the reviewer's summary when there is one, and which attempt. */
+export function landingComment(landed: Landed): string {
+  const sha = landed.mergeCommit.slice(0, 7)
+  const head = `**Landed on \`${landed.base}\`${sha === '' ? '' : ` in \`${sha}\``}.**`
+  if (landed.summary === null) return head
+  return [head, unmention(withoutLocalPaths(landed.summary)), `Attempt ${landed.attempt} · reviewed cold`].join('\n\n')
+}
+
+/**
+ * **One comment per landing, never a second** (#896). Posts nothing when the
+ * ticket's stream already holds, after its latest `TicketLanded`, a `comment`
+ * attempt with no `waitId` — `IssueUpdated` or `IssueUpdateFailed` alike, so a
+ * refused post is not retried. A post made and not recorded (a restart between
+ * the two) is not searched for and not re-posted: the same accepted cost as the
+ * waiting comment. A stream that cannot be read posts nothing.
+ */
+function postLanding(store: EventStore, github: IssueChannel, ticketId: string, landed: Landed): Promise<void> {
+  return store
+    .read(ticketId)
+    .then((events) =>
+      landingCommentTriedOf(events)
+        ? undefined
+        : tellGitHub({ store, github, ticketId, change: { kind: 'comment', body: landingComment(landed) } }).then(
+            () => undefined,
+          ),
+    )
+    .catch(() => undefined) // Deliberately silent: nothing here throws.
+}
+
+/**
  * Everything one state change implies for an issue, in the order the outbox
  * used to send it.
  *
@@ -536,6 +693,8 @@ export async function tellGitHubAbout(
     editEnded?: boolean
     /** The events just appended; any `EndActionsResolved` among them is carried out. */
     appended?: readonly ToAppend[]
+    /** The landing, when this call tells of one: one comment, posted before `appended`'s close (#896). */
+    landed?: Landed
   } & SnapshotReadOptions,
 ): Promise<void> {
   const { store, github, ticketId } = options
@@ -565,6 +724,7 @@ export async function tellGitHubAbout(
     })
   }
   if (options.labels != null) await tell({ kind: 'labels', labels: options.labels })
+  if (options.landed !== undefined) await postLanding(store, github, ticketId, options.landed)
 
   for (const e of options.appended ?? []) {
     if (e.type !== 'EndActionsResolved') continue

@@ -233,6 +233,12 @@ describe('offerFor: zero spent', () => {
       ],
     })
   })
+
+  it('DiffTooLarge: only hand-to-person is on offer, so no judge is asked (0108 §14)', () => {
+    const tooLarge: Proposal = { _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 }
+    const offer = offerFor(tooLarge, policy, zero)
+    expect(offer.available).toEqual([{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }])
+  })
 })
 
 describe("offerFor: #471's seven — a born-before-implement step leaves fix-lines out entirely, never unavailable", () => {

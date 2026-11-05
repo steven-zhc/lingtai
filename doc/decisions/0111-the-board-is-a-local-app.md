@@ -112,6 +112,18 @@ budget.
     unterminated OSC loses only its `ESC ]`. Carriage-return redraws and other
     control characters are left alone.
 
+15. **A part that waits is drawn where it will be, in its own shape.** Whatever
+    streams in after the page (GitHub's answers, a tab or section read when
+    opened) is shown until then as a placeholder of the content's shape at its
+    place: skeleton cards in a column of cards, skeleton lines in a body of
+    text, with a short label saying what is being asked (*asking GitHub…*). It
+    is sized from the last answer seen, when there was one, so the page does not
+    jump when the answer arrives. What arrives fades in, and only what is new
+    moves; a refresh that changes nothing moves nothing. A reader who asked for
+    reduced motion gets the same placeholders, still. There is one placeholder
+    component, and every waiting part uses it. A failure is said in the same
+    place, never left as a placeholder.
+
 ## Consequences
 
 - The board needs a Node runtime and holds a store connection per open tab;

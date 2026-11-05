@@ -161,7 +161,13 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     )
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
-    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
+    expect(typesOf(await theItem(store))).toEqual([
+      'TicketClaimed',
+      'IssueUpdated',
+      'TicketLanded',
+      'IssueUpdated',
+      'IssueUpdated',
+    ])
     expect(typesOf(theRun(store))).toEqual([
       'StepStarted',
       'StepEnded',
@@ -243,7 +249,13 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     )
 
     expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
-    expect(typesOf(await theItem(store))).toEqual(['TicketClaimed', 'IssueUpdated', 'TicketLanded', 'IssueUpdated'])
+    expect(typesOf(await theItem(store))).toEqual([
+      'TicketClaimed',
+      'IssueUpdated',
+      'TicketLanded',
+      'IssueUpdated',
+      'IssueUpdated',
+    ])
     expect(typesOf(theRun(store))).toEqual([
       'StepStarted',
       'StepEnded',
