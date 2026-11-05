@@ -1305,7 +1305,7 @@ export function Standing({
                 {standing.state === 'blocked' && (standing.waitId === null || standing.reason === null) ? (
                   <p className="refusal">the decision on this card could not be read — reload and read it again</p>
                 ) : null}
-                {standing.state === 'queued' ? null : (
+                {
                   <div className="sresolutiongrid" data-rank="moves">
                     {resolutionCards.map((tag) => {
                       const visible = standing.state === 'blocked' && allowed.includes(tag)
@@ -1452,7 +1452,7 @@ export function Standing({
                       )
                     })}
                   </div>
-                )}
+                }
 
                 {/* A queued ticket's moves: three cards, none recommended, none amber. Every
           head and sentence is drawn at once; only the action that needs GitHub's
@@ -1460,12 +1460,7 @@ export function Standing({
           had and it lived in a terminal (0028 §3). */}
                 {standing.state === 'queued' ? (
                   <div className="sresolutiongrid" data-rank="moves">
-                    <ResolutionCard
-                      recommended={false}
-                      className="sresolution"
-                      data-resolution="RunNow"
-                      head={<h3>Run it now</h3>}
-                    >
+                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Run it now</h3>}>
                       <p className="sresolutionconsequence">
                         Taken on the conductor’s next turn, ahead of the queue. It still waits for a free slot.
                       </p>
@@ -1491,12 +1486,7 @@ export function Standing({
                         </Gh>
                       </div>
                     </ResolutionCard>
-                    <ResolutionCard
-                      recommended={false}
-                      className="sresolution"
-                      data-resolution="EditPrompt"
-                      head={<h3>Edit the prompt</h3>}
-                    >
+                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Edit the prompt</h3>}>
                       <p className="sresolutionconsequence">
                         Change what Attempt {standing.attempts + 1} is sent. The edit applies to Attempt{' '}
                         {standing.attempts + 1} only.
@@ -1517,12 +1507,7 @@ export function Standing({
                         </Gh>
                       </div>
                     </ResolutionCard>
-                    <ResolutionCard
-                      recommended={false}
-                      className="sresolution"
-                      data-resolution="Close"
-                      head={<h3>Close the ticket</h3>}
-                    >
+                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Close the ticket</h3>}>
                       <p className="sresolutionconsequence">{RESOLUTION_COPY.Close.consequence}</p>
                       <div className="sresolutionaction">
                         <Close project={project} issue={issue} waitId={null} />

@@ -1054,12 +1054,13 @@ describe('a queued page reduces the plan into the rail (#781)', () => {
     tier: 'guarded',
   })
 
-  it('draws one rail and no plan box, with the plan in a closed disclosure', () => {
+  it('draws one rail and no plan box, with the plan open in the panel', () => {
     const html = page(queuedOf(view))
     expect(html.match(/class="seq"/g)).toHaveLength(1)
     expect(html).not.toContain('class="plan"')
-    expect(html).toContain('<details class="srailplan">')
-    expect(html.match(/<li class="splancell"/g)).toHaveLength(view.steps.length)
+    expect(html).not.toContain('srailplan')
+    expect(html).toContain('<ol class="planlist">')
+    expect(html).toContain('What Attempt 1 will do')
   })
 
   it('says the recipe could not be read when there is no plan', () => {
