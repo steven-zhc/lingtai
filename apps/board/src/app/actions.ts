@@ -182,6 +182,8 @@ export async function continueFixingCard(input: {
   issue: number
   waitId: WaitId
   onSha: string
+  /** The answers the person picked, by question index; none takes the recommended ones (#922). */
+  picks?: Readonly<Record<number, string>>
 }): Promise<ActionResult> {
   try {
     if (!input.waitId || !input.onSha)
@@ -201,6 +203,7 @@ export async function continueFixingCard(input: {
       issue: input.issue,
       waitId: input.waitId,
       resolution: { _tag: 'GrantFixRound', onSha: input.onSha, ref: '' },
+      picks: input.picks,
       by: actor(),
       client,
       github: client,
@@ -281,6 +284,8 @@ export async function requeueCard(input: {
   note: string
   /** The wait the card rendered — `StandingView.waitId` (#465). Required — see `approveCard`'s own comment (#508). */
   waitId: WaitId
+  /** The answers the person picked, by question index; none takes the recommended ones (#922). */
+  picks?: Readonly<Record<number, string>>
 }): Promise<ActionResult> {
   try {
     if (!input.waitId) {
@@ -296,6 +301,7 @@ export async function requeueCard(input: {
       by: actor(),
       note: input.note,
       waitId: input.waitId,
+      picks: input.picks,
       github: await answersChannel(input.project),
     })
 

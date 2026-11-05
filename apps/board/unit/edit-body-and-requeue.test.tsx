@@ -1,4 +1,4 @@
-import type { WaitId } from '@lingtai/domain'
+import { triageAnswersText, type WaitId } from '@lingtai/domain'
 import { aWaitId } from '@lingtai/domain/test/events'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
@@ -11,6 +11,8 @@ const harness = vi.hoisted(() => ({
   submit: vi.fn(async () => ({ ok: true, detail: 'back in the queue' })),
   answer: vi.fn(async () => ({ ok: true, detail: 'answered' })),
   conclude: vi.fn(async () => ({ ok: true, detail: 'concluded' })),
+  continueFixing: vi.fn(async (_input: unknown) => ({ ok: true, detail: 'granted' })),
+  requeue: vi.fn(async (_input: unknown) => ({ ok: true, detail: 'requeued' })),
   /** What `useContext` answers: the provider's value, as the last `mount` rendered it. */
   triage: null as unknown,
 }))
@@ -38,9 +40,11 @@ vi.mock('../src/app/actions.ts', () => ({
   editBodyAndRequeueCard: harness.submit,
   answerCard: harness.answer,
   concludeChat: harness.conclude,
+  continueFixingCard: harness.continueFixing,
+  requeueCard: harness.requeue,
 }))
 
-import { EditBodyAndRequeue, Requeue } from '../src/app/decide.tsx'
+import { ContinueFixing, EditBodyAndRequeue, Requeue } from '../src/app/decide.tsx'
 import { TriagePicks, appendTo, draftTarget } from '../src/app/triage-picks.tsx'
 
 type Tag = string | null
@@ -63,10 +67,15 @@ const question = (text: string, picked: string) => ({
 function mount<T>(
   waitId: WaitId | null,
   component: () => T,
-  { by = null as Tag, questions = [] as ReturnType<typeof question>[] } = {},
+  { by = null as Tag, questions = [] as ReturnType<typeof question>[], cause = null as { _tag: string } | null } = {},
 ): T {
   harness.cursor = 0
-  const provider = TriagePicks({ waitId, questions, recommended: by, children: null }) as ReactElement<{
+  const provider = TriagePicks({
+    waitId,
+    cause: (cause ?? { _tag: 'UndecidedQuestion', questions }) as never,
+    recommended: by,
+    children: null,
+  }) as ReactElement<{
     value: unknown
   }>
   harness.triage = provider.props.value
@@ -172,9 +181,9 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
   const pick = (answerId: string) =>
     (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
 
-  expect(control(render(first, 'A'), 'textarea').props.value).toBe('Which? — A')
+  expect(control(render(first, 'A'), 'textarea').props.value).toBe('- Which? — A')
   pick('B')
-  expect(control(render(first, 'A'), 'textarea').props.value).toBe('Which? — B')
+  expect(control(render(first, 'A'), 'textarea').props.value).toBe('- Which? — B')
   control(render(first, 'A'), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
   pick('A')
   expect(control(render(first, 'A'), 'textarea').props.value).toBe('My own answer')
@@ -188,7 +197,7 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
     }),
   )
 
-  expect(control(render(next, 'A', 'Where?'), 'textarea').props.value).toBe('Where? — A')
+  expect(control(render(next, 'A', 'Where?'), 'textarea').props.value).toBe('- Where? — A')
 })
 
 const writesNothing = () => {
@@ -214,14 +223,14 @@ it('adds a discussion answer under the picks, writes nothing, and stops followin
   const pick = (answerId: string) =>
     (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
 
-  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A')
+  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A')
   addToDraft('Because the lock is held.')
-  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A\n\nBecause the lock is held.')
+  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A\n\nBecause the lock is held.')
   pick('B')
-  expect(control(render('A'), 'textarea').props.value).toBe('Which? — A\n\nBecause the lock is held.')
+  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A\n\nBecause the lock is held.')
   addToDraft('And a second thing.')
   expect(control(render('A'), 'textarea').props.value).toBe(
-    'Which? — A\n\nBecause the lock is held.\n\nAnd a second thing.',
+    '- Which? — A\n\nBecause the lock is held.\n\nAnd a second thing.',
   )
   writesNothing()
 })
@@ -349,4 +358,78 @@ it('keeps the body-writing label for FixerDisagrees', () => {
   expect(html).toContain('Text to add to the ticket body')
   expect(html).toContain('Write it into the body &amp; requeue')
   expect(html).not.toContain('Your answer')
+})
+
+it("sends the picks the person made, and the current wait's alone, from Continue fixing and Requeue", async () => {
+  harness.values = []
+  harness.continueFixing.mockClear()
+  harness.requeue.mockClear()
+  const waitId = aWaitId()
+  const render = <T,>(component: () => T) => mount(waitId, component, { questions: [question('Which?', 'A')] })
+  const pick = (answerId: string) =>
+    (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
+  const grant = () => ContinueFixing({ project: 'lingtai', issue: 112, waitId, onSha: 'abc', primary: true })
+  const requeue = () => Requeue({ project: 'lingtai', issue: 112, waitId, asked: false })
+
+  control(render(grant), 'button').props.onClick?.()
+  await vi.waitFor(() =>
+    expect(harness.continueFixing).toHaveBeenLastCalledWith({
+      project: 'lingtai',
+      issue: 112,
+      waitId,
+      onSha: 'abc',
+      picks: {},
+    }),
+  )
+
+  // A fresh page: a click retires its card, so each move starts one over.
+  harness.values = []
+  render(() => null)
+  pick('B')
+  control(render(grant), 'button').props.onClick?.()
+  await vi.waitFor(() =>
+    expect(harness.continueFixing).toHaveBeenLastCalledWith({
+      project: 'lingtai',
+      issue: 112,
+      waitId,
+      onSha: 'abc',
+      picks: { 0: 'B' },
+    }),
+  )
+
+  harness.values = []
+  render(() => null)
+  pick('B')
+  control(render(requeue), 'button').props.onClick?.()
+  control(render(requeue), 'button').props.onClick?.()
+  await vi.waitFor(() =>
+    expect(harness.requeue).toHaveBeenLastCalledWith({
+      project: 'lingtai',
+      issue: 112,
+      note: '',
+      waitId,
+      picks: { 0: 'B' },
+    }),
+  )
+})
+
+it("composes the text with the domain function, naming a hunk's path:line", () => {
+  harness.values = []
+  const waitId = aWaitId()
+  const hunks = [
+    { _tag: 'Mechanical', path: 'm.ts', line: 1 },
+    { _tag: 'Divergent', path: 'd.ts', line: 7, question: question('Which?', 'A') },
+  ]
+  for (const cause of [
+    { _tag: 'UndecidedQuestion', questions: [question('Which?', 'A')] },
+    { _tag: 'ConflictingHunks', hunks, total: 2 },
+  ]) {
+    harness.values = []
+    mount(waitId, () => null, { cause })
+    ;(harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, 'B')
+    mount(waitId, () => null, { cause })
+    const expected = triageAnswersText(cause as never, { 0: 'B' })
+    expect((harness.triage as { text: string }).text).toBe(expected.ok ? expected.text : null)
+  }
+  expect((harness.triage as { text: string }).text).toBe('- `d.ts:7` — Which? — B')
 })

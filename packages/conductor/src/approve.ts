@@ -342,6 +342,8 @@ export async function requeue(
     waitId?: WaitId
     /** Where the wait's triage answers are written before it requeues (#921). */
     github?: IssueChannel
+    /** The answers the person picked, by question index (#922); a missing index takes the recommended one. */
+    picks?: Readonly<Record<number, string>>
     store?: EventStore
   } & SnapshotReadOptions,
 ): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }> {
@@ -375,6 +377,7 @@ export async function requeueHolding(
     onQuestion?: 'withdraw' | 'refuse'
     waitId?: WaitId
     github?: IssueChannel
+    picks?: Readonly<Record<number, string>>
   },
   store: EventStore,
   ticketId: string,
@@ -424,6 +427,7 @@ export async function requeueHolding(
       by: options.by,
       note,
       github: options.github,
+      picks: options.picks,
       store,
       ...read,
     },

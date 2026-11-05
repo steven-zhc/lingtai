@@ -33,7 +33,7 @@ const turn = (
 
 const render = (discussion: DiscussionView, tag: string | null, waitId = aWaitId()) =>
   renderToStaticMarkup(
-    <TriagePicks waitId={waitId} questions={[]} recommended={tag}>
+    <TriagePicks waitId={waitId} cause={null} recommended={tag}>
       <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[discussion]} />
     </TriagePicks>,
   )
@@ -68,7 +68,7 @@ describe('add to this resolution', () => {
 
   it('keeps both buttons outside a wait', () => {
     const html = renderToStaticMarkup(
-      <TriagePicks waitId={null} questions={[]} recommended="EditBodyAndRequeue">
+      <TriagePicks waitId={null} cause={null} recommended="EditBodyAndRequeue">
         <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[turn({ kind: 'ticket', text: 'x' })]} />
       </TriagePicks>,
     )

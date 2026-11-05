@@ -1,6 +1,6 @@
 'use client'
 
-import type { TriageQuestion, WaitId } from '@lingtai/domain'
+import { triageAnswersText, type TriageQuestion, type WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
 type Picks = { waitId: WaitId | null; answers: Record<number, string> }
@@ -12,6 +12,8 @@ export type DraftTarget = 'EditBodyAndRequeue' | 'AnswerQuestion'
 type TriageDraft = {
   waitId: WaitId | null
   text: string
+  /** The current wait's picks, by question index in `triageQuestionsOf`'s order; empty under another wait's. */
+  picks: Readonly<Record<number, string>>
   /** The body editor's draft once the person has edited it or added to it; null while it follows the picks. */
   body: Draft | null
   setBody: (text: string) => void
@@ -28,7 +30,6 @@ type TriageDraft = {
 }
 
 const Context = createContext<TriageDraft | null>(null)
-const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
 
 /** An addition goes under what is there, after a blank line; into an empty draft it is the draft. */
 export const appendTo = (current: string, addition: string): string =>
@@ -44,12 +45,13 @@ export function draftTarget(recommended: string | null): DraftTarget | null {
 
 export function TriagePicks({
   waitId,
-  questions,
+  cause,
   recommended = null,
   children,
 }: {
   waitId: WaitId | null
-  questions: readonly TriageQuestion[]
+  /** The cause triage advised, whose questions the choices draw; null when there is none. */
+  cause: Parameters<typeof triageAnswersText>[0] | null
   /** The card triage's advice recommends, as `recommendedResolution` answered it on the server. */
   recommended?: string | null
   children: ReactNode
@@ -61,12 +63,9 @@ export function TriagePicks({
     answer: null,
   })
   const selected = (index: number, question: TriageQuestion) => answers[index] ?? question.recommended
-  const text = questions
-    .map((question, index) => {
-      const answer = question.answers.find((item) => item.id === selected(index, question))
-      return `${oneLine(question.text)} — ${oneLine(answer?.text ?? '')}`
-    })
-    .join('\n')
+  // The one composition: the server writes this same text for the same picks (#921).
+  const composed = cause === null ? null : triageAnswersText(cause, answers)
+  const text = composed?.ok ? composed.text : ''
   const pick = (index: number, answerId: string) =>
     setPicks((current) => ({
       waitId,
@@ -111,6 +110,7 @@ export function TriagePicks({
       value={{
         waitId,
         text,
+        picks: answers,
         body,
         setBody,
         answer,
