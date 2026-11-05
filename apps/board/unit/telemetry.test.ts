@@ -252,6 +252,18 @@ it('remembers at most the limit of trace ids, oldest first', async () => {
   expect(only.remembered).toBe(2)
 })
 
+it('drops a request span whose context was evicted before its page ended', async () => {
+  const sdk = await loadSdk()
+  const { seen, inner } = recorder()
+  const provider = new sdk.base.BasicTracerProvider({ spanProcessors: [new OnlyScope(SCOPE, inner, 2)] })
+  const first = traced(provider, 'a')
+  traced(provider, 'b')
+  traced(provider, 'c') // evicts a's request context
+  first.page.end()
+  first.request.end()
+  expect(seen).toEqual(['page a'])
+})
+
 it('never remembers more than 1,000 trace ids when page spans arrive with no request span', async () => {
   const sdk = await loadSdk()
   const only = new OnlyScope(SCOPE, recorder().inner)

@@ -133,8 +133,9 @@ export class OnlyScope implements SpanProcessor {
       const parent = span.parentSpanContext?.spanId
       this.inner.onEnd(request !== undefined && parent !== request.spanId ? reparented(span, request) : span)
     } else if (isRequest(span)) {
-      this.#requests.delete(traceId)
-      if (this.#pages.delete(traceId)) this.inner.onEnd(requestCopy(span))
+      // A request whose context was evicted had its page re-parented onto nothing: dropped.
+      const tracked = this.#requests.delete(traceId)
+      if (this.#pages.delete(traceId) && tracked) this.inner.onEnd(requestCopy(span))
     }
   }
   #remember(traceId: string): void {
