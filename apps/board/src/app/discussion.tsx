@@ -57,7 +57,7 @@ import type { TriageStatus, WaitReason } from '@lingtai/domain/wait'
  */
 import { useEffect, useRef, useState, useTransition } from 'react'
 
-import type { DiscussionView } from '@/lib/task'
+import type { DiscussionView, StandingState } from '@/lib/task'
 
 import { askDiscussion, concludeChat } from './actions.ts'
 import { useFollowing } from './live.tsx'
@@ -428,9 +428,44 @@ export function discussionContext(
   return { state: 'advised', label: 'Triage advised a move', detail: status.result.summary }
 }
 
+/**
+ * The example question in the empty box: about the state the page is in, and
+ * naming only an attempt that exists (0118 §2). `attempt` is the attempt that
+ * produced the state and is null when none has; a queued ticket's next attempt
+ * is `attempts + 1`, never `attempt`.
+ */
+export function askPlaceholder({
+  state,
+  attempt,
+  attempts,
+  reason,
+}: {
+  state: StandingState
+  attempt: number | null
+  attempts: number
+  reason: WaitReason | null
+}): string {
+  if (state === 'closed') return 'why was this ticket closed?'
+  if (state === 'queued') return `what will Attempt ${attempts + 1} change first?`
+  if (state === 'blocked' && reason?._tag === 'OwnQuestion') return 'what does the code say about this question?'
+  if (attempt === null) return 'what is this ticket asking for?'
+  switch (state) {
+    case 'running':
+      return `what is Attempt ${attempt} doing now?`
+    case 'blocked':
+      return `why did Attempt ${attempt} stop?`
+    case 'approved':
+      return `what will Attempt ${attempt} do once it continues?`
+    case 'landed':
+      return `what did Attempt ${attempt} change?`
+  }
+}
+
 export function Discussion({
   taskId,
+  state,
   attempt,
+  attempts,
   reason = null,
   triageStatus = null,
   discussions,
@@ -438,6 +473,10 @@ export function Discussion({
   quiet = false,
 }: {
   taskId: string
+  /** The state the page is in; the example question follows it. */
+  state: StandingState
+  /** How many attempts there have been, so a queued page can name the next. */
+  attempts: number
   /** The attempt a new question is about — the newest one, or null. */
   attempt: number | null
   reason?: WaitReason | null
@@ -810,7 +849,7 @@ export function Discussion({
                   ask,
                 )
               }
-              placeholder={open === null ? 'why did attempt 2 not produce a branch?' : 'ask a follow-up'}
+              placeholder={open === null ? askPlaceholder({ state, attempt, attempts, reason }) : 'ask a follow-up'}
             />
             <div className="btnrow">
               <button className={pri} disabled={!canAsk(busy, question)} onClick={ask}>

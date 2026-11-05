@@ -1,4 +1,5 @@
 import type { Envelope } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 /**
  * What the page says about a conversation, settled by envelopes.
  *
@@ -13,7 +14,8 @@ import type { Envelope } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
-import { chatIdsFor, presentChat, totalsOf, type DiscussionView } from '../src/lib/task.ts'
+import { askPlaceholder } from '../src/app/discussion.tsx'
+import { chatIdsFor, presentChat, totalsOf, type DiscussionView, type StandingState } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -188,3 +190,43 @@ function discussionSpent(costUsd: number | null): SpendRow {
     kind: null,
   }
 }
+
+describe('the example question in the empty box', () => {
+  const own = { _tag: 'OwnQuestion', question: 'q', by: 'agent' } as unknown as WaitReason
+  const other = { _tag: 'Other' } as unknown as WaitReason
+  const ask = (state: StandingState, attempt: number | null, attempts: number, reason: WaitReason | null = null) =>
+    askPlaceholder({ state, attempt, attempts, reason })
+
+  it('names the next attempt on a queued page, from the count and never from `attempt`', () => {
+    expect(ask('queued', null, 0)).toBe('what will Attempt 1 change first?')
+    expect(ask('queued', 2, 2)).toBe('what will Attempt 3 change first?')
+  })
+
+  it('has a sentence for every other state', () => {
+    expect(ask('running', 2, 2)).toBe('what is Attempt 2 doing now?')
+    expect(ask('blocked', 1, 1, own)).toBe('what does the code say about this question?')
+    expect(ask('blocked', 1, 1, other)).toBe('why did Attempt 1 stop?')
+    expect(ask('blocked', 3, 3)).toBe('why did Attempt 3 stop?')
+    expect(ask('approved', 3, 3)).toBe('what will Attempt 3 do once it continues?')
+    expect(ask('landed', 1, 1)).toBe('what did Attempt 1 change?')
+    expect(ask('closed', 1, 1)).toBe('why was this ticket closed?')
+    expect(ask('closed', null, 0)).toBe('why was this ticket closed?')
+  })
+
+  it('falls back when a state that names an attempt has none', () => {
+    for (const state of ['running', 'blocked', 'approved', 'landed'] as const)
+      expect(ask(state, null, 0)).toBe('what is this ticket asking for?')
+  })
+
+  it('never prints null, undefined, or attempt 2 for an attempt that is not 2', () => {
+    const states: StandingState[] = ['queued', 'running', 'blocked', 'landed', 'closed', 'approved']
+    for (const state of states)
+      for (const attempt of [null, 1, 2])
+        for (const attempts of [0, 1, 2])
+          for (const reason of [null, own]) {
+            const text = ask(state, attempt, attempts, reason)
+            expect(text).not.toMatch(/null|undefined/)
+            if (/attempt 2/i.test(text)) expect(state === 'queued' ? attempts + 1 : attempt).toBe(2)
+          }
+  })
+})

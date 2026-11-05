@@ -48,7 +48,19 @@ const waiting: DiscussionView = {
 }
 
 const render = (discussions: DiscussionView[]) =>
-  renderToStaticMarkup(<Discussion taskId="ticket-lingtai-89" attempt={2} discussions={discussions} />)
+  renderToStaticMarkup(
+    <Discussion taskId="ticket-lingtai-89" state="blocked" attempts={2} attempt={2} discussions={discussions} />,
+  )
+
+describe('the example question', () => {
+  it('asks about the state of a queued page, not an attempt that does not exist', () => {
+    const html = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" state="queued" attempts={0} attempt={null} discussions={[]} quiet />,
+    )
+    expect(html).toContain('placeholder="what will Attempt 1 change first?"')
+    expect(html).not.toContain('why did attempt 2 not produce a branch?')
+  })
+})
 
 describe('the box while it is being answered', () => {
   it('puts the conversation in its own scroller, with the input box under it', () => {
@@ -143,7 +155,15 @@ describe('the six Discussion reference contexts', () => {
 
   it.each(fixtures)('shows $name without inventing destination actions', ({ reason, status, state, name }) => {
     const html = renderToStaticMarkup(
-      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[]} reason={reason} triageStatus={status} />,
+      <Discussion
+        taskId="ticket-lingtai-89"
+        state="blocked"
+        attempts={2}
+        attempt={2}
+        discussions={[]}
+        reason={reason}
+        triageStatus={status}
+      />,
     )
     expect(html).toContain(`data-context="${state}"`)
     expect(html).not.toMatch(/Add as fix|Use as the split|Use as my answer/)
@@ -158,7 +178,14 @@ describe('the six Discussion reference contexts', () => {
 
   it('keeps an open conversation visible under a compact eligible wait', () => {
     const html = renderToStaticMarkup(
-      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[waiting]} reason={signoff} />,
+      <Discussion
+        taskId="ticket-lingtai-89"
+        state="blocked"
+        attempts={2}
+        attempt={2}
+        discussions={[waiting]}
+        reason={signoff}
+      />,
     )
     expect(html).toContain('class="chatscroll"')
     expect(html).not.toContain('class="chatentry"')
@@ -216,7 +243,7 @@ describe('the conversation, as turns', () => {
 
   it('wears no brass when the item is running', () => {
     const quiet = renderToStaticMarkup(
-      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[answered]} quiet />,
+      <Discussion taskId="ticket-lingtai-89" state="running" attempts={2} attempt={2} discussions={[answered]} quiet />,
     )
     expect(quiet).not.toContain('btn pri')
     expect(render([answered])).toContain('btn pri')

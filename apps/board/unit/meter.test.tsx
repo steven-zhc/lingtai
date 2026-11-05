@@ -50,7 +50,14 @@ function turn(question: string) {
 
 const render = (discussions: DiscussionView[], discussionTotal: string | null = null) =>
   renderToStaticMarkup(
-    <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={discussions} discussionTotal={discussionTotal} />,
+    <Discussion
+      taskId="ticket-lingtai-89"
+      state="blocked"
+      attempts={2}
+      attempt={2}
+      discussions={discussions}
+      discussionTotal={discussionTotal}
+    />,
   )
 
 describe('the meter', () => {

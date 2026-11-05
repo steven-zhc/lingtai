@@ -34,7 +34,7 @@ const turn = (
 const render = (discussion: DiscussionView, tag: string | null, waitId = aWaitId()) =>
   renderToStaticMarkup(
     <TriagePicks waitId={waitId} cause={null} recommended={tag}>
-      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[discussion]} />
+      <Discussion taskId="ticket-lingtai-89" state="blocked" attempts={2} attempt={2} discussions={[discussion]} />
     </TriagePicks>,
   )
 
@@ -69,7 +69,13 @@ describe('add to this resolution', () => {
   it('keeps both buttons outside a wait', () => {
     const html = renderToStaticMarkup(
       <TriagePicks waitId={null} cause={null} recommended="EditBodyAndRequeue">
-        <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[turn({ kind: 'ticket', text: 'x' })]} />
+        <Discussion
+          taskId="ticket-lingtai-89"
+          state="blocked"
+          attempts={2}
+          attempt={2}
+          discussions={[turn({ kind: 'ticket', text: 'x' })]}
+        />
       </TriagePicks>,
     )
     expect(html).toContain('Add to the ticket')
@@ -78,7 +84,13 @@ describe('add to this resolution', () => {
 
   it('keeps both buttons with no provider at all', () => {
     const html = renderToStaticMarkup(
-      <Discussion taskId="ticket-lingtai-89" attempt={2} discussions={[turn({ kind: 'ticket', text: 'x' })]} />,
+      <Discussion
+        taskId="ticket-lingtai-89"
+        state="blocked"
+        attempts={2}
+        attempt={2}
+        discussions={[turn({ kind: 'ticket', text: 'x' })]}
+      />,
     )
     expect(html).toContain('Add to the ticket')
   })
