@@ -49,4 +49,17 @@ describe('presentAttempt', () => {
     const state = reduceAttempt([e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'hello' })])
     expect(presentAttempt(state, claim, 1, null).prompt).toEqual({ version: 'ticket@3', bytes: 12, text: 'hello' })
   })
+
+  it('exposes the step in flight with an ISO since, and the refusal a fix round is answering', () => {
+    const v = view(lateHistories.attempt.refusedThenFailed)
+    expect(v.stepNow).toMatchObject({ step: 'implement', round: 1 })
+    expect(v.stepNow?.since).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/)
+    expect(v.refusal?.key.startsWith('review:')).toBe(true)
+  })
+
+  it('has neither where no step is in flight and nothing was refused', () => {
+    const v = view(histories.attempt.failedThenFinished)
+    expect(v.stepNow).toBeNull()
+    expect(v.refusal).toBeNull()
+  })
 })

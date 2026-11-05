@@ -19,8 +19,9 @@ state: running 20m
 subject: the reviewer crashes on a reused session id The whole ticket ↓ claim admit prepared design implement build review proposed merge end agent 4h33m
 where: Where it is
 why: run log not reading
-so-what: an agent is working
+running: Running between steps Between steps. Nothing is needed from you. Then The recipe could not be read, so what an attempt would do here is not known.
+discussion: discussion reads the log, the ticket and the code — it cannot run anything Ask
 moves: 
-pair: discussion reads the log, the ticket and the code — it cannot run anything Ask
+pair: 
 record: Ticket · Attempt 1"
 `;

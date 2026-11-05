@@ -123,6 +123,8 @@ function run(over: Partial<AttemptView> = {}): AttemptView {
     diff: null,
     prompt: null,
     awaitingSha: null,
+    stepNow: null,
+    refusal: null,
     steps: [],
     progress: null,
     ...over,

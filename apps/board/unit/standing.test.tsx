@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest'
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
+import type { RunningPanelView } from '../src/lib/running.ts'
 import {
   currentTriageStatus,
   currentWaitWant,
@@ -1185,9 +1186,38 @@ describe('the block, rendered', () => {
     // claim here is that the amber is unspent, which is what these two say.
     expect(off).toContain('class="standing live"')
     expect(off).not.toContain('onyou')
-    expect(off).toContain('an agent is working')
+    expect(off).not.toContain('an agent is working')
     // Nothing is being asked, so nothing offers to answer it.
     expect(off).not.toContain('Start over from base')
+  })
+
+  it('draws a running ticket as a panel that holds Discussion, and not twice', () => {
+    const running: RunningPanelView = {
+      head: { label: 'Running', step: 'build', round: null },
+      line: { kind: 'step', step: 'build', actions: ['pnpm test'] },
+      ask: 'Nothing is needed from you.',
+      then: ['review', 'merge'],
+    }
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={{ ...HELD, state: 'running', onYou: false, who: 'an agent is working', question: null, running }}
+        project="lingtai"
+        issue={112}
+        taskId="ticket-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    const panel = html.slice(html.indexOf('data-rank="running"'))
+    expect(html).toContain('<div class="sreading sreading--advised">')
+    expect(panel).toContain('Nothing is needed from you.')
+    expect(panel).toContain('review → merge, unless a step sends it back.')
+    expect(panel.indexOf('data-rank="discussion"')).toBeGreaterThan(0)
+    expect(html).not.toContain('an agent is working')
+    expect(html.match(/data-rank="discussion"/g)).toHaveLength(1)
+    expect(html).not.toContain('data-rank="so-what"')
   })
 
   it('states the state with no move at all when the id is not a work item', () => {

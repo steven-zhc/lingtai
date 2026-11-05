@@ -67,10 +67,12 @@ describe('the attempt in flight', () => {
    * (#152), so the row says where it went instead of opening a second follower
    * on the same file.
    */
-  it("points up to the page's own log when the item is running on it", () => {
+  it('draws neither a second log nor a second rail when the item is running on it', () => {
     const html = renderToStaticMarkup(<Attempt run={running()} followed />)
     expect(html).not.toContain('class="alog"')
-    expect(html).toContain('being followed at the top of this page')
+    expect(html).not.toContain('being followed at the top of this page')
+    expect(html).not.toContain('class="seq aseq"')
+    expect(html).toContain('Steps')
   })
 
   it('leaves every finished attempt closed, and reading nothing', () => {
