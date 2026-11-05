@@ -543,7 +543,7 @@ it('1. lands with no rounds spent', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 948f181b',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -568,49 +568,48 @@ it('1. lands with no rounds spent', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-948f181b-7a6\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -620,13 +619,12 @@ it('1. lands with no rounds spent', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -636,47 +634,47 @@ it('1. lands with no rounds spent', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 outcome={"step":"review","round":0,"actions":[]}',
+          summary: 'review ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=proposed round=0',
+          summary: 'proposed started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 outcome={"step":"proposed","round":0,"actions":[]}',
+          summary: 'proposed ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-948f181b-7a61-4047-9df6-efd4055de687 step=merge round=0',
+          summary: 'merge started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'merge \u00b7 land the branch',
+          summary: 'merge · land the branch',
         },
       ],
     },
@@ -1353,7 +1351,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 616d382e',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -1378,49 +1376,48 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-616d382e-495\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines, until the rounds are spent \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines, until the rounds are spent · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -1430,13 +1427,12 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -1446,105 +1442,102 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=implement round=1',
+          summary: 'implement started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":1} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=build round=1',
+          summary: 'build started (round 1)',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a outcome={"step":"build","round":1,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=review round=1',
+          summary: 'review started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":1} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (cold reviewer): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer',
+          summary: 'review · cold reviewer',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=proposed round=1',
+          summary: 'proposed started (round 1)',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a outcome={"step":"proposed","round":1,"actions":[]}',
+          summary: 'proposed ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-616d382e-4955-46be-9aa8-147e8eaeb58a step=merge round=1',
+          summary: 'merge started (round 1)',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'merge \u00b7 land the branch',
+          summary: 'merge · land the branch',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 \u2014 1 finding',
+          summary: 'round 1 — 1 finding',
         },
       ],
     },
@@ -2094,7 +2087,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 0f01bef6',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -2105,7 +2098,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
           type: 'TicketReleased',
           actor: 'conductor',
           summary:
-            'run 0f01bef6: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
+            'Attempt 1 released: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
         },
         {
           type: 'IssueUpdated',
@@ -2120,49 +2113,48 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/fake/pass-0f01bef6-2cf\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines or the approach \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines or the approach · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -2172,13 +2164,12 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -2188,39 +2179,37 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0f01bef6-2cf7-4540-b28b-525822a76083 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Judge","when":"findings"} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: 'The judge: 5 turns, 2.0 s · cost $1.25',
         },
         {
           type: 'PassRouted',
@@ -2235,7 +2224,7 @@ it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', () => {
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -2843,7 +2832,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 606f36ee',
+          summary: 'an attempt of another ticket claimed',
         },
         {
           type: 'IssueUpdated',
@@ -2854,7 +2843,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
           type: 'TicketReleased',
           actor: 'conductor',
           summary:
-            'run 606f36ee: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
+            'an attempt of another ticket released: the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
         },
         {
           type: 'IssueUpdated',
@@ -2864,7 +2853,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 39b684e6',
+          summary: 'Attempt 2 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -2874,7 +2863,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'judgement: agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary: 'agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'IssueUpdated',
@@ -2894,49 +2883,48 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1+failure@cc4f1d57d997 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=742fe0e54d5ea871b919acf1b9f44cd57b51b9197417f42aff52170eccbab745 worktree=/tmp/f\u2026',
+          summary: "Attempt 2's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines or the approach \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines or the approach · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -2946,13 +2934,12 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 2's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -2962,45 +2949,42 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-39b684e6-de0e-4f16-92f5-d049b83e2ec9 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 2's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Judge","when":"findings"} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: 'The judge: 5 turns, 2.0 s · cost $1.25',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary:
-            'review \u2192 waiting \u2014 agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary: 'review → waiting — agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'RunRefsPublished',
@@ -3011,12 +2995,12 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'proposed \u00b7 conductor:judge \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+            'proposed · conductor:judge — Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-2 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-2 at bbbbbbb',
         },
       ],
     },
@@ -3443,7 +3427,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 90cecc5b',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -3453,7 +3437,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'acknowledgement: the `implement` step did-not-finish: the agent produced no commits',
+          summary: 'the `implement` step did-not-finish: the agent produced no commits',
         },
         {
           type: 'IssueUpdated',
@@ -3473,49 +3457,48 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-90cecc5b-b272-4486-b9ad-bcb305fc0c20 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-90cecc5b-b27\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -3525,18 +3508,17 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change \u2014 did not finish: the agent produced no commits',
+          summary: 'implement · write the change — did not finish: the agent produced no commits',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'implement \u2192 waiting \u2014 the `implement` step did-not-finish: the agent produced no commits',
+          summary: 'implement → waiting — the `implement` step did-not-finish: the agent produced no commits',
         },
         {
           type: 'RunRefsPublished',
@@ -4180,7 +4162,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run a8a50213',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -4191,7 +4173,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'judgement: the `implement` step declined: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it t\u2026',
+            'the `implement` step declined: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it t…',
         },
         {
           type: 'IssueUpdated',
@@ -4211,49 +4193,48 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-a8a50213-6f4\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines, until the rounds are spent \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines, until the rounds are spent · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -4263,13 +4244,12 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -4279,61 +4259,59 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a8a50213-6f4b-422f-8858-157e890b1af6 step=implement round=1',
+          summary: 'implement started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":1} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'implement \u00b7 write the change \u2014 did not finish: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it twice and the second call deadlo…',
+            'implement · write the change — did not finish: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it twice and the second call deadlo…',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 \u2014 1 finding',
+          summary: 'round 1 — 1 finding',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'implement \u2192 waiting \u2014 the `implement` step declined: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it t\u2026',
+            'implement → waiting — the `implement` step declined: {"findings":[{"file":"src/fix.ts","line":12,"severity":"blocker","claim":"the approach cannot work","failureScenario":"call it t…',
         },
         {
           type: 'RunRefsPublished',
@@ -4343,7 +4321,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -4957,7 +4935,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 19b36007',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -4967,8 +4945,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary:
-            'acknowledgement: the `merge` step refused: blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns)',
+          summary: 'the `merge` step refused: blocker src/fix.ts:12 — the approach cannot work (5 turns)',
         },
         {
           type: 'IssueUpdated',
@@ -4988,49 +4965,48 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=6353c1eaf44d11c9b8723dc1c6b369209b31628728428e2067daf91d848cf93b worktree=/tmp/fake/pass-19b36007-e37\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge check+land the branch \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge check+land the branch · end —',
         },
         {
           type: 'RunFinished',
@@ -5040,13 +5016,12 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -5056,59 +5031,58 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb outcome={"step":"review","round":0,"actions":[]}',
+          summary: 'review ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=proposed round=0',
+          summary: 'proposed started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb outcome={"step":"proposed","round":0,"actions":[]}',
+          summary: 'proposed ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-19b36007-e37f-41a9-b3b4-89a2ff5600cb step=merge round=0',
+          summary: 'merge started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"merge","name":"check","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (check): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'merge \u00b7 check \u2014 1 finding',
+          summary: 'merge · check — 1 finding',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'merge \u2192 waiting \u2014 the `merge` step refused: blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns)',
+            'merge → waiting — the `merge` step refused: blocker src/fix.ts:12 — the approach cannot work (5 turns)',
         },
         {
           type: 'RunRefsPublished',
@@ -5119,12 +5093,12 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 \u2014 the approach cannot work (5 turns) (`check`)',
+            'merge · conductor:unfixed — Merge agent/7 into main anyway? the `merge` step refused: blocker src/fix.ts:12 — the approach cannot work (5 turns) (`check`)',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -5706,7 +5680,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 1ba1768c',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -5716,7 +5690,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'judgement: agent/7 is waiting on you. both sides touched src/fix.ts \u2014 recommends requeue',
+          summary: 'agent/7 is waiting on you. both sides touched src/fix.ts — recommends requeue',
         },
         {
           type: 'IssueUpdated',
@@ -5736,49 +5710,48 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-1ba1768c-940\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -5788,13 +5761,12 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -5804,52 +5776,52 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df outcome={"step":"review","round":0,"actions":[]}',
+          summary: 'review ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=proposed round=0',
+          summary: 'proposed started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df outcome={"step":"proposed","round":0,"actions":[]}',
+          summary: 'proposed ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-1ba1768c-940f-4433-9095-fe318e6519df step=merge round=0',
+          summary: 'merge started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'merge \u00b7 land the branch',
+          summary: 'merge · land the branch',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'merge \u2192 waiting \u2014 agent/7 is waiting on you. both sides touched src/fix.ts',
+          summary: 'merge → waiting — agent/7 is waiting on you. both sides touched src/fix.ts',
         },
         {
           type: 'RunRefsPublished',
@@ -5860,12 +5832,12 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
+            'merge · conductor:unfixed — Merge agent/7 into main anyway? agent/7 into main is waiting on you. both sides touched src/fix.ts (`land the branch`)',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -6425,7 +6397,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 5631c913',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -6435,7 +6407,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'acknowledgement: dirty-base: main moved under it',
+          summary: 'dirty-base: main moved under it',
         },
         {
           type: 'IssueUpdated',
@@ -6455,49 +6427,48 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-5631c913-c30\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -6507,13 +6478,12 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -6523,52 +6493,52 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f outcome={"step":"review","round":0,"actions":[]}',
+          summary: 'review ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=proposed round=0',
+          summary: 'proposed started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f outcome={"step":"proposed","round":0,"actions":[]}',
+          summary: 'proposed ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-5631c913-c309-4330-9d68-512fc7caa03f step=merge round=0',
+          summary: 'merge started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'merge \u00b7 land the branch',
+          summary: 'merge · land the branch',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'merge \u2192 waiting \u2014 dirty-base: main moved under it',
+          summary: 'merge → waiting — dirty-base: main moved under it',
         },
         {
           type: 'RunRefsPublished',
@@ -6579,12 +6549,12 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'merge \u00b7 conductor:unfixed \u2014 Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
+            'merge · conductor:unfixed — Merge agent/7 into main anyway? dirty-base: main moved under it (`land the branch`)',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -6858,7 +6828,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 204c6511',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -6869,7 +6839,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'judgement: the `design` step asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+            'the `design` step asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
         },
         {
           type: 'IssueUpdated',
@@ -6889,45 +6859,44 @@ it('11. an agent asks a question (`StepAsked`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-204c6511-9f2f-446d-a41f-e00fdfeae742 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-204c6511-9f2f-446d-a41f-e00fdfeae742 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-204c6511-9f2f-446d-a41f-e00fdfeae742 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-204c6511-9f2f-446d-a41f-e00fdfeae742 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"design","name":"draft","round":0} runtime=claude-code turns=2 durationMs=1234 usage=[] costUsd=0.21',
+          summary: "Attempt 1's agent (draft): 2 turns, 1.2 s · cost $0.21",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'design \u00b7 draft \u2014 asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+            'design · draft — asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'design \u2192 waiting \u2014 the `design` step asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+            'design → waiting — the `design` step asked: The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
         },
         {
           type: 'RunRefsPublished',
@@ -7405,7 +7374,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run e2696b08',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -7415,7 +7384,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: "judgement: ready to land — Merge this? It is Lingtai's own code.",
+          summary: "ready to land — Merge this? It is Lingtai's own code.",
         },
         {
           type: 'IssueUpdated',
@@ -7435,49 +7404,48 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=7007dfe8eb4e956548410da6b95d931b3bb5d549ab4a9484ec8630f51af6fc30 worktree=/tmp/fake/pass-e2696b08-8ea\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed approval \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed approval · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -7487,13 +7455,12 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -7503,37 +7470,37 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 outcome={"step":"review","round":0,"actions":[]}',
+          summary: 'review ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-e2696b08-8eae-4345-9b30-3c69547e0634 step=proposed round=0',
+          summary: 'proposed started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: "proposed \u00b7 approval \u2014 Merge this? It is Lingtai's own code.",
+          summary: "proposed · approval — Merge this? It is Lingtai's own code.",
         },
         {
           type: 'RunRefsPublished',
@@ -7543,7 +7510,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -8139,7 +8106,7 @@ it('13. a judge answer is unreadable', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run c7908588',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -8150,7 +8117,7 @@ it('13. a judge answer is unreadable', () => {
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'judgement: agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off\u2026',
+            'agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off…',
         },
         {
           type: 'IssueUpdated',
@@ -8170,49 +8137,48 @@ it('13. a judge answer is unreadable', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=91dc07820041694a822997757e710f0d4da19bb28bd45e959136c3ff5303c92e worktree=/tmp/fake/pass-c7908588-018\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines or the approach \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines or the approach · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -8222,13 +8188,12 @@ it('13. a judge answer is unreadable', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (write the change): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -8238,45 +8203,43 @@ it('13. a judge answer is unreadable', () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c7908588-018d-4b8b-bb1a-488dbdc25e4d step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Judge","when":"findings"} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: 'The judge: 5 turns, 2.0 s · cost $1.25',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'review \u2192 waiting \u2014 agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off\u2026',
+            'review → waiting — agent/7 is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was not readable as one of the steps it was off…',
         },
         {
           type: 'RunRefsPublished',
@@ -8287,12 +8250,12 @@ it('13. a judge answer is unreadable', () => {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'proposed \u00b7 conductor:judge \u2014 Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was n\u2026',
+            'proposed · conductor:judge — Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge\'s answer could not be read: the "the lines or the approach" judge\'s answer was n…',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -8833,7 +8796,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 9af1b0d2',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -8844,7 +8807,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            "judgement: agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
+            "agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         },
         {
           type: 'IssueUpdated',
@@ -8864,49 +8827,48 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-9af1b0d2-cd7\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines, until the rounds are spent \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines, until the rounds are spent · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -8916,13 +8878,12 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -8932,39 +8893,38 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-9af1b0d2-cd79-48f8-8fd8-298a7d47ac83 step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (cold reviewer): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 the answer could not be read',
+          summary: 'review · cold reviewer — the answer could not be read',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            "review \u2192 waiting \u2014 agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
+            "review → waiting — agent/7 is waiting on you. `review`'s findings could not be read at all: the reviewer's answer was not readable as findings: I am not sure what to say here.",
         },
         {
           type: 'RunRefsPublished',
@@ -8974,7 +8934,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -9443,7 +9403,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run a5bb7a5f',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -9453,8 +9413,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary:
-            'acknowledgement: out-of-turns: out-of-turns: spent all 10 turns with no commit \u2014 recommends requeue',
+          summary: 'out-of-turns: out-of-turns: spent all 10 turns with no commit — recommends requeue',
         },
         {
           type: 'IssueUpdated',
@@ -9474,49 +9433,48 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-a5bb7a5f-5cd4-499e-af20-c15b88a8452c step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-a5bb7a5f-5cd\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -9531,19 +9489,17 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=10 durationMs=5000 usage=[] costUsd=1.1',
+          summary: "Attempt 1's agent (write the change): 10 turns, 5.0 s · cost $1.10",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary:
-            'implement \u00b7 write the change \u2014 did not finish: out-of-turns: spent all 10 turns with no commit',
+          summary: 'implement · write the change — did not finish: out-of-turns: spent all 10 turns with no commit',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'implement \u2192 waiting \u2014 out-of-turns: out-of-turns: spent all 10 turns with no commit',
+          summary: 'implement → waiting — out-of-turns: out-of-turns: spent all 10 turns with no commit',
         },
         {
           type: 'RunRefsPublished',
@@ -9553,12 +9509,12 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -9943,7 +9899,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run c2738401',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -9953,7 +9909,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'acknowledgement: the `implement` step did-not-finish: timeout: exceeded wall 2m',
+          summary: 'the `implement` step did-not-finish: timeout: exceeded wall 2m',
         },
         {
           type: 'IssueUpdated',
@@ -9973,49 +9929,48 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-c2738401-7e1a-45a7-9cdc-9e066eaebd59 step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=9518d85ba5af13bac11ec38616710a49f8538840ccc7db179130a5f4c3f1edf1 worktree=/tmp/fake/pass-c2738401-7e1\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review \u2014 \u00b7 proposed \u2014 \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review — · proposed — · merge — · end —',
         },
         {
           type: 'RunFailed',
@@ -10025,13 +9980,12 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=2 durationMs=120000 usage=[] costUsd=0.2',
+          summary: "Attempt 1's agent (write the change): 2 turns, 120.0 s · cost $0.20",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change \u2014 did not finish: timeout: exceeded wall 2m',
+          summary: 'implement · write the change — did not finish: timeout: exceeded wall 2m',
         },
         {
           type: 'RunRefsPublished',
@@ -10041,12 +9995,12 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -10690,7 +10644,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 35a5806a',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -10701,7 +10655,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'acknowledgement: out-of-turns: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read \u2014 recommends requeue',
+            'out-of-turns: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read — recommends requeue',
         },
         {
           type: 'IssueUpdated',
@@ -10721,49 +10675,48 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-35a5806a-46d\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines, until the rounds are spent \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines, until the rounds are spent · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -10773,13 +10726,12 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -10789,61 +10741,59 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-35a5806a-46de-4937-ada4-a3c5b2de46ac step=implement round=1',
+          summary: 'implement started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":1} runtime=claude-code turns=7 durationMs=3000 usage=[] costUsd=0.77',
+          summary: "Attempt 1's agent (write the change): 7 turns, 3.0 s · cost $0.77",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'implement \u00b7 write the change \u2014 did not finish: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
+            'implement · write the change — did not finish: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 \u2014 1 finding',
+          summary: 'round 1 — 1 finding',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'implement \u2192 waiting \u2014 out-of-turns: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
+            'implement → waiting — out-of-turns: the fixing agent did not finish (out-of-turns: spent all 7 turns mid-fix), so there is nothing new for the review to read',
         },
         {
           type: 'RunRefsPublished',
@@ -10853,7 +10803,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -11388,7 +11338,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 758fc02c',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -11399,7 +11349,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
           type: 'WaitStarted',
           actor: 'conductor',
           summary:
-            'acknowledgement: out-of-turns: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing \u2014 recommends requeue',
+            'out-of-turns: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing — recommends requeue',
         },
         {
           type: 'IssueUpdated',
@@ -11419,49 +11369,48 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=2f66c5abfe214dd96d0256ddf41a0a614203cf24439076bf220bb9bd7617988a worktree=/tmp/fake/pass-758fc02c-17b\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines, until the rounds are spent \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines, until the rounds are spent · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -11471,13 +11420,12 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -11487,40 +11435,39 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-758fc02c-17b6-4e13-9963-20b33ecfa2ae step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=0.33',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $0.33",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'review \u00b7 cold reviewer \u2014 did not finish: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
+            'review · cold reviewer — did not finish: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
           summary:
-            'review \u2192 waiting \u2014 out-of-turns: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
+            'review → waiting — out-of-turns: the reviewer did not finish (out-of-turns): spent all 5 turns reviewing',
         },
         {
           type: 'RunRefsPublished',
@@ -11530,7 +11477,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 and agent/7-attempt-1 at bbbbbbb',
+          summary: 'already there — agent/7 and agent/7-attempt-1 at bbbbbbb',
         },
       ],
     },
@@ -11632,7 +11579,7 @@ it('15c. a claim decline (`claim-unconfirmed`) writes TicketReleased and resolve
           type: 'TicketReleased',
           actor: 'conductor',
           summary:
-            'run 84ec94a4: the claim was not confirmed: ticket-purecheck-7 may be claimed by this run: connection lost',
+            'an attempt of another ticket released: the claim was not confirmed: ticket-purecheck-7 may be claimed by this run: connection lost',
         },
         {
           type: 'IssueUpdated',
@@ -12353,7 +12300,7 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'TicketClaimed',
           actor: 'conductor',
-          summary: 'run 0870ddf8',
+          summary: 'Attempt 1 claimed',
         },
         {
           type: 'IssueUpdated',
@@ -12364,7 +12311,7 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
           type: 'TicketReleased',
           actor: 'conductor',
           summary:
-            'run 0870ddf8: the proposed reviewer still refused after 1 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 2',
+            'Attempt 1 released: the proposed reviewer still refused after 1 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 2',
         },
         {
           type: 'IssueUpdated',
@@ -12379,49 +12326,48 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=admit round=0',
+          summary: 'admit started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'admit \u00b7 cut the branch',
+          summary: 'admit · cut the branch',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=prepared round=0',
+          summary: 'prepared started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd outcome={"step":"prepared","round":0,"actions":[]}',
+          summary: 'prepared ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=design round=0',
+          summary: 'design started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd outcome={"step":"design","round":0,"actions":[]}',
+          summary: 'design ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=implement round=0',
+          summary: 'implement started',
         },
         {
           type: 'RunStarted',
           actor: 'conductor',
-          summary:
-            'ticketId=ticket-purecheck-7 runtime=claude-code model= promptVersion=ticket@1 baseSha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa configHash=8a30fea5adf3c61ad10d4b25d582b1e09a9d8534e056bdba9b028ecbfdce5a9b worktree=/tmp/fake/pass-0870ddf8-142\u2026',
+          summary: "Attempt 1's agent started on claude-code from base aaaaaaa",
         },
         {
           type: 'StepsResolved',
           actor: 'conductor',
           summary:
-            'claim \u2014 \u00b7 admit \u2014 \u00b7 prepared \u2014 \u00b7 design \u2014 \u00b7 implement \u2014 \u00b7 build \u2014 \u00b7 review cold reviewer \u00b7 proposed the lines or the approach \u00b7 merge \u2014 \u00b7 end \u2014',
+            'claim — · admit — · prepared — · design — · implement — · build — · review cold reviewer · proposed the lines or the approach · merge — · end —',
         },
         {
           type: 'RunFinished',
@@ -12431,13 +12377,12 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":0} runtime=claude-code turns=3 durationMs=1234 usage=[] costUsd=0.42',
+          summary: "Attempt 1's agent (write the change): 3 turns, 1.2 s · cost $0.42",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'RunProposedCompletion',
@@ -12447,97 +12392,92 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=build round=0',
+          summary: 'build started',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd outcome={"step":"build","round":0,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=review round=0',
+          summary: 'review started',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":0} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Judge","when":"findings"} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: 'The judge: 5 turns, 2.0 s · cost $1.25',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=implement round=1',
+          summary: 'implement started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"implement","name":"write the change","round":1} runtime=claude-code turns=8 durationMs=90000 usage=[] costUsd=1.5',
+          summary: "Attempt 1's agent (write the change): 8 turns, 90.0 s · cost $1.50",
         },
         {
           type: 'RunProducedDiff',
           actor: 'conductor',
-          summary: '1 files +3 \u22121',
+          summary: '1 files +3 −1',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'implement \u00b7 write the change',
+          summary: 'implement · write the change',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=build round=1',
+          summary: 'build started (round 1)',
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd outcome={"step":"build","round":1,"actions":[]}',
+          summary: 'build ended with no action to run',
         },
         {
           type: 'StepStarted',
           actor: 'conductor',
-          summary: 'runId=pass-0870ddf8-1424-4bf5-8af1-1fb8902fe8bd step=review round=1',
+          summary: 'review started (round 1)',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Action","step":"review","name":"cold reviewer","round":1} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: "Attempt 1's agent (cold reviewer): 5 turns, 2.0 s · cost $1.25",
         },
         {
           type: 'StepEnded',
           actor: 'conductor',
-          summary: 'review \u00b7 cold reviewer \u2014 1 finding',
+          summary: 'review · cold reviewer — 1 finding',
         },
         {
           type: 'RunSpent',
           actor: 'conductor',
-          summary:
-            'for={"_tag":"Judge","when":"findings"} runtime=claude-code turns=5 durationMs=2000 usage=[] costUsd=1.25',
+          summary: 'The judge: 5 turns, 2.0 s · cost $1.25',
         },
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'round 1 \u2014 1 finding',
+          summary: 'round 1 — 1 finding',
         },
         {
           type: 'PassRouted',
@@ -12552,12 +12492,12 @@ it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRest
         {
           type: 'RunKeptUncommitted',
           actor: 'conductor',
-          summary: 'kept 1 file(s) +3 \u22121 as eeeeeee on agent/7-attempt-1 \u2014 stopped by out-of-turns',
+          summary: 'kept 1 file(s) +3 −1 as eeeeeee on agent/7-attempt-1 — stopped by out-of-turns',
         },
         {
           type: 'RunRefsPublished',
           actor: 'conductor',
-          summary: 'already there \u2014 agent/7 at ddddddd and agent/7-attempt-1 at eeeeeee',
+          summary: 'already there — agent/7 at ddddddd and agent/7-attempt-1 at eeeeeee',
         },
       ],
     },

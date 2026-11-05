@@ -40,7 +40,7 @@ function e(type: string, data: unknown): Envelope {
 }
 
 function render(event: Envelope): string {
-  return renderToStaticMarkup(<HistoryRow line={toLine(event)} />)
+  return renderToStaticMarkup(<HistoryRow line={toLine(event, { attempts: new Map() })} />)
 }
 
 describe('a payload that carries a document', () => {
@@ -95,5 +95,48 @@ describe('a payload that carries a document', () => {
   it('leaves a payload with no document exactly as it was stored', () => {
     const data = { promptVersion: 'ticket@1911', bytes: 4593, prompt: null }
     expect(splitPayload(data)).toEqual({ raw: JSON.stringify(data, null, 2), documents: [] })
+  })
+})
+
+/**
+ * The row is a sentence first (#887): the sentence leads, who said it and the
+ * event's type follow, and `seq`, the stream id and the fields are one click
+ * further, inside the open row.
+ */
+describe('a row reads as a sentence', () => {
+  const ATTEMPTS = new Map([['pass-f60112af-a598', 1]])
+  const html = (event: Envelope) => renderToStaticMarkup(<HistoryRow line={toLine(event, { attempts: ATTEMPTS })} />)
+  /** The closed row, and what opens under it. */
+  const parts = (markup: string) => {
+    const at = markup.indexOf('</summary>')
+    return { closed: markup.slice(0, at), open: markup.slice(at) }
+  }
+
+  it('puts the type after the sentence, small and beside it, and the actor in words between', () => {
+    const { closed } = parts(html(e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: null })))
+    const sentence = closed.indexOf('Attempt 1&#x27;s agent was prompted (4593 bytes)')
+    const who = closed.indexOf('class="who"')
+    const type = closed.indexOf('class="what">RunPrompted')
+    expect(sentence).toBeGreaterThan(-1)
+    expect(who).toBeGreaterThan(sentence)
+    expect(type).toBeGreaterThan(who)
+    // The whole actor is on hover, never in the text.
+    expect(closed).toContain('title="agent:pass-f60112af-a598-47ee-a21c-b277bda75822"')
+    expect(closed.replace(/title="[^"]*"/g, '')).not.toContain('pass-f60112af')
+  })
+
+  it('keeps seq, the stream id, the schema and the fields inside the open row only', () => {
+    const { closed, open } = parts(html(e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: null })))
+    for (const detail of ['seq 1800', 'pass-f60112af-a598 v3', 'schema 2', '&quot;promptVersion&quot;']) {
+      expect(closed).not.toContain(detail)
+      expect(open).toContain(detail)
+    }
+  })
+
+  it('says that it recorded the type when no sentence can be built, with the fields in the open row', () => {
+    const { closed, open } = parts(html(e('RunTouchedFile', { path: 42 })))
+    expect(closed).toContain('recorded RunTouchedFile; open for its fields')
+    expect(closed).not.toContain('path=')
+    expect(open).toContain('&quot;path&quot;: 42')
   })
 })

@@ -13,7 +13,7 @@
  */
 import { inWords } from '@lingtai/conductor/queue'
 
-import { shortActor, type HistoryLine } from '@/lib/history'
+import type { HistoryLine } from '@/lib/history'
 
 import { DocumentBody } from './markdown.tsx'
 
@@ -57,14 +57,17 @@ export function HistoryRow({ line }: { line: HistoryLine }) {
           {line.at.slice(5, 10)} {line.at.slice(11, 19)}
           <span className="ago">{inWords(Date.now() - Date.parse(line.at))}</span>
         </span>
-        <span className="what">{line.type}</span>
-        {/* Short, with the whole of it in the title. A run's actor is 45
-            characters and used to run past its own column into where the
-            detail belongs (#87). */}
-        <span className="who" title={line.actor}>
-          {shortActor(line.actor)}
+        {/* The sentence leads (#887). An attempt of another ticket carries the
+            id it could not name in the title, never in the text. */}
+        <span className="sum" title={line.summaryTitle || undefined}>
+          {line.summary}
         </span>
-        <span className="sum">{line.summary}</span>
+        {/* The actor in words, with the whole of it in the title. A run's actor
+            is 45 characters and used to run past its own column (#87). */}
+        <span className="who" title={line.actor}>
+          {line.who}
+        </span>
+        <span className="what">{line.type}</span>
       </summary>
       {/* seq first: a claim about this system's behaviour is worth more when it
           cites one. */}
