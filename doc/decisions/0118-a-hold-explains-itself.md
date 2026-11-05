@@ -616,10 +616,16 @@ which kind a wait was got inferred again in each place that needed it, from
      second section of its brief; a `FixableLines` round's lines, which offer
      no choice, are still the brief's own section.
      _Approve_, _Split_ and _Close_ send no agent and write nothing.
+   - **What was written is on the log as well as on GitHub.** The resolution
+     that wrote the section carries it: the answer chosen for each question,
+     by its place in the list, and the text written into the body, so what a
+     person decided survives a later edit of the issue, and whether they
+     changed triage's recommendation is read off the log. _Write it into the
+     body_'s own text is carried the same way.
    - The requeue's reason is written for the person from those answers. They
      are not asked for one.
    - **Which advice a resolution answered is derived, never written.** A
-     resolution is one event, `WaitResolved { waitId, by, resolution, note }`
+     resolution is one event, `WaitResolved { waitId, by, resolution, note, answers? }`
      A resolution answers the `WaitTriaged` of the wait that
      was current when it was made, and both are on the item's stream, so a query
      finds the pair for board and CLI alike. Whether the resolution matched the
