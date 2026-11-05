@@ -1,6 +1,6 @@
 import { machineFileFrom } from '@lingtai/env'
 import { context, ROOT_CONTEXT, trace, type Tracer } from '@opentelemetry/api'
-import { InMemorySpanExporter, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { InMemorySpanExporter, type ReadableSpan, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { afterEach, expect, it } from 'vitest'
 
 import { register } from '../src/instrumentation.ts'
@@ -93,13 +93,17 @@ it('a page is one trace: the page span is a child of the request span, its reads
   await trace
     .getTracer('next.js')
     .startActiveSpan('GET /task/[id]', { attributes: { ...REQUEST, 'next.route': '/task/[id]' } }, async (request) => {
-      await measure(
-        async () => {
-          await timed('events.task', async () => 1)
-          await timed('events.run', async () => 2, { desc: '7' })
-        },
-        { label: '/task' },
-      )
+      // Next activates render spans of its own, which the exporter drops.
+      await trace.getTracer('next.js').startActiveSpan('AppRender.getBodyResult', async (render) => {
+        await measure(
+          async () => {
+            await timed('events.task', async () => 1)
+            await timed('events.run', async () => 2, { desc: '7' })
+          },
+          { label: '/task' },
+        )
+        render.end()
+      })
       request.end()
     })
   await provider!.forceFlush()
@@ -177,6 +181,42 @@ it('never forwards a request span without a page span, one from another scope, o
       .map((s) => s.name)
       .toSorted(),
   ).toEqual(['GET /task/[id]', 'page /task'])
+})
+
+it('forwards a copy: the original request span keeps its URL, event, link and message, the copy has none', async () => {
+  const sdk = await loadSdk()
+  const forwarded: ReadableSpan[] = []
+  const originals: ReadableSpan[] = []
+  const tap = (into: ReadableSpan[]) =>
+    ({
+      onStart() {},
+      onEnd: (s: ReadableSpan) => void into.push(s),
+      forceFlush: async () => {},
+      shutdown: async () => {},
+    }) as unknown as SpanProcessor
+  const provider = new sdk.base.BasicTracerProvider({
+    spanProcessors: [new OnlyScope(SCOPE, tap(forwarded)), tap(originals)],
+  })
+  const linked = provider.getTracer('next.js').startSpan('x', { root: true }).spanContext()
+  const request = provider
+    .getTracer('next.js')
+    .startSpan('GET /task/[id]', { root: true, attributes: REQUEST, links: [{ context: linked }] })
+  provider.getTracer(SCOPE).startSpan('page /task', {}, trace.setSpan(ROOT_CONTEXT, request)).end()
+  request.setAttribute('http.target', '/task/123')
+  request.recordException(new Error('https://x?token=y'))
+  request.setStatus({ code: 2, message: 'https://x?token=y' })
+  request.end()
+  const copy = forwarded.find((s) => s.name === 'GET /task/[id]')!
+  const original = originals.find((s) => s.name === 'GET /task/[id]')!
+  expect(copy).not.toBe(original)
+  expect(original.attributes['http.target']).toBe('/task/123')
+  expect(original.events).toHaveLength(1)
+  expect(original.links).toHaveLength(1)
+  expect(original.status.message).toBe('https://x?token=y')
+  expect(copy.attributes['http.target']).toBeUndefined()
+  expect(copy.events).toEqual([])
+  expect(copy.links).toEqual([])
+  expect(copy.status).toEqual({ code: 2 })
 })
 
 /** A request span and a `page` span in its trace, built with explicit contexts and no global provider. */

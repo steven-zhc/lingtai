@@ -67,6 +67,37 @@ function requestCopy(span: ReadableSpan): ReadableSpan {
 }
 
 /**
+ * The `page` span with its parent replaced by the request span (#883). Next
+ * activates spans of its own (`AppRender.getBodyResult`, …) between the request
+ * span and `measure`, and those are dropped, so the active span is not the one
+ * that leaves. The original is never touched.
+ */
+function reparented(span: ReadableSpan, parent: Context): ReadableSpan {
+  return {
+    name: span.name,
+    kind: span.kind,
+    spanContext: () => span.spanContext(),
+    parentSpanContext: bare(parent),
+    startTime: span.startTime,
+    endTime: span.endTime,
+    status: span.status,
+    attributes: span.attributes,
+    links: span.links,
+    events: span.events,
+    duration: span.duration,
+    ended: span.ended,
+    resource: span.resource,
+    instrumentationScope: span.instrumentationScope,
+    droppedAttributesCount: span.droppedAttributesCount,
+    droppedEventsCount: span.droppedEventsCount,
+    droppedLinksCount: span.droppedLinksCount,
+  }
+}
+
+const isRequest = (span: ReadableSpan): boolean =>
+  span.instrumentationScope.name === NEXT_SCOPE && span.attributes['next.span_type'] === REQUEST_SPAN
+
+/**
  * Forwards a span to `inner` only when it came from `scope`, plus a stripped
  * copy of Next's request span for a trace that held a `page` span (#883).
  */
@@ -76,6 +107,8 @@ export class OnlyScope implements SpanProcessor {
   readonly #limit: number
   /** Trace ids that held a `page` span, oldest first; bounded, and dropped once the request span ends. */
   readonly #pages = new Set<string>()
+  /** Request span contexts by trace id, from start to end; bounded the same way. */
+  readonly #requests = new Map<string, Context>()
   constructor(scope: string, inner: SpanProcessor, limit = 1000) {
     this.scope = scope
     this.inner = inner
@@ -84,19 +117,24 @@ export class OnlyScope implements SpanProcessor {
   get remembered(): number {
     return this.#pages.size
   }
-  onStart(): void {}
+  onStart(span: Span): void {
+    if (!isRequest(span)) return
+    const context = span.spanContext()
+    this.#requests.set(context.traceId, context)
+    if (this.#requests.size > this.#limit) this.#requests.delete(this.#requests.keys().next().value!)
+  }
   onEnding(): void {}
   onEnd(span: ReadableSpan): void {
     const traceId = span.spanContext().traceId
     if (span.instrumentationScope.name === this.scope) {
-      if (span.name.startsWith('page ')) this.#remember(traceId)
-      this.inner.onEnd(span)
-    } else if (
-      span.instrumentationScope.name === NEXT_SCOPE &&
-      span.attributes['next.span_type'] === REQUEST_SPAN &&
-      this.#pages.delete(traceId)
-    ) {
-      this.inner.onEnd(requestCopy(span))
+      if (!span.name.startsWith('page ')) return this.inner.onEnd(span)
+      this.#remember(traceId)
+      const request = this.#requests.get(traceId)
+      const parent = span.parentSpanContext?.spanId
+      this.inner.onEnd(request !== undefined && parent !== request.spanId ? reparented(span, request) : span)
+    } else if (isRequest(span)) {
+      this.#requests.delete(traceId)
+      if (this.#pages.delete(traceId)) this.inner.onEnd(requestCopy(span))
     }
   }
   #remember(traceId: string): void {
