@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 
 import './globals.css'
+import { Palette } from './palette'
 
 /**
  * The typefaces the design asks for, self-hosted.
@@ -68,7 +69,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Palette />
+      </body>
     </html>
   )
 }

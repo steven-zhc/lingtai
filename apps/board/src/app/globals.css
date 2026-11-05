@@ -3055,3 +3055,37 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .arrive { animation: card-arrive 200ms ease-out; }
 @keyframes card-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sk-bar, .ct-pulse, .arrive { animation: none; } }
+
+/* ⌘K (#908). A modal <dialog>; no amber, which is the headline's alone. */
+dialog.palette {
+  margin: 12vh auto 0;
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-2);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgb(15 24 28 / 0.18);
+}
+dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
+.palette-body { display: grid; gap: 6px; padding: 10px; }
+.palette-input {
+  font: inherit; color: inherit;
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 7px 9px;
+}
+.palette-problems { margin: 0; padding: 0; list-style: none; font-size: 11px; color: var(--ink-2); }
+.palette-list { margin: 0; padding: 0; list-style: none; max-height: 50vh; overflow-y: auto; }
+.palette-group {
+  padding: 6px 8px 2px; font-size: 10.5px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.palette-opt {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 8px; border-radius: 3px; cursor: pointer;
+}
+.palette-opt.on { background: var(--accent-soft); color: var(--accent-ink); }
+.palette-detail { color: var(--muted); font-size: 11px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { dialog.palette, .palette-opt { transition: none !important; } }

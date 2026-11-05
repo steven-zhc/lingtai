@@ -1373,7 +1373,7 @@ export function emptyIfUnbuilt(err: unknown): TaskCard[] {
  * The same `does not exist` `loadBoard` reads as an empty board: before the
  * first run there is no table, and that is a state rather than a fault.
  */
-async function onBoardProjects(): Promise<string[]> {
+export async function onBoardProjects(): Promise<string[]> {
   try {
     return await readTaskProjects()
   } catch (err) {
