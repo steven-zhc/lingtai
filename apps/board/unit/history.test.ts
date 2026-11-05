@@ -1,5 +1,5 @@
-import { decideRoute, EVENTS, offerFor } from '@lingtai/domain'
-import type { Action, Envelope, Finding, JudgeReply, Proposal } from '@lingtai/domain'
+import { decideRoute, EVENTS, offerFor, STEPS } from '@lingtai/domain'
+import type { Action, Envelope, EventType, Finding, JudgeReply, PayloadOf, Proposal, WaitId } from '@lingtai/domain'
 import { anOutcome, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 /**
@@ -17,12 +17,16 @@ import { makeStream } from '@lingtai/domain/test/support'
  */
 import { describe, expect, it } from 'vitest'
 
-import { describePayload, shortActor, summarise } from '../src/lib/history.ts'
+import { summarise as summariseWith, toLine, type LineContext } from '../src/lib/history.ts'
 
-function e(type: string, data: unknown, actor = 'conductor'): Envelope {
+/** `summarise` with an empty attempts map, which is right for every event that names none. */
+const summarise = (event: Envelope, ctx: Partial<LineContext> = {}) =>
+  summariseWith(event, { attempts: new Map(), ...ctx })
+
+function e(type: string, data: unknown, actor = 'conductor', streamId = 'ticket-lingtai-59'): Envelope {
   return {
     seq: 1n,
-    streamId: 'ticket-lingtai-59',
+    streamId,
     version: 1,
     type,
     schemaVer: 1,
@@ -32,6 +36,245 @@ function e(type: string, data: unknown, actor = 'conductor'): Envelope {
     at: new Date('2026-09-04T17:12:15Z'),
   }
 }
+
+const WAIT = 'wait-1' as WaitId
+const RUN = 'pass-948f181b-7a61-4047-9df6-efd4055de687'
+const SHA = 'a'.repeat(40)
+const ONE_ACTION: Action = {
+  plugin: 'agent',
+  name: 'cold reviewer',
+  onSha: SHA,
+  evidence: 'exit 1',
+  yields: 'verdict',
+  result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
+}
+const BUILD_RED: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
+const NOT_ASKED = offerFor(BUILD_RED, { rounds: 0, restarts: 0 }, { rounds: 0, restarts: 0 })
+const ADVISED: PayloadOf<'WaitTriaged'>['result'] = {
+  _tag: 'TriageAdvised',
+  cause: { _tag: 'FixableLines', fixes: [] },
+  resolution: 'EditBodyAndRequeue',
+  summary: 'One edit remains',
+  want: null,
+}
+const USAGE = [{ model: 'claude-opus-5-5', tokens: { fresh: 10, output: 20 } }]
+const ISSUE_CHANGE = { project: 'lingtai', issue: '59', change: 'labels' as const, detail: 'lingtai:working' }
+
+/**
+ * **A schema-valid sample of every type in the catalogue**, and more than one
+ * where the shape changes what the sentence has to say. The record is total over
+ * `EventType` and that is the point: a new event type is a red typecheck *here*
+ * and nowhere in the board's source, which is what lets `FORMAT` stay `Partial`
+ * (`history.ts`, rule 3) without the renderer being allowed to fall behind.
+ *
+ * Three of these are the payloads that threw: a `StepStarted` (no `action`), a
+ * `StepEnded` with `actions: []`, and a `TriageStarted` whose `model` is `""`.
+ */
+const SAMPLES = {
+  TicketDiscovered: [
+    { project: 'lingtai', source: 'github-issue', externalRef: '59', title: 'a race', kind: 'bug', labels: ['bug'] },
+  ],
+  TicketClaimed: [{ runId: RUN, worker: 'conductor:1', title: null, kind: null }],
+  TicketContinued: [{ runId: RUN, worker: 'conductor:1' }],
+  TicketReleased: [
+    { runId: RUN, reason: 'the pass did not finish', cause: null },
+    { runId: RUN, reason: 'restart', cause: { _tag: 'Restart', restart: 1 } },
+  ],
+  WaitStarted: [{ waitId: WAIT, reason: { _tag: 'OwnQuestion', question: 'which one?', by: 'human:steven' } }],
+  WaitResolved: [{ waitId: WAIT, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: '' }],
+  TicketSplit: [
+    {
+      waitId: WAIT,
+      children: [
+        { key: 'a', number: 161, id: 5_000_000_161 },
+        { key: 'b', number: 162, id: 5_000_000_162 },
+      ],
+      blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
+    },
+  ],
+  SplitStarted: [
+    {
+      waitId: WAIT,
+      plan: { children: [{ key: 'a', title: 'first', body: 'do it', kind: 'bug' }], blockedBy: [] },
+      instance: 'conductor:1',
+    },
+  ],
+  SplitChildWritten: [{ waitId: WAIT, key: 'a', number: 161, id: 5_000_000_161 }],
+  SplitLinkWritten: [{ waitId: WAIT, ticket: 'b', blockedBy: 'a' }],
+  SplitFailed: [{ waitId: WAIT, step: 'write-children', detail: 'GitHub refused' }],
+  TicketLinked: [{ relation: 'follows-up', otherRef: '58' }],
+  TicketLanded: [{ mergeCommit: SHA, base: 'main' }],
+  TicketClosed: [{ by: 'human:steven', reason: 'no longer wanted' }],
+  DispatchRefused: [{ requiredTier: 'sandboxed', runtime: 'codex', missing: ['sandbox'] }],
+  RunStarted: [
+    {
+      ticketId: 'ticket-lingtai-59',
+      runtime: 'claude-code',
+      model: 'opus-5',
+      promptVersion: 'ticket@1911',
+      baseSha: SHA,
+      configHash: 'b'.repeat(40),
+      worktree: `/Users/steven/.lingtai/worktrees/lingtai/${RUN}`,
+      invocation: null,
+    },
+  ],
+  RunPrompted: [{ promptVersion: 'ticket@1911', bytes: 4593, prompt: null }],
+  RunTouchedFile: [
+    { path: `/Users/steven/.lingtai/worktrees/lingtai/${RUN}/apps/board/src/lib/history.ts`, op: 'edit' },
+    { path: '/tmp/elsewhere.ts', op: 'delete' },
+  ],
+  RunContextExhausted: [{ turn: 12 }],
+  RunAwaitingInput: [{ prompt: 'which branch?' }],
+  RunProducedDiff: [{ branch: 'agent/59', headSha: SHA, files: 1, insertions: 3, deletions: 1 }],
+  RunRefsPublished: [
+    { branch: 'agent/59', arm: 'agent/59-attempt-1', headSha: SHA, outcome: 'published', detail: null },
+  ],
+  RunKeptUncommitted: [
+    {
+      arm: 'agent/59-attempt-1',
+      sha: SHA,
+      parentSha: SHA,
+      stoppedBy: 'timeout',
+      files: 1,
+      insertions: 1,
+      deletions: 0,
+    },
+  ],
+  RunProposedCompletion: [{ headSha: SHA }],
+  RunFinished: [{ exitCode: 0, turns: 3, durationMs: 1000 }],
+  RunFailed: [{ kind: 'timeout', detail: 'the wall was hit' }],
+  RunSpent: [
+    {
+      for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
+      runtime: 'claude-code',
+      turns: 2,
+      durationMs: 13_537,
+      usage: USAGE,
+      costUsd: 0.729924,
+    },
+    {
+      for: { _tag: 'Judge', when: 'findings' },
+      runtime: 'claude-code',
+      turns: 1,
+      durationMs: 900,
+      usage: [],
+      costUsd: null,
+    },
+    {
+      for: { _tag: 'Triage', waitId: WAIT },
+      runtime: 'claude-code',
+      turns: 2,
+      durationMs: 13_537,
+      usage: USAGE,
+      costUsd: 0.1,
+    },
+    { for: { _tag: 'Discussion' }, runtime: 'codex', turns: 1, durationMs: 2000, usage: [], costUsd: 0 },
+  ],
+  StepsResolved: [{ runId: RUN, configHash: 'c'.repeat(40), steps: STEPS.map((step) => ({ step, actions: [] })) }],
+  EndActionsResolved: [
+    { outcome: 'landed', actions: [{ name: 'comment', labels: ['done'] }] },
+    { outcome: 'closed', actions: [] },
+  ],
+  StepStarted: [{ runId: RUN, step: 'build', round: 0 }],
+  StepEnded: [
+    { runId: RUN, outcome: anOutcome('review', 0, [ONE_ACTION]) },
+    { runId: RUN, outcome: anOutcome('prepared', 0, []) },
+  ],
+  FindingAccepted: [{ project: 'lingtai', key: 'k1', by: 'human:steven', kind: 'bug', labels: ['bug'] }],
+  FindingProposed: [{ project: 'lingtai', key: 'k1', by: 'agent:' + RUN, externalRef: '60', url: null }],
+  FindingDeclined: [{ project: 'lingtai', key: 'k1', by: 'human:steven', reason: 'not a bug' }],
+  MergeLaneWaited: [{ behind: { runId: RUN, issue: 'agent/58' } }],
+  IntegrationAttempted: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', headSha: SHA }],
+  IntegrationRefused: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', reason: 'conflict', detail: 'a.ts' }],
+  IntegrationSucceeded: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', base: 'main', mergeCommit: SHA }],
+  BaseChecked: [
+    {
+      base: 'main',
+      baseSha: SHA,
+      command: 'pnpm test',
+      ok: true,
+      exitCode: 0,
+      durationMs: 5,
+      evidence: '',
+      runId: RUN,
+    },
+    {
+      base: 'main',
+      baseSha: SHA,
+      command: 'pnpm test',
+      ok: false,
+      exitCode: 1,
+      durationMs: 5,
+      evidence: 'red',
+      runId: RUN,
+    },
+  ],
+  PassRouted: [
+    {
+      runId: RUN,
+      offer: NOT_ASKED,
+      reply: { _tag: 'NotAsked' },
+      decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
+    },
+  ],
+  ConductorPaused: [{ by: 'human:steven', reason: 'maintenance', until: null, holdsAcrossStarts: false }],
+  ConductorResumed: [{ by: 'human:steven' }],
+  ConductorShutdownRequested: [{ by: 'human:steven', reason: 'picking up #88', timeoutMs: null, force: false }],
+  ConductorStarted: [
+    { by: 'daemon', reason: null, sha: SHA, dirty: false, worker: 'h:1', handoff: null },
+    { by: 'daemon', reason: null, sha: null, dirty: true, worker: 'h:1', handoff: null },
+  ],
+  ConductorShutdownWithdrawn: [{ by: 'human:steven', version: 1, reason: 'changed my mind', handoff: null }],
+  OutboxDelivered: [{ ref: 'r1', kind: 'comment', target: 'lingtai#59', detail: '' }],
+  OutboxFailed: [{ ref: 'r1', kind: 'comment', target: 'lingtai#59', error: 'boom', permanent: false }],
+  IssueUpdated: [ISSUE_CHANGE],
+  IssueUpdateFailed: [{ project: 'lingtai', issue: '59', change: 'labels', error: 'boom' }],
+  QueueChanged: [{ project: 'lingtai', reason: 'a ticket was labelled', delivery: 'webhook' }],
+  RunRequested: [{ project: 'lingtai', issue: '59', by: 'human:steven' }],
+  ContinueRequested: [{ project: 'lingtai', issue: '59', runId: RUN, by: 'human:steven' }],
+  DiscussionRequested: [
+    { chatId: 'chat-1', ticketId: 'ticket-lingtai-59', attempt: 1, question: 'why?', by: 'human:steven' },
+  ],
+  DiscussionAsked: [
+    { ticketId: 'ticket-lingtai-59', attempt: null, by: 'human:steven', question: 'why?', reading: [] },
+  ],
+  DiscussionAnswered: [
+    { text: 'because', read: ['a.ts'], cannot: [], proposal: null, turns: 1, durationMs: 1, failure: null },
+  ],
+  DiscussionHeld: [{ chatId: 'chat-1', outcome: 'ticket', by: 'human:steven' }],
+  PromptEdited: [
+    { text: 'also do x', hash: null, by: 'human:steven', basedOn: null, chatId: null },
+    { text: '', hash: null, by: 'human:steven', basedOn: null, chatId: null },
+  ],
+  ProjectOnboardingStarted: [{ slug: 'lingtai', base: 'main', by: 'human:steven' }],
+  ProjectConfigured: [{ project: 'lingtai', owner: null, base: null, configHash: 'c'.repeat(40), fromSha: SHA }],
+  ProjectRefused: [{ project: 'lingtai', detail: 'no recipe', ref: null, codeSha: null }],
+  ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
+  Reconciled: [{ findings: [{ stream: 'ticket-lingtai-59', expected: 'a', actual: 'b', action: 'released' }] }],
+  GitHubAppCreated: [{ appId: '123', slug: 'lingtai-app' }],
+  TriageStarted: [
+    { waitId: WAIT, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: 'opus-5' } },
+    { waitId: WAIT, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+    { waitId: WAIT, attempt: 2, by: { _tag: 'Mechanical' } },
+  ],
+  WaitTriaged: [
+    {
+      waitId: WAIT,
+      attempt: 1,
+      headSha: SHA,
+      result: ADVISED,
+      by: { _tag: 'Agent', runtime: 'claude-code', model: 'opus-5' },
+    },
+    {
+      waitId: WAIT,
+      attempt: 1,
+      headSha: SHA,
+      result: { _tag: 'TriageFailed', why: 'no answer' },
+      by: { _tag: 'Mechanical' },
+    },
+  ],
+  PluginFailed: [{ name: 'notify', eventType: 'TicketLanded', project: null, reason: 'boom' }],
+} satisfies { [K in EventType]: PayloadOf<K>[] }
 
 describe('a line of history', () => {
   it('uses the readable cause in triage history', () => {
@@ -47,24 +290,160 @@ describe('a line of history', () => {
         },
       }),
     )
-    expect(said).toContain('Lines to fix → Requeue')
+    expect(said).toContain('Lines to fix')
+    expect(said).toContain('Start over from base')
     expect(said).not.toContain('FixableLines')
+    expect(said).not.toContain('Requeue')
   })
 
-  it('says something for every type in the catalogue, whatever the payload', () => {
-    for (const type of Object.keys(EVENTS)) {
-      for (const data of [{}, null, { of: 'an unexpected shape' }]) {
-        expect(summarise(e(type, data)), `${type} with ${JSON.stringify(data)}`).not.toBe('')
+  /**
+   * **Every type in the catalogue has a sentence, and none of them is the
+   * fallback** (#887). A key in `FORMAT` is not enough: three formatters existed
+   * and threw on ordinary payloads (`StepStarted`, a `StepEnded` with no actions,
+   * a `TriageStarted` with `model: ""`), so the commonest rows fell back anyway.
+   * Each sample is parsed through the type's own schema first, so a sample that
+   * drifts from the catalogue fails here and not as a formatter that "works".
+   */
+  it('says a sentence for a schema-valid sample of every type in the catalogue', () => {
+    const types = Object.keys(EVENTS) as EventType[]
+    expect(Object.keys(SAMPLES).sort()).toEqual([...types].sort())
+    for (const type of types) {
+      for (const sample of SAMPLES[type] as unknown[]) {
+        const data = EVENTS[type].parse(sample)
+        const said = summarise(e(type, data, 'conductor', RUN), {
+          attempts: new Map([[RUN, 1]]),
+          branch: 'agent/59',
+        })
+        const label = `${type} with ${JSON.stringify(sample)}`
+        expect(said, label).not.toBe('')
+        expect(said, label).not.toMatch(/^recorded /)
+        expect(said, label).not.toMatch(/\w=/)
+        expect(said, label).not.toContain('{"')
       }
     }
   })
 
-  it('falls back to the payload for a type no formatter has learned', () => {
+  /**
+   * A formatter that throws must still never break the page, and what it says
+   * instead points at the fields rather than printing them (#887).
+   */
+  it('says that it recorded the type, and not the payload, when no sentence can be built', () => {
+    const fallback = (type: string) => `recorded ${type}; open for its fields`
+    for (const type of Object.keys(EVENTS)) {
+      for (const data of [{}, null, { of: 'an unexpected shape' }]) {
+        const said = summarise(e(type, data))
+        expect(said, `${type} with ${JSON.stringify(data)}`).not.toBe('')
+        expect(said, `${type} with ${JSON.stringify(data)}`).not.toMatch(/\w=/)
+      }
+    }
+    expect(summarise(e('WaitStarted', {}))).toBe(fallback('WaitStarted'))
+    expect(summarise(e('RunPrompted', null))).toBe(fallback('RunPrompted'))
+  })
+
+  it('falls back to a sentence that points into the open row for a type no formatter has learned', () => {
     // Not in the catalogue at all — the case a renderer is always one commit
     // away from, and the one that used to render as a blank row.
     const said = summarise(e('SomethingNobodyHasWrittenYet', { thing: 'happened', n: 3 }))
-    expect(said).toContain('thing=happened')
-    expect(said).toContain('n=3')
+    expect(said).toBe('recorded SomethingNobodyHasWrittenYet; open for its fields')
+  })
+
+  /** The rows #698's Ticket tab showed as `key=value` and JSON, with the payloads shaped as they were. */
+  describe('the rows #698 showed as fields', () => {
+    const attempts = new Map([[RUN, 1]])
+    const line = (event: Envelope) => toLine(event, { attempts })
+    const WORKTREE = `/Users/steven/.lingtai/worktrees/lingtai/${RUN}`
+
+    it('says who claimed, as an attempt and not as a run id', () => {
+      const claimed = line(e('TicketClaimed', { runId: RUN, worker: 'conductor:1', title: null, kind: null }))
+      expect(claimed.summary).toBe('Attempt 1 claimed')
+      expect(claimed.summary).not.toMatch(/pass-|run [0-9a-f]{8}/)
+      expect(
+        summarise(e('TicketClaimed', { runId: RUN, worker: 'w', title: null, kind: null }), {
+          attempts,
+          claim: 'continuation',
+        }),
+      ).toBe('Attempt 1 continued')
+    })
+
+    it('names an attempt of another ticket without printing its id', () => {
+      const other = line(e('TicketClaimed', { runId: 'pass-other-ticket', worker: 'w', title: null, kind: null }))
+      expect(other.summary).toBe('an attempt of another ticket claimed')
+      expect(other.summaryTitle).toBe('pass-other-ticket')
+    })
+
+    it('says triage run N for an agent and triage N (mechanical) for the other arm, never Attempt N', () => {
+      const agent = line(
+        e('TriageStarted', { waitId: 'w', attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } }),
+      )
+      expect(agent.summary).toBe('Triage run 1 started (claude-code)')
+      const mechanical = line(e('TriageStarted', { waitId: 'w', attempt: 2, by: { _tag: 'Mechanical' } }))
+      expect(mechanical.summary).toBe('Triage 2 (mechanical) started')
+      expect(`${agent.summary} ${mechanical.summary}`).not.toContain('Attempt')
+      expect(agent.who).toBe('triage')
+    })
+
+    it('prints the money of a RunSpent as a bill, and an unknown cost as unknown', () => {
+      const judge = {
+        for: { _tag: 'Triage', waitId: 'w' },
+        runtime: 'claude-code',
+        turns: 2,
+        durationMs: 13537,
+        usage: [{ model: 'claude-opus-5-5', tokens: { fresh: 1 } }],
+      }
+      const spent = line(e('RunSpent', { ...judge, costUsd: 0.729924 }))
+      expect(spent.summary).toBe('Triage: 2 turns, 13.5 s · cost $0.73')
+      expect(spent.summary).not.toContain('{"')
+      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).toContain('cost unknown')
+      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).not.toContain('$0.00')
+      expect(spent.who).toBe('triage')
+      expect(line(e('RunSpent', { ...judge, for: { _tag: 'Judge', when: 'findings' }, costUsd: 1 })).who).toBe(
+        'the judge',
+      )
+    })
+
+    it("names the move a triage advised by the board's own title for it", () => {
+      const advised = line(
+        e('WaitTriaged', {
+          waitId: 'w',
+          attempt: 1,
+          headSha: 'abc',
+          by: { _tag: 'Agent', runtime: 'claude-code', model: 'opus-5' },
+          result: {
+            _tag: 'TriageAdvised',
+            cause: { _tag: 'UndecidedQuestion' },
+            resolution: 'EditBodyAndRequeue',
+            summary: 'Held because the body is silent',
+            want: null,
+          },
+        }),
+      )
+      expect(advised.summary).toContain('Triage run 1 advised: Add to the ticket and start over')
+      expect(advised.summary).not.toContain('EditBodyAndRequeue')
+      expect(advised.summary).not.toContain('Attempt')
+    })
+
+    it('shows a touched path relative to the repository, and leaves another path alone', () => {
+      const inside = line(
+        e('RunTouchedFile', { path: `${WORKTREE}/apps/board/src/x.ts`, op: 'edit' }, 'agent:' + RUN, RUN),
+      )
+      expect(inside.summary).toBe("Attempt 1's agent edited apps/board/src/x.ts")
+      expect(inside.summary).not.toContain('/worktrees/')
+      expect(line(e('RunTouchedFile', { path: '/tmp/x.ts', op: 'write' }, 'agent:' + RUN, RUN)).summary).toContain(
+        '/tmp/x.ts',
+      )
+    })
+
+    it('says the actor in words', () => {
+      expect(line(e('RunPrompted', { promptVersion: 'v', bytes: 1, prompt: null }, 'agent:' + RUN, RUN)).who).toBe(
+        "Attempt 1's agent",
+      )
+      expect(line(e('TicketClosed', { by: 'human:steven', reason: 'x' }, 'human:steven')).who).toBe('steven')
+      expect(line(e('QueueChanged', { project: 'p', reason: 'r', delivery: 'd' })).who).toBe('conductor')
+      expect(line(e('DiscussionHeld', { chatId: 'c', outcome: 'none', by: 'human:steven' })).who).toBe('a discussion')
+      expect(
+        line(e('RunPrompted', { promptVersion: 'v', bytes: 1, prompt: null }, 'agent:pass-zzz', 'pass-zzz')).who,
+      ).toBe('an agent of another ticket')
+    })
   })
 
   /**
@@ -109,7 +488,7 @@ describe('a line of history', () => {
         reply: { _tag: 'NotAsked' },
         decision: decideRoute(notAsked, { _tag: 'NotAsked' }),
       }),
-      'agent/7',
+      { branch: 'agent/7' },
     )
     expect(said).toContain('build → waiting')
     expect(said).toContain('agent/7 is waiting on you')
@@ -123,7 +502,7 @@ describe('a line of history', () => {
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'start over' }
     const said2 = summarise(
       e('PassRouted', { runId: 'pass-1', offer: spent, reply, decision: decideRoute(spent, reply) }),
-      'agent/7',
+      { branch: 'agent/7' },
     )
     expect(said2).toContain('review → waiting')
     expect(said2).toContain('agent/7 is waiting on you')
@@ -147,8 +526,7 @@ describe('a line of history', () => {
         decision: decideRoute(notAsked, { _tag: 'NotAsked' }),
       }),
     )
-    expect(said).not.toContain('is waiting on you')
-    expect(said).toContain('tsc failed')
+    expect(said).toBe('recorded PassRouted; open for its fields')
   })
 
   /** A copy with no checkout records `sha: null`, which the schema allows. */
@@ -289,10 +667,6 @@ describe('a line of history', () => {
     )
   })
 
-  it('keeps a null in the payload, because a null is a statement', () => {
-    expect(describePayload({ prompt: null })).toBe('prompt=null')
-  })
-
   /**
    * The two kinds of block, told apart on the row (#83). `held at the merge
    * gate: …` and `conflict: agent/112 does not merge into develop: …` were both
@@ -307,7 +681,7 @@ describe('a line of history', () => {
       raw: 'agent/112 holds nothing main does not.',
     })
     const said = summarise(blocked!)
-    expect(said).toContain('acknowledgement:')
+    expect(said).not.toContain('acknowledgement:')
     expect(said).toContain('no-commits: agent/112 holds nothing main does not.')
     expect(said).toContain('recommends requeue')
   })
@@ -324,17 +698,20 @@ describe('a line of history', () => {
     expect(said).not.toContain('recommends')
   })
 
-  it('falls to the raw payload when hold does not parse — an old or unrecognised shape', () => {
+  it('points into the open row when hold does not parse — an old or unrecognised shape', () => {
     const said = summarise(e('WorkItemBlocked', { hold: { _tag: 'SomethingElse' } }))
-    expect(said).toContain('SomethingElse')
+    expect(said).toBe('recorded WorkItemBlocked; open for its fields')
   })
 
-  it('names the action on a gate row, not only the point', () => {
-    const build = e('StepStarted', { step: 'prepared', action: 'build', runId: 'pass-1', onSha: 'abc' })
-    const lint = e('StepStarted', { step: 'prepared', action: 'lint', runId: 'pass-1', onSha: 'abc' })
-    expect(summarise(build)).toBe('prepared · build')
-    // Three gates at one point used to render as three identical rows.
-    expect(summarise(build)).not.toBe(summarise(lint))
+  /** `StepStarted` carries a step and a round and no action: `stepAt` threw on every one of them. */
+  it('says which step began, and in which round, from a payload that names no action', () => {
+    expect(summarise(e('StepStarted', { runId: 'pass-1', step: 'prepared', round: 0 }))).toBe('prepared started')
+    expect(summarise(e('StepStarted', { runId: 'pass-1', step: 'review', round: 2 }))).toBe('review started (round 2)')
+  })
+
+  it('says a step ended with nothing to run, rather than falling back', () => {
+    const ended = e('StepEnded', { runId: 'pass-1', outcome: anOutcome('prepared', 0, []) })
+    expect(summarise(ended)).toBe('prepared ended with no action to run')
   })
 
   /**
@@ -413,19 +790,16 @@ describe('a line of history', () => {
         invocation: null,
       }),
     )
-    expect(said).toBe('claude-code · opus-5 · base 1f7d07b · recipe 3f8a1c2b9d04')
+    // The worktree, the prompt version and the recipe hash are in the fields.
+    expect(said).toBe('an agent of another ticket started on claude-code (opus-5) from base 1f7d07b')
   })
 
   it('gives RunPrompted a detail of its own, so its actor is not read as one', () => {
     const said = summarise(
       e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: '…' }, 'agent:pass-78db72ff-d659'),
     )
-    expect(said).toBe('ticket@1911, 4593 bytes')
-  })
-
-  it("shortens a run's actor to something an actor column can hold", () => {
-    expect(shortActor('agent:pass-78db72ff-d659-4515-a5d3-150a0e8a3b33')).toBe('agent:pass-78db72ff')
-    expect(shortActor('conductor')).toBe('conductor')
-    expect(shortActor('human:steven')).toBe('human:steven')
+    // Its size; a version string is not a caption.
+    expect(said).toBe('an agent of another ticket was prompted (4593 bytes)')
+    expect(said).not.toContain('ticket@1911')
   })
 })

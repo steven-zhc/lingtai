@@ -313,6 +313,14 @@ describe('the history', () => {
     expect(groups[1]?.lines.map((l) => l.type)).toEqual(['RunStarted', 'RunFinished'])
   })
 
+  it('names a claim by its attempt, and a second claim of the same run as a continuation (#887)', () => {
+    const claimed = events.filter((ev) => ev.type === 'TicketClaimed')
+    const again = { ...claimed[0]!, seq: claimed[0]!.seq + 1000n }
+    const lines = groupHistory([...events, again], attempts).flatMap((g) => g.lines)
+    const said = lines.filter((l) => l.type === 'TicketClaimed').map((l) => l.summary)
+    expect(said).toEqual(['Attempt 1 claimed', 'Attempt 1 continued'])
+  })
+
   it('carries a seq range per group, which is what a finding cites', () => {
     const run = groupHistory(events, attempts).find((g) => g.attempt === 1)
 
