@@ -16,7 +16,7 @@ import {
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -58,22 +58,6 @@ function Gh({
     <Deferred value={g} fallback={fallback}>
       {children}
     </Deferred>
-  )
-}
-
-/** The Edit card's action. Its draft lives here, above the `Gh` and its problem branch, so a refresh that fails does not unmount the draft. */
-function EditPromptAction({ g, pending, taskId }: { g: Answered<TaskAnswer>; pending: boolean; taskId: string }) {
-  const [draft, setDraft] = useState<string | null>(null)
-  return (
-    <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}>
-      {(a) =>
-        a.outgoing === null || a.outgoing.problem !== null ? (
-          <p className="empty">The prompt could not be composed, so there is nothing to edit.</p>
-        ) : (
-          <OutgoingEditor taskId={taskId} outgoing={a.outgoing} sendable={false} draft={draft} onDraft={setDraft} />
-        )
-      }
-    </Gh>
   )
 }
 
@@ -291,8 +275,9 @@ import {
 } from './decide.tsx'
 import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
+import { EditPromptAction } from './edit-prompt.tsx'
 import { DocumentBody } from './markdown.tsx'
-import { Outgoing, OutgoingEditor, OutgoingPrompt } from './outgoing.tsx'
+import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 import { Skeleton } from './skeleton.tsx'
