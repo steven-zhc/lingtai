@@ -12,7 +12,7 @@
  * test needs none of the real ones. `daemonTriagePorts` wires the production
  * ports for the daemon in this file.
  */
-import { createRuntime, type Runtime, type RunOutcome } from '@lingtai/agent'
+import { createRuntime, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
@@ -869,12 +869,14 @@ async function waitTriageWithin(
 
           // Before the call, so a crash or a kill still leaves the prompt on the log
           // (#923). Tagged as the round's `RunSpent` is.
+          const triageEnv = checkout?.env ?? runnableEnv({})
           await recordPrompt(
             deps.store,
             stream,
             {
               for: { _tag: 'Triage', waitId: request.waitId },
               promptVersion: `triage@${prompt.length}`,
+              runtimeVersion: await runtimeVersionOf(runtime, triageEnv, cwd),
               prompt,
             },
             log,
@@ -887,7 +889,7 @@ async function waitTriageWithin(
               prompt,
               ...(call.model === undefined ? {} : { model: call.model }),
               settingsPath,
-              env: checkout?.env ?? runnableEnv({}),
+              env: triageEnv,
               limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
               // The runtime enforces the bounds before it answers; `parseTriage`
               // below stays the last check, and the route that cannot carry a

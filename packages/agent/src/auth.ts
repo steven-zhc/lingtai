@@ -78,9 +78,16 @@ export function classifyCodexLogin(end: ProbeEnd): AuthStatus {
 }
 
 /** Spawn `binary args`, and resolve with what happened — the first thing to settle wins. */
-function probe(binary: string, args: string[], env: Record<string, string>): Promise<ProbeEnd> {
+function probe(
+  binary: string,
+  args: string[],
+  env: Record<string, string>,
+  how: { readonly timeoutMs?: number; readonly spawn?: typeof spawn; readonly cwd?: string } = {},
+): Promise<ProbeEnd> {
+  const spawnChild = how.spawn ?? spawn
   return new Promise<ProbeEnd>((resolve) => {
-    const child = spawn(binary, args, {
+    const child = spawnChild(binary, args, {
+      ...(how.cwd === undefined ? {} : { cwd: how.cwd }),
       // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
       // board reaches this through `currentRecipe`'s sign-in detection.
       env: env as NodeJS.ProcessEnv,
@@ -96,7 +103,7 @@ function probe(binary: string, args: string[], env: Record<string, string>): Pro
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       resolve({ kind: 'timeout' })
-    }, 20_000)
+    }, how.timeoutMs ?? 20_000)
 
     child.on('error', (e: NodeJS.ErrnoException) => {
       clearTimeout(timer)
@@ -108,6 +115,32 @@ function probe(binary: string, args: string[], env: Record<string, string>): Pro
       resolve({ kind: 'exited', code, signal, out, err })
     })
   })
+}
+
+/**
+ * What `--version` printed, judged (#929): the first non-empty stdout line,
+ * trimmed and capped at 200 characters, only for a clean exit. Everything else
+ * is `null` — stderr is never the answer, and a probe nobody could read is not
+ * a version.
+ */
+export function reportedVersion(end: ProbeEnd): string | null {
+  if (end.kind !== 'exited' || end.code !== 0) return null
+  const line = end.out.split(/\r?\n/).find((l) => l.trim() !== '')
+  return line === undefined ? null : line.trim().slice(0, 200)
+}
+
+/** `binary --version`, as the binary printed it, in `env`. Asked per call; never cached. */
+export function runtimeVersion(
+  binary: string,
+  env: Record<string, string>,
+  spawnChild?: typeof spawn,
+  cwd?: string,
+): Promise<string | null> {
+  return probe(binary, ['--version'], env, {
+    timeoutMs: 5_000,
+    ...(spawnChild ? { spawn: spawnChild } : {}),
+    ...(cwd === undefined ? {} : { cwd }),
+  }).then(reportedVersion)
 }
 
 /**

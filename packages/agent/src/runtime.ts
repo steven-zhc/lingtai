@@ -273,6 +273,22 @@ export interface Runtime {
    * `lingtai doctor` reports an absent check as deferred rather than as passing.
    */
   checkAuth?(env: Record<string, string>): Promise<AuthStatus>
+  /**
+   * The first line of `<binary> --version`, as this runtime printed it, in the
+   * environment a call would spawn with (#929). Optional like `checkAuth`; a
+   * runtime without it records `null`. Asked per call, never cached.
+   */
+  version?(env: Record<string, string>, cwd?: string): Promise<string | null>
+}
+
+/** A runtime's version for one call. Never rejects; `null` when it cannot be read or asked. */
+export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>, cwd?: string): Promise<string | null> {
+  return Promise.resolve()
+    .then(() => runtime.version?.(env, cwd) ?? null)
+    .then(
+      (version) => version ?? null,
+      () => null,
+    )
 }
 
 /**

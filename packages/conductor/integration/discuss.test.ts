@@ -76,6 +76,7 @@ describe('a discussion, on the log', () => {
       {
         store,
         serve: async () => null,
+        version: async () => null,
         ask: answers(
           '{"answer":"the flag is never passed","cannot":["whether the binary accepts it"],"proposal":{"kind":"prompt","text":"pass --max-turns"}}',
         ),
@@ -109,7 +110,12 @@ describe('a discussion, on the log', () => {
     const chatId = id('chat')
 
     await holdDiscussion(
-      { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
+      {
+        store,
+        serve: async () => null,
+        version: async () => null,
+        ask: answers('{"answer":"x","cannot":[],"proposal":null}'),
+      },
       {
         chatId,
         evidence: evidence(ticketId),
@@ -152,7 +158,12 @@ describe('a discussion, on the log', () => {
     const ticketId = id('wi')
     const chatId = id('chat')
     await holdDiscussion(
-      { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
+      {
+        store,
+        serve: async () => null,
+        version: async () => null,
+        ask: answers('{"answer":"x","cannot":[],"proposal":null}'),
+      },
       {
         chatId,
         evidence: evidence(ticketId),
@@ -194,7 +205,12 @@ describe('a discussion, on the log', () => {
     // And the refusal path, on a second conversation about the same item.
     const second = id('chat')
     await holdDiscussion(
-      { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
+      {
+        store,
+        serve: async () => null,
+        version: async () => null,
+        ask: answers('{"answer":"x","cannot":[],"proposal":null}'),
+      },
       {
         chatId: second,
         evidence: evidence(ticketId),

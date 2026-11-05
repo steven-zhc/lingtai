@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyClaudeAuth, classifyCodexLogin, type ProbeEnd } from '../src/auth.ts'
+import { classifyClaudeAuth, classifyCodexLogin, reportedVersion, type ProbeEnd } from '../src/auth.ts'
 
 const exited = (code: number | null, out: string, signal: NodeJS.Signals | null = null): ProbeEnd => ({
   kind: 'exited',
@@ -59,5 +59,27 @@ describe('classifyClaudeAuth', () => {
   })
   it('ENOENT is not installed', () => {
     expect(classifyClaudeAuth({ ...ENOENT, message: 'spawn claude ENOENT' }).state).toBe('not-installed')
+  })
+})
+
+describe('reportedVersion (#929)', () => {
+  it('is the first line as the runtime printed it', () => {
+    expect(reportedVersion(exited(0, '2.1.318 (Claude Code)\n'))).toBe('2.1.318 (Claude Code)')
+    expect(reportedVersion(exited(0, 'codex-cli 0.164.0\n'))).toBe('codex-cli 0.164.0')
+  })
+  it('skips blank lines and caps at 200 characters', () => {
+    expect(reportedVersion(exited(0, '\n  \n 1.2.3 \nnext'))).toBe('1.2.3')
+    expect(reportedVersion(exited(0, 'v'.repeat(500)))).toBe('v'.repeat(200))
+  })
+  it('is null for anything that is not a clean exit with output', () => {
+    expect(reportedVersion(exited(1, '1.2.3'))).toBeNull()
+    expect(reportedVersion(exited(null, '1.2.3', 'SIGABRT'))).toBeNull()
+    expect(reportedVersion({ kind: 'timeout' })).toBeNull()
+    expect(reportedVersion(ENOENT)).toBeNull()
+    expect(reportedVersion(exited(0, ''))).toBeNull()
+    expect(reportedVersion(exited(0, '  \n\n'))).toBeNull()
+  })
+  it('never answers with stderr', () => {
+    expect(reportedVersion({ kind: 'exited', code: 0, signal: null, out: '', err: '9.9.9' })).toBeNull()
   })
 })

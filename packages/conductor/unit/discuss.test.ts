@@ -336,6 +336,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => null,
+        version: async () => null,
         ask: async (prompt, _round, call): Promise<Answered> => {
           prompts.push(prompt)
           calls.push(call)
@@ -392,6 +393,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => null,
+        version: async () => null,
         ask: async (): Promise<Answered> => {
           throw new Error('killed')
         },
@@ -420,6 +422,7 @@ describe('holding one question', () => {
     const held = await holdDiscussion(
       {
         store: store.store,
+        version: async () => null,
         serve: async (ref, path) => {
           served.push(`${ref}:${path}`)
           return 'export const x = 1;'
@@ -499,6 +502,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => 'x',
+        version: async () => null,
         ask: async (): Promise<Answered> => rounds[round++]!,
       },
       {
@@ -555,6 +559,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => 'x',
+        version: async () => null,
         ask: async (): Promise<Answered> => {
           round += 1
           return round === 1
@@ -600,6 +605,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => null,
+        version: async () => null,
         ask: async (): Promise<Answered> => ({
           turns: 1,
           durationMs: 1,
@@ -628,6 +634,7 @@ describe('holding one question', () => {
       {
         store: store.store,
         serve: async () => 'x',
+        version: async () => null,
         ask: async (): Promise<Answered> => ({
           turns: 1,
           durationMs: 1,

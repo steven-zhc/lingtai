@@ -1,3 +1,4 @@
+import { parsePayload } from '@lingtai/domain'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
@@ -11,12 +12,23 @@ describe('recordPrompt (#923)', () => {
     const store = createMemoryEventStore()
     const lines: string[] = []
 
-    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@5', prompt: 'héllo' }, (l) => lines.push(l))
+    await recordPrompt(
+      store,
+      'pass-1',
+      { for: FOR, promptVersion: 'fix@5', runtimeVersion: null, prompt: 'héllo' },
+      (l) => lines.push(l),
+    )
 
     expect(lines).toEqual([])
     const events = await store.read('pass-1')
     expect(events.map((e) => e.type)).toEqual(['RunPrompted'])
-    expect(events[0]!.data).toEqual({ promptVersion: 'fix@5', bytes: 6, prompt: 'héllo', for: FOR })
+    expect(events[0]!.data).toEqual({
+      promptVersion: 'fix@5',
+      runtimeVersion: null,
+      bytes: 6,
+      prompt: 'héllo',
+      for: FOR,
+    })
   })
 
   it('swallows a refused append, logs it, and does not retry', async () => {
@@ -32,7 +44,9 @@ describe('recordPrompt (#923)', () => {
     const lines: string[] = []
 
     await expect(
-      recordPrompt(failing, 'pass-1', { for: FOR, promptVersion: 'fix@1', prompt: 'x' }, (l) => lines.push(l)),
+      recordPrompt(failing, 'pass-1', { for: FOR, promptVersion: 'fix@1', runtimeVersion: null, prompt: 'x' }, (l) =>
+        lines.push(l),
+      ),
     ).resolves.toBeUndefined()
 
     expect(attempts).toBe(1)
@@ -49,7 +63,12 @@ describe('recordPrompt (#923)', () => {
       }) as EventStore['read'],
     }
     await expect(
-      recordPrompt(failing, 'pass-1', { for: { _tag: 'Discussion' }, promptVersion: 'discussion@1', prompt: 'x' }),
+      recordPrompt(failing, 'pass-1', {
+        for: { _tag: 'Discussion' },
+        promptVersion: 'discussion@1',
+        runtimeVersion: null,
+        prompt: 'x',
+      }),
     ).resolves.toBeUndefined()
   })
 })
@@ -64,7 +83,7 @@ describe('recordPrompt with a composed prompt (#927)', () => {
       { text: diff, ref: { _tag: 'Diff', from: 'a'.repeat(40), to: 'b'.repeat(40) } },
       ' tail',
     ])
-    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', prompt: composed })
+    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', runtimeVersion: null, prompt: composed })
     const data = (await store.read('pass-1'))[0]!.data as {
       bytes: number
       prompt: string
@@ -79,7 +98,7 @@ describe('recordPrompt with a composed prompt (#927)', () => {
 
   it('writes no refs for a plain string', async () => {
     const store = createMemoryEventStore()
-    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', prompt: 'plain' })
+    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', runtimeVersion: null, prompt: 'plain' })
     expect((await store.read('pass-1'))[0]!.data).not.toHaveProperty('refs')
   })
 })
@@ -116,6 +135,7 @@ describe('recordPrompt with a step part (#928)', () => {
     await recordPrompt(store, 'pass-1', {
       for: FOR,
       promptVersion: 'ticket@1',
+      runtimeVersion: null,
       prompt: ['a: ', { text: 'the design', onStep: { field: 'document', trimmed: true } }, ' :b'],
     })
     const events = await store.read('pass-1')
@@ -144,10 +164,25 @@ describe('recordPrompt with a step part (#928)', () => {
     await recordPrompt(store, 'pass-1', {
       for: FOR,
       promptVersion: 'ticket@1',
+      runtimeVersion: null,
       prompt: ['x ', { text: 'cut', onStep: { field: 'evidence', trimmed: false } }],
     })
     const data = (await store.read('pass-1')).at(-1)!.data as { prompt: string; refs?: unknown }
     expect(data.prompt).toBe('x cut')
     expect(data.refs).toBeUndefined()
+  })
+
+  it('writes the runtime version as given, and a payload without it still parses (#929)', async () => {
+    const store = createMemoryEventStore()
+    await recordPrompt(store, 'pass-v', {
+      for: FOR,
+      promptVersion: 'fix@1',
+      runtimeVersion: '2.1.318 (Claude Code)',
+      prompt: 'x',
+    })
+    expect((await store.read('pass-v'))[0]!.data).toMatchObject({ runtimeVersion: '2.1.318 (Claude Code)' })
+    const old = { promptVersion: 'v', bytes: 1, prompt: 'x' }
+    expect(parsePayload('RunPrompted', old)).toEqual(old)
+    expect(parsePayload('RunPrompted', { ...old, runtimeVersion: null })).toMatchObject({ runtimeVersion: null })
   })
 })

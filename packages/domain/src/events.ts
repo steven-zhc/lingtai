@@ -673,6 +673,14 @@ export const RunPrompted = z.object({
    */
   for: SpentFor.optional(),
   /**
+   * Added by #929 (0100 §14). The first line of `<binary> --version` as the
+   * runtime that answered this call printed it, read for that call in that
+   * call's environment. **Absent means a record written before this field.
+   * `null` means the runtime was asked and gave no readable answer, or cannot be
+   * asked.** Never `""` or `"unknown"`.
+   */
+  runtimeVersion: z.string().nullable().optional(),
+  /**
    * Added by #927 (0100 §14). Where `prompt` holds a **marker** in place of a
    * value already on the log or in git — the ticket body, a diff — one entry per
    * marker: its `[start, end)` UTF-16 offsets in `prompt`, what it stands for, the
