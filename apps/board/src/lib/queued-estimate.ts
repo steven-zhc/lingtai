@@ -71,20 +71,20 @@ export function estimateStart(input: StartInput): Start {
   const free = ends.length < slots && position === 1
   let busy = ends.length
   let at = 0
-  let popped: number | null = null
   for (let j = 1; j <= position; j++) {
     while (busy >= slots) {
       let low = 0
       for (let i = 1; i < ends.length; i++) if (ends[i]! < ends[low]!) low = i
       at = ends.splice(low, 1)[0]!
-      popped ??= at
       busy -= 1
     }
     if (j === position) break
     ends.push(at + t)
     busy += 1
   }
-  return { ms: at, pastTypical: position === 1 && popped === 0, free }
+  // "Starts when one finishes" holds only if the slot it waits for is already
+  // free in the model (S = 0) — not when several must end first and S is later.
+  return { ms: at, pastTypical: position === 1 && !free && at === 0, free }
 }
 
 /** The sentence for S; buckets are decided on the unrounded figure. */
