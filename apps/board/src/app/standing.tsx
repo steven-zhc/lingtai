@@ -16,7 +16,7 @@ import {
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -58,6 +58,22 @@ function Gh({
     <Deferred value={g} fallback={fallback}>
       {children}
     </Deferred>
+  )
+}
+
+/** The Edit card's action. Its draft lives here, above the `Gh` and its problem branch, so a refresh that fails does not unmount the draft. */
+function EditPromptAction({ g, pending, taskId }: { g: Answered<TaskAnswer>; pending: boolean; taskId: string }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}>
+      {(a) =>
+        a.outgoing === null || a.outgoing.problem !== null ? (
+          <p className="empty">The prompt could not be composed, so there is nothing to edit.</p>
+        ) : (
+          <OutgoingEditor taskId={taskId} outgoing={a.outgoing} sendable={false} draft={draft} onDraft={setDraft} />
+        )
+      }
+    </Gh>
   )
 }
 
@@ -1454,68 +1470,6 @@ export function Standing({
                   </div>
                 }
 
-                {/* A queued ticket's moves: three cards, none recommended, none amber. Every
-          head and sentence is drawn at once; only the action that needs GitHub's
-          answer waits for it. `lingtai now` was the only control this state ever
-          had and it lived in a terminal (0028 §3). */}
-                {standing.state === 'queued' ? (
-                  <div className="sresolutiongrid" data-rank="moves">
-                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Run it now</h3>}>
-                      <p className="sresolutionconsequence">
-                        Taken on the conductor’s next turn, ahead of the queue. It still waits for a free slot.
-                      </p>
-                      <div className="sresolutionaction">
-                        <Gh
-                          g={g}
-                          pending={pending}
-                          fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}
-                        >
-                          {(a) =>
-                            a.queued === null ? (
-                              <p className="empty">Its place in the queue could not be read.</p>
-                            ) : (
-                              <RunNow
-                                project={project}
-                                issue={String(issue)}
-                                holding={runNowCaption(a.queued)}
-                                primary={false}
-                                go
-                              />
-                            )
-                          }
-                        </Gh>
-                      </div>
-                    </ResolutionCard>
-                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Edit the prompt</h3>}>
-                      <p className="sresolutionconsequence">
-                        Change what Attempt {standing.attempts + 1} is sent. The edit applies to Attempt{' '}
-                        {standing.attempts + 1} only.
-                      </p>
-                      <div className="sresolutionaction">
-                        <Gh
-                          g={g}
-                          pending={pending}
-                          fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}
-                        >
-                          {(a) =>
-                            a.outgoing === null || a.outgoing.problem !== null ? (
-                              <p className="empty">The prompt could not be composed, so there is nothing to edit.</p>
-                            ) : (
-                              <OutgoingEditor taskId={taskId} outgoing={a.outgoing} sendable={false} />
-                            )
-                          }
-                        </Gh>
-                      </div>
-                    </ResolutionCard>
-                    <ResolutionCard recommended={false} className="sresolution" head={<h3>Close the ticket</h3>}>
-                      <p className="sresolutionconsequence">{RESOLUTION_COPY.Close.consequence}</p>
-                      <div className="sresolutionaction">
-                        <Close project={project} issue={issue} waitId={null} />
-                      </div>
-                    </ResolutionCard>
-                  </div>
-                ) : null}
-
                 {/* The one control an `approved` item offers (#465's board-recovery
           finding). `WaitResolved{Approve}` already landed, so there is
           nothing left to decide — the only thing that can still be missing
@@ -1537,6 +1491,52 @@ export function Standing({
               </>
             )
           })}
+
+          {/* A queued ticket's moves: three cards, none recommended, none amber. Every
+  head and sentence is drawn at once; only the action that needs GitHub's
+  answer waits for it. `lingtai now` was the only control this state ever
+  had and it lived in a terminal (0028 §3). */}
+          {standing.state === 'queued' ? (
+            <div className="sresolutiongrid" data-rank="moves">
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Run it now</h3>}>
+                <p className="sresolutionconsequence">
+                  Taken on the conductor’s next turn, ahead of the queue. It still waits for a free slot.
+                </p>
+                <div className="sresolutionaction">
+                  <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}>
+                    {(a) =>
+                      a.queued === null || project === null || !actable || missingOf(a) ? (
+                        <p className="empty">Its place in the queue could not be read.</p>
+                      ) : (
+                        <RunNow
+                          project={project}
+                          issue={String(issue)}
+                          holding={runNowCaption(a.queued)}
+                          primary={false}
+                          go
+                        />
+                      )
+                    }
+                  </Gh>
+                </div>
+              </ResolutionCard>
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Edit the prompt</h3>}>
+                <p className="sresolutionconsequence">
+                  Change what Attempt {standing.attempts + 1} is sent. The edit applies to Attempt{' '}
+                  {standing.attempts + 1} only.
+                </p>
+                <div className="sresolutionaction">
+                  <EditPromptAction g={g} pending={pending} taskId={taskId} />
+                </div>
+              </ResolutionCard>
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Close the ticket</h3>}>
+                <p className="sresolutionconsequence">{RESOLUTION_COPY.Close.consequence}</p>
+                <div className="sresolutionaction">
+                  {actable && project !== null ? <Close project={project} issue={issue} waitId={null} /> : null}
+                </div>
+              </ResolutionCard>
+            </div>
+          ) : null}
 
           {/* ---- rank 5: the outgoing prompt and nonblocked discussion ---------- */}
 

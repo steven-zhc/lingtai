@@ -56,14 +56,18 @@ export function OutgoingEditor({
   outgoing,
   sendable = false,
   onEdit,
+  draft,
+  onDraft: setDraft,
 }: {
   taskId: string
   outgoing: OutgoingView
   sendable?: boolean
+  /** The draft, owned by a parent that outlives this editor's conditional mounting. */
+  draft: string | null
+  onDraft: (draft: string | null) => void
   /** Called when Edit is pressed, before the draft opens. */
   onEdit?: () => void
 }) {
-  const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -223,6 +227,7 @@ export function Outgoing({
   // re-renders this component rather than mounting it, so seeding from `reduced`
   // once would carry the blocked page's open prompt onto the queued one.
   const [opened, setOpened] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
   if (outgoing.problem !== null) {
     return (
       <div className="outgoing">
@@ -271,6 +276,8 @@ export function Outgoing({
         taskId={taskId}
         outgoing={outgoing}
         sendable={sendable}
+        draft={draft}
+        onDraft={setDraft}
         onEdit={() => {
           if (reduced) setOpened(true)
         }}

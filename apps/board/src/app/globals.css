@@ -1819,6 +1819,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    longer prompt moves nothing under it, and the editor is bounded the same way
    for the same reason. */
 .outgoing > .outtext,
+.outgoing > .outeditor,
 .outgoing > .outbox {
   flex: 1 1 auto;
   min-height: 0;
@@ -1881,6 +1882,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-variant-numeric: tabular-nums;
 }
 .outwho { margin-right: 0.45rem; color: var(--muted); }
+.outeditor { display: grid; gap: 0.35rem; align-content: start; }
 .outbox { display: grid; gap: 0.35rem; }
 .outbox textarea {
   font: 0.75rem/1.55 var(--mono);
