@@ -9,9 +9,19 @@ import { readControl } from '@lingtai/daemon/control'
 // so `projects.tsx` stays a reducer over its arguments (#216).
 import { hasGitHubAuth, storeChoice } from '@lingtai/env'
 import Link from 'next/link'
-import { Fragment } from 'react'
+import { type ComponentProps, Fragment, Suspense } from 'react'
 
-import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
+import {
+  emptyNote,
+  githubQueue,
+  groupQueue,
+  issueUrl,
+  loadBoard,
+  queuedStanding,
+  type BoardCard,
+  type GithubQueue,
+  LANDED_OPEN,
+} from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
@@ -33,6 +43,14 @@ import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
 import { Projects } from './projects.tsx'
+import {
+  QueuedAnswered,
+  QueuedCountAnswered,
+  QueuedCountPending,
+  QueuedFallback,
+  QueuedSegmentAnswered,
+  QueuedSegmentPending,
+} from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
 
 /**
@@ -533,16 +551,19 @@ function Queued({
   showProject,
   issue,
   paused,
+  markNext = true,
 }: {
   cards: BoardCard[]
   order: string[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
   paused: boolean
+  /** False while GitHub is still being asked: which group is taken first is not known yet (#884). */
+  markNext?: boolean
 }) {
   return (
     <>
-      {groupQueue(cards, order).map((group) => (
+      {groupQueue(cards, order, markNext).map((group) => (
         <Fragment key={group.kind}>
           {/* Not amber, and not any of the state colours. "This is taken first"
               is a fact about the queue's order, not about a person being
@@ -558,6 +579,29 @@ function Queued({
       ))}
     </>
   )
+}
+
+/**
+ * The three places the page waits for GitHub (#884), each an `await` of the one
+ * promise `Page` started and nothing else — what they draw is
+ * `queued-stream.tsx`'s, which a test renders without a promise.
+ */
+async function AwaitedQueued({
+  queue,
+  ...props
+}: { queue: Promise<GithubQueue> } & Omit<ComponentProps<typeof QueuedAnswered>, 'github'>) {
+  return <QueuedAnswered github={await queue} {...props} />
+}
+
+async function AwaitedCount({ queue, logCount }: { queue: Promise<GithubQueue>; logCount: number }) {
+  return <QueuedCountAnswered github={await queue} logCount={logCount} />
+}
+
+async function AwaitedSegment({
+  queue,
+  ...props
+}: { queue: Promise<GithubQueue> } & Omit<ComponentProps<typeof QueuedSegmentAnswered>, 'github'>) {
+  return <QueuedSegmentAnswered github={await queue} {...props} />
 }
 
 /**
@@ -605,7 +649,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // reads that projection without refreshing it, so run beside it the day's
   // total could be read before today's `RunSpent` events were projected.
   const [
-    [{ columns, queueOrder, ticketSources, projects: filters, pending, spend }, registered, control, today],
+    [
+      { columns, queueOrder, ticketSources, projects: filters, pending, spend, askable, known },
+      registered,
+      control,
+      today,
+    ],
     timings,
   ] = await measure(
     async () => {
@@ -619,6 +668,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     },
     { label: '/' },
   )
+  // GitHub's half of the Queued column, asked only now (#884): the page's own
+  // `measure` has returned, so these timings are not in the meta tag already
+  // sent — started inside it they would land in an array that has been
+  // serialised, and be lost silently. Started once and awaited from both
+  // boundaries below; two calls would be two fan-outs to GitHub.
+  const queue: Promise<GithubQueue> = measure(() => timed('board.queue', () => githubQueue(askable, known)), {
+    label: '/ queue',
+  }).then(([github]) => github)
   const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // reduced cleanly — a chip is not free, and this is the ordinary case — and
@@ -637,10 +694,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const waiting = columns.find((c) => c.id === 'waiting')?.cards.length ?? 0
   // And the rest, which is what `11 items` was a sum of. Said as its parts,
   // because the parts mean different things and the sum meant nothing.
+  // Queued is the first column, and its count is GitHub's to finish: it
+  // streams in at the front, where Queued's count stood.
+  const logQueued = columns.find((c) => c.id === 'queued')?.cards.length ?? 0
   const rest = columns
-    .filter((c) => c.id !== 'waiting' && c.cards.length > 0)
+    .filter((c) => c.id !== 'waiting' && c.id !== 'queued' && c.cards.length > 0)
     .map((c) => `${c.cards.length} ${c.label.toLowerCase()}`)
     .join(' · ')
+  // What follows the streamed Queued segment. `what this has cost` is only what
+  // an otherwise empty reading says, so a printed count replaces it.
+  const tail =
+    total === 0
+      ? only === undefined
+        ? 'nothing in the log yet'
+        : `nothing here for ${only}`
+      : rest === ''
+        ? 'what this has cost'
+        : rest
+  const tailOnlyAlone = total > 0 && rest === ''
+  const queuedColumn = columns.find((c) => c.id === 'queued')
 
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
@@ -702,13 +774,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 : 'everything that is not waiting on you — and what it has cost'
             }${today.short === null ? '' : ` — ${today.text}`}`}
           >
-            {total === 0
-              ? only === undefined
-                ? 'nothing in the log yet'
-                : `nothing here for ${only}`
-              : rest === ''
-                ? 'what this has cost'
-                : rest}
+            <Suspense fallback={<QueuedSegmentPending tail={tail} />}>
+              <AwaitedSegment queue={queue} logQueued={logQueued} tail={tail} tailOnlyAlone={tailOnlyAlone} />
+            </Suspense>
             {today.short === null ? null : ` · ${today.short}`}
           </Link>
           {/* `/report` is a second way out of the reading and not a fifth
@@ -820,7 +888,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           >
             <header className="col-h">
               <span>{col.label}</span>
-              <span className="ct">{col.cards.length}</span>
+              {col.id === 'queued' ? (
+                <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
+                  <AwaitedCount queue={queue} logCount={col.cards.length} />
+                </Suspense>
+              ) : (
+                <span className="ct">{col.cards.length}</span>
+              )}
             </header>
             <div className="cards">
               {/* **An empty column and an unanswerable one are different facts.**
@@ -834,35 +908,55 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                   listed (#76), the lane is empty because somebody stopped the
                   conductor (#77), and the lane is simply empty. Only the last
                   one means what it says. */}
-              {col.problems?.map((p) => (
-                <p key={p.project} className="empty broken">
-                  <strong>{p.project}</strong>: the queue could not be listed — {p.reason}
-                </p>
-              ))}
-              {/* What was listed and is not a card, in `lingtai status`'s own
-                  words (#131): a ticket held by an open blocker is a count
-                  here rather than an absence, and a repository whose GitHub
-                  will not report dependencies says so rather than showing an
-                  order it did not check. */}
-              {col.notes?.map((n) => (
-                <p key={`${n.project}:${n.reason}`} className="empty">
-                  <strong>{n.project}</strong>: {n.reason}
-                </p>
-              ))}
-              {col.cards.length === 0 && !col.problems?.length ? (
+              {col.id === 'queued' ? (
+                // **GitHub's half streams in after the rest** (#884). The
+                // fallback is what the log already says, and the answer is
+                // the whole column again: one grouping and one *taken first*
+                // over the log's cards and GitHub's, as before.
+                <Suspense
+                  fallback={
+                    <QueuedFallback
+                      unreadable={col.problems ?? []}
+                      logCards={col.cards}
+                      onBoard={onBoard}
+                      list={(cards, showProject, markNext) => (
+                        <Queued
+                          cards={cards}
+                          order={queueOrder}
+                          showProject={showProject}
+                          issue={ticket}
+                          paused={control.paused}
+                          markNext={markNext}
+                        />
+                      )}
+                    />
+                  }
+                >
+                  <AwaitedQueued
+                    queue={queue}
+                    unreadable={queuedColumn?.problems ?? []}
+                    logCards={col.cards}
+                    onBoard={onBoard}
+                    list={(cards, showProject, markNext) => (
+                      <Queued
+                        cards={cards}
+                        order={queueOrder}
+                        showProject={showProject}
+                        issue={ticket}
+                        paused={control.paused}
+                        markNext={markNext}
+                      />
+                    )}
+                    empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
+                  />
+                </Suspense>
+              ) : null}
+              {col.id === 'queued' ? null : col.cards.length === 0 ? (
                 <p className={`empty${col.id === 'running' && control.paused ? ' held' : ''}`}>
                   {emptyNote(col.id, control.paused, only)}
                 </p>
               ) : col.id === 'landed' ? (
                 <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
-              ) : col.id === 'queued' ? (
-                <Queued
-                  cards={col.cards}
-                  order={queueOrder}
-                  showProject={onBoard.size > 1}
-                  issue={ticket}
-                  paused={control.paused}
-                />
               ) : (
                 col.cards.map((card) => (
                   <Card
