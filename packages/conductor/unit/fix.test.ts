@@ -1777,8 +1777,11 @@ describe('a granted round after a decline (#935)', () => {
   }
   it('lists the findings as the criterion and the answer under the fixer’s heading', () => {
     const brief = fixBrief({ ...base, refusal: { on: 'findings', findings: [finding()] } })
-    const at = brief.indexOf('What the previous fixer answered, which is not the review')
-    expect(at).toBeGreaterThan(brief.indexOf('## The findings'))
+    const findings = brief.indexOf('## The findings')
+    const at = brief.indexOf('## What the previous fixer answered, which is not the review')
+    expect(findings).toBeGreaterThanOrEqual(0)
+    expect(brief).toContain(finding().claim)
+    expect(at).toBeGreaterThan(findings)
     expect(brief.indexOf(said)).toBeGreaterThan(at)
     expect(brief.split(said)).toHaveLength(2)
   })
@@ -1788,6 +1791,8 @@ describe('a granted round after a decline (#935)', () => {
       refusal: { on: 'output', output: 'There is no recorded review finding to fix.' },
     })
     expect(brief).not.toContain('## The findings')
+    expect(brief).toContain('There is no recorded review finding to fix.')
+    expect(brief).toContain('## What the previous fixer answered, which is not the review')
     expect(brief).toContain(said)
   })
 })
