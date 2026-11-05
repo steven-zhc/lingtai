@@ -241,7 +241,7 @@ async function printFound(
   // The first word is the manager (`uv`, `poetry`, `pnpm`…). ruff, mypy and
   // pytest come from the project's environment after install, so they are not
   // probed; Go's tools come from no such environment, so all of them are. An
-  // entry whose first word is a shell builtin names its tool, and a wrapper's is `java`. A probe that
+  // entry whose first word is a shell builtin names its tool, and a wrapper's is `java`. Rust's `cargo fmt` and `cargo clippy` name `rustfmt` and `cargo-clippy`, rustup components that may be absent beside `cargo`. A probe that
   // throws says nothing.
   const commands = [
     detected.install === null ? undefined : { tool: detected.install.tool, run: detected.install.run },
