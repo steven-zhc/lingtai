@@ -61,6 +61,7 @@ import {
   conductorLockHolder,
   describeCurrency,
   describeInFlight,
+  findOrphanLogs,
   findOrphans,
   held as heldPasses,
   lastBeat,
@@ -1621,24 +1622,36 @@ async function conductorLock(
  * would tell you about a state that no longer exists by the time you read it.
  */
 async function orphans(
-  fetch: () => ReturnType<typeof findOrphans> = () => findOrphans({ dryRun: true }),
+  fetch: () => ReturnType<typeof findOrphans> = () =>
+    Promise.all([findOrphans({ dryRun: true }), findOrphanLogs({ dryRun: true })]).then((both) => both.flat()),
 ): Promise<CheckResult> {
   const found = await fetch().catch(() => null)
   if (found === null) {
-    return { name: 'worktrees: reconciliation', status: 'ok', detail: 'could not read the worktree directory' }
+    return {
+      name: 'worktrees: reconciliation',
+      status: 'ok',
+      detail: 'could not read the worktree or run-log directory',
+    }
   }
   if (found.length === 0) {
     return { name: 'worktrees: reconciliation', status: 'ok', detail: 'nothing left over' }
   }
+  const mysteries = found.filter((f) => f.once)
+  const repairable = found.filter((f) => !f.once)
+  const clauses = [
+    mysteries.length > 0 ? `${mysteries.length} a person removes: ${mysteries.map((f) => f.path).join(', ')}` : '',
+    // Only this group is cleared by starting the daemon; a mystery is reported,
+    // never removed.
+    repairable.length > 0
+      ? `${repairable.length} lingtai daemon removes on startup: ${repairable.map((f) => f.stream).join(', ')}`
+      : '',
+  ].filter((c) => c !== '')
   return {
     name: 'worktrees: reconciliation',
     status: 'ok',
-    // Reported, not failed. Leftovers are a normal consequence of a kill, and
-    // starting the daemon clears them — a red doctor here would train people
-    // to ignore a red doctor.
-    detail: `${found.length} left over; lingtai daemon removes them on startup: ${found
-      .map((f) => f.stream)
-      .join(', ')}`,
+    // Reported, not failed. Leftovers are a normal consequence of a kill, and a
+    // red doctor here would train people to ignore a red doctor.
+    detail: `${found.length} left over; ${clauses.join('; ')}`,
   }
 }
 

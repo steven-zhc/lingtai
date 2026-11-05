@@ -40,7 +40,10 @@
  * hat.
  *
  * A run that found nothing appends nothing. An empty `Reconciled` every startup
- * would be noise in the one place noise is expensive.
+ * would be noise in the one place noise is expensive. Nor is a mystery
+ * appended twice: an orphan an earlier start already reported (a worktree or log
+ * for a run with no `RunStarted`) is left out, and `lingtai doctor` lists what is
+ * still there (0111 §11).
  *
  * ## What counts as orphaned
  *
@@ -74,7 +77,14 @@ import { promisify } from 'node:util'
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
 import { readState } from '@lingtai/conductor/snapshot-state'
-import { reduceTicket, ticketReducer, parsePayload, type ProjectState, ticketStreamsOf } from '@lingtai/domain'
+import {
+  type Envelope,
+  reduceTicket,
+  ticketReducer,
+  parsePayload,
+  type ProjectState,
+  ticketStreamsOf,
+} from '@lingtai/domain'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore, log as processLog, type SnapshotReadOptions } from '@lingtai/event-store'
 import { projectionLag } from '@lingtai/projector'
@@ -144,6 +154,48 @@ export interface Finding {
   action: Action
   /** Absolute path for a worktree finding; empty for the others. */
   path: string
+  /**
+   * A mystery reported and never removed: appended once, then listed by
+   * `lingtai doctor` until a person removes it. Never written to the event.
+   */
+  once?: true
+}
+
+const onceKey = (stream: string, actual: string): string => `${stream}\0${actual}`
+
+/**
+ * Drop the report-once findings an earlier `Reconciled` already carried as
+ * `reported`. Identity is `stream` + `actual`. `null` means the earlier events
+ * could not be read, and then nothing is dropped.
+ */
+export function unreported(findings: Finding[], earlier: readonly Envelope[] | null): Finding[] {
+  if (earlier === null) return findings
+  const seen = new Set<string>()
+  for (const e of earlier) {
+    const list = (e.data as { findings?: { stream: string; actual: string; action: string }[] } | undefined)?.findings
+    for (const f of list ?? []) if (f.action === 'reported') seen.add(onceKey(f.stream, f.actual))
+  }
+  return findings.filter((f) => !(f.once && seen.has(onceKey(f.stream, f.actual))))
+}
+
+/** Read the earlier `Reconciled` events and apply `unreported`; a failed read suppresses nothing. */
+export function withoutReported(
+  store: Pick<EventStore, 'readTypes'>,
+  findings: Finding[],
+  log: (line: string) => void,
+): Promise<Finding[]> {
+  return store.readTypes(CONTROL_STREAM, ['Reconciled']).then(
+    (earlier) => {
+      const kept = unreported(findings, earlier)
+      const dropped = findings.length - kept.length
+      if (dropped > 0) log(`${dropped} orphan(s) already reported and still present (lingtai doctor lists them)`)
+      return kept
+    },
+    (err: unknown) => {
+      log(`could not read earlier Reconciled: ${(err as Error).message}; reporting every orphan again`)
+      return findings
+    },
+  )
 }
 
 export interface ReconcileOptions {
@@ -274,6 +326,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
           // being able to explain them.
           action: 'reported',
           path,
+          once: true,
         })
         continue
       }
@@ -382,6 +435,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
           actual: `a log at ${path} for a run with no RunStarted`,
           action: 'reported',
           path,
+          once: true,
         })
         continue
       }
@@ -615,7 +669,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
   // findings are reported in the old order.
   const foreign = await releaseForeignClaims(options)
   const abandoned = new Set(foreign.map((f) => f.stream))
-  const findings = [
+  const scanned = [
     ...(await findLaggingProjections(options)),
     ...(await findOrphans({ ...options, abandoned })),
     ...(await findOrphanLogs(options)),
@@ -641,7 +695,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
     })
     const done = new Set(converged.map((d) => `${d.ticketId}:${d.change}`))
     for (const d of divergences) {
-      findings.push({
+      scanned.push({
         stream: d.ticketId,
         expected: `${d.change}: ${d.expected}`,
         actual: d.actual,
@@ -651,6 +705,7 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
     }
   }
 
+  const findings = await withoutReported(store, scanned, log)
   if (findings.length === 0) return []
 
   for (const f of findings) {
