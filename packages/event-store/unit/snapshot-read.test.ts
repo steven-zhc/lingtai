@@ -145,7 +145,10 @@ describe("readThroughSnapshot with 'all' over the attempt reducer", () => {
           ? ({
               type: 'ProposalRouted',
               actor: e.actor,
-              data: { ...(e.data as { offer: object }), offer: { ...(e.data as { offer: object }).offer, ended: null } },
+              data: {
+                ...(e.data as { offer: object }),
+                offer: { ...(e.data as { offer: object }).offer, ended: null },
+              },
             } as never)
           : ({ type: e.type, actor: e.actor, data: e.data } as never),
       ),

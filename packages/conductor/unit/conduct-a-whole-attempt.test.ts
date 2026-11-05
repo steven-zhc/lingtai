@@ -21,8 +21,17 @@
  * process, no socket, no network. The fixtures are `test/one-attempt.ts`.
  */
 import type { Runtime } from '@lingtai/agent'
-import type { Action, Envelope, JudgeReply, RouteDecision, RouteOffer, RunSpent, ToAppend } from '@lingtai/domain'
-import { cleared, waitWords, STEPS } from '@lingtai/domain'
+import type {
+  Action,
+  Envelope,
+  JudgeReply,
+  PayloadOf,
+  RouteDecision,
+  RouteOffer,
+  RunSpent,
+  ToAppend,
+} from '@lingtai/domain'
+import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, resolveSource, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -1566,6 +1575,17 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
       .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed.map((row) => row.to)).toEqual(['implement', 'waiting'])
+    // What is written is a `ProposalRouted` (#932): the review-refused route
+    // carries no findings of its own, and names the `StepEnded` that holds them.
+    const stored = run.filter((e) => e.type === 'ProposalRouted').map((e) => e.data as PayloadOf<'ProposalRouted'>)
+    expect(stored[0]!.offer.proposal._tag).toBe('ReviewFindings')
+    expect('findings' in stored[0]!.offer.proposal).toBe(false)
+    expect(stored[0]!.offer.ended).not.toBeNull()
+    const resolved = resolveOffer(stored[0]!.offer, stepEndedsOf(run))
+    expect(resolved._tag).toBe('Resolved')
+    if (resolved._tag === 'Resolved' && resolved.offer.proposal._tag === 'ReviewFindings') {
+      expect(resolved.offer.proposal.findings.length).toBeGreaterThan(0)
+    }
     expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge')
     expect(routed[0]!.why).toContain('the recipe declares `judge: same-worktree`')
     expect(routed[0]!.ceiling).toBeNull()

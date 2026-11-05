@@ -1,7 +1,7 @@
 /**
  * 0120 §3's route: `RouteOffer`, `JudgeReply`, `RouteDecision`, `offerFor`,
  * `decideRoute` and `routeNext` — wired into `proposed` by the pass, and,
- * since #502, the shape `PassRouted` stores: `events.ts` imports the three
+ * since #502, the shape `PassRouted` stored (and `ProposalRouted` stores, #932): `events.ts` imports the three
  * types as values for that schema, which is safe because nothing this file
  * depends on imports `events.ts` back.
  *
@@ -20,9 +20,9 @@
  */
 import { z } from 'zod'
 
+import type { StepOutcome } from './action.ts'
 import { FixRound, MergeBase, type AttemptNext, Restart, type Spent } from './attempt-next.ts'
 import { copiedFieldsOf, Proposal, StoredProposal } from './proposal.ts'
-import type { StepOutcome } from './action.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { STEPS, type Step } from './vocabulary.ts'
 import { AttemptRef } from './wait.ts'
@@ -403,7 +403,11 @@ export function resolveOffer(
 
   const ended = offer.ended
   if (ended === null || ended === undefined) {
-    return { _tag: 'Unresolved', version: null, why: `a ${proposal._tag} with no ${missing.join('/')} names no StepEnded` }
+    return {
+      _tag: 'Unresolved',
+      version: null,
+      why: `a ${proposal._tag} with no ${missing.join('/')} names no StepEnded`,
+    }
   }
   const outcome = endedAt(ended.version)
   if (outcome === undefined) {

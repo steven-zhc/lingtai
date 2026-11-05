@@ -1382,7 +1382,9 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       claimed.add((e.data as PayloadOf<'TicketClaimed'>).runId)
       claimedByStream.set(e.streamId, claimed)
     }
-    group.lines.push(toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim, endedAt: endedByRun.get(e.streamId) }))
+    group.lines.push(
+      toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim, endedAt: endedByRun.get(e.streamId) }),
+    )
     group.to = String(e.seq)
   }
 

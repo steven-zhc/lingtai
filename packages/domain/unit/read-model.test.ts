@@ -277,7 +277,9 @@ describe('boardFactOf', () => {
   it('answers WaitResolved with the resolution the person made', () => {
     const item = makeStream('ticket-1')
     const waitId = aWaitId()
-    const facts = aResolution(item, waitId, { _tag: 'Close' }, 'steven', 'no longer wanted').flatMap((e) => boardFactOf(e, () => undefined))
+    const facts = aResolution(item, waitId, { _tag: 'Close' }, 'steven', 'no longer wanted').flatMap((e) =>
+      boardFactOf(e, () => undefined),
+    )
     expect(facts).toEqual([
       { _tag: 'WaitResolved', by: 'steven', note: 'no longer wanted', resolution: { _tag: 'Close' } },
     ])

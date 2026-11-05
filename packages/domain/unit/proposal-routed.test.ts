@@ -196,7 +196,10 @@ describe('ProposalRouted', () => {
 
   it('refuses a copy beside a reference, and a missing copy without one', () => {
     expect(() =>
-      parsePayload('ProposalRouted', base({ _tag: 'ReviewFindings', findings: [finding] }, { version: 3, action: 'c' })),
+      parsePayload(
+        'ProposalRouted',
+        base({ _tag: 'ReviewFindings', findings: [finding] }, { version: 3, action: 'c' }),
+      ),
     ).toThrow()
     expect(() => parsePayload('ProposalRouted', base({ _tag: 'ReviewFindings' }, null))).toThrow()
     expect(parsePayload('ProposalRouted', base({ _tag: 'ReviewFindings', findings: [finding] }, null))).toBeTruthy()

@@ -21,7 +21,9 @@ const BOARD_ENDING = {
 function readers(events: readonly Envelope[]) {
   const steps = Object.fromEntries(Object.entries(reduceAttempt(events).steps).map(([k, s]) => [k, s.verdict]))
   const board = Object.fromEntries(
-    events.flatMap((e) => boardFactOf(e, () => undefined)).flatMap((f) => (f._tag === 'StepEnded' ? [[`${f.step}:${f.action}`, f] as const] : [])),
+    events
+      .flatMap((e) => boardFactOf(e, () => undefined))
+      .flatMap((f) => (f._tag === 'StepEnded' ? [[`${f.step}:${f.action}`, f] as const] : [])),
   )
   return { steps, board }
 }

@@ -12,12 +12,11 @@
  * what the projections see, since they reduce in global `seq` order too.
  */
 import { isReached, type Reached, type StepOutcome, type WaitId } from './action.ts'
-import type { AttemptNext } from './attempt-next.ts'
 import { verdictOf, type StepVerdict } from './attempt.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import { fromOf } from './proposal.ts'
-import { resolveOffer, routeMove, routeNext, type RouteDecision, type RouteMove } from './routing.ts'
+import { resolveOffer, routeMove, type RouteDecision, type RouteMove } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import { reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
@@ -279,10 +278,7 @@ function boardStepEndedOf(outcome: StepOutcome, action: Reached): Extract<BoardF
 }
 
 /** `boardFactOf`'s one entry point — see the section header for what it does and does not answer. */
-export function boardFactOf(
-  event: Envelope,
-  endedAt: (version: number) => StepOutcome | undefined,
-): BoardFact[] {
+export function boardFactOf(event: Envelope, endedAt: (version: number) => StepOutcome | undefined): BoardFact[] {
   switch (event.type) {
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
