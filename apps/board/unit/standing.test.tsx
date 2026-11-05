@@ -616,6 +616,39 @@ describe('the move the block ends in', () => {
     expect(standing.awaitingSha).toBeNull()
   })
 
+  it('approves the head commit for a wait that comes with no signoff, and draws no refusal', () => {
+    // #920: a fixer's decline offers Approve and opens no signoff.
+    const run = presentAttemptEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
+      e(RUN_1, 'RunProducedDiff', { headSha: SHA, branch: 'agent/911', files: 2, insertions: 9, deletions: 1 }),
+    ])
+    const standing = standingOf(
+      [
+        e(ITEM, 'TicketClaimed', { runId: RUN_1 }),
+        e(ITEM, 'WaitStarted', {
+          waitId: 'wait-1',
+          reason: { _tag: 'FixerDisagrees', run: { runId: RUN_1 }, said: null },
+        }),
+      ],
+      [run],
+    )
+
+    expect(standing.awaitingSha).toBe(SHA)
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={standing}
+        project="lingtai"
+        issue={911}
+        taskId="ticket-lingtai-911"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+    expect(html).toContain('<button class="btn">Approve</button>')
+    expect(html).not.toContain('nothing to approve')
+  })
+
   it('asks nothing of anybody while a run is still in flight', () => {
     const run = presentAttemptEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
       e(RUN_1, 'ApprovalRequested', { step: 'proposed', action: 'human', onSha: SHA }),

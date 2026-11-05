@@ -93,6 +93,17 @@ export type AttemptLifecycle =
 
 export type AttemptStatus = AttemptLifecycle['status']
 
+/**
+ * **The sha an approval is about.** `lifecycle.onSha` for a declared
+ * `human:`/`--no-merge` signoff, and for every other wait that offers
+ * `Approve`, `headSha`. An empty sha is no sha: an awaiting-approval signoff
+ * with an empty `onSha` does not fall back to the head, since approving a
+ * different commit from the one asked about is not that approval.
+ */
+export function approvalSha(state: Pick<AttemptState, 'lifecycle' | 'headSha'>): string | null {
+  return state.lifecycle.status === 'awaiting-approval' ? state.lifecycle.onSha || null : state.headSha || null
+}
+
 export interface AttemptState {
   lifecycle: AttemptLifecycle
 

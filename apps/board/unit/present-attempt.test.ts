@@ -26,8 +26,8 @@ describe('presentAttempt', () => {
     expect(stepOf(events, 'review:')?.stale).toBe(true)
   })
 
-  it('D3: a requested signoff is cleared by a later lifecycle event', () => {
-    expect(view(histories.attempt.signoffRequestedThenLifecycle).awaitingSha).toBeNull()
+  it('D3: a requested signoff is cleared by a later lifecycle event, leaving the head commit (#920)', () => {
+    expect(view(histories.attempt.signoffRequestedThenLifecycle).awaitingSha).toBe('sha-1')
   })
 
   it('D3: a failure stays a failure', () => {

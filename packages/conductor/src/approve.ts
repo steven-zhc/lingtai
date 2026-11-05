@@ -1,4 +1,5 @@
 import {
+  approvalSha,
   reduceAttempt,
   stepOutcomesOf,
   ticketReducer,
@@ -232,14 +233,8 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
   const runEvents = await store.read(runId)
   const run = reduceAttempt(runEvents)
 
-  /**
-   * **The sha an approval is about.** `run.lifecycle.onSha` for a declared
-   * `human:`/`--no-merge` signoff, and for every other wait that offers
-   * `Approve`, `run.headSha` — both reach here through the same `StepEnded`
-   * reduce (`run.ts`).
-   */
-  const onSha: string | null =
-    run.lifecycle.status === 'awaiting-approval' ? run.lifecycle.onSha : run.headSha !== null ? run.headSha : null
+  // The sha an approval is about: see `approvalSha` in @lingtai/domain.
+  const onSha: string | null = approvalSha(run)
   if (onSha === null) {
     return {
       ok: false,

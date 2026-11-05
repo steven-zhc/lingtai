@@ -24,6 +24,7 @@ import {
   type SplitProgress,
   type WaitId,
   type TicketLifecycle,
+  approvalSha,
   reduceAttempt,
   filesOf,
   STEPS,
@@ -306,13 +307,14 @@ export interface AttemptView {
   diff: { branch: string; files: number; insertions: number; deletions: number } | null
   prompt: PromptView | null
   /**
-   * The sha an open approval is *asking* about, and null when nothing is asked.
+   * The sha an Approve would be about, and null when there is nothing to approve.
    *
    * Not `headSha`, which is what the run *produced*: a branch repaired and
    * approval re-requested moves this and leaves that where it was, and sending
    * the wrong one is an Approve that refuses what `lingtai approve` accepts
-   * (#92). The same rule `task_view.awaiting_sha` reduces, read off the run's own
-   * stream because that is where the approval events land.
+   * (#92). A signoff's sha beats the head. This is the sha `lingtai approve`
+   * would approve (`approvalSha`), which `task_view.awaiting_sha` deliberately
+   * is not: that one also drives the review chip.
    */
   awaitingSha: string | null
   steps: StepVerdict[]
@@ -1172,8 +1174,8 @@ export function presentAttempt(
             deletions: state.produced.deletions,
           },
     prompt: state.promptMeta === null ? null : { ...state.promptMeta, text: state.prompt },
-    // Offered only while the lifecycle still awaits it (D3).
-    awaitingSha: state.lifecycle.status === 'awaiting-approval' ? state.lifecycle.onSha || null : null,
+    // The sha `lingtai approve` would approve (D3).
+    awaitingSha: approvalSha(state),
     steps,
     progress,
   }
