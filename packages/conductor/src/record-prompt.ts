@@ -15,27 +15,32 @@ import type { EventStore } from '@lingtai/event-store'
  * the pass's `appendNow`, which would remember the refusal and re-raise the whole
  * pass as a defect.
  */
-export async function recordPrompt(
+export function recordPrompt(
   store: EventStore,
   stream: string,
   call: { readonly for: SpentFor; readonly promptVersion: string; readonly prompt: string },
   log: (line: string) => void = () => {},
 ): Promise<void> {
-  try {
-    const at = (await store.read(stream)).length
-    await store.append(stream, at, [
-      {
-        type: 'RunPrompted',
-        actor: 'conductor',
-        data: parsePayload('RunPrompted', {
-          promptVersion: call.promptVersion,
-          bytes: Buffer.byteLength(call.prompt, 'utf8'),
-          prompt: call.prompt,
-          for: call.for,
-        }),
+  return Promise.resolve()
+    .then(() => store.read(stream))
+    .then((have) =>
+      store.append(stream, have.length, [
+        {
+          type: 'RunPrompted',
+          actor: 'conductor',
+          data: parsePayload('RunPrompted', {
+            promptVersion: call.promptVersion,
+            bytes: Buffer.byteLength(call.prompt, 'utf8'),
+            prompt: call.prompt,
+            for: call.for,
+          }),
+        },
+      ]),
+    )
+    .then(
+      () => undefined,
+      (err: unknown) => {
+        log(`could not record the ${call.for._tag} prompt: ${err instanceof Error ? err.message : String(err)}`)
       },
-    ])
-  } catch (err) {
-    log(`could not record the ${call.for._tag} prompt: ${(err as Error).message}`)
-  }
+    )
 }

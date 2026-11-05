@@ -2695,50 +2695,51 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 Effect.sync(() => new AbortController()),
                 (controller) => Effect.sync(() => controller.abort()),
               )
-              return yield* Effect.promise(async () => {
-                await recordPrompt(
+              return yield* Effect.promise(() =>
+                recordPrompt(
                   store,
                   runId,
                   { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgePromptText },
                   log,
-                )
-                return dispatched
-                  .run({
-                    // The count is in it, so two arrivals on one pass are two
-                    // sessions: a judge asked whether it still agrees with itself
-                    // is the warm-review failure `sessionIdFor` exists to avoid,
-                    // and a session id reused is the refusal `#195` cost a run.
-                    // The wait this continuation resumes is in it too, since the
-                    // count restarts in each one (#580). See `judgements`.
-                    runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
-                    // The worktree where there is one, and the conductor's own
-                    // directory where `admit` never cut one. Nothing is read from
-                    // either — the prompt says so — but a process still needs a
-                    // directory that exists to start in.
-                    cwd: worktree?.path ?? home,
-                    prompt: judgePromptText,
-                    ...(declared.model === undefined ? {} : { model: declared.model }),
-                    settingsPath: settings.right,
-                    log: taggedTrace(runLog, `judge:${on.when}`),
-                    traceTools: true,
-                    env: runnableEnv(env.values),
-                    limits: spendFor(declared.limits),
-                    signal: abort.signal,
-                  })
-                  .catch((err) => {
-                    threw = true
-                    return {
-                      exitCode: null,
-                      turns: 0,
-                      durationMs: 0,
-                      costUsd: null,
-                      failure: { kind: 'crash' as const, detail: (err as Error).message },
-                      text: null,
-                      sessionId: '',
-                      usage: undefined,
-                    }
-                  })
-              })
+                ).then(() =>
+                  dispatched
+                    .run({
+                      // The count is in it, so two arrivals on one pass are two
+                      // sessions: a judge asked whether it still agrees with itself
+                      // is the warm-review failure `sessionIdFor` exists to avoid,
+                      // and a session id reused is the refusal `#195` cost a run.
+                      // The wait this continuation resumes is in it too, since the
+                      // count restarts in each one (#580). See `judgements`.
+                      runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
+                      // The worktree where there is one, and the conductor's own
+                      // directory where `admit` never cut one. Nothing is read from
+                      // either — the prompt says so — but a process still needs a
+                      // directory that exists to start in.
+                      cwd: worktree?.path ?? home,
+                      prompt: judgePromptText,
+                      ...(declared.model === undefined ? {} : { model: declared.model }),
+                      settingsPath: settings.right,
+                      log: taggedTrace(runLog, `judge:${on.when}`),
+                      traceTools: true,
+                      env: runnableEnv(env.values),
+                      limits: spendFor(declared.limits),
+                      signal: abort.signal,
+                    })
+                    .catch((err) => {
+                      threw = true
+                      return {
+                        exitCode: null,
+                        turns: 0,
+                        durationMs: 0,
+                        costUsd: null,
+                        failure: { kind: 'crash' as const, detail: (err as Error).message },
+                        text: null,
+                        sessionId: '',
+                        usage: undefined,
+                      }
+                    }),
+                ),
+              )
             }),
           ),
         )
