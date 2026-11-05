@@ -116,7 +116,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   {
     event: 'IssueUpdated',
     why: 'type is a string argument of `record`',
-    file: 'packages/conductor/src/edit-body.ts',
+    file: 'packages/conductor/src/write-section.ts',
     anchor: "await record(store, ticketId, 'IssueUpdated', {",
   },
   {

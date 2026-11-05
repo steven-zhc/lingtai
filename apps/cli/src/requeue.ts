@@ -28,6 +28,7 @@ import { editBodyAndRequeue, type IssueChannel } from '@lingtai/conductor/edit-b
 import { projectClient } from '@lingtai/conductor/filter'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
+import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log, type EventStore } from '@lingtai/event-store'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
@@ -96,7 +97,11 @@ export async function requeueVerdict(
       })
       return fromOutcome(outcome, { written: outcome.written })
     }
+    // Only needed when the wait's triage asked questions; with no GitHub App the
+    // requeue refuses by name in that case and is unchanged otherwise (#921).
+    const github = deps.client ?? (hasGitHubAuth() ? (await projectClient(project)).client : undefined)
     const outcome = await (deps.requeue ?? requeue)({
+      github,
       project: options.project,
       issue: options.issue,
       // The local account: a weak claim, but a true one, and the same one the

@@ -89,3 +89,61 @@ export type DivergentHunk = z.infer<typeof DivergentHunk>
 
 export const Hunk = z.discriminatedUnion('_tag', [MechanicalHunk, DivergentHunk])
 export type Hunk = z.infer<typeof Hunk>
+
+/** A question a person must answer, with where it sits when it came from a hunk. */
+export type TriageAsk = {
+  readonly question: TriageQuestion
+  readonly at?: { readonly path: string; readonly line: number | null }
+}
+
+/**
+ * The questions a cause asks, in the order the page draws them: an
+ * `UndecidedQuestion`'s own, or a `ConflictingHunks`'s `Divergent` hunks in hunk
+ * order. Every other cause asks none. Typed structurally so this module still
+ * imports nothing from `wait.ts`.
+ */
+export function triageQuestionsOf(cause: {
+  readonly _tag: string
+  readonly questions?: readonly TriageQuestion[]
+  readonly hunks?: readonly Hunk[]
+}): TriageAsk[] {
+  if (cause._tag === 'UndecidedQuestion') return (cause.questions ?? []).map((question) => ({ question }))
+  if (cause._tag === 'ConflictingHunks') {
+    const asks: TriageAsk[] = []
+    for (const h of cause.hunks ?? [])
+      if (h._tag === 'Divergent') asks.push({ question: h.question, at: { path: h.path, line: h.line } })
+    return asks
+  }
+  return []
+}
+
+/**
+ * The section text for a wait's triage answers (#921): one line per question,
+ * `path:line — question — answer` for a hunk. `picks` maps a question's index in
+ * `triageQuestionsOf`'s order to an answer id; a missing index takes the
+ * recommended answer, and an unknown answer id or an index past the end is
+ * refused, because triage changed since the page was drawn. No questions is
+ * `ok` with empty text. Deterministic, so a retry writes the same section.
+ */
+export function triageAnswersText(
+  cause: Parameters<typeof triageQuestionsOf>[0],
+  picks: Readonly<Record<number, string>> = {},
+): { ok: true; text: string } | { ok: false; detail: string } {
+  const asks = triageQuestionsOf(cause)
+  for (const key of Object.keys(picks))
+    if (!(Number(key) >= 0 && Number(key) < asks.length))
+      return { ok: false, detail: `question ${key} is not one triage asked — triage changed since this page was drawn` }
+  const lines: string[] = []
+  for (const [i, { question, at }] of asks.entries()) {
+    const id = picks[i] ?? question.recommended
+    const answer = question.answers.find((a) => a.id === id)
+    if (answer === undefined)
+      return {
+        ok: false,
+        detail: `"${id}" is not an answer to "${question.text}" — triage changed since this page was drawn`,
+      }
+    const where = at === undefined ? '' : `\`${at.line === null ? at.path : `${at.path}:${at.line}`}\` — `
+    lines.push(`- ${where}${question.text} — ${answer.text}`)
+  }
+  return { ok: true, text: lines.join('\n') }
+}

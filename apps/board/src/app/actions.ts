@@ -190,6 +190,7 @@ export async function continueFixingCard(input: {
       resolution: { _tag: 'GrantFixRound', onSha: input.onSha, ref: '' },
       by: actor(),
       client,
+      github: client,
     })
     revalidatePath(`/task/${result.ticketId}`)
     revalidatePath('/')
@@ -275,6 +276,7 @@ export async function requeueCard(input: {
         detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
       }
     }
+    const { client } = await projectClient(await project(input.project))
     const result = await requeue({
       writer: await boardWriterOrNone(),
       project: input.project,
@@ -282,6 +284,7 @@ export async function requeueCard(input: {
       by: actor(),
       note: input.note,
       waitId: input.waitId,
+      github: client,
     })
 
     revalidatePath('/')
@@ -738,10 +741,12 @@ export async function sendAttempt(input: {
       if (!edited.ok) return edited
     }
 
+    const { client } = await projectClient(await project(parsed.project))
     const result = await requeue({
       writer: await boardWriterOrNone(),
       project: parsed.project,
       issue: Number(parsed.issue),
+      github: client,
       by,
       // The system's own sentence rather than a field to fill in: the reason
       // is the document on screen, already on the log, and asking again would
