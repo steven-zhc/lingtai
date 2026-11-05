@@ -196,6 +196,8 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
     )
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Send · waiting for GitHub<\/button>/)
     expect(movesOf(html)).not.toContain('Back to the queue')
+    // Nothing else is disabled or fenced off: only Send needs GitHub.
+    expect(html).not.toMatch(/<fieldset[^>]*disabled/)
   })
 
   /**
