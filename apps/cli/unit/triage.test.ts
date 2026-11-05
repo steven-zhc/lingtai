@@ -687,7 +687,7 @@ describe('waitTriage', () => {
   it('appends TriageStarted, one RunSpent per call, then one WaitTriaged — advised on a good reply', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 1)
-    const { runtime } = stubRuntime(() => ADVISED)
+    const { runtime, requests } = stubRuntime(() => ADVISED)
     const deps = fakeDeps(store, runtime)
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
@@ -697,6 +697,13 @@ describe('waitTriage', () => {
 
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+
+    // The prompt the runtime was handed is on the log, under the `for` the
+    // call's `RunSpent` carries (#923).
+    const prompted = events.find((e) => e.type === 'RunPrompted')!.data as { prompt: string; for: unknown }
+    const spent = events.find((e) => e.type === 'RunSpent')!.data as { for: unknown }
+    expect(prompted.prompt).toBe(requests[0]!.prompt)
+    expect(prompted.for).toEqual(spent.for)
 
     const started = events.find((e) => e.type === 'TriageStarted')!.data as { attempt: number }
     const triaged = events.find((e) => e.type === 'WaitTriaged')!.data as { attempt: number }
