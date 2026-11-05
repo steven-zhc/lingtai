@@ -496,15 +496,59 @@ export async function editEndedWaits(
  * not a mention).
  */
 export function unmention(markdown: string): string {
-  const defuse = (text: string) => text.replace(/(^|[^\w`])@(?=[\w-])/g, '$1@‍')
-  let out = ''
-  let plain = ''
-  const flush = () => {
-    out += defuse(plain)
-    plain = ''
+  const defuse = (text: string) => text.replace(/(^|[^\w])@(?=[\w-])/g, '$1@‍')
+  // Prose between fences: a backslash escapes the next character (so an escaped backtick opens
+  // nothing), and a code span runs to the next backtick run of its width within the same
+  // paragraph, across line breaks but not across a blank line.
+  const prose = (text: string): string => {
+    let out = ''
+    let plain = ''
+    let at = 0
+    while (at < text.length) {
+      const ch = text[at]!
+      if (ch === '\\') {
+        plain += text.slice(at, at + 2)
+        at += 2
+        continue
+      }
+      if (ch !== '`') {
+        plain += ch
+        at++
+        continue
+      }
+      let end = at
+      while (text[end] === '`') end++
+      const width = end - at
+      const brk = text.slice(end).search(/\n[ \t]*\n/)
+      const limit = brk === -1 ? text.length : end + brk
+      let search = end
+      let found = -1
+      while (search < limit) {
+        const next = text.indexOf('`', search)
+        if (next === -1 || next >= limit) break
+        let stop = next
+        while (text[stop] === '`') stop++
+        if (stop - next === width) {
+          found = stop
+          break
+        }
+        search = stop
+      }
+      if (found === -1) {
+        plain += text.slice(at, end)
+        at = end
+        continue
+      }
+      out += defuse(plain) + text.slice(at, found)
+      plain = ''
+      at = found
+    }
+    return out + defuse(plain)
   }
-  const lines = markdown.split('\n')
+  let out = ''
+  let buffer = ''
   let fence: string | null = null
+  const lines = markdown.split('\n')
   lines.forEach((line, i) => {
     const nl = i < lines.length - 1 ? '\n' : ''
     const m = /^ {0,3}(`{3,}|~{3,})/.exec(line)
@@ -514,46 +558,27 @@ export function unmention(markdown: string): string {
       return
     }
     if (m !== null) {
-      flush()
+      out += prose(buffer)
+      buffer = ''
       fence = m[1]!
       out += line + nl
       return
     }
-    // Inline code: a backtick run closes at the next run of the same length.
-    let at = 0
-    while (at < line.length) {
-      const open = line.indexOf('`', at)
-      if (open === -1) break
-      let end = open
-      while (line[end] === '`') end++
-      const width = end - open
-      let search = end
-      let found = -1
-      while (search < line.length) {
-        const next = line.indexOf('`', search)
-        if (next === -1) break
-        let stop = next
-        while (line[stop] === '`') stop++
-        if (stop - next === width) {
-          found = stop
-          break
-        }
-        search = stop
-      }
-      if (found === -1) {
-        plain += line.slice(at, end)
-        at = end
-        continue
-      }
-      plain += line.slice(at, open)
-      flush()
-      out += line.slice(open, found)
-      at = found
-    }
-    plain += line.slice(at) + nl
+    buffer += line + nl
   })
-  flush()
-  return out
+  return out + prose(buffer)
+}
+
+/**
+ * The text with every local filesystem path replaced: an absolute path under a
+ * home, temp or system directory, a `~/` path, or a Windows user path. The
+ * reviewer writes about a diff in a worktree and may name where it lives; a
+ * comment on a public issue must not (#896).
+ */
+export function withoutLocalPaths(text: string): string {
+  return text
+    .replace(/(?<![\w.:/-])(?:\/(?:Users|home|private|var|tmp|root|opt)\/|~\/|\$HOME\/)[^\s`'")\],;]*/g, '[local path]')
+    .replace(/(?<![\w])[A-Za-z]:\\(?:Users|Documents and Settings)\\[^\s`'")\],;]*/g, '[local path]')
 }
 
 /** What a landing carries to its comment (#896). */
@@ -569,11 +594,8 @@ export interface Landed {
 export function landingComment(landed: Landed): string {
   const sha = landed.mergeCommit.slice(0, 7)
   const head = `**Landed on \`${landed.base}\`${sha === '' ? '' : ` in \`${sha}\``}.**`
-  return [
-    head,
-    ...(landed.summary === null ? [] : [unmention(landed.summary)]),
-    `Attempt ${landed.attempt} · reviewed cold`,
-  ].join('\n\n')
+  if (landed.summary === null) return head
+  return [head, unmention(withoutLocalPaths(landed.summary)), `Attempt ${landed.attempt} · reviewed cold`].join('\n\n')
 }
 
 /**

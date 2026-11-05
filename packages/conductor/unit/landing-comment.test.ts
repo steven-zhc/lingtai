@@ -56,7 +56,7 @@ describe('the landing comment', () => {
   it('a landing with no summary posts the landing line alone', async () => {
     const w = await world()
     await w.tell({ landed: { ...landed, summary: null } })
-    expect(w.tickets.commentBodies(1)).toEqual(['**Landed on `main` in `ab5848a`.**\n\nAttempt 2 · reviewed cold'])
+    expect(w.tickets.commentBodies(1)).toEqual(['**Landed on `main` in `ab5848a`.**'])
   })
 
   it('a failed post is recorded and not retried', async () => {
@@ -80,5 +80,20 @@ describe('the landing comment', () => {
     expect(body).toContain('@‍someone')
     expect(body).toContain('`@types/node`')
     expect(unmention('```\n@fenced\n```\n@real a@b.c')).toBe('```\n@fenced\n```\n@‍real a@b.c')
+  })
+
+  it('follows the renderer: escaped backticks open no span, a span may cross a line', () => {
+    expect(unmention('\\`@someone\\`')).toBe('\\`@‍someone\\`')
+    expect(unmention('`code\n@types/node`')).toBe('`code\n@types/node`')
+  })
+
+  it('names no local path', () => {
+    const body = landingComment({
+      ...landed,
+      summary: 'Edits `/Users/alice/.lingtai/worktrees/app/pass-123/src/main.ts` and ~/.lingtai/x; see src/main.ts.',
+    })
+    expect(body).not.toContain('alice')
+    expect(body).not.toContain('.lingtai')
+    expect(body).toContain('src/main.ts')
   })
 })
