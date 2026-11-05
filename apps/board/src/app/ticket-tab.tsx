@@ -3,6 +3,7 @@ import { withAnswer, type TicketAnswer, type TicketTabDetail, type TicketView } 
 import { Deferred, type Answered } from './deferred.tsx'
 import { HistoryRow } from './history-row.tsx'
 import { DocumentBody } from './markdown.tsx'
+import { Skeleton } from './skeleton.tsx'
 
 /**
  * What was asked for, in the record's prompt row.
@@ -43,28 +44,30 @@ export function Ticket({ ticket, pending = false }: { ticket: TicketView; pendin
 
       <h3 className="ttitle">{ticket.title ?? '(no title was recorded)'}</h3>
 
-      {ticket.body ? (
-        <details className="tbody" open>
-          <summary>The ticket, as it was written</summary>
-          <DocumentBody source="ticket-body" text={ticket.body} rawClass="tbodytext" />
-        </details>
-      ) : null}
+      <div className={pending ? undefined : 'arrive'}>
+        {ticket.body ? (
+          <details className="tbody" open>
+            <summary>The ticket, as it was written</summary>
+            <DocumentBody source="ticket-body" text={ticket.body} rawClass="tbodytext" />
+          </details>
+        ) : null}
 
-      {/* Never merely absent. An App that cannot reach the repository, a
+        {/* Never merely absent. An App that cannot reach the repository, a
           project that was never registered and an issue that has been deleted
           all render as a ticket with no body, and only the reason tells them
           apart (#76, one page along). The sentence names GitHub only where
           GitHub was actually asked — `askedGitHub` — because a project whose
           tickets live in the database was never going to be (#384). */}
-      {pending ? (
-        <p className="empty">asking GitHub…</p>
-      ) : ticket.problem ? (
-        <p className={ticket.askedGitHub ? 'refusal' : 'note'}>
-          {ticket.askedGitHub ? `The issue could not be read from GitHub: ${ticket.problem}` : ticket.problem}
-        </p>
-      ) : ticket.body ? null : (
-        <p className="empty">This issue has no body.</p>
-      )}
+        {pending ? (
+          <Skeleton shape="lines" count={3} label="asking GitHub…" />
+        ) : ticket.problem ? (
+          <p className={ticket.askedGitHub ? 'refusal' : 'note'}>
+            {ticket.askedGitHub ? `The issue could not be read from GitHub: ${ticket.problem}` : ticket.problem}
+          </p>
+        ) : ticket.body ? null : (
+          <p className="empty">This issue has no body.</p>
+        )}
+      </div>
     </>
   )
 }
