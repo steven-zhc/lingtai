@@ -24,6 +24,29 @@ import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+// Every boundary draws its fallback inside `<x-fb>`, so a test can say what is
+// drawn *outside* every boundary — which is where a control must be to be usable,
+// and to keep an unsent draft, while GitHub has not answered (0118 §2).
+vi.mock('../src/app/deferred.tsx', async () => {
+  const { isValidElement, createElement } = await import('react')
+  return {
+    Deferred: ({
+      value,
+      fallback,
+      children,
+    }: {
+      value: unknown
+      fallback: unknown
+      children: (v: unknown) => unknown
+    }) =>
+      typeof (value as { then?: unknown } | null)?.then === 'function'
+        ? createElement('x-fb', null, fallback as never)
+        : isValidElement(children)
+          ? children
+          : (children(value) as never),
+  }
+})
+
 import { AttemptTab } from '../src/app/attempt-tab.tsx'
 import { TaskBody, UnpushedBanner } from '../src/app/task/[id]/layout.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
@@ -1109,23 +1132,63 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
 describe('what a pending page cannot lose or hide', () => {
   const never = () => new Promise<TaskAnswer>(() => {})
 
-  it('keeps every log-backed control outside the pending boundary, enabled, for a touched ticket', () => {
-    const pending = renderToStaticMarkup(<TaskBody task={{ ...blocked(), events: 5 }} github={never()} />)
-    expect(pending).not.toMatch(/\binert\b/)
-    // No fieldset disables anything: the Discussion box, the Close and Answer
-    // editors and the triage choices are the log's and do not wait for GitHub.
-    expect(pending).not.toMatch(/<fieldset[^>]*disabled/)
-    expect(pending).toMatch(/<textarea(?![^>]*disabled)/)
-    expect(pending).toContain('Close')
-    expect(pending).toContain('asking GitHub…')
-    // The ticket link is a link; only the opening waits.
-    expect(pending).toContain('/task/ticket-lingtai-147/ticket')
+  /** What is drawn outside every boundary: the fallbacks, whole, are cut out. */
+  const outside = (html: string) => {
+    let out = html
+    for (let prev = ''; prev !== out;) {
+      prev = out
+      out = out.replace(/<x-fb>(?:(?!<x-fb>)[\s\S])*?<\/x-fb>/g, '')
+    }
+    return out
+  }
+  const touched = () => ({ ...blocked(), events: 5 })
+
+  it('draws every log-owned control of a touched ticket outside any fallback, enabled', () => {
+    const html = renderToStaticMarkup(<TaskBody task={touched()} github={never()} />)
+    expect(html).toContain('<x-fb>')
+    const out = outside(html)
+    expect(out).not.toMatch(/\binert\b/)
+    expect(out).not.toMatch(/<fieldset[^>]*disabled/)
+    // Discussion, and the Close and Answer editors, are the log's.
+    expect(out).toMatch(/data-rank="discussion"[\s\S]*<textarea(?![^>]*disabled)/)
+    expect(out).toMatch(/data-rank="moves"/)
+    expect(out).toContain('Close')
+    expect(out).toContain('Close the ticket')
+    // Only what GitHub knows waits.
+    expect(html).toContain('asking GitHub…')
+    expect(out).not.toContain('asking GitHub…')
+    expect(out).toContain('/task/ticket-lingtai-147/ticket')
   })
 
-  it('draws no editable draft inside the untouched ticket’s fallback, which the answer replaces', () => {
-    const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
-    expect(pending).toContain('asking GitHub…')
-    expect(pending).not.toContain('<textarea')
+  it('draws Discussion outside every boundary for an untouched ticket too, so a draft is not lost', () => {
+    const out = outside(renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />))
+    expect(out).toMatch(/data-rank="discussion"[\s\S]*<textarea/)
+    // Not the moves: they wait for GitHub to say the issue exists.
+    expect(out).not.toContain('data-rank="moves"')
+  })
+
+  it('has the same tree around Discussion for events=0 and events>0', () => {
+    const around = (events: number) => {
+      const out = outside(renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />))
+      const at = out.indexOf('data-rank="discussion"')
+      expect(at).toBeGreaterThan(-1)
+      // The Discussion block and everything that encloses it up to the page.
+      return out.slice(0, at).replace(/data-rank="moves"[\s\S]*$/, '') && out.slice(at, out.indexOf('</div>', at))
+    }
+    expect(around(0)).toBe(around(5))
+    const boundariesBefore = (events: number) =>
+      (
+        renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />).split(
+          'data-rank="discussion"',
+        )[0] ?? ''
+      ).match(/<x-fb>(?![\s\S]*<\/x-fb>[\s\S]*<\/x-fb>)/g)
+    // No fallback is open around Discussion in either: it is never inside one.
+    for (const events of [0, 5]) {
+      const html = renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />)
+      const head = html.slice(0, html.indexOf('data-rank="discussion"'))
+      expect((head.match(/<x-fb>/g) ?? []).length).toBe((head.match(/<\/x-fb>/g) ?? []).length)
+    }
+    expect(boundariesBefore(0)?.length ?? 0).toBe(boundariesBefore(5)?.length ?? 0)
   })
 
   it('says why the opening is missing when GitHub failed for a touched ticket', () => {

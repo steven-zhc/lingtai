@@ -475,6 +475,7 @@ export function Standing({
   queued,
   unknown,
   pending = false,
+  untouched = false,
   ticketProblem = null,
   github,
   progress = null,
@@ -544,6 +545,14 @@ export function Standing({
    * one caller that sets it.
    */
   pending?: boolean
+  /**
+   * The log has never touched this ticket (`events === 0`), so GitHub's answer
+   * decides whether there is anything to act on: the state and the moves wait for
+   * it, and a 404 replaces them with *GitHub has no issue #N*. **Everything else —
+   * Discussion above all — is drawn at once and in the same place whatever this
+   * says**, so the first event does not remount it and an unsent question survives.
+   */
+  untouched?: boolean
   /** Why the issue's body is null when GitHub answered and it could not be read; drawn in the opening. */
   ticketProblem?: { text: string; askedGitHub: boolean } | null
   /**
@@ -591,7 +600,19 @@ export function Standing({
     outgoing,
     queued,
   }
-  const acting = project !== null && issue !== null
+  const actable = project !== null && issue !== null
+  const missingOf = (a: TaskAnswer) => untouched && a.ticket.found === false && subject !== null
+  const unknownOf = (a: TaskAnswer) =>
+    unknown ?? (untouched && a.ticket.found === null && a.ticket.askedGitHub ? a.ticket.problem : null)
+  // The moves: for an untouched ticket, only once GitHub has said the issue exists.
+  const open = (render: (ids: { project: string; issue: number } | null) => ReactNode) =>
+    untouched ? (
+      <Gh g={g} pending={pending} fallback={render(null)}>
+        {(a) => render(actable && !missingOf(a) ? { project, issue } : null)}
+      </Gh>
+    ) : (
+      render(actable ? { project, issue } : null)
+    )
   // What is stopping it and where it is in line — two facts, and the second is
   // not an annotation on the first. `holding` is null for the item that is
   // simply next, which is the answer rather than an omission.
@@ -641,7 +662,7 @@ export function Standing({
       : [...drawable].sort((a, b) => Number(b === recommended) - Number(a === recommended))
   // Keep the keyed body editor mounted across Follow refreshes so an unsent
   // draft remains available after somebody else resolves the wait.
-  const resolutionCards: Resolution['_tag'][] = acting
+  const resolutionCards: Resolution['_tag'][] = actable
     ? standing.state === 'blocked'
       ? orderedResolutions.includes('EditBodyAndRequeue')
         ? orderedResolutions
@@ -753,12 +774,19 @@ export function Standing({
   )
   const stateReadout = (
     <Gh g={g} pending={pending} fallback={readout(null)}>
-      {(a) => readout(a.queued === null ? null : place(a.queued))}
+      {(a) =>
+        subject !== null && missingOf(a) ? (
+          <p className="refusal">GitHub has no issue #{subject.ref}</p>
+        ) : (
+          readout(a.queued === null ? null : place(a.queued))
+        )
+      }
     </Gh>
   )
   const opening = (
     <Gh g={g} pending={pending} fallback={<TicketContext opening={null} body={null} taskId={taskId} pending />}>
       {(a) => {
+        if (missingOf(a)) return null
         const text = a.ticket.body
         return (
           <TicketContext
@@ -766,7 +794,7 @@ export function Standing({
             body={text}
             taskId={taskId}
             problem={
-              text === null && a.ticket.problem && !unknown
+              text === null && a.ticket.problem && !unknownOf(a)
                 ? { text: a.ticket.problem, askedGitHub: a.ticket.askedGitHub }
                 : null
             }
@@ -776,9 +804,9 @@ export function Standing({
     </Gh>
   )
 
-  // Not in the untouched ticket's fallback: that block is replaced whole when the
-  // answer arrives, and a question typed into it would be discarded with it.
-  const discussion = pending ? null : (
+  // Never inside a boundary: it needs nothing of GitHub's, and it stays where it is
+  // whatever the answer says or the first event does.
+  const discussion = (
     <Discussion
       taskId={taskId}
       attempt={standing.attempt}
@@ -956,12 +984,17 @@ export function Standing({
               stream *and* could not ask GitHub, so what it knows is that it does
               not know — which is not the same claim as "there is no such
               ticket", and is the whole of #113's first requirement. */}
-                {unknown ? (
-                  <p className="refusal">
-                    Lingtai has never touched this ticket and GitHub could not be asked, so whether it exists is not
-                    known here: {unknown}
-                  </p>
-                ) : null}
+                <Gh g={g} pending={pending}>
+                  {(a) => {
+                    const why = unknownOf(a)
+                    return why ? (
+                      <p className="refusal">
+                        Lingtai has never touched this ticket and GitHub could not be asked, so whether it exists is not
+                        known here: {why}
+                      </p>
+                    ) : null
+                  }}
+                </Gh>
 
                 {/* Why it is not moving, in the wording `lingtai status` and the card
               use for the same hold. Null — and absent — for the item that is
@@ -1030,7 +1063,7 @@ export function Standing({
             ticket wants on this page goes to rank 2 or to the record, and the
             snapshots in `task-page.test.tsx` make it say which (#152). */}
             <Gh g={g} pending={pending} fallback={soWhatLine(null)}>
-              {(a) => soWhatLine(stoppedOf(a.queued))}
+              {(a) => (missingOf(a) ? null : soWhatLine(stoppedOf(a.queued)))}
             </Gh>
           </div>
         </section>
@@ -1067,189 +1100,203 @@ export function Standing({
 
           {/* ---- rank 4: the moves ---------------------------------------------- */}
 
-          {acting && standing.state === 'blocked' && (standing.waitId === null || standing.reason === null) ? (
-            <p className="refusal">the wait on this card could not be read — reload and read it again</p>
-          ) : null}
-          {acting ? (
-            <div className="sresolutiongrid" data-rank="moves">
-              {resolutionCards.map((tag) => {
-                const visible = standing.state === 'blocked' && allowed.includes(tag)
-                const waitId = standing.waitId
-                const copy = RESOLUTION_COPY[tag]
-                const fixUnavailable = tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
-                const consequenceOf = (sendable: number | null) =>
-                  fixUnavailable
-                    ? 'The saved branch and head must be available before a fix round can be granted.'
-                    : tag === 'Requeue' && sendable !== null
-                      ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
-                      : copy.consequence
-                return (
-                  <ResolutionCard
-                    key={tag}
-                    recommended={triageRecommended === tag}
-                    className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
-                    data-resolution={visible ? tag : undefined}
-                    id={visible ? `resolution-${tag}` : undefined}
-                    hidden={!visible && tag !== 'EditBodyAndRequeue'}
-                    head={visible ? <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3> : null}
-                  >
-                    {visible ? (
-                      <>
-                        <p className="sresolutionconsequence">
-                          {tag === 'Requeue' ? (
-                            <Gh g={g} pending={pending} fallback={consequenceOf(null)}>
-                              {(a) => consequenceOf(sendableOf(a.outgoing))}
-                            </Gh>
-                          ) : (
-                            consequenceOf(null)
-                          )}
-                        </p>
-                        {tag === 'AnswerQuestion' || tag === 'EditBodyAndRequeue' || tag === 'Close' ? (
-                          <p className="sresolutioninput">
-                            {tag === 'AnswerQuestion'
-                              ? 'An answer is required to continue; withdrawing needs no answer.'
-                              : tag === 'Close'
-                                ? 'A closing reason is required.'
-                                : 'Enter the text to add before this can run.'}
-                          </p>
-                        ) : null}
-                      </>
-                    ) : null}
-                    <div className="sresolutionaction">
-                      {visible &&
-                      tag === 'GrantFixRound' &&
-                      standing.fixWork &&
-                      'head' in standing.fixWork &&
-                      waitId !== null ? (
-                        <ContinueFixing
-                          project={project}
-                          issue={issue}
-                          waitId={waitId}
-                          onSha={standing.fixWork.head}
-                          primary={recommended === 'GrantFixRound'}
-                        />
-                      ) : null}
-                      {visible && tag === 'GrantFixRound' && (!standing.fixWork || 'refusal' in standing.fixWork) ? (
-                        <p className="refusal">
-                          {standing.fixWork && 'refusal' in standing.fixWork
-                            ? standing.fixWork.refusal
-                            : 'Saved work could not be verified; reload this wait before continuing.'}
-                        </p>
-                      ) : null}
-                      {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
-                        <Decide
-                          project={project}
-                          issue={issue}
-                          onSha={standing.awaitingSha}
-                          waitId={waitId}
-                          refusing={standing.failed.length > 0}
-                          recommended={recommended === 'Approve' ? 'approve' : null}
-                        />
-                      ) : null}
-                      {visible && tag === 'Approve' && standing.awaitingSha === null ? (
-                        <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
-                      ) : null}
-                      {visible && tag === 'AnswerQuestion' && waitId !== null ? (
-                        <Requeue
-                          project={project}
-                          issue={issue}
-                          waitId={waitId}
-                          asked={true}
-                          question={standing.askedQuestion}
-                          recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
-                        />
-                      ) : null}
-                      {visible && tag === 'Requeue' && waitId !== null ? (
-                        allowed.includes('AnswerQuestion') ? (
-                          // Never sendable (#147): the form needs nothing of GitHub's.
-                          requeueForm({ project, issue, waitId }, recommended === 'Requeue' ? 'requeue' : null)
-                        ) : (
-                          // Send needs the body, and the body is GitHub's: drawn disabled,
-                          // and said why, until the answer is in.
-                          <Gh
-                            g={g}
-                            pending={pending}
-                            fallback={
-                              <button type="button" className="btn" disabled title="waiting for GitHub">
-                                Send · waiting for GitHub
-                              </button>
-                            }
-                          >
-                            {(a) => {
-                              const sendable = sendableOf(a.outgoing)
-                              return sendable !== null ? (
-                                <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
-                              ) : (
+          {open((ids) => {
+            if (ids === null) return null
+            const { project, issue } = ids
+            return (
+              <>
+                {standing.state === 'blocked' && (standing.waitId === null || standing.reason === null) ? (
+                  <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+                ) : null}
+                {
+                  <div className="sresolutiongrid" data-rank="moves">
+                    {resolutionCards.map((tag) => {
+                      const visible = standing.state === 'blocked' && allowed.includes(tag)
+                      const waitId = standing.waitId
+                      const copy = RESOLUTION_COPY[tag]
+                      const fixUnavailable =
+                        tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+                      const consequenceOf = (sendable: number | null) =>
+                        fixUnavailable
+                          ? 'The saved branch and head must be available before a fix round can be granted.'
+                          : tag === 'Requeue' && sendable !== null
+                            ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
+                            : copy.consequence
+                      return (
+                        <ResolutionCard
+                          key={tag}
+                          recommended={triageRecommended === tag}
+                          className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
+                          data-resolution={visible ? tag : undefined}
+                          id={visible ? `resolution-${tag}` : undefined}
+                          hidden={!visible && tag !== 'EditBodyAndRequeue'}
+                          head={visible ? <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3> : null}
+                        >
+                          {visible ? (
+                            <>
+                              <p className="sresolutionconsequence">
+                                {tag === 'Requeue' ? (
+                                  <Gh g={g} pending={pending} fallback={consequenceOf(null)}>
+                                    {(a) => consequenceOf(sendableOf(a.outgoing))}
+                                  </Gh>
+                                ) : (
+                                  consequenceOf(null)
+                                )}
+                              </p>
+                              {tag === 'AnswerQuestion' || tag === 'EditBodyAndRequeue' || tag === 'Close' ? (
+                                <p className="sresolutioninput">
+                                  {tag === 'AnswerQuestion'
+                                    ? 'An answer is required to continue; withdrawing needs no answer.'
+                                    : tag === 'Close'
+                                      ? 'A closing reason is required.'
+                                      : 'Enter the text to add before this can run.'}
+                                </p>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <div className="sresolutionaction">
+                            {visible &&
+                            tag === 'GrantFixRound' &&
+                            standing.fixWork &&
+                            'head' in standing.fixWork &&
+                            waitId !== null ? (
+                              <ContinueFixing
+                                project={project}
+                                issue={issue}
+                                waitId={waitId}
+                                onSha={standing.fixWork.head}
+                                primary={recommended === 'GrantFixRound'}
+                              />
+                            ) : null}
+                            {visible &&
+                            tag === 'GrantFixRound' &&
+                            (!standing.fixWork || 'refusal' in standing.fixWork) ? (
+                              <p className="refusal">
+                                {standing.fixWork && 'refusal' in standing.fixWork
+                                  ? standing.fixWork.refusal
+                                  : 'Saved work could not be verified; reload this wait before continuing.'}
+                              </p>
+                            ) : null}
+                            {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (
+                              <Decide
+                                project={project}
+                                issue={issue}
+                                onSha={standing.awaitingSha}
+                                waitId={waitId}
+                                refusing={standing.failed.length > 0}
+                                recommended={recommended === 'Approve' ? 'approve' : null}
+                              />
+                            ) : null}
+                            {visible && tag === 'Approve' && standing.awaitingSha === null ? (
+                              <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
+                            ) : null}
+                            {visible && tag === 'AnswerQuestion' && waitId !== null ? (
+                              <Requeue
+                                project={project}
+                                issue={issue}
+                                waitId={waitId}
+                                asked={true}
+                                question={standing.askedQuestion}
+                                recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
+                              />
+                            ) : null}
+                            {visible && tag === 'Requeue' && waitId !== null ? (
+                              allowed.includes('AnswerQuestion') ? (
+                                // Never sendable (#147): the form needs nothing of GitHub's.
                                 requeueForm({ project, issue, waitId }, recommended === 'Requeue' ? 'requeue' : null)
+                              ) : (
+                                // Send needs the body, and the body is GitHub's: drawn disabled,
+                                // and said why, until the answer is in.
+                                <Gh
+                                  g={g}
+                                  pending={pending}
+                                  fallback={
+                                    <button type="button" className="btn" disabled title="waiting for GitHub">
+                                      Send · waiting for GitHub
+                                    </button>
+                                  }
+                                >
+                                  {(a) => {
+                                    const sendable = sendableOf(a.outgoing)
+                                    return sendable !== null ? (
+                                      <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
+                                    ) : (
+                                      requeueForm(
+                                        { project, issue, waitId },
+                                        recommended === 'Requeue' ? 'requeue' : null,
+                                      )
+                                    )
+                                  }}
+                                </Gh>
                               )
-                            }}
-                          </Gh>
-                        )
-                      ) : null}
-                      {tag === 'EditBodyAndRequeue' ? (
-                        <EditBodyAndRequeue
-                          project={project}
-                          issue={issue}
-                          waitId={visible ? waitId : null}
-                          reason={standing.reason}
-                        />
-                      ) : null}
-                      {visible && tag === 'Close' && waitId !== null ? (
-                        <Close
-                          key={closePrefill ?? ''}
-                          project={project}
-                          issue={issue}
-                          waitId={waitId}
-                          primary={recommended === 'Close'}
-                          prefill={closePrefill}
-                        />
-                      ) : null}
-                    </div>
-                  </ResolutionCard>
-                )
-              })}
-            </div>
-          ) : null}
+                            ) : null}
+                            {tag === 'EditBodyAndRequeue' ? (
+                              <EditBodyAndRequeue
+                                project={project}
+                                issue={issue}
+                                waitId={visible ? waitId : null}
+                                reason={standing.reason}
+                              />
+                            ) : null}
+                            {visible && tag === 'Close' && waitId !== null ? (
+                              <Close
+                                key={closePrefill ?? ''}
+                                project={project}
+                                issue={issue}
+                                waitId={waitId}
+                                primary={recommended === 'Close'}
+                                prefill={closePrefill}
+                              />
+                            ) : null}
+                          </div>
+                        </ResolutionCard>
+                      )
+                    })}
+                  </div>
+                }
 
-          {/* The queued item's own row, and it has exactly one move. `lingtai now`
+                {/* The queued item's own row, and it has exactly one move. `lingtai now`
           was the only control this state ever had and it lived in a terminal;
           the page that says why the item is not moving is the page the button
           belongs on. It jumps the backoff, and says so when there is one to
           jump (0028 §3). */}
-          {acting && standing.state === 'queued' ? (
-            <div className="btnrow smoves" data-rank="moves">
-              <Gh g={g} pending={pending}>
-                {(a) =>
-                  a.queued === null ? null : (
-                    <RunNow project={project} issue={String(issue)} holding={runNowCaption(a.queued)} />
-                  )
-                }
-              </Gh>
-              {/* Beside it, the opposite move. A queued item has exactly two
+                {standing.state === 'queued' ? (
+                  <div className="btnrow smoves" data-rank="moves">
+                    <Gh g={g} pending={pending}>
+                      {(a) =>
+                        a.queued === null ? null : (
+                          <RunNow project={project} issue={String(issue)} holding={runNowCaption(a.queued)} />
+                        )
+                      }
+                    </Gh>
+                    {/* Beside it, the opposite move. A queued item has exactly two
               things a person can say about it — *sooner* and *never* — and
               until `#151` the page offered only the first. */}
-              <Close project={project} issue={issue} waitId={null} />
-            </div>
-          ) : null}
+                    <Close project={project} issue={issue} waitId={null} />
+                  </div>
+                ) : null}
 
-          {/* The one control an `approved` item offers (#465's board-recovery
+                {/* The one control an `approved` item offers (#465's board-recovery
           finding). `WaitResolved{Approve}` already landed, so there is
           nothing left to decide — the only thing that can still be missing
           is the continuation itself, and this is the only way to ask again
           without shell access to the conducting machine. See
           `ScheduleContinuation`'s own comment for what the click now sends
           and why that is what makes it safe (#508). */}
-          {acting && standing.state === 'approved' && standing.waitId !== null && standing.approvedSha !== null ? (
-            <div className="btnrow smoves" data-rank="moves">
-              <ScheduleContinuation
-                project={project}
-                issue={issue}
-                onSha={standing.approvedSha}
-                waitId={standing.waitId}
-                grant={standing.afterMove?.resolution === 'GrantFixRound'}
-              />
-            </div>
-          ) : null}
+                {standing.state === 'approved' && standing.waitId !== null && standing.approvedSha !== null ? (
+                  <div className="btnrow smoves" data-rank="moves">
+                    <ScheduleContinuation
+                      project={project}
+                      issue={issue}
+                      onSha={standing.approvedSha}
+                      waitId={standing.waitId}
+                      grant={standing.afterMove?.resolution === 'GrantFixRound'}
+                    />
+                  </div>
+                ) : null}
+              </>
+            )
+          })}
 
           {/* ---- rank 5: the outgoing prompt and nonblocked discussion ---------- */}
 
@@ -1270,7 +1317,7 @@ export function Standing({
                     // The editor offers Send only where the row above it does. A
                     // sentence typed and not staged is otherwise lost to the click that
                     // was meant to send it.
-                    sendable={acting && standing.state === 'blocked' && sendableOf(a.outgoing) !== null}
+                    sendable={actable && standing.state === 'blocked' && sendableOf(a.outgoing) !== null}
                     // Reduced where the opening above already says it; open on blocked,
                     // where Send is the move.
                     reduced={standing.state === 'queued' || standing.state === 'approved'}
@@ -1567,52 +1614,27 @@ type StandingProps = Parameters<typeof Standing>[0]
  * says so.
  *
  * **`untouched` is a ticket the log has never touched** (`events === 0`): there
- * the answer decides whether there is a page to act on at all. Until it is in, no
- * move is offered (`issue` is null); a 404 replaces the state and the moves with
- * the sentence, and no queued line is drawn; a GitHub that could not be asked
- * says so and offers the moves, as it always did (#113).
+ * the answer decides whether there is anything to act on. Until it is in, no move
+ * is offered; a 404 replaces the state and the moves with the sentence, and no
+ * queued line is drawn; a GitHub that could not be asked says so and offers the
+ * moves, as it always did (#113). **The component tree is the same for every
+ * `events`**: only those places read `untouched`, so Discussion is never inside a
+ * boundary and an unsent question survives the ticket's first event.
  */
 export function DeferredStanding({
   answer,
   untouched,
   ...props
-}: Omit<StandingProps, 'body' | 'outgoing' | 'queued' | 'unknown' | 'pending' | 'github' | 'ticketProblem'> & {
+}: Omit<
+  StandingProps,
+  'body' | 'outgoing' | 'queued' | 'unknown' | 'pending' | 'github' | 'ticketProblem' | 'untouched'
+> & {
   answer: Answered<TaskAnswer>
   untouched: boolean
 }) {
-  // **A ticket the log has touched** has a page whatever GitHub says: the block is
-  // drawn at once, with each place that reads the answer its own boundary, so its
-  // controls are in the page and not in a fallback that is replaced.
-  if (!untouched) return <Standing {...props} github={answer} outgoing={null} queued={null} />
-  return (
-    <Deferred
-      value={answer}
-      fallback={<Standing {...props} issue={null} body={null} outgoing={null} queued={null} pending />}
-    >
-      {(a) => {
-        const { ticket } = a
-        if (ticket.found === false && props.subject !== null) {
-          return (
-            <section className="standing" data-rank="state">
-              <p className="ssubject" data-rank="subject">
-                <span className="sref">#{props.subject.ref}</span>
-              </p>
-              <p className="refusal">GitHub has no issue #{props.subject.ref}</p>
-            </section>
-          )
-        }
-        return (
-          <Standing
-            {...props}
-            github={a}
-            outgoing={null}
-            queued={null}
-            unknown={ticket.found === null && ticket.askedGitHub ? ticket.problem : null}
-          />
-        )
-      }}
-    </Deferred>
-  )
+  // One tree whatever `untouched` says: the first event on a ticket changes a
+  // prop, never the component's ancestry, so nothing typed into it is remounted.
+  return <Standing {...props} github={answer} untouched={untouched} outgoing={null} queued={null} />
 }
 
 /** `Coords`, with *offered by GitHub* omitted until the answer is in (0118 §2). */
