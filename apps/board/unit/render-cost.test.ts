@@ -22,6 +22,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   forgetKindColors,
+  forgetSkeletonCounts,
+  skeletonCount,
   githubQueue,
   lastKindColor,
   queueFilters,
@@ -243,6 +245,29 @@ describe('the colour a log card draws', () => {
     // By project: another repository's `bug` is not this one's colour.
     expect(lastKindColor('nextloom-ai-admin', 'bug')).toBeNull()
     forgetKindColors()
+  })
+})
+
+describe('the skeletons the Queued column waits in', () => {
+  it('are two before any answer, then what GitHub offered, capped at three', async () => {
+    forgetSkeletonCounts()
+    expect(skeletonCount(['lingtai'])).toBe(2)
+
+    await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, ['1'], {}))
+    expect(skeletonCount(['lingtai'])).toBe(1)
+    // A project that has not answered adds nothing; the ones that have are summed.
+    expect(skeletonCount(['lingtai', 'other'])).toBe(1)
+    expect(skeletonCount(['other'])).toBe(2)
+
+    await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) =>
+      listed(f, ['1', '2', '3', '4', '5'], {}),
+    )
+    expect(skeletonCount(['lingtai'])).toBe(3)
+
+    // Nothing offered: the label alone.
+    await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, [], {}))
+    expect(skeletonCount(['lingtai'])).toBe(0)
+    forgetSkeletonCounts()
   })
 })
 
