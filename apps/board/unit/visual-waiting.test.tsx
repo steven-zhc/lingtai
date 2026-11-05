@@ -34,10 +34,10 @@ describe('waiting visual previews', () => {
     ['fixable-lines', true],
     ['fixable-lines-no-head', false],
   ] as const)('%s reduces the representative wait and saved-head availability', async (name, available) => {
-    const { card, task } = await preview(name)
-    const html = renderToStaticMarkup(<TaskBody task={task} now={PREVIEW_NOW} />)
+    const { card, task, answer } = await preview(name)
+    const html = renderToStaticMarkup(<TaskBody task={task} github={answer} now={PREVIEW_NOW} />)
     expect(task.ticket?.ref).toBe('393')
-    expect(task.ticket?.body).toContain('| **Problem** |')
+    expect(answer.ticket.body).toContain('| **Problem** |')
     expect(task.standing.reason?._tag).toBe('ProposedEscalated')
     expect(task.runs[0]?.progress?.steps).toHaveLength(10)
     expect(task.runs[0]?.diff?.branch).toBe('agent/393')

@@ -96,8 +96,8 @@ import {
 } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
-import { outgoingFor, type OutgoingView } from './prompt.ts'
-import { queuedFor, type QueuedView } from './queued.ts'
+import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
+import { queuedFor, refused as refusedQueued, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -928,6 +928,30 @@ export interface HistoryGroup {
   lines: HistoryLine[]
 }
 
+/** What the log and the register give of a ticket — everything but GitHub's answer. */
+export type TicketBase = Pick<TicketView, 'project' | 'ref' | 'title' | 'kind' | 'labels' | 'url' | 'compareUrl'>
+
+/**
+ * What only the issue's answer knows (0118 §2). A field it has no value for is
+ * null and the log's stands: `withAnswer` is the one place they meet.
+ */
+export interface TicketAnswer extends Pick<TicketView, 'found' | 'askedGitHub' | 'title' | 'url' | 'body' | 'problem'> {
+  labels: string[] | null
+}
+
+/**
+ * The deferred part of the task page: the answer, and the two reads that need it.
+ * `outgoing` is what the next attempt will be handed (null when there will not be
+ * one — see `prompt.ts`); `queued` is where the item is in line and what taking
+ * it runs, the one thing that is not a reducer because an issue nobody has run
+ * has no stream (0012, `queued.ts`).
+ */
+export interface TaskAnswer {
+  ticket: TicketAnswer
+  outgoing: OutgoingView | null
+  queued: QueuedView | null
+}
+
 export interface TaskDetail {
   taskId: string
   /** Neighbours in the Waiting lane, read from `readTasks` on every render (#584). */
@@ -944,30 +968,16 @@ export interface TaskDetail {
   standing: StandingView
   /** Triage's reading of what the ticket wants, only for the current blocked wait. */
   want: string | null
-  /** Null only when the id is not `ticket-<project>-<n>`. */
-  ticket: TicketView | null
+  /**
+   * What the log and the register give: no body, no `found`, no GitHub (0118 §2).
+   * Null only when the id is not `ticket-<project>-<n>` — and `loadTask` is null
+   * then, so a page never has it.
+   */
+  ticket: TicketBase | null
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
   runs: AttemptView[]
   /** Every conversation held about this item, oldest first. */
   discussions: DiscussionView[]
-  /**
-   * What the next attempt will be handed, and null when there will not be one.
-   *
-   * Null for an item that has landed or is running: the prompt for a run in
-   * flight was already sent, and a box offering to edit it would be offering
-   * something the code cannot do. See `prompt.ts` for what composing it costs
-   * and why it is composed by the conductor's own function rather than here.
-   */
-  outgoing: OutgoingView | null
-  /**
-   * Where it is in line and what taking it would run — and null in every other
-   * state.
-   *
-   * The one thing on this page that is not a reducer, for the reason the board's
-   * Queued column is not one: an issue nobody has run has no stream, so being
-   * queued is a fact about GitHub (0012). See `queued.ts`.
-   */
-  queued: QueuedView | null
   /**
    * The budget line the standing's own rail carries — rounds spent against
    * their ceiling, restarts left against theirs (`describeHeld`, `#415`).
@@ -1371,112 +1381,133 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
 }
 
 /**
- * The ticket, from the log first and GitHub second.
+ * The ticket as the log and the register give it, with no GitHub in it (0118 §2).
  *
- * The order matters. A title recorded on `TicketClaimed` is what the ticket
- * said when the run started, and it survives a repository the App can no longer
- * reach — so it is read first and only overwritten by an answer. GitHub is
- * asked once, for the three things the log has never carried, and a refusal
- * costs the body and not the page.
+ * A title recorded on `TicketClaimed` is what the ticket said when the run
+ * started, and it survives a repository the App can no longer reach — so it is
+ * what the page draws until an answer overwrites it. The link is buildable
+ * without GitHub, and worth building: it is the thing the page exists to save a
+ * trip for. A recipe that will not parse costs the link, not the page.
+ *
+ * Null for an id that is not `ticket-<project>-<n>` and for a project Lingtai
+ * has never been told about: **the two things a 404 may rest on**, because
+ * neither needs GitHub to decide (`knowable`).
  */
-async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
+async function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise<TicketBase | null> {
   const parsed = parseTicketStream(taskId)
   if (!parsed) return null
   const { project, issue } = parsed
+  const state = await loadProject(project).catch(() => null)
+  if (!state) return null
 
   const reduced = reduceTicket(own)
-  const { title, kind } = reduced
-  const labels = [...reduced.labels]
-
-  const state = await loadProject(project).catch(() => null)
-  const base = { project, ref: issue, title, kind, labels, compareUrl: null as string | null }
-  if (!state) {
-    // A definite absence rather than an unanswered question. Lingtai's own
-    // register is the authority on which projects it has, so an id naming one
-    // it has never been told about cannot be an issue it has not touched — it
-    // is an id nothing knows about, and the route is right to say so.
-    return {
-      ...base,
-      found: false,
-      askedGitHub: false,
-      url: null,
-      body: null,
-      problem: `${project} is not a registered project`,
-    }
-  }
-
-  // Buildable without GitHub, and worth building: a link to the issue is the
-  // thing the page exists to save a trip for, and it does not need an answer.
-  // The same shape the cards link to, said once (`board.ts`). A recipe that
-  // will not parse costs the link, not the page — caught here rather than
-  // read twice.
   const tickets = await currentRecipe(state)
     .then((r) => ticketSourceOf(r.recipe))
     .catch(() => null)
-  const url = issueUrl(state.owner, project, issue, tickets)
-  base.compareUrl = compareUrl(state.owner, project, state.base, agentBranchOf(issue), tickets)
-  // One reader for the three places a ticket is read (#731). A `db` ticket's
-  // number is not a GitHub issue number — it can collide with an unrelated
-  // issue on the same repository (`recipe.ts`, `TicketSource`'s doc comment),
-  // so the reader never asks GitHub about it (#384).
-  const read = await timed('github.issue', () => readProjectTicket(state, Number(issue)), {
-    failed: (r) => !r.ok,
-  })
-  if (read.ok) {
-    const live = read.ticket
-    return {
-      ...base,
-      found: true,
-      askedGitHub: read.from === 'github',
-      title: live.title,
-      // Names only. The colours GitHub sends with them are the board's, for the
-      // dot on a card (#85); this page lists every label a ticket carries, and
-      // a row of coloured pills here would be the filled pill that ticket
-      // refused — a taxonomy wearing the palette's verdict colours.
-      labels: live.labels.map((l) => l.name),
-      // The ticket table has no page of its own, so the link built above stays.
-      url: read.from === 'github' ? (live.url ?? url) : url,
-      body: live.body,
-      problem: null,
-    }
-  }
-  // **The one question this has to answer twice.** A 404 from GitHub is
-  // an answer — there is no such issue — and everything else is the absence of
-  // one. Collapsing the two is what made `ticket-lingtai-99999` and a repository
-  // behind a rate limit render identically, and only the first of them is a
-  // page that should not exist (#113). The ticket table has no typed "missing"
-  // error, so a `db` miss stays `null` and says why.
-  const missing = read.error instanceof GitHubError && read.error.status === 404
   return {
-    ...base,
-    found: missing ? false : null,
-    askedGitHub: read.from === 'github',
-    url,
-    body: null,
-    problem: (read.error as Error).message,
+    project,
+    ref: issue,
+    title: reduced.title,
+    kind: reduced.kind,
+    labels: [...reduced.labels],
+    url: issueUrl(state.owner, project, issue, tickets),
+    compareUrl: compareUrl(state.owner, project, state.base, agentBranchOf(issue), tickets),
   }
 }
 
+/** The ticket, once GitHub (or the table, for a `db` project) has answered: the base and the answer, as one. */
+export function withAnswer(base: TicketBase, answer: TicketAnswer): TicketView {
+  return {
+    ...base,
+    title: answer.title ?? base.title,
+    labels: answer.labels ?? base.labels,
+    url: answer.url ?? base.url,
+    body: answer.body,
+    found: answer.found,
+    askedGitHub: answer.askedGitHub,
+    problem: answer.problem,
+  }
+}
+
+const NO_ANSWER: TicketAnswer = {
+  found: null,
+  askedGitHub: false,
+  title: null,
+  labels: null,
+  url: null,
+  body: null,
+  problem: null,
+}
+
 /**
- * Whether there is a page here at all — **the one thing a 404 may rest on.**
+ * What only the issue's answer knows, asked once per render and **never
+ * rejecting** (0118 §2).
  *
- * Its own function because it is the whole of #113's lead requirement and it
- * used to be `own.length === 0`, which is a claim about the log and was being
- * read as a claim about the world. Two facts were flattened into one 404:
- * `ticket-lingtai-112`, which GitHub has and Lingtai has not touched, and
- * `ticket-lingtai-99999`, which nothing knows about. Only the second is a page that
- * should not exist.
+ * A promise that rejected would be read under a `<Suspense>` and go to the error
+ * boundary, which replaces the page, where every place that reads it should say
+ * *what failed* in its own words. So everything is caught and becomes `problem`.
  *
- * So: an item the log has touched is a page whatever GitHub says today — the
- * log is the authority on what Lingtai did. An item it has not is a page unless
- * something *answered* that there is no such issue. `found === null` is not
- * that answer; it is the absence of one, and it renders a page that says so.
+ * One reader for the three places a ticket is read (#731). A `db` ticket's
+ * number is not a GitHub issue number — it can collide with an unrelated issue
+ * on the same repository — so the reader never asks GitHub about it (#384).
+ *
+ * **The one question this has to answer twice.** A 404 from GitHub is an answer
+ * — there is no such issue — and everything else is the absence of one.
+ * Collapsing the two is what made `ticket-lingtai-99999` and a repository behind
+ * a rate limit render identically (#113).
  */
-export function exists(own: readonly Envelope[], ticket: TicketView | null): boolean {
-  if (own.length > 0) return true
-  // `null` is an id that is not `ticket-<project>-<n>` — there is no issue behind
-  // it to have an opinion about, so nothing could ever have offered it.
-  return ticket !== null && ticket.found !== false
+export const loadTicketAnswer = cache(async (taskId: string): Promise<TicketAnswer> => {
+  try {
+    const parsed = parseTicketStream(taskId)
+    if (!parsed) return { ...NO_ANSWER, found: false, problem: 'this id is not a ticket' }
+    const state = await loadProject(parsed.project).catch(() => null)
+    if (!state) return { ...NO_ANSWER, found: false, problem: `${parsed.project} is not a registered project` }
+    const read = await timed('github.issue', () => readProjectTicket(state, Number(parsed.issue)), {
+      failed: (r) => !r.ok,
+    })
+    if (read.ok) {
+      const live = read.ticket
+      return {
+        found: true,
+        askedGitHub: read.from === 'github',
+        title: live.title,
+        // Names only. The colours GitHub sends with them are the board's, for the
+        // dot on a card (#85); this page lists every label a ticket carries, and
+        // a row of coloured pills here would be the filled pill that ticket
+        // refused — a taxonomy wearing the palette's verdict colours.
+        labels: live.labels.map((l) => l.name),
+        // The ticket table has no page of its own, so the link built from the log stays.
+        url: read.from === 'github' ? (live.url ?? null) : null,
+        body: live.body,
+        problem: null,
+      }
+    }
+    const missing = read.error instanceof GitHubError && read.error.status === 404
+    return {
+      ...NO_ANSWER,
+      found: missing ? false : null,
+      askedGitHub: read.from === 'github',
+      problem: (read.error as Error).message,
+    }
+  } catch (err) {
+    return { ...NO_ANSWER, problem: (err as Error).message }
+  }
+})
+
+/**
+ * Whether there is a page here at all — **the one thing a 404 may rest on**, and
+ * the only thing it may rest on without asking GitHub (0118 §2, #113).
+ *
+ * The id parses as `ticket-<project>-<n>` and the project is one Lingtai has been
+ * told about. Whether the *issue* exists is GitHub's to say and arrives after the
+ * page is sent: a ticket the log has never touched and GitHub has no issue for
+ * is a page that says so (`TaskAnswer`), not a 404; an item the log has touched
+ * is a page whatever GitHub says today.
+ */
+export async function knowable(taskId: string): Promise<boolean> {
+  const parsed = parseTicketStream(taskId)
+  if (!parsed) return false
+  return (await loadProject(parsed.project).catch(() => null)) !== null
 }
 
 /**
@@ -1542,18 +1573,13 @@ async function recipesFor(project: string, runs: readonly AttemptView[]): Promis
  * so a ticket that has never run has no stream and the one column the board
  * leads with was the one column you could not open (#113).
  *
- * So the emptiness of the stream decides nothing on its own, and the question
- * *does this ticket exist* is put where the Queued column already puts it — to
- * GitHub, through `loadTicket`. Three answers, and the middle one is the fix:
- *
- * | `ticket.found` | means | this returns |
- * |---|---|---|
- * | `false` | GitHub has no such issue, or Lingtai has no such project | `null` — a 404, and it is right |
- * | `true` | GitHub is offering it and nothing has run it | a page saying it has not started |
- * | `null` | GitHub could not be asked — a rate limit, a revoked App — or it was never going to be asked, because the project's tickets are not on GitHub (`askedGitHub`, #384) | a page saying **that**, never a 404 |
- *
- * A `ticket` of `null` — an id that is not `ticket-<project>-<n>` at all — is the
- * first row: there is no issue behind it to have an opinion about.
+ * So the emptiness of the stream decides nothing, and **neither does GitHub**
+ * (0118 §2): the page is a 404 only for what needs no GitHub to decide — an id
+ * that is not `ticket-<project>-<n>`, or a project Lingtai has never been told
+ * about (`knowable`). Whether the *issue* exists is the answer's
+ * (`loadTaskAnswer`), which arrives after the page is sent: GitHub's 404 for a
+ * ticket the log never touched is a page that says so, and a GitHub that could
+ * not be asked is a page that says that, never a 404.
  */
 /** Only the wait the blocked lifecycle names can lend its paraphrase to the page. */
 export function currentWaitWant(own: readonly Envelope[], standing: StandingView): string | null {
@@ -1597,6 +1623,16 @@ export function heldRunOf(life: TicketLifecycle): string | null {
   return life.status === 'blocked' ? life.runId : null
 }
 
+/**
+ * The control stream, read once however many places of one render ask: the
+ * layout's reductions and the queue's `paused` (0118 §2). Never rejects.
+ */
+const readConductor = cache(() =>
+  timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
+    evaluateControl(emptyControl, new Date()),
+  ),
+)
+
 /** The ticket's own stream, read once however many segments of one render ask (#885). */
 const readOwn = cache((taskId: string) => timed('events.task', () => eventStore.read(taskId)))
 
@@ -1609,8 +1645,7 @@ const readOwn = cache((taskId: string) => timed('events.task', () => eventStore.
  *
  * Keyed by the id string, because React's `cache` memoizes on argument identity
  * and any array a caller built would never hit. The project comes from the id
- * (`parseTicketStream`), never from `loadTicket`, so a tab reads no GitHub
- * issue to learn it.
+ * (`parseTicketStream`), never from GitHub, so a tab reads no issue to learn it.
  */
 export const readAttempts = cache(async (taskId: string) => {
   const own = await readOwn(taskId)
@@ -1649,8 +1684,7 @@ export const readAttempts = cache(async (taskId: string) => {
   // recipe's, and a phase in flight or one that stopped mid-gate are the two
   // readings with a denominator to draw — and the second is also `held`'s
   // only source for a ceiling the run's own stream never named (`#415`). The
-  // project is the id's: `loadTicket` returns null exactly where
-  // `parseTicketStream` does.
+  // project is the id's, from `parseTicketStream`.
   const project = parseTicketStream(taskId)?.project ?? null
   const planAndLimits =
     (standing.state === 'running' || standing.state === 'blocked') && project !== null
@@ -1694,23 +1728,22 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // Beside the attempts rather than after them: one side is a handful of
   // database reads and the other is two calls to GitHub, and the page waits for
   // the slower of the two instead of for both.
+  //
+  // **No GitHub in it** (0118 §2): the issue's answer is `loadTaskAnswer`, which
+  // the layout starts beside this and the page reads where it is drawn.
   const [shared, ticket, control, lane] = await Promise.all([
     readAttempts(taskId),
-    readOwn(taskId).then((own) => loadTicket(taskId, own)),
-    timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
-      evaluateControl(emptyControl, new Date()),
-    ),
+    readOwn(taskId).then((own) => loadTicketBase(taskId, own)),
+    readConductor(),
     timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])
   const { own, ticketState, claims, streams, states, spendFold, standing: foldedStanding, runs, limits } = shared
   const spend = spendFold.rows
 
-  // **The only thing that decides a 404**, and it decides it after GitHub has
-  // been asked rather than before. See `exists`.
-  if (!exists(own, ticket)) return null
+  // **The only thing that decides a 404**, and it needs no GitHub. See `knowable`.
+  if (ticket === null) return null
 
-  const conductor = control
-  const chats = chatIdsFor(conductor.discussions, ticketState.discussions, taskId)
+  const chats = chatIdsFor(control.discussions, ticketState.discussions, taskId)
   const chatStreams =
     chats.length > 0
       ? await timed('events.chat', () => Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId)))), {
@@ -1721,19 +1754,14 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
 
   const keptAt = foldedStanding.unpushed?.keptAt
   const unpushedMirror =
-    keptAt?._tag === 'Mirror' && ticket !== null
+    keptAt?._tag === 'Mirror'
       ? {
           path: mirrorPathFor(ticket.project),
           sha: await timed('mirror.ref', () => refSha({ project: ticket.project, ref: keptAt.ref })),
         }
       : null
   let triage: Awaited<ReturnType<typeof loadCurrentTriageStatus>> = null
-  if (
-    foldedStanding.state === 'blocked' &&
-    foldedStanding.waitId !== null &&
-    foldedStanding.reason !== null &&
-    ticket !== null
-  ) {
+  if (foldedStanding.state === 'blocked' && foldedStanding.waitId !== null && foldedStanding.reason !== null) {
     triage = await timed('triage.read', () => loadCurrentTriageStatus(taskId, ticket.project, foldedStanding))
 
     // A crash that stands in for a wait is advised by the triage the person saw
@@ -1751,7 +1779,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   }
   const status = triage?.status ?? null
   const triageHeadLineText =
-    status?._tag === 'Done' && triage?.headSha !== null && triage?.headSha !== undefined && ticket !== null
+    status?._tag === 'Done' && triage?.headSha !== null && triage?.headSha !== undefined
       ? triageHeadLine(
           triage.headSha,
           await timed('mirror.ref', () =>
@@ -1764,8 +1792,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     standing.state === 'blocked' &&
     standing.reason !== null &&
     allowedResolutions(standing.reason).includes('GrantFixRound') &&
-    standing.runId !== null &&
-    ticket !== null
+    standing.runId !== null
   ) {
     const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
     const saved = savedFixWork(standing.runId, streams[runIndex] ?? [])
@@ -1797,8 +1824,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     standing.state === 'blocked' &&
     standing.waitId !== null &&
     standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('Split') &&
-    ticket !== null
+    allowedResolutions(standing.reason).includes('Split')
   ) {
     const state = await loadProject(ticket.project)
     const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
@@ -1812,26 +1838,6 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     }
   }
   const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
-  // Together, because neither is an argument to the other: one is a file read
-  // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
-  // and a page that waited for the sum would pay for both round trips end to
-  // end — #112's complaint, one page along.
-  //
-  // Each is asked only where it says anything. `outgoing` where a next attempt
-  // is possible: a run in flight has been handed its prompt already and a
-  // landed item will never be handed another (0032 §5). `queued` where the item
-  // is queued, which is the one state that is not in the log at all.
-  const [outgoing, queued] = await Promise.all([
-    standing.state === 'blocked' || standing.state === 'queued'
-      ? timed('next.outgoing', () => outgoingFor({ own, streams, ticket }))
-      : null,
-    standing.state === 'queued' && ticket !== null
-      ? timed('next.queued', () =>
-          queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused }),
-        )
-      : null,
-  ])
-
   // The run the state names, reduced with the recipe's bounds above — the same
   // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
   // is nothing to spend yet, or the run that is running will not say.
@@ -1857,11 +1863,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     want,
     // An unpushed branch is not GitHub's `agent/<n>`, so its compare view would
     // show some other diff or none; the page falls back to the shas (#590).
-    ticket: ticket !== null && standing.unpushed !== null ? { ...ticket, compareUrl: null } : ticket,
+    ticket: standing.unpushed !== null ? { ...ticket, compareUrl: null } : ticket,
     runs,
     discussions,
-    outgoing,
-    queued,
     held,
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
@@ -1908,18 +1912,77 @@ export async function loadAttemptTab(taskId: string, n: number): Promise<Attempt
   }
 }
 
+/**
+ * Everything on the task page that only the issue's answer knows, in one promise
+ * that **never rejects** (0118 §2): the ticket's title, labels, link and body,
+ * and the two reads that need them — what the next attempt will be handed
+ * (`outgoingFor` wants the body) and where the item is in line (`queuedFor` asks
+ * GitHub).
+ *
+ * The layout starts it beside `loadTask`, in a `measure` of its own, and does
+ * not await it: the page is sent when the log and the database have answered,
+ * and each place that reads this draws *asking GitHub…* until it arrives.
+ *
+ * Asked only where it says anything, as it always was: `outgoing` where a next
+ * attempt is possible (a run in flight has been handed its prompt already and a
+ * landed item will never be handed another, 0032 §5), `queued` where the item is
+ * queued, the one state that is not in the log at all. And neither for a ticket
+ * the log has never touched and GitHub has no issue for: that page says so.
+ */
+export async function loadTaskAnswer(taskId: string): Promise<TaskAnswer> {
+  const ticket = await loadTicketAnswer(taskId)
+  const parsed = parseTicketStream(taskId)
+  if (!parsed) return { ticket, outgoing: null, queued: null }
+  try {
+    const [shared, control] = await Promise.all([readAttempts(taskId), readConductor()])
+    const { own, streams, standing } = shared
+    if (ticket.found === false && own.length === 0) return { ticket, outgoing: null, queued: null }
+    const reduced = reduceTicket(own)
+    const base: TicketBase = {
+      project: parsed.project,
+      ref: parsed.issue,
+      title: reduced.title,
+      kind: reduced.kind,
+      labels: [...reduced.labels],
+      url: null,
+      compareUrl: null,
+    }
+    const [outgoing, queued] = await Promise.all([
+      standing.state === 'blocked' || standing.state === 'queued'
+        ? timed('next.outgoing', () => outgoingFor({ own, streams, ticket: withAnswer(base, ticket) })).catch((err) =>
+            refusedOutgoing((err as Error).message),
+          )
+        : null,
+      standing.state === 'queued'
+        ? timed('next.queued', () =>
+            queuedFor({ project: parsed.project, issue: parsed.issue, own, paused: control.paused }),
+          ).catch((err) => refusedQueued((err as Error).message, null, control.paused))
+        : null,
+    ])
+    return { ticket, outgoing, queued }
+  } catch {
+    // The log could not be read; `loadTask` says so for itself. What GitHub said stands.
+    return { ticket, outgoing: null, queued: null }
+  }
+}
+
 /** The Ticket tab: the ticket as it was written, and the ticket stream's events. */
 export interface TicketTabDetail {
   taskId: string
-  ticket: TicketView | null
+  /** What the log and the register give; GitHub's part is `loadTicketAnswer`. Null for an id that is not a ticket id. */
+  ticket: TicketBase | null
   events: HistoryLine[]
 }
 
-/** The Ticket tab's reads: the ticket stream, and the one GitHub issue (#885). */
+/**
+ * The Ticket tab's reads: the ticket stream, and **nothing from GitHub** (0118 §2).
+ * The tab draws the log's part at once and reads `loadTicketAnswer` where the
+ * body goes. Null only for an id a 404 may rest on (`knowable`).
+ */
 export async function loadTicketTab(taskId: string): Promise<TicketTabDetail | null> {
   const own = await readOwn(taskId)
-  const ticket = await loadTicket(taskId, own)
-  if (!exists(own, ticket)) return null
+  const ticket = await loadTicketBase(taskId, own)
+  if (ticket === null) return null
   // The ticket stream's claims are what its `TicketClaimed` rows name, so the
   // map is built from the same reduction `readAttempts` numbers the tabs by.
   const attempts = new Map(reduceTicket(own).claims.map((c, i) => [c.runId, i + 1]))

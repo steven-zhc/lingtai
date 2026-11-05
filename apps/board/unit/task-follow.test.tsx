@@ -16,13 +16,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it, vi } from 'vitest'
 
-import type { TaskDetail } from '../src/lib/task.ts'
+import type { TaskAnswer, TaskDetail } from '../src/lib/task.ts'
 
 const stub = { taskId: 'ticket-lingtai-172' } as TaskDetail
+const answer = { ticket: {}, outgoing: null, queued: null } as unknown as TaskAnswer
 
 vi.mock('../src/lib/task.ts', async (original) => ({
   ...(await original<typeof import('../src/lib/task.ts')>()),
   loadTask: vi.fn(async () => stub),
+  knowable: vi.fn(async () => true),
+  loadTaskAnswer: vi.fn(async () => answer),
 }))
 
 const { default: TaskLayout, TaskBody } = await import('../src/app/task/[id]/layout.tsx')
@@ -43,8 +46,14 @@ describe('the task route', () => {
     // The page it keeps current is the reducer this request read, and it is inside
     // the subscription, so what the stream says reaches the bar and the pane.
     const inside = Children.toArray(follow.props.children).filter(isValidElement)
-    const body = inside.find((el) => el.type === TaskBody) as ReactElement<{ task: TaskDetail; children: ReactNode }>
+    const body = inside.find((el) => el.type === TaskBody) as ReactElement<{
+      task: TaskDetail
+      github: Promise<TaskAnswer>
+      children: ReactNode
+    }>
     expect(body.props.task).toBe(stub)
+    // GitHub's answer is handed over unawaited (0118 §2): the page is sent first.
+    expect(await body.props.github).toBe(answer)
     // The open tab is inside it too, so one append refreshes both segments.
     expect(body.props.children).toBe('tab')
     // The subscription without the board's dot: the dot is the board's (#64).

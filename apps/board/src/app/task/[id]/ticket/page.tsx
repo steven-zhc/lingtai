@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 
-import { loadTicketTab } from '@/lib/task'
+import { loadTicketAnswer, loadTicketTab } from '@/lib/task'
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
@@ -13,14 +13,17 @@ export const dynamic = 'force-dynamic'
 /** `/task/<id>/ticket`: the Ticket tab (#885). Its loader is its own and never `loadTask`. */
 export default async function TicketTabPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [read, timings] = await measure(() => guarded(() => loadTicketTab(decodeURIComponent(id))), {
+  const taskId = decodeURIComponent(id)
+  // Not awaited: the tab is sent and the body streams in (0118 §2). Shared with the layout's read.
+  const answer = measure(() => loadTicketAnswer(taskId), { label: '/task github' }).then(([a]) => a)
+  const [read, timings] = await measure(() => guarded(() => loadTicketTab(taskId)), {
     label: '/task tab',
   })
   if (read.status === 'missing') notFound()
   return (
     <>
       <TimingMeta timings={timings} />
-      {read.status === 'failed' ? <TabFailed what="the ticket" /> : <TicketTab detail={read.detail} />}
+      {read.status === 'failed' ? <TabFailed what="the ticket" /> : <TicketTab detail={read.detail} answer={answer} />}
     </>
   )
 }

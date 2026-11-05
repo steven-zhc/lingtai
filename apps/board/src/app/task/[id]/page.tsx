@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 
+import { loadTicketAnswer } from '@/lib/task'
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
@@ -18,7 +19,10 @@ export const dynamic = 'force-dynamic'
  */
 export default async function TaskDefaultTab({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [read, timings] = await measure(() => loadDefaultTab(decodeURIComponent(id)), { label: '/task tab' })
+  const taskId = decodeURIComponent(id)
+  // Not awaited, and shared with the layout's read: only the Ticket tab draws it (0118 §2).
+  const answer = measure(() => loadTicketAnswer(taskId), { label: '/task github' }).then(([a]) => a)
+  const [read, timings] = await measure(() => loadDefaultTab(taskId), { label: '/task tab' })
   if (read.status === 'missing') notFound()
   return (
     <>
@@ -26,7 +30,7 @@ export default async function TaskDefaultTab({ params }: { params: Promise<{ id:
       {read.status === 'failed' ? (
         <TabFailed what="this tab" />
       ) : read.detail.kind === 'ticket' ? (
-        <TicketTab detail={read.detail.detail} />
+        <TicketTab detail={read.detail.detail} answer={answer} />
       ) : (
         <AttemptTab key={read.detail.detail.run.runId} detail={read.detail.detail} />
       )}

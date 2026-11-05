@@ -213,7 +213,7 @@ export function backoffOf(own: readonly Envelope[], backoffMs: number, now: numb
   return heldUntil({ lastAttemptAt: reduceTicket(own).lastAttemptAt, repairPending: false }, backoffMs, now)
 }
 
-function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {
+export function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {
   return {
     position: null,
     inLine: 0,

@@ -24,7 +24,7 @@ import { describe, expect, it } from 'vitest'
 import { Rail } from '../src/app/rail.tsx'
 import { Coords, Standing } from '../src/app/standing.tsx'
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
-import { exists, type StandingView, type TicketView } from '../src/lib/task.ts'
+import type { StandingView } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -42,68 +42,6 @@ function e(streamId: string, type: string, data: unknown, at = '2026-09-09T04:12
     at: new Date(at),
   }
 }
-
-const TICKET: TicketView = {
-  project: 'lingtai',
-  ref: '112',
-  title: 'the card cannot be opened',
-  kind: 'bug',
-  labels: ['bug'],
-  url: 'https://github.com/steven-zhc/lingtai/issues/112',
-  compareUrl: null,
-  found: true,
-  askedGitHub: true,
-  body: 'the body',
-  problem: null,
-}
-
-// ------------------------------------------- the two facts, told apart ----
-
-describe('whether there is a page here', () => {
-  /**
-   * The row the ticket leads with. `ticket-lingtai-112` — GitHub has it, Lingtai
-   * has not touched it — was a 404, and the whole Queued column with it.
-   */
-  it('renders an id GitHub offers and the log has never seen', () => {
-    expect(exists([], TICKET)).toBe(true)
-  })
-
-  /** `ticket-lingtai-99999`. GitHub answered, and the answer was no. */
-  it('still refuses an id nothing knows about', () => {
-    expect(exists([], { ...TICKET, ref: '99999', found: false, body: null })).toBe(false)
-  })
-
-  /**
-   * **The requirement that is not a page but a sentence.** A GitHub that will
-   * not answer is not evidence that the issue is absent, and a 404 says *it
-   * does not exist* — a claim Lingtai is in no position to make.
-   */
-  it('never 404s because GitHub could not be asked', () => {
-    const unreachable: TicketView = {
-      ...TICKET,
-      found: null,
-      body: null,
-      problem: '403 on /repos/…: rate limit exceeded',
-    }
-    expect(exists([], unreachable)).toBe(true)
-  })
-
-  /** An id that is not `ticket-<project>-<n>`: there is no issue to have a view about. */
-  it('refuses an id that is not a work item', () => {
-    expect(exists([], null)).toBe(false)
-  })
-
-  /**
-   * The log is the authority on what Lingtai did. An item it has touched keeps
-   * its page through a rate limit, a deleted issue and an unregistered project
-   * alike — those cost the body, not the page (#76).
-   */
-  it('keeps the page for an item the log has touched, whatever GitHub says', () => {
-    const own = [e('ticket-lingtai-89', 'TicketClaimed', { runId: 'pass-1' })]
-    expect(exists(own, { ...TICKET, found: false, body: null })).toBe(true)
-    expect(exists(own, null)).toBe(true)
-  })
-})
 
 // ------------------------------------------------------- where in line ----
 
