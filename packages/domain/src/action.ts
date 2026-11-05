@@ -30,6 +30,8 @@ export type WaitId = z.infer<typeof WaitId>
 export const Assessment = z.object({
   verdict: z.enum(['accepted', 'refused']),
   findings: z.array(Finding),
+  /** The cold reviewer's summary of the change (0103 §3, #890); absent on a row written before it. */
+  summary: z.string().optional(),
 })
 export type Assessment = z.infer<typeof Assessment>
 
@@ -371,6 +373,25 @@ export function designOf(outcome: StepOutcome): Design | null {
     if (action.yields === 'design' && action.result._tag === 'Drafted') design = action.result.design
   }
   return design
+}
+
+/**
+ * The review's summary of the change (0103 §3, #890): the last `verdict` action
+ * of a `review` step that completed with one. Every reader calls this and none
+ * picks its own. `clipped` is left unset until #892.
+ */
+export function reviewSummaryOf(outcome: StepOutcome): { summary: string; clipped?: boolean } | null {
+  if (outcome.step !== 'review') return null
+  let found: string | null = null
+  for (const action of outcome.actions) {
+    if (
+      action.yields === 'verdict' &&
+      action.result._tag === 'Completed' &&
+      typeof action.result.assessment.summary === 'string'
+    )
+      found = action.result.assessment.summary
+  }
+  return found === null ? null : { summary: found }
 }
 
 /**
