@@ -83,6 +83,19 @@ async function project(name: string) {
   return state
 }
 
+/**
+ * Where a wait's triage answers are written (#921) — the ticket store of an
+ * ownerless project, GitHub otherwise. `undefined` when there is none, which
+ * only matters to a wait whose triage asked questions: `requeue` refuses that
+ * by name and is unchanged otherwise.
+ */
+async function answersChannel(name: string) {
+  const state = await loadProject(name)
+  if (!state) return undefined
+  if (state.owner === null) return (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+  return hasGitHubAuth() ? (await projectClient(state)).client : undefined
+}
+
 export async function approveCard(input: {
   project: string
   issue: number
@@ -276,7 +289,6 @@ export async function requeueCard(input: {
         detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
       }
     }
-    const { client } = await projectClient(await project(input.project))
     const result = await requeue({
       writer: await boardWriterOrNone(),
       project: input.project,
@@ -284,7 +296,7 @@ export async function requeueCard(input: {
       by: actor(),
       note: input.note,
       waitId: input.waitId,
-      github: client,
+      github: await answersChannel(input.project),
     })
 
     revalidatePath('/')
@@ -741,12 +753,11 @@ export async function sendAttempt(input: {
       if (!edited.ok) return edited
     }
 
-    const { client } = await projectClient(await project(parsed.project))
     const result = await requeue({
       writer: await boardWriterOrNone(),
       project: parsed.project,
       issue: Number(parsed.issue),
-      github: client,
+      github: await answersChannel(parsed.project),
       by,
       // The system's own sentence rather than a field to fill in: the reason
       // is the document on screen, already on the log, and asking again would

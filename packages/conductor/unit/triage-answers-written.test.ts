@@ -172,8 +172,21 @@ describe('GrantFixRound writes the triage answers first (#921)', () => {
     expect((await tickets.getIssue(ISSUE)).body).toContain('edited by the person')
   })
 
-  it('does not write for Approve', async () => {
+  it('does not write for Approve or Close', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
+    await resolveWaitHolding(
+      {
+        ticketId,
+        waitId,
+        resolution: { _tag: 'Approve', onSha: SHA },
+        by: 'human:steven',
+        github: tickets,
+        client: { refSha: async () => SHA },
+        store,
+      },
+      ticketId,
+    )
+    expect((await tickets.getIssue(ISSUE)).body).toBe('the ticket')
     await resolveWaitHolding(
       {
         ticketId,

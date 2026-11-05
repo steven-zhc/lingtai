@@ -311,10 +311,11 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
  * from a base that has since moved, which for the commonest case — a conflict
  * nobody chose to repair — is the whole of the fix.
  *
- * No GitHub call. `labelsFor("queued")` is empty, so there is nothing to say
- * that is not already implied, and `reconcile` converges the label an earlier
- * block left behind. A decision here does not need a network round trip to
- * count.
+ * No GitHub call to say the item is queued: `labelsFor("queued")` is empty, so
+ * there is nothing to say that is not already implied, and `reconcile`
+ * converges the label an earlier block left behind. The one exception is a wait
+ * whose triage asked questions (#921): their answers are written into the body
+ * first, through `github`, and a failed write or a missing `github` refuses.
  */
 export async function requeue(
   options: {
