@@ -52,8 +52,7 @@ and the places that must agree are listed.
    never without its no-delete rule. Those drop statements are the only place
    the retired name belongs in code.
 
-8. **A name changes nothing in the log.** Stream ids (`wi-`, `run-`, `prj-`,
-   `int-`, `ctl-`, `chat-`) and event types do not carry the product name, so a
+8. **A name changes nothing in the log.** Stream ids (0100 §3) and event types do not carry the product name, so a
    rename never requires a reset or an upcaster.
 
 ## Consequences
