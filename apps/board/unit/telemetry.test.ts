@@ -252,16 +252,48 @@ it('remembers at most the limit of trace ids, oldest first', async () => {
   expect(only.remembered).toBe(2)
 })
 
-it('drops a request span whose context was evicted before its page ended', async () => {
+it('keeps the page under its request span though 1,000 other requests evicted the request context', async () => {
   const sdk = await loadSdk()
-  const { seen, inner } = recorder()
+  const spans: ReadableSpan[] = []
+  const inner = {
+    onStart() {},
+    onEnd: (s: ReadableSpan) => void spans.push(s),
+    forceFlush: async () => {},
+    shutdown: async () => {},
+  } as unknown as SpanProcessor
   const provider = new sdk.base.BasicTracerProvider({ spanProcessors: [new OnlyScope(SCOPE, inner, 2)] })
-  const first = traced(provider, 'a')
-  traced(provider, 'b')
-  traced(provider, 'c') // evicts a's request context
-  first.page.end()
-  first.request.end()
-  expect(seen).toEqual(['page a'])
+  const next = provider.getTracer('next.js')
+  const request = next.startSpan('GET /a', { root: true, attributes: REQUEST })
+  const render = next.startSpan('AppRender.getBodyResult', {}, trace.setSpan(ROOT_CONTEXT, request))
+  const page = provider.getTracer(SCOPE).startSpan('page /a', {}, trace.setSpan(ROOT_CONTEXT, render))
+  for (const n of ['b', 'c', 'd']) next.startSpan(`GET /${n}`, { root: true, attributes: REQUEST })
+  page.end()
+  render.end()
+  request.end()
+  const exported = spans.find((s) => s.name === 'page /a')!
+  expect(exported.parentSpanContext?.spanId).toBe(request.spanContext().spanId)
+  expect(spans.map((s) => s.name).toSorted()).toEqual(['GET /a', 'page /a'])
+})
+
+it('exports a page as a root when its request span cannot be named, never under an unexported span', async () => {
+  const sdk = await loadSdk()
+  const spans: ReadableSpan[] = []
+  const inner = {
+    onStart() {},
+    onEnd: (s: ReadableSpan) => void spans.push(s),
+    forceFlush: async () => {},
+    shutdown: async () => {},
+  } as unknown as SpanProcessor
+  const provider = new sdk.base.BasicTracerProvider({ spanProcessors: [new OnlyScope(SCOPE, inner, 2)] })
+  const next = provider.getTracer('next.js')
+  const request = next.startSpan('GET /a', { root: true, attributes: REQUEST })
+  const render = next.startSpan('AppRender.getBodyResult', {}, trace.setSpan(ROOT_CONTEXT, request))
+  const page = provider.getTracer(SCOPE).startSpan('page /a', {}, trace.setSpan(ROOT_CONTEXT, render))
+  for (let i = 0; i < 3; i++) provider.getTracer(SCOPE).startSpan('page /x', { root: true }).end() // evicts a
+  page.end()
+  request.end()
+  expect(spans.find((s) => s.name === 'page /a')!.parentSpanContext).toBeUndefined()
+  expect(spans.some((s) => s.name === 'GET /a')).toBe(false)
 })
 
 it('never remembers more than 1,000 trace ids when page spans arrive with no request span', async () => {

@@ -70,14 +70,16 @@ function requestCopy(span: ReadableSpan): ReadableSpan {
  * The `page` span with its parent replaced by the request span (#883). Next
  * activates spans of its own (`AppRender.getBodyResult`, …) between the request
  * span and `measure`, and those are dropped, so the active span is not the one
- * that leaves. The original is never touched.
+ * that leaves. With no request span to name, the parent is dropped and the page
+ * is a root, since its own parent is a span that never leaves. The original is
+ * never touched.
  */
-function reparented(span: ReadableSpan, parent: Context): ReadableSpan {
+function reparented(span: ReadableSpan, parent: Context | undefined): ReadableSpan {
   return {
     name: span.name,
     kind: span.kind,
     spanContext: () => span.spanContext(),
-    parentSpanContext: bare(parent),
+    ...(parent === undefined ? {} : { parentSpanContext: bare(parent) }),
     startTime: span.startTime,
     endTime: span.endTime,
     status: span.status,
@@ -105,8 +107,11 @@ export class OnlyScope implements SpanProcessor {
   readonly scope: string
   readonly inner: SpanProcessor
   readonly #limit: number
-  /** Trace ids that held a `page` span, oldest first; bounded, and dropped once the request span ends. */
-  readonly #pages = new Set<string>()
+  /**
+   * Trace ids that held a `page` span, oldest first, with the request span's
+   * context the page started under; bounded, and dropped once the request span ends.
+   */
+  readonly #pages = new Map<string, Context | undefined>()
   /** Request span contexts by trace id, from start to end; bounded the same way. */
   readonly #requests = new Map<string, Context>()
   constructor(scope: string, inner: SpanProcessor, limit = 1000) {
@@ -118,30 +123,40 @@ export class OnlyScope implements SpanProcessor {
     return this.#pages.size
   }
   onStart(span: Span): void {
-    if (!isRequest(span)) return
     const context = span.spanContext()
-    this.#requests.set(context.traceId, context)
-    if (this.#requests.size > this.#limit) this.#requests.delete(this.#requests.keys().next().value!)
+    if (isRequest(span)) {
+      this.#requests.set(context.traceId, context)
+      if (this.#requests.size > this.#limit) this.#requests.delete(this.#requests.keys().next().value!)
+    } else if (span.instrumentationScope.name === this.scope && span.name.startsWith('page ')) {
+      // Taken now: by the time the page ends, 1,000 other requests may have evicted this one.
+      this.#remember(context.traceId, this.#requests.get(context.traceId))
+    }
   }
   onEnding(): void {}
   onEnd(span: ReadableSpan): void {
     const traceId = span.spanContext().traceId
     if (span.instrumentationScope.name === this.scope) {
       if (!span.name.startsWith('page ')) return this.inner.onEnd(span)
-      this.#remember(traceId)
-      const request = this.#requests.get(traceId)
+      const request = this.#pages.get(traceId) // absent if evicted, and not re-added: it would evict a live one
       const parent = span.parentSpanContext?.spanId
-      this.inner.onEnd(request !== undefined && parent !== request.spanId ? reparented(span, request) : span)
+      if (request !== undefined) this.inner.onEnd(parent !== request.spanId ? reparented(span, request) : span)
+      // No request span to name: its parent is a span that never leaves, so it is a root.
+      else this.inner.onEnd(parent === undefined ? span : reparented(span, undefined))
     } else if (isRequest(span)) {
-      // A request whose context was evicted had its page re-parented onto nothing: dropped.
-      const tracked = this.#requests.delete(traceId)
-      if (this.#pages.delete(traceId) && tracked) this.inner.onEnd(requestCopy(span))
+      this.#requests.delete(traceId)
+      // Forwarded only when the page that left was re-parented onto it.
+      const request = this.#pages.get(traceId)
+      this.#pages.delete(traceId)
+      if (request?.spanId === span.spanContext().spanId) this.inner.onEnd(requestCopy(span))
     }
   }
-  #remember(traceId: string): void {
-    if (this.#pages.has(traceId)) return
-    this.#pages.add(traceId)
-    if (this.#pages.size > this.#limit) this.#pages.delete(this.#pages.values().next().value!)
+  #remember(traceId: string, request: Context | undefined): void {
+    if (this.#pages.has(traceId)) {
+      if (request !== undefined && this.#pages.get(traceId) === undefined) this.#pages.set(traceId, request)
+      return
+    }
+    this.#pages.set(traceId, request)
+    if (this.#pages.size > this.#limit) this.#pages.delete(this.#pages.keys().next().value!)
   }
   forceFlush(): Promise<void> {
     return this.inner.forceFlush()
