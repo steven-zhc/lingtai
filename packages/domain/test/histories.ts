@@ -1095,6 +1095,35 @@ const late_declinedThenAccepted = (() => {
   ])
 })()
 
+/**
+ * #932: a route stored by reference. The `ProposalRouted` carries no findings;
+ * it names the refusing `StepEnded` by its version on the stream and the action.
+ */
+function proposalRoutedByReference(): readonly Envelope[] {
+  const run = anAttempt(attemptStream('proposal-routed'))
+  const offer = {
+    proposal: { _tag: 'ReviewFindings' as const },
+    available: [
+      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
+    ],
+    unavailable: [],
+    ended: { version: 2, action: 'cold' },
+  }
+  const reply = { _tag: 'Selected' as const, candidate: 'fix-lines', why: 'the lines are wrong' }
+  const decision = { _tag: 'Selected' as const, candidate: 'fix-lines' }
+  // Not `stamp`: it spends the module's seq and slot counters, and a history
+  // built in the middle would shift every one after it (see the header).
+  return [
+    runStarted(run, runTicket),
+    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')])),
+    run.event('ProposalRouted', { runId: run.runId, offer, reply, decision }),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 1 }),
+  ].map((e, i) => ({ ...e, seq: BigInt(900_000_000 + i), at: new Date(START_MS - (10 - i) * STEP_MS) }))
+}
+
+const late_proposalRoutedByReference = proposalRoutedByReference()
+
 export const lateHistories = {
   attempt: {
     fixRoundRouted: late_fixRoundRouted,
@@ -1110,6 +1139,7 @@ export const lateHistories = {
     planResolved: late_planResolved,
     laneWaited: late_laneWaited,
     implementThenReviewed: late_implementThenReviewed,
+    proposalRoutedByReference: late_proposalRoutedByReference,
   },
   ticket: {
     titledByClaims: late_titledByClaims,
@@ -1334,6 +1364,7 @@ export const COVERS = {
     'StepsResolved',
     'MergeLaneWaited',
     'PassRouted',
+    'ProposalRouted',
     'RunRefsPublished',
     'RunKeptUncommitted',
   ],

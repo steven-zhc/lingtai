@@ -1444,7 +1444,7 @@ export const BaseChecked = z.object({
  * thing that knows the offer, the reply and the decision together, and
  * `conduct.ts` writes what it returns.
  *
- * @summary Retired: the step after review chose where the ticket goes next (now `ProposalRouted`, which does not repeat the evidence).
+ * @summary No longer written: the step after review chose where the ticket goes next; `ProposalRouted` replaced it.
  */
 export const PassRouted = z.object({
   runId: z.string(),
@@ -1475,7 +1475,7 @@ export const PassRouted = z.object({
  * `TicketReleased{cause: Restart{restart}}` on the work item's stream, in that
  * order. On the **run's** stream, appended after the walk returns.
  *
- * @summary The step after review chose where the ticket goes next; the log keeps what it was offered and why, and names the StepEnded that holds the evidence.
+ * @summary The step after review chose where the ticket goes next; the log keeps the offer, and names the StepEnded that holds the evidence.
  */
 export const ProposalRouted = z
   .object({

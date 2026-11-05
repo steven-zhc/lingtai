@@ -165,7 +165,7 @@ describe('what an event is written at (#628)', () => {
         expect(
           all.some((e) => e.type === 'RunSpent' && (e.data as { for: { _tag: string } }).for._tag === 'Judge'),
         ).toBe(true)
-      if (name === 'a merge conflict') expect(all.some((e) => e.type === 'PassRouted')).toBe(true)
+      if (name === 'a merge conflict') expect(all.some((e) => e.type === 'ProposalRouted')).toBe(true)
       expect(misplaced(all, EVENT_AT)).toEqual([])
     })
   }
