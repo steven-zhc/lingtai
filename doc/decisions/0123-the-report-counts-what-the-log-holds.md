@@ -226,6 +226,24 @@ The operator's decisions in epic #648 are the inputs here.
    Every chart has a hover with its exact figures and a legend; no chart has two
    y-axes.
 
+8. **`/landed` is the same projection, read as a journal.** It answers *what
+   did Lingtai change*, for a person reading after the fact, and shows landed
+   tickets only, newest first, in pages of twenty by landing time.
+   - Days down the left, each with its date, how many landed and what they
+     cost; one rail, each ticket hung on it at the minute it landed.
+   - A ticket with a summary (0103 §3) is a card: the summary's first sentence
+     is its headline, marked in the ticket's kind colour; the ticket's own title
+     is the caption above it, as the person wrote it; the rest of the summary
+     under it; then whatever a person should know (a decision a person made, the
+     minor findings sent to the backlog, no tests changed); then one ruled line
+     of facts: kind, the landing attempt and its fix rounds, the diff's files and
+     lines, the cost, the merge commit and the issue.
+   - A ticket without a summary is one line: time, number, title, diff, cost.
+   - Every fact comes from the log through `ticket_report`; nothing is asked of
+     GitHub. Kind colours are §7's series, and amber is not used.
+   - It is reached from the board's Landed column, whose heading links to it
+     (carrying `?project=`), and so adds nothing to the bar's row (the-bar.md).
+
 ## Consequences
 
 - An average over landings says nothing about tickets that did not land. That is

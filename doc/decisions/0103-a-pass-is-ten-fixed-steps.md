@@ -52,6 +52,17 @@ never report a fault.
    findings and judges nothing, so a reviewer's `failed` makes `review` *pass*
    carrying its findings, and `proposed` judges them.
 
+   **The reviewer also writes the change's summary**, beside its findings: what
+   the diff does, for a person reading after the fact. Its first sentence says
+   what the change does in one clause of at most about twelve words or eighty
+   characters, and does not open with a code name; the sentences after it say
+   what changed where and why. It is markdown with inline code and emphasis
+   only. It is written by the reviewer and never by the agent that made the
+   change, because a summary of one's own work is advocacy. It is a request and
+   not a gate: a summary that is missing, long or malformed is shown as it is,
+   and refuses nothing and buys nothing. A ticket's summary is the one from the
+   last review of the attempt that landed.
+
 4. **A step ends one of seven ways, and the type says which go anywhere.**
    `StepEnding` in `run-attempt.ts`:
    - `passed` — the attempt moves to the next step on the spine.

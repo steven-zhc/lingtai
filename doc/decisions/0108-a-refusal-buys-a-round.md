@@ -177,6 +177,16 @@ fixes the bounds and the endings that router works inside.
     by the base commit and the command, so attempts in flight and the next ticket
     reuse it, and a base that moves runs it again.
 
+14. **A diff the reviewer cannot read whole buys nothing.** Before `review`,
+    the diff the reviewer would be handed is measured the way it is clipped,
+    against `runtime.budget.diff`. When it is longer, no reviewer and no judge
+    is paid: the attempt holds for a person (`DiffTooLarge`), naming the size and
+    the limit, and no fix round is offered, because a fix agent cannot make a
+    change smaller without dropping what the ticket asked for. Triage is asked
+    and may advise `Split` with its plan (0118 §12). The person may also
+    `Approve`, which runs the review on the clipped diff and records that the
+    reviewer read only the first part, so the summary and the task page say so.
+
 ## Consequences
 
 - Every refusal is one flow with one ceiling. Only the evidence differs between a
