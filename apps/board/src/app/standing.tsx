@@ -1044,6 +1044,8 @@ export function Standing({
   const discussion = (
     <Discussion
       taskId={taskId}
+      state={standing.state}
+      attempts={standing.attempts}
       attempt={standing.attempt}
       reason={standing.reason}
       triageStatus={standing.triageStatus}
