@@ -378,7 +378,11 @@ describe('the Go detector', () => {
   it('go.mod alone gives the install and three build commands, the format check failing on output', async () => {
     const result = await detectSetup(reader(GO))
     expect(result.install).toEqual({ run: 'go mod download', because: 'go.mod is at the root' })
-    expect(result.build.map((b) => b.run)).toEqual(['test -z "$(gofmt -l .)"', 'go vet ./...', 'go test ./...'])
+    expect(result.build.map((b) => b.run)).toEqual([
+      'out=$(gofmt -l .) && test -z "$out"',
+      'go vet ./...',
+      'go test ./...',
+    ])
     expect(result.build[0]?.tool).toBe('gofmt')
   })
 
@@ -386,7 +390,7 @@ describe('the Go detector', () => {
     const text = file.endsWith('.toml') ? 'a = 1\n' : 'linters:\n  enable: [govet]\n'
     const result = await detectSetup(reader({ ...GO, [file]: text }))
     expect(result.build.map((b) => b.run)).toEqual([
-      'test -z "$(gofmt -l .)"',
+      'out=$(gofmt -l .) && test -z "$out"',
       'go vet ./...',
       'golangci-lint run',
       'go test ./...',
@@ -404,6 +408,19 @@ describe('the Go detector', () => {
     const result = await detectSetup(reader({ ...GO, '.golangci.yml': 'a: [1\n' }))
     expect(result.notes).toContain('.golangci.yml does not parse')
     expect(result.build.map((b) => b.name)).not.toContain('lint')
+  })
+
+  it('a rejected lookup of an earlier config withholds lint rather than falling to a later file', async () => {
+    const files: Record<string, string> = { ...GO, '.golangci.yaml': 'a: 1\n' }
+    const result = await detectSetup({
+      has: async (p) => {
+        if (p === '.golangci.yml') throw new Error('no')
+        return p in files
+      },
+      read: async (p) => files[p] ?? null,
+    })
+    expect(result.build.map((b) => b.name)).not.toContain('lint')
+    expect(result.notes).toContain('could not tell whether .golangci.yml is at the root')
   })
 
   it('has(go.mod) rejecting is could-not-tell', async () => {

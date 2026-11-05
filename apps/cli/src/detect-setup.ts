@@ -504,6 +504,8 @@ const goDetector: StackDetector = {
       const found = await hasOrUnknown(reader, file)
       if (found === 'unknown') {
         notes.push(`could not tell whether ${file} is at the root`)
+        // An earlier file that may exist decides, so a later one cannot stand in for it.
+        if (chosen === null) break
       } else if (found) {
         if (chosen !== null) {
           notes.push(`${file} is also at the root; ${chosen} was used`)
@@ -515,7 +517,7 @@ const goDetector: StackDetector = {
     }
 
     const build: DetectedSetup['build'] = [
-      { name: 'format', run: 'test -z "$(gofmt -l .)"', because: 'go.mod is at the root', tool: 'gofmt' },
+      { name: 'format', run: 'out=$(gofmt -l .) && test -z "$out"', because: 'go.mod is at the root', tool: 'gofmt' },
       { name: 'vet', run: 'go vet ./...', because: 'go.mod is at the root' },
     ]
     if (lint !== null) build.push({ name: 'lint', run: 'golangci-lint run', because: `${lint} is at the root` })
