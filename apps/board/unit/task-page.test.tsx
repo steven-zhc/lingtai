@@ -19,7 +19,7 @@
 import { readFileSync } from 'node:fs'
 
 import type { StepPlan } from '@lingtai/conductor/filter'
-import type { TicketClaim } from '@lingtai/domain'
+import { STEPS, type TicketClaim } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -1035,6 +1035,8 @@ describe('the places that wait for GitHub', () => {
     const html = waiting({ ...t, ticket: { ...t.ticket!, title: 'the log’s own title' } })
     expect(html).toContain('the log’s own title')
     expect(html).toContain('asking GitHub…')
+    expect(html).toContain('class="skeleton"')
+    expect(html).not.toContain('<p class="empty">asking GitHub…</p>')
     // Nothing GitHub knows is drawn as though GitHub had said nothing.
     expect(html).not.toContain('The reviewer crashed.')
     expect(html).not.toContain('could not be asked')
@@ -1050,6 +1052,10 @@ describe('the places that wait for GitHub', () => {
     const html = waiting(queuedPage())
     expect(html).toMatch(/class="sstate">queued</)
     expect(html).toContain('asking GitHub…')
+    expect(html).toContain('class="skeleton"')
+    expect(html).not.toContain('splan-pending')
+    expect(html).not.toContain('class="squestion">asking GitHub…')
+    expect(html.match(/class="sk-bar sk-cell"/g)?.length).toBe(STEPS.length)
     expect(html).not.toContain('Run it now')
     expect(html).not.toContain('offered by GitHub')
   })
@@ -1111,6 +1117,9 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
     expect(html).toContain('#147')
     expect(html).toContain(TICKET.title!)
     expect(html).toContain('asking GitHub…')
+    expect(html).toContain('class="skeleton"')
+    expect(html).not.toContain('<p class="empty">asking GitHub…</p>')
+    expect(html).not.toContain('arrive')
     expect(html).toContain('Events')
     expect(html).not.toContain('The whole ticket, as written.')
   })
@@ -1118,6 +1127,7 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
   it('draws the body once it has', () => {
     const html = tab(answered)
     expect(html).toContain('The whole ticket, as written.')
+    expect(html).toContain('class="arrive"')
     expect(html).toContain('GitHub’s title')
     expect(html).not.toContain('asking GitHub…')
   })
@@ -1215,8 +1225,8 @@ describe('what a pending page cannot lose or hide', () => {
     expect(html).toContain('The issue could not be read from GitHub: rate limit exceeded')
   })
 
-  it('draws a plan placeholder in the header of an untouched queued ticket', () => {
+  it('draws a skeleton rail in the header of an untouched queued ticket', () => {
     const html = renderToStaticMarkup(<TaskBody task={task([], [])} github={never()} />)
-    expect(html).toContain('splan-pending')
+    expect(html).toContain('sk-cells')
   })
 })
