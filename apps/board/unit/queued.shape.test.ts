@@ -175,7 +175,10 @@ describe('inFlightOf', () => {
       slots: 3,
     })
   })
-  it('is null when the recipe was not read', () => {
+  it('is null under a ceiling when the recipe was not read', () => {
     expect(inFlightOf(rows, 'p', undefined, true)).toBeNull()
+  })
+  it('needs no recipe without a ceiling', () => {
+    expect(inFlightOf(rows, 'p', undefined, false)?.slots).toBe(1)
   })
 })

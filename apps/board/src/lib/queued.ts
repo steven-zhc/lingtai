@@ -412,7 +412,8 @@ export interface InFlight {
  * **`runtime.concurrency` is ignored without a daily ceiling** (`conduct.ts`):
  * then one slot, filled by any project's attempt. With one, `concurrency` slots
  * and this project's attempts only. `held` stays the one definition of "in
- * flight". Null when the recipe was not read — unknown is not 1.
+ * flight". Null when a ceiling is set and the recipe was not read — unknown is not 1;
+ * without one the slots are 1 whatever the recipe says.
  */
 export function inFlightOf(
   rows: readonly { project: string; issue: string; state: string }[],
@@ -420,13 +421,13 @@ export function inFlightOf(
   concurrency: number | undefined,
   ceilingSet: boolean,
 ): InFlight | null {
-  if (concurrency === undefined) return null
+  if (ceilingSet && concurrency === undefined) return null
   const running = heldBy(rows as Parameters<typeof heldBy>[0]).map((id) => {
     const at = id.lastIndexOf('#')
     return { project: id.slice(0, at), issue: id.slice(at + 1) }
   })
   return ceilingSet
-    ? { running: running.filter((r) => r.project === project), slots: concurrency }
+    ? { running: running.filter((r) => r.project === project), slots: concurrency! }
     : { running, slots: 1 }
 }
 

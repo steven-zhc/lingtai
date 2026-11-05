@@ -82,7 +82,6 @@ import { eventStore } from '@lingtai/event-store'
 import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
-import { concurrencyOf } from '@lingtai/recipe/settings'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 import { cache } from 'react'
@@ -1531,18 +1530,12 @@ export async function knowable(taskId: string): Promise<boolean> {
  */
 async function planFor(
   project: string,
-): Promise<
-  { plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'>; concurrency: number } | undefined
-> {
+): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> } | undefined> {
   const state = await loadProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
-    ? {
-        plan: filter.plan,
-        limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts },
-        concurrency: concurrencyOf(filter.recipe),
-      }
+    ? { plan: filter.plan, limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts } }
     : undefined
 }
 
@@ -1697,17 +1690,11 @@ export const readAttempts = cache(async (taskId: string) => {
   // project is the id's, from `parseTicketStream`.
   const project = parseTicketStream(taskId)?.project ?? null
   const planAndLimits =
-    (standing.state === 'running' || standing.state === 'blocked' || standing.state === 'queued') && project !== null
-      ? standing.state === 'queued'
-        ? await planFor(project)
-        : await timed('next.plan', () => planFor(project))
+    (standing.state === 'running' || standing.state === 'blocked') && project !== null
+      ? await timed('next.plan', () => planFor(project))
       : undefined
-  // A queued page reads the recipe for its slots only: `plan` and `limits`
-  // stay what they were for a state that never had them.
-  const drawsPlan = standing.state === 'running' || standing.state === 'blocked'
-  const plan = drawsPlan ? planAndLimits?.plan : undefined
-  const limits = drawsPlan ? (planAndLimits?.limits ?? null) : null
-  const concurrency = standing.state === 'queued' ? planAndLimits?.concurrency : undefined
+  const plan = planAndLimits?.plan
+  const limits = planAndLimits?.limits ?? null
 
   // The last attempt reduced again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
@@ -1731,19 +1718,19 @@ export const readAttempts = cache(async (taskId: string) => {
     return { ...r, costUsd }
   })
 
-  return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits, concurrency }
+  return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
 })
 
-/** `inFlightOf` for a queued ticket only; an unreadable ceiling is unknown, not one slot. */
-function inFlightFor(
-  state: string,
-  lane: Awaited<ReturnType<typeof readTasks>>,
-  project: string,
-  concurrency: number | undefined,
-): InFlight | null {
+/**
+ * `inFlightOf` for a queued ticket only; an unreadable ceiling is unknown, not
+ * one slot. **It reads no recipe** — that needs GitHub's installation lookup,
+ * and this is the log's half (0118 §2) — so under a daily ceiling, where the
+ * slots are the recipe's `concurrency`, it is null.
+ */
+function inFlightFor(state: string, lane: Awaited<ReturnType<typeof readTasks>>, project: string): InFlight | null {
   if (state !== 'queued') return null
   try {
-    return inFlightOf(lane, project, concurrency, machineDayCeiling() !== undefined)
+    return inFlightOf(lane, project, undefined, machineDayCeiling() !== undefined)
   } catch {
     return null
   }
@@ -1768,18 +1755,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     readConductor(),
     timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])
-  const {
-    own,
-    ticketState,
-    claims,
-    streams,
-    states,
-    spendFold,
-    standing: foldedStanding,
-    runs,
-    limits,
-    concurrency,
-  } = shared
+  const { own, ticketState, claims, streams, states, spendFold, standing: foldedStanding, runs, limits } = shared
   const spend = spendFold.rows
 
   // **The only thing that decides a 404**, and it needs no GitHub. See `knowable`.
@@ -1912,7 +1888,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
-    inFlight: inFlightFor(standing.state, lane, ticket.project, concurrency),
+    inFlight: inFlightFor(standing.state, lane, ticket.project),
     events: own.length,
   }
 }
