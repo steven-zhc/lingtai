@@ -69,7 +69,9 @@ export function misplaced(envelopes: readonly Envelope[], at: Readonly<Record<Ev
     }
     // An agent judge is dispatched by `routeProposal` at `proposed`, after `review` has closed,
     // and its `RunSpent` is the one event that visit appends (`for._tag` is `Judge`).
-    const judged = e.type === 'RunSpent' && (e.data as { for?: { _tag?: string } }).for?._tag === 'Judge'
+    const judged =
+      (e.type === 'RunSpent' || e.type === 'RunPrompted') &&
+      (e.data as { for?: { _tag?: string } }).for?._tag === 'Judge'
     const window = !started ? ['claim'] : open ? [current] : judged ? ['proposed'] : ['end']
     const declared = at[e.type as EventType]
     if (!declared.some((s) => window.includes(s))) found.push({ type: e.type, seq: e.seq, window, declared })

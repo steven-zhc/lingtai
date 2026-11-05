@@ -42,6 +42,7 @@ import type {
   Step,
   PayloadOf,
   RefusedAbout,
+  SpentFor,
   WaitId,
 } from '@lingtai/domain'
 
@@ -470,6 +471,12 @@ export interface SentBack {
 
 export interface ActionContext {
   runId: string
+  /**
+   * Records the prompt an agent action is about to hand `runtime.run` (#923),
+   * before it does. The pipeline fills it in with the `for` its `RunSpent` will
+   * carry, which the action does not know; absent where nothing records.
+   */
+  prompted?: (promptVersion: string, prompt: string) => Promise<void>
   /** The commit this verdict is about, and the only thing that makes it stale. */
   onSha: string
   /** The worktree. Actions run where the agent worked, never anywhere else. */
@@ -716,6 +723,13 @@ export interface PipelineOptions {
    */
   emit: (event: ActionEvent) => Promise<void> | void
   /**
+   * Records the prompt an agent action handed `runtime.run` (#923), tagged with
+   * the `for` that action's `RunSpent` carries. **Apart from `emit` on purpose**:
+   * `emit` is the pass's own append, whose refusal re-raises the pass, and a
+   * prompt that could not be recorded must not stop the dispatch. Must not reject.
+   */
+  recordPrompt?: (call: { for: SpentFor; promptVersion: string; prompt: string }) => Promise<void>
+  /**
    * Every approval that has waived one of this step's declared actions, by
    * name (#465, 0120 §6) — **the first action with each name, and that one
    * alone**: a second entry declared under the same name still runs, and a
@@ -822,6 +836,18 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     const started = Date.now()
     context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
 
+    // Built once: the prompt the action records and the `RunSpent` it bills are
+    // the same call's, so they carry the same `for` (#923).
+    const spentFor: SpentFor = { _tag: 'Action', step, name: action.name, round: context.round ?? 0 }
+    const recordPrompt = options.recordPrompt
+    const handed: ActionContext =
+      recordPrompt === undefined
+        ? context
+        : {
+            ...context,
+            prompted: (promptVersion, prompt) => recordPrompt({ for: spentFor, promptVersion, prompt }),
+          }
+
     let result: ActionResult
     try {
       // Named by kind, never by `action.name` (#791): a recipe author writes the
@@ -829,7 +855,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       result = await inSpan(
         `action ${action.kind}`,
         { 'lingtai.index': index },
-        () => action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context),
+        () => action.run(handed.log ? { ...handed, log: taggedTrace(handed.log, tag) } : handed),
         // 0120 §1's reading of the *domain* result, not the raw verdict: what
         // `commitResultOf` / `worktreeResultOf` make of it. `asked` — a
         // `NEEDS_INPUT` question, or a `needs-approval` from a `verdict` or
@@ -862,7 +888,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     if (result.spent !== undefined) {
       await emit({
         type: 'RunSpent',
-        data: { for: { _tag: 'Action', step, name: action.name, round: context.round ?? 0 }, ...result.spent },
+        data: { for: spentFor, ...result.spent },
       })
     }
 

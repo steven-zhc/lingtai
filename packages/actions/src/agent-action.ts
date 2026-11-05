@@ -690,10 +690,13 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       let outcome: RunOutcome | undefined
       let thrown: { error: unknown } | undefined
       try {
+        const prompt = buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock, delta)
+        // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
+        await context.prompted?.(`review@${prompt.length}`, prompt)
         outcome = await deps.runtime.run({
           runId: reviewId,
           cwd: context.cwd,
-          prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock, delta),
+          prompt,
           // The cold reviewer's own flag (`#369`): the only action that sends one.
           // Each adapter turns it into the runtime's own way of forcing the shape
           // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
@@ -1271,13 +1274,15 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // happened yet, which is the same mistake read backwards.
       const draftId = `${context.runId}:design:${spec.name}`
       context.log?.note('design', `${draftId} · drafting for #${issue.ref}`)
+      // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
+      // and it is null on every way through — which is every pass but one a
+      // judge sent back here.
+      const prompt = buildDesignPrompt(spec, issue, context.again ?? null, deps.designAsks ?? 0)
+      await context.prompted?.(`design@${prompt.length}`, prompt)
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,
-        // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
-        // and it is null on every way through — which is every pass but one a
-        // judge sent back here.
-        prompt: buildDesignPrompt(spec, issue, context.again ?? null, deps.designAsks ?? 0),
+        prompt,
         ...(spec.model === undefined ? {} : { model: spec.model }),
         settingsPath: deps.settingsPath,
         log: context.log,

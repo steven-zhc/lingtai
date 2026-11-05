@@ -99,6 +99,27 @@ function theRuns(store: ReturnType<typeof memoryStore>): Envelope[][] {
   return [...streams(store)].filter(([id]) => id.startsWith('pass-')).map(([, events]) => events)
 }
 
+/**
+ * #923: every paid call but the hooked implement run records the prompt it was
+ * handed just before its `RunSpent`, tagged with that `RunSpent`'s own `for`.
+ * `expected` names the kinds of call this pass is meant to have recorded
+ * (`<_tag>` or `<_tag>:<step>`), so a pass that dropped one fails here.
+ */
+function expectEveryPromptBesideItsSpend(events: readonly Envelope[], expected: readonly string[]): void {
+  const kinds: string[] = []
+  events.forEach((event, i) => {
+    if (event.type !== 'RunPrompted') return
+    const prompted = event.data as { prompt: string | null; for?: { _tag: string; step?: string } }
+    expect(prompted.for).toBeDefined()
+    expect(prompted.prompt?.length ?? 0).toBeGreaterThan(0)
+    const next = events[i + 1]!
+    expect(next.type).toBe('RunSpent')
+    expect((next.data as { for: unknown }).for).toEqual(prompted.for)
+    kinds.push(prompted.for!.step === undefined ? prompted.for!._tag : `${prompted.for!._tag}:${prompted.for!.step}`)
+  })
+  expect(new Set(kinds)).toEqual(new Set(expected))
+}
+
 function typesOf(events: readonly Envelope[] | null): string[] {
   return events === null ? [] : events.map((e) => e.type)
 }
@@ -274,15 +295,18 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'RunProducedDiff',
       'StepEnded',
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'StepStarted',
@@ -291,6 +315,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepEnded',
       'PassRouted',
     ])
+    expectEveryPromptBesideItsSpend(theRun(store)!, ['Action:review', 'Action:implement'])
     // **`FixApplied` is gone (#502): the fix round's own `StepEnded{step:
     // 'implement', round: 1}` is the one event now.**
     const fixApplied = theRun(store)!.find(
@@ -430,13 +455,16 @@ runtime:
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
+      'RunPrompted',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
       'RunRefsPublished',
     ])
+    expectEveryPromptBesideItsSpend(theRun(store)!, ['Action:review', 'Judge'])
     const item = await theItem(store)
     expect(theHold(item)).toBeNull()
     // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}` is
@@ -575,8 +603,10 @@ runtime:
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
+      'RunPrompted',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',
@@ -764,9 +794,11 @@ runtime:
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'PassRouted',
@@ -885,6 +917,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'PassRouted',
@@ -1168,6 +1201,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
       'PassRouted',
@@ -1314,8 +1348,10 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'StepEnded',
       'StepStarted',
+      'RunPrompted',
       'RunSpent',
       'StepEnded',
+      'RunPrompted',
       'RunSpent',
       'PassRouted',
       'RunRefsPublished',

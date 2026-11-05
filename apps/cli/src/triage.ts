@@ -17,6 +17,7 @@ import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
+import { recordPrompt } from '@lingtai/conductor/record-prompt'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   MAX_READ_ROUNDS,
@@ -866,6 +867,18 @@ async function waitTriageWithin(
               ? '\n\nInspect the checked-out files directly with your CLI tools before answering. This checkout is disposable; give one final triage answer without requesting mirror-served files.'
               : '')
 
+          // Before the call, so a crash or a kill still leaves the prompt on the log
+          // (#923). Tagged as the round's `RunSpent` is.
+          await recordPrompt(
+            deps.store,
+            stream,
+            {
+              for: { _tag: 'Triage', waitId: request.waitId },
+              promptVersion: `triage@${prompt.length}`,
+              prompt,
+            },
+            log,
+          )
           let threw = false
           const outcome = await runtime
             .run({

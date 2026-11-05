@@ -568,6 +568,34 @@ export const RunStarted = z.object({
 })
 
 /**
+ * What a paid run was for — [0110](../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
+ * §9's tagged union, one variant per place `Runtime.run` is called.
+ *
+ * `Action`'s `round` is non-negative rather than ≥ 1: implement is round 0,
+ * and only a fix round counts from 1 (0110 §10). `step`, `name` and `round`
+ * together find the `RunSpent` for one action — there is no call id — which
+ * holds only while an action's `name` is unique within its step; `actionsAt`
+ * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
+ *
+ * `Action.grant` names the person's decision that paid for the round — the
+ * `waitId` of the `WaitResolved{GrantFixRound}` it spent. It is absent on every automatic round, and
+ * optional so a payload written before it existed still parses.
+ */
+export const SpentFor = z.discriminatedUnion('_tag', [
+  z.object({
+    _tag: z.literal('Action'),
+    step: Step,
+    name: z.string(),
+    round: z.number().int().nonnegative(),
+    grant: WaitId.optional(),
+  }),
+  z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
+  z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
+  z.object({ _tag: z.literal('Discussion') }),
+])
+export type SpentFor = z.infer<typeof SpentFor>
+
+/**
  * The prompt an agent was handed. The whole of it.
  *
  * This was `{ promptVersion, bytes }`: two numbers about a document, and not
@@ -605,6 +633,15 @@ export const RunPrompted = z.object({
    * event answer "how big was it" the same way.
    */
   prompt: z.string().nullable(),
+  /**
+   * Added by #923. Which paid call this prompt was handed to: the same `for` its
+   * `RunSpent` carries. **Absent means the hooked implement run**, which is what
+   * every event stored before this field means and what the hook still writes.
+   * An unhooked call — the cold reviewer, a judge, a fix round, the design
+   * agent, triage, a discussion — records its prompt here with a `for`, and the
+   * attempt reducer leaves its own `prompt` alone for those.
+   */
+  for: SpentFor.optional(),
 })
 
 /** @summary An agent edited, wrote, or deleted a file during its run. */
@@ -863,34 +900,6 @@ export const RunFailed = z.object({
   kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
 })
-
-/**
- * What a paid run was for — [0110](../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
- * §9's tagged union, one variant per place `Runtime.run` is called.
- *
- * `Action`'s `round` is non-negative rather than ≥ 1: implement is round 0,
- * and only a fix round counts from 1 (0110 §10). `step`, `name` and `round`
- * together find the `RunSpent` for one action — there is no call id — which
- * holds only while an action's `name` is unique within its step; `actionsAt`
- * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
- *
- * `Action.grant` names the person's decision that paid for the round — the
- * `waitId` of the `WaitResolved{GrantFixRound}` it spent. It is absent on every automatic round, and
- * optional so a payload written before it existed still parses.
- */
-export const SpentFor = z.discriminatedUnion('_tag', [
-  z.object({
-    _tag: z.literal('Action'),
-    step: Step,
-    name: z.string(),
-    round: z.number().int().nonnegative(),
-    grant: WaitId.optional(),
-  }),
-  z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
-  z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
-  z.object({ _tag: z.literal('Discussion') }),
-])
-export type SpentFor = z.infer<typeof SpentFor>
 
 /**
  * One `RunSpent` per paid call (0110 §1, §2): what the call was for, what it
@@ -2353,7 +2362,8 @@ export const EVENT_AT = {
   TicketClosed: ['outside'],
   DispatchRefused: ['claim'],
   RunStarted: [...AGENT_STEPS],
-  RunPrompted: [...AGENT_STEPS],
+  // Beside `RunSpent` since #923: a prompt carries the `for` its cost does.
+  RunPrompted: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
   RunTouchedFile: [...AGENT_STEPS],
   RunContextExhausted: [...AGENT_STEPS],
   RunAwaitingInput: [...AGENT_STEPS],

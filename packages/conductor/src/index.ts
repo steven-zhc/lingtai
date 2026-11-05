@@ -1,4 +1,5 @@
 export { readState } from './snapshot-state.ts'
+export { recordPrompt } from './record-prompt.ts'
 export {
   claimTicket,
   conductorWorker,

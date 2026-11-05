@@ -13,6 +13,7 @@
     "./decide": "./src/approve.ts",
     "./resolve-wait": "./src/resolve-wait.ts",
     "./ask": "./src/ask.ts",
+    "./record-prompt": "./src/record-prompt.ts",
     "./discover": "./src/discover.ts",
     "./discuss": "./src/discuss.ts",
     "./triage": "./src/triage.ts",

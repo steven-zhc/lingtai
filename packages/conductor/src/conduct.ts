@@ -239,6 +239,7 @@ import { signedInHere } from './projects.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
 import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
+import { recordPrompt } from './record-prompt.ts'
 import { restartReason } from './restart.ts'
 import {
   type Ceilings,
@@ -2684,6 +2685,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // ticket asks for is "whose process returned a `RunOutcome`", and
         // this one did not.
         let threw = false
+        // Built once, for the prompt record and for the `RunSpent` below (#923).
+        const judgeFor: SpentFor = { _tag: 'Judge', when: on.when }
+        const judgePromptText = judgePrompt(on)
         const outcome = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
@@ -2692,42 +2696,49 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 (controller) => Effect.sync(() => controller.abort()),
               )
               return yield* Effect.promise(() =>
-                dispatched
-                  .run({
-                    // The count is in it, so two arrivals on one pass are two
-                    // sessions: a judge asked whether it still agrees with itself
-                    // is the warm-review failure `sessionIdFor` exists to avoid,
-                    // and a session id reused is the refusal `#195` cost a run.
-                    // The wait this continuation resumes is in it too, since the
-                    // count restarts in each one (#580). See `judgements`.
-                    runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
-                    // The worktree where there is one, and the conductor's own
-                    // directory where `admit` never cut one. Nothing is read from
-                    // either — the prompt says so — but a process still needs a
-                    // directory that exists to start in.
-                    cwd: worktree?.path ?? home,
-                    prompt: judgePrompt(on),
-                    ...(declared.model === undefined ? {} : { model: declared.model }),
-                    settingsPath: settings.right,
-                    log: taggedTrace(runLog, `judge:${on.when}`),
-                    traceTools: true,
-                    env: runnableEnv(env.values),
-                    limits: spendFor(declared.limits),
-                    signal: abort.signal,
-                  })
-                  .catch((err) => {
-                    threw = true
-                    return {
-                      exitCode: null,
-                      turns: 0,
-                      durationMs: 0,
-                      costUsd: null,
-                      failure: { kind: 'crash' as const, detail: (err as Error).message },
-                      text: null,
-                      sessionId: '',
-                      usage: undefined,
-                    }
-                  }),
+                recordPrompt(
+                  store,
+                  runId,
+                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgePromptText },
+                  log,
+                ).then(() =>
+                  dispatched
+                    .run({
+                      // The count is in it, so two arrivals on one pass are two
+                      // sessions: a judge asked whether it still agrees with itself
+                      // is the warm-review failure `sessionIdFor` exists to avoid,
+                      // and a session id reused is the refusal `#195` cost a run.
+                      // The wait this continuation resumes is in it too, since the
+                      // count restarts in each one (#580). See `judgements`.
+                      runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
+                      // The worktree where there is one, and the conductor's own
+                      // directory where `admit` never cut one. Nothing is read from
+                      // either — the prompt says so — but a process still needs a
+                      // directory that exists to start in.
+                      cwd: worktree?.path ?? home,
+                      prompt: judgePromptText,
+                      ...(declared.model === undefined ? {} : { model: declared.model }),
+                      settingsPath: settings.right,
+                      log: taggedTrace(runLog, `judge:${on.when}`),
+                      traceTools: true,
+                      env: runnableEnv(env.values),
+                      limits: spendFor(declared.limits),
+                      signal: abort.signal,
+                    })
+                    .catch((err) => {
+                      threw = true
+                      return {
+                        exitCode: null,
+                        turns: 0,
+                        durationMs: 0,
+                        costUsd: null,
+                        failure: { kind: 'crash' as const, detail: (err as Error).message },
+                        text: null,
+                        sessionId: '',
+                        usage: undefined,
+                      }
+                    }),
+                ),
               )
             }),
           ),
@@ -2748,7 +2759,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // can read one, and `RunSpent.turns`/`.costUsd` may never be invented
         // numbers (`events.ts`'s own doc on `RunSpent`).
         if (!threw) {
-          await appendNow(runId, [runSpentFrom(outcome, { _tag: 'Judge', when: on.when }, runtime)])
+          await appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)])
         }
         /**
          * **A quota wall is the account's, so it stops the conductor rather than
@@ -3940,6 +3951,37 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // the same reason (`#468`): an agent is running, and nothing has
         // judged what it leaves in the worktree if it is interrupted here.
         stoppedBy = 'interrupted'
+        // The brief and the `for`, built once: each is recorded before the dispatch
+        // and then handed to it / to the `RunSpent` below (#923).
+        const fixPrompt = alsoSays(
+          fixBrief({
+            refusal,
+            round,
+            of: ceiling.rounds,
+            action: from,
+            diff: underReview,
+            diffBytes: recipe.runtime.budget.diff,
+            checks: buildCommands(recipe.steps),
+            ticket: { title: brief.ticket.title, body: brief.ticket.body },
+            ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
+          }),
+          spec.prompt,
+        )
+        const fixFor: SpentFor = {
+          _tag: 'Action',
+          step: 'implement',
+          name: spec.name,
+          round,
+          // The lap a person's grant paid for is capped at one round
+          // (`runAttempt`'s `roundLimit`), so this is that round.
+          ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
+        }
+        await recordPrompt(
+          store,
+          runId,
+          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixPrompt },
+          log,
+        )
         const fixed = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
@@ -3952,20 +3994,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   .run({
                     runId: fixId,
                     cwd: tree.path,
-                    prompt: alsoSays(
-                      fixBrief({
-                        refusal,
-                        round,
-                        of: ceiling.rounds,
-                        action: from,
-                        diff: underReview,
-                        diffBytes: recipe.runtime.budget.diff,
-                        checks: buildCommands(recipe.steps),
-                        ticket: { title: brief.ticket.title, body: brief.ticket.body },
-                        ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
-                      }),
-                      spec.prompt,
-                    ),
+                    prompt: fixPrompt,
                     ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: settings.right,
                     log: taggedTrace(runLog, `fix:${round}`),
@@ -4005,21 +4034,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // dispatch writes it once the pipeline reads `fixed` back through
         // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
         // spend is never reduced into a step's own outcome (0110).
-        await appendNow(runId, [
-          runSpentFrom(
-            fixed,
-            {
-              _tag: 'Action',
-              step: 'implement',
-              name: spec.name,
-              round,
-              // The lap a person's grant paid for is capped at one round
-              // (`runAttempt`'s `roundLimit`), so this is that round.
-              ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
-            },
-            dispatched.capabilities.id,
-          ),
-        ])
+        await appendNow(runId, [runSpentFrom(fixed, fixFor, dispatched.capabilities.id)])
         runLog.note(
           'fix',
           `round ${round}: ${committed ? after.slice(0, 7) : 'no commit'}` +
@@ -4224,6 +4239,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           recipe,
           context: passContext,
           emit,
+          recordPrompt: (call) => recordPrompt(store, runId, call, log),
           actionsAt,
           bodies: passBodies,
           ceilings,
