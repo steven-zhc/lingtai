@@ -58,6 +58,23 @@ export function stepOutcomesOf(events: readonly Envelope[]): RunStepOutcome[] {
     })
 }
 
+// -------------------------------------------------- landingCommentTriedOf ----
+
+/**
+ * Whether a landing's own comment was already attempted (#896): after the
+ * ticket's latest `TicketLanded`, an `IssueUpdated` or `IssueUpdateFailed` for a
+ * `comment` carrying no `waitId`. A failed attempt counts, so a refused post is
+ * not retried.
+ */
+export function landingCommentTriedOf(events: readonly Envelope[]): boolean {
+  const landed = events.findLastIndex((e) => e.type === 'TicketLanded')
+  return events.slice(landed + 1).some((e) => {
+    if (e.type !== 'IssueUpdated' && e.type !== 'IssueUpdateFailed') return false
+    const d = e.data as { change?: string; waitId?: string }
+    return d.change === 'comment' && d.waitId === undefined
+  })
+}
+
 // --------------------------------------------------------------- routesOf ----
 
 /** One `PassRouted` reduced to 0120 §3's `RouteDecision` and the move it actually made. */

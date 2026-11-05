@@ -27,7 +27,7 @@ import { inSpan } from '@lingtai/actions/spans'
  * it structurally, and a test satisfies it with four functions and no
  * network — which is the whole point of a caller naming its own requirement.
  */
-import { parseTicketStream, ticketReducer } from '@lingtai/domain'
+import { landingCommentTriedOf, parseTicketStream, ticketReducer } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
 import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
 
@@ -490,6 +490,114 @@ export async function editEndedWaits(
 }
 
 /**
+ * Markdown with every word-initial `@` outside code made harmless: `@` then a
+ * zero-width joiner, so GitHub does not notify the person it names. Fenced
+ * blocks and inline code spans are left as written (`@types/node` in a span is
+ * not a mention).
+ */
+export function unmention(markdown: string): string {
+  const defuse = (text: string) => text.replace(/(^|[^\w`])@(?=[\w-])/g, '$1@‍')
+  let out = ''
+  let plain = ''
+  const flush = () => {
+    out += defuse(plain)
+    plain = ''
+  }
+  const lines = markdown.split('\n')
+  let fence: string | null = null
+  lines.forEach((line, i) => {
+    const nl = i < lines.length - 1 ? '\n' : ''
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(line)
+    if (fence !== null) {
+      out += line + nl
+      if (m !== null && m[1]!.startsWith(fence[0]!) && m[1]!.length >= fence.length) fence = null
+      return
+    }
+    if (m !== null) {
+      flush()
+      fence = m[1]!
+      out += line + nl
+      return
+    }
+    // Inline code: a backtick run closes at the next run of the same length.
+    let at = 0
+    while (at < line.length) {
+      const open = line.indexOf('`', at)
+      if (open === -1) break
+      let end = open
+      while (line[end] === '`') end++
+      const width = end - open
+      let search = end
+      let found = -1
+      while (search < line.length) {
+        const next = line.indexOf('`', search)
+        if (next === -1) break
+        let stop = next
+        while (line[stop] === '`') stop++
+        if (stop - next === width) {
+          found = stop
+          break
+        }
+        search = stop
+      }
+      if (found === -1) {
+        plain += line.slice(at, end)
+        at = end
+        continue
+      }
+      plain += line.slice(at, open)
+      flush()
+      out += line.slice(open, found)
+      at = found
+    }
+    plain += line.slice(at) + nl
+  })
+  flush()
+  return out
+}
+
+/** What a landing carries to its comment (#896). */
+export interface Landed {
+  mergeCommit: string
+  base: string
+  attempt: number
+  /** The landing run's last review's summary, or `null` when it gave none. */
+  summary: string | null
+}
+
+/** The comment a landing posts: where it landed, the reviewer's summary when there is one, and which attempt. */
+export function landingComment(landed: Landed): string {
+  const sha = landed.mergeCommit.slice(0, 7)
+  const head = `**Landed on \`${landed.base}\`${sha === '' ? '' : ` in \`${sha}\``}.**`
+  return [
+    head,
+    ...(landed.summary === null ? [] : [unmention(landed.summary)]),
+    `Attempt ${landed.attempt} · reviewed cold`,
+  ].join('\n\n')
+}
+
+/**
+ * **One comment per landing, never a second** (#896). Posts nothing when the
+ * ticket's stream already holds, after its latest `TicketLanded`, a `comment`
+ * attempt with no `waitId` — `IssueUpdated` or `IssueUpdateFailed` alike, so a
+ * refused post is not retried. A post made and not recorded (a restart between
+ * the two) is not searched for and not re-posted: the same accepted cost as the
+ * waiting comment. A stream that cannot be read posts nothing.
+ */
+function postLanding(store: EventStore, github: IssueChannel, ticketId: string, landed: Landed): Promise<void> {
+  return store
+    .read(ticketId)
+    .then((events) =>
+      landingCommentTriedOf(events)
+        ? undefined
+        : tellGitHub({ store, github, ticketId, change: { kind: 'comment', body: landingComment(landed) } }).then(
+            () => undefined,
+          ),
+    )
+    .catch(() => undefined) // Deliberately silent: nothing here throws.
+}
+
+/**
  * Everything one state change implies for an issue, in the order the outbox
  * used to send it.
  *
@@ -536,6 +644,8 @@ export async function tellGitHubAbout(
     editEnded?: boolean
     /** The events just appended; any `EndActionsResolved` among them is carried out. */
     appended?: readonly ToAppend[]
+    /** The landing, when this call tells of one: one comment, posted before `appended`'s close (#896). */
+    landed?: Landed
   } & SnapshotReadOptions,
 ): Promise<void> {
   const { store, github, ticketId } = options
@@ -565,6 +675,7 @@ export async function tellGitHubAbout(
     })
   }
   if (options.labels != null) await tell({ kind: 'labels', labels: options.labels })
+  if (options.landed !== undefined) await postLanding(store, github, ticketId, options.landed)
 
   for (const e of options.appended ?? []) {
     if (e.type !== 'EndActionsResolved') continue
