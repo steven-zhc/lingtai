@@ -15,22 +15,28 @@ reasoning below, *a chip is not free and the row is the unit*, still holds; it
 is applied to two rows instead of one.
 
 - **The filter** is one control: the project in view, with its recipe and
-  *add a project* in its menu. `recipe` and `+` are no longer objects of their
+  *add a repository* in its menu. `recipe` and `+` are no longer objects of their
   own.
 - **Health** is silent when well: a green dot and nothing else. When it is
   not, one sentence names the fault and the command that fixes it
-  (*daemon 17 commits behind · `pnpm lingtai restart`*). Today's spend joins it
-  only when it passes 80 % of the day's ceiling (*today $165 of $200*), because
-  that is the one reading a person then acts on.
+  (*daemon 17 commits behind · `lingtai restart`*, written bare as every
+  other health sentence writes its command). Today's spend joins it
+  only when it passes 80 % of the day's ceiling (*today $120 + ~$45 of $200*,
+  in the fail colour, never amber), because that is the one reading a person
+  then acts on. Reported and estimated stay two figures, never one sum
+  (`packages/conductor/src/day-ceiling.ts`).
 - **The headline** is the count waiting on you, in amber, linking to the
   column, and nothing when the count is zero. Amber stays the headline's alone.
 - **The counts are not on the bar**: each column carries its own, so *2 queued
   · 3 running · 65 landed* was the same numbers twice. *nothing waiting on you*
   goes for the same reason.
 - **The footer** holds the reading: today's spend against the ceiling as a
-  meter (reported, estimated and unknown on hover), how many landed, the
-  projections' currency in faint type, and the links to `/landed`, `/report`
-  and `/spend` (each carrying `?project=`). The `report` link's argument below
+  meter of two segments, reported and estimated, written as two figures
+  (*$26.15 + ~$22.03 of $200*, unknown said and never $0, the whole sentence on
+  hover), how many landed, the
+  projections' currency in faint type, and the links to `/report` and `/spend`
+  (each carrying `?project=`); on the home page the landed count links to
+  `/landed`. The `report` link's argument below
   is kept: it was always *a second way out of the reading*, and the reading is
   now the footer.
 - **⌘K** opens one search over projects, recipes, tickets and pages. It is a

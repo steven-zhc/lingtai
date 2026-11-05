@@ -404,25 +404,38 @@ which kind a wait was got inferred again in each place that needed it, from
      - **A queued ticket's panel says when it will start**: *In line · Nth of M*,
        the sentence of what it waits for, *Nothing is needed from you* unless
        something is in its way, and three facts: why it is in that place (its
-       kind's order), what is running now, and what is behind it (GitHub's
-       answer, a placeholder until it arrives). Then **what the next attempt
-       will do**, open, one row per step that will run and the limits under
-       them; this list replaces the cells once drawn under the rail, which were
-       closed and not read. A refusal from a last attempt is named once, whole.
-       The prompt is closed by default and read when opened. The moves are
-       cards (*Run it now*, *Edit the prompt*, *Close the ticket*), none marked
-       recommended, and none amber.
+       kind's order), what is running now, and what is behind it. Its place,
+       the sentence and what is behind it come from GitHub's list of runnable
+       issues, so each is a placeholder of its own shape until that answer
+       arrives (0111 §15); what is running is the log's and is drawn at once.
+       Where the log's own machine times allow it, the panel adds an estimate
+       of when it is likely to start, labelled as an estimate, and says nothing
+       when an input is missing. Then **what the next attempt will do**, open,
+       one row per step that will run (its recipe action names) and the limits
+       under them; this list replaces the cells once drawn under the rail,
+       which were closed and not read. A refusal from a last attempt is named
+       once, whole. The prompt is closed by default; reading it only when
+       opened is a later step. The moves are cards (*Run it now*, *Edit the
+       prompt*, *Close the ticket*), none marked recommended, and none amber.
      - **A running ticket's panel says what the run is doing, in words**:
-       *Running · <step> [· fix round N]*, a sentence of what this step is for
-       (for a fix round, the finding that sent it back, whole beneath it), three
-       meters (this round's time, the attempt's turns, its cost so far, each
-       against its limit where there is one), the agent's own last lines from
-       the run log, newest first and labelled as the run log's, and what comes
-       next. The raw run log is closed by default and follows live when opened;
-       it is a trace (0111 §13), and nothing on the panel is decided from it.
-       The attempt tab does not draw the rail a second time.
+       *Running · <step> [· fix round N]*; for a fix round, the finding that
+       sent it back, whole; otherwise the step's recipe action names, the same
+       rows the queued plan prints. Three meters: this agent run's time against
+       its wall limit, the turns of the attempt's finished agent runs (a turn
+       limit is per agent run, so it is said as *at most T a run*, never as a
+       total), and the attempt's cost so far (*nothing billed yet* before the
+       first bill). The agent's own last lines from the run log, newest first
+       and labelled as the run log's (*nothing said yet in this round* when the
+       round has none), and what comes next. The panel says when the attempt
+       last did anything, and that it may be stuck when an implement step or a
+       fix round has been quiet past a fixed threshold, in the refusal style,
+       never amber. The raw run log is closed by default and follows live when
+       opened; it is a trace (0111 §13), and nothing on the panel is decided
+       from it. The attempt tab does not draw the rail a second time.
      - Discussion's placeholder asks about the state the page is in, never
        about an attempt that does not exist.
+     - **An approved ticket's page** keeps today's panel until it is
+       redesigned in its own turn.
      The mocks agreed with the operator are
      `https://claude.ai/artifact/4YVX98CsnwU8MSTcKZ3pTw` (`queued.html`,
      `running.html`); [design/queued-page.html](../design/queued-page.html) is
