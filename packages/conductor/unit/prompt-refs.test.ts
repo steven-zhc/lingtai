@@ -96,6 +96,17 @@ describe('resolvePromptRefs (#927)', () => {
     })
     expect(swapped).toEqual([{ unresolved: "the value's sha256 differs from the record's" }])
 
+    const syncThrow = await resolvePromptRefs([entries[0]!, diff], {
+      ...ports,
+      store: {
+        read: () => {
+          throw new Error('sync read')
+        },
+      },
+    })
+    expect(syncThrow[0]).toEqual({ unresolved: 'sync read' })
+    expect(syncThrow[1]).toEqual({ text: DIFF })
+
     const thrown = await resolvePromptRefs([diff], {
       ...ports,
       git: async () => {

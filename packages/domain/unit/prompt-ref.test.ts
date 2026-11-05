@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { composePrompt, expandPrompt, markerOf, utf8Bytes, type PromptRef } from '../src/prompt-ref.ts'
+import { composePrompt, expandPrompt, markerOf, sha256Hex, utf8Bytes, type PromptRef } from '../src/prompt-ref.ts'
 
 const BODY: PromptRef = { _tag: 'TicketBody', stream: 'ticket-p-9', version: 2 }
 const DIFF_A: PromptRef = { _tag: 'Diff', from: '1'.repeat(40), to: '2'.repeat(40) }
@@ -68,6 +68,16 @@ describe('composePrompt and expandPrompt (#927)', () => {
       const got = expandPrompt(record, [{ text: 'bod' }, { text: 'diff-a' }, { text: 'diff-b' }])
       expect(got.unresolved).toEqual([{ index: 0, ref: BODY, why: 'the value is 3 bytes, the record says 4' }])
       expect(got.text).toContain(markerOf(BODY, 4))
+    })
+
+    it('a value of the same size and other content, by the recorded sha256', () => {
+      const one = composePrompt([{ text: 'allow', ref: BODY }])
+      const refs = one.refs.map((r) => ({ ...r, sha256: sha256Hex('allow') }))
+      expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+      const got = expandPrompt({ prompt: one.recorded, refs }, [{ text: 'deny!' }])
+      expect(got.text).toBe(one.recorded)
+      expect(got.unresolved[0]!.why).toBe("the value's sha256 differs from the record's")
+      expect(expandPrompt({ prompt: one.recorded, refs }, [{ text: 'allow' }]).text).toBe('allow')
     })
 
     it('a value that is missing', () => {

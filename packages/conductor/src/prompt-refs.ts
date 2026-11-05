@@ -69,18 +69,21 @@ function resolveOne(
   ports: PromptRefPorts,
 ): Promise<PromptValue> {
   const { ref } = entry
-  return (ref._tag === 'TicketBody' ? fetchBody(ref, ports) : fetchDiff(ref, ports)).then((got): PromptValue => {
-    if ('unresolved' in got) return got
-    const size = utf8Bytes(got.text)
-    if (size !== entry.bytes) {
-      return {
-        unresolved: `${ref._tag === 'Diff' ? 'git produced' : 'the event holds'} ${size} bytes, the record says ${entry.bytes}`,
+  // Inside a `.then`, so a port that throws before it returns a promise is caught too.
+  return Promise.resolve()
+    .then(() => (ref._tag === 'TicketBody' ? fetchBody(ref, ports) : fetchDiff(ref, ports)))
+    .then((got): PromptValue => {
+      if ('unresolved' in got) return got
+      const size = utf8Bytes(got.text)
+      if (size !== entry.bytes) {
+        return {
+          unresolved: `${ref._tag === 'Diff' ? 'git produced' : 'the event holds'} ${size} bytes, the record says ${entry.bytes}`,
+        }
       }
-    }
-    return sha256Of(got.text) === entry.sha256
-      ? { text: got.text }
-      : { unresolved: "the value's sha256 differs from the record's" }
-  })
+      return sha256Of(got.text) === entry.sha256
+        ? { text: got.text }
+        : { unresolved: "the value's sha256 differs from the record's" }
+    })
 }
 
 export function resolvePromptRefs(

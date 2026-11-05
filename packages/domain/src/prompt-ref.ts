@@ -72,6 +72,67 @@ export const DIFF_FLAGS: readonly string[] = [
 
 export const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
 
+const K = Uint32Array.from(
+  Array.from({ length: 64 }, (_, i) => {
+    let n = 0
+    for (let c = 2, found = 0; found <= i; c++) {
+      let prime = true
+      for (let d = 2; d * d <= c; d++) if (c % d === 0) prime = false
+      if (prime) {
+        n = Math.floor((c ** (1 / 3) % 1) * 2 ** 32)
+        found++
+      }
+    }
+    return n
+  }),
+)
+
+/**
+ * SHA-256 (hex) in pure code, so `expandPrompt` can refuse a value of the right
+ * size and other content by itself rather than trusting its caller to have
+ * checked (`node:crypto` is out: the board imports this package).
+ */
+export function sha256Hex(text: string): string {
+  const data = new TextEncoder().encode(text)
+  const total = Math.ceil((data.length + 9) / 64) * 64
+  const buf = new Uint8Array(total)
+  buf.set(data)
+  buf[data.length] = 0x80
+  const view = new DataView(buf.buffer)
+  view.setUint32(total - 8, Math.floor((data.length * 8) / 2 ** 32))
+  view.setUint32(total - 4, (data.length * 8) >>> 0)
+  const h = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ])
+  const w = new Uint32Array(64)
+  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n))
+  for (let off = 0; off < total; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4)
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15]!
+      const b = w[i - 2]!
+      w[i] =
+        (w[i - 16]! + (rotr(a, 7) ^ rotr(a, 18) ^ (a >>> 3)) + w[i - 7]! + (rotr(b, 17) ^ rotr(b, 19) ^ (b >>> 10))) >>>
+        0
+    }
+    let [a, b, c, d, e, f, g, hh] = h as unknown as number[]
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh! + (rotr(e!, 6) ^ rotr(e!, 11) ^ rotr(e!, 25)) + ((e! & f!) ^ (~e! & g!)) + K[i]! + w[i]!) >>> 0
+      const t2 = ((rotr(a!, 2) ^ rotr(a!, 13) ^ rotr(a!, 22)) + ((a! & b!) ^ (a! & c!) ^ (b! & c!))) >>> 0
+      hh = g
+      g = f
+      f = e
+      e = (d! + t1) >>> 0
+      d = c
+      c = b
+      b = a
+      a = (t1 + t2) >>> 0
+    }
+    ;[a, b, c, d, e, f, g, hh].forEach((v, i) => (h[i] = (h[i]! + v!) >>> 0))
+  }
+  return Array.from(h, (v) => v.toString(16).padStart(8, '0')).join('')
+}
+
 /** The text a recorded prompt holds where `ref` stood. A person can read it unexpanded. */
 export function markerOf(ref: PromptRef, bytes: number): string {
   return ref._tag === 'Diff'
@@ -143,7 +204,9 @@ export interface ExpandedPrompt {
 export function expandPrompt(
   record: {
     readonly prompt: string | null
-    readonly refs?: readonly Pick<PromptRefEntry, 'start' | 'end' | 'ref' | 'bytes'>[] | undefined
+    readonly refs?:
+      | readonly (Pick<PromptRefEntry, 'start' | 'end' | 'ref' | 'bytes'> & { readonly sha256?: string | undefined })[]
+      | undefined
   },
   values: readonly PromptValue[],
 ): ExpandedPrompt {
@@ -182,6 +245,10 @@ export function expandPrompt(
     const size = utf8Bytes(value.text)
     if (size !== entry.bytes) {
       fail(`the value is ${size} bytes, the record says ${entry.bytes}`)
+      continue
+    }
+    if (entry.sha256 !== undefined && sha256Hex(value.text) !== entry.sha256) {
+      fail("the value's sha256 differs from the record's")
       continue
     }
     text = text.slice(0, entry.start) + value.text + text.slice(entry.end)
