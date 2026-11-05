@@ -30,6 +30,42 @@ disagree, the code is right and this is corrected.
   0120 §5.
 - [The attempt](the-attempt.html) shows where each of these arrives from.
 
+## Words on the board
+
+The board and the CLI speak to a person who has not read the code. They use
+these words, each for one thing, and no other word for it. A page that needs
+another word defines it where it is used or does without it.
+
+| Word | Means | Never |
+|---|---|---|
+| **Ticket** | The issue Lingtai works on, and everything recorded about it as a whole. | *task*, *item*, *issue* when the ticket is meant |
+| **Attempt** | One try at the ticket, from being claimed to an outcome, numbered 1, 2, 3 in order. Shown as `Attempt N` even when it is the only one. | *pass*, *run*, *the run* |
+| **Step** | One of the ten points every attempt passes, `claim` to `end`. What a step concluded is its **verdict**, shown as its state (*passed*, *failed*, *asked*) or as *N findings*. | *gate*, *stage*, *phase* |
+| **Finding** | A problem a step reported, with the scenario in which it fails. | *issue*, *comment* |
+| **Event** | One entry in the log. Everything a page shows is reduced from events. | *history row*, *log line* |
+| **Run log** | What an agent printed while it ran, kept until the attempt lands. The one place *run* appears on its own. | *output*, *transcript* |
+| **Waiting on you** | The state of a ticket that has stopped for a person. | *held*, *blocked*, when a person is what it waits for |
+| **Decision** | What a person is asked to choose while a ticket is waiting on them, and the move they choose. | *judgement*, *resolution*, *wait* |
+| **Triage**, **judge** | The two agents that advise on a decision: triage on why it stopped, the judge on a reviewer's findings. They name who advised, never the decision itself. | |
+
+How these appear:
+
+- **An event is shown as a sentence first** (*Attempt 1 claimed by the
+  conductor*), with its type (`TicketClaimed`) in small type beside it and its
+  fields one click further. Names the log already holds keep their spelling
+  where they are shown as code.
+- **An id is shown short and as what it names.** An attempt is `Attempt N`; its
+  stream id (`pass-…`) and its run id appear only on hover or in an
+  event's fields. The one place ids are text is the bar's line of
+  identifiers, each once, because that is where a person copies one for
+  the CLI.
+- **A path is shown relative to the repository**, never under the worktree it
+  was written in.
+- **An internal version is not a caption.** A prompt is described by its size;
+  its version string is in its fields.
+- *Stream* is not a word the board shows: the record's tabs are its streams,
+  named Ticket and `Attempt N`.
+
 ## The log and its states
 
 Lingtai is an event log. Everything else is what the log's events add up to.

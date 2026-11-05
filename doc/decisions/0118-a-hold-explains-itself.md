@@ -357,7 +357,42 @@ which kind a wait was got inferred again in each place that needed it, from
      says what stopped and why — and the rail and its line are the whole of
      where it is. Evidence a person needs and triage does not carry, such as a
      conflict's paths, still shows.
-   - **The record** is History, Diff, Findings, Attempts and Ticket, as tabs.
+   - **The record is one tab per subject: Ticket, then each attempt, newest
+     first.** An attempt's tab is named `Attempt N` whether or not there are
+     others. The three newest attempts have tabs, and so do the attempt being
+     decided on and the one open; the rest are listed under one *earlier
+     attempts* control. The tab that opens is the attempt the
+     panel above points at (`deciding`), else the newest attempt, else Ticket.
+     Each tab is addressed by the URL, so a link opens it and the page works
+     without JavaScript.
+     - **An attempt's tab is always in the same order:** one summary line (its
+       outcome, turns, time, cost, the size of its diff and its date); its
+       steps, as the rail and one line per step with that step's verdict; where
+       this is the attempt a person is deciding on, the wait's reasoning
+       (what was done and the recommendation, whole); then **Changes**,
+       **Prompt**, **Recipe**, **Run log** and **Events**, each closed.
+     - **The Ticket tab** is the issue as GitHub has it (title, labels, the
+       whole body), then the ticket stream's own events.
+     - **Only the open tab is sent.** Another tab is read when it is opened,
+       so what the page costs grows with one attempt, not with how many there
+       were.
+     - **Nothing is shown twice.** Each attempt's facts are in its own tab
+       only, and an event is shown as its sentence, with its type and fields
+       one click further, never the raw payload beside documents drawn from it.
+   - **What only GitHub knows arrives after the page.** The page is sent once
+     the log and the register have answered. The issue's title, labels and
+     body, the prompt that would be sent, and the queued plan stream in after
+     it, each where it is drawn, and each place says *asking GitHub…* until it
+     arrives. The heading shows the title the log recorded until GitHub's
+     answer replaces it. A GitHub failure is said where the answer would have
+     been, never shown as an empty body.
+   - **A task page exists** for every ticket id that parses as
+     `ticket-<project>-<n>` on a registered project. GitHub answering that there
+     is no such issue is said on the page, in place of the state and the moves;
+     it is not a 404. A queued ticket's state line says *queued* from the log,
+     and why it is not moving and what the next attempt will do arrive with
+     GitHub's answer.
+   - **The words are [the glossary](../glossary.md)'s *Words on the board*.**
    - **A queued, running or approved ticket's page is drawn on the same
      frame**, and only what fills the panel and the moves differs. The header
      is the number, the state and its age as one line, the title, and the
