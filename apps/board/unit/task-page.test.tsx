@@ -1167,28 +1167,38 @@ describe('what a pending page cannot lose or hide', () => {
     expect(out).not.toContain('data-rank="moves"')
   })
 
+  /** The opening tags of every element still open where `marker` starts: the ancestry, attributes and all. */
+  const ancestry = (html: string, marker: string) => {
+    const at = html.indexOf(marker)
+    expect(at).toBeGreaterThan(-1)
+    const open: string[] = []
+    const VOID = new Set(['input', 'br', 'hr', 'img', 'meta', 'link', 'source', 'wbr'])
+    for (const m of html.slice(0, at).matchAll(/<(\/?)([a-zA-Z][\w-]*)[^>]*?(\/?)>/g)) {
+      const [tag, closing, name, selfClosed] = m
+      if (VOID.has(name!.toLowerCase()) || selfClosed) continue
+      if (closing) open.pop()
+      else open.push(tag)
+    }
+    return open
+  }
+
   it('has the same tree around Discussion for events=0 and events>0', () => {
-    const around = (events: number) => {
-      const out = outside(renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />))
-      const at = out.indexOf('data-rank="discussion"')
-      expect(at).toBeGreaterThan(-1)
-      // The Discussion block and everything that encloses it up to the page.
-      return out.slice(0, at).replace(/data-rank="moves"[\s\S]*$/, '') && out.slice(at, out.indexOf('</div>', at))
-    }
-    expect(around(0)).toBe(around(5))
-    const boundariesBefore = (events: number) =>
-      (
-        renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />).split(
-          'data-rank="discussion"',
-        )[0] ?? ''
-      ).match(/<x-fb>(?![\s\S]*<\/x-fb>[\s\S]*<\/x-fb>)/g)
-    // No fallback is open around Discussion in either: it is never inside one.
-    for (const events of [0, 5]) {
-      const html = renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />)
-      const head = html.slice(0, html.indexOf('data-rank="discussion"'))
-      expect((head.match(/<x-fb>/g) ?? []).length).toBe((head.match(/<\/x-fb>/g) ?? []).length)
-    }
-    expect(boundariesBefore(0)?.length ?? 0).toBe(boundariesBefore(5)?.length ?? 0)
+    const treeOf = (events: number) =>
+      ancestry(
+        renderToStaticMarkup(<TaskBody task={{ ...blocked(), events }} github={never()} />),
+        'data-rank="discussion"',
+      )
+    const untouched = treeOf(0)
+    // Every ancestor, its attributes included, is the same: a wrapper that
+    // appears for one of them remounts Discussion on the first event.
+    expect(untouched).toEqual(treeOf(5))
+    // And none of them is a boundary: Discussion is never inside a fallback.
+    expect(untouched).not.toContain('<x-fb>')
+  })
+
+  it('sees an ancestor that only an untouched ticket has', () => {
+    const html = (extra: boolean) => `<main>${extra ? '<div class="w">' : ''}<section data-rank="discussion">`
+    expect(ancestry(html(true), 'data-rank="discussion"')).not.toEqual(ancestry(html(false), 'data-rank="discussion"'))
   })
 
   it('says why the opening is missing when GitHub failed for a touched ticket', () => {
