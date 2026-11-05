@@ -515,6 +515,11 @@ export function fixBriefParts(input: {
    * the brief without the section.
    */
   advice?: GrantedAdvice
+  /**
+   * What the previous fixer answered when it declined (#935). Context under its
+   * own heading and never the criterion: the findings above are that.
+   */
+  declined?: string
 }): PromptPart[] {
   const clip = input.diff.length > input.diffBytes
   const clipped = clip
@@ -549,7 +554,7 @@ ${input.round} of ${input.of}.
 session. What you have is below, and the code in front of you.
 
 ${evidence}
-${adviceSection(input.advice)}
+${adviceSection(input.advice)}${declinedSection(input.declined)}
 ## The ticket the reviewer held this change to
 
 ${input.ticket.title}
@@ -633,6 +638,20 @@ function adviceFrom(result: ReturnType<typeof triageFactsOf>['result']): Granted
 }
 
 const at = (path: string, line: number | null) => `\`${line === null ? path : `${path}:${line}`}\``
+
+function declinedSection(declined: string | undefined): string {
+  if (declined === undefined) return ''
+  return `
+## What the previous fixer answered, which is not the review
+
+\`\`\`
+${declined}
+\`\`\`
+
+That is the previous fixer's own answer, not the reviewer's. The criterion is
+the findings (or the absence of any) above; you may disagree with this text.
+`
+}
 
 function adviceSection(advice: GrantedAdvice | undefined): string {
   if (advice === undefined) return ''

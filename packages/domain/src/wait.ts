@@ -365,8 +365,31 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
  */
 export function grantCriterion(
   reason: WaitReason,
-): { printed: { step: Step; detail: string }; findings: Finding[] } | null {
-  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) return grantCriterion(reason.standing.reason)
+  refusal?: { readonly key: string; readonly findings: readonly Finding[] } | null,
+): { printed: { step: Step; detail: string }; findings: Finding[]; declined?: string } | null {
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined)
+    return grantCriterion(reason.standing.reason, refusal)
+  // A fixer declined: the criterion is the review findings it declined (the
+  // attempt's standing review refusal), and its own answer is context only,
+  // carried apart as `declined` (#935). The offer passes no refusal, so
+  // whether a criterion exists depends on `said` alone, as it always did.
+  const declinedBrief = (said: string | null) => {
+    if (said === null) return null
+    const findings = (refusal != null && refusal.key.startsWith('review:') ? refusal.findings : []).filter(
+      (finding) => finding.failureScenario.trim().length > 0,
+    )
+    return findings.length > 0
+      ? { printed: { step: 'review' as const, detail: 'Fix the recorded review findings.' }, findings, declined: said }
+      : {
+          printed: {
+            step: 'review' as const,
+            detail:
+              'There is no recorded review finding to fix: the previous fixer declined and its answer, below, is why the pass stopped. Fix nothing you cannot tie to the ticket.',
+          },
+          findings: [] as Finding[],
+          declined: said,
+        }
+  }
   const text = (value: string | null | undefined) => (value != null && value.trim().length > 0 ? value : null)
   const checkBrief = (from: Step, action: string | null | undefined, output: string) => ({
     // `proposed`, never the step the check ran at: `fixRound` reads a printed
@@ -380,8 +403,7 @@ export function grantCriterion(
     return { printed: checkBrief(reason.step, reason.action, reason.evidence), findings }
   }
   if (reason._tag === 'FixerDisagrees') {
-    const said = text(reason.said)
-    return said === null ? null : { printed: { step: 'review', detail: said }, findings: [] }
+    return declinedBrief(text(reason.said))
   }
   if (reason._tag !== 'ProposedEscalated') return null
   const proposal = reason.proposal
@@ -402,10 +424,8 @@ export function grantCriterion(
       return text(proposal.output) === null
         ? null
         : { printed: checkBrief(proposal.from, proposal.action, proposal.output), findings: [] }
-    case 'FixerDisagrees': {
-      const said = text(proposal.said)
-      return said === null ? null : { printed: { step: 'review', detail: said }, findings: [] }
-    }
+    case 'FixerDisagrees':
+      return declinedBrief(text(proposal.said))
     case 'MergeConflict':
       // A conflict always has a criterion: merge the base, resolve, commit.
       // `fixRound` reads a printed `merge` as a conflict and the detail as its

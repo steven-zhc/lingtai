@@ -1762,3 +1762,32 @@ describe('fixBriefParts records references for the body and the diff (#927)', ()
     expect(c.recorded).toBe(c.handed)
   })
 })
+
+describe('a granted round after a decline (#935)', () => {
+  const said = 'I am declining this and changed nothing.'
+  const base = {
+    round: 1,
+    of: 2,
+    action: 'review',
+    diff: 'd',
+    diffBytes: 400_000,
+    checks: [],
+    ticket: TICKET,
+    declined: said,
+  }
+  it('lists the findings as the criterion and the answer under the fixer’s heading', () => {
+    const brief = fixBrief({ ...base, refusal: { on: 'findings', findings: [finding()] } })
+    const at = brief.indexOf('What the previous fixer answered, which is not the review')
+    expect(at).toBeGreaterThan(brief.indexOf('## The findings'))
+    expect(brief.indexOf(said)).toBeGreaterThan(at)
+    expect(brief.split(said)).toHaveLength(2)
+  })
+  it('with no findings there is no findings section', () => {
+    const brief = fixBrief({
+      ...base,
+      refusal: { on: 'output', output: 'There is no recorded review finding to fix.' },
+    })
+    expect(brief).not.toContain('## The findings')
+    expect(brief).toContain(said)
+  })
+})
