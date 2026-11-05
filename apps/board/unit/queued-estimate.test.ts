@@ -81,6 +81,10 @@ describe('estimateStart', () => {
     const s = estimateStart({ typicalMs: T, running: ago(60, 10, 20), slots: 1, position: 1, now: NOW })
     expect(s).toEqual({ ms: 30 * MIN, pastTypical: false, free: false })
   })
+  it('one slot, three running all past T: several must end, so not "when one finishes"', () => {
+    const s = estimateStart({ typicalMs: T, running: ago(60, 50, 45), slots: 1, position: 1, now: NOW })
+    expect(s.pastTypical).toBe(false)
+  })
   it('a future since counts as just started', () => {
     expect(estimateStart({ typicalMs: T, running: [NOW + 5 * MIN], slots: 1, position: 1, now: NOW }).ms).toBe(T)
   })
