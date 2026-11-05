@@ -89,14 +89,20 @@ export function RecordTabRow({
 /**
  * A pre-#885 link — `/task/<id>#attempt-7`, `#record-ticket`, `#record-diff` —
  * lands on the tab it meant. Without JavaScript it opens the default tab,
- * which is accepted. A full replace rather than a router push: this runs once,
- * on a link that was written before the tabs had URLs.
+ * which is accepted. A full replace rather than a router push: it runs on a
+ * link that was written before the tabs had URLs, on load and on a hash change.
  */
 export function LegacyFragment({ taskId }: { taskId: string }) {
   useEffect(() => {
-    const tab = tabOfFragment(window.location.hash)
-    if (tab === null) return
-    window.location.replace(tab === 'default' ? taskPath(taskId) : tabPath(taskId, tab))
+    const translate = () => {
+      const tab = tabOfFragment(window.location.hash)
+      if (tab === null) return
+      window.location.replace(tab === 'default' ? taskPath(taskId) : tabPath(taskId, tab))
+    }
+    translate()
+    // A hash-only navigation on an open page fires `hashchange` and no mount.
+    window.addEventListener('hashchange', translate)
+    return () => window.removeEventListener('hashchange', translate)
   }, [taskId])
   return null
 }

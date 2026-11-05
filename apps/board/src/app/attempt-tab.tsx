@@ -130,7 +130,14 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
         {/* Never `headSha ?? ''`: a run that never proposed anything has no
             commit to diff against (#417). The diff is read when the button is
             pressed. */}
-        {proposed ? <RunDiff project={project} baseSha={run.baseSha!} headSha={run.headSha!} /> : null}
+        {proposed ? (
+          <RunDiff
+            key={`${run.baseSha}...${run.headSha}`}
+            project={project}
+            baseSha={run.baseSha!}
+            headSha={run.headSha!}
+          />
+        ) : null}
       </details>
 
       <details className="asec aprompt">
@@ -203,10 +210,9 @@ function changesFact(run: AttemptView): string {
  * The recipe this attempt was given — the reading of it, what each of its gate
  * actions runs, and what differs from head (#190, #217).
  *
- * **On the attempt, and not a fifth row of the record.** An attempt's recipe is
- * a fact about that attempt, and attempts already nest; a row of its own would
- * be a fifth thing in a shape #152 keeps at four so it is learned once. It also
- * puts the command beside the point it ran at, which was #190's whole argument:
+ * **On the attempt's tab, in its closed Recipe section.** An attempt's recipe is
+ * a fact about that attempt, so it sits with the rest of that attempt's record
+ * and not in a place of its own. It also puts the command beside the point it ran at, which was #190's whole argument:
  * the question is not *show me the recipe*, it is *what did `proposed:build`
  * do*, asked while looking at `proposed:build`.
  *
@@ -245,9 +251,9 @@ export function RecipeGiven({ run }: { run: AttemptView }) {
         </p>
       )}
 
-      {/* The reading, in `lingtai status`'s rows and its words. Open, because
-          *what was this attempt run under* is the question the page is being
-          asked and a disclosure would be an answer nobody found. */}
+      {/* The reading, in `lingtai status`'s rows and its words. Inside the
+          Recipe section, which is closed: *what was this attempt run under*
+          is answered by opening it, and the section's caption carries the hash. */}
       <dl className="rread">
         {readRecipe(recipe.recipe).map((row) => (
           <div key={row.name}>
@@ -337,8 +343,8 @@ export function RecipeGiven({ run }: { run: AttemptView }) {
  * `2d3353b` is the day that matters, when `pnpm test:db` left the `build` gate
  * and the runs from both sides of it sat in one list saying nothing.
  *
- * Not a disclosure. It is the part that makes the block worth opening, and the
- * block is already two disclosures down.
+ * Not a disclosure of its own. It is the part that makes the Recipe section
+ * worth opening, and the section is itself closed.
  */
 function FromHeadSays({ from }: { from: FromHead }) {
   if (from.of === 'unknown') {

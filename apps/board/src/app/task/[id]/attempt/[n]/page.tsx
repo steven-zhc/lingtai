@@ -26,7 +26,11 @@ export default async function AttemptTabPage({ params }: { params: Promise<{ id:
   return (
     <>
       <TimingMeta timings={timings} />
-      {read.status === 'failed' ? <TabFailed what={`attempt ${attempt}`} /> : <AttemptTab detail={read.detail} />}
+      {read.status === 'failed' ? (
+        <TabFailed what={`attempt ${attempt}`} />
+      ) : (
+        <AttemptTab key={read.detail.run.runId} detail={read.detail} />
+      )}
     </>
   )
 }

@@ -28,7 +28,7 @@ export default async function TaskDefaultTab({ params }: { params: Promise<{ id:
       ) : read.detail.kind === 'ticket' ? (
         <TicketTab detail={read.detail.detail} />
       ) : (
-        <AttemptTab detail={read.detail.detail} />
+        <AttemptTab key={read.detail.detail.run.runId} detail={read.detail.detail} />
       )}
     </>
   )
