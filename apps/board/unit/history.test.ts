@@ -170,6 +170,7 @@ const SAMPLES = {
     },
     { for: { _tag: 'Discussion' }, runtime: 'codex', turns: 1, durationMs: 2000, usage: [], costUsd: 0 },
   ],
+  RecipeRecorded: [{ configHash: 'c'.repeat(64), recipe: { version: 2 } }],
   StepsResolved: [{ runId: RUN, configHash: 'c'.repeat(40), steps: STEPS.map((step) => ({ step, actions: [] })) }],
   EndActionsResolved: [
     { outcome: 'landed', actions: [{ name: 'comment', labels: ['done'] }] },

@@ -16,11 +16,11 @@ describe('triageAnswersText (#921)', () => {
   const undecided = { _tag: 'UndecidedQuestion', questions: [q('one'), q('two', 'b')] }
 
   it('takes the recommended answers with no picks', () => {
-    expect(triageAnswersText(undecided)).toEqual({ ok: true, text: '- one? — yes\n- two? — no' })
+    expect(triageAnswersText(undecided)).toMatchObject({ ok: true, text: '- one? — yes\n- two? — no' })
   })
 
   it('takes a pick over the recommendation', () => {
-    expect(triageAnswersText(undecided, { 1: 'a' })).toEqual({ ok: true, text: '- one? — yes\n- two? — yes' })
+    expect(triageAnswersText(undecided, { 1: 'a' })).toMatchObject({ ok: true, text: '- one? — yes\n- two? — yes' })
   })
 
   it('refuses an answer id or an index triage does not have', () => {
@@ -38,10 +38,23 @@ describe('triageAnswersText (#921)', () => {
       ],
     } as never
     expect(triageQuestionsOf(cause)).toHaveLength(2)
-    expect(triageAnswersText(cause)).toEqual({ ok: true, text: '- `d.ts:7` — x? — yes\n- `e.ts` — y? — yes' })
+    expect(triageAnswersText(cause)).toMatchObject({ ok: true, text: '- `d.ts:7` — x? — yes\n- `e.ts` — y? — yes' })
   })
 
   it('is empty for a cause with no questions', () => {
-    expect(triageAnswersText({ _tag: 'FixableLines' })).toEqual({ ok: true, text: '' })
+    expect(triageAnswersText({ _tag: 'FixableLines' })).toMatchObject({ ok: true, text: '' })
+  })
+})
+
+describe('triageAnswersText picks (#924)', () => {
+  it('records the id each line was built from, defaults included', () => {
+    expect(
+      triageAnswersText({ _tag: 'UndecidedQuestion', questions: [q('one'), q('two', 'b')] }, { 0: 'b' }),
+    ).toMatchObject({
+      picks: [
+        { index: 0, answerId: 'b' },
+        { index: 1, answerId: 'b' },
+      ],
+    })
   })
 })

@@ -355,6 +355,17 @@ export const WaitResolved = z.object({
   by: z.string(),
   resolution: Resolution,
   note: z.string(),
+  /**
+   * The copy of what a resolution wrote into the body (#924): the answer id
+   * chosen for each of triage's questions, and the section exactly as handed to
+   * the write. Absent when nothing was written; never empty.
+   */
+  answers: z
+    .object({
+      picks: z.array(z.object({ index: z.number().int().nonnegative(), answerId: z.string() })),
+      section: z.string(),
+    })
+    .optional(),
 })
 
 /**
@@ -1040,15 +1051,39 @@ export const StepsResolved = z.object({
   /** Every step, in order, with the ordered action names resolved for it. */
   steps: z.array(z.object({ step: Step, actions: z.array(z.string()) })).length(10),
   /**
-   * `canonical(recipe)` as an object: parsed, `undefined` dropped, keys sorted —
-   * exactly what `hashRecipe` hashes, so `hashRecipe(recipe) === configHash` and
-   * a reader can verify it without trusting the writer.
-   *
-   * **Absent, not empty, on a v1 or v2 event**: nothing recorded it, and today's
-   * recipe read back onto it would be the log claiming a configuration nobody
-   * ran. Names environment variables and never their values (0021, 0047 §4).
+   * **Absent on every event written since #930**, and optional for the ones
+   * written before it: those carry `canonical(recipe)` inline, and the log is
+   * append-only. The body is now on `rcp-<configHash>` as one `RecipeRecorded`.
+   * Absent, not empty — nothing recorded it here, and today's recipe read back
+   * onto it would be the log claiming a configuration nobody ran.
    */
   recipe: z.record(z.string(), z.unknown()).optional(),
+})
+
+/**
+ * The canonical recipe a `configHash` is the hash of, recorded once.
+ *
+ * The first and only event of `rcp-<configHash>`, appended at version 0 just
+ * before the `StepsResolved` that names the hash: a second writer for the same
+ * hash loses at the append, and that loss means *already recorded*. One stream
+ * per hash for the whole installation, because the hash is the content.
+ * 0100 §14.
+ *
+ * **A record, never a source**, as `StepsResolved.recipe` was: nothing reads it
+ * back to decide anything, and `conductor/unit/recorded-recipe.test.ts` holds
+ * that line.
+ *
+ * @summary The conductor recorded a recipe, once, under the hash that names it.
+ */
+export const RecipeRecorded = z.object({
+  configHash: z.string(),
+  /**
+   * `canonical(recipe)` as an object: parsed, `undefined` dropped, keys sorted —
+   * exactly what `hashRecipe` hashes, so `hashRecipe(recipe) === configHash` and
+   * a reader can verify it without trusting the writer. Names environment
+   * variables and never their values (0021, 0047 §4).
+   */
+  recipe: z.record(z.string(), z.unknown()),
 })
 
 /**
@@ -2313,6 +2348,7 @@ export const EVENTS = {
   RunFailed,
   RunSpent,
   StepsResolved,
+  RecipeRecorded,
   EndActionsResolved,
   StepStarted,
   StepEnded,
@@ -2407,6 +2443,7 @@ export const EVENT_AT = {
   RunFailed: [...AGENT_STEPS, 'end'],
   RunSpent: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
   StepsResolved: ['claim', 'admit', 'implement'],
+  RecipeRecorded: ['claim', 'admit', 'implement'],
   EndActionsResolved: ['end'],
   StepStarted: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
   StepEnded: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'end'],

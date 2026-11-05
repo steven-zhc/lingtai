@@ -113,6 +113,7 @@ export async function editBodyAndRequeueHolding(
       ticketId,
       waitId: options.waitId,
       resolution: { _tag: 'EditBodyAndRequeue' },
+      writtenSection: options.text,
       by: options.by,
       // A note the person typed wins; otherwise it is composed from the text
       // just written, so it cannot go stale against an edited answer (0118 §6).
