@@ -776,7 +776,9 @@ export function Standing({
     </Gh>
   )
 
-  const discussion = (
+  // Not in the untouched ticket's fallback: that block is replaced whole when the
+  // answer arrives, and a question typed into it would be discarded with it.
+  const discussion = pending ? null : (
     <Discussion
       taskId={taskId}
       attempt={standing.attempt}

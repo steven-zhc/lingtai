@@ -1109,16 +1109,23 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
 describe('what a pending page cannot lose or hide', () => {
   const never = () => new Promise<TaskAnswer>(() => {})
 
-  it('keeps every log-backed control outside the pending boundary, enabled', () => {
-    const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
+  it('keeps every log-backed control outside the pending boundary, enabled, for a touched ticket', () => {
+    const pending = renderToStaticMarkup(<TaskBody task={{ ...blocked(), events: 5 }} github={never()} />)
     expect(pending).not.toMatch(/\binert\b/)
     // No fieldset disables anything: the Discussion box, the Close and Answer
     // editors and the triage choices are the log's and do not wait for GitHub.
     expect(pending).not.toMatch(/<fieldset[^>]*disabled/)
     expect(pending).toMatch(/<textarea(?![^>]*disabled)/)
+    expect(pending).toContain('Close')
     expect(pending).toContain('asking GitHub…')
     // The ticket link is a link; only the opening waits.
     expect(pending).toContain('/task/ticket-lingtai-147/ticket')
+  })
+
+  it('draws no editable draft inside the untouched ticket’s fallback, which the answer replaces', () => {
+    const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
+    expect(pending).toContain('asking GitHub…')
+    expect(pending).not.toContain('<textarea')
   })
 
   it('says why the opening is missing when GitHub failed for a touched ticket', () => {
