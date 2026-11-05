@@ -124,6 +124,8 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
   issue?: number
   waitId: WaitId
   resolution: Resolution
+  /** The exact text `editBodyAndRequeue` handed `writeSection`; read only for `EditBodyAndRequeue`. */
+  writtenSection?: string
   /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
   by: string
   /** Why. Required only where `Approve` is waiving a refusal still standing on the sha — see `refusingOn`. */
@@ -367,6 +369,9 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   // wrote its own text.
   let version = item.version
   let written = false
+  let recorded: PayloadOf<'WaitResolved'>['answers']
+  if (resolution._tag === 'EditBodyAndRequeue' && options.writtenSection !== undefined)
+    recorded = { picks: [], section: options.writtenSection }
   if (resolution._tag === 'GrantFixRound' || resolution._tag === 'Requeue') {
     const triage = triageFactsFromState(item, options.waitId).result
     const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
@@ -395,6 +400,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
       })
       if (!result.written) return { ok: false, ticketId, reason: 'write-failed', detail: result.detail }
       written = true
+      recorded = { picks: answers.picks, section: answers.text }
       // The write recorded its own events on this stream, so the version read
       // above is behind: read again, and check the wait is still the one open.
       const fresh = await readState(store, ticketReducer, ticketId, 'all', {
@@ -426,6 +432,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
           by: options.by,
           resolution,
           note,
+          ...(recorded ? { answers: recorded } : {}),
         }),
       },
       ...releaseOf(options, resolution, block.runId),

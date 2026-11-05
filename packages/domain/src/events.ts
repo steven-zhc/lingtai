@@ -354,6 +354,17 @@ export const WaitResolved = z.object({
   by: z.string(),
   resolution: Resolution,
   note: z.string(),
+  /**
+   * The copy of what a resolution wrote into the body (#924): the answer id
+   * chosen for each of triage's questions, and the section exactly as handed to
+   * the write. Absent when nothing was written; never empty.
+   */
+  answers: z
+    .object({
+      picks: z.array(z.object({ index: z.number().int().nonnegative(), answerId: z.string() })),
+      section: z.string(),
+    })
+    .optional(),
 })
 
 /**
