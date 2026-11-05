@@ -2375,7 +2375,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // than acted on wrongly when the request has gone stale.
           claim =
             options.continuing !== undefined && continuation !== null
-              ? await continueTicket(ticketId, runId, { store, ...ticketSnapshots })
+              ? await continueTicket(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
               : // The claim carries what the task is, because it is now the
                 // only place a title enters the log at all.
                 await claimTicket(ticketId, {
@@ -2384,6 +2384,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ...ticketSnapshots,
                   title: runnable.title,
                   kind: runnable.kind,
+                  body: issue.body,
                   children: options.client,
                 })
         } catch (error) {

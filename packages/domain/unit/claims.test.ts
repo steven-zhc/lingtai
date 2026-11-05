@@ -121,3 +121,16 @@ describe('the attempts a ticket holds (#829)', () => {
     expect(ghost.since).toEqual(events[1]!.at)
   })
 })
+
+describe('reduceTicket and the body a claim carries (#926)', () => {
+  it('ignores it: the state is the same with and without', () => {
+    const a = makeStream('t')
+    const b = makeStream('t')
+    const without = reduceTicket([a('TicketClaimed', claim('r1')), a('TicketContinued', { runId: 'r1', worker: 'w' })])
+    const withBody = reduceTicket([
+      b('TicketClaimed', { ...claim('r1'), body: 'the body' }),
+      b('TicketContinued', { runId: 'r1', worker: 'w', body: 'again' }),
+    ])
+    expect({ ...withBody, lastSeq: 0n }).toEqual({ ...without, lastSeq: 0n })
+  })
+})
