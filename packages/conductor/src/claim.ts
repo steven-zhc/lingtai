@@ -48,6 +48,8 @@ export interface ClaimOptions extends SnapshotReadOptions {
    */
   title?: string | null
   kind?: string | null
+  /** The ticket body the pass fetched; recorded on the claim as given, left off when absent. */
+  body?: string
   store?: EventStore
   /**
    * Where a split's children are asked about (#604). Omitted, a recorded split
@@ -167,6 +169,7 @@ export async function claimTicket(ticketId: string, options: ClaimOptions): Prom
           worker,
           title: options.title ?? null,
           kind: options.kind ?? null,
+          ...(options.body !== undefined ? { body: options.body } : {}),
         }),
       },
     ])
@@ -209,7 +212,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
 export async function continueTicket(
   ticketId: string,
   runId: string,
-  options: { worker?: string; store?: EventStore } & SnapshotReadOptions = {},
+  options: { worker?: string; body?: string; store?: EventStore } & SnapshotReadOptions = {},
 ): Promise<ContinueResult> {
   const store = options.store ?? eventStore
   const worker = options.worker ?? conductorWorker()
@@ -228,7 +231,11 @@ export async function continueTicket(
       {
         type: 'TicketContinued',
         actor: 'conductor',
-        data: parsePayload('TicketContinued', { runId, worker }),
+        data: parsePayload('TicketContinued', {
+          runId,
+          worker,
+          ...(options.body !== undefined ? { body: options.body } : {}),
+        }),
       },
     ])
     return { ok: true, claim: { ticketId, runId, worker, version: written!.version } }

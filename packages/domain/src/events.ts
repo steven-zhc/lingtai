@@ -218,6 +218,13 @@ export const TicketClaimed = z.object({
    */
   title: z.string().nullable(),
   kind: z.string().nullable(),
+  /**
+   * The ticket body the pass fetched and built its prompts from
+   * ([0109](../../../doc/decisions/0109-the-core-takes-a-ticket.md) §1).
+   * Absent means the event was written before this field existed — not that
+   * the body was empty, which is `''`.
+   */
+  body: z.string().optional(),
 })
 
 /**
@@ -235,6 +242,13 @@ export const TicketClaimed = z.object({
 export const TicketContinued = z.object({
   runId: z.string(),
   worker: z.string(),
+  /**
+   * The ticket body the pass fetched again for the continuation and built its prompts from
+   * ([0109](../../../doc/decisions/0109-the-core-takes-a-ticket.md) §1).
+   * Absent means the event was written before this field existed — not that
+   * the body was empty, which is `''`.
+   */
+  body: z.string().optional(),
 })
 
 /**
