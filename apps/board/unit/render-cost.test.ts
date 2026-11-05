@@ -1,4 +1,5 @@
 import { DEPENDENCIES_UNREAD } from '@lingtai/conductor/discover'
+import type { ProjectFilter } from '@lingtai/conductor/filter'
 import type { ProjectState } from '@lingtai/domain'
 /**
  * What a render costs, as a property rather than as a stopwatch.
@@ -19,7 +20,15 @@ import type { ProjectState } from '@lingtai/domain'
  */
 import { describe, expect, it } from 'vitest'
 
-import { queuedCards, type ProjectQueue } from '../src/lib/board.ts'
+import {
+  forgetKindColors,
+  githubQueue,
+  lastKindColor,
+  queueFilters,
+  queuedSegment,
+  type AskableFilter,
+  type ProjectQueue,
+} from '../src/lib/board.ts'
 
 /** Enough of a project for a reducer that only ever reads its name. */
 const project = (name: string): ProjectState => ({ project: name, owner: 'steven-zhc', base: 'main' }) as ProjectState
@@ -77,39 +86,44 @@ function resolvedFilter(name: string, kinds: string[]) {
     limits: { rounds: 2, restarts: 0, turns: 150, wall: '1h', wallMs: 3_600_000 },
     plan: new Map(),
     recipe: { source: {} },
-  } as unknown as Extract<ProjectQueue, { state: 'listed' }>['filter']
+  } as unknown as AskableFilter
 }
 
-function listed(name: string, kinds: string[], refs: string[]): ProjectQueue {
+function listed(filter: AskableFilter, refs: string[], kindColors: Record<string, string> = {}): ProjectQueue {
+  const name = filter.project
   return {
     state: 'listed',
-    filter: resolvedFilter(name, kinds),
-    offered: { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null },
+    filter,
+    offered: { runnable: [], skipped: [], kindColors, dependenciesUnread: null },
     runnable: refs.map((ref) => ({
       taskId: `ticket-${name}-${ref}`,
       issue: ref,
       title: `issue ${ref}`,
-      kind: kinds[0]!,
+      kind: filter.kinds[0]!,
     })),
   }
 }
 
-describe('the projects on a board', () => {
-  it('are all asked at once, not one after the one before', async () => {
+const filterOf = (kinds: Record<string, string[]>) => async (p: ProjectState) =>
+  resolvedFilter(p.project!, kinds[p.project!] ?? ['bug']) as ProjectFilter
+
+describe('the recipes on a board', () => {
+  it('are all read at once, not one after the one before', async () => {
     const step = barrier(2)
-    const result = await queuedCards([project('lingtai'), project('nextloom-ai-admin')], async (p) => {
+    const result = await queueFilters([project('lingtai'), project('nextloom-ai-admin')], async (p) => {
       await step.wait()
-      return listed(p.project!, ['bug'], ['1'])
+      return resolvedFilter(p.project!, ['bug']) as ProjectFilter
     })
 
-    expect(result.cards.map((c) => c.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
+    expect(result.askable.map((f) => f.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
   })
 
   it('still reduce in the order the projects were given, whichever answers first', async () => {
     const slow = new Map([['lingtai', 20]])
-    const result = await queuedCards([project('lingtai'), project('nextloom-ai-admin')], async (p) => {
+    const kinds = { lingtai: ['bug'], 'nextloom-ai-admin': ['feature', 'bug'] }
+    const result = await queueFilters([project('lingtai'), project('nextloom-ai-admin')], async (p) => {
       await new Promise((r) => setTimeout(r, slow.get(p.project!) ?? 0))
-      return listed(p.project!, p.project === 'lingtai' ? ['bug'] : ['feature', 'bug'], ['7'])
+      return filterOf(kinds)(p)
     })
 
     // First mention wins, and the first mention is the first *project* — the
@@ -117,6 +131,39 @@ describe('the projects on a board', () => {
     // likely to take away.
     expect(result.kindOrder).toEqual(['bug', 'feature'])
     expect(result.limits.map((l) => l.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
+  })
+
+  it('name a recipe that will not read, before GitHub is asked', async () => {
+    const result = await queueFilters([project('lingtai')], async (p) => ({
+      project: p.project!,
+      ok: false,
+      problem: 'recipe.yml: missing',
+    }))
+
+    expect(result.problems).toEqual([{ project: 'lingtai', reason: 'recipe.yml: missing' }])
+    expect(result.askable).toEqual([])
+  })
+})
+
+describe('what GitHub offers', () => {
+  const lingtai = resolvedFilter('lingtai', ['bug'])
+  const other = resolvedFilter('nextloom-ai-admin', ['bug'])
+
+  it('is asked of all the projects at once', async () => {
+    const step = barrier(2)
+    const result = await githubQueue([lingtai, other], new Set(), async (f) => {
+      await step.wait()
+      return listed(f, ['1'])
+    })
+
+    expect(result.cards.map((c) => c.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
+    expect(result).toMatchObject({ asked: 2, answered: 2 })
+  })
+
+  it('does not add a task the log already has a card for a second time', async () => {
+    const result = await githubQueue([lingtai], new Set(['ticket-lingtai-1']), async (f) => listed(f, ['1', '2']))
+
+    expect(result.cards.map((c) => c.taskId)).toEqual(['ticket-lingtai-2'])
   })
 
   /**
@@ -127,22 +174,24 @@ describe('the projects on a board', () => {
    * are notes, in `lingtai status`'s own words.
    */
   it('say what they passed over, and which issues were not checked for a blocker', async () => {
-    const result = await queuedCards([project('lingtai')], async (p) => {
-      const answer = listed(p.project!, ['bug'], ['121'])
-      return {
-        ...answer,
-        offered: {
-          runnable: [],
-          skipped: [
-            { ref: 123, reason: 'blocked-by' },
-            { ref: 9, reason: 'excluded-label' },
-            { ref: 10, reason: 'excluded-label' },
-          ],
-          kindColors: {},
-          dependenciesUnread: DEPENDENCIES_UNREAD,
-        },
-      } as ProjectQueue
-    })
+    const result = await githubQueue(
+      [lingtai],
+      new Set(),
+      async (f) =>
+        ({
+          ...listed(f, ['121']),
+          offered: {
+            runnable: [],
+            skipped: [
+              { ref: 123, reason: 'blocked-by' },
+              { ref: 9, reason: 'excluded-label' },
+              { ref: 10, reason: 'excluded-label' },
+            ],
+            kindColors: {},
+            dependenciesUnread: DEPENDENCIES_UNREAD,
+          },
+        }) as ProjectQueue,
+    )
 
     expect(result.problems).toEqual([])
     expect(result.notes).toEqual([
@@ -151,16 +200,76 @@ describe('the projects on a board', () => {
     ])
   })
 
-  it('name a project GitHub would not answer for, and keep its filter', async () => {
-    const result = await queuedCards([project('lingtai')], async (p) => ({
-      state: 'unanswered',
-      filter: resolvedFilter(p.project!, ['bug']),
-      problem: 'API rate limit exceeded',
-    }))
+  it('name a project GitHub would not answer for, and keep the others', async () => {
+    const result = await githubQueue([lingtai, other], new Set(), async (f) =>
+      f.project === 'lingtai'
+        ? { state: 'unanswered', filter: f, problem: 'API rate limit exceeded' }
+        : listed(f, ['5']),
+    )
 
     expect(result.problems).toEqual([{ project: 'lingtai', reason: 'API rate limit exceeded' }])
-    // The recipe resolved, so the column still knows what this project
-    // prioritises even though its queue could not be listed.
-    expect(result.kindOrder).toEqual(['bug'])
+    expect(result.cards.map((c) => c.taskId)).toEqual(['ticket-nextloom-ai-admin-5'])
+    expect(result).toMatchObject({ asked: 2, answered: 1 })
+  })
+
+  it('never rejects, even when the asking throws', async () => {
+    const result = await githubQueue([lingtai], new Set(), async () => {
+      throw new Error('boom')
+    })
+
+    expect(result.problems).toEqual([{ project: 'lingtai', reason: 'boom' }])
+    expect(result).toMatchObject({ asked: 1, answered: 0 })
+  })
+
+  it('is not waited for by the recipes: a queue that never answers leaves them resolved', async () => {
+    const pending = githubQueue([lingtai], new Set(), () => new Promise<ProjectQueue>(() => {}))
+    const recipes = await queueFilters([project('lingtai')], async () => lingtai as ProjectFilter)
+
+    expect(recipes.askable.map((f) => f.project)).toEqual(['lingtai'])
+    expect(await Promise.race([pending, Promise.resolve('still waiting')])).toBe('still waiting')
+  })
+})
+
+describe('the colour a log card draws', () => {
+  const lingtai = resolvedFilter('lingtai', ['bug'])
+
+  it('is none before any queue answer, and the last one seen after', async () => {
+    forgetKindColors()
+    expect(lastKindColor('lingtai', 'bug')).toBeNull()
+
+    await githubQueue([lingtai], new Set(), async (f) => listed(f, ['1'], { bug: 'd73a4a' }))
+
+    expect(lastKindColor('lingtai', 'bug')).toBe('d73a4a')
+    // By project: another repository's `bug` is not this one's colour.
+    expect(lastKindColor('nextloom-ai-admin', 'bug')).toBeNull()
+    forgetKindColors()
+  })
+})
+
+describe('the count the bar prints for Queued', () => {
+  const github = (over: Partial<Parameters<typeof queuedSegment>[1]>) => ({
+    cards: [],
+    problems: [],
+    notes: [],
+    asked: 1,
+    answered: 1,
+    ...over,
+  })
+
+  it('is the log and GitHub together', () => {
+    expect(queuedSegment(2, github({ cards: [{}, {}, {}] as never }))).toBe('5 queued')
+  })
+
+  it('is nothing at all for an empty queue', () => {
+    expect(queuedSegment(0, github({}))).toBeNull()
+  })
+
+  it('says it could not be counted, never 0, when every project failed', () => {
+    expect(queuedSegment(0, github({ answered: 0 }))).toBe('queued uncounted')
+    expect(queuedSegment(3, github({ answered: 0 }))).toBe('3+ queued, GitHub uncounted')
+  })
+
+  it('is the log alone when nobody was asked', () => {
+    expect(queuedSegment(2, github({ asked: 0, answered: 0 }))).toBe('2 queued')
   })
 })

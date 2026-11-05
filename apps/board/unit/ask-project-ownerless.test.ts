@@ -8,8 +8,8 @@
  * Queued column: `runnableNow`'s order and skip reasons, over a seeded
  * `memoryTickets()`.
  *
- * `filterFor` and `select` are `askProject`'s own seam, used here rather than
- * a pre-built `ProjectFilter`, so the real `projectFilter` runs end to end —
+ * `select` is `askProject`'s own seam, and the filter comes from the real
+ * `projectFilter`, so it runs end to end —
  * its default path reads `~/.lingtai/<project>/recipe.yml` and `task_view`,
  * both outside the system under 0060 §1 and both unreachable under
  * `HOME=/nonexistent`.
@@ -46,8 +46,9 @@ describe('askProject, for a project with no owner', () => {
     await tickets.createIssue({ title: 'a bug', body: '', labels: ['bug'] })
     await tickets.createIssue({ title: 'held', body: '', labels: ['bug', 'agent:hold'] })
 
-    const queue = await askProject(state, {
-      filterFor: (s) => projectFilter(s, clientFor, recipeFor, async () => tickets),
+    const filter = await projectFilter(state, clientFor, recipeFor, async () => tickets)
+    if (!filter.ok) throw new Error(filter.problem)
+    const queue = await askProject(filter, {
       // `selectRunnable`'s own sort is tested elsewhere (`queued.test.ts`); here
       // it just passes `offered` through, so the assertion below is about
       // `runnableNow`'s order and not a second one.

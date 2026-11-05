@@ -1,3 +1,4 @@
+import type { ProjectFilter } from '@lingtai/conductor/filter'
 import { emptyProject, type ProjectState } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
@@ -20,7 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Pending } from '../src/app/pending.tsx'
-import { type ProjectQueue, queuedCards, splitRegister } from '../src/lib/board.ts'
+import { queueFilters, splitRegister } from '../src/lib/board.ts'
 
 /** A project the wizard recorded and `Recheck` has not registered. */
 const ARRIVING: ProjectState = {
@@ -50,23 +51,20 @@ describe('the register, split', () => {
   })
 
   /**
-   * The one that matters. `askProject` never throws — it answers `unreadable`,
-   * and `queuedCards` turns that into a `problem`, which is a red line in the
+   * The one that matters. `projectFilter` answers `unreadable`, and
+   * `queueFilters` turns that into a `problem`, which is a red line in the
    * Queued column naming the project. A pending repository put through here
    * would redden the board every render until somebody pressed Recheck.
    */
   it('asks GitHub about the live project and nothing at all about the pending one', async () => {
     const asked: string[] = []
-    const ask = async (state: ProjectState): Promise<ProjectQueue> => {
+    const filterFor = async (state: ProjectState): Promise<ProjectFilter> => {
       asked.push(state.project as string)
-      return {
-        state: 'unreadable',
-        filter: { project: state.project as string, ok: false, problem: 'asked' },
-      }
+      return { project: state.project as string, ok: false, problem: 'asked' }
     }
 
     const { registered, pending } = splitRegister([LIVE, ARRIVING])
-    const queued = await queuedCards(registered, ask)
+    const queued = await queueFilters(registered, filterFor)
 
     expect(asked).toEqual(['esctest-live'])
     expect(queued.problems.map((p) => p.project)).toEqual(['esctest-live'])

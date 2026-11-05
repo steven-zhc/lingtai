@@ -367,7 +367,7 @@ export interface Board {
    * Where each project's tickets live, for the reference `issueUrl` builds.
    *
    * Here rather than read in the page, for the reason `queueOrder` is here:
-   * `queuedCards` already resolved every recipe this loop needs, and reading
+   * `queueFilters` already resolved every recipe this loop needs, and reading
    * one twice is how a render gets expensive.
    */
   ticketSources: Map<string, TicketSource>
@@ -391,6 +391,13 @@ export interface Board {
    * be, because it has no recipe to be asked under.
    */
   pending: PendingProject[]
+  /**
+   * The projects whose recipe resolved: who GitHub is asked about, by
+   * `githubQueue`, once the page has gone out (#884). `loadBoard` asks nobody.
+   */
+  askable: AskableFilter[]
+  /** The log's task ids, which GitHub's cards must not duplicate. */
+  known: Set<string>
   /**
    * This board's own `spend` — the same rows every card's bill came from, so
    * `/spend`'s `ledger` reads the one this render already paid for rather than
@@ -744,43 +751,37 @@ export function toCard(
  * contribute — its kinds, its backoff, its gates. Losing those on a rate limit
  * would take the Queued column's ordering and a running card's timeout with it.
  */
+export type AskableFilter = Extract<ProjectFilter, { ok: true }>
+
 export type ProjectQueue =
-  | { state: 'unreadable'; filter: Extract<ProjectFilter, { ok: false }> }
-  | { state: 'unanswered'; filter: Extract<ProjectFilter, { ok: true }>; problem: string }
+  | { state: 'unanswered'; filter: AskableFilter; problem: string }
   | {
       state: 'listed'
-      filter: Extract<ProjectFilter, { ok: true }>
+      filter: AskableFilter
       offered: Awaited<ReturnType<typeof runnableNow>>
       runnable: Awaited<ReturnType<typeof selectRunnable>>
     }
 
 /**
- * Everything one project has to be asked, and nothing about any other.
+ * What GitHub says about one project whose recipe has already resolved.
  *
- * Its own function so the loop below can be a `Promise.all` rather than a
- * queue of `await`s. Never throws: a failure is one of the three answers, which
- * is what lets the caller fan out without a rejection taking the whole board
+ * Its own function so the loader below can be a `Promise.all` rather than a
+ * queue of `await`s. Never throws: a failure is one of the two answers, which
+ * is what lets the caller fan out without a rejection taking the whole column
  * down with the one project whose token expired.
  *
- * `filterFor` and `select` default to `projectFilter` and `selectRunnable` —
- * the conductor's own reads, a local recipe file and `task_view` — and exist
- * only so a unit test can reach this without either (#354): `projectFilter`'s
- * default path reads `~/.lingtai/<project>/recipe.yml`, and `selectRunnable`
- * reads `task_view` through `readTasks`, both outside the system under 0060
- * §1 and both unreachable under `HOME=/nonexistent`. `queuedCards`'s own `ask`
- * seam, below, is the precedent.
+ * Takes the *filter*, not the project: resolving the recipe is `queueFilters`'
+ * business and happens once per render, before the page is sent. This half is
+ * what the page waits for after it (#884).
+ *
+ * `select` defaults to `selectRunnable` — which reads `task_view` — and exists
+ * only so a unit test can reach this without a database (#354).
  */
 export async function askProject(
-  state: ProjectState,
-  options: {
-    filterFor?: (state: ProjectState) => Promise<ProjectFilter>
-    select?: typeof selectRunnable
-  } = {},
+  filter: AskableFilter,
+  options: { select?: typeof selectRunnable } = {},
 ): Promise<ProjectQueue> {
-  const filterFor = options.filterFor ?? projectFilter
   const select = options.select ?? selectRunnable
-  const filter = await filterFor(state)
-  if (!filter.ok) return { state: 'unreadable', filter }
   try {
     const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
     const runnable = await select({
@@ -798,93 +799,64 @@ export async function askProject(
 }
 
 /**
- * The Queued column: what GitHub is offering that the log has not taken, and
- * what could not be asked.
+ * What the log's cards need from each recipe, and the projects whose recipes
+ * resolved — the half of the Queued column that does not wait for GitHub.
  *
- * Still per project — a repository whose token expired costs you its queue and
- * not the whole board — but no longer *silent*. This used to end in an empty
- * catch whose comment named one failure ("a project whose GitHub is
- * unreachable") and swallowed four: that, a recipe that will not parse, a
- * recipe that is missing, and an App that is misconfigured. All of them
- * rendered as an empty Queued column, which is also what a repository with
- * nothing to do renders as (#76). The operator's report was "I still don't know
- * why the issues weren't picked up."
+ * Still per project — a repository whose recipe will not read costs you its
+ * queue and not the whole board — but no longer *silent*. This used to end in
+ * an empty catch that swallowed four failures and rendered them as an empty
+ * Queued column, which is also what a repository with nothing to do renders as
+ * (#76). `projectFilter` is the shared answer: resolved, or refused with the
+ * reason, in the same wording `lingtai daemon` and `lingtai status` use.
  *
- * `projectFilter` is the shared answer: resolved, or refused with the reason,
- * in the same wording `lingtai daemon` and `lingtai status` use.
- *
- * Takes the projects rather than loading them. It used to load them and apply
- * the filter itself, which put the only unfiltered list of projects behind the
- * filter — and left the bar naming what it was showing instead of what it could
+ * Takes the projects rather than loading them, so the bar names what it could
  * show (#86).
  *
- * `ask` is a seam so a test can prove the projects overlap. Nothing else passes
- * it.
+ * **It asks GitHub nothing** (#884). The recipe is a local file; what GitHub
+ * offers is `githubQueue`'s, started after the page has gone out. The filters
+ * that resolved are handed on as `askable`, so a recipe is still read once per
+ * project per render — reading one twice is how a render gets expensive.
+ *
+ * `filterFor` is a seam so a test can prove the projects overlap.
  */
-export async function queuedCards(
+export async function queueFilters(
   projects: readonly ProjectState[],
-  ask: (state: ProjectState) => Promise<ProjectQueue> = askProject,
+  filterFor: (state: ProjectState) => Promise<ProjectFilter> = projectFilter,
 ): Promise<{
-  cards: BoardCard[]
+  /** The projects whose recipe resolved, in project order: who GitHub is asked about. */
+  askable: AskableFilter[]
+  /** A recipe that would not resolve, known before GitHub is asked. */
   problems: QueueProblem[]
-  /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
-  notes: QueueProblem[]
   limits: AttemptLimitsView[]
   /** `source.backoff` per project, for the held cards `loadBoard` reduces from the log. */
   backoffMs: Map<string, number>
-  /**
-   * The recipe's gates per project, for the running cards `loadBoard` reduces.
-   * Gathered here for the reason `backoffMs` is: this loop already resolved
-   * every recipe, and reading one twice is how a render gets expensive.
-   */
+  /** The recipe's gates per project, for the running cards `loadBoard` reduces. */
   plans: Map<string, StepPlan>
   /** Where each project's tickets live, for the reference `loadBoard` carries onto `Board`. */
   ticketSources: Map<string, TicketSource>
-  /**
-   * What each project's repository calls each kind's colour, keyed by project
-   * and then by kind. Off the issues `runnableNow` has already read, for the
-   * reason above: it is a fact that arrived with an answer this loop needed
-   * anyway, so carrying it costs no request.
-   */
-  kindColors: Map<string, Record<string, string>>
   /** The kinds each project prioritises, in order, for the Queued grouping. */
   kindOrder: string[]
 }> {
-  const cards: BoardCard[] = []
+  const askable: AskableFilter[] = []
   const problems: QueueProblem[] = []
-  const notes: QueueProblem[] = []
-  // Gathered here rather than by a second pass over the projects: this loop
-  // already resolves every recipe, and asking GitHub twice for a fact that
-  // arrived with the first answer is how a render gets expensive.
   const limits: AttemptLimitsView[] = []
   const backoffMs = new Map<string, number>()
   const plans = new Map<string, StepPlan>()
   const ticketSources = new Map<string, TicketSource>()
-  const kindColors = new Map<string, Record<string, string>>()
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
   const kindOrder: string[] = []
 
-  // **All of them at once.** Nothing one project is asked depends on another's
-  // answer, and in series the board waited for the sum: two projects meant two
-  // GitHub round trips end to end — 597ms + 762ms where 762 would have done —
-  // and a third repository would have added a third (#112). The cost was linear
-  // in the number of repositories, which is the number that grows.
-  //
-  // The fan-out is `laneProgress`'s, two hundred lines down and written by
-  // the same hand: this loop simply did not get it.
-  const asked = await Promise.all(projects.map((p) => ask(p)))
+  // **All of them at once** (#112): nothing one project is asked depends on
+  // another's answer, and the reducer below stays in project order.
+  const filters = await Promise.all(projects.map((p) => filterFor(p)))
 
-  // The reducer stays in project order, and the ordering rules stay exactly what
-  // they were — `kindOrder`'s first mention, the bar's project order, which
-  // problem is listed first. Concurrency is about when the questions are asked,
-  // never about what the answers mean.
-  for (const answer of asked) {
-    if (answer.state === 'unreadable') {
-      problems.push({ project: answer.filter.project, reason: answer.filter.problem })
+  for (const filter of filters) {
+    if (!filter.ok) {
+      problems.push({ project: filter.project, reason: filter.problem })
       continue
     }
-    const filter = answer.filter
+    askable.push(filter)
     limits.push({
       project: filter.project,
       rounds: filter.limits.rounds,
@@ -895,15 +867,92 @@ export async function queuedCards(
     plans.set(filter.project, filter.plan)
     ticketSources.set(filter.project, ticketSourceOf(filter.recipe))
     for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
+  }
+  return { askable, problems, limits, backoffMs, plans, ticketSources, kindOrder }
+}
+
+/**
+ * What each project's repository last said each of its kinds' colour is, keyed
+ * by project and then by kind (#884).
+ *
+ * The log's queued cards are drawn without waiting for GitHub, and a dot's
+ * colour is the repository's, learned from the issues `runnableNow` reads. So
+ * the colours are the previous render's: the one GitHub answer this board keeps
+ * across renders. Per process — a restart, or HMR, forgets them, and the cards
+ * draw the neutral dot until the first queue answer.
+ */
+const lastKindColors = new Map<string, Record<string, string>>()
+
+/** Forgets every colour, so a test can start from *no answer seen*. */
+export function forgetKindColors(): void {
+  lastKindColors.clear()
+}
+
+/** The last colour a project's repository gave a kind, or null if none has been seen. */
+export function lastKindColor(project: string, kind: string): string | null {
+  return lastKindColors.get(project)?.[kind] ?? null
+}
+
+export interface GithubQueue {
+  /** What GitHub offers that the log has no card for. */
+  cards: BoardCard[]
+  /** A project whose GitHub would not answer. */
+  problems: QueueProblem[]
+  /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
+  notes: QueueProblem[]
+  /** How many projects were asked, and how many of them answered. */
+  asked: number
+  answered: number
+}
+
+/**
+ * The Queued column's other half: what GitHub is offering that the log has not
+ * taken, for the projects whose recipe resolved.
+ *
+ * **Never rejects.** `askProject` turns a throw into `unanswered`, and an `ask`
+ * that throws anyway is turned into the same: the page awaits this from two
+ * boundaries and has no error boundary, so a rejection would take it down.
+ *
+ * `known` is the log's task ids. A task released back to the queue has a row
+ * *and* is offered by GitHub, so it would otherwise appear twice. The row wins:
+ * it carries the attempts.
+ *
+ * `ask` is a seam so a test can prove the projects overlap. Nothing else
+ * passes it.
+ */
+export async function githubQueue(
+  askable: readonly AskableFilter[],
+  known: ReadonlySet<string>,
+  ask: (filter: AskableFilter) => Promise<ProjectQueue> = askProject,
+): Promise<GithubQueue> {
+  const cards: BoardCard[] = []
+  const problems: QueueProblem[] = []
+  const notes: QueueProblem[] = []
+  let answered = 0
+
+  // All of them at once, for the reason `queueFilters` gives (#112).
+  const asked = await Promise.all(
+    askable.map((filter) =>
+      ask(filter).catch((err: unknown): ProjectQueue => ({
+        state: 'unanswered',
+        filter,
+        problem: err instanceof Error ? err.message : String(err),
+      })),
+    ),
+  )
+
+  for (const answer of asked) {
+    const filter = answer.filter
     if (answer.state === 'unanswered') {
       problems.push({ project: filter.project, reason: answer.problem })
       continue
     }
+    answered += 1
     const offered = answer.offered
     // What the repository says each of its kinds looks like. A project whose
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
-    kindColors.set(filter.project, offered.kindColors)
+    lastKindColors.set(filter.project, offered.kindColors)
     // The same two sentences `lingtai status` prints, from the same functions,
     // so the column and the terminal cannot count a held ticket differently.
     const passed = passedOver(offered.skipped)
@@ -912,6 +961,7 @@ export async function queuedCards(
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
     }
     for (const r of answer.runnable) {
+      if (known.has(r.taskId)) continue
       cards.push({
         taskId: r.taskId,
         project: filter.project,
@@ -968,7 +1018,23 @@ export async function queuedCards(
       })
     }
   }
-  return { cards, problems, notes, limits, backoffMs, plans, ticketSources, kindColors, kindOrder }
+  return { cards, problems, notes, asked: askable.length, answered }
+}
+
+/**
+ * The Queued count the bar prints, once GitHub has answered — or null when
+ * there is nothing to say (#884).
+ *
+ * Never `0` for a queue that could not be asked: when every project that was
+ * asked failed, the count is not known, and a log-only number would be passed
+ * off as the total. `logQueued` is what the log holds in Queued.
+ */
+export function queuedSegment(logQueued: number, github: GithubQueue): string | null {
+  if (github.asked > 0 && github.answered === 0) {
+    return logQueued > 0 ? `${logQueued}+ queued, GitHub uncounted` : 'queued uncounted'
+  }
+  const count = logQueued + github.cards.length
+  return count > 0 ? `${count} queued` : null
 }
 
 /**
@@ -1139,7 +1205,9 @@ export async function loadBoard(project?: string): Promise<Board> {
   // read: the board holds no projector, and the conductor lock's holder
   // follows `spend` (0100 §13; #786, reversing #498's reducer).
   const [queued, spend, daemon, triageDeclared] = await Promise.all([
-    timed('board.queue', () => queuedCards(registered.filter((p) => project === undefined || p.project === project))),
+    timed('board.recipes', () =>
+      queueFilters(registered.filter((p) => project === undefined || p.project === project)),
+    ),
     // Not measured, so not claimed: a skipped read has no lag to report, and
     // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
     // this is a board with nothing to bill rather than a lag read that
@@ -1192,7 +1260,9 @@ export async function loadBoard(project?: string): Promise<Board> {
       // By kind and by project, because a label's colour is the repository's:
       // two projects can both have a `bug` and colour it differently, and the
       // cards say which repository they are from for the same reason.
-      queued.kindColors.get(t.project)?.[t.kind] ?? null,
+      // The last colours a queue answer gave (#884): this render does not
+      // wait for GitHub, so a colour is the previous render's, or none.
+      lastKindColor(t.project, t.kind),
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
@@ -1202,12 +1272,14 @@ export async function loadBoard(project?: string): Promise<Board> {
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so
-  // it would otherwise appear twice. The row wins: it carries the attempts.
+  // it would otherwise appear twice. The row wins: it carries the attempts —
+  // `githubQueue` applies that with this set (#884).
   const known = new Set(fromLog.map((c) => c.taskId))
-  const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))]
 
   return {
-    columns: toColumns(cards, queued.problems, queued.notes),
+    columns: toColumns(fromLog, queued.problems),
+    askable: queued.askable,
+    known,
     limits: queued.limits,
     queueOrder: queued.kindOrder,
     ticketSources: queued.ticketSources,
@@ -1228,12 +1300,12 @@ export async function loadBoard(project?: string): Promise<Board> {
  *
  * **The whole of #163's "must not break", in one place.** A pending project has
  * no registration, so `currentRecipe` has nothing to answer for it — and
- * `askProject` turns a throw into `unreadable`, which the Queued column renders
+ * `projectFilter` answers a throw as `unreadable`, which the Queued column renders
  * as *the queue could not be listed*. One repository waiting for `Recheck`
  * (#182) would therefore have put a
  * red line on the board, which is the failure the design names: **one card that
  * is not ready must not redden the page.** So the pending half never reaches
- * `queuedCards` and is asked nothing at all.
+ * `queueFilters` and is asked nothing at all.
  *
  * Exported and pure for that reason: the property worth pinning is *who gets
  * asked*, and a test can hold it without a database or a GitHub.
@@ -1465,7 +1537,7 @@ export interface QueueGroup {
  * Within a group, by issue number — `selectRunnable`'s own tiebreak, so the
  * card at the top of a group is the one that would actually be claimed first.
  */
-export function groupQueue(cards: readonly BoardCard[], order: readonly string[]): QueueGroup[] {
+export function groupQueue(cards: readonly BoardCard[], order: readonly string[], markNext = true): QueueGroup[] {
   const byKind = new Map<string, BoardCard[]>()
   for (const card of cards) {
     const group = byKind.get(card.kind)
@@ -1483,7 +1555,7 @@ export function groupQueue(cards: readonly BoardCard[], order: readonly string[]
   }))
 
   const takenNext = groups.find((g) => g.cards.some((c) => c.runnableAt === null))
-  if (takenNext) takenNext.next = true
+  if (takenNext && markNext) takenNext.next = true
   return groups
 }
 
@@ -1589,7 +1661,7 @@ export function ledger(
  * it* are different questions and the second one had no link at all (#81).
  *
  * `tickets` is `null` where the board does not know where a project's tickets
- * live — a project that is `'unreadable'` (`queuedCards`) included, which is
+ * live — a project that is `'unreadable'` (`queueFilters`) included, which is
  * exactly the project likeliest to be a `db` one with no GitHub App. A dead
  * link is worse than none, so an unknown source gets no link rather than the
  * `'github'` one it would have gotten before this field existed.
