@@ -269,25 +269,21 @@ export function Rail({
   /**
    * What the next pass would do at each step, reduced into the rail (#781).
    *
-   * **`undefined` and `null` are different answers.** Undefined is the card and
-   * every page that is not queued: nothing is drawn that was not drawn before.
-   * Null is a queued page whose recipe could not be read, and the sentence says
-   * so rather than leaving the rail looking complete (#76).
+   * Draws only the segments of a never-run ticket; the list of what the next
+   * attempt does is the queued panel's (0118 §2). **`undefined` and `null`**
+   * both draw nothing here — null is a queued page whose recipe could not be
+   * read, and the panel says so (#76).
    */
   plan?: PlanView | null
 }) {
-  if (progress === null && plan === undefined) return null
+  if (progress === null && !plan) return null
   const drawn = progress !== null ? progress.steps : plannedSegments(plan ?? null)
   const columns = plan ? columnsOf(drawn, plan) : null
   const style = columns === null ? undefined : ({ '--steps': columns.length } as CSSProperties)
-  const unreadable = plan === null ? <p className="empty">{UNREADABLE}</p> : null
-  const planned = plan ? <PlanRow plan={plan} columns={columns ?? []} /> : null
   if (progress === null) {
     return (
       <div className="seq" style={style}>
         <Segs steps={drawn} at={null} labels />
-        {unreadable}
-        {planned}
       </div>
     )
   }
@@ -372,13 +368,11 @@ export function Rail({
           {held !== null ? <span className="shold"> — {held}</span> : null}
         </p>
       )}
-      {unreadable}
-      {planned}
     </div>
   )
 }
 
-const UNREADABLE = 'The recipe could not be read, so what an attempt would do here is not known.'
+export const UNREADABLE = 'The recipe could not be read, so what an attempt would do here is not known.'
 
 /**
  * The plan's steps drawn as a rail nothing has run on: every one `pending`, or
@@ -432,35 +426,18 @@ export function limits(plan: PlanView): string {
   ].join(' · ')
 }
 
-/**
- * A closed disclosure under the rail: one cell per column, on the segments'
- * grid (`--steps`), each the step's actions or a muted `skipped` — stated, not
- * omitted, for 0016 §4's reason. A rail step the plan lacks keeps an empty cell.
- */
-function PlanRow({ plan, columns }: { plan: PlanView; columns: readonly string[] }) {
+/** One step's line in a plan list: its recipe action names, or nothing for a skipped step. */
+export function planStepLine(_step: string, actions: readonly string[], skipped: boolean): string {
+  return skipped ? '' : actions.join(', ')
+}
+
+/** One `<li>` of a plan list; a skipped step is not drawn (the list names it in its *nothing configured* line). */
+export function PlanStep({ step, actions, skipped }: { step: string; actions: readonly string[]; skipped: boolean }) {
+  if (skipped) return null
   return (
-    <details className="srailplan">
-      <summary>What the next attempt does at each step</summary>
-      <ol className="splanrow">
-        {columns.map((name) => {
-          const p = plan.steps.find((q) => q.step === name)
-          return (
-            <li key={name} className="splancell">
-              {p === undefined ? null : (
-                <>
-                  <span className="mono name">{p.step}</span>
-                  {p.skipped ? (
-                    <span className="skipped">skipped</span>
-                  ) : (
-                    <span className="actions">{p.actions.join(', ')}</span>
-                  )}
-                </>
-              )}
-            </li>
-          )
-        })}
-      </ol>
-      <p className="splanlimits">{limits(plan)}</p>
-    </details>
+    <li>
+      <b>{step}</b>
+      <span>{planStepLine(step, actions, skipped)}</span>
+    </li>
   )
 }

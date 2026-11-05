@@ -781,6 +781,7 @@ export function RunNow({
   issue,
   holding,
   primary = true,
+  go = false,
 }: {
   project: string
   /** The issue number as GitHub numbers it, which is what `RunRequested` carries. */
@@ -799,6 +800,8 @@ export function RunNow({
    * it — so it carries it by default.
    */
   primary?: boolean
+  /** Teal rather than amber, for a move that is not what a person is being waited on for. */
+  go?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -811,7 +814,7 @@ export function RunNow({
     <div className="decide">
       <div className="btnrow">
         <button
-          className={primary ? 'btn pri' : 'btn'}
+          className={primary ? 'btn pri' : go ? 'btn go' : 'btn'}
           disabled={pending}
           onClick={() => {
             setPending(true)
