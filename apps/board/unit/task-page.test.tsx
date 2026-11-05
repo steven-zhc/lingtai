@@ -253,6 +253,22 @@ function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: En
   return task(own, [])
 }
 
+describe('the page class', () => {
+  it('a queued page is framed as queued, and an approved one has neither queued nor running', () => {
+    const base = running()
+    const mainTag = (html: string) => html.match(/<main class="[^"]*"/)?.[0]
+
+    expect(mainTag(page({ ...base, standing: { ...base.standing, state: 'queued' } }))).toBe(
+      '<main class="detail detail--framed detail--queued"',
+    )
+
+    const html = page({ ...base, standing: { ...base.standing, state: 'approved' } })
+    expect(html).not.toContain('detail--queued')
+    expect(html).not.toContain('detail--running')
+    expect(mainTag(html)).toBe('<main class="detail detail--framed"')
+  })
+})
+
 describe('after the move', () => {
   it('names the move by its title, and prints a tag the table does not hold as it is', () => {
     const t = moved('Close')

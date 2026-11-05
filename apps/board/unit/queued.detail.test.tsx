@@ -23,7 +23,17 @@ import { describe, expect, it } from 'vitest'
 
 import { Rail } from '../src/app/rail.tsx'
 import { Coords, Standing, detailClass } from '../src/app/standing.tsx'
-import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
+import {
+  backoffOf,
+  holding,
+  place,
+  planOf,
+  queuedChip,
+  queuedSentence,
+  whyLabel,
+  type PlanView,
+  type QueuedView,
+} from '../src/lib/queued.ts'
 import type { InFlight } from '../src/lib/queued.ts'
 import type { StandingView, TaskAnswer } from '../src/lib/task.ts'
 
@@ -509,6 +519,32 @@ describe('the queued panel', () => {
   it('does not claim a slot when the recipe could not be read', () => {
     const html = panel(QUEUED, undefined, null)
     expect(html).toContain('the slot count is not known')
+  })
+
+  it('at 1st of 2 draws the band, the chip, the sentence, the all-clear, then the facts, in that order', () => {
+    const view = { ...QUEUED, position: 1, inLine: 2 }
+    const html = panel(view)
+    const after = (needle: string, from: number) => {
+      const i = html.indexOf(needle, from)
+      expect(i, `${needle} after ${from}`).toBeGreaterThan(-1)
+      return i
+    }
+
+    const band = after('triage-band', 0)
+    const inLine = after('In line', band)
+    const chip = after(`cause-chip--queue">${queuedChip(view, FLIGHT)}</p>`, inLine)
+    expect(queuedChip(view, FLIGHT)).toBe('1st of 2')
+    const summary = after('triage-summary"', chip)
+    const sentence = after(queuedSentence(view, FLIGHT), summary)
+    const clear = after('Nothing is needed from you', sentence)
+    const first = after('class="fact"', clear)
+    const label = after(`<span class="fk">${whyLabel(1)}</span>`, first)
+    const second = after('class="fact"', label + 1)
+    const third = after('class="fact"', second + 1)
+    expect(third).toBeGreaterThan(second)
+    expect(html.match(/class="fact"/g)).toHaveLength(3)
+    // The first fact's label is the one for place 1, and is not the other one's.
+    expect(html.slice(first, second)).not.toContain(whyLabel(4))
   })
 
   it('names the queued and running frames, and leaves approved alone', () => {
