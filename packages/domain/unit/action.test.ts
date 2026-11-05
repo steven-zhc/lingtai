@@ -73,6 +73,11 @@ describe('cleared', () => {
     expect(cleared(action)).toBe(false)
   })
 
+  it('verdict/DiffTooLarge: not cleared', () => {
+    const action = parseAction({ ...base, yields: 'verdict', result: { _tag: 'DiffTooLarge', size: 5, limit: 4 } })
+    expect(cleared(action)).toBe(false)
+  })
+
   it('verdict/Interrupted: not cleared', () => {
     const action = parseAction({ ...base, yields: 'verdict', result: { _tag: 'Interrupted', cause: 'crash' } })
     expect(cleared(action)).toBe(false)
