@@ -172,7 +172,7 @@ export async function continueFixingCard(input: {
 }): Promise<ActionResult> {
   try {
     if (!input.waitId || !input.onSha)
-      return { ok: false, detail: 'stale: reload this wait before granting a fix round' }
+      return { ok: false, detail: 'stale: reload this page before granting a fix round' }
     const state = await loadProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
     const client =

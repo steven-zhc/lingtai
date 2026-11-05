@@ -684,7 +684,7 @@ describe('the block, rendered', () => {
       />,
     )
 
-    expect(html).toContain('waiting for you')
+    expect(html).toContain('waiting on you')
     expect(html).not.toMatch(/>blocked</)
     expect(html).toContain('onyou')
     // The coordinate is the bar's now (#152), and still says which attempt.
@@ -719,7 +719,7 @@ describe('the block, rendered', () => {
       />,
     )
 
-    expect(html).toContain('the wait on this card could not be read')
+    expect(html).toContain('the decision on this card could not be read')
     const moves = /<div class="btnrow smoves"[^>]*>(.*?)<\/div>/.exec(html)?.[1] ?? ''
     expect(moves).not.toContain('<button')
   })
@@ -1170,7 +1170,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('waiting for you')
+    expect(html).toContain('waiting on you')
     expect(html).not.toContain('Start over from base')
   })
 
@@ -1462,7 +1462,7 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
   expect(html).toContain(
     'Triage advised Start over from base. With 2 hunks to resolve, a fix round is drawn first instead',
   )
-  expect(html).not.toContain('which this wait does not offer')
+  expect(html).not.toContain('which this decision does not offer')
   expect(html).not.toContain('recommended answer goes to the fixer')
   const divergent = {
     _tag: 'Divergent' as const,
@@ -1642,11 +1642,11 @@ it('draws triage’s advice as the recommendation where the judge handed the wai
 })
 
 describe('the moves the column ends in', () => {
-  it('offers Send, numbered the way the box above it is, and Leave blocked beside it', () => {
+  it('offers Send, numbered the way the box above it is, and Leave it waiting beside it', () => {
     const html = render(HELD, OUTGOING)
 
     expect(html).toContain('Send Attempt 3')
-    expect(html).toContain('Leave blocked')
+    expect(html).toContain('Leave it waiting')
     // The box says `Attempt 3 only` and the button says `Send Attempt 3`: one
     // number, said twice, because that is how long the edit lasts (0032 §5).
     expect(html).toContain('Attempt 3 only')
@@ -1666,7 +1666,7 @@ describe('the moves the column ends in', () => {
 
     expect(html).toContain('Send Attempt 3')
     expect(html).toContain('Approve')
-    expect(html).toContain('Leave blocked')
+    expect(html).toContain('Leave it waiting')
     expect(html).not.toContain('Reject')
     expect(html).not.toContain('Waive')
   })
@@ -1825,7 +1825,7 @@ describe('the moves the column ends in', () => {
     const html = render({ ...HELD, state: 'queued', onYou: false, question: null }, OUTGOING)
 
     expect(html).not.toContain('Send Attempt')
-    expect(html).not.toContain('Leave blocked')
+    expect(html).not.toContain('Leave it waiting')
   })
 
   /**
@@ -1842,7 +1842,7 @@ describe('the moves the column ends in', () => {
 
     expect(html).toContain('Schedule it')
     expect(html).not.toContain('Send Attempt')
-    expect(html).not.toContain('Leave blocked')
+    expect(html).not.toContain('Leave it waiting')
     expect(html).not.toContain('Approve')
   })
 
@@ -1876,7 +1876,7 @@ describe('the moves the column ends in', () => {
 
     expect(html).not.toContain('class="triage-band')
     expect(html).not.toContain('sreading--advised')
-    expect(html).toContain('No triage analysis for this wait')
+    expect(html).toContain('No triage analysis for this decision')
     expect(html.indexOf('class="spair" data-rank="discussion"')).toBeLessThan(html.indexOf('class="sresolutiongrid"'))
   })
 })
@@ -1974,7 +1974,7 @@ describe('what the refusal means for the decision', () => {
  * document that comes second inside it. Measured on `ticket-lingtai-159`: the
  * GitHub link rendered at y=1103 of an 1126px page, and the title's `innerText`
  * came back empty because a closed `<details>` renders none of it. The page
- * opened on *Approve / Send Attempt 3 / Leave blocked / Close* and named the
+ * opened on *Approve / Send Attempt 3 / Leave it waiting / Close* and named the
  * thing it was asking about `ticket-lingtai-159`.
  *
  * So these assert the subject is in the standing block, not that it exists

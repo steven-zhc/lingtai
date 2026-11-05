@@ -6,7 +6,7 @@ export const NO_RESTART_EFFECT = 'This neither spends nor refunds an automatic r
 export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
   Approve: {
     title: 'Approve and continue',
-    consequence: 'Continue this attempt from its recorded commit. Any refusal at this hold is waived.',
+    consequence: 'Continue this attempt from its recorded commit. Every refusal that stopped it is waived.',
   },
   GrantFixRound: {
     title: 'Continue fixing current work',
@@ -29,10 +29,15 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
   },
   Split: {
     title: 'Split into smaller tickets',
-    consequence: 'Open the approved child tickets in the order given, then end this wait.',
+    consequence: 'Open the approved child tickets in the order given; the ticket then stops waiting on you.',
   },
   Close: {
     title: 'Close the ticket',
     consequence: 'End this ticket without another attempt. A reason is required.',
   },
+}
+
+/** A move's title; an unknown tag (an event older than the type) prints as it is. */
+export function moveTitle(tag: string): string {
+  return Object.hasOwn(RESOLUTION_COPY, tag) ? RESOLUTION_COPY[tag as Resolution['_tag']].title : tag
 }

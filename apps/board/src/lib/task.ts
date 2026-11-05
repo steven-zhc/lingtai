@@ -400,7 +400,7 @@ export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'close
 const STATE_WORD: Record<StandingState, string> = {
   queued: 'queued',
   running: 'running',
-  blocked: 'waiting for you',
+  blocked: 'waiting on you',
   landed: 'landed',
   closed: 'closed',
   approved: 'approved',
@@ -853,7 +853,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             reason: continued
               ? 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
-                ? 'The wait was resolved; a new attempt starts from base.'
+                ? 'A new attempt starts from base.'
                 : released
                   ? `${m.then?.reason ?? ''} A new attempt starts from base.`
                   : (m.then?.reason ?? ''),
