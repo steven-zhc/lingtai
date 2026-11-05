@@ -382,8 +382,8 @@ which kind a wait was got inferred again in each place that needed it, from
    - **What only GitHub knows arrives after the page.** The page is sent once
      the log and the register have answered. The issue's title, labels and
      body, the prompt that would be sent, and the queued plan stream in after
-     it, each where it is drawn, and each place says *asking GitHub…* until it
-     arrives. The heading shows the title the log recorded until GitHub's
+     it, each where it is drawn, and each place shows a placeholder of its own
+     shape labelled *asking GitHub…* until it arrives (0111 §15). The heading shows the title the log recorded until GitHub's
      answer replaces it. A GitHub failure is said where the answer would have
      been, never shown as an empty body.
    - **A task page exists** for every ticket id that parses as
