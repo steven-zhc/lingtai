@@ -1814,16 +1814,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-/* The version, on screen rather than only in a payload. Two runs sharing one
-   `promptVersion` that did not share a prompt is the log lying about what
-   produced a result (0032 §5), so the field a reader would check is shown. */
-.outver {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
 /* Raw, and bounded. What is here is what will be sent, byte for byte — no
    markdown, no collapsed whitespace — and it scrolls when open. Blocked pages
    leave it open (Send approves this document); queued and approved fold it. */

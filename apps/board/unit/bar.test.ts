@@ -136,7 +136,7 @@ describe('the health dot', () => {
    */
   it('lets a dead stream beat everything under it', () => {
     expect(bearing('trouble', board(), level).tone).toBe('warn')
-    expect(bearing('trouble', board(), level).why).toContain('event stream is down')
+    expect(bearing('trouble', board(), level).why).toContain('live connection to the log is down')
   })
 
   /** Not yet an answer is not a green one. */

@@ -97,7 +97,7 @@ export function TicketTab({ detail, answer }: { detail: TicketTabDetail; answer:
           {(a) => <Ticket ticket={withAnswer(base, a)} />}
         </Deferred>
       ) : (
-        <p className="empty">This id is not a work item, so there is no ticket behind it.</p>
+        <p className="empty">This id is not a ticket.</p>
       )}
       <details className="asec">
         <summary>

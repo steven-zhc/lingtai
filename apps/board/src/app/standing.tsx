@@ -1188,7 +1188,9 @@ export function Standing({
                               />
                             ) : null}
                             {visible && tag === 'Approve' && standing.awaitingSha === null ? (
-                              <p className="refusal">nothing to approve — this run recorded no sha to continue from</p>
+                              <p className="refusal">
+                                nothing to approve — this attempt recorded no commit to continue from
+                              </p>
                             ) : null}
                             {visible && tag === 'AnswerQuestion' && waitId !== null ? (
                               <Requeue
@@ -1424,7 +1426,7 @@ export function Coords({
           scroll={false}
           title={standing.runId ?? undefined}
         >
-          {standing.state === 'queued' ? 'after' : 'from'} attempt {standing.attempt} of {standing.attempts} ↓
+          {standing.state === 'queued' ? 'after' : 'from'} Attempt {standing.attempt} of {standing.attempts} ↓
         </Link>
       ) : null}
     </span>
@@ -1510,7 +1512,7 @@ function Reason({
         <span className="sline">{deciding.line}</span>
         {deciding.attempt !== attempt ? (
           <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
-            in attempt {deciding.attempt} ↓
+            in Attempt {deciding.attempt} ↓
           </Link>
         ) : null}
       </p>

@@ -466,8 +466,8 @@ describe('the evidence', () => {
    * the named run found nothing, and the flattened `question` became the only
    * evidence on screen.
    *
-   * The design's own example reads exactly this way: *from attempt 2 of 2* at the
-   * top, *in attempt 1 ↓* on the evidence.
+   * The design's own example reads exactly this way: *from Attempt 2 of 2* at the
+   * top, *in Attempt 1 ↓* on the evidence.
    */
   it('walks back to the attempt that refused when the named one refused nothing', () => {
     const first = presentAttemptEvents(claim(RUN_1, '2026-09-08T03:00:00.000Z'), 1, [
@@ -689,7 +689,7 @@ describe('the block, rendered', () => {
     expect(html).toContain('onyou')
     // The coordinate is the bar's now (#152), and still says which attempt.
     expect(renderToStaticMarkup(<Coords standing={HELD} taskId="ticket-lingtai-112" queued={null} />)).toContain(
-      'from attempt 2 of 2',
+      'from Attempt 2 of 2',
     )
     expect(html).toContain('conflict: agent/112 does not merge into develop')
     // The move that is left when there is no diff to approve (#84).
@@ -1112,7 +1112,7 @@ describe('the block, rendered', () => {
       />,
     )
     expect(html).toContain('href="/task/ticket-lingtai-112/attempt/1"')
-    expect(html).toContain('in attempt 1')
+    expect(html).toContain('in Attempt 1')
   })
 
   /**
@@ -1320,7 +1320,7 @@ it('offers distinct saved-head and base-starting actions without triage', () => 
   expect(html).toContain('saved branch and head')
   expect(html).toContain('Build and review run again')
   expect(html).toContain('Start over from base')
-  expect(html).toContain('Send attempt 3 from base')
+  expect(html).toContain('Send Attempt 3 from base')
   expect(html).not.toContain('Approve and continue')
 })
 
@@ -1329,7 +1329,7 @@ it('does not offer a continuation button for missing or moved saved work', () =>
     const html = render({ ...FIXABLE, fixWork: { refusal } }, OUTGOING)
     expect(html).toContain(refusal)
     expect(html).not.toContain('>Continue fixing current work</button>')
-    expect(html).toContain('Send attempt 3 from base')
+    expect(html).toContain('Send Attempt 3 from base')
   }
   expect(savedFixWork(RUN_2, [])).toHaveProperty('refusal')
   expect(
@@ -1400,7 +1400,7 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const reviewMoves = moves(reviewFindings)
   expect(reviewFindings).toContain('The approach is wrong; start over from base instead of continuing saved work.')
   expect(reviewMoves).not.toContain('sresolution--recommended')
-  expect(reviewMoves).toContain('Send attempt 3 from base')
+  expect(reviewMoves).toContain('Send Attempt 3 from base')
   expect(reviewMoves).not.toContain('class="btn pri">Approve and continue')
   const waiver = render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'Approve') }, OUTGOING)
   expect(waiver).toContain('approval, which waives the refusal')
@@ -1645,11 +1645,11 @@ describe('the moves the column ends in', () => {
   it('offers Send, numbered the way the box above it is, and Leave blocked beside it', () => {
     const html = render(HELD, OUTGOING)
 
-    expect(html).toContain('Send attempt 3')
+    expect(html).toContain('Send Attempt 3')
     expect(html).toContain('Leave blocked')
-    // The box says `attempt 3 only` and the button says `Send attempt 3`: one
+    // The box says `Attempt 3 only` and the button says `Send Attempt 3`: one
     // number, said twice, because that is how long the edit lasts (0032 §5).
-    expect(html).toContain('attempt 3 only')
+    expect(html).toContain('Attempt 3 only')
     // The base-starting move is named in the card; Send remains the button.
     expect(html).toContain('<h3>Start over from base</h3>')
     expect(html).not.toContain('>Start over from base</button>')
@@ -1664,7 +1664,7 @@ describe('the moves the column ends in', () => {
   it('offers Approve beside Send, and no Reject or Waive, wherever there is an approval open', () => {
     const html = render({ ...HELD, awaitingSha: SHA, failed: ['proposed:review'], reason: SIGNOFF_REASON }, OUTGOING)
 
-    expect(html).toContain('Send attempt 3')
+    expect(html).toContain('Send Attempt 3')
     expect(html).toContain('Approve')
     expect(html).toContain('Leave blocked')
     expect(html).not.toContain('Reject')
@@ -1722,7 +1722,7 @@ describe('the moves the column ends in', () => {
         OUTGOING,
       ),
     )
-    expect(html.indexOf('>Close</button>')).toBeLessThan(html.indexOf('>Send attempt'))
+    expect(html.indexOf('>Close</button>')).toBeLessThan(html.indexOf('>Send Attempt'))
     expect(html).toContain('class="btn pri">Close')
     expect(html).not.toContain('class="btn pri">Send')
   })
@@ -1783,7 +1783,7 @@ describe('the moves the column ends in', () => {
         OUTGOING,
       ),
     )
-    expect(html).toContain('Send attempt')
+    expect(html).toContain('Send Attempt')
     expect(html).not.toContain('class="btn pri"')
   })
 
@@ -1791,7 +1791,7 @@ describe('the moves the column ends in', () => {
     const html = render(HELD, { ...OUTGOING, problem: 'lingtai is not a registered project' })
 
     expect(html).toContain('Start over from base')
-    expect(html).not.toContain('Send attempt')
+    expect(html).not.toContain('Send Attempt')
   })
 
   /**
@@ -1815,7 +1815,7 @@ describe('the moves the column ends in', () => {
       { ...OUTGOING, attempt: 1 },
     )
 
-    expect(html).not.toContain('Send attempt')
+    expect(html).not.toContain('Send Attempt')
     expect(moves(html)).toContain('class="btn">Answer')
     expect(moves(html)).toContain('Withdraw')
     expect(moves(html).match(/btn pri/g)).toBeNull()
@@ -1824,7 +1824,7 @@ describe('the moves the column ends in', () => {
   it('offers no move at all on an item nobody is being asked about', () => {
     const html = render({ ...HELD, state: 'queued', onYou: false, question: null }, OUTGOING)
 
-    expect(html).not.toContain('Send attempt')
+    expect(html).not.toContain('Send Attempt')
     expect(html).not.toContain('Leave blocked')
   })
 
@@ -1841,7 +1841,7 @@ describe('the moves the column ends in', () => {
     const html = render({ ...HELD, state: 'approved', onYou: false, approvedSha: SHA }, OUTGOING)
 
     expect(html).toContain('Schedule it')
-    expect(html).not.toContain('Send attempt')
+    expect(html).not.toContain('Send Attempt')
     expect(html).not.toContain('Leave blocked')
     expect(html).not.toContain('Approve')
   })
@@ -1974,7 +1974,7 @@ describe('what the refusal means for the decision', () => {
  * document that comes second inside it. Measured on `ticket-lingtai-159`: the
  * GitHub link rendered at y=1103 of an 1126px page, and the title's `innerText`
  * came back empty because a closed `<details>` renders none of it. The page
- * opened on *Approve / Send attempt 3 / Leave blocked / Close* and named the
+ * opened on *Approve / Send Attempt 3 / Leave blocked / Close* and named the
  * thing it was asking about `ticket-lingtai-159`.
  *
  * So these assert the subject is in the standing block, not that it exists

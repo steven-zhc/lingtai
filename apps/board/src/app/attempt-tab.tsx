@@ -87,7 +87,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
           §4, and 0061 §5 for the ten). Labelled, with nothing lit: where a run
           in flight is *now* is rank 2's to say, and this is the record. */}
       {run.progress === null ? (
-        <p className="empty">Nothing is on this attempt&apos;s stream, so no step has been reached.</p>
+        <p className="empty">Nothing is recorded for this attempt, so no step has been reached.</p>
       ) : (
         <div className="seq aseq">
           <Segs steps={run.progress.steps} at={null} labels />
@@ -151,7 +151,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
           <p className="empty">No prompt was recorded for this attempt.</p>
         ) : run.prompt.text === null ? (
           <p className="empty">
-            This run predates the prompt being recorded, so the log has its length and not the document (#88).
+            This attempt predates the prompt being recorded, so the log has its length and not the document (#88).
           </p>
         ) : (
           // Raw, always. #88's justification is that the log holds the exact
@@ -239,15 +239,15 @@ export function RecipeGiven({ run }: { run: AttemptView }) {
     <div className="arecipe">
       {recipe.of === 'run' ? (
         <p className="rprov">
-          {hash} — this run&apos;s own, proved by the hash it recorded
+          {hash} — this attempt&apos;s own, proved by the hash it recorded
           {'base' in recipe.at
             ? `, read at base ${recipe.at.base.slice(0, 7)}`
             : `, and the same document as the head of ${recipe.at.head}`}
         </p>
       ) : (
         <p className="rprov refusal">
-          Not this run&apos;s recipe: {hash} is the head of {recipe.ref}, which is what the next run gets. Shown because{' '}
-          {recipe.why}.
+          Not this attempt&apos;s recipe: {hash} is the head of {recipe.ref}, which is what the next attempt gets. Shown
+          because {recipe.why}.
         </p>
       )}
 
@@ -325,7 +325,7 @@ export function RecipeGiven({ run }: { run: AttemptView }) {
       <details className="aprompt">
         <summary>
           <span className="hdocname">the whole recipe</span>
-          <span className="hdocsize">{recipe.of === 'run' ? "this run's" : `head of ${recipe.ref}`}</span>
+          <span className="hdocsize">{recipe.of === 'run' ? "this attempt's" : `head of ${recipe.ref}`}</span>
         </summary>
         <pre className="hdoctext">{recipe.source}</pre>
       </details>

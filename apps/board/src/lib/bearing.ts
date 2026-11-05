@@ -110,8 +110,8 @@ export function bearing(
     return {
       tone: 'warn',
       label: 'offline',
-      why: 'the event stream is down — reload once it is back',
-      title: also('the event stream is down, so nothing here is updating'),
+      why: 'the live connection to the log is down — reload once it is back',
+      title: also('the live connection to the log is down, so nothing here is updating'),
     }
   }
   if (!board) {

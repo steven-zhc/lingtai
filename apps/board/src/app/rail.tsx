@@ -366,7 +366,7 @@ export function Rail({
            for hours. */
         <p
           className="snow quiet"
-          title="nothing on this run's stream is running and nothing on it refused — what the attempt is stopped on is not on it, and the note says what"
+          title="nothing in this attempt is running and nothing in it refused — what it is stopped on is outside it, and the note says what"
         >
           nothing running
           {held !== null ? <span className="shold"> — {held}</span> : null}
@@ -378,7 +378,7 @@ export function Rail({
   )
 }
 
-const UNREADABLE = 'The recipe could not be read, so what a run would do here is not known.'
+const UNREADABLE = 'The recipe could not be read, so what an attempt would do here is not known.'
 
 /**
  * The plan's steps drawn as a rail nothing has run on: every one `pending`, or

@@ -577,7 +577,7 @@ export async function concludeChat(input: {
 }): Promise<ActionResult> {
   try {
     const parsed = parseTicketStream(input.taskId)
-    if (!parsed) return { ok: false, detail: 'this id is not a work item' }
+    if (!parsed) return { ok: false, detail: 'this id is not a ticket' }
 
     let ticket: { github: IssueChannel; body: string } | undefined
     if (input.outcome === 'ticket') {
@@ -640,7 +640,7 @@ export async function editPrompt(input: {
   basedOn: string
 }): Promise<ActionResult> {
   try {
-    if (!parseTicketStream(input.taskId)) return { ok: false, detail: 'this id is not a work item' }
+    if (!parseTicketStream(input.taskId)) return { ok: false, detail: 'this id is not a ticket' }
     const text = input.text
     const by = actor()
     const events = await eventStore.read(input.taskId)
@@ -710,7 +710,7 @@ export async function sendAttempt(input: {
 }): Promise<ActionResult> {
   try {
     const parsed = parseTicketStream(input.taskId)
-    if (!parsed) return { ok: false, detail: 'this id is not a work item' }
+    if (!parsed) return { ok: false, detail: 'this id is not a ticket' }
 
     const by = actor()
     // **Not on a question asked before any run** (#147), and refused before the
@@ -726,7 +726,7 @@ export async function sendAttempt(input: {
     const life = state.lifecycle
     const wait = waitsFromState(state).at(-1)
     if (life.status === 'blocked' && wait !== undefined && allowedResolutions(wait.reason).includes('AnswerQuestion')) {
-      return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` }
+      return { ok: false, detail: `${input.taskId} is asking a question before any attempt — answer it first` }
     }
     if (typeof input.text === 'string' && input.text.trim() !== '') {
       const edited = await editPrompt({

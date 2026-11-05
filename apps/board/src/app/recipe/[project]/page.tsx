@@ -70,7 +70,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                 matters on the day they differ (#217). */}
             <span className="hfact">
               {view.ok
-                ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next run gets`
+                ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
                 : view.fault === 'recipe'
                   ? 'it could not be read, so nothing will be taken from this project'
                   : 'it could not be resolved, so nothing will be taken from this project'}

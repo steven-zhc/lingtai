@@ -906,7 +906,7 @@ rename, the same way `gate` sat in `events.ts` until `#247`'s reset spent it.
 
 ### the allowlist
 
-**32 occurrences in 21 files, counted 2026-10-20** — and that sentence is
+**27 occurrences in 18 files, counted 2026-10-20** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table
 below and not a number somebody forgot to raise when the table grew.
 
@@ -1016,9 +1016,6 @@ failure, not a number nobody was watching.
 
 | file | retired names in it |
 |---|---|
-| `apps/board/src/app/actions.ts` | `work-item` ×3 |
-| `apps/board/src/app/ticket-tab.tsx` | `work-item` ×1 |
-| `apps/board/src/lib/prompt.ts` | `work-item` ×1 |
 | `apps/cli/src/attach.ts` | `work-item` ×1 |
 | `apps/cli/src/commands.ts` | `work-item` ×1 |
 | `apps/cli/src/doctor.ts` | `work-item` ×2 |
@@ -1040,7 +1037,7 @@ failure, not a number nobody was watching.
 
 ### ordinary English
 
-**0 of those 32 occurrences are the English word** — the 32 is the pair rule's,
+**0 of those 27 occurrences are the English word** — the 27 is the pair rule's,
 read above, and none of it is the English *point at* residue this table once
 carried: every occurrence the pair rule counts is the retired concept, a ticket,
 not the verb. The table that stood here for the four words is gone, and that is

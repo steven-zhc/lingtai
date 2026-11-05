@@ -123,7 +123,7 @@ export async function outgoingFor(input: {
   ticket: TicketView | null
 }): Promise<OutgoingView> {
   const { ticket } = input
-  if (!ticket) return refused('this id is not a work item, so there is no ticket to fill in')
+  if (!ticket) return refused('this id is not a ticket, so there is no ticket to fill in')
   if (ticket.body === null) {
     // The body is most of the document. Composing without it would show a
     // prompt shorter than the one that runs, which is the specific lie this
