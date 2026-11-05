@@ -143,6 +143,19 @@ const AnswerUnreadable = z.object({
 })
 type AnswerUnreadable = z.infer<typeof AnswerUnreadable>
 
+/**
+ * The diff was longer than the reviewer would read whole, so none was paid
+ * (0108 §14). Unexported for the reason `AnswerUnreadable` above is: `action.ts`
+ * exports a `DiffTooLarge` of its own.
+ */
+const DiffTooLarge = z.object({
+  _tag: z.literal('DiffTooLarge'),
+  from: Step.extract(['design', 'review', 'proposed', 'merge']),
+  size: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+})
+type DiffTooLarge = z.infer<typeof DiffTooLarge>
+
 /** `implement` at round 0 cleared and committed nothing — there is only the ticket to argue with. */
 const NothingProduced = z.object({ _tag: z.literal('NothingProduced'), said: z.string().nullable() })
 type NothingProduced = z.infer<typeof NothingProduced>
@@ -186,6 +199,7 @@ export const Proposal = z.discriminatedUnion('_tag', [
   SetupRefused,
   CheckRefused,
   AnswerUnreadable,
+  DiffTooLarge,
   NothingProduced,
   FixerDisagrees,
   MergeRefused,
@@ -208,6 +222,7 @@ export function fromOf(proposal: Proposal): Step {
     case 'SetupRefused':
     case 'CheckRefused':
     case 'AnswerUnreadable':
+    case 'DiffTooLarge':
     case 'BudgetExhausted':
       return proposal.from
     case 'NothingProduced':

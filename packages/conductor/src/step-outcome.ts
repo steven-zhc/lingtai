@@ -134,6 +134,12 @@ function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
       // `#369`'s `no-structured-answer` and a refusal the runtime parsed are
       // both `unreadable: true` (`agent-action.ts:541-549`, `:608-613`); an
       // ordinary refusal with findings is not.
+      // `diffTooLarge` first: it is `failed` with no findings, which is
+      // `Completed{refused, []}` and so `ReviewEmpty`, and a declared judge is
+      // paid for that. No reviewer ran (0108 §14).
+      if (outcome.diffTooLarge !== undefined) {
+        return { _tag: 'DiffTooLarge', size: outcome.diffTooLarge.size, limit: outcome.diffTooLarge.limit }
+      }
       return outcome.unreadable
         ? { _tag: 'AnswerUnreadable', raw: outcome.evidence }
         : { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings, ...summary } }

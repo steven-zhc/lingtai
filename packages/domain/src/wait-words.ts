@@ -291,6 +291,14 @@ function escalatedColumns(
         return acknowledgement(stepLine('merge', 'refused', proposal.raw), run, proposal.raw)
       return acknowledgement(stepLine(proposal.from, 'did-not-finish', proposal.raw), run, proposal.raw)
     }
+    case 'DiffTooLarge': {
+      // The unit is the clip's own (`diff.length`, UTF-16 code units), so the
+      // two numbers are comparable with the recipe's `runtime.budget.diff`.
+      const detail =
+        `the diff is ${proposal.size} characters and the reviewer reads ${proposal.limit}, ` +
+        `so the \`${proposal.from}\` reviewer was not run and no fix round is offered`
+      return judgement(`${subjectOf(pass)} is waiting on you. ${said(detail, 400)}`, run, detail)
+    }
     case 'NothingProduced':
       return acknowledgement(
         stepLine('implement', 'did-not-finish', proposal.said ?? 'the agent produced no commits'),

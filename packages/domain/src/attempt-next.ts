@@ -180,6 +180,8 @@ function verdictFellShort(step: Step, action: OfYields<'verdict'>, run: AttemptR
       return requeuedNeverStarted(action.result.scope)
     case 'AnswerUnreadable':
       return answerUnreadable(step, action.result.raw)
+    case 'DiffTooLarge':
+      return diffTooLarge(step, action.result.size, action.result.limit)
     case 'Interrupted':
       return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'Waived':
@@ -357,6 +359,13 @@ function answerUnreadable(step: Step, raw: string): NextOfResult {
     throw new ImpossibleOutcomeError(step, 'verdict|design', `AnswerUnreadable cannot happen at ${step}`)
   }
   return { _tag: 'Propose', proposal: { _tag: 'AnswerUnreadable', from: step, raw } }
+}
+
+function diffTooLarge(step: Step, size: number, limit: number): NextOfResult {
+  if (step !== 'design' && step !== 'review' && step !== 'proposed' && step !== 'merge') {
+    throw new ImpossibleOutcomeError(step, 'verdict', `DiffTooLarge cannot happen at ${step}`)
+  }
+  return { _tag: 'Propose', proposal: { _tag: 'DiffTooLarge', from: step, size, limit } }
 }
 
 function setupRefused(step: Step, why: string): NextOfResult {

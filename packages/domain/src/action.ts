@@ -100,6 +100,18 @@ export const AnswerUnreadable = z.object({
 })
 export type AnswerUnreadable = z.infer<typeof AnswerUnreadable>
 
+/**
+ * The diff was longer than the reviewer would read whole (`runtime.budget.diff`),
+ * so no reviewer was paid (0108 §14). `size` and `limit` are `diff.length` and the
+ * limit it was compared with, in the same unit the clip uses.
+ */
+export const DiffTooLarge = z.object({
+  _tag: z.literal('DiffTooLarge'),
+  size: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+})
+export type DiffTooLarge = z.infer<typeof DiffTooLarge>
+
 /** A mechanical operation did not happen: a file not kept, a tree not cut or not restored. */
 export const NotDone = z.object({ _tag: z.literal('NotDone') })
 export type NotDone = z.infer<typeof NotDone>
@@ -129,6 +141,7 @@ const VerdictAction = ActionBase.extend({
   result: z.discriminatedUnion('_tag', [
     z.object({ _tag: z.literal('Completed'), assessment: Assessment }),
     AnswerUnreadable,
+    DiffTooLarge,
     Interrupted,
     NeverStarted,
     Waived,
@@ -250,6 +263,7 @@ export function cleared(action: Action): boolean {
         case 'Waived':
           return true
         case 'AnswerUnreadable':
+        case 'DiffTooLarge':
         case 'Interrupted':
         case 'NeverStarted':
         case 'NotReached':

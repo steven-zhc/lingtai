@@ -209,6 +209,9 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       break
     }
     case 'ReviewEmpty':
+    // 0108 §14: no reviewer was paid and nothing holds an agent to a round, so
+    // only a person is on offer and no judge is asked.
+    case 'DiffTooLarge':
       round('fix-lines', 'implement', false)
       restart(false)
       break
