@@ -157,7 +157,9 @@ export function decodeRun(stored: unknown, projection: string, runId?: string): 
 /** The attempt reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
 export const attemptReducer: Reducer<AttemptState> = {
   name: 'attempt',
-  version: 1,
+  // 2: a `RunPrompted` for implement round 0 now folds into `prompt` (#928); a
+  // version-1 snapshot may have been cut by a reducer that ignored it.
+  version: 2,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,
