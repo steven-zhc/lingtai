@@ -36,6 +36,7 @@ import {
   type TriageStatus,
   type WaitReason,
 } from '@lingtai/domain/wait'
+import { machineDayCeiling } from '@lingtai/env'
 import { hasGitHubAuth } from '@lingtai/env'
 /**
  * One task, reduced from its streams on demand.
@@ -81,7 +82,7 @@ import { eventStore } from '@lingtai/event-store'
 import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
-import { ticketSourceOf } from '@lingtai/recipe/settings'
+import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 import { cache } from 'react'
 
@@ -97,7 +98,7 @@ import {
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
-import { queuedFor, refused as refusedQueued, type QueuedView } from './queued.ts'
+import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -956,6 +957,8 @@ export interface TaskDetail {
   taskId: string
   /** Neighbours in the Waiting lane, read from `readTasks` on every render (#584). */
   waiting: { previous: WaitingNeighbour | null; next: WaitingNeighbour | null }
+  /** For a queued ticket: what is running now and the slots (0118 §2); null otherwise or when the recipe was not read. */
+  inFlight: InFlight | null
   /** Local mirror check for the current wait's kept ref; null for every other case. */
   unpushedMirror: { path: string; sha: string | null } | null
   /**
@@ -1718,6 +1721,33 @@ export const readAttempts = cache(async (taskId: string) => {
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
 })
 
+/**
+ * `inFlightOf` for a queued ticket only; an unreadable ceiling or recipe is
+ * unknown, not one slot. The recipe is read (locally, through `currentRecipe`)
+ * only under a daily ceiling, where the slots are its `concurrency`; without
+ * one the slots are 1 whatever it says.
+ */
+async function inFlightFor(
+  state: string,
+  lane: Awaited<ReturnType<typeof readTasks>>,
+  project: string,
+): Promise<InFlight | null> {
+  if (state !== 'queued') return null
+  try {
+    const ceilingSet = machineDayCeiling() !== undefined
+    let concurrency: number | undefined
+    if (ceilingSet) {
+      const loaded = await loadProject(project).catch(() => null)
+      // `currentRecipe` is the local read: `projectFilter` would build a GitHub
+      // client first, and the log's half must not wait for (or fail with) GitHub.
+      if (loaded) concurrency = concurrencyOf((await currentRecipe(loaded)).recipe)
+    }
+    return inFlightOf(lane, project, concurrency, ceilingSet)
+  } catch {
+    return null
+  }
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // The control stream is read for the seven types the reducer handles only: it
   // also holds a `Reconciled` per daemon start, 22 KB each and never read here
@@ -1870,6 +1900,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
+    inFlight: await inFlightFor(standing.state, lane, ticket.project),
     events: own.length,
   }
 }
