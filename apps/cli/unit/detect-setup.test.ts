@@ -530,37 +530,48 @@ describe('detectSetup — Java', () => {
   })
 
   it.each([
-    ['pom.xml', '<project><broken></project>'],
-    ['pom.xml', ''],
-    ['build.gradle', 'plugins { id "java" '],
-    ['build.gradle.kts', 'dependencies { implementation("a") ]'],
-  ])('%s that does not parse suggests nothing and says so', async (file, text) => {
-    const r = await detectSetup(reader({ [file]: text }))
+    ['<project><broken></project>'],
+    [''],
+    ['<project><!-- never closed </project>'],
+    ['<project><a></project></a>'],
+  ])('a pom.xml with unbalanced tags (%j) suggests nothing and says so', async (text) => {
+    const r = await detectSetup(reader({ 'pom.xml': text }))
     expect(r.install).toBeNull()
     expect(r.build).toEqual([])
-    expect(r.notes).toContain(`${file} does not parse`)
+    expect(r.notes).toContain('pom.xml has unbalanced tags')
   })
 
   it.each([
-    ['pom.xml', '<project><description>Requires Java > 8</description></project>'],
-    ['pom.xml', '<project a="1" b=\'2\'><d>Build &amp; test &#38; &#x26;</d><e/></project>'],
-    ['build.gradle', "plugins { id 'java' }\ndef pattern = /\\(/\n"],
-    ['build.gradle.kts', '/* outer /* inner */ } */\nplugins { java }\n'],
-  ])('%s that is valid still gets suggestions', async (file, text) => {
-    const r = await detectSetup(reader({ [file]: text }))
+    ['<project><description>Requires Java > 8</description></project>'],
+    ['<project a="1" b=\'2\'><d>Build &amp; test</d><e/></project>'],
+    ['<project><!-- </project> --><a/></project>'],
+    ['<project><![CDATA[ <!-- ]]><a/><b>x</b></project>'],
+    ['<project><a href="x>y" b="/>"/></project>'],
+    ['<?xml version="1.0"?><project/>'],
+    ['<!DOCTYPE project [ <!ENTITY a "b"> ]><project/>'],
+    // balanced tags is all that is checked, so these are accepted
+    ['<project><description>Build & test</description></project>'],
+    ['<project><a b=c/></project>'],
+    ['<project a="1" a="2"/>'],
+  ])('a pom.xml with balanced tags (%j) gets suggestions', async (text) => {
+    const r = await detectSetup(reader({ 'pom.xml': text }))
     expect(r.build.length).toBe(1)
-    expect(r.notes).not.toContain(`${file} does not parse`)
+    expect(r.notes).not.toContain('pom.xml has unbalanced tags')
   })
 
-  it.each([
-    ['pom.xml', '<project><description>Build & test</description></project>'],
-    ['pom.xml', '<project><a b=c/></project>'],
-    ['pom.xml', '<project a="1" a="2"/>'],
-  ])('%s with bad entities or attributes does not parse', async (file, text) => {
-    const r = await detectSetup(reader({ [file]: text }))
-    expect(r.build).toEqual([])
-    expect(r.notes).toContain(`${file} does not parse`)
-  })
+  it.each([['build.gradle'], ['build.gradle.kts']])(
+    '%s is never read, so a broken script still gets gradle test',
+    async (file) => {
+      const r = await detectSetup({
+        has: async (path) => path === file,
+        read: async () => {
+          throw new Error('a Gradle script is not read')
+        },
+      })
+      expect(r.build.map((b) => b.run)).toEqual(['gradle test'])
+      expect(r.notes.some((n) => n.includes('parse') || n.includes('read'))).toBe(false)
+    },
+  )
 
   it('a build file that cannot be read suggests nothing and says so', async () => {
     const r = await detectSetup(reader({ 'pom.xml': POM }, { haveNotRead: ['pom.xml'] }))
