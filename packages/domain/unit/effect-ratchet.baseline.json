@@ -1,5 +1,5 @@
 {
-  "apps/cli": { "async": 435, "run": 6 },
+  "apps/cli": { "async": 436, "run": 6 },
   "packages/event-store": { "async": 66, "run": 0 },
   "packages/projector": { "async": 78, "run": 0 },
   "packages/github": { "async": 37, "run": 2 },

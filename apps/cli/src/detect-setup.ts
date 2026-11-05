@@ -11,6 +11,7 @@
  */
 
 import { parse as parseToml } from 'smol-toml'
+import { parse as parseYaml } from 'yaml'
 
 /** The file seam: a local directory or a GitHub default branch. */
 export interface SetupReader {
@@ -42,7 +43,8 @@ export const EMPTY_SETUP_READER: SetupReader = {
 
 export interface DetectedSetup {
   install: { run: string; because: string } | null
-  build: { name: string; run: string; because: string }[]
+  /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`). */
+  build: { name: string; run: string; because: string; tool?: string }[]
   skipped: { script: string; why: string }[]
   notes: string[]
 }
@@ -315,6 +317,13 @@ async function configParses(
     } catch {
       ok = false
     }
+  } else if (file.endsWith('.yml') || file.endsWith('.yaml')) {
+    try {
+      parseYaml(text)
+      ok = true
+    } catch {
+      ok = false
+    }
   } else {
     ok = iniParses(text)
   }
@@ -465,7 +474,65 @@ const pythonDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector]
+const GOLANGCI_CONFIGS = ['.golangci.yml', '.golangci.yaml', '.golangci.toml'] as const
+
+const goDetector: StackDetector = {
+  stack: 'Go',
+  async detect(reader) {
+    const notes: string[] = []
+    const mod = await hasOrUnknown(reader, 'go.mod')
+    if (mod === 'unknown') {
+      notes.push('could not tell whether a Go module is at the root')
+      return { presence: 'unknown', install: null, build: [], skipped: [], notes }
+    }
+    if (!mod) return { presence: 'absent', install: null, build: [], skipped: [], notes }
+
+    const vendor = await hasOrUnknown(reader, 'vendor')
+    if (vendor === 'unknown') notes.push('could not tell whether vendor/ is at the root')
+    else if (vendor) {
+      notes.push(
+        'vendor/ is at the root; go mod download still fetches the module cache, and gofmt -l . checks vendor/ too',
+      )
+    }
+
+    // The first config present decides, as golangci-lint itself looks them up;
+    // one that is present but does not parse is not skipped past.
+    let chosen: string | null = null
+    let lint: string | null = null
+    const said = new Set<string>()
+    for (const file of GOLANGCI_CONFIGS) {
+      const found = await hasOrUnknown(reader, file)
+      if (found === 'unknown') {
+        notes.push(`could not tell whether ${file} is at the root`)
+        // An earlier file that may exist decides, so a later one cannot stand in for it.
+        if (chosen === null) break
+      } else if (found) {
+        if (chosen !== null) {
+          notes.push(`${file} is also at the root; ${chosen} was used`)
+          continue
+        }
+        chosen = file
+        if ((await configParses(reader, file, notes, said)) !== null) lint = file
+      }
+    }
+
+    const build: DetectedSetup['build'] = [
+      { name: 'format', run: 'out=$(gofmt -l .) && test -z "$out"', because: 'go.mod is at the root', tool: 'gofmt' },
+      { name: 'vet', run: 'go vet ./...', because: 'go.mod is at the root' },
+    ]
+    if (lint !== null) build.push({ name: 'lint', run: 'golangci-lint run', because: `${lint} is at the root` })
+    build.push({ name: 'test', run: 'go test ./...', because: 'go.mod is at the root' })
+    return {
+      presence: 'present',
+      install: { run: 'go mod download', because: 'go.mod is at the root' },
+      build,
+      skipped: [],
+      notes,
+    }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present
