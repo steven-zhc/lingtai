@@ -30,6 +30,7 @@ import {
   diagnoseUnfixed,
   disagreementQuestion,
   fixBrief,
+  fixBriefParts,
   fixStopOf,
   mergeAnywayBecause,
   quoteFindings,
@@ -1712,5 +1713,52 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
       expect(grantedAdviceOf(empty, w)).toBeUndefined()
       expect(grantedAdviceOf([], w)).toBeUndefined()
     })
+  })
+})
+
+describe('fixBriefParts records references for the body and the diff (#927)', () => {
+  const base = {
+    refusal: { on: 'findings', findings: [finding()] } as const,
+    round: 1,
+    of: 2,
+    action: 'review',
+    diffBytes: 1_000,
+    checks: ['pnpm typecheck && pnpm test'],
+  }
+  const from = 'a'.repeat(40)
+  const to = 'b'.repeat(40)
+
+  it('concatenates to exactly what fixBrief returns, and expands back from the record', async () => {
+    const { composePrompt, expandPrompt } = await import('@lingtai/domain')
+    const input = {
+      ...base,
+      diff: '+x\n'.repeat(100),
+      diffAt: { from, to },
+      ticket: { ...TICKET, bodyAt: { stream: 'ticket-p-1', version: 4 } },
+    }
+    const c = composePrompt(fixBriefParts(input))
+    expect(c.handed).toBe(fixBrief(input))
+    expect(c.refs.map((r) => r.ref)).toEqual([
+      { _tag: 'TicketBody', stream: 'ticket-p-1', version: 4 },
+      { _tag: 'Diff', from, to },
+    ])
+    expect(c.recorded.length).toBeLessThan(c.handed.length)
+    expect(
+      expandPrompt(
+        { prompt: c.recorded, refs: c.refs },
+        c.values.map((text) => ({ text })),
+      ),
+    ).toEqual({
+      text: c.handed,
+      unresolved: [],
+    })
+  })
+
+  it('writes a clipped diff out with no Diff ref, and a body with nothing to point at', async () => {
+    const { composePrompt } = await import('@lingtai/domain')
+    const c = composePrompt(fixBriefParts({ ...base, diff: 'x'.repeat(5_000), diffAt: { from, to }, ticket: TICKET }))
+    expect(c.refs).toEqual([])
+    expect(c.handed).toContain('[diff truncated at 1000 bytes]')
+    expect(c.recorded).toBe(c.handed)
   })
 })

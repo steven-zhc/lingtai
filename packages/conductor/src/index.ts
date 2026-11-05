@@ -1,5 +1,6 @@
 export { readState } from './snapshot-state.ts'
 export { recordPrompt } from './record-prompt.ts'
+export { resolvePromptRefs, type PromptRefPorts } from './prompt-refs.ts'
 export {
   claimTicket,
   conductorWorker,

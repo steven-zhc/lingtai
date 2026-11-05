@@ -7,7 +7,14 @@
  */
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
 import { sessionIdFor } from '@lingtai/agent'
-import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, parsePayload } from '@lingtai/domain'
+import {
+  REFUSED_ABOUT,
+  REVIEW_ANSWER_JSON_SCHEMA,
+  SEVERITIES,
+  expandPrompt,
+  parsePayload,
+  type ComposedPrompt,
+} from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -2347,7 +2354,7 @@ describe('recording the prompt an agent action was handed (#923)', () => {
   it('records the cold reviewer’s prompt before the dispatch, with its RunSpent’s for', async () => {
     const runtime = reviewer(outcome({ text: JSON.stringify({ verdict: 'approved', findings: [] }) }))
     const order: string[] = []
-    const recorded: { for: unknown; promptVersion: string; prompt: string }[] = []
+    const recorded: { for: unknown; promptVersion: string; prompt: string | ComposedPrompt }[] = []
     const spentFor: unknown[] = []
     const action = createAgentAction(
       { name: 'review', prompt: '' },
@@ -2376,15 +2383,87 @@ describe('recording the prompt an agent action was handed (#923)', () => {
 
     expect(order).toEqual(['record', 'run'])
     expect(recorded).toHaveLength(1)
-    expect(recorded[0]!.prompt).toBe(runtime.seen[0]!.prompt)
+    expect((recorded[0]!.prompt as ComposedPrompt).handed).toBe(runtime.seen[0]!.prompt)
     expect(recorded[0]!.promptVersion).toBe(`review@${runtime.seen[0]!.prompt.length}`)
     expect(spentFor).toEqual([recorded[0]!.for])
     expect(recorded[0]!.for).toEqual({ _tag: 'Action', step: 'review', name: 'review', round: 0 })
   })
 
+  it('records the review with references for the body and the diff, and expands back to what was handed (#927)', async () => {
+    const runtime = reviewer(outcome({ text: JSON.stringify({ verdict: 'approved', findings: [] }) }))
+    const from = 'a'.repeat(40)
+    const to = 'b'.repeat(40)
+    const big = `${HUNK_DIFF}\n${'+ x\n'.repeat(5000)}`
+    const recorded: { for: unknown; promptVersion: string; prompt: string | ComposedPrompt }[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ({ ...ISSUE, bodyAt: { stream: 'ticket-p-58', version: 3 } }),
+        diff: async () => ({ text: big, from, to }),
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+
+    await runActionPipeline({
+      step: 'review',
+      actions: [action],
+      context,
+      emit: () => {},
+      recordPrompt: async (call) => {
+        recorded.push(call)
+      },
+    })
+
+    const handed = runtime.seen[0]!.prompt
+    const composed = recorded[0]!.prompt as ComposedPrompt
+    expect(composed.handed).toBe(handed)
+    expect(composed.refs.map((r) => r.ref)).toEqual([
+      { _tag: 'TicketBody', stream: 'ticket-p-58', version: 3 },
+      { _tag: 'Diff', from, to },
+    ])
+    expect(composed.recorded.length).toBeLessThan(handed.length - big.length + 400)
+    expect(composed.recorded).not.toContain(big)
+    const expanded = expandPrompt({ prompt: composed.recorded, refs: composed.refs }, [
+      { text: ISSUE.body },
+      { text: big },
+    ])
+    expect(expanded).toEqual({ text: handed, unresolved: [] })
+  })
+
+  it('writes the body and diff out where nothing says where they came from (#927)', async () => {
+    const runtime = reviewer(outcome({ text: JSON.stringify({ verdict: 'approved', findings: [] }) }))
+    const recorded: { for: unknown; promptVersion: string; prompt: string | ComposedPrompt }[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => HUNK_DIFF,
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    await runActionPipeline({
+      step: 'review',
+      actions: [action],
+      context,
+      emit: () => {},
+      recordPrompt: async (call) => {
+        recorded.push(call)
+      },
+    })
+    const composed = recorded[0]!.prompt as ComposedPrompt
+    expect(composed.refs).toEqual([])
+    expect(composed.recorded).toBe(runtime.seen[0]!.prompt)
+  })
+
   it('records the design agent’s prompt before the dispatch, with its RunSpent’s for', async () => {
     const runtime = reviewer(outcome({ text: 'Put it in `packages/recipe`.' }))
-    const recorded: { for: unknown; promptVersion: string; prompt: string }[] = []
+    const recorded: { for: unknown; promptVersion: string; prompt: string | ComposedPrompt }[] = []
     const spentFor: unknown[] = []
 
     await runActionPipeline({

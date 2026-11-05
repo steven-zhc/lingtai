@@ -54,7 +54,15 @@
  */
 import type { RunOutcome, Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
-import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, type RefusedAbout, type Severity } from '@lingtai/domain'
+import {
+  composePrompt,
+  REFUSED_ABOUT,
+  REVIEW_ANSWER_JSON_SCHEMA,
+  SEVERITIES,
+  type PromptPart,
+  type RefusedAbout,
+  type Severity,
+} from '@lingtai/domain'
 
 import {
   NEEDS_INPUT,
@@ -113,18 +121,33 @@ export interface AgentActionSpec {
  */
 export type RestoreAnswer = { readonly untouched: true } | { readonly restored: string } | { readonly failed: string }
 
+/**
+ * A diff and the two commits it was run between (#927). `from` and `to` are full
+ * shas, resolved once **before** the diff ran, so the text and a reference to it
+ * describe the same pair even if `HEAD` moves; null where either end could not be
+ * resolved, and the diff is then written out rather than referenced.
+ */
+export interface DiffRead {
+  readonly text: string
+  readonly from: string | null
+  readonly to: string | null
+}
+
+const readOf = (got: string | DiffRead): DiffRead =>
+  typeof got === 'string' ? { text: got, from: null, to: null } : got
+
 export interface AgentActionDeps {
   runtime: Runtime
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
    *  recipe without an agent action costs no API call. */
-  issue: () => Promise<{ ref: string; title: string; body: string }>
+  issue: () => Promise<ReviewIssue>
   /** How many times this ticket has already stopped at `design` with an
    *  `AgentQuestion` (`designAsksOf`, counted at claim). Absent is 0. From 2 the
    *  design brief forbids the fence (`#649`). `dispatchDeps` forwards it by hand. */
   designAsks?: number
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
-  diff: (from?: string) => Promise<string>
+  diff: (from?: string) => Promise<string | DiffRead>
   /** What `fromSha..toSha` changed on each of `paths`, one entry per path (#594).
    *  Asked only of a review that follows a `base-moved` merge. A diff that could
    *  not be read is that path's `diff`, as text — it must not kill the review. */
@@ -242,6 +265,13 @@ export interface ReviewIssue {
   ref: string
   title: string
   body: string
+  /**
+   * Where the claim recorded `body` (#927): the ticket stream and the version of
+   * the `TicketClaimed` / `TicketContinued` that carries it. Present only when
+   * that event holds exactly this string, which is what lets the prompt record a
+   * reference instead of a copy.
+   */
+  bodyAt?: { stream: string; version: number }
 }
 
 /**
@@ -315,14 +345,14 @@ export interface ReviewDelta {
   readonly fromSha: string
   readonly toSha: string
   readonly text: string
+  /** The two shas are the ones the text was run between, so it may be referenced (#927). */
+  readonly exact?: boolean
 }
 
-function deltaBlock(delta: ReviewDelta, limitBytes: number): string {
-  const clipped =
-    delta.text.length > limitBytes
-      ? `${delta.text.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
-      : delta.text
-  return `## What the fix changed
+function deltaParts(delta: ReviewDelta, limitBytes: number): PromptPart[] {
+  const clip = delta.text.length > limitBytes
+  const clipped = clip ? `${delta.text.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : delta.text
+  const head = `## What the fix changed
 
 \`${delta.fromSha.slice(0, 7)}..${delta.toSha.slice(0, 7)}\` is what changed since the last review read this diff. The
 rest of the diff above was already reviewed. Look for **new** problems only in
@@ -330,8 +360,14 @@ what this section changed; the rest is context for that and for any scenario
 above. A new finding outside these lines is demoted to a minor note.
 
 \`\`\`diff
-${clipped}
+`
+  const tail = `
 \`\`\``
+  const insert: PromptPart =
+    delta.exact === true && !clip
+      ? { text: clipped, ref: { _tag: 'Diff', from: delta.fromSha, to: delta.toSha } }
+      : clipped
+  return [head, insert, tail]
 }
 
 /** How many lines of what landed on the base the review is shown (#594). */
@@ -398,11 +434,38 @@ export function buildReviewPrompt(
   landed = '',
   delta?: ReviewDelta,
 ): string {
-  const clipped = clippedAt(diff, limitBytes)
-    ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
-    : diff
+  return composePrompt(reviewPromptParts(spec, issue, { text: diff }, limitBytes, recheck, landed, delta)).handed
+}
 
-  return `You are reviewing a change you did not write. You have the ticket and the
+/**
+ * `buildReviewPrompt` as parts (#927): each verbatim insert of the ticket body
+ * and of a diff is its own part, with the reference it may be recorded as, so the
+ * record knows where each stood without ever searching the finished string. A
+ * clipped diff is not verbatim and is a plain part. Concatenated, the parts are
+ * byte-identical to what the string-returning form always returned.
+ */
+export function reviewPromptParts(
+  spec: AgentActionSpec,
+  issue: ReviewIssue,
+  diff: { readonly text: string; readonly from?: string | null; readonly to?: string | null },
+  limitBytes: number,
+  recheck: readonly ActionFinding[] = [],
+  landed = '',
+  delta?: ReviewDelta,
+): PromptPart[] {
+  const clip = clippedAt(diff.text, limitBytes)
+  const clipped = clip ? `${diff.text.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : diff.text
+  const body: PromptPart =
+    issue.bodyAt === undefined
+      ? issue.body
+      : { text: issue.body, ref: { _tag: 'TicketBody', stream: issue.bodyAt.stream, version: issue.bodyAt.version } }
+  const diffPart: PromptPart =
+    !clip && diff.from != null && diff.to != null
+      ? { text: clipped, ref: { _tag: 'Diff', from: diff.from, to: diff.to } }
+      : clipped
+
+  return [
+    `You are reviewing a change you did not write. You have the ticket and the
 diff, and deliberately nothing else — no plan, no transcript, no reasoning from
 whoever wrote it. That is deliberate: this exists because self-review after a
 long implementation is not a second opinion.
@@ -411,7 +474,9 @@ long implementation is not a second opinion.
 
 #${issue.ref} — ${issue.title}
 
-${issue.body}
+`,
+    body,
+    `
 
 ## The checklist
 ${CHECKLIST}
@@ -423,12 +488,17 @@ ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ''}
 ${recheck.length > 0 ? `${recheckBlock(recheck, delta !== undefined)}\n\n` : ''}## The diff
 
 \`\`\`diff
-${clipped}
+`,
+    diffPart,
+    `
 \`\`\`
 
-${delta ? `${deltaBlock(delta, limitBytes)}\n\n` : ''}${landed ? `${landed}\n\n` : ''}## How to report
+`,
+    ...(delta ? [...deltaParts(delta, limitBytes), '\n\n'] : []),
+    `${landed ? `${landed}\n\n` : ''}## How to report
 ${CONTRACT}
-`
+`,
+  ]
 }
 
 /** What either reading of an answer produces. Shared so both enforce one rule. */
@@ -610,7 +680,8 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // branch's own change is `toSha...HEAD`; otherwise the base's changes would
       // be in it twice.
       const from = context.mergedOnto ?? moved?.toSha
-      const diff = await (from === undefined ? deps.diff() : deps.diff(from))
+      const read = readOf(await (from === undefined ? deps.diff() : deps.diff(from)))
+      const diff = read.text
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is
         // cheaper than an agent call that reads an empty diff.
@@ -668,13 +739,22 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       let deltaHunks: DiffHunks | undefined
       if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
         try {
-          const text = await deps.diff(context.reviewedSha)
-          const read = text.trim() === '' ? null : hunksOf(text)
-          if (read === null) {
+          const got = readOf(await deps.diff(context.reviewedSha))
+          const text = got.text
+          const hunks = text.trim() === '' ? null : hunksOf(text)
+          if (hunks === null) {
             context.log?.note('review', 'the fix delta was empty or unreadable; this is a full review')
           } else {
-            delta = { fromSha: context.reviewedSha, toSha: context.onSha, text }
-            deltaHunks = read
+            // The shas the diff was run between when it says them, so a reference and
+            // the text name the same pair; otherwise the context's, written out.
+            const exact = got.from !== null && got.to !== null
+            delta = {
+              fromSha: got.from ?? context.reviewedSha,
+              toSha: got.to ?? context.onSha,
+              text,
+              exact,
+            }
+            deltaHunks = hunks
           }
         } catch (error) {
           context.log?.note('review', `the fix delta could not be read (${errorMessage(error)}); this is a full review`)
@@ -690,9 +770,12 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       let outcome: RunOutcome | undefined
       let thrown: { error: unknown } | undefined
       try {
-        const prompt = buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck, landedBlock, delta)
+        const composed = composePrompt(
+          reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
+        )
+        const prompt = composed.handed
         // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
-        await context.prompted?.(`review@${prompt.length}`, prompt)
+        await context.prompted?.(`review@${prompt.length}`, composed)
         outcome = await deps.runtime.run({
           runId: reviewId,
           cwd: context.cwd,
