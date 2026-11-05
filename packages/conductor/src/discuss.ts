@@ -450,6 +450,12 @@ export interface DiscussionPorts {
    * same recipe's `discuss.limits`.**
    */
   ask(prompt: string, round: number, call: { model?: string; turns: number; wallMs: number }): Promise<Answered>
+  /**
+   * The version of the runtime `ask` will use for this round, as it prints it
+   * (#929), or null. Asked every round, just before `ask`; a host answers for
+   * the runtime it chose, and a rejection is recorded as null.
+   */
+  version(): Promise<string | null>
   store: EventStore
   log?: (line: string) => void
 }
@@ -566,7 +572,12 @@ export async function holdDiscussion(ports: DiscussionPorts, options: Discussion
     await recordPrompt(
       ports.store,
       stream,
-      { for: { _tag: 'Discussion' }, promptVersion: `discussion@${prompt.length}`, prompt },
+      {
+        for: { _tag: 'Discussion' },
+        promptVersion: `discussion@${prompt.length}`,
+        runtimeVersion: await ports.version().catch(() => null),
+        prompt,
+      },
       log,
     )
     const outcome = await ports.ask(prompt, round, call).catch((err: unknown): Answered => {

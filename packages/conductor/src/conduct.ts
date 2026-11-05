@@ -29,6 +29,7 @@ import {
   type Runtime,
   createRuntime,
   missingForTier,
+  runtimeVersionOf,
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
@@ -2724,50 +2725,60 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 Effect.sync(() => new AbortController()),
                 (controller) => Effect.sync(() => controller.abort()),
               )
+              const judgeEnv = runnableEnv(env.values)
               return yield* Effect.promise(() =>
-                recordPrompt(
-                  store,
-                  runId,
-                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgeParts },
-                  log,
-                ).then(() =>
-                  dispatched
-                    .run({
-                      // The count is in it, so two arrivals on one pass are two
-                      // sessions: a judge asked whether it still agrees with itself
-                      // is the warm-review failure `sessionIdFor` exists to avoid,
-                      // and a session id reused is the refusal `#195` cost a run.
-                      // The wait this continuation resumes is in it too, since the
-                      // count restarts in each one (#580). See `judgements`.
-                      runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
-                      // The worktree where there is one, and the conductor's own
-                      // directory where `admit` never cut one. Nothing is read from
-                      // either — the prompt says so — but a process still needs a
-                      // directory that exists to start in.
-                      cwd: worktree?.path ?? home,
-                      prompt: judgePromptText,
-                      ...(declared.model === undefined ? {} : { model: declared.model }),
-                      settingsPath: settings.right,
-                      log: taggedTrace(runLog, `judge:${on.when}`),
-                      traceTools: true,
-                      env: runnableEnv(env.values),
-                      limits: spendFor(declared.limits),
-                      signal: abort.signal,
-                    })
-                    .catch((err) => {
-                      threw = true
-                      return {
-                        exitCode: null,
-                        turns: 0,
-                        durationMs: 0,
-                        costUsd: null,
-                        failure: { kind: 'crash' as const, detail: (err as Error).message },
-                        text: null,
-                        sessionId: '',
-                        usage: undefined,
-                      }
-                    }),
-                ),
+                runtimeVersionOf(dispatched, judgeEnv)
+                  .then((runtimeVersion) =>
+                    recordPrompt(
+                      store,
+                      runId,
+                      {
+                        for: judgeFor,
+                        promptVersion: `judge@${judgePromptText.length}`,
+                        runtimeVersion,
+                        prompt: judgeParts,
+                      },
+                      log,
+                    ),
+                  )
+                  .then(() =>
+                    dispatched
+                      .run({
+                        // The count is in it, so two arrivals on one pass are two
+                        // sessions: a judge asked whether it still agrees with itself
+                        // is the warm-review failure `sessionIdFor` exists to avoid,
+                        // and a session id reused is the refusal `#195` cost a run.
+                        // The wait this continuation resumes is in it too, since the
+                        // count restarts in each one (#580). See `judgements`.
+                        runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
+                        // The worktree where there is one, and the conductor's own
+                        // directory where `admit` never cut one. Nothing is read from
+                        // either — the prompt says so — but a process still needs a
+                        // directory that exists to start in.
+                        cwd: worktree?.path ?? home,
+                        prompt: judgePromptText,
+                        ...(declared.model === undefined ? {} : { model: declared.model }),
+                        settingsPath: settings.right,
+                        log: taggedTrace(runLog, `judge:${on.when}`),
+                        traceTools: true,
+                        env: judgeEnv,
+                        limits: spendFor(declared.limits),
+                        signal: abort.signal,
+                      })
+                      .catch((err) => {
+                        threw = true
+                        return {
+                          exitCode: null,
+                          turns: 0,
+                          durationMs: 0,
+                          costUsd: null,
+                          failure: { kind: 'crash' as const, detail: (err as Error).message },
+                          text: null,
+                          sessionId: '',
+                          usage: undefined,
+                        }
+                      }),
+                  ),
               )
             }),
           ),
@@ -3781,7 +3792,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   round: 0,
                 }
                 yield* Effect.promise(() =>
-                  recordPrompt(store, runId, { for: implementerFor, promptVersion, prompt: implementerParts }, log),
+                  runtimeVersionOf(dispatched, agentEnv).then((runtimeVersion) =>
+                    recordPrompt(
+                      store,
+                      runId,
+                      { for: implementerFor, promptVersion, runtimeVersion, prompt: implementerParts },
+                      log,
+                    ),
+                  ),
                 )
 
                 yield* Effect.acquireRelease(
@@ -4040,10 +4058,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // (`runAttempt`'s `roundLimit`), so this is that round.
           ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
         }
+        const fixEnv = runnableEnv(env.values)
         await recordPrompt(
           store,
           runId,
-          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixParts },
+          {
+            for: fixFor,
+            promptVersion: `fix@${fixPrompt.length}`,
+            runtimeVersion: await runtimeVersionOf(dispatched, fixEnv),
+            prompt: fixParts,
+          },
           log,
         )
         const fixed = await Effect.runPromise(
@@ -4063,7 +4087,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     settingsPath: settings.right,
                     log: taggedTrace(runLog, `fix:${round}`),
                     traceTools: true,
-                    env: runnableEnv(env.values),
+                    env: fixEnv,
                     limits: spendFor(spec.limits),
                     signal: abort.signal,
                   })

@@ -25,6 +25,7 @@ export {
   type Runtime,
   type RuntimeCapabilities,
   type Spawned,
+  runtimeVersionOf,
 } from './runtime.ts'
 export {
   CLAUDE_CODE_CAPABILITIES,

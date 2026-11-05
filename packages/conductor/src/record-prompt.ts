@@ -84,6 +84,8 @@ export function recordPrompt(
   call: {
     readonly for: SpentFor
     readonly promptVersion: string
+    /** What the dispatched runtime's `--version` printed just before this call, or null (#929). Written as given. */
+    readonly runtimeVersion: string | null
     readonly prompt: string | ComposedPrompt | readonly RecordPart[]
   },
   log: (line: string) => void = () => {},
@@ -116,6 +118,7 @@ export function recordPrompt(
               bytes: utf8Bytes(composed.handed),
               prompt: composed.recorded,
               for: call.for,
+              runtimeVersion: call.runtimeVersion,
               ...(refs.length === 0 ? {} : { refs }),
             }),
           },

@@ -39,7 +39,15 @@
 import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { createRuntime, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS, type RunTrace, type Runtime } from '@lingtai/agent'
+import {
+  createRuntime,
+  NO_RUN_LOG,
+  openRunLog,
+  RUN_LOG_BEAT_MS,
+  runtimeVersionOf,
+  type RunTrace,
+  type Runtime,
+} from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import {
   FILE_BYTES,
@@ -273,6 +281,14 @@ export function discussionAsk(
 }
 
 /**
+ * The `version` port: the same runtime `discussionAsk` selects, asked in the
+ * environment it runs with (#929). Resolved per call, like `ask`.
+ */
+export function discussionVersion(runtime: Runtime | (() => Runtime)): DiscussionPorts['version'] {
+  return () => runtimeVersionOf(typeof runtime === 'function' ? runtime() : runtime, runnableEnv({}))
+}
+
+/**
  * Answer one question.
  *
  * Never throws: it is called from the daemon's subscription, and an exception
@@ -393,6 +409,7 @@ export async function answerDiscussion(
           settingsPath,
           log: trace,
         }),
+        version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' })),
       },
       {
         chatId: request.chatId,
