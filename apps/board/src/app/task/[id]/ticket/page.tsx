@@ -15,7 +15,7 @@ export default async function TicketTabPage({ params }: { params: Promise<{ id: 
   const { id } = await params
   const taskId = decodeURIComponent(id)
   // Not awaited: the tab is sent and the body streams in (0118 §2). Shared with the layout's read.
-  const answer = loadTicketAnswer(taskId)
+  const answer = measure(() => loadTicketAnswer(taskId), { label: '/task github' }).then(([a]) => a)
   const [read, timings] = await measure(() => guarded(() => loadTicketTab(taskId)), {
     label: '/task tab',
   })

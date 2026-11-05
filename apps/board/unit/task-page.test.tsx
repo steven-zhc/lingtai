@@ -1105,3 +1105,26 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
     expect(html).not.toContain('This issue has no body.')
   })
 })
+
+describe('what a pending page cannot lose or hide', () => {
+  const never = () => new Promise<TaskAnswer>(() => {})
+
+  it('is read-only until GitHub answers, so nothing typed can be replaced', () => {
+    const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
+    expect(pending).toMatch(/<section class="standing[^"]*" inert/)
+    expect(page(blocked())).not.toMatch(/<section class="standing[^"]*" inert/)
+  })
+
+  it('says why the opening is missing when GitHub failed for a touched ticket', () => {
+    const html = page(
+      { ...blocked(), events: 5 },
+      { found: null, askedGitHub: true, body: null, problem: 'rate limit exceeded' },
+    )
+    expect(html).toContain('The issue could not be read from GitHub: rate limit exceeded')
+  })
+
+  it('draws a plan placeholder in the header of an untouched queued ticket', () => {
+    const html = renderToStaticMarkup(<TaskBody task={task([], [])} github={never()} />)
+    expect(html).toContain('splan-pending')
+  })
+})

@@ -21,7 +21,7 @@ export default async function TaskDefaultTab({ params }: { params: Promise<{ id:
   const { id } = await params
   const taskId = decodeURIComponent(id)
   // Not awaited, and shared with the layout's read: only the Ticket tab draws it (0118 §2).
-  const answer = loadTicketAnswer(taskId)
+  const answer = measure(() => loadTicketAnswer(taskId), { label: '/task github' }).then(([a]) => a)
   const [read, timings] = await measure(() => loadDefaultTab(taskId), { label: '/task tab' })
   if (read.status === 'missing') notFound()
   return (

@@ -259,17 +259,25 @@ function TicketContext({
   body,
   taskId,
   pending = false,
+  problem = null,
 }: {
   opening: ReturnType<typeof ticketOpening>
   body: string | null
   taskId: string
   /** GitHub has not answered: the opening is not known yet, which is not the same as there being none. */
   pending?: boolean
+  /** GitHub answered and the issue could not be read: said here, so a failed read is not drawn as an issue with no opening. */
+  problem?: { text: string; askedGitHub: boolean } | null
 }) {
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className="topening">
       {pending ? <p className="empty">asking GitHub…</p> : null}
+      {problem ? (
+        <p className={problem.askedGitHub ? 'refusal' : 'note'}>
+          {problem.askedGitHub ? `The issue could not be read from GitHub: ${problem.text}` : problem.text}
+        </p>
+      ) : null}
       {opening === null ? null : (
         <div className="tcontext">
           {(
@@ -441,6 +449,7 @@ export function Standing({
   queued,
   unknown,
   pending = false,
+  ticketProblem = null,
   progress = null,
   // Renamed on the way in: the component already has a `held` of its own —
   // `describeWaitLines`'s lines, rank 2 and 3's words — and this is a different
@@ -508,6 +517,8 @@ export function Standing({
    * one caller that sets it.
    */
   pending?: boolean
+  /** Why the issue's body is null when GitHub answered and it could not be read; drawn in the opening. */
+  ticketProblem?: { text: string; askedGitHub: boolean } | null
   /**
    * Where the run in flight has got to — the board's rail, drawn at rank 2 of
    * a running item and nowhere else in this block.
@@ -715,7 +726,9 @@ export function Standing({
       questions={triageQuestions}
       recommended={triageRecommended}
     >
-      <section className={`standing${mark}`}>
+      {/* Until GitHub answers the block is read-only: this tree is replaced, not
+          updated, by the resolved one, and a sentence typed into it would be lost. */}
+      <section className={`standing${mark}`} inert={pending || undefined}>
         {isFramed ? (
           <header className="swaiting-head">
             <div className="swaiting-meta">
@@ -730,11 +743,19 @@ export function Standing({
             {subject !== null ? (
               <div className="sticket">
                 {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-                <TicketContext opening={opening} body={body} taskId={taskId} pending={pending} />
+                <TicketContext
+                  opening={opening}
+                  body={body}
+                  taskId={taskId}
+                  pending={pending}
+                  problem={ticketProblem}
+                />
               </div>
             ) : null}
             {progress !== null || queued !== null ? (
               <Rail progress={progress} live={standing.state === 'running'} held={budget} plan={queued?.plan} />
+            ) : queuedPending ? (
+              <p className="empty splan-pending">asking GitHub…</p>
             ) : null}
           </header>
         ) : subject !== null ? (
@@ -744,7 +765,7 @@ export function Standing({
               {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-            <TicketContext opening={opening} body={body} taskId={taskId} pending={pending} />
+            <TicketContext opening={opening} body={body} taskId={taskId} pending={pending} problem={ticketProblem} />
           </div>
         ) : null}
         {standing.afterMove ? (
@@ -1466,6 +1487,11 @@ export function DeferredStanding({
                   }
             }
             body={ticket.body}
+            ticketProblem={
+              ticket.body === null && ticket.problem && !(untouched && ticket.found === null && ticket.askedGitHub)
+                ? { text: ticket.problem, askedGitHub: ticket.askedGitHub }
+                : null
+            }
             outgoing={a.outgoing}
             queued={a.queued}
             unknown={untouched && ticket.found === null && ticket.askedGitHub ? ticket.problem : null}
