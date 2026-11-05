@@ -54,10 +54,12 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
   const label = inView ?? 'all projects'
   const current = { 'aria-current': 'page' } as const
 
-  // A plain <details>: no state, no script. Every entry is a link, and
-  // following one reloads the page, which closes the menu.
+  // A plain <details>: no state, no script. Every entry is a Next <Link>, so
+  // following one is a client navigation that keeps this element and its `open`
+  // attribute. The key is the state the menu shows, so a selection that changes
+  // it remounts the element closed.
   return (
-    <details className="filter">
+    <details key={`${only ?? ''}`} className="filter">
       <summary>
         {label} <span aria-hidden="true">▾</span>
       </summary>

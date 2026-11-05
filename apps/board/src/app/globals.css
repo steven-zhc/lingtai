@@ -221,7 +221,8 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   font-family: var(--mono); font-size: 10.5px; color: var(--muted);
   padding: 2px 7px; border-radius: 2px; border: 1px solid transparent;
 }
-.filter > summary::before { content: none; }
+.filter > summary::before,
+.filter[open] > summary::before { content: none; }
 .filter > summary:hover { color: var(--ink); }
 .filter .menu {
   position: absolute; top: 100%; left: 0; z-index: 10;
