@@ -163,14 +163,14 @@ describe('which object on the row this is', () => {
    * Line breaks and comment stars are not the claim, so they are collapsed
    * before the membership is read.
    */
-  it('leaves the four what they were, in the code and in the doc', () => {
+  it('leaves the three what they were, in the code and in the doc', () => {
     const said = (src: string) => src.replace(/[\s*]+/g, ' ')
-    const four = 'filter, reading, health, headline'
+    const three = 'filter, health, headline'
 
     // Twice in `page.tsx`: the docstring and the rule it points at.
-    expect(said(page).split(four)).toHaveLength(3)
-    expect(said(read('../src/app/projects.tsx'))).toContain(four)
-    expect(said(read('../../../doc/design/the-bar.md'))).toContain(four)
+    expect(said(page).split(three)).toHaveLength(3)
+    expect(said(read('../src/app/projects.tsx'))).toContain(three)
+    expect(said(read('../../../doc/design/the-bar.md'))).toContain('Three objects: the filter, health, the headline')
   })
 
   /** It is a control in the list, and `.reading` is text for the opposite reason. */

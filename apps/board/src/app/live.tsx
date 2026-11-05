@@ -277,33 +277,34 @@ export function Following() {
   const followed = useContext(Followed)
   const said = followed === null ? null : warning(followed.socket, followed.health)
   if (said === null) return null
-  const { label, tone, why, title } = said
+  return <Said said={said} />
+}
+
+/**
+ * The dot, the sentence and the command, drawn once for both bars. The command
+ * is a sibling of `.why` and not inside it: that span truncates, and the
+ * command is the part that must never be cut.
+ */
+export function Said({ said }: { said: Bearing }) {
+  const { label, tone, why, command, title } = said
   return (
     <>
+      {/* `role="img"` and a label, because the dot is the whole statement in
+          the ordinary case and a dot has no text. */}
       <span className={`dot ${tone}`} role="img" aria-label={label} title={title} />
-      <span className="why" title={title}>
-        {why}
-      </span>
+      {/* The sentence and the command, and only when there is a sentence.
+          Silence is what makes the dot worth glancing at. */}
+      {why ? (
+        <span className="why" title={title}>
+          {why}
+        </span>
+      ) : null}
+      {why && command ? <code>{command}</code> : null}
     </>
   )
 }
 
 export function Live({ code }: { code: CodeNews | null }) {
   const { socket, health } = useFollow()
-  const { label, tone, why, title } = bearing(socket, health, code)
-  return (
-    <>
-      {/* `role="img"` and a label, because the dot is the whole statement in
-          the ordinary case and a dot has no text. What a sighted reader gets
-          from the colour, a screen reader gets from here. */}
-      <span className={`dot ${tone}`} role="img" aria-label={label} title={title} />
-      {/* The sentence and the action, and only when there is one. Silence is
-          what makes the dot worth glancing at. */}
-      {why ? (
-        <span className="why" title={title}>
-          {why}
-        </span>
-      ) : null}
-    </>
-  )
+  return <Said said={bearing(socket, health, code)} />
 }

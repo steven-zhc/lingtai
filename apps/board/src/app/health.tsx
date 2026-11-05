@@ -54,13 +54,13 @@ async function news(): Promise<CodeNews | null> {
     if (isSea()) {
       return {
         wrong: null,
-        action: null,
+        command: null,
         said: 'running an installed Lingtai binary; Git commit comparison does not apply',
       }
     }
     return {
       wrong: 'code unknown',
-      action: 'restart it with: lingtai restart',
+      command: 'lingtai restart',
       said: 'this daemon started before the beacon carried a commit, so what code it is running cannot be read from here',
     }
   }
@@ -71,7 +71,7 @@ async function news(): Promise<CodeNews | null> {
   if (!currency) {
     return {
       wrong: 'code unknown',
-      action: 'compare it by hand: lingtai doctor',
+      command: 'lingtai doctor',
       said: "the daemon's commit could not be compared against the repository",
     }
   }
@@ -79,11 +79,11 @@ async function news(): Promise<CodeNews | null> {
   // longer holds, a base ref never fetched. `describeCurrency` says which, and
   // it is not a fault to act on.
   if (currency.unknown || currency.behind.length === 0) {
-    return { wrong: null, action: null, said: describeCurrency(currency) }
+    return { wrong: null, command: null, said: describeCurrency(currency) }
   }
   return {
-    wrong: `daemon ${currency.behind.length} behind`,
-    action: 'restart it to take them',
+    wrong: `daemon ${currency.behind.length} commits behind`,
+    command: 'lingtai restart',
     said: describeCurrency(currency),
   }
 }

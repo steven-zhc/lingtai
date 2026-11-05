@@ -13,12 +13,11 @@
  */
 import { Fragment, type ReactNode } from 'react'
 
-import { queuedSegment, type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
+import { type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
 
 import { Skeleton } from './skeleton'
 
 export const ASKING_COLUMN = 'asking GitHub for runnable issues…'
-export const ASKING_BAR = 'asking GitHub…'
 
 /**
  * Draws the Queued cards. `markNext` is false while GitHub is still being
@@ -125,41 +124,4 @@ export function QueuedCountPending({ logCount }: { logCount: number }) {
 
 export function QueuedCountAnswered({ logCount, github }: { logCount: number; github: GithubQueue }) {
   return <span className="ct">{logCount + github.cards.length}</span>
-}
-
-/**
- * The bar's Queued segment, with the text that follows it. `tail` is joined by
- * ` · ` when there is a segment. `tailOnlyAlone` drops the tail when a count is
- * printed — `what this has cost` was only ever what an otherwise empty reading
- * said.
- */
-export function QueuedSegmentPending({ tail }: { tail: string | null }) {
-  return (
-    <Fragment>
-      {ASKING_BAR}
-      {tail === null ? null : ` · ${tail}`}
-    </Fragment>
-  )
-}
-
-export function QueuedSegmentAnswered({
-  logQueued,
-  github,
-  tail,
-  tailOnlyAlone,
-}: {
-  logQueued: number
-  github: GithubQueue
-  tail: string | null
-  tailOnlyAlone: boolean
-}) {
-  const segment = queuedSegment(logQueued, github)
-  if (segment === null) return <Fragment>{tail}</Fragment>
-  const rest = tailOnlyAlone ? null : tail
-  return (
-    <Fragment>
-      {segment}
-      {rest === null ? null : ` · ${rest}`}
-    </Fragment>
-  )
 }

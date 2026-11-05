@@ -27,7 +27,6 @@ import {
   githubQueue,
   lastKindColor,
   queueFilters,
-  queuedSegment,
   type AskableFilter,
   type ProjectQueue,
 } from '../src/lib/board.ts'
@@ -268,33 +267,5 @@ describe('the skeletons the Queued column waits in', () => {
     await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, [], {}))
     expect(skeletonCount(['lingtai'])).toBe(0)
     forgetSkeletonCounts()
-  })
-})
-
-describe('the count the bar prints for Queued', () => {
-  const github = (over: Partial<Parameters<typeof queuedSegment>[1]>) => ({
-    cards: [],
-    problems: [],
-    notes: [],
-    asked: 1,
-    answered: 1,
-    ...over,
-  })
-
-  it('is the log and GitHub together', () => {
-    expect(queuedSegment(2, github({ cards: [{}, {}, {}] as never }))).toBe('5 queued')
-  })
-
-  it('is nothing at all for an empty queue', () => {
-    expect(queuedSegment(0, github({}))).toBeNull()
-  })
-
-  it('says it could not be counted, never 0, when every project failed', () => {
-    expect(queuedSegment(0, github({ answered: 0 }))).toBe('queued uncounted')
-    expect(queuedSegment(3, github({ answered: 0 }))).toBe('3+ queued, GitHub uncounted')
-  })
-
-  it('is the log alone when nobody was asked', () => {
-    expect(queuedSegment(2, github({ asked: 0, answered: 0 }))).toBe('2 queued')
   })
 })

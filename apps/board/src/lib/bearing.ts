@@ -51,8 +51,8 @@ export type Tone = 'pass' | 'warn' | 'idle'
 export interface CodeNews {
   /** What is wrong, in a few words — null when nothing is. */
   wrong: string | null
-  /** What to do about it. Null exactly when `wrong` is. */
-  action: string | null
+  /** The command that fixes it, bare. Null exactly when `wrong` is. */
+  command: string | null
   /** The whole of it, wrong or not, for the title. */
   said: string
 }
@@ -61,8 +61,10 @@ export interface Bearing {
   tone: Tone
   /** What the dot would say if a dot could speak. Read by a screen reader. */
   label: string
-  /** The sentence and the action, beside the dot. Null when there is nothing to say. */
+  /** The sentence beside the dot, with no command in it. Null when there is nothing to say. */
   why: string | null
+  /** The command that fixes it, written bare and drawn as code after the sentence. Null when there is none. */
+  command: string | null
   /** Both facts, always, on hover. */
   title: string
 }
@@ -111,6 +113,7 @@ export function bearing(
       tone: 'warn',
       label: 'offline',
       why: 'the live connection to the log is down — reload once it is back',
+      command: null,
       title: also('the live connection to the log is down, so nothing here is updating'),
     }
   }
@@ -119,6 +122,7 @@ export function bearing(
       tone: 'idle',
       label: socket === 'open' ? 'asking' : 'connecting',
       why: null,
+      command: null,
       title: also('asking whether this board is current'),
     }
   }
@@ -127,6 +131,7 @@ export function bearing(
       tone: 'warn',
       label: 'unknown',
       why: 'the projection could not be read',
+      command: 'lingtai doctor',
       title: also(`could not read the projection: ${board.error}`),
     }
   }
@@ -145,7 +150,8 @@ export function bearing(
     return {
       tone: 'warn',
       label: said,
-      why: `${said}${names.includes('task_view') ? ' — not taking work' : ''} — rebuild first: ${rebuild}, then lingtai restart`,
+      why: `${said}${names.includes('task_view') ? ' — not taking work' : ''} — rebuild first, then restart`,
+      command: `${rebuild}, then lingtai restart`,
       title: also(`${detail} — ${beating(board)}`),
     }
   }
@@ -153,7 +159,8 @@ export function bearing(
     return {
       tone: 'idle',
       label: 'no board yet',
-      why: 'nothing has been reduced yet — run: lingtai daemon',
+      why: 'nothing has been reduced yet',
+      command: 'lingtai daemon',
       title: also(`task_view has never been built${predates(board)}`),
     }
   }
@@ -167,7 +174,8 @@ export function bearing(
     return {
       tone: 'warn',
       label: `behind ${board.lag} · no daemon`,
-      why: `${board.lag} event(s) unfolded — start one with: lingtai daemon --no-conduct`,
+      why: `${board.lag} event(s) unfolded — start one`,
+      command: 'lingtai daemon --no-conduct',
       title: also(`${board.lag} event(s) unfolded and ${beat}`),
     }
   }
@@ -178,7 +186,8 @@ export function bearing(
     return {
       tone: 'warn',
       label: code.wrong,
-      why: `${code.wrong} — ${code.action}`,
+      why: code.wrong,
+      command: code.command,
       title: also(board.lag === 0 ? `task_view is at the head — ${beat}` : `catching up — ${beat}`),
     }
   }
@@ -187,6 +196,7 @@ export function bearing(
       tone: 'idle',
       label: `behind ${board.lag}`,
       why: 'catching up',
+      command: null,
       title: also(`catching up — ${beat}`),
     }
   }
@@ -197,6 +207,7 @@ export function bearing(
     tone: 'pass',
     label: 'current',
     why: null,
+    command: null,
     title: also(`task_view is at the head — ${beat}`),
   }
 }

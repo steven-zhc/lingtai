@@ -9,14 +9,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import {
-  ASKING_BAR,
   ASKING_COLUMN,
   QueuedAnswered,
   QueuedCountAnswered,
   QueuedCountPending,
   QueuedFallback,
-  QueuedSegmentAnswered,
-  QueuedSegmentPending,
   type ListQueued,
 } from '../src/app/queued-stream.tsx'
 import type { BoardCard, GithubQueue } from '../src/lib/board.ts'
@@ -141,41 +138,5 @@ describe('the Queued column once GitHub has answered', () => {
     expect(
       html(<QueuedCountAnswered logCount={1} github={answer({ cards: [card('a', '1'), card('a', '2')] })} />),
     ).toContain('>3<')
-  })
-})
-
-describe('the bar’s Queued segment', () => {
-  it('says GitHub is being asked, and still shows what follows it', () => {
-    const out = html(<QueuedSegmentPending tail="2 running" />)
-    expect(out).toBe(`${ASKING_BAR} · 2 running`)
-    expect(ASKING_BAR).toBe('asking GitHub…')
-  })
-
-  const segment = (github: GithubQueue, logQueued: number, tail: string | null, tailOnlyAlone = false) =>
-    html(<QueuedSegmentAnswered logQueued={logQueued} github={github} tail={tail} tailOnlyAlone={tailOnlyAlone} />)
-
-  it('prints the count at the front of the rest', () => {
-    expect(segment(answer({ cards: [card('a', '1')] }), 1, '2 running')).toBe('2 queued · 2 running')
-  })
-
-  it('reads on a fresh board with runnable issues', () => {
-    expect(segment(answer({ cards: [card('a', '1'), card('a', '2')] }), 0, 'nothing in the log yet')).toBe(
-      '2 queued · nothing in the log yet',
-    )
-  })
-
-  it('says it could not be counted when every project failed — never 0', () => {
-    const out = segment(answer({ answered: 0 }), 0, 'nothing in the log yet')
-    expect(out).toBe('queued uncounted · nothing in the log yet')
-    expect(out).not.toMatch(/\b0 queued/)
-  })
-
-  it('is just what follows it when there is nothing queued', () => {
-    expect(segment(answer(), 0, '2 running')).toBe('2 running')
-  })
-
-  it('drops `what this has cost` once a count is printed, and keeps it when none is', () => {
-    expect(segment(answer({ cards: [card('a', '1')] }), 0, 'what this has cost', true)).toBe('1 queued')
-    expect(segment(answer(), 0, 'what this has cost', true)).toBe('what this has cost')
   })
 })

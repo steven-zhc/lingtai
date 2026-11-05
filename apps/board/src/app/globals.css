@@ -190,15 +190,12 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    carries the rule; the file used to state that rule 23 lines above a `chip sig`
    holding a dollar figure. There is no second one now.
 
-   **Nothing waiting is the quiet version**: same words, ordinary weight, no
-   colour and no box. A bar where everything is emphasised is a bar where
-   nothing is. */
-.bar .head {
-  font-family: var(--mono); font-size: 12px; color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+   It is drawn only while something waits: with nothing waiting there is no
+   element at all, and the Waiting column's own empty line says so. */
 .bar .head.sig {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
   font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  text-decoration: none;
   color: var(--signal);
   padding: 2px 8px; border-radius: 2px;
   border: 1px solid var(--signal); background: var(--signal-soft);
@@ -210,6 +207,11 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .bar .why {
   color: var(--ink-2);
   max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The command beside the sentence, never inside the span that truncates. */
+.bar code {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  white-space: nowrap;
 }
 
 /* The projects, as one control (the-bar.md, *Since 2026-11-05*): a <details>
