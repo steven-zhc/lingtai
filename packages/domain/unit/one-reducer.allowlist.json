@@ -104,6 +104,22 @@
     "reason": "Idempotency: has this outcome's plan already been appended (plan §1.5)."
   },
   {
+    "file": "packages/conductor/src/prompt-refs.ts",
+    "function": "fetchStepValue",
+    "type": "StepEnded",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads one named action's value off the one StepEnded a prompt reference names; reduces nothing (#928)."
+  },
+  {
+    "file": "packages/conductor/src/record-prompt.ts",
+    "function": "withStepRef",
+    "type": "StepEnded",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds the latest StepEnded holding an inserted text, so a prompt can point at it; reduces nothing (#928)."
+  },
+  {
     "file": "packages/conductor/src/split-ticket.ts",
     "function": "splitTicketHolding",
     "type": "SplitStarted",

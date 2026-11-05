@@ -18,7 +18,7 @@ import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload
 import { describe, expect, it } from 'vitest'
 
 import type { PromptBudget } from '../src/attempts.ts'
-import { editHash, nextPrompt, renderPrompt } from '../src/prompt.ts'
+import { editHash, nextPrompt, renderPrompt, renderPromptParts } from '../src/prompt.ts'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 
@@ -409,5 +409,40 @@ describe("the next attempt's prompt", () => {
       expect(text).toMatch(/against the bar below:\n\n## What this attempt checks, and what it does not/)
       expect(text).toMatch(/\n\n4\. \*\*Commit as the work stands/)
     })
+  })
+})
+
+describe('renderPromptParts (#928)', () => {
+  const ticket = { number: 7, title: 'a title', body: 'a body' }
+  const text = (parts: readonly (string | { text: string })[]) =>
+    parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
+
+  it('inserts a body verbatim, whatever replacement patterns or slots it contains', () => {
+    const body = "cost $& and $' and {{design}} and {{body}} and {{title}}"
+    const out = renderPrompt('Title: {{title}}\nBody: {{body}}\nEnd', { ...ticket, body }, [], '', 'the design')
+    expect(out).toContain(`Body: ${body}\nEnd`)
+    expect(out.match(/the design/g)).toHaveLength(1)
+  })
+
+  it('references the body when told where it came from, and the design as an onStep part', () => {
+    const parts = renderPromptParts('{{body}}|{{design}}', ticket, [], '', '  doc  ', {
+      bodyAt: { stream: 'ticket-p-7', version: 2 },
+    })
+    expect(parts).toContainEqual({ text: 'a body', ref: { _tag: 'TicketBody', stream: 'ticket-p-7', version: 2 } })
+    expect(parts).toContainEqual({ text: 'doc', onStep: { field: 'document', trimmed: true } })
+    expect(text(parts)).toBe(renderPrompt('{{body}}|{{design}}', ticket, [], '', '  doc  '))
+  })
+
+  it('appends the design as a step part when the template has no slot for it', () => {
+    const parts = renderPromptParts('just {{issue}}', ticket, ['pnpm test'], '', 'doc')
+    expect(parts.filter((p) => typeof p !== 'string' && 'onStep' in p)).toHaveLength(1)
+    expect(text(parts)).toContain('## The design, written for this run before any code')
+    expect(text(parts).endsWith('\n')).toBe(true)
+  })
+
+  it('leaves an unknown slot literal and an empty design as nothing', () => {
+    const parts = renderPromptParts('{{nope}} {{design}}!', ticket, [], '', '   ')
+    expect(text(parts).startsWith('{{nope}} !')).toBe(true)
+    expect(parts.some((p) => typeof p !== 'string' && 'onStep' in p)).toBe(false)
   })
 })

@@ -34,6 +34,19 @@ export const PromptRef = z.discriminatedUnion('_tag', [
     from: z.string(),
     to: z.string(),
   }),
+  z.object({
+    _tag: z.literal('StepValue'),
+    /** The run stream. */
+    stream: z.string(),
+    /** The `StepEnded` at this version. */
+    version: z.number().int().nonnegative(),
+    /** The action's `name` in that step's outcome. */
+    action: z.string(),
+    /** Its `evidence`, or the document of a `Design` it drafted. */
+    field: z.enum(['evidence', 'document']),
+    /** The value was inserted after `.trim()`; the resolver applies it before the size and hash checks. */
+    trimmed: z.literal(true).optional(),
+  }),
 ])
 export type PromptRef = z.infer<typeof PromptRef>
 
@@ -136,9 +149,18 @@ export function sha256Hex(text: string): string {
 
 /** The text a recorded prompt holds where `ref` stood. A person can read it unexpanded. */
 export function markerOf(ref: PromptRef, bytes: number): string {
-  return ref._tag === 'Diff'
-    ? `⟪lingtai:diff ${ref.from.slice(0, 7)}...${ref.to.slice(0, 7)} · ${bytes} bytes⟫`
-    : `⟪lingtai:body ${ref.stream}@${ref.version} · ${bytes} bytes⟫`
+  switch (ref._tag) {
+    case 'Diff':
+      return `⟪lingtai:diff ${ref.from.slice(0, 7)}...${ref.to.slice(0, 7)} · ${bytes} bytes⟫`
+    case 'TicketBody':
+      return `⟪lingtai:body ${ref.stream}@${ref.version} · ${bytes} bytes⟫`
+    case 'StepValue':
+      return `⟪lingtai:step ${ref.stream}@${ref.version} ${ref.action} ${ref.field} · ${bytes} bytes⟫`
+    default: {
+      const never: never = ref
+      return never
+    }
+  }
 }
 
 export type PromptPart = string | { readonly text: string; readonly ref: PromptRef }
