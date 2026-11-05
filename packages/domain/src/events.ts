@@ -23,6 +23,7 @@
 import { z } from 'zod'
 
 import { StepOutcome, WaitId } from './action.ts'
+import { PromptRefEntry } from './prompt-ref.ts'
 import { JudgeWhen } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
@@ -644,7 +645,10 @@ export type SpentFor = z.infer<typeof SpentFor>
  *
  * If that ever rivals the rest of the table the answer is to truncate at append
  * time and say in the payload that it was truncated — never to delete, which
- * the log's no-delete rule forbids in any case.
+ * the log's no-delete rule forbids in any case. **#927 chose references instead
+ * for the cold reviewer's and the fix round's prompts**: they paste the whole
+ * diff, up to `runtime.budget.diff`, per round, and `refs` replaces those copies
+ * with a marker.
  *
  * @summary The conductor handed the agent its prompt.
  */
@@ -667,6 +671,20 @@ export const RunPrompted = z.object({
    * attempt reducer leaves its own `prompt` alone for those.
    */
   for: SpentFor.optional(),
+  /**
+   * Added by #927 (0100 §14). Where `prompt` holds a **marker** in place of a
+   * value already on the log or in git — the ticket body, a diff — one entry per
+   * marker: its `[start, end)` UTF-16 offsets in `prompt`, what it stands for, the
+   * UTF-8 size of that value and its `sha256`. Absent means `prompt` is the whole
+   * of what was handed, as every event written before this is. `bytes` stays the
+   * size of the prompt **as handed**, so it is the same number either way.
+   *
+   * The offsets are the authority and `prompt` is never searched for a marker
+   * (a body can contain the marker text). `expandPrompt` in `@lingtai/domain`
+   * puts the values back; a value that no longer resolves is reported, never
+   * invented. A clipped insert is not verbatim and is written out, not referenced.
+   */
+  refs: z.array(PromptRefEntry).optional(),
 })
 
 /** @summary An agent edited, wrote, or deleted a file during its run. */

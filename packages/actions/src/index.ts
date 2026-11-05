@@ -18,6 +18,8 @@ export { createProcessAction, EVIDENCE_BYTES, EVIDENCE_LINES, tail, type Process
 export {
   buildDesignPrompt,
   buildReviewPrompt,
+  reviewPromptParts,
+  type DiffRead,
   createAgentAction,
   createDraftAction,
   parseDraft,

@@ -43,6 +43,7 @@ import type {
   PayloadOf,
   RefusedAbout,
   SpentFor,
+  ComposedPrompt,
   WaitId,
 } from '@lingtai/domain'
 
@@ -476,7 +477,7 @@ export interface ActionContext {
    * before it does. The pipeline fills it in with the `for` its `RunSpent` will
    * carry, which the action does not know; absent where nothing records.
    */
-  prompted?: (promptVersion: string, prompt: string) => Promise<void>
+  prompted?: (promptVersion: string, prompt: string | ComposedPrompt) => Promise<void>
   /** The commit this verdict is about, and the only thing that makes it stale. */
   onSha: string
   /** The worktree. Actions run where the agent worked, never anywhere else. */
@@ -728,7 +729,7 @@ export interface PipelineOptions {
    * `emit` is the pass's own append, whose refusal re-raises the pass, and a
    * prompt that could not be recorded must not stop the dispatch. Must not reject.
    */
-  recordPrompt?: (call: { for: SpentFor; promptVersion: string; prompt: string }) => Promise<void>
+  recordPrompt?: (call: { for: SpentFor; promptVersion: string; prompt: string | ComposedPrompt }) => Promise<void>
   /**
    * Every approval that has waived one of this step's declared actions, by
    * name (#465, 0120 §6) — **the first action with each name, and that one

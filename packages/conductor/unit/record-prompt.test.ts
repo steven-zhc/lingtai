@@ -53,3 +53,33 @@ describe('recordPrompt (#923)', () => {
     ).resolves.toBeUndefined()
   })
 })
+
+describe('recordPrompt with a composed prompt (#927)', () => {
+  it('records the marked text, the refs with their hashes, and bytes as handed', async () => {
+    const { composePrompt } = await import('@lingtai/domain')
+    const store = createMemoryEventStore()
+    const diff = '+x\n'.repeat(500)
+    const composed = composePrompt([
+      'head ',
+      { text: diff, ref: { _tag: 'Diff', from: 'a'.repeat(40), to: 'b'.repeat(40) } },
+      ' tail',
+    ])
+    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', prompt: composed })
+    const data = (await store.read('pass-1'))[0]!.data as {
+      bytes: number
+      prompt: string
+      refs: { sha256: string; bytes: number }[]
+    }
+    expect(data.bytes).toBe(Buffer.byteLength(composed.handed))
+    expect(data.prompt).toBe(composed.recorded)
+    expect(data.refs).toHaveLength(1)
+    expect(data.refs[0]!.bytes).toBe(Buffer.byteLength(diff))
+    expect(data.refs[0]!.sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('writes no refs for a plain string', async () => {
+    const store = createMemoryEventStore()
+    await recordPrompt(store, 'pass-1', { for: FOR, promptVersion: 'fix@1', prompt: 'plain' })
+    expect((await store.read('pass-1'))[0]!.data).not.toHaveProperty('refs')
+  })
+})

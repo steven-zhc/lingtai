@@ -167,6 +167,12 @@ export interface Claimed {
   readonly ticket: Ticket
   /** Which kind the recipe matched it as, which is what ordered the queue. */
   readonly kind: string
+  /**
+   * The version of the `TicketClaimed` / `TicketContinued` this pass appended, and
+   * so where its `body` is on the log (#927). It is what a `TicketBody` reference
+   * in a recorded prompt points at. Absent where that event carries no body.
+   */
+  readonly claimVersion?: number
 }
 
 /**

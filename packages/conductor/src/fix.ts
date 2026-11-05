@@ -59,7 +59,9 @@
  */
 import type { ActionFinding } from '@lingtai/actions'
 import {
+  composePrompt,
   type Envelope,
+  type PromptPart,
   SEVERITIES,
   type Severity,
   type TicketState,
@@ -467,7 +469,7 @@ export function decideFix(input: FixInput): FixDecision {
  * was the branch the prompt discouraged. An escape hatch nobody is told about is
  * not one, so `fix.test.ts` pins the sentence rather than trusting it to stay.
  */
-export function fixBrief(input: {
+export function fixBriefParts(input: {
   /**
    * What refused, and what it said.
    *
@@ -486,6 +488,11 @@ export function fixBrief(input: {
   action: string
   /** `base...head`, as the reviewer was shown it. */
   diff: string
+  /**
+   * The two full shas `diff` was run between, when it was (#927). With them an
+   * unclipped diff is recorded as a reference; without, or clipped, it is written out.
+   */
+  diffAt?: { readonly from: string; readonly to: string }
   /** `runtime.budget.diff`. The same ceiling the review runs under. */
   diffBytes: number
   /**
@@ -501,18 +508,29 @@ export function fixBrief(input: {
    * `Done when` a person added before granting the round is the one thing a
    * fixer without it cannot meet (#643).
    */
-  ticket: { title: string; body: string }
+  ticket: { title: string; body: string; bodyAt?: { stream: string; version: number } }
   /**
    * What triage advised and the person who granted this round accepted
    * (`grantedAdviceOf`). Evidence, not a second spec; absent or empty leaves
    * the brief without the section.
    */
   advice?: GrantedAdvice
-}): string {
-  const clipped =
-    input.diff.length > input.diffBytes
-      ? `${input.diff.slice(0, input.diffBytes)}\n\n[diff truncated at ${input.diffBytes} bytes]`
-      : input.diff
+}): PromptPart[] {
+  const clip = input.diff.length > input.diffBytes
+  const clipped = clip
+    ? `${input.diff.slice(0, input.diffBytes)}\n\n[diff truncated at ${input.diffBytes} bytes]`
+    : input.diff
+  const body: PromptPart =
+    input.ticket.bodyAt === undefined
+      ? input.ticket.body
+      : {
+          text: input.ticket.body,
+          ref: { _tag: 'TicketBody', stream: input.ticket.bodyAt.stream, version: input.ticket.bodyAt.version },
+        }
+  const diffPart: PromptPart =
+    !clip && input.diffAt !== undefined
+      ? { text: clipped, ref: { _tag: 'Diff', from: input.diffAt.from, to: input.diffAt.to } }
+      : clipped
 
   const { evidence, criterion } =
     input.refusal.on === 'findings'
@@ -521,7 +539,8 @@ export function fixBrief(input: {
         ? conflictHalf(input.refusal.base, input.refusal.paths)
         : outputHalf(input.refusal.output, input.action)
 
-  return `# The ${input.action} action refused this change, and you are the fix
+  return [
+    `# The ${input.action} action refused this change, and you are the fix
 
 You are in the worktree the change was made in. This is fix round
 ${input.round} of ${input.of}.
@@ -535,7 +554,9 @@ ${adviceSection(input.advice)}
 
 ${input.ticket.title}
 
-${input.ticket.body}
+`,
+    body,
+    `
 
 This is what the cold reviewer read the change against. It is context for the
 findings, not the job handed to you again: the findings are still the criterion.
@@ -543,7 +564,9 @@ findings, not the job handed to you again: the findings are still the criterion.
 ## The change under review
 
 \`\`\`diff
-${clipped}
+`,
+    diffPart,
+    `
 \`\`\`
 
 ${criterion}
@@ -572,7 +595,13 @@ describes cannot happen, or it does not happen here, or the failure was not
 caused by this diff. **Never make the code worse to make the refusal go away.** A
 fixer that rewrites working code to silence a false finding, or deletes a test to
 make a build go green, is the failure this whole loop is most likely to produce,
-and committing nothing is the move that exists so you never have to.`
+and committing nothing is the move that exists so you never have to.`,
+  ]
+}
+
+/** `fixBriefParts`, concatenated: the text the fixer is handed. `fix.test.ts` pins its sentences. */
+export function fixBrief(input: Parameters<typeof fixBriefParts>[0]): string {
+  return composePrompt(fixBriefParts(input)).handed
 }
 
 /** One line triage advised fixing, as `FixableLines` carries it. */
