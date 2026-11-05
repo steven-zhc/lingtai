@@ -53,6 +53,9 @@ const QUEUED: QueuedView = {
   paused: false,
   dependenciesUnread: null,
   plan: null,
+  kind: 'bug',
+  kinds: ['bug', 'tech-debt', 'feature', 'documentation'],
+  behind: null,
   problem: null,
 }
 

@@ -2,6 +2,7 @@ import { runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { loadProject } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
+import { held as heldBy } from '@lingtai/daemon/control'
 /**
  * What a queued item is waiting for, and what happens if you press the button.
  *
@@ -168,6 +169,16 @@ export interface QueuedView {
   dependenciesUnread: string | null
   /** What pressing the button runs. Null when the recipe could not be read. */
   plan: PlanView | null
+  /**
+   * This issue's kind as GitHub offers it — taken from the offer rather than
+   * the runnable list, so an item the backoff holds still has one. Null when
+   * GitHub is not offering it or could not be asked.
+   */
+  kind: string | null
+  /** The kind order `selectRunnable` sorted by (`['bug']` where the recipe names none). Empty on `problem`. */
+  kinds: string[]
+  /** The entry after this one in line, null when last, not in line or on `problem`. */
+  behind: { issue: string; title: string; kind: string } | null
   /** Why none of this could be answered, when it could not. */
   problem: string | null
 }
@@ -213,6 +224,10 @@ export function backoffOf(own: readonly Envelope[], backoffMs: number, now: numb
   return heldUntil({ lastAttemptAt: reduceTicket(own).lastAttemptAt, repairPending: false }, backoffMs, now)
 }
 
+function pickBehind(r: { issue: string; title: string; kind: string }): NonNullable<QueuedView['behind']> {
+  return { issue: r.issue, title: r.title, kind: r.kind }
+}
+
 export function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {
   return {
     position: null,
@@ -222,6 +237,9 @@ export function refused(problem: string, plan: PlanView | null, paused: boolean)
     paused,
     dependenciesUnread: null,
     plan,
+    kind: null,
+    kinds: [],
+    behind: null,
     problem,
   }
 }
@@ -300,6 +318,10 @@ export async function queuedFor(input: {
       paused,
       dependenciesUnread: offered.dependenciesUnread,
       plan,
+      kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
+      // `selectRunnable`'s own fallback (`queue.ts`), so this describes the order it used.
+      kinds: filter.kinds.length > 0 ? [...filter.kinds] : ['bug'],
+      behind: at >= 0 && runnable[at + 1] ? pickBehind(runnable[at + 1]!) : null,
       problem: null,
     }
   } catch (err) {
@@ -376,4 +398,68 @@ function ordinal(n: number): string {
 export function place(view: QueuedView): string | null {
   if (view.position === null) return null
   return `${ordinal(view.position)} of ${view.inLine} in line`
+}
+
+/** The attempts the conductor is holding, and how many it will hold at once. */
+export interface InFlight {
+  running: { project: string; issue: string }[]
+  slots: number
+}
+
+/**
+ * What is in flight, and the slots, as the conductor counts them.
+ *
+ * **`runtime.concurrency` is ignored without a daily ceiling** (`conduct.ts`):
+ * then one slot, filled by any project's attempt. With one, `concurrency` slots
+ * and this project's attempts only. `held` stays the one definition of "in
+ * flight". Null when the recipe was not read — unknown is not 1.
+ */
+export function inFlightOf(
+  rows: readonly { project: string; issue: string; state: string }[],
+  project: string,
+  concurrency: number | undefined,
+  ceilingSet: boolean,
+): InFlight | null {
+  if (concurrency === undefined) return null
+  const running = heldBy(rows as Parameters<typeof heldBy>[0]).map((id) => {
+    const at = id.lastIndexOf('#')
+    return { project: id.slice(0, at), issue: id.slice(at + 1) }
+  })
+  return ceilingSet
+    ? { running: running.filter((r) => r.project === project), slots: concurrency }
+    : { running, slots: 1 }
+}
+
+/** The panel's chip: the place without *in line*, or what holds it. */
+export function queuedChip(view: QueuedView, _inFlight: InFlight | null, now: number = Date.now()): string {
+  if (view.problem !== null) return 'unknown'
+  if (view.position !== null) return `${ordinal(view.position)} of ${view.inLine}`
+  if (view.notOffered !== null) return 'not offered'
+  if (view.paused) return 'paused'
+  if (view.runnableAt !== null && holding(view, now) !== null) return 'backing off'
+  return 'unknown'
+}
+
+/** The panel's sentence about its place and its hold. */
+export function queuedSentence(view: QueuedView, inFlight: InFlight | null, now: number = Date.now()): string {
+  if (view.problem !== null) return `Its place in the queue could not be read: ${view.problem}`
+  const hold = holding(view, now)
+  if (hold !== null) return hold
+  if (view.position === null) return 'It is not in line.'
+  if (view.position === 1) {
+    if (inFlight === null) return 'Taken next, when a slot is free.'
+    const n = inFlight.running.length
+    if (n < inFlight.slots) return "Taken on the conductor's next turn."
+    return n === 1
+      ? 'Taken next, as soon as the running attempt finishes.'
+      : `Taken next, as soon as one of the ${n} running attempts finishes.`
+  }
+  const ahead = view.position - 1
+  return ahead === 1 ? '1 ahead of it; it is taken after it.' : `${ahead} ahead of it; it is taken after them.`
+}
+
+/** *bug → tech-debt → feature, then by number*; null when the order is unknown. */
+export function kindOrder(view: QueuedView): string | null {
+  if (view.kinds.length === 0) return null
+  return `${view.kinds.join(' → ')}, then by number`
 }

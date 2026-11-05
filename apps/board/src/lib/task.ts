@@ -36,6 +36,7 @@ import {
   type TriageStatus,
   type WaitReason,
 } from '@lingtai/domain/wait'
+import { machineDayCeiling } from '@lingtai/env'
 import { hasGitHubAuth } from '@lingtai/env'
 /**
  * One task, reduced from its streams on demand.
@@ -81,6 +82,7 @@ import { eventStore } from '@lingtai/event-store'
 import { GitHubError } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
+import { concurrencyOf } from '@lingtai/recipe/settings'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
 import { cache } from 'react'
@@ -97,7 +99,7 @@ import {
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
-import { queuedFor, refused as refusedQueued, type QueuedView } from './queued.ts'
+import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -956,6 +958,8 @@ export interface TaskDetail {
   taskId: string
   /** Neighbours in the Waiting lane, read from `readTasks` on every render (#584). */
   waiting: { previous: WaitingNeighbour | null; next: WaitingNeighbour | null }
+  /** For a queued ticket: what is running now and the slots (0118 §2); null otherwise or when the recipe was not read. */
+  inFlight: InFlight | null
   /** Local mirror check for the current wait's kept ref; null for every other case. */
   unpushedMirror: { path: string; sha: string | null } | null
   /**
@@ -1527,12 +1531,18 @@ export async function knowable(taskId: string): Promise<boolean> {
  */
 async function planFor(
   project: string,
-): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> } | undefined> {
+): Promise<
+  { plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'>; concurrency: number } | undefined
+> {
   const state = await loadProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
-    ? { plan: filter.plan, limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts } }
+    ? {
+        plan: filter.plan,
+        limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts },
+        concurrency: concurrencyOf(filter.recipe),
+      }
     : undefined
 }
 
@@ -1687,11 +1697,17 @@ export const readAttempts = cache(async (taskId: string) => {
   // project is the id's, from `parseTicketStream`.
   const project = parseTicketStream(taskId)?.project ?? null
   const planAndLimits =
-    (standing.state === 'running' || standing.state === 'blocked') && project !== null
-      ? await timed('next.plan', () => planFor(project))
+    (standing.state === 'running' || standing.state === 'blocked' || standing.state === 'queued') && project !== null
+      ? standing.state === 'queued'
+        ? await planFor(project)
+        : await timed('next.plan', () => planFor(project))
       : undefined
-  const plan = planAndLimits?.plan
-  const limits = planAndLimits?.limits ?? null
+  // A queued page reads the recipe for its slots only: `plan` and `limits`
+  // stay what they were for a state that never had them.
+  const drawsPlan = standing.state === 'running' || standing.state === 'blocked'
+  const plan = drawsPlan ? planAndLimits?.plan : undefined
+  const limits = drawsPlan ? (planAndLimits?.limits ?? null) : null
+  const concurrency = standing.state === 'queued' ? planAndLimits?.concurrency : undefined
 
   // The last attempt reduced again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
@@ -1715,8 +1731,23 @@ export const readAttempts = cache(async (taskId: string) => {
     return { ...r, costUsd }
   })
 
-  return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
+  return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits, concurrency }
 })
+
+/** `inFlightOf` for a queued ticket only; an unreadable ceiling is unknown, not one slot. */
+function inFlightFor(
+  state: string,
+  lane: Awaited<ReturnType<typeof readTasks>>,
+  project: string,
+  concurrency: number | undefined,
+): InFlight | null {
+  if (state !== 'queued') return null
+  try {
+    return inFlightOf(lane, project, concurrency, machineDayCeiling() !== undefined)
+  } catch {
+    return null
+  }
+}
 
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // The control stream is read for the seven types the reducer handles only: it
@@ -1737,7 +1768,18 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     readConductor(),
     timed('tasks.read', () => readTasks({})).catch(emptyIfUnbuilt),
   ])
-  const { own, ticketState, claims, streams, states, spendFold, standing: foldedStanding, runs, limits } = shared
+  const {
+    own,
+    ticketState,
+    claims,
+    streams,
+    states,
+    spendFold,
+    standing: foldedStanding,
+    runs,
+    limits,
+    concurrency,
+  } = shared
   const spend = spendFold.rows
 
   // **The only thing that decides a 404**, and it needs no GitHub. See `knowable`.
@@ -1870,6 +1912,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     totals: totalsOf(runs, discussions, spend),
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
+    inFlight: inFlightFor(standing.state, lane, ticket.project, concurrency),
     events: own.length,
   }
 }

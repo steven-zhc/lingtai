@@ -134,6 +134,7 @@ const task = (
   return {
     taskId: ITEM,
     waiting: { previous: null, next: null },
+    inFlight: null,
     unpushedMirror: null,
     standing: standingOf(own, runs),
     want: null,
@@ -988,6 +989,9 @@ describe('a queued page reduces the plan into the rail (#781)', () => {
         paused: false,
         dependenciesUnread: null,
         plan,
+        kind: null,
+        kinds: [],
+        behind: null,
         problem: null,
       },
     })
@@ -1026,6 +1030,9 @@ describe('the places that wait for GitHub', () => {
         paused: false,
         dependenciesUnread: null,
         plan: null,
+        kind: null,
+        kinds: [],
+        behind: null,
         problem: null,
       },
     })
