@@ -68,7 +68,7 @@ describe('the task route', () => {
  */
 describe("the task page's bar, when the stream is not following", () => {
   it('warns when the stream is down, and is silent when it is fine', () => {
-    expect(warning('trouble', null)?.why).toBe('the event stream is down — reload once it is back')
+    expect(warning('trouble', null)?.why).toBe('the live connection to the log is down — reload once it is back')
     expect(warning('connecting', null)).toBeNull()
     expect(warning('open', null)).toBeNull()
   })

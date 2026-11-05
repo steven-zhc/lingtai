@@ -40,7 +40,7 @@ export function Paused({ by, reason }: { by: string | null; reason: string | nul
     <>
       {/* Held, not failed: nothing is broken, and a red chip here would send
           somebody looking for the fault instead of reading the sentence. */}
-      <span className="chip held" title="the conductor is taking no new work; a run already in flight finishes">
+      <span className="chip held" title="the conductor is taking no new work; an attempt already in flight finishes">
         paused
       </span>
       <span className="why" title={said}>

@@ -510,7 +510,7 @@ describe('a blocked task', () => {
     )
     expect(positions.every((position) => position >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
-    expect(html.indexOf('Send attempt 2')).toBeLessThan(html.indexOf('>Close</button>'))
+    expect(html.indexOf('Send Attempt 2')).toBeLessThan(html.indexOf('>Close</button>'))
     // The raw refusal is the deciding attempt's, in its tab, and not in the layout.
     expect(html).not.toContain('<pre class="sraw"')
   })
@@ -535,7 +535,7 @@ describe('a blocked task', () => {
     expect(resolutions.indexOf('data-resolution="EditBodyAndRequeue"')).toBeLessThan(
       resolutions.indexOf('data-resolution="Requeue"'),
     )
-    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('Send attempt 2'))
+    expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('Send Attempt 2'))
     expect(resolutions).toContain('Triage recommended')
   })
 
@@ -613,7 +613,7 @@ describe('a running task', () => {
     const quiet = page({ ...running(), discussions: [talk] })
     // Not vacuous: the turn rendered, with its cannot line and its buttons.
     expect(quiet).toContain('class="chatcannot"')
-    expect(quiet).toContain('Use for the next run')
+    expect(quiet).toContain('Use for the next attempt')
     expect(quiet).toContain('class="chat quiet"')
     expect(quiet).not.toMatch(BRASS)
     // The cannot rule's amber is the stylesheet's, so the override is read there.

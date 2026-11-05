@@ -45,7 +45,7 @@ describe('add to this resolution', () => {
       const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }), tag)
       expect(html).toContain('Add to this resolution')
       expect(html).not.toContain('Add to the ticket')
-      expect(html).toContain('Use for the next run')
+      expect(html).toContain('Use for the next attempt')
     },
   )
 

@@ -1227,7 +1227,7 @@ function outcomeOf(state: DomainRunState, claim: TicketClaim, held: boolean, bra
   if (claim.ended?.kind === 'released') return { state: 'released', detail: claim.ended.reason }
   if (state.agentStartedAt !== null) return { state: 'running', detail: null }
   if (claim.ended?.kind === 'asked') return asked()
-  return { state: 'claimed', detail: 'nothing on its stream' }
+  return { state: 'claimed', detail: 'nothing recorded for it yet' }
 }
 
 /**

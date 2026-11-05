@@ -73,7 +73,7 @@ describe('the box, rendered', () => {
    */
   it('says how long the edit lasts, on the box', () => {
     const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} />)
-    expect(html).toContain('attempt 3 only')
+    expect(html).toContain('Attempt 3 only')
   })
 
   /**
@@ -117,7 +117,7 @@ describe('the box, rendered', () => {
     )
 
     expect(html).toContain('the recipe could not be read: bad kinds')
-    expect(html).not.toContain('attempt 3 only')
+    expect(html).not.toContain('Attempt 3 only')
     expect(html).not.toContain('<pre')
   })
 })
@@ -144,8 +144,10 @@ describe('reduced', () => {
     const html = renderToStaticMarkup(<Outgoing taskId="ticket-lingtai-104" outgoing={VIEW} reduced />)
     const before = html.slice(0, html.indexOf('<details'))
 
-    expect(before).toContain('attempt 3 only')
-    expect(before).toContain(`<p class="outver">${VIEW.version}</p>`)
+    expect(before).toContain('Attempt 3 only')
+    // The version is a field of the head, not a caption under it.
+    expect(before).toContain(`<span class="outname" title="${VIEW.version}">`)
+    expect(html).not.toContain('class="outver"')
   })
 
   it('is unchanged when the prompt cannot be composed', () => {

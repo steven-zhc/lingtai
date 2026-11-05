@@ -91,7 +91,7 @@ const cardsOf = (html: string) =>
 /** Every `<button>`'s own text, in document order. */
 const buttonsOf = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1] ?? '')
 
-const SENTENCE = 'nothing to approve — this run recorded no sha to continue from'
+const SENTENCE = 'nothing to approve — this attempt recorded no commit to continue from'
 
 describe('the moves row draws exactly allowedResolutions (#442)', () => {
   it('offers the body edit for the six named wait reasons exactly where allowed', () => {
@@ -170,7 +170,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
   it('draws Send rather than Back to the queue wherever there is a prompt to send', () => {
     const fx = WAIT_FIXTURES.find((f) => f.name === 'checkrefused')!
     const html = movesOf(render(fx, OUTGOING))
-    expect(buttonsOf(html)).toContain(`Send attempt ${OUTGOING.attempt} from base`)
+    expect(buttonsOf(html)).toContain(`Send Attempt ${OUTGOING.attempt} from base`)
     expect(html).not.toContain('Back to the queue')
   })
 

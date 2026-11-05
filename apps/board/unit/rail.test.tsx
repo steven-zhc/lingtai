@@ -611,7 +611,7 @@ describe('a running card', () => {
     const html = render({}, running(), PLAN, false, { rounds: 3, restarts: 1 })
     const pills = [...html.matchAll(/<li class="pill sig"[^>]*>([^<]*)</g)].map((m) => m[1])
 
-    expect(pills).toContain('attempt 2 · restart 1 of 1')
+    expect(pills).toContain('Attempt 2 · restart 1 of 1')
   })
 
   /**

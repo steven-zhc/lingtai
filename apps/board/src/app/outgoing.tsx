@@ -123,7 +123,9 @@ export function Outgoing({
     return (
       <div className="outgoing">
         <p className="outhead">
-          <span className="outname">next attempt from base</span>
+          <span className="outname" title={outgoing.version}>
+            next attempt from base
+          </span>
         </p>
         {/* Never merely absent. A missing template, an unregistered project and
             a recipe that will not parse all look like "no prompt", and only the
@@ -137,23 +139,17 @@ export function Outgoing({
 
   return (
     <div className="outgoing">
+      {/* The version is a field of the head, in `title`, not a caption: an internal
+          version is not text for a reader (glossary, Words on the board). */}
       <p className="outhead">
-        <span className="outname">next attempt from base</span>
+        <span className="outname" title={outgoing.version}>
+          next attempt from base
+        </span>
         {/* How long the edit lasts, on the box that makes it. The next claim
             consumes it, whoever starts it. */}
-        <span className="outonly">attempt {outgoing.attempt} only</span>
-        {reduced ? null : (
-          <span className="outfact" title={outgoing.version}>
-            {outgoing.text.length} bytes
-          </span>
-        )}
+        <span className="outonly">Attempt {outgoing.attempt} only</span>
+        {reduced ? null : <span className="outfact">{outgoing.text.length} bytes</span>}
       </p>
-
-      {/* The version names the edit, and the page shows the name. Two runs that
-          share a `promptVersion` and did not share a prompt is the log lying
-          about what produced a result (0032 §5), so the field is on screen
-          rather than only in the payload of a history row. */}
-      <p className="outver">{outgoing.version}</p>
 
       {/* Bounded and scrollable. Open where Send is the move (blocked): a
           document behind a disclosure is one somebody approves without opening.
@@ -207,7 +203,7 @@ export function Outgoing({
             placeholder="`claude --help` does not list it; read the shipped bundle instead of guessing."
           />
           <p className="outnote">
-            Added to attempt {outgoing.attempt} from base and to no other. Editing this prompt does not continue saved
+            Added to Attempt {outgoing.attempt} from base and to no other. Editing this prompt does not continue saved
             work. Anything meant to last belongs in the ticket, where every later attempt reads it.
           </p>
           <div className="btnrow">

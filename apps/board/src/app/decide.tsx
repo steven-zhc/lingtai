@@ -737,7 +737,7 @@ export function Send({
             })
           }}
         >
-          {pending ? 'sending…' : `Send attempt ${attempt} from base`}
+          {pending ? 'sending…' : `Send Attempt ${attempt} from base`}
         </button>
         <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
           Leave blocked

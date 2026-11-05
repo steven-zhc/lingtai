@@ -295,8 +295,8 @@ export function RunLog({
       </summary>
       {state === 'gone' ? (
         <p className="empty">
-          No log for this run. A log is deleted when the run&apos;s diff reaches the base branch — what is kept is
-          exactly the runs still owed an explanation (0034 §4).
+          No run log for this attempt. A run log is deleted when the attempt lands or the ticket closes — what is kept
+          is exactly what is still owed an explanation (0034).
         </p>
       ) : (
         <div className="alogbody" ref={tail}>
@@ -375,7 +375,7 @@ function say(state: TailState, count: number): string {
   // `ends here` on a file that has not started.
   if (state === 'waiting' || state === 'queued') return 'no log yet'
   if (state === 'gone') return 'no log'
-  if (state === 'trouble') return 'the stream failed'
+  if (state === 'trouble') return 'the connection to the run log failed'
   if (state === 'reading') return `${count} lines · following`
   if (state === 'removed') return `${count} lines · the log has been deleted`
   return `${count} lines · ends here`

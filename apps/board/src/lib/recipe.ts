@@ -301,9 +301,9 @@ export async function recipeOfAttempt(
 ): Promise<AttemptRecipe> {
   let why: string
   if (run.configHash === null) {
-    why = 'this run recorded no StepsResolved, so there is no hash to prove a recipe against'
+    why = 'this attempt recorded no plan of its steps, so there is no hash to prove a recipe against'
   } else if (run.baseSha === null) {
-    why = 'this run recorded no base commit to read its recipe at'
+    why = 'this attempt recorded no base commit to read its recipe at'
   } else {
     const base = await recipeAtSha(client, run.baseSha)
     if ('problem' in base) {
@@ -327,7 +327,7 @@ export async function recipeOfAttempt(
     } else {
       why =
         `the recipe at base ${run.baseSha.slice(0, 7)} hashes to ${base.configHash.slice(0, 12)}, ` +
-        `and this run was given ${run.configHash.slice(0, 12)}`
+        `and this attempt was given ${run.configHash.slice(0, 12)}`
     }
   }
 

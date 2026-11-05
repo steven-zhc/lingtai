@@ -288,7 +288,7 @@ export function Card({
             word here for the same reason it is everywhere else in this
             sentence. */}
         {card.column === 'running' && card.progress ? (
-          <li className="pill run" title={`this run's first event was ${card.progress.since}`}>
+          <li className="pill run" title={`this attempt's first event was ${card.progress.since}`}>
             running {elapsed(Date.now() - Date.parse(card.progress.since))}
           </li>
         ) : card.updatedAt ? (
@@ -378,7 +378,7 @@ export function Card({
             className="pill sig"
             title={arm ? "attempts so far, and approaches abandoned against the recipe's ceiling" : 'attempts so far'}
           >
-            {[card.attempts > 1 ? `attempt ${card.attempts}` : null, arm]
+            {[card.attempts > 1 ? `Attempt ${card.attempts}` : null, arm]
               .filter((s): s is string => s !== null)
               .join(' · ')}
           </li>
@@ -836,7 +836,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           <span
             className={`head${waiting > 0 ? ' sig' : ''}`}
             title={
-              waiting > 0 ? 'items that will not move until you decide' : 'nothing on this board is blocked on a person'
+              waiting > 0
+                ? 'tickets that will not move until you decide'
+                : 'nothing on this board is blocked on a person'
             }
           >
             {waiting > 0 ? `${waiting} waiting on you` : 'nothing waiting on you'}

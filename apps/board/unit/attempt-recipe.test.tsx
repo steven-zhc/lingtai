@@ -133,7 +133,7 @@ describe("the recipe beside an attempt's actions", () => {
     const html = render({ ...run, recipe })
     expect(html).toContain('pnpm typecheck &amp;&amp; pnpm test')
     expect(html).toContain('timeout 20m')
-    expect(html).toContain('this run&#x27;s own, proved by the hash it recorded')
+    expect(html).toContain('this attempt&#x27;s own, proved by the hash it recorded')
   })
 
   it("is not proved by the fetch: a file at base that hashes otherwise is head's, named", async () => {
@@ -145,9 +145,9 @@ describe("the recipe beside an attempt's actions", () => {
     const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('head')
-    expect(recipe.of === 'head' && recipe.why).toMatch(/hashes to .* and this run was given/)
+    expect(recipe.of === 'head' && recipe.why).toMatch(/hashes to .* and this attempt was given/)
     const html = render({ ...run, recipe })
-    expect(html).toContain('Not this run&#x27;s recipe')
+    expect(html).toContain('Not this attempt&#x27;s recipe')
     expect(html).toContain('the head of main')
     // Head's command, shown only under that sentence.
     expect(html).toContain('<pre class="actcmd">pnpm typecheck</pre>')
@@ -161,10 +161,10 @@ describe("the recipe beside an attempt's actions", () => {
 
     expect(recipe.of).toBe('head')
     expect(recipe.of === 'head' && recipe.why).toContain('could not be read: 502 from GitHub')
-    expect(render({ ...run, recipe })).toContain('Not this run&#x27;s recipe')
+    expect(render({ ...run, recipe })).toContain('Not this attempt&#x27;s recipe')
   })
 
-  it("names head's recipe for a stream with no StepsResolved, and never fetches the base", async () => {
+  it("names head's recipe for a stream with no plan of its steps, and never fetches the base", async () => {
     const run = runWith(null)
     expect(run.configHash).toBeNull()
     const { client, asked, atHead } = fake({ [BASE]: RECIPE })
@@ -172,7 +172,7 @@ describe("the recipe beside an attempt's actions", () => {
     const recipe = await recipeOfAttempt(run, client, atHead)
 
     expect(recipe.of).toBe('head')
-    expect(recipe.of === 'head' && recipe.why).toContain('no StepsResolved')
+    expect(recipe.of === 'head' && recipe.why).toContain('no plan of its steps')
     // Nothing to prove against, so the base is not worth a round trip.
     expect(asked).toEqual([])
   })
@@ -314,7 +314,7 @@ describe('the recipe an attempt was given', () => {
     const { client, atHead } = fake({ [BASE]: RECIPE })
 
     const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
-    expect(html).toContain('Not this run&#x27;s recipe')
+    expect(html).toContain('Not this attempt&#x27;s recipe')
     expect(html).not.toContain('Nothing differs')
     expect(html).toContain('there is nothing to compare it with')
   })

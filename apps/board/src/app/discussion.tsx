@@ -115,7 +115,7 @@ function closedMeter(discussions: readonly DiscussionView[], total: string | nul
 }
 
 const HELD: Record<NonNullable<DiscussionView['held']>, string> = {
-  prompt: 'used for the next run',
+  prompt: 'used for the next attempt',
   ticket: 'added to the ticket',
   none: 'closed',
 }
@@ -402,7 +402,7 @@ export function discussionContext(
   label: string
   detail: string | null
 } {
-  if (reason === null) return { state: 'other', label: 'Ask about this task', detail: null }
+  if (reason === null) return { state: 'other', label: 'Ask about this ticket', detail: null }
   if (reason._tag === 'OwnQuestion')
     return { state: 'question', label: 'Ask the code before you answer the question', detail: null }
   if (status === null || status._tag === 'NotDeclared')
@@ -705,7 +705,7 @@ export function Discussion({
                             <div className="chatprop">
                               <p className="chatpropkind">
                                 {t.answer.proposal.kind === 'prompt'
-                                  ? 'proposed for the next run'
+                                  ? 'proposed for the next attempt'
                                   : 'proposed for the ticket'}
                               </p>
                               <p className="chatproptext">{t.answer.proposal.text}</p>
@@ -724,7 +724,7 @@ export function Discussion({
                                     )
                                   }
                                 >
-                                  Use for the next run
+                                  Use for the next attempt
                                 </button>
                                 {target?.target != null ? (
                                   <button
