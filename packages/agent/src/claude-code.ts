@@ -417,8 +417,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
     capabilities: CLAUDE_CODE_CAPABILITIES,
 
     /** `claude auth status` — `auth.ts`, which loads nothing but `node:child_process`. */
-    version(env: Record<string, string>): Promise<string | null> {
-      return runtimeVersion(binary, spawnEnvFor(env), spawnChild)
+    version(env: Record<string, string>, cwd?: string): Promise<string | null> {
+      return runtimeVersion(binary, spawnEnvFor(env), spawnChild, cwd)
     },
     checkAuth(env: Record<string, string>): Promise<AuthStatus> {
       return claudeCodeAuth(binary, env)

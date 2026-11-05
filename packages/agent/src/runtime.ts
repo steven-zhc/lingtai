@@ -278,13 +278,13 @@ export interface Runtime {
    * environment a call would spawn with (#929). Optional like `checkAuth`; a
    * runtime without it records `null`. Asked per call, never cached.
    */
-  version?(env: Record<string, string>): Promise<string | null>
+  version?(env: Record<string, string>, cwd?: string): Promise<string | null>
 }
 
 /** A runtime's version for one call. Never rejects; `null` when it cannot be read or asked. */
-export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>): Promise<string | null> {
+export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>, cwd?: string): Promise<string | null> {
   return Promise.resolve()
-    .then(() => runtime.version?.(env) ?? null)
+    .then(() => runtime.version?.(env, cwd) ?? null)
     .then(
       (version) => version ?? null,
       () => null,

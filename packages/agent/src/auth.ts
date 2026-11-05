@@ -82,11 +82,12 @@ function probe(
   binary: string,
   args: string[],
   env: Record<string, string>,
-  how: { readonly timeoutMs?: number; readonly spawn?: typeof spawn } = {},
+  how: { readonly timeoutMs?: number; readonly spawn?: typeof spawn; readonly cwd?: string } = {},
 ): Promise<ProbeEnd> {
   const spawnChild = how.spawn ?? spawn
   return new Promise<ProbeEnd>((resolve) => {
     const child = spawnChild(binary, args, {
+      ...(how.cwd === undefined ? {} : { cwd: how.cwd }),
       // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
       // board reaches this through `currentRecipe`'s sign-in detection.
       env: env as NodeJS.ProcessEnv,
@@ -133,10 +134,13 @@ export function runtimeVersion(
   binary: string,
   env: Record<string, string>,
   spawnChild?: typeof spawn,
+  cwd?: string,
 ): Promise<string | null> {
-  return probe(binary, ['--version'], env, { timeoutMs: 5_000, ...(spawnChild ? { spawn: spawnChild } : {}) }).then(
-    reportedVersion,
-  )
+  return probe(binary, ['--version'], env, {
+    timeoutMs: 5_000,
+    ...(spawnChild ? { spawn: spawnChild } : {}),
+    ...(cwd === undefined ? {} : { cwd }),
+  }).then(reportedVersion)
 }
 
 /**

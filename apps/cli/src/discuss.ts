@@ -284,8 +284,12 @@ export function discussionAsk(
  * The `version` port: the same runtime `discussionAsk` selects, asked in the
  * environment it runs with (#929). Resolved per call, like `ask`.
  */
-export function discussionVersion(runtime: Runtime | (() => Runtime)): DiscussionPorts['version'] {
-  return () => runtimeVersionOf(typeof runtime === 'function' ? runtime() : runtime, runnableEnv({}))
+export function discussionVersion(runtime: Runtime | (() => Runtime), cwd?: string): DiscussionPorts['version'] {
+  // Inside the promise chain, so a factory that throws is a rejection the caller records as null.
+  return () =>
+    Promise.resolve().then(() =>
+      runtimeVersionOf(typeof runtime === 'function' ? runtime() : runtime, runnableEnv({}), cwd),
+    )
 }
 
 /**
@@ -409,7 +413,7 @@ export async function answerDiscussion(
           settingsPath,
           log: trace,
         }),
-        version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' })),
+        version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' }), cwd),
       },
       {
         chatId: request.chatId,

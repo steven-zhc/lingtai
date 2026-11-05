@@ -775,7 +775,11 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         )
         const prompt = composed.handed
         // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
-        await context.prompted?.(`review@${prompt.length}`, composed, await runtimeVersionOf(deps.runtime, context.env))
+        await context.prompted?.(
+          `review@${prompt.length}`,
+          composed,
+          await runtimeVersionOf(deps.runtime, context.env, context.cwd),
+        )
         outcome = await deps.runtime.run({
           runId: reviewId,
           cwd: context.cwd,
@@ -1397,7 +1401,11 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const composed = composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0))
       const prompt = composed.handed
       // The body is a reference where the claim it came from is known (#928).
-      await context.prompted?.(`design@${prompt.length}`, composed, await runtimeVersionOf(deps.runtime, context.env))
+      await context.prompted?.(
+        `design@${prompt.length}`,
+        composed,
+        await runtimeVersionOf(deps.runtime, context.env, context.cwd),
+      )
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,

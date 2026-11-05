@@ -69,3 +69,22 @@ describe('runtimeVersionOf', () => {
     expect(seen).toEqual([{ A: 'b' }])
   })
 })
+
+describe('Runtime.version cwd (#929)', () => {
+  it('probes in the directory the call will run in', async () => {
+    const seen: unknown[] = []
+    const fn = ((_b: string, _a: readonly string[], options: { cwd?: unknown }) => {
+      seen.push(options.cwd)
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new EventEmitter(),
+        stderr: new EventEmitter(),
+        kill: () => true,
+      })
+      setImmediate(() => child.emit('close', 0, null))
+      return child
+    }) as unknown as typeof spawn
+    await createClaudeCodeRuntime({ spawn: fn }).version!({}, '/work/tree')
+    await createCodexRuntime({ spawn: fn }).version!({}, '/work/tree')
+    expect(seen).toEqual(['/work/tree', '/work/tree'])
+  })
+})

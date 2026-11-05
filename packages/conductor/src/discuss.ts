@@ -575,7 +575,9 @@ export async function holdDiscussion(ports: DiscussionPorts, options: Discussion
       {
         for: { _tag: 'Discussion' },
         promptVersion: `discussion@${prompt.length}`,
-        runtimeVersion: await ports.version().catch(() => null),
+        runtimeVersion: await Promise.resolve()
+          .then(() => ports.version())
+          .catch(() => null),
         prompt,
       },
       log,

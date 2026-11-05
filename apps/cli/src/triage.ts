@@ -876,7 +876,7 @@ async function waitTriageWithin(
             {
               for: { _tag: 'Triage', waitId: request.waitId },
               promptVersion: `triage@${prompt.length}`,
-              runtimeVersion: await runtimeVersionOf(runtime, triageEnv),
+              runtimeVersion: await runtimeVersionOf(runtime, triageEnv, cwd),
               prompt,
             },
             log,

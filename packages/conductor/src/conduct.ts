@@ -2727,7 +2727,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               )
               const judgeEnv = runnableEnv(env.values)
               return yield* Effect.promise(() =>
-                runtimeVersionOf(dispatched, judgeEnv)
+                runtimeVersionOf(dispatched, judgeEnv, worktree?.path ?? home)
                   .then((runtimeVersion) =>
                     recordPrompt(
                       store,
@@ -3792,7 +3792,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   round: 0,
                 }
                 yield* Effect.promise(() =>
-                  runtimeVersionOf(dispatched, agentEnv).then((runtimeVersion) =>
+                  runtimeVersionOf(dispatched, agentEnv, tree.path).then((runtimeVersion) =>
                     recordPrompt(
                       store,
                       runId,
@@ -4065,7 +4065,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           {
             for: fixFor,
             promptVersion: `fix@${fixPrompt.length}`,
-            runtimeVersion: await runtimeVersionOf(dispatched, fixEnv),
+            runtimeVersion: await runtimeVersionOf(dispatched, fixEnv, tree.path),
             prompt: fixParts,
           },
           log,

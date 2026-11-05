@@ -1369,8 +1369,8 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
     capabilities: CODEX_CAPABILITIES,
 
     /** `codex --version` (#929), in the env `run` is given, without the process marker a probe has no use for. */
-    version(env: Record<string, string>): Promise<string | null> {
-      return runtimeVersion(binary, env, spawnChild)
+    version(env: Record<string, string>, cwd?: string): Promise<string | null> {
+      return runtimeVersion(binary, env, spawnChild, cwd)
     },
 
     /** `codex login status` — `auth.ts`. */
