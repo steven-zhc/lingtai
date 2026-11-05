@@ -1723,7 +1723,7 @@ export const readAttempts = cache(async (taskId: string) => {
 
 /**
  * `inFlightOf` for a queued ticket only; an unreadable ceiling or recipe is
- * unknown, not one slot. The recipe is read (locally, through `projectFilter`)
+ * unknown, not one slot. The recipe is read (locally, through `currentRecipe`)
  * only under a daily ceiling, where the slots are its `concurrency`; without
  * one the slots are 1 whatever it says.
  */
@@ -1738,8 +1738,9 @@ async function inFlightFor(
     let concurrency: number | undefined
     if (ceilingSet) {
       const loaded = await loadProject(project).catch(() => null)
-      const filter = loaded ? await projectFilter(loaded) : null
-      if (filter?.ok) concurrency = concurrencyOf(filter.recipe)
+      // `currentRecipe` is the local read: `projectFilter` would build a GitHub
+      // client first, and the log's half must not wait for (or fail with) GitHub.
+      if (loaded) concurrency = concurrencyOf((await currentRecipe(loaded)).recipe)
     }
     return inFlightOf(lane, project, concurrency, ceilingSet)
   } catch {
