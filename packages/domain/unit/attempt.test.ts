@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
-import { emptyAttempt, filesOf, parsePayload, stepsOn, reduceAttempt } from '../src/index.ts'
+import { emptyAttempt, filesOf, parsePayload, stepsOn, reduceAttempt, standingRefusal } from '../src/index.ts'
 import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
@@ -534,5 +534,17 @@ describe('filesOf and promptMeta (#828)', () => {
       e('RunPrompted', { promptVersion: 'ticket@2', bytes: 9, prompt: 'two' }),
     ])
     expect(state.promptMeta).toEqual({ version: 'ticket@2', bytes: 9 })
+  })
+})
+
+describe('standingRefusal (#935)', () => {
+  const refusal = { key: 'review:cold', evidence: 'e', findings: [] }
+  const step = (verdict: string) => ({ 'review:cold': { step: 'review:cold', verdict } as never })
+  it('is the refusal while its gate still fails', () => {
+    expect(standingRefusal({ ...emptyAttempt, refusal, steps: step('failed') })).toEqual(refusal)
+  })
+  it('is undefined once the gate passed, or with no refusal', () => {
+    expect(standingRefusal({ ...emptyAttempt, refusal, steps: step('passed') })).toBeUndefined()
+    expect(standingRefusal(emptyAttempt)).toBeUndefined()
   })
 })

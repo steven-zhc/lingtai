@@ -613,6 +613,17 @@ export function savedHeadOf(state: AttemptState): SavedHead {
   return { _tag: 'Saved', head: saved.headSha, ref: saved.branch }
 }
 
+/**
+ * The refusal a fixer was still answering, or `undefined`: `refusal` is not
+ * cleared by a later pass, so it counts only while its own gate's latest verdict
+ * is still `failed` (#935).
+ */
+export function standingRefusal(state: AttemptState): NonNullable<AttemptState['refusal']> | undefined {
+  const { refusal } = state
+  if (refusal === null) return undefined
+  return state.steps[refusal.key]?.verdict === 'failed' ? refusal : undefined
+}
+
 export function reduceAttempt(events: readonly Envelope[]): AttemptState {
   return events.reduce(reduceAttemptEvent, emptyAttempt)
 }

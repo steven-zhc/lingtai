@@ -1231,3 +1231,59 @@ describe('AgentCrashed{standing} (#654)', () => {
     })
   })
 })
+
+describe('grantCriterion on a declined fix round (#935)', () => {
+  const said = 'I am declining this finding and changed nothing.'
+  const finding = {
+    file: 'a.ts',
+    line: 1,
+    claim: 'c',
+    failureScenario: 'when X then Y',
+    severity: 'blocker',
+  } as never
+  const blank = { ...(finding as object), failureScenario: '  ' } as never
+  const direct = (s: string | null) => parseReason({ _tag: 'FixerDisagrees', run, said: s })
+  const proposed = (s: string | null) =>
+    parseReason({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'FixerDisagrees', said: s },
+      because: { _tag: 'NotAsked' },
+    })
+  const shapes = [
+    ['direct', direct],
+    ['proposed', proposed],
+  ] as const
+
+  for (const [name, make] of shapes) {
+    describe(name, () => {
+      it('briefs a review refusal’s findings, with the answer apart', () => {
+        const got = grantCriterion(make(said), { key: 'review:cold', findings: [finding] })!
+        expect(got.findings).toEqual([finding])
+        expect(got.printed.detail).not.toContain(said)
+        expect(got.printed.step).toBe('review')
+        expect(got.declined).toBe(said)
+      })
+      it.each([
+        ['no refusal', undefined],
+        ['a null refusal', null],
+        ['a build refusal', { key: 'build:pnpm', findings: [finding] }],
+        ['blank scenarios', { key: 'review:cold', findings: [blank] }],
+      ])('%s: no findings invented, and the brief says so', (_n, refusal) => {
+        const got = grantCriterion(make(said), refusal)!
+        expect(got.findings).toEqual([])
+        expect(got.printed.detail).toMatch(/no recorded review finding/)
+        expect(got.printed.detail).not.toContain(said)
+        expect(got.declined).toBe(said)
+      })
+      it('nothing said: no criterion, whatever the refusal', () => {
+        expect(grantCriterion(make(null), { key: 'review:cold', findings: [finding] })).toBeNull()
+        expect(grantCriterion(make(null))).toBeNull()
+      })
+      it('the offer is unchanged', () => {
+        expect(allowedResolutions(make(said))).toContain('GrantFixRound')
+        expect(allowedResolutions(make(null))).not.toContain('GrantFixRound')
+      })
+    })
+  }
+})

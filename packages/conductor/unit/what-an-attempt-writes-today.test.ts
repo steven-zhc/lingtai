@@ -239,12 +239,16 @@ describe('what a pass writes today, one row per ending (#461)', () => {
   })
 
   /**
-   * **The conductor records the implementer's prompt, and the hook does not**
-   * (#928): exactly one `RunPrompted` with the implement round-0 `for`, straight
+   * **The conductor records the implementer's prompt once** (#928): exactly one `RunPrompted` with the implement round-0 `for`, straight
    * after `StepsResolved`, none without a `for`, and `expandPrompt` over the
    * record and the claim's body gives back what the runtime was handed.
+   *
+   * **This does not exercise the hook.** `fakePorts` supplies a fake hook server
+   * and the fake runtime never submits `UserPromptSubmit`, so it shows only that
+   * the conductor writes one record. That the hook appends none is asserted by
+   * `packages/agent/integration/hook.test.ts`, which is integration (0060 §1).
    */
-  it('1b. records the implementer’s prompt once, by reference, and what it expands to is what the runtime got', async () => {
+  it('1b. the conductor records the implementer’s prompt once, by reference, and what it expands to is what the runtime got', async () => {
     const store = memoryStore()
     const did: string[] = []
     const handed: string[] = []

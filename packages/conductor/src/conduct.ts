@@ -55,6 +55,7 @@ import {
   attemptIdOf,
   attemptStream,
   reduceAttempt,
+  standingRefusal,
   attemptReducer,
   ticketReducer,
   reduceTicket,
@@ -1135,6 +1136,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
+      const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
       return {
@@ -1165,14 +1167,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           : {}),
         roundsSpent: continuationRound(runState, granted),
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
-        ...(granted && grantCriterion(reason) !== null
+        ...(criterion !== null
           ? {
               grant: {
                 why: 'A person granted one checked fix round.',
                 asked: null,
-                printed: grantCriterion(reason)!.printed,
+                printed: criterion.printed,
               },
-              findings: grantCriterion(reason)!.findings,
+              findings: criterion.findings,
+              ...(criterion.declined === undefined ? {} : { declined: criterion.declined }),
             }
           : {}),
         /**
@@ -4043,6 +4046,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
             },
             ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
+            ...(continuation?.declined === undefined ? {} : { declined: continuation.declined }),
           }),
           // Appended as a part, never to the finished string, so no recorded offset
           // depends on where the text before it happened to end.
