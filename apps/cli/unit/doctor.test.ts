@@ -139,6 +139,29 @@ describe('lingtai doctor — the settings row (#718)', () => {
   })
 })
 
+describe('lingtai doctor — the orphan row (#925)', () => {
+  it('names the report-once ones as a person to remove, by path, and the rest as the daemon', async () => {
+    const base = { expected: 'e', actual: 'a', action: 'reported' as const }
+    const report = await runDoctor(
+      {},
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [],
+      {
+        ...reach,
+        orphans: async () => [
+          { ...base, stream: 'run-mystery', path: '/x/runs/run-mystery.log', once: true },
+          { ...base, stream: 'run-stale', path: '/x/worktrees/run-stale', action: 'removed' as const },
+        ],
+      },
+    )
+    const detail = find(report.results, 'worktrees: reconciliation').detail
+    expect(detail).toMatch(/a person removes: \/x\/runs\/run-mystery\.log/)
+    expect(detail).toMatch(/lingtai daemon removes on startup: run-stale/)
+  })
+})
+
 describe('lingtai doctor — a SQLite-only machine, no GitHub App, no projects', () => {
   it('fails no row', async () => {
     const report = await runDoctor(

@@ -151,6 +151,13 @@ describe('reconciliation', () => {
 
     expect(it_?.action).toBe('reported')
     expect(await exists(wt(nameless))).toBe(true)
+
+    // A second start finds the same mystery and appends nothing for it.
+    const reconciled = async () => (await store.readTypes('ctl-conductor', ['Reconciled'])).length
+    const before = await reconciled()
+    const again = await reconcile({ home, store, worker: ME })
+    expect(again.find((f) => f.stream === nameless)).toBeUndefined()
+    expect(await reconciled()).toBe(before)
   })
 
   /**
