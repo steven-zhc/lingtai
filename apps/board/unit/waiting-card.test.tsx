@@ -158,9 +158,9 @@ describe('a card held for approval (#764)', () => {
     vi.useRealTimers()
   })
 
-  it('reads WAITING FOR YOU, the short name and the age, and nothing else', async () => {
+  it('reads WAITING ON YOU, the short name and the age, and nothing else', async () => {
     const html = await renderCard(fx, { row: { updatedAt: new Date('2026-09-08T04:24:00.000Z') } })
-    expect(html).toContain('<span class="waiting-held-badge">WAITING FOR YOU</span>')
+    expect(html).toContain('<span class="waiting-held-badge">WAITING ON YOU</span>')
     expect(html).toContain('ready to land · 6m')
     expect(html).not.toContain('class="snow')
     expect(html).not.toContain('restarts left')

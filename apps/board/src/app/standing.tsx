@@ -21,7 +21,7 @@ import type { ReactNode } from 'react'
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
-import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
+import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
 import { stateWord, type DiscussionView, type StandingView, type TaskAnswer } from '@/lib/task'
@@ -232,7 +232,7 @@ export function TriageBand({
                   : cause._tag === 'ConflictingHunks' &&
                       recommendedResolution(reason, status, { savedHead }) === 'GrantFixRound'
                     ? `Triage advised ${RESOLUTION_COPY[result.resolution].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a fix round is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
-                    : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this wait does not offer.`}
+                    : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this decision does not offer.`}
             {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
           </p>
           {parts ? (
@@ -914,9 +914,9 @@ export function Standing({
               </span>
             </p>
             <p>
-              Move: {standing.afterMove.resolution} · by {standing.afterMove.by}
+              Decided: {moveTitle(standing.afterMove.resolution)} · by {standing.afterMove.by}
             </p>
-            {standing.afterMove.note ? <p>Decision: {standing.afterMove.note}</p> : null}
+            {standing.afterMove.note ? <p>Note: {standing.afterMove.note}</p> : null}
             <p>Result: {standing.afterMove.reason}</p>
           </section>
         ) : null}
@@ -929,7 +929,7 @@ export function Standing({
             <h2>Body update record</h2>
             <p>{standing.bodyOutcome.result === 'failed' ? 'A body update failed.' : 'A body update was recorded.'}</p>
             <p>{standing.bodyOutcome.detail}</p>
-            <p>The body update event does not identify a wait. Current ticket state: {standing.state}.</p>
+            <p>The body update event does not identify a decision. Current ticket state: {standing.state}.</p>
           </section>
         ) : null}
         {/* The readout. Two values at one weight, and the age is `inWords` — the
@@ -1091,12 +1091,12 @@ export function Standing({
 
         <section
           className={standing.state === 'blocked' ? 'sresolutions' : 'sactions'}
-          aria-label={standing.state === 'blocked' ? 'Resolutions' : 'Actions'}
+          aria-label={standing.state === 'blocked' ? 'Your decision' : 'Actions'}
           data-rank={standing.state === 'blocked' ? 'resolutions' : undefined}
           // The other moves wait while a split is being written; the decision lock refuses them anyway.
           inert={standing.split?.progress.state === 'writing' ? true : undefined}
         >
-          {standing.state === 'blocked' ? <h2 className="ssectiontitle">Resolutions</h2> : null}
+          {standing.state === 'blocked' ? <h2 className="ssectiontitle">Your decision</h2> : null}
 
           {/* ---- rank 4: the moves ---------------------------------------------- */}
 
@@ -1106,7 +1106,7 @@ export function Standing({
             return (
               <>
                 {standing.state === 'blocked' && (standing.waitId === null || standing.reason === null) ? (
-                  <p className="refusal">the wait on this card could not be read — reload and read it again</p>
+                  <p className="refusal">the decision on this card could not be read — reload and read it again</p>
                 ) : null}
                 {
                   <div className="sresolutiongrid" data-rank="moves">
@@ -1174,7 +1174,7 @@ export function Standing({
                               <p className="refusal">
                                 {standing.fixWork && 'refusal' in standing.fixWork
                                   ? standing.fixWork.refusal
-                                  : 'Saved work could not be verified; reload this wait before continuing.'}
+                                  : 'Saved work could not be verified; reload this page before continuing.'}
                               </p>
                             ) : null}
                             {visible && tag === 'Approve' && waitId !== null && standing.awaitingSha !== null ? (

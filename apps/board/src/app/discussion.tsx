@@ -111,7 +111,7 @@ function closedMeter(discussions: readonly DiscussionView[], total: string | nul
   if (discussions.length === 0) {
     return 'reads the log, the ticket and the code — it cannot run anything'
   }
-  return `${discussions.length} held${total === null ? '' : ` · ${total}`} · no limit`
+  return `${discussions.length} ${discussions.length === 1 ? 'discussion' : 'discussions'}${total === null ? '' : ` · ${total}`} · no limit`
 }
 
 const HELD: Record<NonNullable<DiscussionView['held']>, string> = {
@@ -406,22 +406,22 @@ export function discussionContext(
   if (reason._tag === 'OwnQuestion')
     return { state: 'question', label: 'Ask the code before you answer the question', detail: null }
   if (status === null || status._tag === 'NotDeclared')
-    return { state: 'no-triage', label: 'No triage analysis for this wait', detail: null }
+    return { state: 'no-triage', label: 'No triage analysis for this decision', detail: null }
   if (status._tag === 'NotNeeded')
-    return { state: 'not-needed', label: 'Triage is not needed for this wait', detail: null }
+    return { state: 'not-needed', label: 'Triage is not needed for this decision', detail: null }
   if (status._tag === 'Queued')
     return { state: 'pending', label: 'Triage is queued', detail: 'Ask now; your question is answered after triage.' }
   if (status._tag === 'Running')
     return {
       state: 'running',
-      label: 'Triage is analysing this wait',
+      label: 'Triage is analysing this decision',
       detail: 'Ask now; your question is answered after triage.',
     }
   if (status._tag === 'Interrupted')
     return {
       state: 'interrupted',
       label: 'Triage was interrupted',
-      detail: 'The current wait has no completed analysis.',
+      detail: 'Triage has not finished on this decision.',
     }
   if (status.result._tag === 'TriageFailed')
     return { state: 'failed', label: 'No analysis to start from', detail: status.result.why }
@@ -602,7 +602,7 @@ export function Discussion({
     >
       {compact ? (
         <button className="chatentry" type="button" onClick={() => setExpanded(true)}>
-          <span aria-hidden="true">+</span> Discussion <small>· ask about this hold</small>
+          <span aria-hidden="true">+</span> Discussion <small>· ask about this decision</small>
         </button>
       ) : (
         <>
@@ -731,7 +731,7 @@ export function Discussion({
                                     className={t.answer.proposal.kind === 'ticket' ? pri : 'btn'}
                                     onClick={() => target.add(t.answer?.proposal?.text ?? '')}
                                   >
-                                    Add to this resolution
+                                    Add to this decision
                                   </button>
                                 ) : (
                                   <button
@@ -764,7 +764,7 @@ export function Discussion({
                                 className="btn"
                                 onClick={() => target.add(t.answer?.proposal?.text || t.answer?.text || '')}
                               >
-                                Add to this resolution
+                                Add to this decision
                               </button>
                             </div>
                           ) : null}

@@ -386,7 +386,7 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
           </p>
         ) : null}
         {controls === undefined ? (
-          <p className="split-note">Split is not offered for this wait, so this plan is only for reading.</p>
+          <p className="split-note">Split is not offered for this decision, so this plan is only for reading.</p>
         ) : null}
         {mode.button === null || controls === undefined ? null : (
           <button

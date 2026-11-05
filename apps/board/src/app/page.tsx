@@ -209,7 +209,7 @@ export function Card({
         ) : null}
         {card.short !== null ? (
           <p className="waiting-held">
-            <span className="waiting-held-badge">WAITING FOR YOU</span> {card.short}
+            <span className="waiting-held-badge">WAITING ON YOU</span> {card.short}
             {card.updatedAt ? ` · ${inWords(Date.now() - Date.parse(card.updatedAt))}` : ''}
           </p>
         ) : card.cause ? (
@@ -835,11 +835,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               nothing is. */}
           <span
             className={`head${waiting > 0 ? ' sig' : ''}`}
-            title={
-              waiting > 0
-                ? 'tickets that will not move until you decide'
-                : 'nothing on this board is blocked on a person'
-            }
+            title={waiting > 0 ? 'tickets that will not move until you decide' : 'nothing is waiting on you'}
           >
             {waiting > 0 ? `${waiting} waiting on you` : 'nothing waiting on you'}
           </span>

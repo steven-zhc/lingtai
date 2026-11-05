@@ -339,7 +339,9 @@ export function EditBodyAndRequeue({
   return (
     <div className="decide">
       {waitId === null && (doneWaitId === null || doneWaitId !== draftWaitId) ? (
-        <p className="refusal">This wait has ended. Your unsent draft is below; copy it before leaving.</p>
+        <p className="refusal">
+          This ticket is no longer waiting on you. Your unsent draft is below; copy it before leaving.
+        </p>
       ) : null}
       {question !== null ? <p>{question}</p> : null}
       <label className="reason">
@@ -712,7 +714,7 @@ export function Send({
   // Honest about having written nothing. The class is not `decided`, because
   // green here would claim an append that did not happen.
   if (left) {
-    return <p className="undecided">left blocked — nothing was appended, and it is still waiting on you</p>
+    return <p className="undecided">left as it is — nothing was recorded, and it is still waiting on you</p>
   }
 
   return (
@@ -740,7 +742,7 @@ export function Send({
           {pending ? 'sending…' : `Send Attempt ${attempt} from base`}
         </button>
         <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
-          Leave blocked
+          Leave it waiting
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}

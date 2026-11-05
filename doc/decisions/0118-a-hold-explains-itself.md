@@ -429,7 +429,7 @@ which kind a wait was got inferred again in each place that needed it, from
      the older drawing.
    - **The card** on the board carries the number, the title, the rail and its
      line (a card held for a person's approval carries the rail with no line
-     under it, and one line of its own: a `WAITING FOR YOU` badge, `waitWords`'
+     under it, and one line of its own: a `WAITING ON YOU` badge, `waitWords`'
      `short` and its age), triage's cause with one sentence, and, once triage has advised, one
      button: the resolution `recommendedResolution` names. `GrantFixRound`,
      `Requeue` and `Approve` resolve the wait in one click, through the same

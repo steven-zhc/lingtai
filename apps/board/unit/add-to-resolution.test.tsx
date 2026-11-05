@@ -43,27 +43,27 @@ describe('add to this resolution', () => {
     'replaces Add to the ticket under a wait recommending %s',
     (tag) => {
       const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }), tag)
-      expect(html).toContain('Add to this resolution')
+      expect(html).toContain('Add to this decision')
       expect(html).not.toContain('Add to the ticket')
       expect(html).toContain('Use for the next attempt')
     },
   )
 
   it('offers it on an answer that proposed nothing', () => {
-    expect(render(turn(null), 'EditBodyAndRequeue')).toContain('Add to this resolution')
+    expect(render(turn(null), 'EditBodyAndRequeue')).toContain('Add to this decision')
   })
 
   it('still offers it on a proposal after the discussion is concluded for the next run', () => {
     const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }, 'prompt'), 'EditBodyAndRequeue')
-    expect(html).toContain('Add to this resolution')
+    expect(html).toContain('Add to this decision')
     expect(html).not.toContain('Add to the ticket')
   })
 
   it.each([null, 'Close', 'Approve'])('keeps both buttons when the first resolution is %s', (tag) => {
     const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }), tag)
     expect(html).toContain('Add to the ticket')
-    expect(html).not.toContain('Add to this resolution')
-    expect(render(turn(null), tag)).not.toContain('Add to this resolution')
+    expect(html).not.toContain('Add to this decision')
+    expect(render(turn(null), tag)).not.toContain('Add to this decision')
   })
 
   it('keeps both buttons outside a wait', () => {
@@ -73,7 +73,7 @@ describe('add to this resolution', () => {
       </TriagePicks>,
     )
     expect(html).toContain('Add to the ticket')
-    expect(html).not.toContain('Add to this resolution')
+    expect(html).not.toContain('Add to this decision')
   })
 
   it('keeps both buttons with no provider at all', () => {

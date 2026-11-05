@@ -253,12 +253,18 @@ function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: En
 }
 
 describe('after the move', () => {
+  it('names the move by its title, and prints a tag the table does not hold as it is', () => {
+    const t = moved('Close')
+    expect(page(t)).toContain('Decided: Close the ticket · by steven')
+    const old = { ...t, standing: { ...t.standing, afterMove: { ...t.standing.afterMove!, resolution: 'Withdraw' } } }
+    expect(page(old)).toContain('Decided: Withdraw · by steven')
+  })
   it('states a recorded close and retires the old resolution', () => {
     const html = page(moved('Close'))
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
     expect(html).toContain('The ticket was closed.')
-    expect(html).toContain('Decision: the review cannot run')
+    expect(html).toContain('Note: the review cannot run')
     expect(html).toContain('Result: the review cannot run')
     expect(html).not.toContain('waiting for a conductor to take it')
     expect(html).not.toContain('data-resolution=')
@@ -272,8 +278,8 @@ describe('after the move', () => {
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
     expect(html).toContain('The ticket returned to the queue for a new attempt from base.')
-    expect(html).toContain('Decision: the review cannot run')
-    expect(html).toContain('Result: The wait was resolved; a new attempt starts from base.')
+    expect(html).toContain('Note: the review cannot run')
+    expect(html).toContain('Result: A new attempt starts from base.')
     expect(html).not.toContain('body write completed')
     expect(html).not.toContain('data-resolution=')
   })
@@ -294,8 +300,8 @@ describe('after the move', () => {
     const html = page(task(own, []))
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
-    expect(html).toContain('Move: AnswerQuestion · by steven')
-    expect(html).toContain('Decision: Use the smaller change')
+    expect(html).toContain('Decided: Answer the question · by steven')
+    expect(html).toContain('Note: Use the smaller change')
     expect(html).toContain('The ticket returned to the queue for a new attempt from base.')
     expect(html.indexOf('data-rank="after-move"')).toBeLessThan(html.indexOf('data-rank="where"'))
   })
@@ -308,9 +314,9 @@ describe('after the move', () => {
     )
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
-    expect(html).toContain('Move: EditBodyAndRequeue')
+    expect(html).toContain('Decided: Add to the ticket and start over')
     expect(html).toContain('A body update was recorded.')
-    expect(html).toContain('The body update event does not identify a wait.')
+    expect(html).toContain('The body update event does not identify a decision.')
     expect(html).not.toContain('The body write completed before the wait was resolved.')
   })
 
@@ -327,7 +333,7 @@ describe('after the move', () => {
       }),
     ]
     const html = page(task(own, []))
-    expect(html).toContain('The body update event does not identify a wait. Current ticket state: blocked.')
+    expect(html).toContain('The body update event does not identify a decision. Current ticket state: blocked.')
     expect(html).toContain(type === 'IssueUpdated' ? 'A body update was recorded.' : 'A body update failed.')
     expect(html).not.toContain('The body write completed before the wait was resolved.')
     expect(html).not.toContain('The ticket returned to the queue for a new attempt from base.')

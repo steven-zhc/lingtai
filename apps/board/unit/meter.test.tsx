@@ -96,7 +96,7 @@ describe('the meter', () => {
   it('reports what closed conversations came to once none is open', () => {
     const html = render([chat({ held: 'none', turns: [turn('why?')] })], '$0.42')
 
-    expect(html).toContain('1 held · $0.42 · no limit')
+    expect(html).toContain('1 discussion · $0.42 · no limit')
   })
 })
 

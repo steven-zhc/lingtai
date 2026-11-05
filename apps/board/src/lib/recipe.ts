@@ -939,7 +939,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     recipe.triage === undefined
       ? {
           name: 'triage',
-          says: 'not declared — no hold is triaged',
+          says: 'not declared — no decision is triaged',
           keys: ['triage'],
         }
       : {
@@ -947,12 +947,12 @@ export function readRecipe(recipe: Recipe): Reading[] {
           says:
             recipe.triage.agent === 'codex' && recipe.triage.tools === 'full'
               ? `Codex CLI with tools, in a disposable checkout, ${recipe.triage.model ?? 'its default model'}, ` +
-                `${recipe.triage.limits.wall} per hold enforced; ` +
+                `${recipe.triage.limits.wall} per decision enforced; ` +
                 `${recipe.triage.limits.turns} turns and $${recipe.triage.limits.usd} declared, not enforced`
               : `${recipe.triage.agent === 'codex' ? 'Codex model-only API, separately billed' : recipe.triage.agent}, ` +
                 `${recipe.triage.model ?? 'its default model'}, ` +
                 `${recipe.triage.limits.turns} turns, ${recipe.triage.limits.wall} and ` +
-                `$${recipe.triage.limits.usd} per hold`,
+                `$${recipe.triage.limits.usd} per decision`,
           keys: [
             'triage.agent',
             'triage.tools',
