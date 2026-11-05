@@ -24,7 +24,7 @@ describe('recordPrompt (#923)', () => {
     let attempts = 0
     const failing: EventStore = {
       ...memory,
-      append: async (...args: Parameters<EventStore['append']>) => {
+      append: async () => {
         attempts += 1
         throw new Error('store down')
       },
