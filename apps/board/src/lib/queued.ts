@@ -407,7 +407,8 @@ export function whyLabel(position: number | null): string {
 
 /** The attempts the conductor is holding, and how many it will hold at once. */
 export interface InFlight {
-  running: { project: string; issue: string }[]
+  /** `since` is the row's `lastAttemptAt`; null is unknown, never 0. */
+  running: { project: string; issue: string; since: Date | null }[]
   slots: number
 }
 
@@ -421,7 +422,7 @@ export interface InFlight {
  * without one the slots are 1 whatever the recipe says.
  */
 export function inFlightOf(
-  rows: readonly { project: string; issue: string; state: string }[],
+  rows: readonly { project: string; issue: string; state: string; lastAttemptAt?: Date | null }[],
   project: string,
   concurrency: number | undefined,
   ceilingSet: boolean,
@@ -429,7 +430,10 @@ export function inFlightOf(
   if (ceilingSet && concurrency === undefined) return null
   const running = heldBy(rows as Parameters<typeof heldBy>[0]).map((id) => {
     const at = id.lastIndexOf('#')
-    return { project: id.slice(0, at), issue: id.slice(at + 1) }
+    const project = id.slice(0, at)
+    const issue = id.slice(at + 1)
+    const row = rows.find((r) => r.project === project && r.issue === issue)
+    return { project, issue, since: row?.lastAttemptAt ?? null }
   })
   return ceilingSet
     ? { running: running.filter((r) => r.project === project), slots: concurrency! }

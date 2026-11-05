@@ -49,7 +49,7 @@ const VIEW: QueuedView = {
 }
 const at = (n: number, inLine = 11): QueuedView => ({ ...VIEW, position: n, inLine })
 const run = (n: number): InFlight['running'] =>
-  Array.from({ length: n }, (_, i) => ({ project: 'p', issue: String(i + 1) }))
+  Array.from({ length: n }, (_, i) => ({ project: 'p', issue: String(i + 1), since: null }))
 
 describe('queuedChip and queuedSentence', () => {
   it('first with a free slot', () => {
@@ -159,9 +159,9 @@ describe('inFlightOf', () => {
   it('with no ceiling: one slot, every project, approved not counted', () => {
     expect(inFlightOf(rows, 'p', 3, false)).toEqual({
       running: [
-        { project: 'p', issue: '1' },
-        { project: 'p', issue: '2' },
-        { project: 'other', issue: '9' },
+        { project: 'p', issue: '1', since: null },
+        { project: 'p', issue: '2', since: null },
+        { project: 'other', issue: '9', since: null },
       ],
       slots: 1,
     })
@@ -169,11 +169,16 @@ describe('inFlightOf', () => {
   it("with a ceiling: the recipe's concurrency and this project's rows", () => {
     expect(inFlightOf(rows, 'p', 3, true)).toEqual({
       running: [
-        { project: 'p', issue: '1' },
-        { project: 'p', issue: '2' },
+        { project: 'p', issue: '1', since: null },
+        { project: 'p', issue: '2', since: null },
       ],
       slots: 3,
     })
+  })
+  it("carries each running row's lastAttemptAt as since", () => {
+    const at = new Date('2026-11-05T10:00:00Z')
+    const got = inFlightOf([{ project: 'p', issue: '1', state: 'running', lastAttemptAt: at }], 'p', 1, false)
+    expect(got?.running).toEqual([{ project: 'p', issue: '1', since: at }])
   })
   it('is null under a ceiling when the recipe was not read', () => {
     expect(inFlightOf(rows, 'p', undefined, true)).toBeNull()

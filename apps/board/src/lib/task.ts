@@ -1,3 +1,4 @@
+import { ceilingReached, daySpend, startOfLocalDay } from '@lingtai/conductor'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
@@ -84,7 +85,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
-import type { SpendRow } from '@lingtai/projector'
+import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
@@ -103,6 +104,7 @@ import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
+import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
 import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { savedFixWork } from './saved-fix-work.ts'
@@ -965,6 +967,8 @@ export interface TaskDetail {
   waiting: { previous: WaitingNeighbour | null; next: WaitingNeighbour | null }
   /** For a queued ticket: what is running now and the slots (0118 §2); null otherwise or when the recipe was not read. */
   inFlight: InFlight | null
+  /** The log's half of the queued panel's start estimate (#914); null in every state but queued. */
+  startEstimate: StartEstimate | null
   /** Local mirror check for the current wait's kept ref; null for every other case. */
   unpushedMirror: { path: string; sha: string | null } | null
   /**
@@ -1758,6 +1762,34 @@ async function inFlightFor(
   }
 }
 
+/**
+ * The log's half of the start estimate (#914), for a queued ticket only. A
+ * throwing report read is said; a ceiling that cannot be read is no line.
+ */
+async function startEstimateFor(state: string, project: string, now: Date): Promise<StartEstimate | null> {
+  if (state !== 'queued') return null
+  let typical
+  try {
+    typical = typicalAttemptMs(await readTicketReport({ project }), now)
+  } catch (err) {
+    return { failure: (err as Error).message }
+  }
+  let reached: boolean | null
+  try {
+    const ceilingUsd = machineDayCeiling()
+    reached =
+      ceilingUsd === undefined
+        ? false
+        : ceilingReached(
+            daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot()),
+            ceilingUsd,
+          )
+  } catch {
+    reached = null
+  }
+  return { typical, ceilingReached: reached }
+}
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // The control stream is read for the seven types the reducer handles only: it
   // also holds a `Reconciled` per daemon start, 22 KB each and never read here
@@ -1911,6 +1943,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     spendCurrency: spendFold.currency,
     waiting: waitingNeighbours(lane, taskId),
     inFlight: await inFlightFor(standing.state, lane, ticket.project),
+    startEstimate: await startEstimateFor(standing.state, ticket.project, new Date()),
     events: own.length,
   }
 }

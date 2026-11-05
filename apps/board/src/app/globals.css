@@ -1431,6 +1431,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail--waiting .triage-recommendation,
 .detail--queued .triage-recommendation,
 .detail--running .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
+.detail--queued .triage-estimate { margin: 0; color: var(--muted, inherit); font-size: 0.85em; }
 .detail--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
 .detail--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
 .detail--waiting .triage-fixes,
