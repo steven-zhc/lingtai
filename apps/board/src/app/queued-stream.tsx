@@ -11,7 +11,7 @@
  * The card list is handed in as `list` rather than imported: `Card` and
  * `Queued` live in `page.tsx`, which may export nothing but the page.
  */
-import { Fragment, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 
 import { type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
 
