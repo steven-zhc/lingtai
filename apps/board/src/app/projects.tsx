@@ -1,40 +1,16 @@
 /**
  * The left half of the bar: which repositories there are, and how to add one.
  *
- * **The filter is one of the four, and this is the filter.** *A chip is not
- * free, and the row is the unit* is stated in `page.tsx` at the end of `.bar`,
- * where the next chip would be added, and the four it names are filter,
- * reading, health, headline — the filter among them, left of the second
- * separator. So this is not the other side of a line the rule stops at; it is
- * one of the objects the rule is counting.
+ * **The filter is one of the four, and it is one control** (the-bar.md, *Since
+ * 2026-11-05*). The four are filter, reading, health, headline — the filter
+ * among them, left of the second separator. The `<summary>` names the project
+ * in view, and the menu under it lists the projects, `recipe` for the project
+ * in view, and *add a repository*. `recipe` (#218) and `+` (#216) are entries
+ * in that menu and no longer objects of their own, so nothing here may be
+ * cited to put a fifth on the row.
  *
- * What passes the test is that nothing is added to the count. The filter has
- * been a list of projects since #81 and it grows a tab when a repository is
- * registered — *a tab is not a chip* is the-bar.md's own sentence about that —
- * so an action at the end of it is that object gaining the affordance a list
- * of things has, and the row still carries four. **Nothing here may be cited to
- * put a fifth on the row**, which is a different act and still has to be argued
- * against the four (#216).
- *
- * **Onboarding does not stop being a thing you do once you have onboarded
- * once.** #169 put the setup link in the slot and it was right, but only for
- * the board that has no projects: with one project the slot became a caption
- * and with two a filter, and in neither was there a route to the next
- * repository. The only ways left were `lingtai add <owner>/<repo>` and typing
- * `/setup/repository` from memory, on the page that exists to be the
- * operator's console. So the `+` is drawn in the two states that had nothing,
- * and the empty board keeps the sentence it already had — it is the same
- * object as the `+`, not a second one beside it.
- *
- * **And the list is where the recipe view is reached from** (#218). It is the
- * same act as the `+` and makes the same argument: the filter was already a
- * list of tabs about projects, and it gains one more. What keeps it from being
- * a chip per project — which is exactly what the-bar.md moved *off* the row —
- * is that it is one control and it names the project in view: with one project
- * that is the only one, with several it is whichever the board is filtered to,
- * and on `all` there is no single recipe to show so there is no control. A chip
- * that is absent whenever there is nothing to say is the property that makes a
- * chip affordable at all.
+ * With no project configured there is no menu: the slot is the link to setup
+ * (#169), the same object saying *there is nothing here yet*.
  *
  * **Where it lands is whether the App exists, and not whether anything is
  * registered.** `filters.length === 0` was the proxy for that and they come
@@ -74,44 +50,50 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
     )
   }
 
-  // A filter, not a caption. With one project there is nothing to choose
-  // between, so it stays the sentence it was — but the list is a list either
-  // way, and the `+` belongs to the list and not to the number of tabs in it.
+  // The summary names the project in view; on `all` there is none to name.
+  const label = inView ?? 'all projects'
+  const current = { 'aria-current': 'page' } as const
+
+  // A plain <details>: no state, no script. Every entry is a link, and
+  // following one reloads the page, which closes the menu.
   return (
-    <span className="filter">
-      {filters.length === 1 ? (
-        <span>{filters[0]}</span>
-      ) : (
-        <>
-          <Link className={`tab${only === undefined ? ' on' : ''}`} href="/">
-            all
-          </Link>
-          {filters.map((p) => (
-            <Link key={p} className={`tab${only === p ? ' on' : ''}`} href={`/?project=${encodeURIComponent(p)}`}>
-              {p}
+    <details className="filter">
+      <summary>
+        {label} <span aria-hidden="true">▾</span>
+      </summary>
+      <div className="menu">
+        {filters.length > 1 ? (
+          <>
+            <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
+              all
             </Link>
-          ))}
-        </>
-      )}
-      {/* What the project in view is configured to do, and which file each
-          value came from (#218). the-bar.md moved `<project>: rounds ×N` off
-          the row *to the recipe view*; this is the way to it, and it is one
-          control rather than one per project. */}
-      {inView === undefined ? null : (
-        <Link
-          className="tab"
-          href={`/recipe/${encodeURIComponent(inView)}`}
-          title={`what ${inView}'s recipe says today`}
-        >
-          recipe
+            {filters.map((p) => (
+              <Link
+                key={p}
+                className={`tab${only === p ? ' on' : ''}`}
+                href={`/?project=${encodeURIComponent(p)}`}
+                {...(only === p ? current : {})}
+              >
+                {p}
+              </Link>
+            ))}
+          </>
+        ) : null}
+        {/* What the project in view is configured to do, and which file each
+            value came from (#218). On `all` there is no single recipe. */}
+        {inView === undefined ? null : (
+          <Link
+            className="tab"
+            href={`/recipe/${encodeURIComponent(inView)}`}
+            title={`what ${inView}'s recipe says today`}
+          >
+            recipe
+          </Link>
+        )}
+        <Link className="tab add" href={where} title={why}>
+          add a repository
         </Link>
-      )}
-      {/* A `.tab`, because it is one of this list's controls. Not `.reading`,
-          which is styled as text precisely so that the rail's one link does
-          not read as a button — this is the opposite case. */}
-      <Link className="tab add" href={where} title={why} aria-label="add a repository">
-        +
-      </Link>
-    </span>
+      </div>
+    </details>
   )
 }

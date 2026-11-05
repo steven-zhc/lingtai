@@ -181,3 +181,52 @@ describe('which object on the row this is', () => {
     expect(out).not.toContain('reading')
   })
 })
+
+describe('the filter is one menu', () => {
+  const order = (out: string, hrefs: string[]) => hrefs.map((h) => out.indexOf(`href="${h}"`))
+  const ascending = (xs: number[]) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]!))
+
+  it('draws no menu for the empty board', () => {
+    const out = html([], true)
+
+    expect(out).not.toContain('<details')
+    expect(out.match(/href=/g)).toHaveLength(1)
+  })
+
+  it('names the one project and lists recipe, then add', () => {
+    const out = html(['lingtai'], true)
+
+    expect(out).toMatch(/<summary>lingtai <span aria-hidden="true">▾<\/span><\/summary>/)
+    expect(ascending(order(out, ['/recipe/lingtai', '/setup/repository']))).toBe(true)
+    expect(out).not.toContain('aria-current')
+  })
+
+  it('names all projects on all, and marks all current', () => {
+    const out = html(['a', 'b'], true)
+
+    expect(out).toContain('<summary>all projects ')
+    expect(ascending(order(out, ['/', '/?project=a', '/?project=b', '/setup/repository']))).toBe(true)
+    expect(out.match(/aria-current="page"/g)).toHaveLength(1)
+    expect(out).toMatch(/aria-current="page"[^>]*>all</)
+  })
+
+  it('names the project in view and puts recipe before add', () => {
+    const out = html(['a', 'b'], true, 'b')
+
+    expect(out).toContain('<summary>b ')
+    expect(ascending(order(out, ['/', '/?project=a', '/?project=b', '/recipe/b', '/setup/repository']))).toBe(true)
+    expect(out.match(/aria-current="page"/g)).toHaveLength(1)
+    expect(out).toMatch(/class="tab on"[^>]*aria-current="page"[^>]*>b</)
+  })
+
+  it('links add to the App-dependent target in every state', () => {
+    for (const [filters, only] of [
+      [['a'], undefined],
+      [['a', 'b'], undefined],
+      [['a', 'b'], 'a'],
+    ] as const) {
+      expect(html([...filters], true, only)).toContain('href="/setup/repository"')
+      expect(html([...filters], false, only)).toContain('href="/setup/github-app"')
+    }
+  })
+})
