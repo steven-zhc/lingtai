@@ -1,9 +1,43 @@
 # The board's bar, weighted
 
-**Status** built · 2026-09-10 · `#134` · a picture at
+**Status** built · 2026-09-10 · `#134` · revised 2026-11-05 · `#902` · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
 Eleven objects, nine of them boxed, wrapping to a second line at 1440.
+
+## Since 2026-11-05: three objects on the bar, the reading in a footer (#902)
+
+The bar still answers two questions, *is anything waiting on me?* and *is the
+system doing what the code says?*, and it now carries only what a person acts
+on. **Three objects: the filter, health, the headline.** The reading, which is
+looked at and not acted on, moves to a footer that every page has. The
+reasoning below, *a chip is not free and the row is the unit*, still holds; it
+is applied to two rows instead of one.
+
+- **The filter** is one control: the project in view, with its recipe and
+  *add a project* in its menu. `recipe` and `+` are no longer objects of their
+  own.
+- **Health** is silent when well: a green dot and nothing else. When it is
+  not, one sentence names the fault and the command that fixes it
+  (*daemon 17 commits behind · `pnpm lingtai restart`*). Today's spend joins it
+  only when it passes 80 % of the day's ceiling (*today $165 of $200*), because
+  that is the one reading a person then acts on.
+- **The headline** is the count waiting on you, in amber, linking to the
+  column, and nothing when the count is zero. Amber stays the headline's alone.
+- **The counts are not on the bar**: each column carries its own, so *2 queued
+  · 3 running · 65 landed* was the same numbers twice. *nothing waiting on you*
+  goes for the same reason.
+- **The footer** holds the reading: today's spend against the ceiling as a
+  meter (reported, estimated and unknown on hover), how many landed, the
+  projections' currency in faint type, and the links to `/landed`, `/report`
+  and `/spend` (each carrying `?project=`). The `report` link's argument below
+  is kept: it was always *a second way out of the reading*, and the reading is
+  now the footer.
+- **⌘K** opens one search over projects, recipes, tickets and pages. It is a
+  key, not an object on the bar.
+
+The mock agreed with the operator is
+`https://claude.ai/artifact/4YVX98CsnwU8MSTcKZ3pTw` (`bar.html`).
 
 ## Every one of them earned its place, and nobody looked at the row
 

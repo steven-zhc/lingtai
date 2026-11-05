@@ -398,14 +398,35 @@ which kind a wait was got inferred again in each place that needed it, from
      is the number, the state and its age as one line, the title, and the
      opening; the rail is drawn under it in every one of these states — the
      run in flight, live, on a running ticket, and the last attempt on a queued
-     or approved one. Where the panel says triage on a wait, a queued ticket's
-     says why it is not moving — once, with the last attempt's refusal whole and
-     named as the last attempt — and a running ticket's is the run log. What the
-     next attempt will do at each step is reduced into the rail, one cell under
-     each step, not drawn as a second list of the same ten steps. The
-     prompt that will be sent is reduced by default beside Discussion, because
-     the opening above and the Ticket record already say it.
-     [design/queued-page.html](../design/queued-page.html) is the drawing.
+     or approved one. The panel is drawn as triage's is on a wait (a label and
+     a chip, one serif sentence, one line of what is asked of you, then its
+     evidence), and Discussion sits inside it:
+     - **A queued ticket's panel says when it will start**: *In line · Nth of M*,
+       the sentence of what it waits for, *Nothing is needed from you* unless
+       something is in its way, and three facts: why it is in that place (its
+       kind's order), what is running now, and what is behind it (GitHub's
+       answer, a placeholder until it arrives). Then **what the next attempt
+       will do**, open, one row per step that will run and the limits under
+       them; this list replaces the cells once drawn under the rail, which were
+       closed and not read. A refusal from a last attempt is named once, whole.
+       The prompt is closed by default and read when opened. The moves are
+       cards (*Run it now*, *Edit the prompt*, *Close the ticket*), none marked
+       recommended, and none amber.
+     - **A running ticket's panel says what the run is doing, in words**:
+       *Running · <step> [· fix round N]*, a sentence of what this step is for
+       (for a fix round, the finding that sent it back, whole beneath it), three
+       meters (this round's time, the attempt's turns, its cost so far, each
+       against its limit where there is one), the agent's own last lines from
+       the run log, newest first and labelled as the run log's, and what comes
+       next. The raw run log is closed by default and follows live when opened;
+       it is a trace (0111 §13), and nothing on the panel is decided from it.
+       The attempt tab does not draw the rail a second time.
+     - Discussion's placeholder asks about the state the page is in, never
+       about an attempt that does not exist.
+     The mocks agreed with the operator are
+     `https://claude.ai/artifact/4YVX98CsnwU8MSTcKZ3pTw` (`queued.html`,
+     `running.html`); [design/queued-page.html](../design/queued-page.html) is
+     the older drawing.
    - **The card** on the board carries the number, the title, the rail and its
      line (a card held for a person's approval carries the rail with no line
      under it, and one line of its own: a `WAITING FOR YOU` badge, `waitWords`'
