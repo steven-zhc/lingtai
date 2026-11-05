@@ -2171,7 +2171,10 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .rearlierlist { display: flex; flex-direction: column; }
 /* One attempt's tab: a summary line, its steps, then five closed sections. */
-.atab { display: grid; gap: 0.6rem; }
+/* Capped for the reason `.swhy` gives (above, "The track is capped"): an `auto`
+   track is as wide as its longest `pre`, so `.sraw` never gets to scroll. A new
+   grid under the record needs the same line. */
+.atab { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
 .asum {
   display: flex;
   flex-wrap: wrap;
@@ -2202,9 +2205,10 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.rbody { display: grid; gap: 0.6rem; padding: 0.85rem; scroll-margin-top: 1rem; }
+/* Capped for the reason `.swhy` gives; see `.atab`. */
+.rbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; padding: 0.85rem; scroll-margin-top: 1rem; }
 .rbody[hidden] { display: none; }
-.rpart { display: grid; gap: 0.3rem; }
+.rpart { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
 /* `attempt 2` over an attempt's share of a row, and `history` over the log. */
 .rof {
   margin: 0.3rem 0 0;

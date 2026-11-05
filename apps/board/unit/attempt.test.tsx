@@ -99,3 +99,27 @@ describe('the disclosure the page hands the server', () => {
     expect(render(finished())).not.toContain('open=""')
   })
 })
+
+describe('a refusal that is one very long line', () => {
+  it('stays whole inside pre.sraw, inside the tab', () => {
+    const line = 'x'.repeat(5000)
+    const html = renderToStaticMarkup(
+      <Attempt
+        run={finished()}
+        blocked
+        standing={{
+          diagnosis: { what: 'refused', raw: line, done: null, recommendation: null } as never,
+          saidBy: null,
+        }}
+      />,
+    )
+    const pre = />([^<]*)<\/pre>/.exec(html.slice(html.indexOf('<pre class="sraw">')))
+    expect(pre?.[1]).toBe(line)
+    expect(line).not.toContain('\n')
+    const tab = html.indexOf('class="atab"')
+    const details = html.indexOf('<details class="sreason"')
+    expect(tab).toBeGreaterThan(-1)
+    expect(details).toBeGreaterThan(tab)
+    expect(html.indexOf('<pre class="sraw">')).toBeGreaterThan(details)
+  })
+})
