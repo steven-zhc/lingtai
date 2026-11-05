@@ -112,8 +112,8 @@ item lives for weeks, so one stream would make every read expensive.
 
 | Aggregate | Stream | Lifetime | Owns |
 |---|---|---|---|
-| WorkItem | `wi-{project}-{n}` | weeks | lifecycle, priority, links to other items |
-| Run | `run-{ulid}` | hours | one agent attempt: progress, guard trips, diff, receipt |
+| WorkItem | `ticket-{project}-{n}` | weeks | lifecycle, priority, links to other items |
+| Run | `pass-{uuid}` | hours | one agent attempt: progress, guard trips, diff, receipt |
 | Integration | `int-{project}-{base}` | forever | one base branch's merge lane — the *record* of it, not the serialisation point (#194) |
 
 **Nothing serialises that lane.** Two integrations against one base overlap on

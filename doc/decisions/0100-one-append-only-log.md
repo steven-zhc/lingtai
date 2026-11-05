@@ -40,8 +40,14 @@ same URL can be visible from a checkout and invisible to a daemon started from
    `append(streamId, expectedVersion, events)` writes a batch in one transaction
    at `expectedVersion + 1 …`; a writer that lost the race gets
    `ConcurrencyError`, re-reads and retries. There is no lock table for the log.
-   Streams are named by prefix: `wi-` (work item), `run-` (run), `prj-` (project), `int-`
-   (integration), `chat-`, `ctl-` (control). The interface is `EventStore` in
+   Streams are named by prefix, and `STREAM_ID_PATTERN` in
+   `packages/domain/src/envelope.ts` is the authority: the store refuses any
+   other prefix on append. They are `ticket-{project}-{n}` (a work item),
+   `pass-{uuid}` (one attempt at a ticket), `int-{project}-{base}` (a base
+   branch's merge lane), `prj-{project}` (the project), `chat-{id}` (a
+   discussion), `bkl-{project}-{key}` (a backlog entry),
+   `rcp-{configHash}` (a recorded recipe), `ctl-conductor` and
+   `ctl-github-app` (control), and `ext-subscribers` (extensions). The interface is `EventStore` in
    `packages/event-store/src/event-store.ts`.
 
 4. **Every row carries `schemaVer`, and the catalogue governs reads and writes.**
