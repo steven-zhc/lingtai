@@ -14,7 +14,7 @@ import { TimingMeta } from '@/lib/timing-meta'
 import type { Answered } from '../../deferred.tsx'
 import { Follow, Following } from '../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
-import { DeferredCoords, DeferredStanding, framed } from '../../standing.tsx'
+import { DeferredCoords, DeferredStanding, detailClass } from '../../standing.tsx'
 
 /**
  * The top of the task page, and the frame the record's tabs sit in.
@@ -144,9 +144,7 @@ export function TaskBody({
   const spendCurrency = spendChip(task.spendCurrency)
 
   return (
-    <main
-      className={`detail${task.standing.state === 'blocked' ? ' detail--waiting' : framed(task.standing.state) ? ' detail--framed' : ''}${task.standing.state !== 'blocked' && task.standing.afterMove ? ' detail--resolved' : ''}`}
-    >
+    <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
       <div className="bar">
         <Link className="brand" href="/">
           ← Lingtai
@@ -189,6 +187,7 @@ export function TaskBody({
                 }
               : null
           }
+          inFlight={task.inFlight}
           want={task.want}
           compareUrl={task.ticket?.compareUrl ?? null}
           taskId={task.taskId}

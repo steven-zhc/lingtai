@@ -788,7 +788,7 @@ function whoWaits(life: TicketLifecycle): string {
     default:
       // Not stuck. The reading #94 got wrong: an item nobody is holding comes
       // back on its own, and the page has to say so in as many words.
-      return 'waiting for a conductor to take it'
+      return 'queued'
   }
 }
 

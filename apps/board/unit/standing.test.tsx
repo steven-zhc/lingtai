@@ -225,7 +225,7 @@ describe('the state, and how long it has held', () => {
 
     expect(standing.state).toBe('queued')
     expect(standing.onYou).toBe(false)
-    expect(standing.who).toBe('waiting for a conductor to take it')
+    expect(standing.who).toBe('queued')
     expect(standing.since).toBe('2026-09-08T04:00:00.000Z')
   })
 
@@ -1951,7 +1951,7 @@ describe('what the refusal means for the decision', () => {
       diagnosed({ action: 'approve', why: 'x'.repeat(900) }),
       diagnosed({ action: 'reject', why: '' }),
       { ...HELD, state: 'running', onYou: false, who: 'an agent is working', question: null },
-      { ...HELD, state: 'queued', onYou: false, who: 'waiting for a conductor to take it', question: null },
+      { ...HELD, state: 'queued', onYou: false, who: 'queued', question: null },
     ]
     for (const standing of cases) {
       const said = soWhat(standing)
