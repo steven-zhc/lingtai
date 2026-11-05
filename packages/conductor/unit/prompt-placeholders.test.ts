@@ -27,7 +27,10 @@ describe('the prompt placeholders', () => {
   it('are the ones renderPrompt substitutes, and every one expands', async () => {
     const names = await documented()
     const source = await readFile(`${root}packages/conductor/src/prompt.ts`, 'utf8')
-    const substituted = [...source.matchAll(/\.replaceAll\(["'](\{\{[a-z]+\}\})["']/g)].map((m) => m[1]!)
+    // The one regexp the template is split with (`SLOTS`), since #928 replaced the `replaceAll` chain.
+    const slots = /const SLOTS = \/\\\{\\\{\(([a-z|]+)\)\\\}\\\}\/g/.exec(source)
+    expect(slots, 'prompt.ts no longer declares SLOTS').not.toBeNull()
+    const substituted = slots![1]!.split('|').map((name) => `{{${name}}}`)
     expect(names.sort()).toEqual(substituted.sort())
 
     for (const name of names) {

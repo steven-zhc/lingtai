@@ -425,12 +425,15 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       // The count is what it always was; the text is what #88 added. A v1 event
       // has none, and leaving the previous one in place would be a lie about
       // which prompt this run was given.
+      const { promptRefs: _stale, ...kept } = state
       return {
-        ...state,
+        ...kept,
         ...at,
         prompts: state.prompts + 1,
         prompt: d.prompt,
-        promptRefs: d.refs ?? null,
+        // Only where the record carries refs, so a state folded from events that
+        // never had any is the one it was before #928.
+        ...(d.refs === undefined ? {} : { promptRefs: d.refs }),
         promptMeta: { version: d.promptVersion, bytes: d.bytes },
       }
     }

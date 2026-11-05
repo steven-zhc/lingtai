@@ -83,3 +83,71 @@ describe('recordPrompt with a composed prompt (#927)', () => {
     expect((await store.read('pass-1'))[0]!.data).not.toHaveProperty('refs')
   })
 })
+
+describe('recordPrompt with a step part (#928)', () => {
+  const stepEnded = (document: string, evidence = 'ev') => ({
+    type: 'StepEnded',
+    actor: 'conductor',
+    data: {
+      runId: 'pass-1',
+      outcome: {
+        step: 'design',
+        round: 0,
+        actions: [
+          {
+            plugin: 'agent',
+            name: 'draft',
+            onSha: 'a',
+            evidence,
+            yields: 'design',
+            result: { _tag: 'Drafted', design: { document } },
+          },
+        ],
+      },
+    },
+  })
+
+  it('references the latest StepEnded holding the text, trimmed as inserted, and expands to what was handed', async () => {
+    const { expandPrompt } = await import('@lingtai/domain')
+    const { resolvePromptRefs } = await import('../src/prompt-refs.ts')
+    const store = createMemoryEventStore()
+    await store.append('pass-1', 0, [stepEnded('first'), stepEnded('  the design\n')] as never)
+    const handed = 'a: the design :b'
+    await recordPrompt(store, 'pass-1', {
+      for: FOR,
+      promptVersion: 'ticket@1',
+      prompt: ['a: ', { text: 'the design', onStep: { field: 'document', trimmed: true } }, ' :b'],
+    })
+    const events = await store.read('pass-1')
+    const data = events.at(-1)!.data as { prompt: string; bytes: number; refs?: { ref: unknown }[] }
+    expect(data.bytes).toBe(handed.length)
+    expect(data.prompt).not.toContain('the design')
+    expect(data.refs?.[0]?.ref).toEqual({
+      _tag: 'StepValue',
+      stream: 'pass-1',
+      version: events[1]!.version,
+      action: 'draft',
+      field: 'document',
+      trimmed: true,
+    })
+    const values = await resolvePromptRefs(data.refs as never, {
+      store,
+      git: async () => ({ ok: false, why: 'no git' }),
+      mirrorPath: '/nowhere',
+    })
+    expect(expandPrompt({ prompt: data.prompt, refs: data.refs as never }, values).text).toBe(handed)
+  })
+
+  it('writes the text out when no StepEnded on the stream holds it', async () => {
+    const store = createMemoryEventStore()
+    await store.append('pass-1', 0, [stepEnded('something else')] as never)
+    await recordPrompt(store, 'pass-1', {
+      for: FOR,
+      promptVersion: 'ticket@1',
+      prompt: ['x ', { text: 'cut', onStep: { field: 'evidence', trimmed: false } }],
+    })
+    const data = (await store.read('pass-1')).at(-1)!.data as { prompt: string; refs?: unknown }
+    expect(data.prompt).toBe('x cut')
+    expect(data.refs).toBeUndefined()
+  })
+})

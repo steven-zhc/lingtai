@@ -75,6 +75,54 @@ describe('reduceAttempt', () => {
     expect(s.promptMeta).toEqual({ version: 'ticket@3', bytes: 12 })
   })
 
+  it('takes the conductor’s implement round-0 record as the attempt’s prompt, with its refs (#928)', () => {
+    const e = makeStream('pass-01JV')
+    const refs = [
+      {
+        start: 3,
+        end: 40,
+        ref: { _tag: 'TicketBody' as const, stream: 'ticket-x-1', version: 0 },
+        bytes: 9,
+        sha256: 'abc',
+      },
+    ]
+    const s = reduceAttempt([
+      e('RunStarted', started),
+      e('RunPrompted', {
+        promptVersion: 'ticket@3',
+        bytes: 12,
+        prompt: 'do the thing',
+        for: { _tag: 'Action', step: 'implement', name: 'implement', round: 0 },
+        refs,
+      }),
+      e('RunPrompted', {
+        promptVersion: 'fix@9',
+        bytes: 9,
+        prompt: 'fix brief',
+        for: { _tag: 'Action', step: 'implement', name: 'fix', round: 1 },
+      }),
+      e('RunPrompted', {
+        promptVersion: 'review@9',
+        bytes: 9,
+        prompt: 'review brief',
+        for: { _tag: 'Action', step: 'review', name: 'cold', round: 0 },
+      }),
+    ])
+
+    expect(s.prompts).toBe(1)
+    expect(s.prompt).toBe('do the thing')
+    expect(s.promptMeta).toEqual({ version: 'ticket@3', bytes: 12 })
+    expect(s.promptRefs).toEqual(refs)
+  })
+
+  it('still takes a legacy record with no `for`, and leaves promptRefs unset (#928)', () => {
+    const e = makeStream('pass-01JU')
+    const s = reduceAttempt([e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' })])
+    expect(s.prompts).toBe(1)
+    expect(s.prompt).toBe('do the thing')
+    expect('promptRefs' in s).toBe(false)
+  })
+
   it('parses a RunPrompted stored before it had a `for`, which means the implement run (#923)', () => {
     const parsed = parsePayload('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' })
     expect(parsed.for).toBeUndefined()
