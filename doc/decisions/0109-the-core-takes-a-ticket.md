@@ -32,6 +32,14 @@ run.
    and holds no body; the body is fetched once, for the ticket that was claimed.
    Which system a ticket came from is recorded and never decides anything.
 
+   **The body a pass fetched is on the event that started it.** `TicketClaimed`
+   carries `body`, and so does `TicketContinued`, because a continuation is a new
+   pass and fetches the body again (an answer may have been written into it
+   since, 0118 §6). Every prompt of that pass is built from that one body, so
+   the log holds the text each agent was given even after the issue is edited
+   on GitHub, and a prompt refers to it rather than copying it (0100 §14).
+   An event written before this has no `body`; nothing is reconstructed for it.
+
 2. **The source is a trusted adapter behind a port, `Tickets`.**
    `packages/conductor/src/ticket-store.ts` defines it: eight verbs —
    `listOpenIssues`, `listIssuesSince`, `getIssue`, `createIssue`, `comment`,
@@ -103,7 +111,8 @@ run.
    go on (`continueTicket`, `packages/conductor/src/claim.ts:210`), the
    conductor appends `TicketContinued { runId, worker }` on the ticket's stream,
    never a second `TicketClaimed`. It is checked at an expected version as a
-   claim is, carries no title and no kind, and starts no attempt. So every
+   claim is, carries no title and no kind (only the body it fetched, §1), and
+   starts no attempt. So every
    `TicketClaimed` is one attempt with a `runId` of its own, and a reader counts
    attempts by counting claims.
 

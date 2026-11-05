@@ -155,6 +155,33 @@ same URL can be visible from a checkout and invisible to a daemon started from
     a later reader must be able to check is a field on an event, never a line in
     a log.
 
+    **What an agent was given is on `RunPrompted`, and each input is on the log
+    once.** Every paid call appends one `RunPrompted` before it is dispatched,
+    beside its `RunSpent` and with the same `for`; the conductor is its one
+    writer, for the implementer as for every other call. Its text is the prompt
+    as handed except where a part is already on the log or in git: there it
+    carries a reference in place of the copy. The ticket body is the claim's
+    (0109 §1); findings and a command's evidence are the `StepEnded` that
+    carried them; triage's advice is the `WaitTriaged`; a person's answers are
+    the `WaitResolved`; a diff is its two shas and its size. Everything else
+    (the template's own words, the round, the rules) is written out, so
+    expanding a `RunPrompted` back into the text is substitution by one pure
+    function: a value inserted verbatim (the body, a command's evidence, a
+    diff) comes back exactly; a part the template rendered from stored data (a
+    list of findings) is rendered again by today's code and may differ in
+    layout, never in content. A prompt costs a few kilobytes, not the size of
+    its diff, and a reference that no longer resolves (a diff whose branch was
+    deleted) says so rather than inventing the text.
+
+    **`RunPrompted` is what Lingtai composed, not the agent's whole context.**
+    The runtime adds its own system prompt and tool definitions, which Lingtai
+    cannot read, and the machine adds its own configuration (the user's
+    `~/.claude` instructions, settings, plugins and servers). Of these, only the
+    runtime's version is recorded, on `RunStarted`, as the runtime reported it,
+    so a change of behaviour across an upgrade can be told from one within a
+    version. The repository's own instructions need no record: they are in git
+    at `baseSha`.
+
 ## Consequences
 
 - *Agents do the work. Lingtai keeps the books.* is a claim §1 and §14 make
