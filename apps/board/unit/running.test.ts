@@ -96,4 +96,20 @@ describe('runningPanelOf', () => {
     for (const s of steps) s.state = states[s.step]!
     expect(runningPanelOf(run({ progress })).then).toEqual(['build', 'review', 'merge'])
   })
+
+  it('a recorded plan that is empty everywhere is known: an empty row and nothing further, not unreadable', () => {
+    const progress = { ...plan({}), planKnown: true } as unknown as AttemptView['progress']
+    const p = runningPanelOf(run({ stepNow: at('implement', 0), progress }))
+    expect(p.line).toEqual({ kind: 'step', step: 'implement', actions: [] })
+    expect(p.then).toEqual([])
+  })
+
+  it('between steps after a standing refusal, the steps after implement all run again', () => {
+    const progress = plan({ implement: ['agent'], build: ['run'], review: ['agent'], merge: ['merge'] })
+    const states: Record<string, string> = { implement: 'passed', build: 'passed', review: 'failed', merge: 'pending' }
+    const steps = (progress as unknown as { steps: { step: string; state: string }[] }).steps
+    for (const s of steps) s.state = states[s.step]!
+    const refusal = { key: 'review:cold', evidence: 'x', findings: [] }
+    expect(runningPanelOf(run({ progress, refusal })).then).toEqual(['build', 'review', 'merge'])
+  })
 })

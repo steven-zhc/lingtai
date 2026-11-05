@@ -27,7 +27,7 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
   const now = run.stepNow
   const steps = run.progress?.steps ?? []
   const fix = now !== null && now.step === 'implement' && now.round > 0
-  const anyPlan = steps.some((p) => p.planned.length > 0)
+  const anyPlan = run.progress?.planKnown ?? steps.some((p) => p.planned.length > 0)
   const planned = (s: Step): string[] => [...(steps.find((p) => p.step === s)?.planned ?? [])]
 
   let line: RunningPanelView['line']
@@ -65,6 +65,11 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
       if (p.state === 'passed' || p.state === 'skipped' || p.state === 'waived') anchor = p.step
       else break
     }
+    // A refusal still standing sent the run back through implement: the
+    // verdicts of the steps after it are the last round's, and those steps run
+    // again, so none of them is done.
+    if (run.refusal !== null && (anchor === undefined || STEPS.indexOf(anchor) > STEPS.indexOf('implement')))
+      anchor = 'implement'
   }
   const after = anchor === undefined ? -1 : STEPS.indexOf(anchor)
   const left = STEPS.filter((s, i) => i > after && planned(s).length > 0)

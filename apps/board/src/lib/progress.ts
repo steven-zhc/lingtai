@@ -195,6 +195,11 @@ export interface AttemptProgress {
   now: Phase | null
   /** All ten, in pass order. */
   steps: readonly StepProgress[]
+  /**
+   * Whether any plan is known: the log's `StepsResolved`, or a recipe read. A
+   * plan that is known and empty at every step is not the same as none.
+   */
+  planKnown?: boolean
 }
 
 /**
@@ -403,7 +408,12 @@ export function progressOf(
     return { step, planned, state: stepState, actions }
   })
 
-  return { since: state.openedAt.toISOString(), now: nowOf(state), steps }
+  return {
+    since: state.openedAt.toISOString(),
+    now: nowOf(state),
+    steps,
+    planKnown: state.resolved != null || plan.size > 0,
+  }
 }
 
 /**
