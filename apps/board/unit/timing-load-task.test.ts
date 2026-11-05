@@ -5,6 +5,7 @@ import { readControl, readStatus } from '@lingtai/daemon/control'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { eventStore } from '@lingtai/event-store'
+import { GitHubError } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector/task-view'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,7 +13,7 @@ import { outgoingFor } from '../src/lib/prompt.ts'
 import { queuedFor } from '../src/lib/queued.ts'
 import { recipeOfAttempt } from '../src/lib/recipe.ts'
 import { currentSpend } from '../src/lib/spend.ts'
-import { loadAttemptTab, loadTask, loadTicketTab } from '../src/lib/task.ts'
+import { knowable, loadAttemptTab, loadTask, loadTaskAnswer, loadTicketTab } from '../src/lib/task.ts'
 import { measure } from '../src/lib/timing.ts'
 
 vi.mock('@lingtai/event-store', async (original) => ({
@@ -101,30 +102,151 @@ it('names the reads of a landed ticket in start order', async () => {
   // such condition and `cache` is a passthrough, so this is not a claim about
   // the number of reads in a render. `recipe.run` is gone: the recipe is the
   // attempt tab's, read by `loadAttemptTab` (#885).
-  expect(got).toEqual([
-    'events.task',
-    'events.task',
-    'events.control',
-    'tasks.read',
-    'events.run',
-    'spend.read',
-    'github.issue',
-  ])
+  expect(got).toEqual(['events.task', 'events.task', 'events.control', 'tasks.read', 'events.run', 'spend.read'])
 })
 
-it('names the next-attempt reads of a queued ticket', async () => {
-  // No events at all, and the issue is open: the board's *queued* standing.
+it('reads nothing of GitHub’s for a queued ticket: that is the answer’s, not the task’s', async () => {
+  // No events at all: the board's *queued* standing, from the log alone.
   const { names: got } = await names([])
-  expect(got).toEqual([
-    'events.task',
-    'events.task',
-    'events.control',
-    'tasks.read',
-    'spend.read',
-    'github.issue',
-    'next.outgoing',
-    'next.queued',
-  ])
+  expect(got).toEqual(['events.task', 'events.task', 'events.control', 'tasks.read', 'spend.read'])
+})
+
+/**
+ * 0118 §2: the page is sent before GitHub has answered. The test that stands in
+ * for the trace — an issue reader that never resolves, and a `loadTask` that
+ * still does, with the recipe's plan read beside it.
+ */
+describe('loadTask does not wait for GitHub', () => {
+  it('resolves with an issue reader that never answers, and never calls it', async () => {
+    const item = makeStream(taskId)
+    const own = aClaim(item, 'run-1')
+    vi.mocked(eventStore.read).mockImplementation(async (stream: string) => (stream === taskId ? own : []))
+    vi.mocked(readProjectTicket).mockReturnValue(new Promise(() => {}))
+    vi.mocked(projectFilter).mockClear()
+
+    const task = await loadTask(taskId)
+
+    expect(task).not.toBeNull()
+    expect(task?.ticket).toMatchObject({ project: 'lingtai', ref: '774' })
+    expect(task?.standing.state).toBe('running')
+    expect(task?.runs).toHaveLength(1)
+    // `next.plan` is read for a running ticket without waiting on the issue.
+    expect(projectFilter).toHaveBeenCalled()
+    expect(readProjectTicket).not.toHaveBeenCalled()
+    expect(outgoingFor).not.toHaveBeenCalled()
+    expect(queuedFor).not.toHaveBeenCalled()
+  })
+
+  it('is null for an id a 404 may rest on, with no GitHub asked', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    expect(await loadTask('nodash')).toBeNull()
+    vi.mocked(loadProject).mockResolvedValue(null)
+    expect(await loadTask(taskId)).toBeNull()
+    expect(await knowable(taskId)).toBe(false)
+    expect(await knowable('nodash')).toBe(false)
+    expect(readProjectTicket).not.toHaveBeenCalled()
+  })
+
+  it('is not null for a registered project’s untouched ticket', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    expect(await knowable(taskId)).toBe(true)
+    expect(await loadTask(taskId)).not.toBeNull()
+  })
+})
+
+describe('loadTaskAnswer', () => {
+  const issue = (over: object = {}) =>
+    vi.mocked(readProjectTicket).mockResolvedValue({
+      ok: true,
+      from: 'github',
+      ticket: { title: 'GitHub title', labels: [{ name: 'bug' }], body: 'the body', url: 'https://x/774' },
+      ...over,
+    } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
+
+  it('carries the title, labels, link and body GitHub gave', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    issue()
+    const answer = await loadTaskAnswer(taskId)
+    expect(answer.ticket).toEqual({
+      found: true,
+      askedGitHub: true,
+      title: 'GitHub title',
+      labels: ['bug'],
+      url: 'https://x/774',
+      body: 'the body',
+      problem: null,
+    })
+  })
+
+  it('answers a 404 as found: false, and asks nothing further of a ticket the log never touched', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    vi.mocked(readProjectTicket).mockResolvedValue({
+      ok: false,
+      from: 'github',
+      error: new GitHubError(404, '/repos/o/lingtai/issues/774', 'Not Found'),
+    } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
+    const answer = await loadTaskAnswer(taskId)
+    expect(answer.ticket).toMatchObject({ found: false, askedGitHub: true, body: null })
+    expect(answer.ticket.problem).toContain('404')
+    expect(answer.outgoing).toBeNull()
+    expect(answer.queued).toBeNull()
+    expect(outgoingFor).not.toHaveBeenCalled()
+    expect(queuedFor).not.toHaveBeenCalled()
+  })
+
+  it('answers a failure as found: null with the problem, and never rejects', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    vi.mocked(readProjectTicket).mockResolvedValue({
+      ok: false,
+      from: 'github',
+      error: new GitHubError(403, '/repos/o/lingtai/issues/774', 'rate limit exceeded'),
+    } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
+    const failed = await loadTaskAnswer(taskId)
+    expect(failed.ticket).toMatchObject({ found: null, askedGitHub: true, body: null })
+    expect(failed.ticket.problem).toContain('rate limit exceeded')
+
+    vi.mocked(readProjectTicket).mockRejectedValue(new Error('socket hang up'))
+    const threw = await loadTaskAnswer(taskId)
+    expect(threw.ticket).toMatchObject({ found: null, body: null, problem: 'socket hang up' })
+  })
+
+  it('composes the outgoing prompt and the queue only in the states that have them', async () => {
+    issue()
+    const outgoing = { text: 'prompt' } as unknown as Awaited<ReturnType<typeof outgoingFor>>
+    const queued = { position: 1 } as unknown as Awaited<ReturnType<typeof queuedFor>>
+    vi.mocked(outgoingFor).mockResolvedValue(outgoing)
+    vi.mocked(queuedFor).mockResolvedValue(queued)
+
+    // queued: both, and the body reached `outgoingFor` through the answer.
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    const waiting = await loadTaskAnswer(taskId)
+    expect(waiting.outgoing).toBe(outgoing)
+    expect(waiting.queued).toBe(queued)
+    expect(vi.mocked(outgoingFor).mock.calls[0]?.[0].ticket?.body).toBe('the body')
+
+    // running: neither.
+    vi.mocked(outgoingFor).mockClear()
+    vi.mocked(queuedFor).mockClear()
+    const item = makeStream(taskId)
+    vi.mocked(eventStore.read).mockImplementation(async (stream: string) =>
+      stream === taskId ? aClaim(item, 'run-1') : [],
+    )
+    const running = await loadTaskAnswer(taskId)
+    expect(running.outgoing).toBeNull()
+    expect(running.queued).toBeNull()
+    expect(outgoingFor).not.toHaveBeenCalled()
+    expect(queuedFor).not.toHaveBeenCalled()
+  })
+
+  it('turns a throw from queuedFor or outgoingFor into that view’s problem, not a rejection', async () => {
+    issue()
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    vi.mocked(outgoingFor).mockRejectedValue(new Error('no template'))
+    vi.mocked(queuedFor).mockRejectedValue(new Error('queue exploded'))
+    const answer = await loadTaskAnswer(taskId)
+    expect(answer.outgoing?.problem).toBe('no template')
+    expect(answer.queued?.problem).toBe('queue exploded')
+  })
 })
 
 /**
@@ -161,14 +283,17 @@ describe('loadAttemptTab', () => {
 })
 
 describe('loadTicketTab', () => {
-  it('reads the one GitHub issue and no attempt', async () => {
+  it('reads no GitHub issue and no attempt', async () => {
     const item = makeStream(taskId)
     vi.mocked(eventStore.read).mockImplementation(async (stream: string) =>
       stream === taskId ? aClaim(item, 'run-1') : [],
     )
+    vi.mocked(readProjectTicket).mockReturnValue(new Promise(() => {}))
     const tab = await loadTicketTab(taskId)
     expect(tab?.events.length).toBeGreaterThan(0)
-    expect(readProjectTicket).toHaveBeenCalledTimes(1)
+    expect(tab?.ticket).toMatchObject({ ref: '774' })
+    // The tab's loader never waits on the issue: the body is `loadTicketAnswer`, read where it is drawn.
+    expect(readProjectTicket).not.toHaveBeenCalled()
     expect(recipeOfAttempt).not.toHaveBeenCalled()
   })
 })

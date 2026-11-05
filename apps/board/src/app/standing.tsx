@@ -1437,14 +1437,7 @@ export function DeferredStanding({
     <Deferred
       value={answer}
       fallback={
-        <Standing
-          {...props}
-          issue={untouched ? null : props.issue}
-          body={null}
-          outgoing={null}
-          queued={null}
-          pending
-        />
+        <Standing {...props} issue={untouched ? null : props.issue} body={null} outgoing={null} queued={null} pending />
       }
     >
       {(a) => {

@@ -28,14 +28,16 @@ import { AttemptTab } from '../src/app/attempt-tab.tsx'
 import { TaskBody, UnpushedBanner } from '../src/app/task/[id]/layout.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
-import { planOf, type PlanView } from '../src/lib/queued.ts'
+import { planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
 import {
   presentAttemptEvents,
   standingOf,
   totalsOf,
   type DiscussionView,
   type AttemptView,
+  type TaskAnswer,
   type TaskDetail,
+  type TicketAnswer,
   type TicketView,
 } from '../src/lib/task.ts'
 
@@ -88,26 +90,48 @@ const TICKET: TicketView = {
 
 const CRASH = 'the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.'
 
-const task = (own: Envelope[], runs: AttemptView[], rest: Partial<TaskDetail> = {}): TaskDetail => ({
-  taskId: ITEM,
-  waiting: { previous: null, next: null },
-  unpushedMirror: null,
-  standing: standingOf(own, runs),
-  want: null,
-  ticket: TICKET,
-  runs,
-  discussions: [],
-  outgoing: null,
-  queued: null,
-  held: null,
-  totals: totalsOf(runs),
-  spendCurrency: { lag: 0 },
-  events: 0,
-  ...rest,
-})
+/**
+ * The page's two halves, as the layout holds them: the task `loadTask` reduced
+ * from the log, and the answer `loadTaskAnswer` reads from GitHub (0118 §2).
+ * `ticket` is given whole here and split into the two on the way in.
+ */
+type Page = TaskDetail & { github: TaskAnswer }
+
+const task = (
+  own: Envelope[],
+  runs: AttemptView[],
+  rest: Partial<Omit<TaskDetail, 'ticket'>> & {
+    ticket?: TicketView
+    outgoing?: OutgoingView | null
+    queued?: QueuedView | null
+  } = {},
+): Page => {
+  const { ticket = TICKET, outgoing = null, queued = null, ...detail } = rest
+  const { body, found, askedGitHub, problem, ...base } = ticket
+  return {
+    taskId: ITEM,
+    waiting: { previous: null, next: null },
+    unpushedMirror: null,
+    standing: standingOf(own, runs),
+    want: null,
+    ticket: base,
+    runs,
+    discussions: [],
+    held: null,
+    totals: totalsOf(runs),
+    spendCurrency: { lag: 0 },
+    events: 0,
+    ...detail,
+    github: {
+      ticket: { found, askedGitHub, title: base.title, labels: base.labels, url: base.url, body, problem },
+      outgoing,
+      queued,
+    },
+  }
+}
 
 /** `ticket-lingtai-147` on 2026-09-14, as the ticket quotes it. */
-function blocked(): TaskDetail {
+function blocked(): Page {
   const run = presentAttemptEvents(claim, 1, [
     e(RUN, 'RunStarted', { baseSha: BASE }),
     e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
@@ -179,14 +203,17 @@ function blocked(): TaskDetail {
   return task(own, [run], { outgoing, discussions: [discussion] })
 }
 
-function running(): TaskDetail {
+function running(): Page {
   const run = presentAttemptEvents(claim, 1, [e(RUN, 'RunStarted', { baseSha: BASE })])
   return task([e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T08:40:00Z')], [run])
 }
 
-const page = (t: TaskDetail) => renderToStaticMarkup(<TaskBody task={t} />)
+const NOTHING = task([], []).github
 
-function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: Envelope[] = []): TaskDetail {
+const page = (t: Page, answered: Partial<TicketAnswer> = {}) =>
+  renderToStaticMarkup(<TaskBody task={t} github={{ ...t.github, ticket: { ...t.github.ticket, ...answered } }} />)
+
+function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: Envelope[] = []): Page {
   const own = [
     e(ITEM, 'TicketClaimed', { runId: RUN }),
     e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
@@ -319,12 +346,11 @@ describe('after the move', () => {
   })
 
   it('does not present a past requeue as the move behind a later close', () => {
-    const t = moved('Requeue')
     const own = [
       e(ITEM, 'WaitResolved', { waitId: 'wait-old', resolution: { _tag: 'Requeue' }, by: 'steven', note: 'old move' }),
       e(ITEM, 'TicketClosed', { by: 'steven', reason: 'later close' }),
     ]
-    const html = page(task(own, [], { ticket: t.ticket }))
+    const html = page(task(own, []))
     expect(html).not.toContain('After the move')
     expect(html).not.toContain('waiting for a conductor to take it')
   })
@@ -614,7 +640,7 @@ describe('the rail on the task page', () => {
     '2026-09-14T08:40:00Z',
   )
 
-  function building(plan?: StepPlan): TaskDetail {
+  function building(plan?: StepPlan): Page {
     const run = presentAttemptEvents(
       claim,
       1,
@@ -642,7 +668,7 @@ describe('the rail on the task page', () => {
     return html.slice(start, html.indexOf('</header>', start) + 9)
   }
   /** The attempt's tab: where the record draws its rail now (#885). */
-  const record = (t: TaskDetail) =>
+  const record = (t: Page) =>
     renderToStaticMarkup(
       <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
     )
@@ -729,7 +755,7 @@ describe('the rail on the task page', () => {
       '| **Fix** | Put the rail below the context. |',
       '| **Watch out** | Keep the whole issue. |',
     ].join('\n')
-    const withContext = opening(page({ ...blocked(), ticket: { ...TICKET, body } }))
+    const withContext = opening(page(blocked(), { body }))
     expect(withContext.indexOf('>Problem</h2>')).toBeLessThan(withContext.indexOf('>Want</h2>'))
     expect(withContext.indexOf('>Want</h2>')).toBeLessThan(withContext.indexOf('>Watch out</h2>'))
     expect(withContext.indexOf('>Watch out</h2>')).toBeLessThan(withContext.indexOf('class="seq"'))
@@ -813,7 +839,11 @@ describe('the record', () => {
   it('is the Ticket, then one tab per attempt, newest first, each its own link', () => {
     const second = { ...running().runs[0]!, runId: 'pass-2', attempt: 2 }
     const t = task([], [{ ...blocked().runs[0]!, attempt: 1 }, second])
-    const html = renderToStaticMarkup(<TaskBody task={t}>child</TaskBody>)
+    const html = renderToStaticMarkup(
+      <TaskBody task={t} github={t.github}>
+        child
+      </TaskBody>,
+    )
     expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/attempt/2`, `/task/${ITEM}/attempt/1`])
     // Labelled by the board's word, `Attempt N`, with no run id as text.
     expect(html).toContain('Attempt 2')
@@ -823,13 +853,21 @@ describe('the record', () => {
   })
 
   it('names a lone attempt `Attempt 1`', () => {
-    const html = renderToStaticMarkup(<TaskBody task={task([], [blocked().runs[0]!])}>x</TaskBody>)
+    const html = renderToStaticMarkup(
+      <TaskBody task={task([], [blocked().runs[0]!])} github={NOTHING}>
+        x
+      </TaskBody>,
+    )
     expect(html).toContain('Attempt 1')
     expect(html).not.toContain('the run')
   })
 
   it('has only the Ticket tab when nothing has been dispatched', () => {
-    const html = renderToStaticMarkup(<TaskBody task={task([], [])}>x</TaskBody>)
+    const html = renderToStaticMarkup(
+      <TaskBody task={task([], [])} github={NOTHING}>
+        x
+      </TaskBody>,
+    )
     expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`])
   })
 })
@@ -840,9 +878,10 @@ describe('the Ticket tab', () => {
       <TicketTab
         detail={{
           taskId: ITEM,
-          ticket: { ...blocked().ticket!, title: 'Fix the thing' },
+          ticket: blocked().ticket,
           events: [],
         }}
+        answer={{ ...blocked().github.ticket, title: 'Fix the thing' }}
       />,
     )
     expect(html.indexOf('Fix the thing')).toBeLessThan(html.indexOf('Events'))
@@ -910,7 +949,7 @@ describe('the Changes section (#729)', () => {
 })
 
 describe('a queued page reduces the plan into the rail (#781)', () => {
-  const queuedOf = (plan: PlanView | null): TaskDetail =>
+  const queuedOf = (plan: PlanView | null): Page =>
     task([], [], {
       queued: {
         position: 1,
@@ -938,5 +977,131 @@ describe('a queued page reduces the plan into the rail (#781)', () => {
 
   it('says the recipe could not be read when there is no plan', () => {
     expect(page(queuedOf(null))).toContain('The recipe could not be read')
+  })
+})
+
+/**
+ * 0118 §2: the page is sent before GitHub has answered. A promise that never
+ * resolves is the moment before the answer; a resolved value is the moment after.
+ */
+describe('the places that wait for GitHub', () => {
+  const never = () => new Promise<TaskAnswer>(() => {})
+  const waiting = (t: Page) => renderToStaticMarkup(<TaskBody task={t} github={never()} />)
+  const queuedPage = () =>
+    task([], [], {
+      queued: {
+        position: 1,
+        inLine: 1,
+        notOffered: null,
+        runnableAt: null,
+        paused: false,
+        dependenciesUnread: null,
+        plan: null,
+        problem: null,
+      },
+    })
+
+  it('draws the log’s title and the opening as asking', () => {
+    const t = blocked()
+    const html = waiting({ ...t, ticket: { ...t.ticket!, title: 'the log’s own title' } })
+    expect(html).toContain('the log’s own title')
+    expect(html).toContain('asking GitHub…')
+    // Nothing GitHub knows is drawn as though GitHub had said nothing.
+    expect(html).not.toContain('The reviewer crashed.')
+    expect(html).not.toContain('could not be asked')
+    expect(html).not.toContain('offered by GitHub')
+  })
+
+  it('names the ticket by its number when the log has no title', () => {
+    const t = blocked()
+    expect(waiting({ ...t, ticket: { ...t.ticket!, title: null } })).toContain('>#147<')
+  })
+
+  it('reads queued from the log at once, and asks about the reasons and the plan', () => {
+    const html = waiting(queuedPage())
+    expect(html).toMatch(/class="sstate">queued</)
+    expect(html).toContain('asking GitHub…')
+    expect(html).not.toContain('Run it now')
+    expect(html).not.toContain('offered by GitHub')
+  })
+
+  it('draws a queued ticket whole once the answer is in', () => {
+    const t = queuedPage()
+    const html = page(t)
+    expect(html).toContain('Run it now')
+    expect(html).toContain('offered by GitHub')
+    expect(html).not.toContain('asking GitHub…')
+  })
+
+  it('offers no move on an untouched ticket until GitHub says the issue exists', () => {
+    const html = waiting(task([], []))
+    expect(html).not.toContain('Run it now')
+    expect(html).not.toContain('Close')
+  })
+
+  it('says GitHub has no such issue, with no state, no queued line and no moves, for a ticket the log never touched', () => {
+    const t = queuedPage()
+    const html = page(t, { found: false, askedGitHub: true, body: null, problem: '404 on /repos: Not Found' })
+    expect(html).toContain('GitHub has no issue #147')
+    expect(html).not.toContain('Run it now')
+    expect(html).not.toContain('class="sstate"')
+  })
+
+  it('says it cannot tell, and still offers the moves, when GitHub could not be asked', () => {
+    const html = page(queuedPage(), { found: null, askedGitHub: true, body: null, problem: 'rate limit exceeded' })
+    expect(html).toContain('whether it exists is not known here')
+    expect(html).toContain('Run it now')
+  })
+
+  it('keeps the page for a ticket the log has touched when GitHub has no such issue', () => {
+    const html = page(
+      { ...blocked(), events: 5 },
+      { found: false, askedGitHub: true, body: null, problem: '404 on /repos: Not Found' },
+    )
+    expect(html).not.toContain('GitHub has no issue')
+    expect(html).toContain('class="sstate"')
+  })
+})
+
+describe('the Ticket tab waits for GitHub in the body only', () => {
+  const answered: TicketAnswer = {
+    found: true,
+    askedGitHub: true,
+    title: 'GitHub’s title',
+    labels: ['bug'],
+    url: 'https://github.com/example/lingtai/issues/147',
+    body: 'The whole ticket, as written.',
+    problem: null,
+  }
+  const detail = { taskId: ITEM, ticket: blocked().ticket, events: [] }
+  const tab = (answer: TicketAnswer | Promise<TicketAnswer>) =>
+    renderToStaticMarkup(<TicketTab detail={detail} answer={answer} />)
+
+  it('draws the log’s part and asking GitHub… until the answer arrives', () => {
+    const html = tab(new Promise<TicketAnswer>(() => {}))
+    expect(html).toContain('#147')
+    expect(html).toContain(TICKET.title!)
+    expect(html).toContain('asking GitHub…')
+    expect(html).toContain('Events')
+    expect(html).not.toContain('The whole ticket, as written.')
+  })
+
+  it('draws the body once it has', () => {
+    const html = tab(answered)
+    expect(html).toContain('The whole ticket, as written.')
+    expect(html).toContain('GitHub’s title')
+    expect(html).not.toContain('asking GitHub…')
+  })
+
+  it('says what failed, never an empty body', () => {
+    const html = tab({ ...answered, found: null, body: null, problem: 'rate limit exceeded' })
+    expect(html).toContain('The issue could not be read from GitHub: rate limit exceeded')
+    expect(html).not.toContain('This issue has no body.')
+  })
+
+  it('says GitHub has no such issue, as a problem, for a 404', () => {
+    const html = tab({ ...answered, found: false, body: null, problem: '404 on /repos: Not Found' })
+    expect(html).toContain('404 on /repos: Not Found')
+    expect(html).not.toContain('This issue has no body.')
   })
 })

@@ -27,6 +27,7 @@ import {
   standingOf,
   totalsOf,
   type StandingView,
+  type TaskAnswer,
   type TaskDetail,
 } from '@/lib/task'
 
@@ -474,10 +475,19 @@ export async function preview(name: CaseName) {
     labels: ['feature'],
     url: null,
     compareUrl: null,
-    body: representative ? FIXABLE_BODY : 'Review the paused pass and decide how work should continue.',
-    found: true,
-    askedGitHub: false,
-    problem: null,
+  }
+  const answer: TaskAnswer = {
+    ticket: {
+      found: true,
+      askedGitHub: false,
+      title: projected.title,
+      labels: ['feature'],
+      url: null,
+      body: representative ? FIXABLE_BODY : 'Review the paused pass and decide how work should continue.',
+      problem: null,
+    },
+    outgoing: null,
+    queued: null,
   }
   const task: TaskDetail = {
     taskId: fixture.taskId,
@@ -488,8 +498,6 @@ export async function preview(name: CaseName) {
     ticket,
     runs: foldedRuns,
     discussions,
-    outgoing: null,
-    queued: null,
     held:
       representative && progress
         ? describeHeld({
@@ -504,5 +512,5 @@ export async function preview(name: CaseName) {
     spendCurrency: { lag: 0 },
     events: 0,
   }
-  return { card, task }
+  return { card, task, answer }
 }

@@ -9,13 +9,13 @@ export default async function WaitingPreview({ params }: { params: Promise<{ nam
   if (process.env.NODE_ENV !== 'development') notFound()
   const { name, surface } = await params
   if (!Object.hasOwn(CASES, name) || (surface !== 'card' && surface !== 'task')) notFound()
-  const { card, task } = await preview(name as CaseName)
+  const { card, task, answer } = await preview(name as CaseName)
   return (
     <div inert style={surface === 'card' ? { width: '100%', maxWidth: 440, padding: 16 } : undefined}>
       {surface === 'card' ? (
         <Card card={card} showProject={false} issue={null} paused={false} />
       ) : (
-        <TaskBody task={task} now={PREVIEW_NOW} />
+        <TaskBody task={task} github={answer} now={PREVIEW_NOW} />
       )}
     </div>
   )

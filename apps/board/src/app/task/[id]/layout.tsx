@@ -11,9 +11,9 @@ import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } 
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import type { Answered } from '../../deferred.tsx'
 import { Follow, Following } from '../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
-import type { Answered } from '../../deferred.tsx'
 import { DeferredCoords, DeferredStanding, framed } from '../../standing.tsx'
 
 /**

@@ -175,6 +175,30 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
   })
 
   /**
+   * Send needs the body and the body is GitHub's (0118 §2): until the answer is
+   * in it is drawn, disabled, and says why — not replaced by `Back to the queue`,
+   * which would offer a different move for a moment.
+   */
+  it('draws Send disabled, waiting for GitHub, while the answer is not in', () => {
+    const fx = WAIT_FIXTURES.find((f) => f.name === 'checkrefused')!
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={standingFor(fx)}
+        project="lingtai"
+        issue={1}
+        taskId={fx.taskId}
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+        pending
+      />,
+    )
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Send · waiting for GitHub<\/button>/)
+    expect(movesOf(html)).not.toContain('Back to the queue')
+  })
+
+  /**
    * `allowedResolutions` drops `Approve` for a run that is `unpushed`
    * (`wait.ts:299-303`), whatever the sha on the wait itself — built as the
    * `signoffrequired` fixture's own events with `unpushed` added to the
