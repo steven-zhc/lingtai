@@ -97,3 +97,22 @@ describe('the landing comment', () => {
     expect(body).toContain('src/main.ts')
   })
 })
+
+describe('the renderer and the redaction agree on the harder inputs (#896)', () => {
+  it('a backtick fence whose info string holds a backtick is prose', () => {
+    expect(unmention('```text \\`@someone\\`')).toBe('```text \\`@‍someone\\`')
+  })
+
+  it('a span does not cross a block boundary', () => {
+    expect(unmention('`unfinished\n# @someone\nend`')).toBe('`unfinished\n# @‍someone\nend`')
+  })
+
+  it('names no path in a file link, or under a home with a space in it', () => {
+    const body = landingComment({
+      ...landed,
+      summary:
+        '[main.ts](file:///Users/alice/.lingtai/worktrees/app/pass-123/src/main.ts) and /Users/Alice Smith/.lingtai/worktrees/app/pass-123/src/main.ts',
+    })
+    expect(body).not.toMatch(/alice|Smith|\.lingtai/i)
+  })
+})

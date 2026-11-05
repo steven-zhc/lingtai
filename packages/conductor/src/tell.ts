@@ -519,7 +519,13 @@ export function unmention(markdown: string): string {
       let end = at
       while (text[end] === '`') end++
       const width = end - at
-      const brk = text.slice(end).search(/\n[ \t]*\n/)
+      // A span cannot cross a block boundary: a blank line, or a line that opens a heading, quote,
+      // list item, thematic break or setext underline.
+      const brk = text
+        .slice(end)
+        .search(
+          /\n[ \t]*(?:\n|#{1,6}(?:[ \t]|\n|$)|>|[-*+][ \t]|\d{1,9}[.)][ \t]|(?:[-*_][ \t]*){3,}(?:\n|$)|=+[ \t]*(?:\n|$))/,
+        )
       const limit = brk === -1 ? text.length : end + brk
       let search = end
       let found = -1
@@ -551,10 +557,13 @@ export function unmention(markdown: string): string {
   const lines = markdown.split('\n')
   lines.forEach((line, i) => {
     const nl = i < lines.length - 1 ? '\n' : ''
-    const m = /^ {0,3}(`{3,}|~{3,})/.exec(line)
+    // A backtick fence's info string holds no backtick (else it is a code span's opener), and a
+    // closing fence is the fence and whitespace alone.
+    const m = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/.exec(line)
     if (fence !== null) {
       out += line + nl
-      if (m !== null && m[1]!.startsWith(fence[0]!) && m[1]!.length >= fence.length) fence = null
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close !== null && close[1]!.startsWith(fence[0]!) && close[1]!.length >= fence.length) fence = null
       return
     }
     if (m !== null) {
@@ -576,9 +585,20 @@ export function unmention(markdown: string): string {
  * comment on a public issue must not (#896).
  */
 export function withoutLocalPaths(text: string): string {
-  return text
-    .replace(/(?<![\w.:/-])(?:\/(?:Users|home|private|var|tmp|root|opt)\/|~\/|\$HOME\/)[^\s`'")\],;]*/g, '[local path]')
-    .replace(/(?<![\w])[A-Za-z]:\\(?:Users|Documents and Settings)\\[^\s`'")\],;]*/g, '[local path]')
+  // A home directory's name may hold spaces (`/Users/Alice Smith/`), so up to three words are read as
+  // the name when a separator follows; a `file://` prefix is part of the path, not a reason to skip it.
+  const word = '[^\\s\\\\/`\'"()\\[\\]<>]+'
+  const name = `(?:${word}(?: ${word}){0,2}[\\\\/])?`
+  const rest = '[^\\s`\'")\\],;]*'
+  const unix = new RegExp(
+    `(?<![\\w.:/-])(?:file://(?:localhost)?)?(?:/(?:Users|home)/${name}|/(?:private|var|tmp|root|opt)/|~/|\\$HOME/)${rest}`,
+    'g',
+  )
+  const windows = new RegExp(
+    `(?<![\\w])(?:file:///)?[A-Za-z]:[\\\\/](?:Users|Documents and Settings)[\\\\/]${name}${rest}`,
+    'g',
+  )
+  return text.replace(unix, '[local path]').replace(windows, '[local path]')
 }
 
 /** What a landing carries to its comment (#896). */
