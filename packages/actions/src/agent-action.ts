@@ -231,7 +231,12 @@ Rules:
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
-- An empty findings list is a real answer.`
+- An empty findings list is a real answer.
+- **Write a \`summary\` of the change** (markdown, inline code and emphasis only;
+  \`null\` if you cannot). The first sentence is one clause, at most about
+  twelve words or eighty characters, and does not open with a code name; then
+  what changed where, and why. It describes the whole diff as it stands, not
+  only a fix round's delta. It never affects your findings.`
 
 export interface ReviewIssue {
   ref: string
@@ -429,7 +434,12 @@ interface ReadAnswer {
    * counted as the default.
    */
   about?: RefusedAbout
+  /** The reviewer's summary of the change, where it gave a non-empty string (0103 §3, #890). */
+  summary?: string
 }
+
+/** How much of a summary is kept; the head, because the first sentence is the headline. */
+const SUMMARY_LIMIT = 4000
 
 /**
  * One answer's `findings` and `about`, off a JS value that is already an
@@ -474,7 +484,15 @@ function normaliseAnswer(value: unknown): ReadAnswer {
   // answers, and inventing either would put a classification at this seam that
   // no reviewer made (0031 §1, `#223`'s own rule).
   const about = (value as { about?: unknown })?.about
-  return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) }
+  const rawSummary = (value as { summary?: unknown })?.summary
+  const trimmed = typeof rawSummary === 'string' ? rawSummary.trim() : ''
+  const summary = trimmed.length > SUMMARY_LIMIT ? `${trimmed.slice(0, SUMMARY_LIMIT).trimEnd()}…` : trimmed
+  return {
+    findings,
+    parsed: true,
+    ...(isRefusedAbout(about) ? { about } : {}),
+    ...(summary === '' ? {} : { summary }),
+  }
 }
 
 /**
@@ -820,7 +838,7 @@ function reviewAnswer(
   // second reading of it to fall back to on the way to `unreadable`
   // (`#369`). `parseFindings` runs only where the runtime answered in
   // prose instead.
-  const { findings, parsed, about } =
+  const { findings, parsed, about, summary } =
     outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text)
   if (!parsed) {
     /**
@@ -863,6 +881,8 @@ function reviewAnswer(
     verdict,
     evidence: boundedEvidence(`${summarise(kept)}\n\n(${outcome.turns} turns)`),
     findings: kept,
+    // On either verdict: a change that landed is one that passed (#890).
+    ...(summary === undefined ? {} : { summary }),
     /**
      * **The reviewer's own classification of its refusal, and only of a
      * refusal** (`#293`).

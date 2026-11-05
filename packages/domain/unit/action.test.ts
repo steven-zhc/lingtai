@@ -17,6 +17,7 @@ import {
   decidingAction,
   designOf,
   headOf,
+  reviewSummaryOf,
   stepCleared,
   StepOutcome,
   wellFormed,
@@ -442,6 +443,31 @@ describe('designOf', () => {
 
   it('an Asked only: null', () => {
     expect(designOf(outcome('design', [askedDesign('which shape?')]))).toBeNull()
+  })
+})
+
+describe('reviewSummaryOf', () => {
+  const withSummary = (summary?: string): Action =>
+    Action.parse({
+      ...base,
+      yields: 'verdict',
+      result: {
+        _tag: 'Completed',
+        assessment: { verdict: 'accepted', findings: [], ...(summary === undefined ? {} : { summary }) },
+      },
+    })
+
+  it('the last review verdict that carries a summary', () => {
+    const result = outcome('review', [withSummary('first'), withSummary('second'), withSummary()])
+    expect(reviewSummaryOf(result)).toEqual({ summary: 'second' })
+  })
+
+  it('null without one, and an old assessment still parses', () => {
+    expect(reviewSummaryOf(outcome('review', [verdictAction('accepted')]))).toBeNull()
+  })
+
+  it('null off the review step', () => {
+    expect(reviewSummaryOf(outcome('build', [withSummary('x')]))).toBeNull()
   })
 })
 

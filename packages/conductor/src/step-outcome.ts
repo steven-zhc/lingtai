@@ -123,18 +123,20 @@ function notReachedOf(action: Action, onSha: string): DomainAction {
 
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
+  // Spread, so no summary is an absent key and not `summary: undefined` (#890).
+  const summary = outcome.summary === undefined ? {} : { summary: outcome.summary }
   switch (outcome.verdict) {
     case 'waived':
       return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
-      return { _tag: 'Completed', assessment: { verdict: 'accepted', findings: outcome.findings } }
+      return { _tag: 'Completed', assessment: { verdict: 'accepted', findings: outcome.findings, ...summary } }
     case 'failed':
       // `#369`'s `no-structured-answer` and a refusal the runtime parsed are
       // both `unreadable: true` (`agent-action.ts:541-549`, `:608-613`); an
       // ordinary refusal with findings is not.
       return outcome.unreadable
         ? { _tag: 'AnswerUnreadable', raw: outcome.evidence }
-        : { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings } }
+        : { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings, ...summary } }
     case 'never-ran':
       return { _tag: 'NeverStarted', scope: 'conductor' }
     case 'did-not-finish':
@@ -148,7 +150,7 @@ function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
       // when `then: request-approval`, which yields `signoff`; the `verdict`
       // yield is `then: fail`'s own, and that one never asks. Nearest arm
       // for a shape that cannot happen.
-      return { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings } }
+      return { _tag: 'Completed', assessment: { verdict: 'refused', findings: outcome.findings, ...summary } }
   }
 }
 
