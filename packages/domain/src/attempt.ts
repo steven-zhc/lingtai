@@ -411,6 +411,10 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
 
     case 'RunPrompted': {
       const d = event.data as PayloadOf<'RunPrompted'>
+      // A prompt with a `for` was handed to another call (#923) and is read off
+      // the stream beside that call's `RunSpent`; the attempt's `prompt` stays
+      // the implementer's.
+      if (d.for !== undefined) return state
       // The count is what it always was; the text is what #88 added. A v1 event
       // has none, and leaving the previous one in place would be a lie about
       // which prompt this run was given.

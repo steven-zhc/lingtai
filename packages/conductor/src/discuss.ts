@@ -1,3 +1,27 @@
+import {
+  chatStream,
+  parsePayload,
+  reduceChat,
+  type ChatTurn,
+  type RuntimeId,
+  type ToAppend,
+  type Usage,
+} from '@lingtai/domain'
+import type { TriageResult } from '@lingtai/domain/wait'
+import type { EventStore } from '@lingtai/event-store'
+
+import { editHash } from './attempts.ts'
+import { writeSection, type IssueChannel } from './edit-body.ts'
+import {
+  jsonCandidates,
+  MAX_READ_ROUNDS,
+  READ_CONTRACT,
+  READS_PER_TURN,
+  readOf,
+  renderIndex,
+  renderServed,
+  type ReadableRef,
+} from './read-step.ts'
 /**
  * The discussion assistant: a third kind of agent, which reads and cannot run.
  *
@@ -66,30 +90,7 @@
  * no dollar figure of its own any more, and `held.costUsd` below is the
  * caller's own in-memory receipt, not a second write of the same fact.
  */
-import {
-  chatStream,
-  parsePayload,
-  reduceChat,
-  type ChatTurn,
-  type RuntimeId,
-  type ToAppend,
-  type Usage,
-} from '@lingtai/domain'
-import type { TriageResult } from '@lingtai/domain/wait'
-import type { EventStore } from '@lingtai/event-store'
-
-import { editHash } from './attempts.ts'
-import { writeSection, type IssueChannel } from './edit-body.ts'
-import {
-  jsonCandidates,
-  MAX_READ_ROUNDS,
-  READ_CONTRACT,
-  READS_PER_TURN,
-  readOf,
-  renderIndex,
-  renderServed,
-  type ReadableRef,
-} from './read-step.ts'
+import { recordPrompt } from './record-prompt.ts'
 
 export type { IssueChannel } from './tell.ts'
 // Re-exported: `apps/board/src/lib/recipe.ts` and `discuss.test.ts` both
@@ -560,6 +561,14 @@ export async function holdDiscussion(ports: DiscussionPorts, options: Discussion
     // 0110 §2) is for a process that returned an outcome — a killed one has
     // nothing to record, and records nothing.
     let threw = false
+    // Before the call, so a crash or a kill still leaves the prompt on the log
+    // (#923). `ports.ask` hands `prompt` to the runtime unchanged.
+    await recordPrompt(
+      ports.store,
+      stream,
+      { for: { _tag: 'Discussion' }, promptVersion: `discussion@${prompt.length}`, prompt },
+      log,
+    )
     const outcome = await ports.ask(prompt, round, call).catch((err: unknown): Answered => {
       threw = true
       return {

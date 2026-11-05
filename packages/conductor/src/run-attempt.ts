@@ -14,6 +14,7 @@ import {
   NEEDS_INPUT,
   NO_DESIGN,
   runActionPipeline,
+  type PipelineOptions,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -847,6 +848,12 @@ export interface AttemptOptions {
    * remove.*
    */
   readonly emit: (event: AttemptEvent) => Promise<void> | void
+  /**
+   * Where an agent action's prompt is recorded (#923), handed to the pipeline
+   * beside `emit`. Not `emit`: that append re-raises the pass when refused, and
+   * a prompt that could not be recorded must not stop the dispatch.
+   */
+  readonly recordPrompt?: PipelineOptions['recordPrompt']
   /**
    * The ten bodies.
    *
@@ -1953,6 +1960,7 @@ async function runStepBody(
               : sentBackTo(spec.step, reached),
         },
         emit: options.emit,
+        ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),
       })
       // Carried out whatever the step then did, because the verdicts are what a
       // later body routes on and a refusal's are the ones it most needs: a

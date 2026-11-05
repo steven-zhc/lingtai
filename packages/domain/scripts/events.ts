@@ -163,6 +163,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "await append(run, 'RunPrompted', { promptVersion: run.promptVersion, bytes, prompt }).catch(() => {",
   },
   {
+    event: 'RunPrompted',
+    why: 'type is a literal in the helper every unhooked paid call records its prompt with (#923)',
+    file: 'packages/conductor/src/record-prompt.ts',
+    anchor: "type: 'RunPrompted',",
+  },
+  {
     event: 'RunTouchedFile',
     why: 'type is a string argument of the hook socket’s `append`',
     file: 'packages/agent/src/hook-socket.ts',
