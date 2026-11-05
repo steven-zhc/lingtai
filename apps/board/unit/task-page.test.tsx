@@ -1055,12 +1055,13 @@ describe('a queued page reduces the plan into the rail (#781)', () => {
     tier: 'guarded',
   })
 
-  it('draws one rail and no plan box, with the plan in a closed disclosure', () => {
+  it('draws one rail and no plan box, with the plan open in the panel', () => {
     const html = page(queuedOf(view))
     expect(html.match(/class="seq"/g)).toHaveLength(1)
     expect(html).not.toContain('class="plan"')
-    expect(html).toContain('<details class="srailplan">')
-    expect(html.match(/<li class="splancell"/g)).toHaveLength(view.steps.length)
+    expect(html).not.toContain('srailplan')
+    expect(html).toContain('<ol class="planlist">')
+    expect(html).toContain('What Attempt 1 will do')
   })
 
   it('says the recipe could not be read when there is no plan', () => {
@@ -1118,36 +1119,39 @@ describe('the places that wait for GitHub', () => {
     expect(html).not.toContain('splan-pending')
     expect(html).not.toContain('class="squestion">asking GitHub…')
     expect(html.match(/class="sk-bar sk-cell"/g)?.length).toBe(STEPS.length)
-    expect(html).not.toContain('Run it now')
+    // The cards' heads and Close are drawn at once; only Run it now's button waits.
+    expect(html).toContain('Close the ticket')
+    expect(html).toContain('Edit the prompt')
+    expect(html).not.toContain('class="btn go"')
     expect(html).not.toContain('offered by GitHub')
   })
 
   it('draws a queued ticket whole once the answer is in', () => {
     const t = queuedPage()
     const html = page(t)
-    expect(html).toContain('Run it now')
+    expect(html).toContain('class="btn go"')
     expect(html).toContain('offered by GitHub')
     expect(html).not.toContain('asking GitHub…')
   })
 
   it('offers no move on an untouched ticket until GitHub says the issue exists', () => {
     const html = waiting(task([], []))
-    expect(html).not.toContain('Run it now')
-    expect(html).not.toContain('Close')
+    expect(html).toContain('Close the ticket')
+    expect(html).not.toContain('class="btn go"')
   })
 
   it('says GitHub has no such issue, with no state, no queued line and no moves, for a ticket the log never touched', () => {
     const t = queuedPage()
     const html = page(t, { found: false, askedGitHub: true, body: null, problem: '404 on /repos: Not Found' })
     expect(html).toContain('GitHub has no issue #147')
-    expect(html).not.toContain('Run it now')
+    expect(html).not.toContain('class="btn go"')
     expect(html).not.toContain('class="sstate"')
   })
 
   it('says it cannot tell, and still offers the moves, when GitHub could not be asked', () => {
     const html = page(queuedPage(), { found: null, askedGitHub: true, body: null, problem: 'rate limit exceeded' })
     expect(html).toContain('whether it exists is not known here')
-    expect(html).toContain('Run it now')
+    expect(html).toContain('class="btn go"')
   })
 
   it('keeps the page for a ticket the log has touched when GitHub has no such issue', () => {

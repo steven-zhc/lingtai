@@ -50,37 +50,24 @@ function delta(view: OutgoingView): string | null {
   return `+${added} −${removed} lines against what Lingtai composed`
 }
 
-export function Outgoing({
+/** The edit controls of the prompt: Edit, the draft box, its buttons and the refusal. State lives here. */
+export function OutgoingEditor({
   taskId,
   outgoing,
   sendable = false,
-  reduced = false,
+  onEdit,
+  draft,
+  onDraft: setDraft,
 }: {
   taskId: string
   outgoing: OutgoingView
-  /**
-   * Whether the decision row below is offering Send.
-   *
-   * When it is, the editor offers it too — on the same click that stages the
-   * sentence. Staging and sending as two clicks is a sentence typed into a box
-   * and then lost to the button that was meant to send it, which is the dead
-   * end `#111` is about one step further in.
-   */
   sendable?: boolean
-  /**
-   * Whether the prompt text sits behind a closed disclosure, with its size in
-   * the summary. A queued or approved page reduces it: the opening above and the
-   * ticket record already say what it says (0118 §2). A blocked page does not —
-   * Send is the move there, and the person is approving this document.
-   */
-  reduced?: boolean
+  /** The draft, owned by a parent that outlives this editor's conditional mounting. */
+  draft: string | null
+  onDraft: (draft: string | null) => void
+  /** Called when Edit is pressed, before the draft opens. */
+  onEdit?: () => void
 }) {
-  // Only what the person did to the reducer. Whether there is a reducer is the prop's,
-  // read on every render: a page that goes blocked -> queued through Follow
-  // re-renders this component rather than mounting it, so seeding from `reduced`
-  // once would carry the blocked page's open prompt onto the queued one.
-  const [opened, setOpened] = useState(false)
-  const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -119,52 +106,10 @@ export function Outgoing({
     })
   }
 
-  if (outgoing.problem !== null) {
-    return (
-      <div className="outgoing">
-        <p className="outhead">
-          <span className="outname" title={outgoing.version}>
-            next attempt from base
-          </span>
-        </p>
-        {/* Never merely absent. A missing template, an unregistered project and
-            a recipe that will not parse all look like "no prompt", and only the
-            reason tells them apart (#76). */}
-        <p className="refusal">The next attempt&rsquo;s prompt cannot be shown: {outgoing.problem}</p>
-      </div>
-    )
-  }
-
   const changed = delta(outgoing)
 
   return (
-    <div className="outgoing">
-      {/* The version is a field of the head, in `title`, not a caption: an internal
-          version is not text for a reader (glossary, Words on the board). */}
-      <p className="outhead">
-        <span className="outname" title={outgoing.version}>
-          next attempt from base
-        </span>
-        {/* How long the edit lasts, on the box that makes it. The next claim
-            consumes it, whoever starts it. */}
-        <span className="outonly">Attempt {outgoing.attempt} only</span>
-        {reduced ? null : <span className="outfact">{outgoing.text.length} bytes</span>}
-      </p>
-
-      {/* Bounded and scrollable. Open where Send is the move (blocked): a
-          document behind a disclosure is one somebody approves without opening.
-          Reduced where the opening above and the ticket record already say it
-          (queued, approved — 0118 §2), with its size in the summary. Edit is
-          outside the reducer and opens it. */}
-      {reduced ? (
-        <details open={opened} onToggle={(e) => setOpened(e.currentTarget.open)}>
-          <summary title={outgoing.version}>prompt · {outgoing.text.length} bytes</summary>
-          <pre className="outtext">{outgoing.text}</pre>
-        </details>
-      ) : (
-        <pre className="outtext">{outgoing.text}</pre>
-      )}
-
+    <div className="outeditor">
       {outgoing.edit !== null ? (
         <p className="outedit">
           <span className="outwho">{outgoing.edit.by}</span>
@@ -178,7 +123,7 @@ export function Outgoing({
             className="btn"
             disabled={busy}
             onClick={() => {
-              if (reduced) setOpened(true)
+              onEdit?.()
               setDraft(outgoing.edit?.text ?? '')
             }}
           >
@@ -217,7 +162,7 @@ export function Outgoing({
               </button>
             ) : null}
             <button
-              className={sendable ? 'btn' : 'btn pri'}
+              className={sendable ? 'btn' : 'btn go'}
               disabled={busy || draft.trim() === ''}
               onClick={() => run(draft)}
             >
@@ -231,6 +176,112 @@ export function Outgoing({
       )}
 
       {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/** The prompt, closed: its size and nothing else in the summary (no version string — glossary). */
+export function OutgoingPrompt({ outgoing, next }: { outgoing: OutgoingView; next: number }) {
+  if (outgoing.problem !== null) {
+    return <p className="refusal">The next attempt&rsquo;s prompt cannot be shown: {outgoing.problem}</p>
+  }
+  return (
+    <details className="asec closedrow">
+      <summary>
+        Prompt for Attempt {next}
+        <span className="outfact">{outgoing.text.length} bytes</span>
+        <span className="hint">closed: read only to check or edit</span>
+      </summary>
+      <pre className="outtext">{outgoing.text}</pre>
+    </details>
+  )
+}
+
+export function Outgoing({
+  taskId,
+  outgoing,
+  sendable = false,
+  reduced = false,
+}: {
+  taskId: string
+  outgoing: OutgoingView
+  /**
+   * Whether the decision row below is offering Send.
+   *
+   * When it is, the editor offers it too — on the same click that stages the
+   * sentence. Staging and sending as two clicks is a sentence typed into a box
+   * and then lost to the button that was meant to send it, which is the dead
+   * end `#111` is about one step further in.
+   */
+  sendable?: boolean
+  /**
+   * Whether the prompt text sits behind a closed disclosure, with its size in
+   * the summary. A queued or approved page reduces it: the opening above and the
+   * ticket record already say what it says (0118 §2). A blocked page does not —
+   * Send is the move there, and the person is approving this document.
+   */
+  reduced?: boolean
+}) {
+  // Only what the person did to the reducer. Whether there is a reducer is the prop's,
+  // read on every render: a page that goes blocked -> queued through Follow
+  // re-renders this component rather than mounting it, so seeding from `reduced`
+  // once would carry the blocked page's open prompt onto the queued one.
+  const [opened, setOpened] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
+  if (outgoing.problem !== null) {
+    return (
+      <div className="outgoing">
+        <p className="outhead">
+          <span className="outname" title={outgoing.version}>
+            next attempt from base
+          </span>
+        </p>
+        {/* Never merely absent. A missing template, an unregistered project and
+            a recipe that will not parse all look like "no prompt", and only the
+            reason tells them apart (#76). */}
+        <p className="refusal">The next attempt&rsquo;s prompt cannot be shown: {outgoing.problem}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="outgoing">
+      {/* The version is a field of the head, in `title`, not a caption: an internal
+          version is not text for a reader (glossary, Words on the board). */}
+      <p className="outhead">
+        <span className="outname" title={outgoing.version}>
+          next attempt from base
+        </span>
+        {/* How long the edit lasts, on the box that makes it. The next claim
+            consumes it, whoever starts it. */}
+        <span className="outonly">Attempt {outgoing.attempt} only</span>
+        {reduced ? null : <span className="outfact">{outgoing.text.length} bytes</span>}
+      </p>
+
+      {/* Bounded and scrollable. Open where Send is the move (blocked): a
+          document behind a disclosure is one somebody approves without opening.
+          Reduced where the opening above and the ticket record already say it
+          (queued, approved — 0118 §2), with its size in the summary. Edit is
+          outside the reducer and opens it. */}
+      {reduced ? (
+        <details open={opened} onToggle={(e) => setOpened(e.currentTarget.open)}>
+          <summary title={outgoing.version}>prompt · {outgoing.text.length} bytes</summary>
+          <pre className="outtext">{outgoing.text}</pre>
+        </details>
+      ) : (
+        <pre className="outtext">{outgoing.text}</pre>
+      )}
+
+      <OutgoingEditor
+        taskId={taskId}
+        outgoing={outgoing}
+        sendable={sendable}
+        draft={draft}
+        onDraft={setDraft}
+        onEdit={() => {
+          if (reduced) setOpened(true)
+        }}
+      />
     </div>
   )
 }

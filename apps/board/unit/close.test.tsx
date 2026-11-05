@@ -80,7 +80,7 @@ describe('the row of moves', () => {
 
     const standing = read('../src/app/standing.tsx')
     const runNow = standing.slice(standing.indexOf('<RunNow'))
-    expect(runNow.slice(0, 600)).toContain('<Close')
+    expect(runNow.slice(0, 3500)).toContain('<Close')
   })
 })
 

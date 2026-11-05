@@ -21,8 +21,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Rail } from '../src/app/rail.tsx'
+import { planStepLine } from '../src/app/rail.tsx'
 import { Coords, Standing, detailClass } from '../src/app/standing.tsx'
+import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   backoffOf,
   holding,
@@ -204,6 +205,22 @@ const PLAN: PlanView = planOf(STEPS, {
   tier: 'guarded',
 })
 
+/** The queued page with the panel's plan filled in, as a resolved answer would draw it. */
+const planPage = (plan: PlanView | null) =>
+  renderToStaticMarkup(
+    <Standing
+      subject={null}
+      standing={NEVER_RUN}
+      project="lingtai"
+      issue={112}
+      taskId="ticket-lingtai-112"
+      discussions={[]}
+      outgoing={null}
+      queued={{ ...QUEUED, position: 1, inLine: 2, plan }}
+      inFlight={null}
+    />,
+  )
+
 describe('what will happen', () => {
   /**
    * ADR 0016 §4 before a run as well as after one: a step that is merely left
@@ -255,18 +272,20 @@ describe('what will happen', () => {
   })
 
   it('renders the plan and the bounds together', () => {
-    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={PLAN} />)
+    const html = planPage(PLAN)
 
-    expect(html).toContain('What the next attempt does at each step')
-    expect(html).not.toContain('<details open')
+    expect(html).toContain('What Attempt 1 will do')
+    expect(html).not.toContain('What the next attempt does at each step')
+    expect(html).not.toContain('srailplan')
+    expect(html).toContain('<ol class="planlist">')
     expect(html).toContain('prepared')
     expect(html).toContain('install')
     expect(html).toContain('close the ticket')
-    // Seven times: the four no plugin implements, and `build`, `review` and
-    // `merge`, which this recipe leaves empty. Each stated rather than omitted
-    // — which is the whole of 0016 §4, and is why the number here goes up with
-    // the vocabulary rather than the bar losing rows to keep it at two.
-    expect(html.match(/<span class="skipped">skipped<\/span>/g)).toHaveLength(7)
+    // Seven steps run nothing here: the four no plugin implements, and `build`,
+    // `review` and `merge`, which this recipe leaves empty. Each is named in one
+    // muted line rather than omitted — 0016 §4 — and none gets a row of its own.
+    expect(html).toContain('nothing configured at: claim, admit, design, implement, build, review, merge')
+    expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 7)
     expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
   })
 
@@ -283,7 +302,7 @@ describe('what will happen', () => {
       limits: { turns: 300, wall: '2h', rounds: 0, restarts: 0 },
       tier: 'guarded',
     })
-    expect(renderToStaticMarkup(<Rail progress={null} live={false} plan={none} />)).toContain('straight to you')
+    expect(planPage(none)).toContain('straight to you')
   })
 
   /**
@@ -302,7 +321,7 @@ describe('what will happen', () => {
       limits: { turns: 150, wall: '1h', rounds: 0, restarts: 2 },
       tier: 'guarded',
     })
-    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={over} />)
+    const html = planPage(over)
 
     expect(html).toContain('no rounds · 2 restart(s)')
     expect(html).not.toContain('straight to you')
@@ -314,8 +333,8 @@ describe('what will happen', () => {
    * else (#76).
    */
   it('says the recipe could not be read rather than showing a plan', () => {
-    const html = renderToStaticMarkup(<Rail progress={null} live={false} plan={null} />)
-    expect(html).toContain('The recipe could not be read')
+    const html = planPage(null)
+    expect(html.match(/The recipe could not be read/g)).toHaveLength(1)
     expect(html).not.toContain('prepared')
   })
 })
@@ -525,9 +544,9 @@ describe('the queued panel', () => {
     const html = panel(null, never())
 
     expect(html).toContain('In line')
-    // Three in the panel itself; other parts of the page wait for GitHub on their own.
+    // Four in the panel itself (the chip, the sentence, behind it, the plan list); other parts of the page wait for GitHub on their own.
     const band = html.slice(html.indexOf('triage-band'), html.indexOf('</section>', html.indexOf('triage-band')))
-    expect(band.match(/asking GitHub…/g)).toHaveLength(3)
+    expect(band.match(/asking GitHub…/g)).toHaveLength(4)
     expect(html).toContain('running now')
     expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
     expect(html).not.toContain('Nothing is needed from you')
@@ -581,5 +600,64 @@ describe('the queued panel', () => {
     expect(detailClass('running', false)).toContain('detail--running')
     expect(detailClass('approved', false)).toBe('detail detail--framed')
     expect(detailClass('blocked', false)).toBe('detail detail--waiting')
+  })
+})
+
+describe('planStepLine', () => {
+  it('joins the actions of a step that runs, and says nothing for a skipped one', () => {
+    expect(planStepLine('proposed', ['build', 'review'], false)).toBe('build, review')
+    expect(planStepLine('claim', [], true)).toBe('')
+    expect(planStepLine('claim', ['x'], true)).toBe('')
+  })
+})
+
+describe('the queued panel, filled (#912)', () => {
+  const OUT = {
+    version: 'v-secret',
+    attempt: 1,
+    basedOn: 'abc',
+    text: 'do the thing',
+    problem: null,
+    edit: null,
+    delta: { added: 0, removed: 0 },
+  } as unknown as OutgoingView
+  const html = renderToStaticMarkup(
+    <Standing
+      subject={null}
+      standing={NEVER_RUN}
+      project="lingtai"
+      issue={112}
+      taskId="ticket-lingtai-112"
+      discussions={[]}
+      outgoing={OUT}
+      queued={{ ...QUEUED, position: 1, inLine: 2, plan: PLAN }}
+      inFlight={null}
+    />,
+  )
+  const at = (needle: string, from = 0) => {
+    const i = html.indexOf(needle, from)
+    expect(i, needle).toBeGreaterThan(-1)
+    return i
+  }
+
+  it('draws the plan, the closed prompt, Discussion, then three cards, in that order', () => {
+    const plan = at('What Attempt 1 will do')
+    const prompt = at('<details class="asec closedrow">', plan)
+    const reading = html.indexOf('sreading')
+    expect(reading).toBeGreaterThan(-1)
+    const discussion = at('data-rank="discussion"', prompt)
+    const moves = at('Moves', discussion)
+    const run = at('Run it now', moves)
+    const edit = at('Edit the prompt', run)
+    at('Close the ticket', edit)
+    expect(html.slice(prompt, html.indexOf('</details>', prompt))).toContain('12 bytes')
+    expect(html).toContain('closed: read only to check or edit')
+    expect(html).not.toContain('v-secret')
+  })
+
+  it('has nothing amber and nothing recommended, and Run it now is teal', () => {
+    expect(html).not.toContain('btn pri')
+    expect(html).not.toContain('sresolution--recommended')
+    expect(html).toContain('class="btn go"')
   })
 })

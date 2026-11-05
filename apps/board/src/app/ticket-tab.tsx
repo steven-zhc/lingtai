@@ -46,8 +46,10 @@ export function Ticket({ ticket, pending = false }: { ticket: TicketView; pendin
 
       <div className={pending ? undefined : 'arrive'}>
         {ticket.body ? (
-          <details className="tbody" open>
-            <summary>The ticket, as it was written</summary>
+          <details className="tbody">
+            <summary>
+              The ticket, as it was written <span className="hint">closed: its table is already at the top</span>
+            </summary>
             <DocumentBody source="ticket-body" text={ticket.body} rawClass="tbodytext" />
           </details>
         ) : null}

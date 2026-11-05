@@ -89,6 +89,8 @@ function QueuedBand({
   startEstimate,
   now,
   project,
+  next,
+  outgoing,
   children,
 }: {
   view: QueuedView | null
@@ -97,6 +99,9 @@ function QueuedBand({
   startEstimate: StartEstimate | null
   now: number
   project: string | null
+  /** The attempt the plan and the prompt are for: `attempts + 1`. */
+  next: number
+  outgoing: OutgoingView | null
   children?: ReactNode
 }) {
   const inLine = resolved && view !== null && view.position !== null
@@ -184,6 +189,33 @@ function QueuedBand({
         )}
       </div>
       {resolved && view?.dependenciesUnread ? <p className="refusal">{view.dependenciesUnread}</p> : null}
+      {!resolved || view !== null ? (
+        <>
+          <h3 className="bandsub">What Attempt {next} will do</h3>
+          {!resolved ? (
+            <Skeleton shape="lines" count={1} label="asking GitHub…" />
+          ) : view?.plan ? (
+            <ol className="planlist">
+              {view.plan.steps.map((p) => (
+                <PlanStep key={p.step} step={p.step} actions={p.actions} skipped={p.skipped} />
+              ))}
+              {view.plan.steps.some((p) => p.skipped) ? (
+                <li className="none">
+                  nothing configured at:{' '}
+                  {view.plan.steps
+                    .filter((p) => p.skipped)
+                    .map((p) => p.step)
+                    .join(', ')}
+                </li>
+              ) : null}
+              <li className="lim">{limits(view.plan)}</li>
+            </ol>
+          ) : (
+            <p className="empty">{UNREADABLE}</p>
+          )}
+          {outgoing !== null ? <OutgoingPrompt outgoing={outgoing} next={next} /> : null}
+        </>
+      ) : null}
       {children}
     </section>
   )
@@ -197,6 +229,8 @@ function QueuedPanel({
   now,
   project,
   missing,
+  next,
+  discussion,
   children,
 }: {
   g: Answered<TaskAnswer>
@@ -206,6 +240,9 @@ function QueuedPanel({
   now: number
   project: string | null
   missing: (a: TaskAnswer) => boolean
+  next: number
+  /** Outside the `Gh`: an unsent question survives GitHub's answer. */
+  discussion: ReactNode
   children: ReactNode
 }) {
   return (
@@ -214,7 +251,16 @@ function QueuedPanel({
         g={g}
         pending={pending}
         fallback={
-          <QueuedBand view={null} resolved={false} inFlight={inFlight} startEstimate={null} now={now} project={project}>
+          <QueuedBand
+            view={null}
+            resolved={false}
+            inFlight={inFlight}
+            startEstimate={null}
+            now={now}
+            project={project}
+            next={next}
+            outgoing={null}
+          >
             {children}
           </QueuedBand>
         }
@@ -228,12 +274,17 @@ function QueuedPanel({
               startEstimate={startEstimate}
               now={now}
               project={project}
+              next={next}
+              outgoing={a.outgoing}
             >
               {children}
             </QueuedBand>
           )
         }
       </Gh>
+      <div className="spair" data-rank="discussion">
+        {discussion}
+      </div>
     </div>
   )
 }
@@ -252,9 +303,10 @@ import {
 } from './decide.tsx'
 import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
+import { EditPromptAction } from './edit-prompt.tsx'
 import { DocumentBody } from './markdown.tsx'
-import { Outgoing } from './outgoing.tsx'
-import { Rail } from './rail.tsx'
+import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
+import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
@@ -997,7 +1049,7 @@ export function Standing({
       triageStatus={standing.triageStatus}
       discussions={discussions}
       discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
-      quiet={standing.state === 'running'}
+      quiet={standing.state === 'running' || standing.state === 'queued'}
     />
   )
   const requeueForm = (
@@ -1237,6 +1289,8 @@ export function Standing({
             now={now}
             project={project}
             missing={missingOf}
+            next={standing.attempts + 1}
+            discussion={discussion}
           >
             <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
           </QueuedPanel>
@@ -1264,13 +1318,16 @@ export function Standing({
         ) : null}
 
         <section
-          className={standing.state === 'blocked' ? 'sresolutions' : 'sactions'}
-          aria-label={standing.state === 'blocked' ? 'Your decision' : 'Actions'}
-          data-rank={standing.state === 'blocked' ? 'resolutions' : undefined}
+          className={standing.state === 'blocked' || standing.state === 'queued' ? 'sresolutions' : 'sactions'}
+          aria-label={
+            standing.state === 'blocked' ? 'Your decision' : standing.state === 'queued' ? 'Moves' : 'Actions'
+          }
+          data-rank={standing.state === 'blocked' || standing.state === 'queued' ? 'resolutions' : undefined}
           // The other moves wait while a split is being written; the decision lock refuses them anyway.
           inert={standing.split?.progress.state === 'writing' ? true : undefined}
         >
           {standing.state === 'blocked' ? <h2 className="ssectiontitle">Your decision</h2> : null}
+          {standing.state === 'queued' ? <h2 className="ssectiontitle">Moves</h2> : null}
 
           {/* ---- rank 4: the moves ---------------------------------------------- */}
 
@@ -1431,27 +1488,6 @@ export function Standing({
                   </div>
                 }
 
-                {/* The queued item's own row, and it has exactly one move. `lingtai now`
-          was the only control this state ever had and it lived in a terminal;
-          the page that says why the item is not moving is the page the button
-          belongs on. It jumps the backoff, and says so when there is one to
-          jump (0028 §3). */}
-                {standing.state === 'queued' ? (
-                  <div className="btnrow smoves" data-rank="moves">
-                    <Gh g={g} pending={pending}>
-                      {(a) =>
-                        a.queued === null ? null : (
-                          <RunNow project={project} issue={String(issue)} holding={runNowCaption(a.queued)} />
-                        )
-                      }
-                    </Gh>
-                    {/* Beside it, the opposite move. A queued item has exactly two
-              things a person can say about it — *sooner* and *never* — and
-              until `#151` the page offered only the first. */}
-                    <Close project={project} issue={issue} waitId={null} />
-                  </div>
-                ) : null}
-
                 {/* The one control an `approved` item offers (#465's board-recovery
           finding). `WaitResolved{Approve}` already landed, so there is
           nothing left to decide — the only thing that can still be missing
@@ -1474,37 +1510,85 @@ export function Standing({
             )
           })}
 
+          {/* A queued ticket's moves: three cards, none recommended, none amber. Every
+  head and sentence is drawn at once; only the action that needs GitHub's
+  answer waits for it. `lingtai now` was the only control this state ever
+  had and it lived in a terminal (0028 §3). */}
+          {standing.state === 'queued' ? (
+            <div className="sresolutiongrid" data-rank="moves">
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Run it now</h3>}>
+                <p className="sresolutionconsequence">
+                  Taken on the conductor’s next turn, ahead of the queue. It still waits for a free slot.
+                </p>
+                <div className="sresolutionaction">
+                  <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}>
+                    {(a) =>
+                      a.queued === null || project === null || !actable || missingOf(a) ? (
+                        <p className="empty">Its place in the queue could not be read.</p>
+                      ) : (
+                        <RunNow
+                          project={project}
+                          issue={String(issue)}
+                          holding={runNowCaption(a.queued)}
+                          primary={false}
+                          go
+                        />
+                      )
+                    }
+                  </Gh>
+                </div>
+              </ResolutionCard>
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Edit the prompt</h3>}>
+                <p className="sresolutionconsequence">
+                  Change what Attempt {standing.attempts + 1} is sent. The edit applies to Attempt{' '}
+                  {standing.attempts + 1} only.
+                </p>
+                <div className="sresolutionaction">
+                  <EditPromptAction g={g} pending={pending} taskId={taskId} />
+                </div>
+              </ResolutionCard>
+              <ResolutionCard recommended={false} className="sresolution" head={<h3>Close the ticket</h3>}>
+                <p className="sresolutionconsequence">{RESOLUTION_COPY.Close.consequence}</p>
+                <div className="sresolutionaction">
+                  {actable && project !== null ? <Close project={project} issue={issue} waitId={null} /> : null}
+                </div>
+              </ResolutionCard>
+            </div>
+          ) : null}
+
           {/* ---- rank 5: the outgoing prompt and nonblocked discussion ---------- */}
 
           {/* On blocked pages Discussion follows triage, before these moves. The
           prompt stays below the moves it belongs to. Other states retain the
           pair: prompt first, then Discussion in reading and tab order. */}
-          <div className="spair" data-rank="pair">
-            {/* The document that will actually run, beside the discussion and under
+          {standing.state === 'queued' ? null : (
+            <div className="spair" data-rank="pair">
+              {/* The document that will actually run, beside the discussion and under
             the buttons that send it. Only where there is a next attempt to be
             handed one — a run in flight has already been given its prompt
             (`loadTask`). */}
-            <Gh g={g} pending={pending}>
-              {(a) =>
-                a.outgoing === null ? null : (
-                  <Outgoing
-                    taskId={taskId}
-                    outgoing={a.outgoing}
-                    // The editor offers Send only where the row above it does. A
-                    // sentence typed and not staged is otherwise lost to the click that
-                    // was meant to send it.
-                    sendable={actable && standing.state === 'blocked' && sendableOf(a.outgoing) !== null}
-                    // Reduced where the opening above already says it; open on blocked,
-                    // where Send is the move.
-                    reduced={standing.state === 'queued' || standing.state === 'approved'}
-                  />
-                )
-              }
-            </Gh>
+              <Gh g={g} pending={pending}>
+                {(a) =>
+                  a.outgoing === null ? null : (
+                    <Outgoing
+                      taskId={taskId}
+                      outgoing={a.outgoing}
+                      // The editor offers Send only where the row above it does. A
+                      // sentence typed and not staged is otherwise lost to the click that
+                      // was meant to send it.
+                      sendable={actable && standing.state === 'blocked' && sendableOf(a.outgoing) !== null}
+                      // Reduced where the opening above already says it; open on blocked,
+                      // where Send is the move.
+                      reduced={standing.state === 'queued' || standing.state === 'approved'}
+                    />
+                  )
+                }
+              </Gh>
 
-            {/* Discussion is offered in every state; only its placement changes. */}
-            {standing.state === 'blocked' ? null : discussion}
-          </div>
+              {/* Discussion is offered in every state; only its placement changes. */}
+              {standing.state === 'blocked' ? null : discussion}
+            </div>
+          )}
         </section>
       </section>
     </TriagePicks>

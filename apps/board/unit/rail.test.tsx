@@ -1296,13 +1296,12 @@ describe('the plan reduced into the rail (#781)', () => {
     return p
   }
 
-  it('draws a closed disclosure with one cell per step and the limits under it', () => {
+  it("draws no plan under the rail: the list is the queued panel's", () => {
     const html = renderToStaticMarkup(<Rail progress={none()} live={false} plan={view} />)
-    expect(html).toContain('<details class="srailplan">')
-    expect(html).toContain('What the next attempt does at each step')
-    expect(html.match(/<li class="splancell"/g)).toHaveLength(STEPS.length)
-    expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
-    expect(html).toContain('<span class="skipped">skipped</span>')
+    expect(html).not.toContain('srailplan')
+    expect(html).not.toContain('splancell')
+    expect(html).not.toContain('What the next attempt does at each step')
+    expect(html).not.toContain('150 turns')
   })
 
   it('draws nothing extra without a plan', () => {
@@ -1311,15 +1310,9 @@ describe('the plan reduced into the rail (#781)', () => {
     expect(html).not.toContain('style=')
   })
 
-  it('keeps a rail step the plan lacks as an empty cell, and appends a plan step the rail lacks', () => {
-    const shorter: PlanView = { ...view, steps: view.steps.filter((p) => p.step !== 'prepared') }
-    const lacking = renderToStaticMarkup(<Rail progress={none()} live={false} plan={shorter} />)
-    expect(lacking.match(/<li class="splancell"/g)).toHaveLength(none().steps.length)
-    expect(lacking).toContain('<li class="splancell"></li>')
-
+  it('appends a plan step the rail lacks as a column', () => {
     const extra: PlanView = { ...view, steps: [...view.steps, { step: 'later', actions: ['x'], skipped: false }] }
     const appended = renderToStaticMarkup(<Rail progress={none()} live={false} plan={extra} />)
-    expect(appended.match(/<li class="splancell"/g)).toHaveLength(none().steps.length + 1)
     expect(appended).toContain(`--steps:${none().steps.length + 1}`)
     expect(segments(appended)).toHaveLength(none().steps.length)
   })
@@ -1330,10 +1323,8 @@ describe('the plan reduced into the rail (#781)', () => {
     expect(html).not.toContain('snow')
   })
 
-  it('says the recipe could not be read, and draws nothing without a plan or progress', () => {
-    expect(renderToStaticMarkup(<Rail progress={null} live={false} plan={null} />)).toContain(
-      'The recipe could not be read',
-    )
+  it('draws nothing without a plan or progress, and nothing for an unreadable one (the panel says it)', () => {
+    expect(renderToStaticMarkup(<Rail progress={null} live={false} plan={null} />)).toBe('')
     expect(renderToStaticMarkup(<Rail progress={null} live={false} />)).toBe('')
   })
 })

@@ -107,3 +107,12 @@ describe('why the body is missing', () => {
     expect(html).toContain('demo&#x27;s tickets are read from the database')
   })
 })
+
+describe('the ticket body', () => {
+  it('opens closed, and says its table is already at the top', () => {
+    const html = renderToStaticMarkup(<Ticket ticket={{ ...TICKET, body: 'the body' }} />)
+    expect(html).toContain('<details class="tbody">')
+    expect(html).not.toContain('<details class="tbody" open')
+    expect(html).toContain('closed: its table is already at the top')
+  })
+})

@@ -504,16 +504,6 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   display: grid; grid-template-columns: repeat(var(--steps, 10), minmax(0, 1fr)); gap: 3px;
   margin: 0; padding: 0; list-style: none;
 }
-.splanrow {
-  display: grid; grid-template-columns: repeat(var(--steps, 10), minmax(0, 1fr)); gap: 3px;
-  margin: 0.3rem 0 0; padding: 0; list-style: none;
-}
-.srailplan { font-size: 0.72rem; }
-.srailplan > summary { cursor: pointer; color: var(--muted, inherit); }
-.splancell { display: grid; align-content: start; gap: 0.1rem; min-width: 0; overflow-wrap: anywhere; }
-.splancell .name { font-weight: 600; }
-.splancell .skipped { opacity: 0.55; font-style: italic; }
-.splanlimits { margin: 0.3rem 0 0; opacity: 0.8; }
 .seg { display: grid; gap: 2px; min-width: 0; }
 /* One cell per planned action, so a step holding `build` and `review` is half
    a bar when half of it has run — the granularity the `N passed` counter had
@@ -732,6 +722,17 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.pri { background: var(--signal); border-color: var(--signal); color: #fff; }
 .btn.pri:hover:not(:disabled) { color: #fff; }
+/* Teal, not amber: a move that is not the thing a person is being waited on for. */
+.btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.go:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+.bandsub { margin: 0.9rem 0 0.3rem; font-size: 0.85rem; font-weight: 600; }
+.planlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; font-size: 0.82rem; }
+.planlist li { display: flex; gap: 0.6rem; min-width: 0; overflow-wrap: anywhere; }
+.planlist li b { min-width: 5rem; font-weight: 600; }
+.planlist li.none, .planlist li.lim { color: var(--ink-2); font-size: 0.76rem; }
+.closedrow { margin-top: 0.7rem; font-size: 0.82rem; }
+.closedrow > summary { cursor: pointer; }
+.closedrow > summary .outfact, .closedrow > summary .hint { margin-left: 0.5rem; color: var(--ink-2); }
 /* The Resume confirmation, which renders inside `.bar`. Not `pri`: that is a
    solid amber, and the bar's amber is the headline's alone (#134). It confirms
    lifting a hold, so it wears the hold's colour — the same one as the `paused`
@@ -1819,6 +1820,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    longer prompt moves nothing under it, and the editor is bounded the same way
    for the same reason. */
 .outgoing > .outtext,
+.outgoing > .outeditor,
 .outgoing > .outbox {
   flex: 1 1 auto;
   min-height: 0;
@@ -1881,6 +1883,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   font-variant-numeric: tabular-nums;
 }
 .outwho { margin-right: 0.45rem; color: var(--muted); }
+.outeditor { display: grid; gap: 0.35rem; align-content: start; }
 .outbox { display: grid; gap: 0.35rem; }
 .outbox textarea {
   font: 0.75rem/1.55 var(--mono);
