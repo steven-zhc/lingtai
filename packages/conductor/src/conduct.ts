@@ -54,6 +54,8 @@ import {
   reduceAttempt,
   attemptReducer,
   ticketReducer,
+  reduceTicket,
+  reviewSummaryOf,
   stepOutcomesOf,
   waitsFromState,
   designAsksFromState,
@@ -4501,6 +4503,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // What is left is telling the issue, which reads the plan that was just
         // appended rather than the stream.
         released = true
+        // The summary of the review that cleared this run, read off the run's own stream: a
+        // continuation's pass has no review visit of its own. The last review, summary or not —
+        // an earlier one describes a diff that has since changed (#896). A failed read posts the
+        // landing line alone, and the attempt number falls back to 1 as the detail page's does.
+        const summary = yield* Effect.promise(() =>
+          store
+            .read(runId)
+            .then((events) => {
+              const review = stepOutcomesOf(events).findLast((o) => o.runId === runId && o.step === 'review')
+              return review === undefined ? null : (reviewSummaryOf(review)?.summary ?? null)
+            })
+            .catch(() => null),
+        )
+        const attempt = yield* Effect.promise(() =>
+          store
+            .read(ticketId)
+            .then((events) => reduceTicket(events).runs.indexOf(runId) + 1 || 1)
+            .catch(() => 1),
+        )
         yield* Effect.promise(() =>
           tellGitHubAbout({
             store,
@@ -4510,6 +4531,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             labels: labelsFor('landed'),
             editEnded: true,
             appended: endResolved,
+            landed: { mergeCommit: merged, base, attempt, summary },
           }),
         )
         log(`landed ${merged.slice(0, 7)} on ${base}`)
