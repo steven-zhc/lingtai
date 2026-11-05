@@ -664,11 +664,12 @@ export const RunPrompted = z.object({
   prompt: z.string().nullable(),
   /**
    * Added by #923. Which paid call this prompt was handed to: the same `for` its
-   * `RunSpent` carries. **Absent means the hooked implement run**, which is what
-   * every event stored before this field means and what the hook still writes.
-   * An unhooked call — the cold reviewer, a judge, a fix round, the design
-   * agent, triage, a discussion — records its prompt here with a `for`, and the
-   * attempt reducer leaves its own `prompt` alone for those.
+   * `RunSpent` carries. **Absent means a record the hook wrote**, which is what
+   * every event stored before #928 means; the hook writes none now. Every paid
+   * call records its prompt here with a `for` — the implementer's is
+   * `{ Action, implement, name, round: 0 }`, written by the conductor before it
+   * dispatches — and the attempt reducer takes that one (or one with no `for`) as
+   * the attempt's `prompt` and leaves it alone for every other.
    */
   for: SpentFor.optional(),
   /**

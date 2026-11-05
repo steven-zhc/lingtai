@@ -59,7 +59,6 @@
  */
 import type { ActionFinding } from '@lingtai/actions'
 import {
-  composePrompt,
   type Envelope,
   type PromptPart,
   SEVERITIES,
@@ -72,6 +71,7 @@ import {
 import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
 
 import { checksBrief } from './prompt.ts'
+import type { RecordPart } from './record-prompt.ts'
 
 /**
  * What a refusal handed the fixer, and which of the two shapes it is.
@@ -515,7 +515,7 @@ export function fixBriefParts(input: {
    * the brief without the section.
    */
   advice?: GrantedAdvice
-}): PromptPart[] {
+}): RecordPart[] {
   const clip = input.diff.length > input.diffBytes
   const clipped = clip
     ? `${input.diff.slice(0, input.diffBytes)}\n\n[diff truncated at ${input.diffBytes} bytes]`
@@ -548,7 +548,9 @@ ${input.round} of ${input.of}.
 **You are not given the implementer's reasoning.** No plan, no transcript, no
 session. What you have is below, and the code in front of you.
 
-${evidence}
+`,
+    ...(typeof evidence === 'string' ? [evidence] : evidence),
+    `
 ${adviceSection(input.advice)}
 ## The ticket the reviewer held this change to
 
@@ -601,7 +603,9 @@ and committing nothing is the move that exists so you never have to.`,
 
 /** `fixBriefParts`, concatenated: the text the fixer is handed. `fix.test.ts` pins its sentences. */
 export function fixBrief(input: Parameters<typeof fixBriefParts>[0]): string {
-  return composePrompt(fixBriefParts(input)).handed
+  return fixBriefParts(input)
+    .map((part) => (typeof part === 'string' ? part : part.text))
+    .join('')
 }
 
 /** One line triage advised fixing, as `FixableLines` carries it. */
@@ -802,13 +806,19 @@ that is ordinary, and it is bounded by the rounds above.`,
   }
 }
 
-function outputHalf(output: string, action: string): { evidence: string; criterion: string } {
+function outputHalf(output: string, action: string): { evidence: readonly RecordPart[]; criterion: string } {
   return {
-    evidence: `## What \`${action}\` printed
+    // The output is a value a `StepEnded` may hold: `recordPrompt` references it
+    // there if it finds exactly this text, and writes it out if it does not (#928).
+    evidence: [
+      `## What \`${action}\` printed
 
 \`\`\`
-${output.trim()}
+`,
+      { text: output.trim(), onStep: { field: 'evidence', trimmed: true } },
+      `
 \`\`\``,
+    ],
     criterion: `## What counts as done
 
 The whole step runs again on what you commit — every action, in order, starting

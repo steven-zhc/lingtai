@@ -57,7 +57,7 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import type { Envelope, PayloadOf } from '@lingtai/domain'
+import { expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
   waitWords,
@@ -100,11 +100,14 @@ function theRuns(store: ReturnType<typeof memoryStore>): Envelope[][] {
 }
 
 /**
- * #923: every paid call but the hooked implement run records the prompt it was
+ * #923: every paid call records the prompt it was
  * handed just before its `RunSpent`, tagged with that `RunSpent`'s own `for`.
  * `expected` names the kinds of call this pass is meant to have recorded
  * (`<_tag>` or `<_tag>:<step>`), so a pass that dropped one fails here.
  */
+const sameFor = (data: unknown, f: unknown): boolean =>
+  JSON.stringify((data as { for?: unknown }).for) === JSON.stringify(f)
+
 function expectEveryPromptBesideItsSpend(events: readonly Envelope[], expected: readonly string[]): void {
   const kinds: string[] = []
   events.forEach((event, i) => {
@@ -112,9 +115,17 @@ function expectEveryPromptBesideItsSpend(events: readonly Envelope[], expected: 
     const prompted = event.data as { prompt: string | null; for?: { _tag: string; step?: string } }
     expect(prompted.for).toBeDefined()
     expect(prompted.prompt?.length ?? 0).toBeGreaterThan(0)
-    const next = events[i + 1]!
-    expect(next.type).toBe('RunSpent')
-    expect((next.data as { for: unknown }).for).toEqual(prompted.for)
+    // #928: the implementer's record is the conductor's too, written straight after
+    // `StepsResolved` and before the agent starts; its `RunSpent` ends the run.
+    const round0 = (prompted.for as { round?: number }).round === 0 && prompted.for!.step === 'implement'
+    if (round0) {
+      expect(events[i - 1]!.type).toBe('StepsResolved')
+      expect(events.slice(i + 1).some((e) => e.type === 'RunSpent' && sameFor(e.data, prompted.for))).toBe(true)
+    } else {
+      const next = events[i + 1]!
+      expect(next.type).toBe('RunSpent')
+      expect((next.data as { for: unknown }).for).toEqual(prompted.for)
+    }
     kinds.push(prompted.for!.step === undefined ? prompted.for!._tag : `${prompted.for!._tag}:${prompted.for!.step}`)
   })
   expect(new Set(kinds)).toEqual(new Set(expected))
@@ -199,6 +210,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -224,6 +236,66 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       _tag: 'Completed',
       integration: { _tag: 'Integrated', mergeSha: 'c'.repeat(40) },
     })
+  })
+
+  /**
+   * **The conductor records the implementer's prompt, and the hook does not**
+   * (#928): exactly one `RunPrompted` with the implement round-0 `for`, straight
+   * after `StepsResolved`, none without a `for`, and `expandPrompt` over the
+   * record and the claim's body gives back what the runtime was handed.
+   */
+  it('1b. records the implementer’s prompt once, by reference, and what it expands to is what the runtime got', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const handed: string[] = []
+    const spying: typeof runtime = {
+      ...runtime,
+      run: async (request) => {
+        if (!request.runId.includes(':')) handed.push(request.prompt)
+        return runtime.run(request)
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([]),
+        runtime: spying,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}: {{body}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+    expect(result).toMatchObject({ ok: true })
+
+    const events = theRun(store)!
+    const prompted = events.filter((e) => e.type === 'RunPrompted')
+    expect(prompted).toHaveLength(1)
+    const data = prompted[0]!.data as PayloadOf<'RunPrompted'>
+    expect(data.for).toEqual({ _tag: 'Action', step: 'implement', name: expect.any(String), round: 0 })
+    expect(events[events.indexOf(prompted[0]!) - 1]!.type).toBe('StepsResolved')
+    const started = events.find((e) => e.type === 'RunStarted')!.data as PayloadOf<'RunStarted'>
+    expect(data.promptVersion).toBe(started.promptVersion)
+    expect(events.filter((e) => e.type === 'RunPrompted' && (e.data as { for?: unknown }).for === undefined)).toEqual(
+      [],
+    )
+
+    expect(handed).toHaveLength(1)
+    expect(data.bytes).toBe(new TextEncoder().encode(handed[0]!).length)
+    // The body is on the claim, so the record points at it instead of copying it.
+    expect(data.prompt).not.toContain('fix it')
+    const claim = (await theItem(store)).find((e) => e.type === 'TicketClaimed')!
+    expect(data.refs).toHaveLength(1)
+    expect(data.refs![0]!.ref).toEqual({ _tag: 'TicketBody', stream: claim.streamId, version: claim.version })
+    const expanded = expandPrompt({ prompt: data.prompt, refs: data.refs! }, [
+      { text: (claim.data as { body: string }).body },
+    ])
+    expect(expanded.unresolved).toEqual([])
+    expect(expanded.text).toBe(handed[0])
   })
 
   /**
@@ -287,6 +359,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -447,6 +520,7 @@ runtime:
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -464,7 +538,7 @@ runtime:
       'RunRefsPublished',
       'RunRefsPublished',
     ])
-    expectEveryPromptBesideItsSpend(theRun(store)!, ['Action:review', 'Judge'])
+    expectEveryPromptBesideItsSpend(theRun(store)!, ['Action:review', 'Judge', 'Action:implement'])
     const item = await theItem(store)
     expect(theHold(item)).toBeNull()
     // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}` is
@@ -595,6 +669,7 @@ runtime:
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -717,6 +792,7 @@ runtime:
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'StepEnded',
@@ -786,6 +862,7 @@ runtime:
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -905,6 +982,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -987,6 +1065,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -1093,6 +1172,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -1266,6 +1346,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -1340,6 +1421,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunSpent',
       'RunProducedDiff',
@@ -1592,6 +1674,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFinished',
       'RunFailed',
       'RunSpent',
@@ -1678,6 +1761,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
       'StepStarted',
       'RunStarted',
       'StepsResolved',
+      'RunPrompted',
       'RunFailed',
       'RunSpent',
       'StepEnded',

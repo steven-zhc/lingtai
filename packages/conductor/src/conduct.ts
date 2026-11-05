@@ -40,7 +40,6 @@ import {
   parsePayload,
   waitWords,
   DIFF_FLAGS,
-  composePrompt,
 } from '@lingtai/domain'
 import {
   CONTROL_FOLD_TYPES,
@@ -230,7 +229,7 @@ import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
-import { chosenIn, judgePrompt } from './judge-agent.ts'
+import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
@@ -241,8 +240,8 @@ import { currentRecipe } from './projects.ts'
 import { signedInHere } from './projects.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
-import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
-import { recordPrompt } from './record-prompt.ts'
+import { buildCommands, nextPrompt, renderPromptParts } from './prompt.ts'
+import { recordPrompt, type RecordPart } from './record-prompt.ts'
 import { restartReason } from './restart.ts'
 import {
   type Ceilings,
@@ -2716,6 +2715,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         let threw = false
         // Built once, for the prompt record and for the `RunSpent` below (#923).
         const judgeFor: SpentFor = { _tag: 'Judge', when: on.when }
+        const judgeParts = judgePromptParts(on)
         const judgePromptText = judgePrompt(on)
         const outcome = await Effect.runPromise(
           Effect.scoped(
@@ -2728,7 +2728,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 recordPrompt(
                   store,
                   runId,
-                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgePromptText },
+                  { for: judgeFor, promptVersion: `judge@${judgePromptText.length}`, prompt: judgeParts },
                   log,
                 ).then(() =>
                   dispatched
@@ -3632,8 +3632,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `defaultsAt` writes — adds nothing at all, so a recipe that declares
        * nothing gets the prompt it got before this key existed, byte for byte.
        */
-      const alsoSays = (prompt: string, extra: string): string =>
-        extra === '' ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`
+      const alsoText = (extra: string): string => `\n\n## Also for this project\n\n${extra}\n`
 
       const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
         const tree = cutTree()
@@ -3744,8 +3743,49 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ]),
                 )
 
+                // **The implementer's prompt, recorded by the conductor before the
+                // hook server learns the run** (#928, 0100 §14). `register` reads
+                // the stream's length for the hook's expected version, so this is
+                // awaited first and never after: a `RunPrompted` appended later
+                // would make the hook's next append a `ConcurrencyError`. The hook
+                // appends no prompt of its own.
+                const implementerParts: RecordPart[] = [
+                  ...renderPromptParts(
+                    options.prompt,
+                    { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
+                    buildCommands(recipe.steps),
+                    next.failure,
+                    // **What `design` produced, and this is the one reader of
+                    // it** (`#265`). `agentPlugin` serves the step: a recipe
+                    // declaring an `agent:` there buys a document, and a document
+                    // nothing hands on is an agent run whose answer no reader ever
+                    // sees. `""` renders as it always did.
+                    //
+                    // **The document and not the locator** (`#297`). The built-in
+                    // dispatch fetches nothing, so it renders the copy the pass is
+                    // already holding and never learns what kind of string
+                    // `TheDesign.locator` is (0066 §4). A plugin at `implement`
+                    // that wants the location reads it off `context.design` itself.
+                    brief.design.document,
+                    took?.claimVersion === undefined || took.ticket !== brief.ticket
+                      ? {}
+                      : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
+                  ),
+                  // The recipe's own words at `implement`, appended (`#266`).
+                  ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                ]
+                const implementerFor = {
+                  _tag: 'Action' as const,
+                  step: 'implement' as const,
+                  name: spec.name,
+                  round: 0,
+                }
+                yield* Effect.promise(() =>
+                  recordPrompt(store, runId, { for: implementerFor, promptVersion, prompt: implementerParts }, log),
+                )
+
                 yield* Effect.acquireRelease(
-                  Effect.promise(async () => server.register(runId, (await store.read(runId)).length, promptVersion)),
+                  Effect.promise(async () => server.register(runId, (await store.read(runId)).length)),
                   () => Effect.sync(() => void server.unregister(runId)),
                 )
 
@@ -3765,32 +3805,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   dispatched.run({
                     runId,
                     cwd: tree.path,
-                    prompt: alsoSays(
-                      renderPrompt(
-                        options.prompt,
-                        { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
-                        buildCommands(recipe.steps),
-                        next.failure,
-                        // **What `design` produced, and this is the one reader of
-                        // it** (`#265`). `Brief.design` has been on this object since
-                        // the brief existed and nothing here read it, which cost
-                        // nothing while the port that filled it answered `""` on every
-                        // pass. `agentPlugin` serves the step now: a recipe declaring
-                        // an `agent:` there buys a document, and a document nothing
-                        // hands on is an agent run bought by a line in the recipe whose
-                        // answer no reader ever sees. `""` renders as it always did.
-                        //
-                        // **The document and not the locator** (`#297`). The built-in
-                        // dispatch is a file-reading plugin's opposite: it fetches
-                        // nothing, so it renders the copy the pass is already holding
-                        // and never learns what kind of string `TheDesign.locator` is
-                        // (0066 §4). A plugin at `implement` that wants the location
-                        // reads it off `context.design` itself.
-                        brief.design.document,
-                      ),
-                      // The recipe's own words at `implement`, appended (`#266`).
-                      spec.prompt,
-                    ),
+                    prompt: implementerParts.map((part) => (typeof part === 'string' ? part : part.text)).join(''),
                     ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: wiring.settingsPath,
                     log: runLog,
@@ -3990,7 +4005,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         stoppedBy = 'interrupted'
         // The brief and the `for`, built once: each is recorded before the dispatch
         // and then handed to it / to the `RunSpent` below (#923).
-        const fixComposed = composePrompt([
+        const fixParts: RecordPart[] = [
           ...fixBriefParts({
             refusal,
             round,
@@ -4014,8 +4029,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Appended as a part, never to the finished string, so no recorded offset
           // depends on where the text before it happened to end.
           ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-        ])
-        const fixPrompt = fixComposed.handed
+        ]
+        const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
         const fixFor: SpentFor = {
           _tag: 'Action',
           step: 'implement',
@@ -4028,7 +4043,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         await recordPrompt(
           store,
           runId,
-          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixComposed },
+          { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, prompt: fixParts },
           log,
         )
         const fixed = await Effect.runPromise(

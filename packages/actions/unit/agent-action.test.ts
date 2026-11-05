@@ -28,6 +28,7 @@ import {
 import {
   type AgentActionDeps,
   buildDesignPrompt,
+  designPromptParts,
   buildReviewPrompt,
   createAgentAction,
   createDraftAction,
@@ -2479,7 +2480,8 @@ describe('recording the prompt an agent action was handed (#923)', () => {
     })
 
     expect(recorded).toHaveLength(1)
-    expect(recorded[0]!.prompt).toBe(runtime.seen[0]!.prompt)
+    const said = recorded[0]!.prompt
+    expect(typeof said === 'string' ? said : said.handed).toBe(runtime.seen[0]!.prompt)
     expect(recorded[0]!.promptVersion).toBe(`design@${runtime.seen[0]!.prompt.length}`)
     expect(spentFor).toEqual([recorded[0]!.for])
   })
@@ -2489,5 +2491,24 @@ describe('recording the prompt an agent action was handed (#923)', () => {
     const result = await createDraftAction({ name: 'draft', prompt: '' }, draftDeps(runtime)).run(context)
     expect(result.verdict).toBe('passed')
     expect(runtime.seen).toHaveLength(1)
+  })
+})
+
+describe('designPromptParts (#928)', () => {
+  it('is buildDesignPrompt byte for byte, with the body a TicketBody part when the claim is known', () => {
+    const spec = { name: 'draft', prompt: 'also this' }
+    const issue = { ...ISSUE, bodyAt: { stream: 'ticket-p-58', version: 3 } }
+    const parts = designPromptParts(spec, issue)
+    expect(parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')).toBe(
+      buildDesignPrompt(spec, issue),
+    )
+    expect(parts.filter((part) => typeof part !== 'string')).toEqual([
+      { text: ISSUE.body, ref: { _tag: 'TicketBody', stream: 'ticket-p-58', version: 3 } },
+    ])
+  })
+
+  it('writes the body out as plain text when nothing says where it was read from', () => {
+    const parts = designPromptParts({ name: 'draft', prompt: '' }, ISSUE)
+    expect(parts.every((part) => typeof part === 'string')).toBe(true)
   })
 })

@@ -37,6 +37,7 @@ import {
   promptVersionFor,
   type PromptBudget,
 } from './attempts.ts'
+import type { RecordPart } from './record-prompt.ts'
 
 /**
  * Re-exported so that everything about *the document an attempt is handed* has
@@ -233,27 +234,84 @@ export function renderPrompt(
   failure = '',
   design = '',
 ): string {
-  const drafted = design.trim() === '' ? '' : designBrief(design)
+  return renderPromptParts(template, ticket, checks, failure, design)
+    .map((part) => (typeof part === 'string' ? part : part.text))
+    .join('')
+}
+
+const SLOTS = /\{\{(issue|title|body|design|checks|failure)\}\}/g
+
+/**
+ * The same prompt as `renderPrompt`, built from parts (#928) so the conductor
+ * can record the body and the design by reference and hand the agent exactly
+ * the concatenation.
+ *
+ * **The template is split once and an insert is never scanned again.** The
+ * `replaceAll` chain this replaced read `$&` and `$'` in a body as replacement
+ * patterns and substituted a `{{design}}` found *inside* an earlier insert, so a
+ * body that mentioned either was not handed verbatim. An unknown `{{x}}` stays
+ * literal, as it did.
+ *
+ * `at.bodyAt` makes `{{body}}` a `TicketBody` part (the claim it was read from);
+ * the design's document is a `StepPart`, which `recordPrompt` turns into a
+ * `StepValue` reference only if it finds that exact text on the run's stream.
+ */
+export function renderPromptParts(
+  template: string,
+  ticket: { number: number; title: string; body: string },
+  checks: readonly string[],
+  failure = '',
+  design = '',
+  at: { bodyAt?: { stream: string; version: number } } = {},
+): RecordPart[] {
+  const drafted: RecordPart[] = design.trim() === '' ? [] : designBriefParts(design)
   const checked = checksBrief(checks)
-  const filled = template
-    .replaceAll('{{issue}}', String(ticket.number))
-    .replaceAll('{{title}}', ticket.title)
-    .replaceAll('{{body}}', ticket.body)
-    .replaceAll('{{design}}', drafted)
-    .replaceAll('{{checks}}', checked)
-    .replaceAll('{{failure}}', failure)
+  const parts: RecordPart[] = []
+  let from = 0
+  for (const match of template.matchAll(SLOTS)) {
+    parts.push(template.slice(from, match.index))
+    from = match.index + match[0].length
+    switch (match[1]) {
+      case 'issue':
+        parts.push(String(ticket.number))
+        break
+      case 'title':
+        parts.push(ticket.title)
+        break
+      case 'body':
+        parts.push(
+          at.bodyAt === undefined ? ticket.body : { text: ticket.body, ref: { _tag: 'TicketBody', ...at.bodyAt } },
+        )
+        break
+      case 'design':
+        parts.push(...drafted)
+        break
+      case 'checks':
+        parts.push(checked)
+        break
+      default:
+        parts.push(failure)
+    }
+  }
+  parts.push(template.slice(from))
   // The design first, the checks second and the history third: the design is
   // about the change, the checks are about the bar it is held to, and the
-  // history is about the attempts at it. `join` drops whichever said nothing,
+  // history is about the attempts at it. A block that said nothing is dropped,
   // so a template that carries a slot appends nothing for it — which keeps the
   // rule above one rule rather than two.
-  const appended = join([
-    drafted !== '' && !template.includes('{{design}}') ? drafted : '',
-    !template.includes('{{checks}}') ? checked : '',
-    failure !== '' && !template.includes('{{failure}}') ? failure : '',
-  ])
-  if (appended === '') return filled
-  return `${filled}\n\n${appended}\n`
+  const blocks: RecordPart[][] = [
+    !template.includes('{{design}}') ? drafted : [],
+    !template.includes('{{checks}}') ? [checked] : [],
+    failure !== '' && !template.includes('{{failure}}') ? [failure] : [],
+  ].filter((block) => block.some((part) => (typeof part === 'string' ? part : part.text) !== ''))
+  if (blocks.length === 0) return parts
+  parts.push('\n\n')
+  blocks.forEach((block, index) => {
+    if (index > 0) parts.push('\n\n')
+    parts.push(...block)
+  })
+  parts.push('\n')
+  return parts
 }
 
 /**
@@ -357,16 +415,19 @@ export function checksBrief(commands: readonly string[]): string {
  * Not in a fence. The document is prose written for this reader by another agent,
  * and a fence would say *this is data* about the one block that is an argument.
  */
-function designBrief(design: string): string {
+function designBriefParts(design: string): RecordPart[] {
   return [
-    '## The design, written for this run before any code',
-    '',
-    'An agent was asked for the shape of this change before you started, and this is',
-    'what it answered. It had the ticket and this worktree and nothing else — no more',
-    'than you have — so it is where to start rather than an instruction: where it',
-    'disagrees with the ticket, the ticket is what was asked for. Say so in your final',
-    'message if you departed from it, and why.',
-    '',
-    design.trim(),
-  ].join('\n')
+    [
+      '## The design, written for this run before any code',
+      '',
+      'An agent was asked for the shape of this change before you started, and this is',
+      'what it answered. It had the ticket and this worktree and nothing else — no more',
+      'than you have — so it is where to start rather than an instruction: where it',
+      'disagrees with the ticket, the ticket is what was asked for. Say so in your final',
+      'message if you departed from it, and why.',
+      '',
+      '',
+    ].join('\n'),
+    { text: design.trim(), onStep: { field: 'document', trimmed: true } },
+  ]
 }

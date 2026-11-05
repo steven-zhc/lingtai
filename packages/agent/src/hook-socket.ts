@@ -122,8 +122,6 @@ const MUTATIONS: Record<string, 'write' | 'edit' | undefined> = {
 
 export interface RegisteredRun {
   runId: string
-  /** Recorded on every prompt, so "which prompt produced better work" is answerable. */
-  promptVersion: string
   /** Tool calls seen. Used where the runtime gives no turn number of its own. */
   calls: number
   /** Counted in memory, flushed as events rather than one append per call. */
@@ -158,7 +156,7 @@ export interface HookServerOptions {
 export interface HookServer {
   readonly socketPath: string
   /** Teaches the server about a run. Until this, its calls are denied. */
-  register(runId: string, version: number, promptVersion?: string): RegisteredRun
+  register(runId: string, version: number): RegisteredRun
   unregister(runId: string): RegisteredRun | undefined
   get(runId: string): RegisteredRun | undefined
   /** Writes the counted-in-memory facts to the log. Called at the end of a run. */
@@ -215,21 +213,11 @@ export function createHookServer(options: HookServerOptions): HookServer {
     // writes that at dispatch because it knows the work item, the model, the
     // base sha and the config hash, none of which the hook is told.
     if (hook === 'UserPromptSubmit') {
-      // The document, and not only its length (#88). This is the one input to a
-      // run that is otherwise unrecoverable: the template's name and byte count
-      // say nothing about the ticket body they were filled with, and that body
-      // can be edited on GitHub afterwards.
-      //
-      // Whole, and not sliced the way `RunAwaitingInput` is. A notification is a
-      // line of prose whose tail is noise; a prompt is the thing being
-      // explained, and half of one explains nothing. See the retention note on
-      // `RunPrompted` for what is being traded and what would change it.
-      const prompt = request.payload?.prompt ?? ''
-      const bytes = Buffer.byteLength(prompt, 'utf8')
+      // **Nothing is appended here since #928.** The conductor records the
+      // implementer's prompt (`RunPrompted`, with its `for`) before it
+      // registers the run, whole or by reference; recording it here as well
+      // would be two records and `prompts: 2`.
       options.onLifecycle?.(run.runId, hook, request.payload)
-      await append(run, 'RunPrompted', { promptVersion: run.promptVersion, bytes, prompt }).catch(() => {
-        // Losing the record must not refuse the prompt.
-      })
       return { allow: true }
     }
 
@@ -296,10 +284,9 @@ export function createHookServer(options: HookServerOptions): HookServer {
   return {
     socketPath: options.socketPath,
 
-    register(runId, version, promptVersion = 'unknown') {
+    register(runId, version) {
       const run: RegisteredRun = {
         runId,
-        promptVersion,
         calls: 0,
         allowed: 0,
         touched: [],

@@ -1,5 +1,5 @@
 import type { ActionFinding } from '@lingtai/actions'
-import { SEVERITIES } from '@lingtai/domain'
+import { SEVERITIES, type PromptPart } from '@lingtai/domain'
 import { aTriageStart, aTriaged, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 /**
@@ -1736,7 +1736,7 @@ describe('fixBriefParts records references for the body and the diff (#927)', ()
       diffAt: { from, to },
       ticket: { ...TICKET, bodyAt: { stream: 'ticket-p-1', version: 4 } },
     }
-    const c = composePrompt(fixBriefParts(input))
+    const c = composePrompt(fixBriefParts(input) as PromptPart[])
     expect(c.handed).toBe(fixBrief(input))
     expect(c.refs.map((r) => r.ref)).toEqual([
       { _tag: 'TicketBody', stream: 'ticket-p-1', version: 4 },
@@ -1756,9 +1756,24 @@ describe('fixBriefParts records references for the body and the diff (#927)', ()
 
   it('writes a clipped diff out with no Diff ref, and a body with nothing to point at', async () => {
     const { composePrompt } = await import('@lingtai/domain')
-    const c = composePrompt(fixBriefParts({ ...base, diff: 'x'.repeat(5_000), diffAt: { from, to }, ticket: TICKET }))
+    const c = composePrompt(
+      fixBriefParts({ ...base, diff: 'x'.repeat(5_000), diffAt: { from, to }, ticket: TICKET }) as PromptPart[],
+    )
     expect(c.refs).toEqual([])
     expect(c.handed).toContain('[diff truncated at 1000 bytes]')
     expect(c.recorded).toBe(c.handed)
+  })
+
+  it('hands the printed output of a refusing command as a step part, trimmed as it was inserted (#928)', () => {
+    const parts = fixBriefParts({
+      ...base,
+      refusal: { on: 'output', output: '  FAIL x\n' },
+      diff: '+x',
+      ticket: TICKET,
+    })
+    expect(parts).toContainEqual({ text: 'FAIL x', onStep: { field: 'evidence', trimmed: true } })
+    expect(parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')).toBe(
+      fixBrief({ ...base, refusal: { on: 'output', output: '  FAIL x\n' }, diff: '+x', ticket: TICKET }),
+    )
   })
 })
