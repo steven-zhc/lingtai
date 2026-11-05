@@ -662,7 +662,7 @@ describe('the PATH note', () => {
     await askInstallAndBuild(
       w,
       input({
-        reader: reader({ 'pom.xml': '', mvnw: '' }),
+        reader: reader({ 'pom.xml': '<project/>', mvnw: '' }),
         files,
         onPath: async (tool: string) => tool !== 'java',
       }),

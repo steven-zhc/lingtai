@@ -536,10 +536,71 @@ const goDetector: StackDetector = {
 const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
 
 /**
- * Maven or Gradle from the build file's existence alone. Nothing is read or
- * parsed: pom.xml is XML and a Gradle script is a program, no parser for
- * either is a dependency here, and a malformed one fails in #436's trial.
- * Gradle wins when both are present, as the ticket says.
+ * Well-formedness only, no schema: every element closes in order and the
+ * document has exactly one root. No XML parser is a dependency here, so this
+ * is a tag stack over what is left after comments, CDATA and declarations.
+ */
+function xmlWellFormed(text: string): boolean {
+  const body = text
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')
+    .replace(/<\?[\s\S]*?\?>/g, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+  const stack: string[] = []
+  let roots = 0
+  let last = 0
+  const tag = /<(\/?)([^\s/>!?][^\s/>]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g
+  for (let m = tag.exec(body); m !== null; m = tag.exec(body)) {
+    if (/[<>]/.test(body.slice(last, m.index).replace(/&[a-z#0-9]+;/gi, ''))) return false
+    last = tag.lastIndex
+    if (m[1] === '/') {
+      if (stack.pop() !== m[2]) return false
+    } else {
+      if (stack.length === 0 && ++roots > 1) return false
+      if (m[4] !== '/') stack.push(m[2]!)
+    }
+  }
+  return stack.length === 0 && roots === 1 && !/[<>]/.test(body.slice(last))
+}
+
+/**
+ * A Gradle script is a program (Groovy or Kotlin) that only Gradle can parse;
+ * what can be told without it is that brackets pair up outside strings and
+ * comments, and that nothing is left open at the end.
+ */
+function gradleBalanced(text: string): boolean {
+  const stack: string[] = []
+  const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      if (end === -1) return false
+      i = end + 1
+    } else if (c === '"' || c === "'") {
+      const triple = text.startsWith(c.repeat(3), i)
+      const close = triple ? c.repeat(3) : c
+      i += triple ? 3 : 1
+      for (; i < text.length && !text.startsWith(close, i); i++) {
+        if (text[i] === '\\') i++
+        else if (!triple && text[i] === '\n') return false
+      }
+      if (i >= text.length) return false
+      i += close.length - 1
+    } else if (c === '(' || c === '[' || c === '{') stack.push(c)
+    else if (c in pairs && stack.pop() !== pairs[c]) return false
+  }
+  return stack.length === 0
+}
+
+/**
+ * Maven or Gradle from the build file's existence, once it has been read and
+ * found to hold together: well-formed XML for pom.xml, balanced brackets for
+ * a Gradle script (which only Gradle can truly parse — a subtler error fails
+ * in #436's trial). A file that cannot be read or does not hold together
+ * suggests nothing and says so. Gradle wins when both are present.
  */
 const javaDetector: StackDetector = {
   stack: 'Java',
@@ -578,6 +639,22 @@ const javaDetector: StackDetector = {
       tool = 'Maven'
       because = 'pom.xml is at the root'
     } else return none('absent')
+
+    const buildFile = tool === 'Maven' ? 'pom.xml' : gradle!
+    let text: string | null
+    try {
+      text = await reader.read(buildFile)
+    } catch {
+      text = null
+    }
+    if (text === null) {
+      notes.push(`${buildFile} could not be read`)
+      return { ...none('absent'), presence: 'present' }
+    }
+    if (!(tool === 'Maven' ? xmlWellFormed(text) : gradleBalanced(text))) {
+      notes.push(`${buildFile} does not parse`)
+      return { ...none('absent'), presence: 'present' }
+    }
 
     const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
     const wrapper = await hasOrUnknown(reader, wrapperName)
