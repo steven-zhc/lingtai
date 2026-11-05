@@ -557,6 +557,10 @@ type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { 
  * try/catch `FORMAT` gets, so a fact a formatter cannot fill (`WaitStarted`
  * with no `question` at all) falls to the fallback sentence.
  */
+/** Which `StepEnded` a route named and the reader was not given (#932). */
+const atVersion = (u: { version: number | null }): string =>
+  u.version === null ? '' : ` (StepEnded version ${u.version})`
+
 const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   StepEnded: (f) => {
     const head = stepAt({ step: f.step, action: f.action })
@@ -624,7 +628,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // so the destination a `for ${action}` clause used to name is still on the
   // page.
   RoundOpened: (f) => {
-    if (f.findingsUnknown === true) return `round ${f.round} — findings not found`
+    if (f.findingsUnknown !== undefined) return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}`
     const n = f.findings.length
     return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}`
   },
@@ -635,7 +639,10 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // own stream, which `attempts.ts`'s `lastRun` already reads (`TicketReleased`
   // is what used to repeat them here, and `#502`'s header says there is
   // nothing left for the release to repeat).
-  Restarted: (f) => `restart ${f.restart}`,
+  Restarted: (f) =>
+    f.evidenceUnknown === undefined
+      ? `restart ${f.restart}`
+      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}`,
 
   /**
    * Which kind of hold, then the question, then the move that was

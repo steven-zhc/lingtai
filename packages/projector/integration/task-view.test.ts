@@ -135,6 +135,12 @@ const restartDecision: RouteDecision = { _tag: 'Selected', candidate: 'restart' 
 
 /** `{ type, actor, data }` off a builder's own `Envelope`, or off one of this file's own non-retired literals — both already carry the three fields `append` wants. */
 function toAppend(e: { type: string; actor: string; data: unknown }): ToAppend {
+  // A store refuses the retired `PassRouted` (#932): the builder's route is appended as the
+  // `ProposalRouted` that kept its evidence (`ended: null`).
+  if (e.type === 'PassRouted') {
+    const d = e.data as { offer: object }
+    return { type: 'ProposalRouted', actor: e.actor, data: { ...d, offer: { ...d.offer, ended: null } } }
+  }
   return { type: e.type, actor: e.actor, data: e.data }
 }
 

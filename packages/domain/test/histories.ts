@@ -1101,6 +1101,10 @@ const late_declinedThenAccepted = (() => {
  */
 function proposalRoutedByReference(): readonly Envelope[] {
   const run = anAttempt(attemptStream('proposal-routed'))
+  const started = runStarted(run, runTicket)
+  const ended = run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')]))
+  // The route names the `StepEnded` itself, not the `StepStarted` before it.
+  const endedVersion = ended.find((e) => e.type === 'StepEnded')!.version
   const offer = {
     proposal: { _tag: 'ReviewFindings' as const },
     available: [
@@ -1108,15 +1112,15 @@ function proposalRoutedByReference(): readonly Envelope[] {
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
     ],
     unavailable: [],
-    ended: { version: 2, action: 'cold' },
+    ended: { version: endedVersion, action: 'cold' },
   }
   const reply = { _tag: 'Selected' as const, candidate: 'fix-lines', why: 'the lines are wrong' }
   const decision = { _tag: 'Selected' as const, candidate: 'fix-lines' }
   // Not `stamp`: it spends the module's seq and slot counters, and a history
   // built in the middle would shift every one after it (see the header).
   return [
-    runStarted(run, runTicket),
-    ...run.aStepEnded(outcome('review', 0, [act('verdict', 'cold', 'sha-1', refused, 'agent')])),
+    started,
+    ...ended,
     run.event('ProposalRouted', { runId: run.runId, offer, reply, decision }),
     run.event('StepStarted', { runId: run.runId, step: 'implement', round: 1 }),
   ].map((e, i) => ({ ...e, seq: BigInt(900_000_000 + i), at: new Date(START_MS - (10 - i) * STEP_MS) }))

@@ -230,10 +230,15 @@ export type BoardFact =
       readonly round: number
       readonly action: string
       readonly findings: readonly Finding[]
-      /** The findings could not be read: the route names a `StepEnded` the reader was not given (#932). */
-      readonly findingsUnknown?: boolean
+      /** The findings could not be read: the route names a `StepEnded` the reader was not given (#932). `version` is the one it names. */
+      readonly findingsUnknown?: { readonly version: number | null }
     }
-  | { readonly _tag: 'Restarted'; readonly restart: number }
+  | {
+      readonly _tag: 'Restarted'
+      readonly restart: number
+      /** The route's evidence could not be read, as for `RoundOpened.findingsUnknown` (#932). */
+      readonly evidenceUnknown?: { readonly version: number | null }
+    }
   | {
       readonly _tag: 'WaitStarted'
       readonly question: string | undefined
@@ -308,7 +313,13 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
       if (next._tag === 'FixRound') {
         const resolved = resolveOffer(d.offer, endedAt)
         if (resolved._tag === 'Unresolved') {
-          facts.push({ _tag: 'RoundOpened', round: next.round, action: '', findings: [], findingsUnknown: true })
+          facts.push({
+            _tag: 'RoundOpened',
+            round: next.round,
+            action: '',
+            findings: [],
+            findingsUnknown: { version: resolved.version },
+          })
         } else {
           const p = resolved.offer.proposal
           facts.push({
@@ -320,7 +331,12 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
         }
       }
       if (next._tag === 'Requeued' && next.cause._tag === 'Restart') {
-        facts.push({ _tag: 'Restarted', restart: next.cause.restart })
+        const resolved = resolveOffer(d.offer, endedAt)
+        facts.push(
+          resolved._tag === 'Unresolved'
+            ? { _tag: 'Restarted', restart: next.cause.restart, evidenceUnknown: { version: resolved.version } }
+            : { _tag: 'Restarted', restart: next.cause.restart },
+        )
       }
       return facts
     }
