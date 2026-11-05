@@ -10,7 +10,7 @@ discussion: discussion this conversation asked · 2 messages · no limit No tria
 resolutions: Resolutions
 moves: Approve and continue Continue this attempt from its recorded commit. Any refusal at this hold is waived. nothing to approve — this run recorded no sha to continue from Start over from base Send the composed prompt for attempt 2; the new attempt starts from base with the recipe’s rounds. This neither spends nor refunds an automatic restart. Send attempt 2 from base Leave blocked Add to the ticket and start over Append your text to the ticket body, then queue a new attempt from main with that text. This neither spends nor refunds an automatic restart. Enter the text to add before this can run. Text to add to the ticket body Write it into the body &amp; requeue Close the ticket End this ticket without another attempt. A reason is required. A closing reason is required. Close Cannot continue saved work The saved branch and head must be available before a fix round can be granted. Saved work could not be verified; reload this wait before continuing.
 pair: next attempt from base attempt 2 only 74 bytes ticket@1924 #147 — the reviewer crashes on a reused session id The reviewer crashed. Edit
-record: history · diff · findings · attempts · ticket"
+record: Ticket · Attempt 1"
 `;
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
@@ -22,5 +22,5 @@ why: run log not reading
 so-what: an agent is working
 moves: 
 pair: discussion reads the log, the ticket and the code — it cannot run anything Ask
-record: history · diff · findings · attempts · ticket"
+record: Ticket · Attempt 1"
 `;

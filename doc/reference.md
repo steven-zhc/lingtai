@@ -1017,7 +1017,7 @@ failure, not a number nobody was watching.
 | file | retired names in it |
 |---|---|
 | `apps/board/src/app/actions.ts` | `work-item` ×3 |
-| `apps/board/src/app/task/[id]/page.tsx` | `work-item` ×1 |
+| `apps/board/src/app/ticket-tab.tsx` | `work-item` ×1 |
 | `apps/board/src/lib/prompt.ts` | `work-item` ×1 |
 | `apps/cli/src/attach.ts` | `work-item` ×1 |
 | `apps/cli/src/commands.ts` | `work-item` ×1 |

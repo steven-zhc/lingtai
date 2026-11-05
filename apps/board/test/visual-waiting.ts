@@ -502,7 +502,7 @@ export async function preview(name: CaseName) {
         : null,
     totals: totalsOf(foldedRuns, discussions),
     spendCurrency: { lag: 0 },
-    history: [],
+    events: 0,
   }
   return { card, task }
 }

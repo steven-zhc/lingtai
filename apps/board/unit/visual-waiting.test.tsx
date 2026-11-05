@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 import { Card } from '../src/app/page.tsx'
 import { TriageBand } from '../src/app/standing.tsx'
-import { Attempt, TaskBody } from '../src/app/task/[id]/page.tsx'
+import { TaskBody } from '../src/app/task/[id]/layout.tsx'
+import { Attempt } from '../test/attempt-tab.tsx'
 import { CASE_NAMES, PREVIEW_NOW, preview } from '../test/visual-waiting.ts'
 
 describe('waiting visual previews', () => {
@@ -47,7 +48,9 @@ describe('waiting visual previews', () => {
     expect(card.progress).toBe(task.runs[0]?.progress)
     expect(html).toContain('A waiting pass hides its review findings')
     expect(html).toContain('Can these findings be handled on the current branch?')
-    expect(html).toContain('A missing branch makes continuation impossible')
+    // The gate's own words are the attempt's, in the tab of the attempt the page is deciding on.
+    const tab = renderToStaticMarkup(<Attempt run={task.runs[0]!} standing={task.standing} blocked now={PREVIEW_NOW} />)
+    expect(tab).toContain('A missing branch makes continuation impossible')
     expect(html).toContain('data-resolution="GrantFixRound"')
     if (available) {
       expect(task.standing.fixWork).toEqual({ head: 'b'.repeat(40), ref: 'agent/393' })
@@ -86,7 +89,7 @@ describe('waiting visual previews', () => {
     it(`${name} uses the preview clock for attempt ages`, async () => {
       const { task } = await preview(name)
       const run = task.runs[0]!
-      const html = renderToStaticMarkup(<Attempt run={run} alone deciding={false} now={PREVIEW_NOW} />)
+      const html = renderToStaticMarkup(<Attempt run={run} now={PREVIEW_NOW} />)
       expect(html).toContain(`${inWords(PREVIEW_NOW - Date.parse(run.at))} ago`)
     })
   }

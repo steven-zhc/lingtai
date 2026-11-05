@@ -15,9 +15,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { Attempt, RECORD_TABS } from '../src/app/task/[id]/page.tsx'
 import { changesFromHead, describeAction, forgetAttemptRecipes, recipeOfAttempt } from '../src/lib/recipe.ts'
 import { presentAttemptEvents, type AttemptView } from '../src/lib/task.ts'
+import { Attempt } from '../test/attempt-tab.tsx'
 
 const RECIPE = `
 version: 2
@@ -111,7 +111,7 @@ function fake(files: Record<string, string | Error>) {
   return { client, asked, atHead, heads: () => heads }
 }
 
-const render = (run: AttemptView) => renderToStaticMarkup(<Attempt run={run} alone={true} deciding={false} />)
+const render = (run: AttemptView) => renderToStaticMarkup(<Attempt run={run} />)
 
 beforeEach(() => forgetAttemptRecipes())
 
@@ -211,10 +211,6 @@ describe("the recipe beside an attempt's actions", () => {
     // Head is read per call here because this fake does not memoise it; the
     // board's `recipesFor` does, so a page with six attempts reads it once.
     expect(heads()).toBe(2)
-  })
-
-  it('does not grow the record a sixth tab', () => {
-    expect(RECORD_TABS).toEqual(['history', 'diff', 'findings', 'attempts', 'ticket'])
   })
 })
 

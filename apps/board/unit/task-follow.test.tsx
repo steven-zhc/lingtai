@@ -25,12 +25,15 @@ vi.mock('../src/lib/task.ts', async (original) => ({
   loadTask: vi.fn(async () => stub),
 }))
 
-const { default: TaskPage, TaskBody } = await import('../src/app/task/[id]/page.tsx')
+const { default: TaskLayout, TaskBody } = await import('../src/app/task/[id]/layout.tsx')
 const { Follow, Following, Live, warning } = await import('../src/app/live.tsx')
 
 describe('the task route', () => {
   it('mounts the subscription around the page it re-renders', async () => {
-    const page = (await TaskPage({ params: Promise.resolve({ id: 'ticket-lingtai-172' }) })) as ReactElement<{
+    const page = (await TaskLayout({
+      params: Promise.resolve({ id: 'ticket-lingtai-172' }),
+      children: 'tab',
+    })) as ReactElement<{
       children: ReactNode
     }>
     const mounted = Children.toArray(page.props.children).filter(isValidElement)
@@ -40,8 +43,10 @@ describe('the task route', () => {
     // The page it keeps current is the reducer this request read, and it is inside
     // the subscription, so what the stream says reaches the bar and the pane.
     const inside = Children.toArray(follow.props.children).filter(isValidElement)
-    const body = inside.find((el) => el.type === TaskBody) as ReactElement<{ task: TaskDetail }>
+    const body = inside.find((el) => el.type === TaskBody) as ReactElement<{ task: TaskDetail; children: ReactNode }>
     expect(body.props.task).toBe(stub)
+    // The open tab is inside it too, so one append refreshes both segments.
+    expect(body.props.children).toBe('tab')
     // The subscription without the board's dot: the dot is the board's (#64).
     expect(mounted.map((el) => el.type)).not.toContain(Live)
   })

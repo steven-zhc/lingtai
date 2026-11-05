@@ -24,7 +24,9 @@ import type { Envelope } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { diffFact, RECORD_TABS, Record, TaskBody, UnpushedBanner } from '../src/app/task/[id]/page.tsx'
+import { AttemptTab } from '../src/app/attempt-tab.tsx'
+import { TaskBody, UnpushedBanner } from '../src/app/task/[id]/layout.tsx'
+import { TicketTab } from '../src/app/ticket-tab.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView } from '../src/lib/queued.ts'
 import {
@@ -100,7 +102,7 @@ const task = (own: Envelope[], runs: AttemptView[], rest: Partial<TaskDetail> = 
   held: null,
   totals: totalsOf(runs),
   spendCurrency: { lag: 0 },
-  history: [],
+  events: 0,
   ...rest,
 })
 
@@ -460,8 +462,8 @@ describe('a blocked task', () => {
     expect(positions.every((position) => position >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
     expect(html.indexOf('Send attempt 2')).toBeLessThan(html.indexOf('>Close</button>'))
-    expect(html.slice(0, positions[4])).not.toContain('<pre class="sraw"')
-    expect(html.slice(positions[4])).toContain(`<pre class="sraw">${CRASH}</pre>`)
+    // The raw refusal is the deciding attempt's, in its tab, and not in the layout.
+    expect(html).not.toContain('<pre class="sraw"')
   })
 
   it('puts a recommended body edit before the other resolutions in reading order', () => {
@@ -488,23 +490,29 @@ describe('a blocked task', () => {
     expect(resolutions).toContain('Triage recommended')
   })
 
-  it('keeps the raw refusal in Attempts, after the decision', () => {
-    const html = page(blocked())
+  it("keeps the raw refusal in the deciding attempt's tab, after the decision", () => {
+    const t = blocked()
+    const html = page(t)
     // No recommendation on this fixture, so there is no so-what element to end the slice on.
     expect(html).not.toContain('data-rank="so-what"')
     const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="discussion"'))
-    const attempts = html.slice(html.indexOf('id="record-attempts"'))
     expect(why).not.toContain('<pre class="sraw"')
-    expect(attempts).toContain('<details class="sreason" open=""')
-    expect(attempts).toContain(CRASH)
+    // The refusal is the attempt's: it is in that attempt's tab and not in the layout.
+    expect(html).not.toContain('<pre class="sraw"')
+    const tab = renderToStaticMarkup(
+      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+    )
+    expect(tab).toContain('<details class="sreason" open=""')
+    expect(tab).toContain(CRASH)
   })
 
   it('prints each identifier once', () => {
     const read = page(blocked()).replace(/<[^>]*>/g, ' ')
     const count = (needle: string) => read.split(needle).length - 1
     expect(count(ITEM)).toBe(1)
-    // Short or as the whole uuid, the run is printed once: the attempt row's.
-    expect(count('pass-52feebd1')).toBe(1)
+    // The run id is not visible text anywhere on the page: the attempt's tab
+    // is `Attempt N`, and the id is only in a `title` (#885).
+    expect(count('pass-52feebd1')).toBe(0)
   })
 })
 
@@ -520,7 +528,13 @@ describe('a running task', () => {
     expect(html).toContain('class="standing live"')
     // One follower for one file: the attempt row points up instead.
     expect(html.split('<details class="alog').length - 1).toBe(1)
-    expect(html).toContain('being followed at the top of this page')
+    // And the attempt's own tab says so rather than opening a second one.
+    const t = running()
+    const tab = renderToStaticMarkup(
+      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+    )
+    expect(tab).toContain('being followed at the top of this page')
+    expect(tab).not.toContain('<details class="alog')
   })
 
   it('wears no brass anywhere, because nobody is waiting on you', () => {
@@ -627,7 +641,11 @@ describe('the rail on the task page', () => {
     const start = html.indexOf('class="swaiting-head"')
     return html.slice(start, html.indexOf('</header>', start) + 9)
   }
-  const record = (html: string) => html.slice(html.indexOf('data-rank="record"'))
+  /** The attempt's tab: where the record draws its rail now (#885). */
+  const record = (t: TaskDetail) =>
+    renderToStaticMarkup(
+      <AttemptTab detail={{ taskId: ITEM, project: 'lingtai', run: t.runs[0]!, standing: t.standing, events: [] }} />,
+    )
 
   /**
    * **Since `#502`, `StepStarted` carries `{step, round}` alone** — 0120's own
@@ -676,13 +694,13 @@ describe('the rail on the task page', () => {
     )
   })
 
-  it("is the board's own Rail, imported by both routes and defined in neither", () => {
+  it("is the board's own Rail, imported by the board and the attempt tab and defined in neither", () => {
     const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-    for (const route of ['../src/app/page.tsx', '../src/app/task/[id]/page.tsx', '../src/app/standing.tsx']) {
+    for (const route of ['../src/app/page.tsx', '../src/app/attempt-tab.tsx', '../src/app/standing.tsx']) {
       expect(read(route)).not.toMatch(/function (Rail|Segs)\b/)
     }
     expect(read('../src/app/page.tsx')).toMatch(/from ["']\.\/rail\.tsx["']/)
-    expect(read('../src/app/task/[id]/page.tsx')).toMatch(/from ["']\.\.\/\.\.\/rail\.tsx["']/)
+    expect(read('../src/app/attempt-tab.tsx')).toMatch(/from ["']\.\/rail\.tsx["']/)
     expect(read('../src/app/rail.tsx')).toMatch(/export function Rail\b/)
   })
 
@@ -718,9 +736,9 @@ describe('the rail on the task page', () => {
 
     const generic = opening(page(blocked()))
     expect(generic).not.toContain('The ticket’s context is in the complete issue.')
-    expect(generic).toContain('href="#record-ticket"')
+    expect(generic).toContain(`href="/task/${ITEM}/ticket"`)
     expect(generic).not.toContain('class="tcontext"')
-    expect(generic.indexOf('href="#record-ticket"')).toBeLessThan(generic.indexOf('class="seq"'))
+    expect(generic.indexOf(`href="/task/${ITEM}/ticket"`)).toBeLessThan(generic.indexOf('class="seq"'))
   })
 
   /**
@@ -776,76 +794,59 @@ describe('the rail on the task page', () => {
     // `over` is what `loadTask` passes for the attempt that landed.
     const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: true })])
     expect(landed.standing.state).toBe('landed')
-    const html = record(page(landed))
+    const html = record(landed)
     expect(html).toContain('class="seg s-never-ran"')
     expect(html).toMatch(/<li class="seg s-never-ran"[^>]*title="proposed: build, review — configured and did not run/)
     expect(html).not.toMatch(/\d+ pending/)
 
     // And the same stream on an item that did not land is only not reached yet:
     // `over` is the whole of the difference.
-    const midway = record(page(task(own.slice(0, 1), [presentAttemptEvents(claim, 1, events)])))
+    const midway = record(task(own.slice(0, 1), [presentAttemptEvents(claim, 1, events)]))
     expect(midway).not.toContain('s-never-ran')
     expect(midway).toContain('class="seg s-pending"')
   })
 })
 
 describe('the record', () => {
-  /** Always the same five, in the same order, whatever the state (0118 §2, #417). */
-  it('is five tabs in a fixed order, the same five in every state, open on history', () => {
-    const run = presentAttemptEvents(claim, 1, [
-      e(RUN, 'RunStarted', { baseSha: BASE }),
-      e(RUN, 'RunProposedCompletion', { headSha: HEAD }),
-      e(RUN, 'StepStarted', { step: 'proposed', round: 0 }),
-      e(RUN, 'StepEnded', {
-        outcome: { step: 'proposed', round: 0, actions: [verdictAction('review', 'ok', 'accepted')] },
-      }),
-      e(RUN, 'RunFinished', { turns: 12, durationMs: 600_000, exitCode: 0 }),
-    ])
-    const landed = task(
-      [
-        e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
-        e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
-      ],
-      [run],
+  const tabsOf = (html: string) => [...html.matchAll(/<a class="rtab"[^>]*href="([^"]+)"/g)].map((r) => r[1])
+
+  it('is the Ticket, then one tab per attempt, newest first, each its own link', () => {
+    const second = { ...running().runs[0]!, runId: 'pass-2', attempt: 2 }
+    const t = task([], [{ ...blocked().runs[0]!, attempt: 1 }, second])
+    const html = renderToStaticMarkup(<TaskBody task={t}>child</TaskBody>)
+    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/attempt/2`, `/task/${ITEM}/attempt/1`])
+    // Labelled by the board's word, `Attempt N`, with no run id as text.
+    expect(html).toContain('Attempt 2')
+    expect(html).not.toContain('>pass-')
+    // The children are the open tab; the layout holds no tab's content itself.
+    expect(html).toContain('child')
+  })
+
+  it('names a lone attempt `Attempt 1`', () => {
+    const html = renderToStaticMarkup(<TaskBody task={task([], [blocked().runs[0]!])}>x</TaskBody>)
+    expect(html).toContain('Attempt 1')
+    expect(html).not.toContain('the run')
+  })
+
+  it('has only the Ticket tab when nothing has been dispatched', () => {
+    const html = renderToStaticMarkup(<TaskBody task={task([], [])}>x</TaskBody>)
+    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`])
+  })
+})
+
+describe('the Ticket tab', () => {
+  it('shows the ticket, then the ticket stream as a closed Events section', () => {
+    const html = renderToStaticMarkup(
+      <TicketTab
+        detail={{
+          taskId: ITEM,
+          ticket: { ...blocked().ticket!, title: 'Fix the thing' },
+          events: [],
+        }}
+      />,
     )
-    const queuedTask = task([], [], {
-      queued: {
-        position: 2,
-        inLine: 5,
-        notOffered: null,
-        runnableAt: null,
-        paused: false,
-        dependenciesUnread: null,
-        plan: null,
-        problem: null,
-      },
-    })
-    // Not vacuous: each is the state its name says.
-    expect(landed.standing.state).toBe('landed')
-    expect(queuedTask.standing.state).toBe('queued')
-    expect(page(queuedTask)).toContain('offered by GitHub')
-    for (const t of [blocked(), running(), landed, queuedTask]) {
-      const html = page(t)
-      const tabs = [
-        ...html.matchAll(/<button type="button" role="tab" id="rtab-([a-z]+)" aria-selected="(true|false)"/g),
-      ]
-      expect(tabs.map((r) => r[1])).toEqual([...RECORD_TABS])
-      // History, and only history, is selected — whatever the state: a page
-      // that picked the opening tab by state was read from the top every time.
-      expect(tabs.map((r) => r[2])).toEqual(['true', 'false', 'false', 'false', 'false'])
-      // Every panel is in the markup the server sent, so a reader with no
-      // JavaScript — and this suite, with no DOM to click a tab in — still
-      // gets the whole record.
-      const panels = [...html.matchAll(/<div role="tabpanel" id="record-([a-z]+)"/g)]
-      expect(panels.map((r) => r[1])).toEqual([...RECORD_TABS])
-    }
-    // `ticket`, and it was `prompt`: the tab opens with the ticket and only
-    // then the document each attempt was handed, so it was labelled by the
-    // second thing in it — and the one place holding *what was asked*
-    // announced itself as the agent's input. `history`, first, and not nested
-    // under `attempts`: the log is the point of an event-sourced system being
-    // legible and belongs beside the other four, not a scroll under the ledger.
-    expect([...RECORD_TABS]).toEqual(['history', 'diff', 'findings', 'attempts', 'ticket'])
+    expect(html.indexOf('Fix the thing')).toBeLessThan(html.indexOf('Events'))
+    expect(html).not.toContain('open=""><summary><span class="hdocname">Events')
   })
 })
 
@@ -892,49 +893,17 @@ describe('the waiting links in the header (#584)', () => {
   })
 })
 
-describe('the Diff tab’s fact (#729)', () => {
-  const diff = (files: number) => ({ branch: 'agent/2', files, insertions: 4, deletions: 2 })
-  const run = (attempt: number, over: Partial<AttemptView> = {}): AttemptView =>
-    ({
-      runId: `run-${attempt}`,
-      attempt,
-      baseSha: 'a'.repeat(40),
-      headSha: 'b'.repeat(40),
-      files: [],
-      diff: null,
-      steps: [],
-      ...over,
-    }) as unknown as AttemptView
-  const touched = [{ path: 'a.md', op: 'edit' }] as unknown as AttemptView['files']
-
-  it('counts the files git found when the agent’s tools recorded none', () => {
-    expect(diffFact([run(1, { diff: diff(2) })])).toBe('2 files')
-    expect(diffFact([run(1, { diff: diff(1) })])).toBe('1 file')
-  })
-
-  it('names the attempt when a newer one has no diff', () => {
-    expect(diffFact([run(1, { diff: diff(2) }), run(2)])).toBe('2 files · attempt 1')
-  })
-
-  it('falls back to the touched paths when no attempt has a diff', () => {
-    expect(diffFact([run(1, { files: touched })])).toBe('1 path')
-    expect(diffFact([run(1)])).toBe('none touched')
-  })
-
-  it('does not take a zero as proof: it shows the path count', () => {
-    expect(diffFact([run(1, { diff: diff(0), files: touched })])).toBe('1 path')
-  })
-
-  it('does not let an earlier attempt’s paths override a newer zero diff', () => {
-    expect(diffFact([run(1, { files: touched }), run(2, { diff: diff(0) })])).toBe('none touched')
-  })
-
-  it('says the count, lines and branch in the attempt’s panel', () => {
+describe('the Changes section (#729)', () => {
+  it('says the count, lines and branch, with paths relative to the repository', () => {
     const reduced = presentAttemptEvents(claim, 1, [
       e(RUN, 'RunStarted', { baseSha: BASE }),
       e(RUN, 'RunProducedDiff', { branch: 'agent/2', headSha: HEAD, files: 2, insertions: 4, deletions: 2 }),
     ])
-    const html = renderToStaticMarkup(<Record task={{ ...task([], []), runs: [reduced] }} />)
+    const html = renderToStaticMarkup(
+      <AttemptTab
+        detail={{ taskId: ITEM, project: 'lingtai', run: reduced, standing: task([], []).standing, events: [] }}
+      />,
+    )
     expect(html).toContain('2 files, +4 −2, on agent/2')
     expect(html).not.toContain('This attempt touched no files.')
   })
