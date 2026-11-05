@@ -400,6 +400,11 @@ export function place(view: QueuedView): string | null {
   return `${ordinal(view.position)} of ${view.inLine} in line`
 }
 
+/** The first fact's label: the head of the line is there *first*, anyone else *here*. */
+export function whyLabel(position: number | null): string {
+  return position === 1 ? 'why first' : 'why here'
+}
+
 /** The attempts the conductor is holding, and how many it will hold at once. */
 export interface InFlight {
   running: { project: string; issue: string }[]

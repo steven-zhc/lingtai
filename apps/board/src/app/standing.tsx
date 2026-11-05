@@ -27,6 +27,7 @@ import {
   queuedChip,
   queuedSentence,
   runNowCaption,
+  whyLabel,
   type InFlight,
   type QueuedView,
 } from '@/lib/queued'
@@ -124,7 +125,7 @@ function QueuedBand({
       <div className="band-facts">
         {inLine ? (
           <div className="fact">
-            <span className="fk">{view.position === 1 ? 'why first' : 'why here'}</span>
+            <span className="fk">{whyLabel(view.position)}</span>
             <span className="fv">{view.kind ?? 'unknown'}</span>
             {kindOrder(view) !== null ? <span className="fs">{kindOrder(view)}</span> : null}
           </div>
