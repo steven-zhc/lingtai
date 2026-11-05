@@ -37,7 +37,15 @@ const standing = (over: Partial<StandingView> = {}): StandingView =>
   }) as unknown as StandingView
 
 const tab = (r: AttemptView, s: StandingView) => {
-  const detail: AttemptTabDetail = { taskId: 'ticket-lingtai-885', project: 'lingtai', run: r, standing: s, events: [] }
+  const detail: AttemptTabDetail = {
+    taskId: 'ticket-lingtai-885',
+    project: 'lingtai',
+    run: r,
+    standing: s,
+    events: [],
+    promptShown: null,
+    expanded: new Map(),
+  }
   return renderToStaticMarkup(<AttemptTab detail={detail} now={Date.parse('2026-11-02T10:00:00Z')} />)
 }
 

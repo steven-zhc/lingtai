@@ -13,6 +13,8 @@ export function Attempt({
   blocked = false,
   standing = {},
   events = [],
+  promptShown = null,
+  expanded = new Map(),
   now,
 }: {
   run: AttemptView
@@ -20,6 +22,8 @@ export function Attempt({
   blocked?: boolean
   standing?: Partial<StandingView>
   events?: AttemptTabDetail['events']
+  promptShown?: AttemptTabDetail['promptShown']
+  expanded?: AttemptTabDetail['expanded']
   now?: number
 }) {
   const detail: AttemptTabDetail = {
@@ -27,6 +31,8 @@ export function Attempt({
     project: 'lingtai',
     run,
     events,
+    promptShown,
+    expanded,
     standing: {
       state: followed ? 'running' : blocked ? 'blocked' : 'queued',
       runId: followed || blocked ? run.runId : null,

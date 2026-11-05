@@ -13,9 +13,11 @@
  */
 import { inWords } from '@lingtai/conductor/queue'
 
+import type { PromptShown } from '@/lib/expand-prompts'
 import type { HistoryLine } from '@/lib/history'
 
 import { DocumentBody } from './markdown.tsx'
+import { ShownPrompt } from './shown-prompt.tsx'
 
 /**
  * A document, collapsed, labelled with its field and its size.
@@ -41,7 +43,7 @@ function Document({ field, text, bytes, source }: HistoryLine['documents'][numbe
   )
 }
 
-export function HistoryRow({ line }: { line: HistoryLine }) {
+export function HistoryRow({ line, expanded }: { line: HistoryLine; expanded?: PromptShown | undefined }) {
   return (
     // Every row opens, including the ones whose summary already says
     // everything: a reader should not have to know which types the formatter
@@ -75,9 +77,21 @@ export function HistoryRow({ line }: { line: HistoryLine }) {
         seq {line.seq} · {line.streamId} v{line.version} · schema {line.schemaVer}
       </p>
       <pre className="hraw">{line.raw}</pre>
-      {line.documents.map((d) => (
-        <Document key={d.field} {...d} />
-      ))}
+      {line.documents.map((d) =>
+        // A `RunPrompted` that holds markers draws the prompt as it was handed
+        // (#933); the payload above stays as recorded.
+        expanded !== undefined && d.field === 'prompt' ? (
+          <details key={d.field} className="hdoc">
+            <summary>
+              <span className="hdocname">{d.field}</span>
+              <span className="hdocsize">{d.bytes} bytes</span>
+            </summary>
+            <ShownPrompt shown={expanded.shown} lines={expanded.lines} />
+          </details>
+        ) : (
+          <Document key={d.field} {...d} />
+        ),
+      )}
     </details>
   )
 }
