@@ -14,8 +14,8 @@ import type { EventStore } from '@lingtai/event-store'
  *
  * **A prompt is a string or a composed prompt** (#927). A string is recorded
  * whole. A `ComposedPrompt` is recorded as its marked form with a `refs` entry per
- * marker — each carrying the `sha256` of the value it stands for, which the
- * domain cannot compute — while `bytes` stays the size of the prompt as handed.
+ * marker — each carrying the `sha256` of the value it stands for, computed here
+ * with `node:crypto` — while `bytes` stays the size of the prompt as handed.
  * Nothing is written to `refs` when nothing was referenced, so such an event is
  * the one written before this existed.
  *

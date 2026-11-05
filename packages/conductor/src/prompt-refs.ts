@@ -16,8 +16,8 @@ import type { EventStore } from '@lingtai/event-store'
  * **It never throws and never invents text.** A read that fails, an event that is
  * not there or holds no `body`, a diff that git cannot produce, a value whose size
  * or `sha256` is not the one recorded — each is that entry's `unresolved`, with a
- * reason. The size and the hash are checked here because the domain, which holds
- * the size check too, cannot hash.
+ * reason. The size and the hash are checked here as well as in
+ * `expandPrompt`, which checks both itself, so a mismatch is reported per entry.
  */
 export interface PromptRefPorts {
   readonly store: Pick<EventStore, 'read'>

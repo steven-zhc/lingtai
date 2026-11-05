@@ -17,7 +17,8 @@ import { z } from 'zod'
  *
  * Pure, and no `node:` import: the board's client components import this
  * package. The hash that makes a same-size, different-content value refusable is
- * computed by the recorder and checked by the resolver, in `packages/conductor`.
+ * computed by the recorder in `packages/conductor`, and checked there by the
+ * resolver and here by `expandPrompt` (with the pure-JS `sha256Hex`).
  */
 export const PromptRef = z.discriminatedUnion('_tag', [
   z.object({
