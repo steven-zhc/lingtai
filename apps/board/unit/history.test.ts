@@ -218,6 +218,14 @@ const SAMPLES = {
       decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
     },
   ],
+  ProposalRouted: [
+    {
+      runId: RUN,
+      offer: { ...NOT_ASKED, ended: null },
+      reply: { _tag: 'NotAsked' },
+      decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
+    },
+  ],
   ConductorPaused: [{ by: 'human:steven', reason: 'maintenance', until: null, holdsAcrossStarts: false }],
   ConductorResumed: [{ by: 'human:steven' }],
   ConductorShutdownRequested: [{ by: 'human:steven', reason: 'picking up #88', timeoutMs: null, force: false }],
