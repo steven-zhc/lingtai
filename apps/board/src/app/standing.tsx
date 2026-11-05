@@ -722,12 +722,6 @@ export function Standing({
     standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
       ? standing.triageStatus.result.cause
       : null
-  const triageQuestions =
-    cause?._tag === 'UndecidedQuestion'
-      ? cause.questions
-      : cause?._tag === 'ConflictingHunks'
-        ? cause.hunks.flatMap((hunk) => (hunk._tag === 'Divergent' ? [hunk.question] : []))
-        : []
   const waiting = standing.state === 'blocked'
   const isFramed = framed(standing.state)
   const conflict =
@@ -842,7 +836,7 @@ export function Standing({
   return (
     <TriagePicks
       waitId={standing.state === 'blocked' ? standing.waitId : null}
-      questions={triageQuestions}
+      cause={cause}
       recommended={triageRecommended}
     >
       <section className={`standing${mark}`}>

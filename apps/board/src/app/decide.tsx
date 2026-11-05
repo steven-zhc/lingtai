@@ -281,6 +281,8 @@ export function ContinueFixing({
   const [detail, setDetail] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [, startTransition] = useTransition()
+  const triage = useTriageDraft()
+  const picks = triage?.waitId === waitId ? triage.picks : {}
   return (
     <div className="decide">
       {done ? null : (
@@ -291,7 +293,7 @@ export function ContinueFixing({
             setPending(true)
             setDetail(null)
             startTransition(async () => {
-              const result = await continueFixingCard({ project, issue, waitId, onSha })
+              const result = await continueFixingCard({ project, issue, waitId, onSha, picks })
               setPending(false)
               setDone(result.ok)
               setDetail(result.detail)
@@ -530,7 +532,14 @@ export function Requeue({
                       question: question ?? '',
                       waitId,
                     })
-                  : await requeueCard({ project, issue, note, waitId })
+                  : await requeueCard({
+                      project,
+                      issue,
+                      note,
+                      waitId,
+                      // A withdrawal sends no agent, so it carries no triage answers.
+                      picks: withdrawing || shared?.waitId !== waitId ? {} : shared.picks,
+                    })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)

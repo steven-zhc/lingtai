@@ -238,3 +238,17 @@ describe('EditBodyAndRequeue keeps its own text (#921)', () => {
     expect(body).not.toContain('which helper? — use ora')
   })
 })
+
+describe('Requeue writes the person’s picks (#922)', () => {
+  it('writes a non-recommended pick, and refuses a stale one writing nothing', async () => {
+    const one = await blocked(undecided)
+    const requeue = (picks: Record<number, string>, ctx: typeof one) =>
+      requeueHolding({ by: 'human:steven', note: '', github: ctx.tickets, picks }, ctx.store, ctx.ticketId)
+    expect(await requeue({ 0: 'b' }, one)).toMatchObject({ ok: true })
+    expect((await one.tickets.getIssue(ISSUE)).body).toContain('which helper? — use nothing')
+
+    const two = await blocked(undecided)
+    expect(await requeue({ 0: 'zzz' }, two)).toMatchObject({ ok: false, reason: 'stale' })
+    expect((await two.tickets.getIssue(ISSUE)).body).toBe('the ticket')
+  })
+})
