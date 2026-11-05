@@ -45,12 +45,14 @@ const ordered = (entries: readonly Entry[]): Timing[] =>
 
 /**
  * Runs `fn` in a scope that collects every `timed` read it makes, in start
- * order, inside a root span `page <label>` (#787) that those reads become the
- * children of. `root: true` is what makes it a root: otherwise its parent is
- * Next's request span, which the exporter drops. The span carries no attribute
+ * order, inside a span `page <label>` (#787) that those reads become the
+ * children of. Under Next the active span is not the request span (Next
+ * activates render spans of its own, which the exporter drops), so `OnlyScope`
+ * re-parents this span onto the request span, which it forwards as a stripped
+ * copy (#883); with no request span (a unit test) it is a root. The span carries no attribute
  * — the label is a route pattern, never an id.
  *
- * A page that loads outside `measure` has no root span, and its reads export
+ * A page that loads outside `measure` has no page span, and its reads export
  * as orphans.
  */
 export async function measure<T>(fn: () => Promise<T>, options: MeasureOptions = {}): Promise<[T, readonly Timing[]]> {
@@ -60,7 +62,7 @@ export async function measure<T>(fn: () => Promise<T>, options: MeasureOptions =
   const label = options.label ?? '/'
   const entries: Entry[] = []
   const began = now()
-  return trace.getTracer('lingtai-board').startActiveSpan(`page ${label}`, { root: true }, async (span) => {
+  return trace.getTracer('lingtai-board').startActiveSpan(`page ${label}`, async (span) => {
     try {
       const value = await scope.run({ now, entries, calls: 0 }, fn)
       return [value, ordered(entries)] as [T, readonly Timing[]]
