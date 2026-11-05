@@ -253,7 +253,7 @@ import {
   runAttempt,
 } from './run-attempt.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
-import { stepsResolved } from './steps-resolved.ts'
+import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
@@ -3703,14 +3703,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // Before the plan that names its hash, and at version 0 (see
                 // `recordRecipe`); only a refusal other than "already there"
                 // is a defect, kept for the handler as `appendNow` keeps one.
-                yield* Effect.promise(async () => {
-                  try {
-                    await recordRecipe(store, resolved)
-                  } catch (defect) {
+                yield* Effect.promise(() =>
+                  recordRecipe(store, resolved).catch((defect: unknown) => {
                     unappended ??= defect
                     throw defect
-                  }
-                })
+                  }),
+                )
                 yield* Effect.promise(() =>
                   appendNow(runId, [
                     {

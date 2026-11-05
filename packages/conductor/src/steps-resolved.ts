@@ -36,17 +36,19 @@ export function recipeRecorded(resolved: ResolvedRecipe) {
  * the hash is already recorded, which is the answer and not a failure; anything
  * else is the caller's defect.
  */
-export async function recordRecipe(
+export function recordRecipe(
   store: Pick<EventStore, 'append'>,
   resolved: ResolvedRecipe,
 ): Promise<'recorded' | 'already'> {
-  try {
-    await store.append(recipeStream(resolved.configHash), 0, [
+  return store
+    .append(recipeStream(resolved.configHash), 0, [
       { type: 'RecipeRecorded', actor: 'conductor', data: parsePayload('RecipeRecorded', recipeRecorded(resolved)) },
     ])
-    return 'recorded'
-  } catch (e) {
-    if (e instanceof ConcurrencyError) return 'already'
-    throw e
-  }
+    .then(
+      () => 'recorded' as const,
+      (e: unknown) => {
+        if (e instanceof ConcurrencyError) return 'already' as const
+        throw e
+      },
+    )
 }
