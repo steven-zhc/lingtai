@@ -397,6 +397,8 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .cause-chip--merge { background: #63549e; color: #fff; border-color: #63549e; }
 .cause-chip--oversized { background: #7a3e6e; color: #fff; border-color: #7a3e6e; }
 .cause-chip--setup { background: #3a4a50; color: #fff; border-color: #3a4a50; }
+/* A place in line is no triage cause, so it takes no cause's hue. */
+.cause-chip--queue { background: var(--surface-2); color: var(--ink-2); border-color: var(--rule); }
 .waiting-cause-summary,
 .waiting-card .waiting-held { margin: 0; color: var(--ink-2); font-size: 12.5px; }
 .waiting-held-badge { color: var(--signal); font-weight: 600; letter-spacing: 0.04em; }
@@ -1384,29 +1386,41 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .saftermove--closed, .saftermove--failed { background: #f6e1de; border-color: #e8c3be; }
 .saftermove--partial { background: #f7ead6; border-color: #e0c9a4; }
 
-.detail--waiting .triage-band {
+.detail--waiting .triage-band,
+.detail--queued .triage-band,
+.detail--running .triage-band {
   gap: 0.8rem;
   padding: clamp(1.25rem, 2.5vw, 2rem);
   border: 1px solid var(--rule);
   background: var(--accent-soft);
 }
-.detail--waiting .triage-label {
+.detail--waiting .triage-label,
+.detail--queued .triage-label,
+.detail--running .triage-label {
   color: var(--accent-ink);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-.detail--waiting .triage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; min-width: 0; }
-.detail--waiting .triage-head .triage-cause { margin: 0; }
-.detail--waiting .triage-cause {
+.detail--waiting .triage-head,
+.detail--queued .triage-head,
+.detail--running .triage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; min-width: 0; }
+.detail--waiting .triage-head .triage-cause,
+.detail--queued .triage-head .triage-cause,
+.detail--running .triage-head .triage-cause { margin: 0; }
+.detail--waiting .triage-cause,
+.detail--queued .triage-cause,
+.detail--running .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
   font-size: 0.78rem;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
-.detail--waiting .triage-summary {
+.detail--waiting .triage-summary,
+.detail--queued .triage-summary,
+.detail--running .triage-summary {
   max-width: 55ch;
   color: var(--ink);
   font-family: var(--serif);
@@ -1414,7 +1428,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   line-height: 1.45;
   text-wrap: pretty;
 }
-.detail--waiting .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
+.detail--waiting .triage-recommendation,
+.detail--queued .triage-recommendation,
+.detail--running .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
 .detail--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
 .detail--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
 .detail--waiting .triage-fixes,
@@ -1455,27 +1471,42 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* Advice and the follow-up it invites are one reading surface. Pending and
    absent advice keep their own truthful Discussion presentation. */
 .sreading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
-.detail--waiting .sreading--advised {
+.detail--waiting .sreading--advised,
+.detail--queued .sreading--advised,
+.detail--running .sreading--advised {
   gap: 0;
   padding: clamp(1.25rem, 2.5vw, 2rem);
   border: 1px solid var(--rule);
   background: var(--accent-soft);
 }
-.detail--waiting .sreading--advised .triage-band {
+.detail--waiting .sreading--advised .triage-band,
+.detail--queued .sreading--advised .triage-band,
+.detail--running .sreading--advised .triage-band {
   padding: 0 0 1rem;
   border: 0;
   background: transparent;
 }
-.detail--waiting .sreading--advised .spair {
+.detail--waiting .sreading--advised .spair,
+.detail--queued .sreading--advised .spair,
+.detail--running .sreading--advised .spair {
   min-width: 0;
   padding-top: 1rem;
   border-top: 1px solid var(--rule-2);
 }
-.detail--waiting .sreading--advised .chat {
+.detail--waiting .sreading--advised .chat,
+.detail--queued .sreading--advised .chat,
+.detail--running .sreading--advised .chat {
   background: transparent;
   border: 0;
   padding-inline: 0;
 }
+.detail--queued .sreading--advised .triage-band:last-child { padding-bottom: 0; }
+/* The queued panel's facts: new names, so scoped to the band they sit in. */
+.band-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.8rem 1.5rem; min-width: 0; }
+.band-facts .fact { display: grid; gap: 0.2rem; align-content: start; min-width: 0; }
+.band-facts .fk { color: var(--ink-2); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.band-facts .fv { overflow-wrap: anywhere; }
+.band-facts .fs { color: var(--ink-2); font-size: 0.82rem; }
 /* Each allowed outcome has its own reading and action surface. The first card
    gets extra room, while auto-fit lets the remaining cards wrap inside the
    Waiting page's bounded measure. */

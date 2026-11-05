@@ -22,9 +22,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Rail } from '../src/app/rail.tsx'
-import { Coords, Standing } from '../src/app/standing.tsx'
+import { Coords, Standing, detailClass } from '../src/app/standing.tsx'
 import { backoffOf, holding, place, planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
-import type { StandingView } from '../src/lib/task.ts'
+import type { InFlight } from '../src/lib/queued.ts'
+import type { StandingView, TaskAnswer } from '../src/lib/task.ts'
 
 let seq = 0n
 
@@ -316,7 +317,7 @@ const NEVER_RUN: StandingView = {
   triageStatus: null,
   since: null,
   onYou: false,
-  who: 'waiting for a conductor to take it',
+  who: 'queued',
   question: null,
   needs: null,
   diagnosis: null,
@@ -366,7 +367,7 @@ describe('the block, for a ticket that has never run', () => {
     expect(html).toContain('4th of 11 in line')
     expect(html).toContain('never run')
     expect(html).toContain('offered by GitHub')
-    expect(html).toContain('waiting for a conductor to take it')
+    expect(html).not.toContain('waiting for a conductor to take it')
   })
 
   /**
@@ -435,5 +436,85 @@ describe('the block, for a ticket that has never run', () => {
     expect(html).not.toContain('Run it now')
     expect(html).not.toContain('what will happen')
     expect(html).not.toContain('in line')
+  })
+})
+
+// ------------------------------------------------------------ the panel ----
+
+/**
+ * 0118 §2: a queued page draws the waiting page's panel. Its place, the sentence
+ * and what is behind it are GitHub's; what is running is the log's.
+ */
+describe('the queued panel', () => {
+  const FLIGHT: InFlight = { running: [{ project: 'lingtai', issue: '899' }], slots: 1 }
+  const panel = (queued: QueuedView | null, github?: Promise<TaskAnswer>, inFlight: InFlight | null = FLIGHT) =>
+    renderToStaticMarkup(
+      <Standing
+        subject={null}
+        standing={NEVER_RUN}
+        project="lingtai"
+        issue={112}
+        taskId="ticket-lingtai-112"
+        discussions={[]}
+        outgoing={null}
+        queued={queued}
+        inFlight={inFlight}
+        github={github}
+      />,
+    )
+  const never = () => new Promise<TaskAnswer>(() => {})
+
+  it('draws the place, the sentence, no ask and three facts, and no Where it is', () => {
+    const html = panel({ ...QUEUED, behind: { issue: '120', title: 'x', kind: 'feature' } })
+    const at = (needle: string) => html.indexOf(needle)
+
+    expect(at('triage-band')).toBeGreaterThan(-1)
+    expect(at('In line')).toBeGreaterThan(at('triage-band'))
+    expect(html).toContain('cause-chip--queue">4th of 11</p>')
+    expect(at('3 ahead of it')).toBeGreaterThan(at('4th of 11'))
+    expect(at('Nothing is needed from you')).toBeGreaterThan(at('3 ahead of it'))
+    expect(html.match(/class="fact"/g)).toHaveLength(3)
+    expect(html).toContain('why here')
+    expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
+    expect(html).toContain('it starts when any of them ends')
+    expect(html).toContain('#120 · feature')
+    expect(html).not.toContain('Where it is')
+    expect(html).not.toContain('waiting for a conductor to take it')
+  })
+
+  it('draws placeholders for what GitHub decides, and what is running at once', () => {
+    const html = panel(null, never())
+
+    expect(html).toContain('In line')
+    // Three in the panel itself; other parts of the page wait for GitHub on their own.
+    const band = html.slice(html.indexOf('triage-band'), html.indexOf('</section>', html.indexOf('triage-band')))
+    expect(band.match(/asking GitHub…/g)).toHaveLength(3)
+    expect(html).toContain('running now')
+    expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
+    expect(html).not.toContain('Nothing is needed from you')
+    expect(html).not.toContain('why here')
+  })
+
+  it('names a hold and asks nothing, and says a failure rather than drawing a skeleton', () => {
+    const paused = panel({ ...QUEUED, position: null, paused: true })
+    expect(paused).toContain('paused')
+    expect(paused).not.toContain('Nothing is needed from you')
+
+    const failed = panel({ ...QUEUED, position: null, problem: 'secondary rate limit' })
+    expect(failed).toContain('Its place in the queue could not be read: secondary rate limit')
+    expect(failed).not.toContain('asking GitHub…')
+    expect(failed).not.toContain('Nothing is needed from you')
+  })
+
+  it('does not claim a slot when the recipe could not be read', () => {
+    const html = panel(QUEUED, undefined, null)
+    expect(html).toContain('the slot count is not known')
+  })
+
+  it('names the queued and running frames, and leaves approved alone', () => {
+    expect(detailClass('queued', false)).toContain('detail--queued')
+    expect(detailClass('running', false)).toContain('detail--running')
+    expect(detailClass('approved', false)).toBe('detail detail--framed')
+    expect(detailClass('blocked', false)).toBe('detail detail--waiting')
   })
 })

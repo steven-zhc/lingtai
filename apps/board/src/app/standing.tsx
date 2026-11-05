@@ -16,11 +16,20 @@ import {
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
-import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
+import {
+  holding,
+  kindOrder,
+  place,
+  queuedChip,
+  queuedSentence,
+  runNowCaption,
+  type InFlight,
+  type QueuedView,
+} from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
@@ -54,6 +63,155 @@ function Gh({
 /** Blocked, queued, running and approved pages share one frame: the `swaiting-head` header. The page class and the header both read this. */
 export const framed = (state: StandingView['state']): boolean =>
   state === 'blocked' || state === 'queued' || state === 'running' || state === 'approved'
+
+/** The page's class: the waiting page's panel rules reach the queued and running frames by name, never `detail--framed` alone. */
+export function detailClass(state: StandingView['state'], afterMove: boolean): string {
+  const frame =
+    state === 'blocked'
+      ? ' detail--waiting'
+      : framed(state)
+        ? ` detail--framed${state === 'queued' ? ' detail--queued' : state === 'running' ? ' detail--running' : ''}`
+        : ''
+  return `detail${frame}${state !== 'blocked' && afterMove ? ' detail--resolved' : ''}`
+}
+
+/**
+ * The queued page's panel (0118 §2): the waiting page's frame, drawn for a
+ * ticket in line. `view` is GitHub's half and null until `resolved`; *running
+ * now* is the log's and is drawn whichever it is, from the same markup.
+ */
+function QueuedBand({
+  view,
+  resolved,
+  inFlight,
+  project,
+  children,
+}: {
+  view: QueuedView | null
+  resolved: boolean
+  inFlight: InFlight | null
+  project: string | null
+  children?: ReactNode
+}) {
+  const inLine = resolved && view !== null && view.position !== null
+  const asking = <Skeleton shape="lines" count={1} label="asking GitHub…" />
+  const hold = resolved && view !== null ? holding(view) : null
+  const running = inFlight?.running ?? []
+  return (
+    <section className="triage-band triage-band--advised" data-rank="triage">
+      <div className="triage-head">
+        <span className="triage-label">
+          {resolved && view !== null && view.position === null ? 'Not in line' : 'In line'}
+        </span>
+        {resolved ? (
+          <p className="triage-cause cause-chip cause-chip--queue">
+            {view === null ? 'unknown' : queuedChip(view, inFlight)}
+          </p>
+        ) : (
+          <div className="triage-cause cause-chip cause-chip--queue">{asking}</div>
+        )}
+      </div>
+      {resolved ? (
+        <p className="triage-summary">
+          {view === null ? 'Its place in the queue could not be read.' : queuedSentence(view, inFlight)}
+        </p>
+      ) : (
+        <div className="triage-summary">{asking}</div>
+      )}
+      {resolved && view !== null && view.problem === null && hold === null ? (
+        <p className="triage-recommendation">Nothing is needed from you.</p>
+      ) : null}
+      <div className="band-facts">
+        {inLine ? (
+          <div className="fact">
+            <span className="fk">{view.position === 1 ? 'why first' : 'why here'}</span>
+            <span className="fv">{view.kind ?? 'unknown'}</span>
+            {kindOrder(view) !== null ? <span className="fs">{kindOrder(view)}</span> : null}
+          </div>
+        ) : null}
+        <div className="fact">
+          <span className="fk">running now</span>
+          <span className="fv">
+            {inFlight === null
+              ? 'not known'
+              : running.length === 0
+                ? 'nothing'
+                : running.map((r, i) => (
+                    <Fragment key={`${r.project}#${r.issue}`}>
+                      {i > 0 ? ', ' : ''}
+                      <Link href={`/task/ticket-${r.project}-${r.issue}`}>
+                        {r.project === project ? `#${r.issue}` : `${r.project} #${r.issue}`}
+                      </Link>
+                    </Fragment>
+                  ))}
+          </span>
+          <span className="fs">
+            {inFlight === null
+              ? 'the slot count is not known'
+              : running.length >= inFlight.slots
+                ? 'it starts when any of them ends'
+                : 'a slot is free'}
+          </span>
+        </div>
+        {resolved ? (
+          inLine ? (
+            <div className="fact">
+              <span className="fk">behind it</span>
+              <span className="fv">
+                {view.behind ? `#${view.behind.issue} · ${view.behind.kind}` : 'nothing behind it'}
+              </span>
+            </div>
+          ) : null
+        ) : (
+          <div className="fact">
+            <span className="fk">behind it</span>
+            <span className="fv">{asking}</span>
+          </div>
+        )}
+      </div>
+      {resolved && view?.dependenciesUnread ? <p className="refusal">{view.dependenciesUnread}</p> : null}
+      {children}
+    </section>
+  )
+}
+
+function QueuedPanel({
+  g,
+  pending,
+  inFlight,
+  project,
+  missing,
+  children,
+}: {
+  g: Answered<TaskAnswer>
+  pending: boolean
+  inFlight: InFlight | null
+  project: string | null
+  missing: (a: TaskAnswer) => boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="sreading sreading--advised">
+      <Gh
+        g={g}
+        pending={pending}
+        fallback={
+          <QueuedBand view={null} resolved={false} inFlight={inFlight} project={project}>
+            {children}
+          </QueuedBand>
+        }
+      >
+        {(a) =>
+          missing(a) ? null : (
+            <QueuedBand view={a.queued} resolved inFlight={inFlight} project={project}>
+              {children}
+            </QueuedBand>
+          )
+        }
+      </Gh>
+    </div>
+  )
+}
 import { presentCause } from '@/lib/triage-cause'
 
 import { codeSpans } from './code-spans.tsx'
@@ -474,6 +632,7 @@ export function Standing({
   discussionBill = emptyBill(),
   outgoing,
   queued,
+  inFlight = null,
   unknown,
   pending = false,
   untouched = false,
@@ -529,6 +688,8 @@ export function Standing({
   outgoing: OutgoingView | null
   /** Where it is in line and what taking it runs. Null in every other state. */
   queued: QueuedView | null
+  /** What the conductor is holding, from the log — never inside a GitHub boundary. Null in every state but queued. */
+  inFlight?: InFlight | null
   /**
    * Why Lingtai cannot say whether this ticket exists at all, when it cannot.
    *
@@ -617,7 +778,6 @@ export function Standing({
   // What is stopping it and where it is in line — two facts, and the second is
   // not an annotation on the first. `holding` is null for the item that is
   // simply next, which is the answer rather than an omission.
-  const stoppedOf = (q: QueuedView | null) => (q === null ? null : holding(q))
   // 0118 §1's own answer to *which controls does this wait allow*, and the
   // only thing the moves row below reads to decide (#442). `[]` where there
   // is no reason to read — a wait that could not be reduced, or no wait at all
@@ -824,8 +984,8 @@ export function Standing({
   // sentence and the so-what step back, and anything else this section holds
   // — a conflict's paths, an unknown ticket, a log — still draws.
   const quiet = waiting && advisedSurface
-  const soWhatLine = (stopped: string | null) => {
-    const text = standing.state === 'queued' && stopped !== null ? null : soWhat(standing)
+  const soWhatLine = () => {
+    const text = soWhat(standing)
     return quiet || text === null ? null : (
       <p className="sowhat" data-rank="so-what">
         {text}
@@ -932,8 +1092,16 @@ export function Standing({
         {/* The readout. Two values at one weight, and the age is `inWords` — the
           same arithmetic and the same words the card uses for the same
           question, so `4h 12m` means there as it does here. */}
-        <section className={`swhere${quiet ? ' swhere--quiet' : ''}`} aria-label="Where it is" data-rank="where">
-          {quiet ? null : <h2 className="ssectiontitle">Where it is</h2>}
+        {/* A queued page's place is the panel below, so the section is not drawn
+        as *Where it is* there — but it stays mounted, with `FollowedLog` in the
+        same place, so a page that follows a run into a requeue keeps the
+        tail it had (a live refresh changes the state, never the tree). */}
+        <section
+          className={`swhere${quiet || standing.state === 'queued' ? ' swhere--quiet' : ''}`}
+          aria-label={standing.state === 'queued' ? undefined : 'Where it is'}
+          data-rank="where"
+        >
+          {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle">Where it is</h2>}
           {isFramed ? null : stateReadout}
 
           {!isFramed &&
@@ -993,41 +1161,6 @@ export function Standing({
                   }}
                 </Gh>
 
-                {/* Why it is not moving, in the wording `lingtai status` and the card
-              use for the same hold. Null — and absent — for the item that is
-              simply next, because `runnable now` on every ordinary queued item
-              would bury the two that mean something. This is a queued item's
-              whole second rank: it has no gate to quote (#113). */}
-                <Gh
-                  g={g}
-                  pending={pending}
-                  fallback={
-                    standing.state === 'queued' ? <Skeleton shape="lines" count={1} label="asking GitHub…" /> : null
-                  }
-                >
-                  {(a) => {
-                    const stopped = stoppedOf(a.queued)
-                    return (
-                      <div className="arrive">
-                        {stopped !== null ? <p className="squestion">{stopped}</p> : null}
-
-                        {/* Not a hold, so not in `holding`: the order above was not checked
-              against a chain for this repository, or for the issues it names,
-              and a place in line that does not say so reads as next (#131). */}
-                        {a.queued?.dependenciesUnread ? <p className="refusal">{a.queued.dependenciesUnread}</p> : null}
-
-                        {/* Never merely absent (#76). A recipe that will not parse and a
-              GitHub behind a rate limit both leave the queue unanswered, and
-              only the reason tells them apart — the same argument the Queued
-              column's own `problems` make. */}
-                        {a.queued?.problem ? (
-                          <p className="refusal">Its place in the queue could not be read: {a.queued.problem}</p>
-                        ) : null}
-                      </div>
-                    )
-                  }}
-                </Gh>
-
                 {/* Verbatim, and only where nothing better was written down — see
               `question` above. It is what the conductor wrote, and a page that
               paraphrases it is a second version of the question. */}
@@ -1039,9 +1172,7 @@ export function Standing({
 
                 {conflict !== null ? <ConflictEvidence conflict={conflict} compareUrl={compareUrl} /> : null}
 
-                {standing.state === 'queued' ? (
-                  <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
-                ) : standing.state !== 'blocked' || !raw?.trim() ? (
+                {standing.state === 'queued' ? null : standing.state !== 'blocked' || !raw?.trim() ? (
                   <Reason
                     raw={raw}
                     said={said}
@@ -1061,11 +1192,19 @@ export function Standing({
             no path by which a second paragraph lands here; a sentence a later
             ticket wants on this page goes to rank 2 or to the record, and the
             snapshots in `task-page.test.tsx` make it say which (#152). */}
-            <Gh g={g} pending={pending} fallback={soWhatLine(null)}>
-              {(a) => (missingOf(a) ? null : soWhatLine(stoppedOf(a.queued)))}
-            </Gh>
+            {standing.state === 'queued' ? null : (
+              <Gh g={g} pending={pending} fallback={soWhatLine()}>
+                {(a) => (missingOf(a) ? null : soWhatLine())}
+              </Gh>
+            )}
           </div>
         </section>
+
+        {standing.state === 'queued' ? (
+          <QueuedPanel g={g} pending={pending} inFlight={inFlight} project={project} missing={missingOf}>
+            <LastAttempt deciding={standing.deciding} attempts={standing.attempts} taskId={taskId} />
+          </QueuedPanel>
+        ) : null}
 
         {standing.state === 'blocked' ? (
           <div className={`sreading${advisedSurface ? ' sreading--advised' : ''}`}>
