@@ -159,19 +159,28 @@ same URL can be visible from a checkout and invisible to a daemon started from
     once.** Every paid call appends one `RunPrompted` before it is dispatched,
     beside its `RunSpent` and with the same `for`; the conductor is its one
     writer, for the implementer as for every other call. Its text is the prompt
-    as handed except where a part is already on the log or in git: there it
-    carries a reference in place of the copy. The ticket body is the claim's
-    (0109 §1); findings and a command's evidence are the `StepEnded` that
-    carried them; triage's advice is the `WaitTriaged`; a person's answers are
-    the `WaitResolved`; a diff is its two shas and its size. Everything else
-    (the template's own words, the round, the rules) is written out, so
-    expanding a `RunPrompted` back into the text is substitution by one pure
-    function: a value inserted verbatim (the body, a command's evidence, a
-    diff) comes back exactly; a part the template rendered from stored data (a
-    list of findings) is rendered again by today's code and may differ in
-    layout, never in content. A prompt costs a few kilobytes, not the size of
-    its diff, and a reference that no longer resolves (a diff whose branch was
-    deleted) says so rather than inventing the text.
+    as handed except where it inserted, verbatim, a value already on the log or
+    in git: there it carries a reference in place of the copy. Those values are
+    the ticket body (the claim's, 0109 §1), a command's evidence and a design
+    document (the `StepEnded` that carried them), and a diff (its two shas and
+    its size). What the template rendered from stored data (a list of findings,
+    triage's advice, a person's answers, which reach the body anyway) is small
+    and stays written out, with the template's own words, the round and the
+    rules. So expanding a `RunPrompted` back into the prompt is substitution by
+    one pure function and gives back exactly what was handed. A prompt costs a
+    few kilobytes, not the size of its diff, and a reference that no longer
+    resolves (a diff whose branch was deleted) says so rather than inventing
+    the text.
+
+    **The same holds for every event: a value already on the log is referenced,
+    not copied.** The recipe a run resolved is recorded once per `configHash`,
+    on a stream of its own, and `StepsResolved` carries the hash.
+    `PassRouted`'s offer names the `StepEnded` whose findings and output it
+    routed rather than repeating them: both are on the run's stream, so a reader
+    of one reads the other in the same read. A copy kept so that one event can
+    be read alone is still a second copy. A value that two streams' reducers
+    need in their own state (a `WaitStarted`'s reason) is the exception, and
+    stays where the reducer reads it.
 
     **`RunPrompted` is what Lingtai composed, not the agent's whole context.**
     The runtime adds its own system prompt and tool definitions, which Lingtai

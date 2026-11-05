@@ -95,7 +95,10 @@ budget.
 11. **Landed deletes the log; anything else keeps it.** The conductor decides in
     the run's finalizer (`runLog.close(didLand ? "delete" : "keep")`).
     `reconcile`'s `findOrphanLogs` removes logs whose work item has landed and
-    reports, never removes, a log with no `RunStarted` behind it.
+    reports, never removes, a log with no `RunStarted` behind it, and the same
+    for a worktree. **It reports each one once**: a restart that finds an orphan
+    an earlier `Reconciled` already reported appends nothing for it, and
+    `lingtai doctor` lists what is still there until a person removes it.
 12. **`lingtai attach <runId>` and the task page's run log are tails of that
     file.** Both start at byte zero and stop at `RUN_LOG_END`; neither touches the
     store, so they work with the daemon and the database down. The board's
