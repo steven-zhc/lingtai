@@ -128,12 +128,13 @@ export function triageQuestionsOf(cause: {
 export function triageAnswersText(
   cause: Parameters<typeof triageQuestionsOf>[0],
   picks: Readonly<Record<number, string>> = {},
-): { ok: true; text: string } | { ok: false; detail: string } {
+): { ok: true; text: string; picks: { index: number; answerId: string }[] } | { ok: false; detail: string } {
   const asks = triageQuestionsOf(cause)
   for (const key of Object.keys(picks))
     if (!(Number(key) >= 0 && Number(key) < asks.length))
       return { ok: false, detail: `question ${key} is not one triage asked — triage changed since this page was drawn` }
   const lines: string[] = []
+  const chosen: { index: number; answerId: string }[] = []
   for (const [i, { question, at }] of asks.entries()) {
     const id = picks[i] ?? question.recommended
     const answer = question.answers.find((a) => a.id === id)
@@ -144,6 +145,7 @@ export function triageAnswersText(
       }
     const where = at === undefined ? '' : `\`${at.line === null ? at.path : `${at.path}:${at.line}`}\` — `
     lines.push(`- ${where}${question.text} — ${answer.text}`)
+    chosen.push({ index: i, answerId: id })
   }
-  return { ok: true, text: lines.join('\n') }
+  return { ok: true, text: lines.join('\n'), picks: chosen }
 }

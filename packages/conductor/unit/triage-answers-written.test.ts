@@ -252,3 +252,48 @@ describe('Requeue writes the person’s picks (#922)', () => {
     expect((await two.tickets.getIssue(ISSUE)).body).toBe('the ticket')
   })
 })
+
+describe('WaitResolved carries what was written (#924)', () => {
+  const resolvedData = async (store: EventStore, id: string) =>
+    (await store.read(id)).find((e) => e.type === 'WaitResolved')?.data as Record<string, unknown>
+
+  it('a GrantFixRound records the section and the picks it wrote', async () => {
+    const { store, tickets, ticketId, grant } = await blocked(undecided)
+    await grant({ github: tickets, picks: { 0: 'b' } })
+    const data = await resolvedData(store, ticketId)
+    expect(data.answers).toEqual({ picks: [{ index: 0, answerId: 'b' }], section: '- which helper? — use nothing' })
+    expect((await tickets.getIssue(ISSUE)).body).toContain((data.answers as { section: string }).section)
+  })
+
+  it('records the recommended id when nothing was picked', async () => {
+    const { store, tickets, ticketId, grant } = await blocked(undecided)
+    await grant({ github: tickets })
+    expect((await resolvedData(store, ticketId)).answers).toMatchObject({ picks: [{ index: 0, answerId: 'a' }] })
+  })
+
+  it('a Close records no answers at all', async () => {
+    const { store, tickets, ticketId, waitId } = await blocked(undecided)
+    await resolveWaitHolding(
+      {
+        ticketId,
+        waitId,
+        resolution: { _tag: 'Close' },
+        by: 'human:steven',
+        github: tickets,
+        store,
+      },
+      ticketId,
+    )
+    expect(await resolvedData(store, ticketId)).not.toHaveProperty('answers')
+  })
+
+  it('EditBodyAndRequeue records the person’s text and no picks', async () => {
+    const { store, tickets, ticketId, waitId } = await blocked(undecided)
+    await editBodyAndRequeueHolding(
+      { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
+      store,
+      ticketId,
+    )
+    expect((await resolvedData(store, ticketId)).answers).toEqual({ picks: [], section: 'my own words' })
+  })
+})
