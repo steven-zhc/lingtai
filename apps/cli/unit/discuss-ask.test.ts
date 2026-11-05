@@ -118,9 +118,9 @@ describe('discussionAsk', () => {
       max_output_tokens: 64,
     })
     const events = await store.read('chat-codex')
-    expect(events.map((event) => event.type)).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
-    expect(events[1]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
-    expect(events[2]?.data).toMatchObject({ text: 'Codex answered', failure: null })
+    expect(events.map((event) => event.type)).toEqual(['DiscussionAsked', 'RunPrompted', 'RunSpent', 'DiscussionAnswered'])
+    expect(events[2]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
+    expect(events[3]?.data).toMatchObject({ text: 'Codex answered', failure: null })
   })
 
   it("carries the recipe's turns and wall onto the runtime's limits", async () => {

@@ -331,11 +331,13 @@ describe('holding one question', () => {
   it("appends the ask before it runs anything, and records a failure's cost", async () => {
     const store = fakeStore()
     const calls: unknown[] = []
+    const prompts: string[] = []
     const held = await holdDiscussion(
       {
         store: store.store,
         serve: async () => null,
-        ask: async (_prompt, _round, call): Promise<Answered> => {
+        ask: async (prompt, _round, call): Promise<Answered> => {
+          prompts.push(prompt)
           calls.push(call)
           return {
             turns: 3,
@@ -358,7 +360,16 @@ describe('holding one question', () => {
 
     // A process that returned an outcome is recorded even though it failed —
     // only a killed one (the `crash` test below) records nothing (#496).
-    expect(store.types()).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
+    expect(store.types()).toEqual(['DiscussionAsked', 'RunPrompted', 'RunSpent', 'DiscussionAnswered'])
+    // The prompt the runtime was handed, recorded before the call under the
+    // same `for` as the call's `RunSpent` (#923).
+    const prompted = store.appended.find((e) => e.type === 'RunPrompted')!
+    const handed = (prompted.data as { prompt: string; for: unknown }).prompt
+    expect(handed.length).toBeGreaterThan(0)
+    expect(prompts).toEqual([handed])
+    expect((prompted.data as { for: unknown }).for).toEqual(
+      (store.appended.find((e) => e.type === 'RunSpent')!.data as { for: unknown }).for,
+    )
     expect(held).toEqual({ costUsd: 0.42, answered: false, proposal: null })
     // **The cost is `RunSpent`'s alone (#502, 0110 §9)** — `DiscussionAnswered`
     // carries no dollar figure of its own any more.
@@ -395,7 +406,8 @@ describe('holding one question', () => {
       },
     )
 
-    expect(store.types()).toEqual(['DiscussionAsked', 'DiscussionAnswered'])
+    // The prompt is on the log even though the process never answered (#923).
+    expect(store.types()).toEqual(['DiscussionAsked', 'RunPrompted', 'DiscussionAnswered'])
     expect(held.answered).toBe(false)
     expect(answerOf(store.appended).failure).toContain('crash')
   })
@@ -499,7 +511,16 @@ describe('holding one question', () => {
       },
     )
 
-    expect(store.types()).toEqual(['DiscussionAsked', 'RunSpent', 'RunSpent', 'RunSpent', 'DiscussionAnswered'])
+    expect(store.types()).toEqual([
+      'DiscussionAsked',
+      'RunPrompted',
+      'RunSpent',
+      'RunPrompted',
+      'RunSpent',
+      'RunPrompted',
+      'RunSpent',
+      'DiscussionAnswered',
+    ])
     const spents = store.appended
       .filter((e) => e.type === 'RunSpent')
       .map(

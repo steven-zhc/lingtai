@@ -287,7 +287,7 @@ describe('waitTriage', () => {
     expect(requests[0]).toMatchObject({ cwd: '/tmp/private-checkout', env: { HOME: '/tmp/private-home' } })
     expect(requests[0]!.prompt).toContain('Inspect the checked-out files directly')
     expect(cleanup).toHaveBeenCalledOnce()
-    expect(typesOf(await store.read(ticketId))).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(await store.read(ticketId))).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('fails when a recorded head is missing instead of inspecting the base', async () => {
@@ -377,7 +377,7 @@ describe('waitTriage', () => {
       requestOn(ticketId, waitId, { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
     )
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'wait no longer current' })
-    expect(typesOf(await store.read(ticketId))).toEqual(['WaitStarted', 'TriageStarted', 'WaitResolved', 'RunSpent'])
+    expect(typesOf(await store.read(ticketId))).toEqual(['WaitStarted', 'TriageStarted', 'RunPrompted', 'WaitResolved', 'RunSpent'])
     expect(cleanup).toHaveBeenCalledOnce()
   })
 
@@ -464,9 +464,9 @@ describe('waitTriage', () => {
     expect(sent).toHaveLength(1)
     expect(JSON.parse(sent[0]!.body as string)).toMatchObject({ tools: [], tool_choice: 'none' })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
-    expect(events[1]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
-    expect(events[2]?.data).toMatchObject({ result: { _tag: 'TriageAdvised' } })
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+    expect(events[2]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
+    expect(events[3]?.data).toMatchObject({ result: { _tag: 'TriageAdvised' } })
   })
 
   it('answers over twenty hunks mechanically without creating a runtime or recording spend', async () => {
@@ -538,8 +538,8 @@ describe('waitTriage', () => {
       why: 'agent advice did not classify every counted merge hunk',
     })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
-    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+    expect((events[3]!.data as { result: unknown }).result).toEqual(result.result)
   })
 
   it('refuses duplicate classifications that conceal a second merge hunk', async () => {
@@ -567,8 +567,8 @@ describe('waitTriage', () => {
       why: 'agent advice did not classify every counted merge hunk',
     })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
-    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+    expect((events[3]!.data as { result: unknown }).result).toEqual(result.result)
   })
 
   it('refuses distinct lines in one hunk when another mirror hunk is unclassified', async () => {
@@ -602,8 +602,8 @@ describe('waitTriage', () => {
       why: 'agent advice did not classify every counted merge hunk',
     })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
-    expect((events[2]!.data as { result: unknown }).result).toEqual(result.result)
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+    expect((events[3]!.data as { result: unknown }).result).toEqual(result.result)
   })
 
   it('accepts one classification for each mirror hunk line', async () => {
@@ -696,7 +696,7 @@ describe('waitTriage', () => {
     expect(held.result._tag).toBe('TriageAdvised')
 
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
 
     const started = events.find((e) => e.type === 'TriageStarted')!.data as { attempt: number }
     const triaged = events.find((e) => e.type === 'WaitTriaged')!.data as { attempt: number }
@@ -713,7 +713,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageFailed')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   describe('the answer schema (#582)', () => {
@@ -847,7 +847,7 @@ describe('waitTriage', () => {
     // The unrelated `WaitResolved` landed first, and the retried `TriageStarted`
     // still landed after it — never the false "another attempt was already
     // starting" a version conflict from an unrelated appender used to produce.
-    expect(typesOf(events)).toEqual(['WaitResolved', 'TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['WaitResolved', 'TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('does not start or bill triage when the wait resolves between the final read and TriageStarted', async () => {
@@ -899,10 +899,11 @@ describe('waitTriage', () => {
   })
 
   it('retries the read RunSpent takes before checking whether its call already landed, rather than losing the ledger row to a transient read failure', async () => {
-    // Store reads in order: (0) waitTriage's own initial read, (1) RunSpent's
-    // first read for this call, (2) the final WaitTriaged append's version
-    // read. Failing call 1 is this ticket's own blocker scenario.
-    const store = flakyReadAtCall(createMemoryEventStore(), 1)
+    // Store reads in order: (0) waitTriage's own initial read, (1) the prompt
+    // record's read (#923), (2) RunSpent's first read for this call, (3) the
+    // final WaitTriaged append's version read. Failing call 2 is this ticket's
+    // own blocker scenario.
+    const store = flakyReadAtCall(createMemoryEventStore(), 2)
     const ticketId = ticketStream('lingtai', 24)
     const { runtime } = stubRuntime(() => ADVISED)
     const deps = fakeDeps(store, runtime)
@@ -911,7 +912,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('never throws when prepare() rejects after TriageStarted has landed, and still answers it with one WaitTriaged', async () => {
@@ -958,7 +959,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('ends the triage in TriageFailed, never a false advice, when RunSpent cannot be recorded even after retries', async () => {
@@ -971,7 +972,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageFailed')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'WaitTriaged'])
     const triaged = events.find((e) => e.type === 'WaitTriaged')!.data as { result: { _tag: string } }
     expect(triaged.result._tag).toBe('TriageFailed')
   })
@@ -986,10 +987,10 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    // Not `['TriageStarted', 'RunSpent', 'RunSpent', 'WaitTriaged']` — a retry
+    // Not `['TriageStarted', 'RunPrompted', 'RunSpent', 'RunSpent', 'WaitTriaged']` — a retry
     // that blindly re-appended on this error would double the ledger row for
     // one paid call (0110 §2).
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('retries the WaitTriaged append when something else appended to the ticket stream between the read and the append', async () => {
@@ -1002,7 +1003,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it('throws, rather than reporting the advice as recorded, when WaitTriaged cannot be made to land even after retries', async () => {
@@ -1017,7 +1018,7 @@ describe('waitTriage', () => {
     // function's contract is about is missing, so the caller must be told
     // rather than handed a `TriageAdvised` the log does not contain.
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent'])
   })
 
   it('passes the abort signal to the runtime, and aborting mid-call kills the runtime and appends one failed WaitTriaged, with nothing after it', async () => {
@@ -1046,7 +1047,7 @@ describe('waitTriage', () => {
 
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'aborted' })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
     const spent = events.find((e) => e.type === 'RunSpent')!.data as { costUsd: number | null; turns: number }
     expect(spent.costUsd).toBeNull()
     expect(spent.turns).toBe(0)
@@ -1183,7 +1184,7 @@ describe('waitTriage', () => {
 
     expect(held.result._tag).toBe('TriageFailed')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'WaitTriaged'])
   })
 
   it("carries the run's RunRefsPublished and the diff stat into the evidence handed to triageBrief", async () => {
@@ -1372,7 +1373,7 @@ describe('waitTriage', () => {
     // for, which stays unchecked if nothing here reads the ticket stream.
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunSpent', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
 
   it("creates the runtime with tools: 'none', and the first call's limits equal triageCallFor(triage)", async () => {
