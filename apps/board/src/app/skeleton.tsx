@@ -7,14 +7,14 @@
  * is the task page's GitHub parts (#898), which draw `lines`.
  */
 
-export type SkeletonShape = 'card' | 'lines'
+export type SkeletonShape = 'card' | 'lines' | 'cells'
 
 export function Skeleton({
   shape,
   count,
   label,
 }: {
-  /** `card` draws a card's outline; `lines` draws text lines. */
+  /** `card` draws a card's outline; `lines` draws text lines; `cells` draws a row of rail cells. */
   shape: SkeletonShape
   /** How many placeholders. 0 draws the label alone. */
   count: number
@@ -24,7 +24,14 @@ export function Skeleton({
   return (
     <div className="skeleton">
       <p className="empty asking">{label}</p>
-      {Array.from({ length: Math.max(0, count) }, (_, i) =>
+      {shape === 'cells' ? (
+        <div className="sk-cells" aria-hidden="true" style={{ '--steps': Math.max(1, count) } as React.CSSProperties}>
+          {Array.from({ length: Math.max(0, count) }, (_, i) => (
+            <span key={i} className="sk-bar sk-cell" />
+          ))}
+        </div>
+      ) : null}
+      {Array.from({ length: shape === 'cells' ? 0 : Math.max(0, count) }, (_, i) =>
         shape === 'card' ? (
           <div key={i} className="sk-card" aria-hidden="true">
             <span className="sk-bar sk-id" />

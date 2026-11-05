@@ -1,5 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
-import { MERGE_HUNKS_ONE_BY_ONE } from '@lingtai/domain'
+import { MERGE_HUNKS_ONE_BY_ONE, STEPS } from '@lingtai/domain'
 // The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
 // off (#483) — so the page and the server action can never disagree about
 // which resolutions a wait allows.
@@ -73,6 +73,7 @@ import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
 import { Rail } from './rail.tsx'
 import { FollowedLog } from './run-log.tsx'
+import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
 import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
@@ -297,8 +298,8 @@ function TicketContext({
 }) {
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
-    <div className="topening">
-      {pending ? <p className="empty">asking GitHub…</p> : null}
+    <div className={`topening${pending ? '' : ' arrive'}`}>
+      {pending ? <Skeleton shape="lines" count={3} label="asking GitHub…" /> : null}
       {problem ? (
         <p className={problem.askedGitHub ? 'refusal' : 'note'}>
           {problem.askedGitHub ? `The issue could not be read from GitHub: ${problem.text}` : problem.text}
@@ -869,13 +870,15 @@ export function Standing({
                 progress !== null ? (
                   <Rail progress={progress} live={standing.state === 'running'} held={budget} />
                 ) : standing.state === 'queued' ? (
-                  <p className="empty splan-pending">asking GitHub…</p>
+                  <Skeleton shape="cells" count={STEPS.length} label="asking GitHub…" />
                 ) : null
               }
             >
               {(a) =>
                 progress !== null || a.queued !== null ? (
-                  <Rail progress={progress} live={standing.state === 'running'} held={budget} plan={a.queued?.plan} />
+                  <div className="arrive">
+                    <Rail progress={progress} live={standing.state === 'running'} held={budget} plan={a.queued?.plan} />
+                  </div>
                 ) : null
               }
             </Gh>
@@ -1004,12 +1007,14 @@ export function Standing({
                 <Gh
                   g={g}
                   pending={pending}
-                  fallback={standing.state === 'queued' ? <p className="squestion">asking GitHub…</p> : null}
+                  fallback={
+                    standing.state === 'queued' ? <Skeleton shape="lines" count={1} label="asking GitHub…" /> : null
+                  }
                 >
                   {(a) => {
                     const stopped = stoppedOf(a.queued)
                     return (
-                      <>
+                      <div className="arrive">
                         {stopped !== null ? <p className="squestion">{stopped}</p> : null}
 
                         {/* Not a hold, so not in `holding`: the order above was not checked
@@ -1024,7 +1029,7 @@ export function Standing({
                         {a.queued?.problem ? (
                           <p className="refusal">Its place in the queue could not be read: {a.queued.problem}</p>
                         ) : null}
-                      </>
+                      </div>
                     )
                   }}
                 </Gh>

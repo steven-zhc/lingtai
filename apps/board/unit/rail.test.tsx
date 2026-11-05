@@ -1206,6 +1206,7 @@ describe('the motion', () => {
   /** Every class the card and its row draw, so "on the card" is a list and not a hope. */
   const CARD_CLASSES = [
     'card',
+    'arrive',
     'id',
     'ti',
     'proj',
@@ -1238,7 +1239,7 @@ describe('the motion', () => {
     const moving = animated.filter((r) => !/animation:\s*none/.test(r.body))
     const onCard = moving.filter((r) => CARD_CLASSES.some((c) => new RegExp(`\\.${c}\\b`).test(r.selector)))
 
-    expect(onCard.map((r) => r.selector)).toEqual(['.scell.t-run', '.card.arrive'])
+    expect(onCard.map((r) => r.selector)).toEqual(['.scell.t-run', '.arrive'])
   })
 
   it('holds still for a reader who has asked it to', () => {

@@ -85,7 +85,7 @@ describe('the Queued column while GitHub is being asked', () => {
     const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
     const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{ \.sk-bar[^}]*\}[^}]*\}/)?.[0] ?? ''
     expect(block).toContain('.sk-bar')
-    expect(block).toContain('.card.arrive')
+    expect(block).toContain('.arrive')
     expect(block).toContain('animation: none')
   })
 })
