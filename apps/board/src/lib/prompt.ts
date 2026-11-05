@@ -93,7 +93,7 @@ export interface OutgoingView {
   problem: string | null
 }
 
-function refused(detail: string): OutgoingView {
+export function refused(detail: string): OutgoingView {
   return {
     text: '',
     version: '',

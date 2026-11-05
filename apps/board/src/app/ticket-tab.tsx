@@ -1,5 +1,6 @@
-import type { TicketTabDetail, TicketView } from '@/lib/task'
+import { withAnswer, type TicketAnswer, type TicketTabDetail, type TicketView } from '@/lib/task'
 
+import { Deferred, type Answered } from './deferred.tsx'
 import { HistoryRow } from './history-row.tsx'
 import { DocumentBody } from './markdown.tsx'
 
@@ -16,7 +17,7 @@ import { DocumentBody } from './markdown.tsx'
  * page written by whoever can file an issue on a managed repository, so how it
  * is rendered is a security question and is answered once, in `markdown.tsx`.
  */
-export function Ticket({ ticket }: { ticket: TicketView }) {
+export function Ticket({ ticket, pending = false }: { ticket: TicketView; pending?: boolean }) {
   return (
     <>
       <p className="tref">
@@ -55,7 +56,9 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
           apart (#76, one page along). The sentence names GitHub only where
           GitHub was actually asked — `askedGitHub` — because a project whose
           tickets live in the database was never going to be (#384). */}
-      {ticket.problem ? (
+      {pending ? (
+        <p className="empty">asking GitHub…</p>
+      ) : ticket.problem ? (
         <p className={ticket.askedGitHub ? 'refusal' : 'note'}>
           {ticket.askedGitHub ? `The issue could not be read from GitHub: ${ticket.problem}` : ticket.problem}
         </p>
@@ -67,11 +70,32 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
 }
 
 /** The Ticket tab: what was asked, then the ticket stream's events (#885). */
-export function TicketTab({ detail }: { detail: TicketTabDetail }) {
+export function TicketTab({ detail, answer }: { detail: TicketTabDetail; answer: Answered<TicketAnswer> }) {
+  const base = detail.ticket
   return (
     <div className="atab">
-      {detail.ticket ? (
-        <Ticket ticket={detail.ticket} />
+      {base ? (
+        // The log's part at once; the body, and the title and labels GitHub may
+        // correct, where the answer is read (0118 §2).
+        <Deferred
+          value={answer}
+          fallback={
+            <Ticket
+              pending
+              ticket={withAnswer(base, {
+                found: null,
+                askedGitHub: false,
+                title: null,
+                labels: null,
+                url: null,
+                body: null,
+                problem: null,
+              })}
+            />
+          }
+        >
+          {(a) => <Ticket ticket={withAnswer(base, a)} />}
+        </Deferred>
       ) : (
         <p className="empty">This id is not a work item, so there is no ticket behind it.</p>
       )}

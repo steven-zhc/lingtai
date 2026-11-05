@@ -7,13 +7,14 @@ import { Home } from '@/app/home.tsx'
 import { theHome } from '@/lib/home'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
-import { loadTask, type TaskDetail } from '@/lib/task'
+import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } from '@/lib/task'
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
 import { Follow, Following } from '../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
-import { Coords, Standing, framed } from '../../standing.tsx'
+import type { Answered } from '../../deferred.tsx'
+import { DeferredCoords, DeferredStanding, framed } from '../../standing.tsx'
 
 /**
  * The top of the task page, and the frame the record's tabs sit in.
@@ -115,7 +116,22 @@ function WaitingNav({ waiting }: { waiting: TaskDetail['waiting'] }) {
   )
 }
 
-export function TaskBody({ task, now, children }: { task: TaskDetail; now?: number; children?: ReactNode }) {
+export function TaskBody({
+  task,
+  github,
+  now,
+  children,
+}: {
+  task: TaskDetail
+  /**
+   * What only the issue's answer knows — resolved, or the promise `loadTaskAnswer`
+   * returned (0118 §2). Each place that reads it draws *asking GitHub…* until it
+   * arrives; a test passes the resolved value and sees what the page sees then.
+   */
+  github: Answered<TaskAnswer>
+  now?: number
+  children?: ReactNode
+}) {
   // The issue the controls would act on. `ref` is GitHub's own number, so
   // anything that does not parse is an id that was never one.
   const ref = Number(task.ticket?.ref)
@@ -138,7 +154,7 @@ export function TaskBody({ task, now, children }: { task: TaskDetail; now?: numb
         </Link>
         <span className="sep" />
         {/* Rank 8: one muted line, each identifier once. */}
-        <Coords standing={task.standing} taskId={task.taskId} queued={task.queued} />
+        <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
         <WaitingNav waiting={task.waiting} />
         {spendCurrency.current ? null : (
           <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
@@ -156,7 +172,9 @@ export function TaskBody({ task, now, children }: { task: TaskDetail; now?: numb
       <div className="detail-body">
         <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
         {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
-        <Standing
+        <DeferredStanding
+          answer={github}
+          untouched={task.events === 0}
           standing={task.standing}
           // What is being decided about, named where the decision is. The log
           // carries the ref and the title; GitHub carries the URL, and a null
@@ -167,22 +185,19 @@ export function TaskBody({ task, now, children }: { task: TaskDetail; now?: numb
                   ref: task.ticket.ref,
                   title: task.ticket.title,
                   url: task.ticket.url,
-                  askedGitHub: task.ticket.askedGitHub,
+                  askedGitHub: false,
                 }
               : null
           }
-          body={task.ticket?.body}
           want={task.want}
           compareUrl={task.ticket?.compareUrl ?? null}
           taskId={task.taskId}
           discussions={task.discussions}
           discussionBill={task.totals.byPurpose.Discussion}
-          outgoing={task.outgoing}
           project={task.ticket?.project ?? null}
           // The controls act on a GitHub issue. An id that is not `ticket-<p>-<n>`
           // has none, and the block states the state without offering a move.
           issue={issueNumber}
-          queued={task.queued}
           // The attempt the state names, which for a running item is the run
           // in flight — the one `loadTask` reduced with the recipe's bounds.
           progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
@@ -190,18 +205,6 @@ export function TaskBody({ task, now, children }: { task: TaskDetail; now?: numb
           // `loadTask`'s, so the two cannot word one ticket's hold two ways.
           held={task.held}
           now={now}
-          // The one thing a 404 used to be standing in for: nothing in the log
-          // and no answer from GitHub is *I cannot tell*, and a page that said
-          // "it does not exist" was making a claim Lingtai is not in a position
-          // to make (#113). Only when the log has nothing at all — an item it
-          // has touched is a page whatever GitHub says today. `askedGitHub`
-          // keeps this to a GitHub that would not answer — a `db` project's
-          // tickets were never going to be asked about, so an unclaimed one
-          // (all of them, while #382 is unwired) is not "existence unknown"
-          // (#384).
-          unknown={
-            task.events === 0 && task.ticket?.found === null && task.ticket.askedGitHub ? task.ticket.problem : null
-          }
         />
 
         <section className="record" data-rank="record">
@@ -231,7 +234,16 @@ export default async function TaskLayout({
   children: ReactNode
 }) {
   const { id } = await params
-  const [task, timings] = await measure(() => loadTask(decodeURIComponent(id)), { label: '/task' })
+  const taskId = decodeURIComponent(id)
+  // **A 404 rests on what needs no GitHub** (0118 §2, #113): an id that is not
+  // `ticket-<project>-<n>`, or a project Lingtai was never told about.
+  if (!(await knowable(taskId))) notFound()
+  // Started here, before `loadTask` is awaited, in a `measure` of its own: the
+  // page is sent when the log and the database have answered, and what only the
+  // issue's answer knows streams in after it. Started inside `loadTask` its reads
+  // would be under `page /task`, which ends before they do. Never rejects.
+  const github = measure(() => loadTaskAnswer(taskId), { label: '/task github' }).then(([answer]) => answer)
+  const [task, timings] = await measure(() => loadTask(taskId), { label: '/task' })
   if (!task) notFound()
   return (
     <>
@@ -244,7 +256,9 @@ export default async function TaskLayout({
           refreshes both segments. On the layout and not in `TaskBody`, which a
           test renders with no router to refresh. */}
       <Follow>
-        <TaskBody task={task}>{children}</TaskBody>
+        <TaskBody task={task} github={github}>
+          {children}
+        </TaskBody>
       </Follow>
     </>
   )

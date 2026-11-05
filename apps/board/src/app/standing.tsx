@@ -23,7 +23,7 @@ import { holding, place, runNowCaption, type QueuedView } from '@/lib/queued'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
-import { stateWord, type DiscussionView, type StandingView } from '@/lib/task'
+import { stateWord, type DiscussionView, type StandingView, type TaskAnswer } from '@/lib/task'
 
 /** Blocked, queued, running and approved pages share one frame: the `swaiting-head` header. The page class and the header both read this. */
 export const framed = (state: StandingView['state']): boolean =>
@@ -41,6 +41,7 @@ import {
   ScheduleContinuation,
   Send,
 } from './decide.tsx'
+import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing } from './outgoing.tsx'
@@ -257,14 +258,18 @@ function TicketContext({
   opening,
   body,
   taskId,
+  pending = false,
 }: {
   opening: ReturnType<typeof ticketOpening>
   body: string | null
   taskId: string
+  /** GitHub has not answered: the opening is not known yet, which is not the same as there being none. */
+  pending?: boolean
 }) {
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className="topening">
+      {pending ? <p className="empty">asking GitHub…</p> : null}
       {opening === null ? null : (
         <div className="tcontext">
           {(
@@ -435,6 +440,7 @@ export function Standing({
   outgoing,
   queued,
   unknown,
+  pending = false,
   progress = null,
   // Renamed on the way in: the component already has a `held` of its own —
   // `describeWaitLines`'s lines, rank 2 and 3's words — and this is a different
@@ -495,6 +501,14 @@ export function Standing({
    */
   unknown?: string | null
   /**
+   * GitHub has not answered yet (0118 §2), and `body`, `outgoing` and `queued`
+   * are null for that reason and not because there is none. The opening, a
+   * queued ticket's reasons and Send say *asking GitHub…* / *waiting for GitHub*
+   * instead of drawing as if GitHub had said nothing. `DeferredStanding` is the
+   * one caller that sets it.
+   */
+  pending?: boolean
+  /**
    * Where the run in flight has got to — the board's rail, drawn at rank 2 of
    * a running item and nowhere else in this block.
    *
@@ -525,6 +539,7 @@ export function Standing({
   // not an annotation on the first. `holding` is null for the item that is
   // simply next, which is the answer rather than an omission.
   const stopped = queued === null ? null : holding(queued)
+  const queuedPending = pending && standing.state === 'queued'
   const inLine = queued === null ? null : place(queued)
   // 0118 §1's own answer to *which controls does this wait allow*, and the
   // only thing the moves row below reads to decide (#442). `[]` where there
@@ -654,9 +669,11 @@ export function Standing({
     subject === null ? null : (
       <span className="stitle">
         {subject.title ??
-          (subject.askedGitHub
-            ? 'GitHub did not answer, so the title is not on this page'
-            : 'the title is not on this page')}
+          (pending
+            ? `#${subject.ref}`
+            : subject.askedGitHub
+              ? 'GitHub did not answer, so the title is not on this page'
+              : 'the title is not on this page')}
       </span>
     )
   const stateReadout = (
@@ -713,7 +730,7 @@ export function Standing({
             {subject !== null ? (
               <div className="sticket">
                 {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-                <TicketContext opening={opening} body={body} taskId={taskId} />
+                <TicketContext opening={opening} body={body} taskId={taskId} pending={pending} />
               </div>
             ) : null}
             {progress !== null || queued !== null ? (
@@ -727,7 +744,7 @@ export function Standing({
               {subjectTitle}
             </p>
             {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-            <TicketContext opening={opening} body={body} taskId={taskId} />
+            <TicketContext opening={opening} body={body} taskId={taskId} pending={pending} />
           </div>
         ) : null}
         {standing.afterMove ? (
@@ -837,6 +854,7 @@ export function Standing({
               would bury the two that mean something. This is a queued item's
               whole second rank: it has no gate to quote (#113). */}
                 {stopped !== null ? <p className="squestion">{stopped}</p> : null}
+                {queuedPending ? <p className="squestion">asking GitHub…</p> : null}
 
                 {/* Not a hold, so not in `holding`: the order above was not checked
               against a chain for this repository, or for the issues it names,
@@ -1010,7 +1028,14 @@ export function Standing({
                       {visible && tag === 'Requeue' && sendable !== null && waitId !== null ? (
                         <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
                       ) : null}
-                      {visible && tag === 'Requeue' && sendable === null && waitId !== null ? (
+                      {visible && tag === 'Requeue' && pending && !allowed.includes('AnswerQuestion') ? (
+                        // Send needs the body, and the body is GitHub's: drawn, and
+                        // said why it cannot be pressed yet.
+                        <button type="button" className="btn" disabled title="waiting for GitHub">
+                          Send · waiting for GitHub
+                        </button>
+                      ) : null}
+                      {visible && tag === 'Requeue' && sendable === null && !pending && waitId !== null ? (
                         <Requeue
                           project={project}
                           issue={issue}
@@ -1176,6 +1201,7 @@ export function Coords({
 }: {
   standing: StandingView
   taskId: string
+  /** Null until GitHub has answered, and for every state but `queued`: *offered by GitHub* is omitted then. */
   queued: QueuedView | null
 }) {
   return (
@@ -1381,5 +1407,90 @@ export function RawEvidence({ raw, said }: { raw: string; said: string | null })
           #111's, one page along. A log rendered as prose is not that log. */}
       <pre className="sraw">{raw}</pre>
     </details>
+  )
+}
+
+type StandingProps = Parameters<typeof Standing>[0]
+
+/**
+ * `Standing`, with the parts only GitHub's answer knows read where they are drawn
+ * (0118 §2): the heading's title and link, the opening, Send, a queued ticket's
+ * reasons and plan. Until it arrives the block is drawn with `pending`, from the
+ * log alone — the state line says what the log says, and each place that waits
+ * says so.
+ *
+ * **`untouched` is a ticket the log has never touched** (`events === 0`): there
+ * the answer decides whether there is a page to act on at all. Until it is in, no
+ * move is offered (`issue` is null); a 404 replaces the state and the moves with
+ * the sentence, and no queued line is drawn; a GitHub that could not be asked
+ * says so and offers the moves, as it always did (#113).
+ */
+export function DeferredStanding({
+  answer,
+  untouched,
+  ...props
+}: Omit<StandingProps, 'body' | 'outgoing' | 'queued' | 'unknown' | 'pending'> & {
+  answer: Answered<TaskAnswer>
+  untouched: boolean
+}) {
+  return (
+    <Deferred
+      value={answer}
+      fallback={
+        <Standing
+          {...props}
+          issue={untouched ? null : props.issue}
+          body={null}
+          outgoing={null}
+          queued={null}
+          pending
+        />
+      }
+    >
+      {(a) => {
+        const { ticket } = a
+        if (untouched && ticket.found === false && props.subject !== null) {
+          return (
+            <section className="standing" data-rank="state">
+              <p className="ssubject" data-rank="subject">
+                <span className="sref">#{props.subject.ref}</span>
+              </p>
+              <p className="refusal">GitHub has no issue #{props.subject.ref}</p>
+            </section>
+          )
+        }
+        return (
+          <Standing
+            {...props}
+            subject={
+              props.subject === null
+                ? null
+                : {
+                    ref: props.subject.ref,
+                    title: ticket.title ?? props.subject.title,
+                    url: ticket.url ?? props.subject.url,
+                    askedGitHub: ticket.askedGitHub,
+                  }
+            }
+            body={ticket.body}
+            outgoing={a.outgoing}
+            queued={a.queued}
+            unknown={untouched && ticket.found === null && ticket.askedGitHub ? ticket.problem : null}
+          />
+        )
+      }}
+    </Deferred>
+  )
+}
+
+/** `Coords`, with *offered by GitHub* omitted until the answer is in (0118 §2). */
+export function DeferredCoords({
+  answer,
+  ...props
+}: { answer: Answered<TaskAnswer> } & Omit<Parameters<typeof Coords>[0], 'queued'>) {
+  return (
+    <Deferred value={answer} fallback={<Coords {...props} queued={null} />}>
+      {(a) => <Coords {...props} queued={a.queued} />}
+    </Deferred>
   )
 }
