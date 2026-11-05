@@ -61,7 +61,7 @@ import type { TokenCounts, Usage } from '@lingtai/domain'
 import { mergeTokenCounts } from '@lingtai/domain'
 import { parse as parseToml } from 'smol-toml'
 
-import { codexAuth } from './auth.ts'
+import { codexAuth, runtimeVersion } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
@@ -249,6 +249,8 @@ export type CodexSandbox = 'workspace-write' | 'read-only'
 export interface CodexOptions {
   /** The `codex` executable. Overridable so a test can use a stand-in. */
   binary?: string
+  /** Replaces `node:child_process`'s `spawn` for `run` and `version`: `pnpm test` runs no process. */
+  spawn?: typeof spawn
   /** Defaults to `workspace-write`. See `CodexSandbox`. */
   sandbox?: CodexSandbox
   /** Extra arguments, for a project that needs one. Never used to widen the sandbox. */
@@ -1361,9 +1363,15 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
   const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
   const extraArgs = options.extraArgs ?? []
   const stopProcesses = options.stopProcesses ?? stopRunProcesses
+  const spawnChild = options.spawn ?? spawn
 
   return {
     capabilities: CODEX_CAPABILITIES,
+
+    /** `codex --version` (#929), in the env `run` is given, without the process marker a probe has no use for. */
+    version(env: Record<string, string>, cwd?: string): Promise<string | null> {
+      return runtimeVersion(binary, env, spawnChild, cwd)
+    },
 
     /** `codex login status` — `auth.ts`. */
     checkAuth(env: Record<string, string>): Promise<AuthStatus> {
@@ -1460,7 +1468,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       return new Promise<RunOutcome>((resolve) => {
         const processMarker = randomUUID()
         const seen: Seen = new Map()
-        const child = spawn(binary, args, {
+        const child = spawnChild(binary, args, {
           cwd: request.cwd,
           // Filtered, not inherited (0007).
           env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as unknown as NodeJS.ProcessEnv,

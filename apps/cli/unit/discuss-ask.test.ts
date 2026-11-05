@@ -20,7 +20,7 @@ import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
  */
 import { describe, expect, it } from 'vitest'
 
-import { discussionAsk } from '../src/discuss.ts'
+import { discussionAsk, discussionVersion } from '../src/discuss.ts'
 
 function stubRuntime(): { runtime: Runtime; requests: RunRequest[] } {
   const requests: RunRequest[] = []
@@ -84,6 +84,7 @@ describe('discussionAsk', () => {
       {
         store,
         serve: async () => null,
+        version: discussionVersion(runtime),
         ask: discussionAsk(runtime, {
           runId: async () => 'chat-codex:0:0',
           cwd: '/tmp/chat-codex',
