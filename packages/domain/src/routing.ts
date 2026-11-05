@@ -72,6 +72,13 @@ export const RouteOffer = z.object({
   proposal: Proposal,
   available: z.array(Candidate),
   unavailable: z.array(ExcludedCandidate),
+  /**
+   * The `StepEnded` this offer's proposal was taken from, on the run's stream
+   * (0100 §14, #931): its `version`, and the name of the action in it that
+   * decided. Absent on a route written before this field; `null` where no
+   * `StepEnded` produced the proposal. Never read as version 0.
+   */
+  ended: z.object({ version: z.number().int().positive(), action: z.string() }).nullable().optional(),
 })
 export type RouteOffer = z.infer<typeof RouteOffer>
 

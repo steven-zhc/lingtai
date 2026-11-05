@@ -2917,3 +2917,111 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
     expect(wiring).toContain('runAttempt({')
   })
 })
+
+// ------------------------------------------------ the StepEnded a route names ----
+
+/**
+ * #931: `PassRouted`'s offer names the `StepEnded` its proposal came from. The
+ * routes are appended in one batch after the walk, so the version is the one
+ * `emit` answered at the moment of each `StepEnded`, never a position.
+ */
+describe('a route names the StepEnded it was taken from', () => {
+  /** An `emit` that numbers what it is given, the way a stream does. */
+  const numbering = () => {
+    const seen: AttemptEvent[] = []
+    return { emit: (event: AttemptEvent) => seen.push(event), seen }
+  }
+
+  const finding = (claim: string): ActionFinding => ({
+    file: 'packages/conductor/src/run-attempt.ts',
+    line: 1,
+    claim,
+    failureScenario: 'it does the wrong thing',
+    severity: 'major',
+  })
+
+  const endedAction = (seen: readonly AttemptEvent[], version: number, name: string) => {
+    const event = seen[version - 1]
+    expect(event?.type).toBe('StepEnded')
+    const outcome = (event!.data as { outcome: { actions: { name: string; evidence: string; result: unknown }[] } })
+      .outcome
+    const action = outcome.actions.find((a) => a.name === name)
+    expect(action).toBeDefined()
+    return action!
+  }
+
+  it('names a different StepEnded for each lap, including a review that passed carrying findings', async () => {
+    const { bodies } = watching()
+    let reviews = 0
+    let builds = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step) =>
+      step === 'review'
+        ? [
+            canned('cold reviewer', {
+              verdict: 'failed',
+              evidence: `read the diff, lap ${reviews}`,
+              findings: [finding(`blocker ${reviews++}`)],
+            }),
+          ]
+        : step === 'build'
+          ? [
+              canned(
+                'tests',
+                builds++ < 2 ? PASSED : { verdict: 'failed', evidence: 'the third build is red', findings: [] },
+              ),
+            ]
+          : step === 'implement'
+            ? [committedSomething('write the change')]
+            : []
+    const { emit, seen } = numbering()
+
+    const result = await runAttempt({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
+    })
+
+    expect(result.routes.map((r) => r.offer.proposal._tag)).toEqual(['ReviewFindings', 'ReviewFindings', 'BuildRed'])
+    const versions = result.routes.map((r) => r.ended?.version)
+    expect(new Set(versions).size).toBe(3)
+    for (const route of result.routes) {
+      expect(route.ended).not.toBeNull()
+      const named = endedAction(seen, route.ended!.version, route.ended!.action)
+      const proposal = route.offer.proposal
+      if (proposal._tag === 'BuildRed') {
+        expect(named.evidence).toEqual(proposal.output)
+      } else if (proposal._tag === 'ReviewFindings') {
+        expect((named.result as { assessment: { findings: unknown } }).assessment.findings).toEqual(proposal.findings)
+      }
+    }
+    // The first two are reviews that ended `passed`, so `reported` was null for them.
+    expect(seen[result.routes[0]!.ended!.version - 1]).toMatchObject({ type: 'StepEnded' })
+  })
+
+  it('carries null where the proposal came from no StepEnded', async () => {
+    const { bodies } = watching({ design: asked('which one did you mean?') })
+    const { actionsAt } = watchingActions()
+    const { emit } = numbering()
+
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(result.routes).toHaveLength(1)
+    expect(result.routes[0]!.ended).toBeNull()
+  })
+
+  it('carries null when emit does not number what it is given', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      build: [canned('tests', { verdict: 'failed', evidence: '3 failing', findings: [] })],
+    })
+    const { emit } = events()
+
+    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(result.routes.map((r) => r.ended)).toEqual([null])
+  })
+})
