@@ -364,6 +364,9 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join('+') : '—'}`)
       .join(' · ')
   },
+  // On `rcp-<hash>`, not on a run's own stream, so no run page shows it; the sentence
+  // is for the catalogue's promise that every type has one.
+  RecipeRecorded: (d) => `Recipe ${need(d, 'configHash').slice(0, 12)} written down once`,
   EndActionsResolved: (d) => {
     const outcome = need(d, 'outcome')
     const actions = d['actions']

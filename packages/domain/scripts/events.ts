@@ -33,7 +33,7 @@ export const APPEND_CALLEES: ReadonlySet<string> = new Set([
   'appendFrom',
 ])
 
-export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-'
+export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-'
 
 /**
  * Appends the finder cannot see, one row per site. A row finds its line by
@@ -254,6 +254,7 @@ export const STREAMS = {
   RunFailed: ['pass-'],
   RunSpent: ['pass-', 'chat-', 'ticket-'],
   StepsResolved: ['pass-'],
+  RecipeRecorded: ['rcp-'],
   EndActionsResolved: ['pass-'],
   StepStarted: ['pass-'],
   StepEnded: ['pass-'],
@@ -312,6 +313,7 @@ export const PREFIXES = {
   'chat-': { onePer: 'discussion, `chat-…`', state: 'ChatState' },
   'ext-': { onePer: 'extension, `ext-subscribers` (the only one so far)', state: null },
   'bkl-': { onePer: 'finding, `bkl-{project}-{key}`', state: 'Finding state' },
+  'rcp-': { onePer: 'recipe, `rcp-{configHash}`', state: null },
 } as const satisfies { readonly [P in StreamPrefix]: { readonly onePer: string; readonly state: string | null } }
 
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
