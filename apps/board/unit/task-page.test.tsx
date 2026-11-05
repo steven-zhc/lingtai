@@ -1109,10 +1109,9 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
 describe('what a pending page cannot lose or hide', () => {
   const never = () => new Promise<TaskAnswer>(() => {})
 
-  it('is read-only until GitHub answers, so nothing typed can be replaced', () => {
+  it('keeps the log-backed block usable and readable while GitHub is pending', () => {
     const pending = renderToStaticMarkup(<TaskBody task={blocked()} github={never()} />)
-    expect(pending).toMatch(/<section class="standing[^"]*" inert/)
-    expect(page(blocked())).not.toMatch(/<section class="standing[^"]*" inert/)
+    expect(pending).not.toMatch(/\binert\b/)
   })
 
   it('says why the opening is missing when GitHub failed for a touched ticket', () => {

@@ -726,9 +726,11 @@ export function Standing({
       questions={triageQuestions}
       recommended={triageRecommended}
     >
-      {/* Until GitHub answers the block is read-only: this tree is replaced, not
-          updated, by the resolved one, and a sentence typed into it would be lost. */}
-      <section className={`standing${mark}`} inert={pending || undefined}>
+      {/* Not inert while GitHub is pending: the log-backed controls (discussion,
+          answers, closing reasons, triage choices), the heading and the links
+          are the log's and stay usable and readable. Only what needs the body
+          is held back — Send is drawn disabled. */}
+      <section className={`standing${mark}`}>
         {isFramed ? (
           <header className="swaiting-head">
             <div className="swaiting-meta">
