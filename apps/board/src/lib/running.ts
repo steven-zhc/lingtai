@@ -61,15 +61,15 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
   // implement a fix round just finished.
   let anchor: Step | undefined = now?.step
   if (anchor === undefined) {
+    // A verdict made against a head that has since moved is the last round's:
+    // that step runs again, so it is not done (`AttemptView.steps[].stale`).
+    // Judged by the verdict's own sha, not by whether a refusal still stands,
+    // so a step that has passed again on the new head counts.
+    const stale = new Set((run.steps ?? []).filter((v) => v.stale).map((v) => v.step.slice(0, v.step.indexOf(':'))))
     for (const p of steps) {
-      if (p.state === 'passed' || p.state === 'skipped' || p.state === 'waived') anchor = p.step
+      if ((p.state === 'passed' || p.state === 'skipped' || p.state === 'waived') && !stale.has(p.step)) anchor = p.step
       else break
     }
-    // A refusal still standing sent the run back through implement: the
-    // verdicts of the steps after it are the last round's, and those steps run
-    // again, so none of them is done.
-    if (run.refusal !== null && (anchor === undefined || STEPS.indexOf(anchor) > STEPS.indexOf('implement')))
-      anchor = 'implement'
   }
   const after = anchor === undefined ? -1 : STEPS.indexOf(anchor)
   const left = STEPS.filter((s, i) => i > after && planned(s).length > 0)

@@ -104,12 +104,20 @@ describe('runningPanelOf', () => {
     expect(p.then).toEqual([])
   })
 
-  it('between steps after a standing refusal, the steps after implement all run again', () => {
+  it('between steps after a standing refusal, steps whose verdicts are stale run again, and those passed on the new head are done', () => {
     const progress = plan({ implement: ['agent'], build: ['run'], review: ['agent'], merge: ['merge'] })
     const states: Record<string, string> = { implement: 'passed', build: 'passed', review: 'failed', merge: 'pending' }
     const steps = (progress as unknown as { steps: { step: string; state: string }[] }).steps
     for (const s of steps) s.state = states[s.step]!
     const refusal = { key: 'review:cold', evidence: 'x', findings: [] }
-    expect(runningPanelOf(run({ progress, refusal })).then).toEqual(['build', 'review', 'merge'])
+    const verdicts = (buildStale: boolean) =>
+      [
+        { step: 'build:run', state: 'passed', stale: buildStale, evidence: null, findings: [] },
+        { step: 'review:cold', state: 'failed', stale: true, evidence: null, findings: [] },
+      ] as AttemptView['steps']
+    // Build's verdict is about the old head: it runs again.
+    expect(runningPanelOf(run({ progress, refusal, steps: verdicts(true) })).then).toEqual(['build', 'review', 'merge'])
+    // Build has passed on the new head, review's refusal still standing: review is next.
+    expect(runningPanelOf(run({ progress, refusal, steps: verdicts(false) })).then).toEqual(['review', 'merge'])
   })
 })
