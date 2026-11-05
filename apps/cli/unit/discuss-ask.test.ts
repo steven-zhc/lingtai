@@ -118,7 +118,12 @@ describe('discussionAsk', () => {
       max_output_tokens: 64,
     })
     const events = await store.read('chat-codex')
-    expect(events.map((event) => event.type)).toEqual(['DiscussionAsked', 'RunPrompted', 'RunSpent', 'DiscussionAnswered'])
+    expect(events.map((event) => event.type)).toEqual([
+      'DiscussionAsked',
+      'RunPrompted',
+      'RunSpent',
+      'DiscussionAnswered',
+    ])
     expect(events[2]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
     expect(events[3]?.data).toMatchObject({ text: 'Codex answered', failure: null })
   })

@@ -377,7 +377,13 @@ describe('waitTriage', () => {
       requestOn(ticketId, waitId, { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
     )
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'wait no longer current' })
-    expect(typesOf(await store.read(ticketId))).toEqual(['WaitStarted', 'TriageStarted', 'RunPrompted', 'WaitResolved', 'RunSpent'])
+    expect(typesOf(await store.read(ticketId))).toEqual([
+      'WaitStarted',
+      'TriageStarted',
+      'RunPrompted',
+      'WaitResolved',
+      'RunSpent',
+    ])
     expect(cleanup).toHaveBeenCalledOnce()
   })
 
@@ -1380,7 +1386,14 @@ describe('waitTriage', () => {
     // for, which stays unchecked if nothing here reads the ticket stream.
     expect(held.result._tag).toBe('TriageAdvised')
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
+    expect(typesOf(events)).toEqual([
+      'TriageStarted',
+      'RunPrompted',
+      'RunSpent',
+      'RunPrompted',
+      'RunSpent',
+      'WaitTriaged',
+    ])
   })
 
   it("creates the runtime with tools: 'none', and the first call's limits equal triageCallFor(triage)", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome, WaitId } from '../src/index.ts'
-import { emptyAttempt, filesOf, stepsOn, reduceAttempt } from '../src/index.ts'
+import { emptyAttempt, filesOf, parsePayload, stepsOn, reduceAttempt } from '../src/index.ts'
 import { histories, lateHistories } from '../test/histories.ts'
 import { makeStream, unknownEvent } from '../test/support.ts'
 
@@ -55,6 +55,29 @@ describe('reduceAttempt', () => {
 
     expect(s.prompts).toBe(1)
     expect(s.prompt).toBe('do the thing')
+  })
+
+  it('leaves the implementer’s prompt alone for a RunPrompted that has a `for` (#923)', () => {
+    const e = makeStream('pass-01JW')
+    const s = reduceAttempt([
+      e('RunStarted', started),
+      e('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' }),
+      e('RunPrompted', {
+        promptVersion: 'fix@9',
+        bytes: 9,
+        prompt: 'fix brief',
+        for: { _tag: 'Action', step: 'implement', name: 'fix', round: 1 },
+      }),
+    ])
+
+    expect(s.prompts).toBe(1)
+    expect(s.prompt).toBe('do the thing')
+    expect(s.promptMeta).toEqual({ version: 'ticket@3', bytes: 12 })
+  })
+
+  it('parses a RunPrompted stored before it had a `for`, which means the implement run (#923)', () => {
+    const parsed = parsePayload('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' })
+    expect(parsed.for).toBeUndefined()
   })
 
   it('says nothing about the text of a prompt recorded before it was kept', () => {

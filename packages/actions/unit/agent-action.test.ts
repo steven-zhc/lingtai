@@ -2329,3 +2329,86 @@ describe('a review after a fix round reviews the fix (#671)', () => {
     expect(result.findings[0]?.severity).toBe('minor')
   })
 })
+
+/**
+ * #923: the prompt an agent action hands `runtime.run` is recorded first, by the
+ * pipeline's `recordPrompt`, under the `for` that action's `RunSpent` carries.
+ */
+describe('recording the prompt an agent action was handed (#923)', () => {
+  const draftDeps = (runtime: Runtime) => ({
+    runtime,
+    issue: async () => ISSUE,
+    diff: async () => '',
+    restore: async () => ({ untouched: true as const }),
+    settingsPath: '/tmp/settings.json',
+    limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+  })
+
+  it('records the cold reviewer’s prompt before the dispatch, with its RunSpent’s for', async () => {
+    const runtime = reviewer(outcome({ text: JSON.stringify({ verdict: 'approved', findings: [] }) }))
+    const order: string[] = []
+    const recorded: { for: unknown; promptVersion: string; prompt: string }[] = []
+    const spentFor: unknown[] = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime: { ...runtime, run: async (r) => (order.push('run'), runtime.run(r)) },
+        issue: async () => ISSUE,
+        diff: async () => HUNK_DIFF,
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+
+    await runActionPipeline({
+      step: 'review',
+      actions: [action],
+      context,
+      emit: (event) => {
+        if (event.type === 'RunSpent') spentFor.push(event.data.for)
+      },
+      recordPrompt: async (call) => {
+        order.push('record')
+        recorded.push(call)
+      },
+    })
+
+    expect(order).toEqual(['record', 'run'])
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0]!.prompt).toBe(runtime.seen[0]!.prompt)
+    expect(recorded[0]!.promptVersion).toBe(`review@${runtime.seen[0]!.prompt.length}`)
+    expect(spentFor).toEqual([recorded[0]!.for])
+    expect(recorded[0]!.for).toEqual({ _tag: 'Action', step: 'review', name: 'review', round: 0 })
+  })
+
+  it('records the design agent’s prompt before the dispatch, with its RunSpent’s for', async () => {
+    const runtime = reviewer(outcome({ text: 'Put it in `packages/recipe`.' }))
+    const recorded: { for: unknown; promptVersion: string; prompt: string }[] = []
+    const spentFor: unknown[] = []
+
+    await runActionPipeline({
+      step: 'design',
+      actions: [createDraftAction({ name: 'draft', prompt: '' }, draftDeps(runtime))],
+      context,
+      emit: (event) => {
+        if (event.type === 'RunSpent') spentFor.push(event.data.for)
+      },
+      recordPrompt: async (call) => {
+        recorded.push(call)
+      },
+    })
+
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0]!.prompt).toBe(runtime.seen[0]!.prompt)
+    expect(recorded[0]!.promptVersion).toBe(`design@${runtime.seen[0]!.prompt.length}`)
+    expect(spentFor).toEqual([recorded[0]!.for])
+  })
+
+  it('records nothing, and dispatches all the same, where no recorder is wired', async () => {
+    const runtime = reviewer(outcome({ text: 'a design' }))
+    const result = await createDraftAction({ name: 'draft', prompt: '' }, draftDeps(runtime)).run(context)
+    expect(result.verdict).toBe('passed')
+    expect(runtime.seen).toHaveLength(1)
+  })
+})
