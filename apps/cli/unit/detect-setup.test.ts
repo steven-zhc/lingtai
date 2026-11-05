@@ -580,3 +580,84 @@ describe('detectSetup — Java', () => {
     expect(r.notes).toContain('pom.xml could not be read')
   })
 })
+
+describe('detectSetup — Rust', () => {
+  const TOML = '[package]\nname = "x"\nversion = "0.1.0"\n'
+
+  it('with Cargo.lock, fetch and test are --locked', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': TOML, 'Cargo.lock': '' }))
+    expect(r.install).toEqual({ run: 'cargo fetch --locked', because: 'Cargo.toml is at the root' })
+    expect(r.build.map((b) => b.run)).toEqual([
+      'cargo fmt --check',
+      'cargo clippy --all-targets -- -D warnings',
+      'cargo test --locked',
+    ])
+  })
+
+  it('without Cargo.lock, neither is', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': TOML }))
+    expect(r.install?.run).toBe('cargo fetch')
+    expect(r.build.map((b) => b.run)).toEqual([
+      'cargo fmt --check',
+      'cargo clippy --all-targets -- -D warnings',
+      'cargo test',
+    ])
+  })
+
+  it('a workspace gets the same commands', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': '[workspace]\nmembers = ["a"]\n' }))
+    expect(r.build.map((b) => b.name)).toEqual(['format', 'lint', 'test'])
+  })
+
+  it('the timeout note is among the notes', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': TOML }))
+    expect(r.notes.some((n) => n.includes('timeout:') && n.includes('15m'))).toBe(true)
+  })
+
+  it('format and lint probe rustfmt and cargo-clippy; fetch and test probe cargo', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': TOML }))
+    expect(r.install?.tool).toBeUndefined()
+    expect(r.build.map((b) => b.tool)).toEqual(['rustfmt', 'cargo-clippy', undefined])
+  })
+
+  it('an unknown Cargo.lock leaves --locked off and says so', async () => {
+    const r = await detectSetup({
+      has: async (path) => {
+        if (path === 'Cargo.lock') throw new Error('no')
+        return path === 'Cargo.toml'
+      },
+      read: async () => TOML,
+    })
+    expect(r.install?.run).toBe('cargo fetch')
+    expect(r.notes).toContain('could not tell whether Cargo.lock is at the root; --locked was left off')
+  })
+
+  it('a Cargo.toml that does not parse suggests nothing and says so', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': '[package\n' }))
+    expect(r.install).toBeNull()
+    expect(r.build).toEqual([])
+    expect(r.notes).toContain('Cargo.toml does not parse')
+  })
+
+  it('a Cargo.toml that cannot be read suggests nothing and says so', async () => {
+    const r = await detectSetup(reader({ 'Cargo.toml': TOML }, { haveNotRead: ['Cargo.toml'] }))
+    expect(r.build).toEqual([])
+    expect(r.notes).toContain('Cargo.toml could not be read')
+  })
+
+  it('a has() that rejects is could-not-tell, not absent', async () => {
+    const r = await detectSetup({
+      has: async () => {
+        throw new Error('no')
+      },
+      read: async () => null,
+    })
+    expect(r.notes).toContain('could not tell whether a Cargo project is at the root')
+  })
+
+  it('Node keeps the suggestions when package.json is also at the root', async () => {
+    const r = await detectSetup(reader({ 'package.json': pkg({ test: 'vitest' }), 'Cargo.toml': TOML }))
+    expect(r.build.map((b) => b.run)).not.toContain('cargo test')
+    expect(r.notes).toContain('Rust is also at the root; Node was used')
+  })
+})

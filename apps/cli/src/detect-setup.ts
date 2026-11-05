@@ -44,7 +44,7 @@ export const EMPTY_SETUP_READER: SetupReader = {
 export interface DetectedSetup {
   /** `tool` as on `build`: a wrapper's is `java`, since `./mvnw` is never on PATH. */
   install: { run: string; because: string; tool?: string } | null
-  /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`). */
+  /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`), or is a launcher for a separately installed component (`cargo clippy` → `cargo-clippy`). */
   build: { name: string; run: string; because: string; tool?: string }[]
   skipped: { script: string; why: string }[]
   notes: string[]
@@ -690,7 +690,78 @@ const javaDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector, javaDetector]
+/**
+ * Rust from `Cargo.toml` (#697). A package and a workspace get the same
+ * commands: from the root they cover every member. `--locked` only when
+ * `Cargo.lock` is at the root. `clippy` and `rustfmt` are rustup components that
+ * may be missing while `cargo` is present, so their entries name the launcher to
+ * probe. Last in DETECTORS, so a napi or Tauri repository keeps Node's commands.
+ */
+const rustDetector: StackDetector = {
+  stack: 'Rust',
+  async detect(reader) {
+    const notes: string[] = []
+    const none = (presence: 'absent' | 'unknown' | 'present'): StackFinding => ({
+      presence,
+      install: null,
+      build: [],
+      skipped: [],
+      notes,
+    })
+    const manifest = await hasOrUnknown(reader, 'Cargo.toml')
+    if (manifest === 'unknown') {
+      notes.push('could not tell whether a Cargo project is at the root')
+      return none('unknown')
+    }
+    if (!manifest) return none('absent')
+
+    let text: string | null
+    try {
+      text = await reader.read('Cargo.toml')
+    } catch {
+      text = null
+    }
+    if (text === null) {
+      notes.push('Cargo.toml could not be read')
+      return none('present')
+    }
+    try {
+      parseToml(text)
+    } catch {
+      notes.push('Cargo.toml does not parse')
+      return none('present')
+    }
+
+    const lock = await hasOrUnknown(reader, 'Cargo.lock')
+    if (lock === 'unknown') {
+      notes.push('could not tell whether Cargo.lock is at the root; --locked was left off')
+    }
+    const locked = lock === true ? ' --locked' : ''
+    const because = 'Cargo.toml is at the root'
+    notes.push(
+      "a cold Cargo build compiles every dependency in each new worktree and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out",
+    )
+    return {
+      presence: 'present',
+      install: { run: `cargo fetch${locked}`, because },
+      build: [
+        { name: 'format', run: 'cargo fmt --check', because, tool: 'rustfmt' },
+        { name: 'lint', run: 'cargo clippy --all-targets -- -D warnings', because, tool: 'cargo-clippy' },
+        { name: 'test', run: `cargo test${locked}`, because },
+      ],
+      skipped: [],
+      notes,
+    }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [
+  nodeDetector,
+  pythonDetector,
+  goDetector,
+  javaDetector,
+  rustDetector,
+]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present
