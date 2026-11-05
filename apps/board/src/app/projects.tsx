@@ -22,6 +22,8 @@
  */
 import Link from 'next/link'
 
+import { FilterMenu } from './filter-menu'
+
 /**
  * The slot, in its three states.
  *
@@ -54,15 +56,18 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
   const label = inView ?? 'all projects'
   const current = { 'aria-current': 'page' } as const
 
-  // A plain <details>: no state, no script. Every entry is a Next <Link>, so
-  // following one is a client navigation that keeps this element and its `open`
-  // attribute. The key is the state the menu shows, so a selection that changes
-  // it remounts the element closed.
+  // A <details>, closed by `FilterMenu` when any entry is followed: a Next
+  // <Link> navigation keeps the element and its `open` attribute, and selecting
+  // the current entry again changes no state a key could notice.
   return (
-    <details key={`${only ?? ''}`} className="filter">
-      <summary>
-        {label} <span aria-hidden="true">▾</span>
-      </summary>
+    <FilterMenu
+      className="filter"
+      summary={
+        <>
+          {label} <span aria-hidden="true">▾</span>
+        </>
+      }
+    >
       <div className="menu">
         {filters.length > 1 ? (
           <>
@@ -96,6 +101,6 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
           add a repository
         </Link>
       </div>
-    </details>
+    </FilterMenu>
   )
 }
