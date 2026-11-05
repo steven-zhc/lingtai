@@ -42,7 +42,8 @@ export const EMPTY_SETUP_READER: SetupReader = {
 }
 
 export interface DetectedSetup {
-  install: { run: string; because: string } | null
+  /** `tool` as on `build`: a wrapper's is `java`, since `./mvnw` is never on PATH. */
+  install: { run: string; because: string; tool?: string } | null
   /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`). */
   build: { name: string; run: string; because: string; tool?: string }[]
   skipped: { script: string; why: string }[]
@@ -532,7 +533,164 @@ const goDetector: StackDetector = {
   },
 }
 
-export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector]
+const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
+
+/**
+ * Balanced tags only, which is all this checks: every start tag is closed by an
+ * end tag of the same name, in order, and nothing is left open. It is one scan
+ * with no pre-pass, so comments, CDATA, processing instructions and a DOCTYPE
+ * (internal subset included) are skipped whole by their own end marker, and a
+ * quoted attribute value may hold `>`. Entities, attributes and the single root
+ * are not checked: a file this accepts may still be invalid XML, and #436's
+ * one-time try is what finds it. No XML parser is a dependency of apps/cli.
+ */
+function xmlTagsBalanced(text: string): boolean {
+  const stack: string[] = []
+  let opened = false
+  let i = 0
+  const skipTo = (end: string, from: number): number => {
+    const at = text.indexOf(end, from)
+    return at === -1 ? -1 : at + end.length
+  }
+  while (i < text.length) {
+    const lt = text.indexOf('<', i)
+    if (lt === -1) break
+    if (text.startsWith('<!--', lt)) i = skipTo('-->', lt + 4)
+    else if (text.startsWith('<![CDATA[', lt)) i = skipTo(']]>', lt + 9)
+    else if (text.startsWith('<?', lt)) i = skipTo('?>', lt + 2)
+    else if (text.startsWith('<!', lt)) {
+      let depth = 0
+      let j = lt + 2
+      for (; j < text.length; j++) {
+        const c = text[j]
+        if (c === '[') depth++
+        else if (c === ']') depth--
+        else if (c === '>' && depth <= 0) break
+      }
+      i = j < text.length ? j + 1 : -1
+    } else {
+      const closing = text[lt + 1] === '/'
+      const nameAt = lt + (closing ? 2 : 1)
+      const m = /^[^\s/>]+/.exec(text.slice(nameAt, nameAt + 200))
+      if (m === null) return false
+      let j = nameAt + m[0].length
+      let quote = ''
+      for (; j < text.length; j++) {
+        const c = text[j]!
+        if (quote !== '') {
+          if (c === quote) quote = ''
+        } else if (c === '"' || c === "'") quote = c
+        else if (c === '>') break
+      }
+      if (j >= text.length) return false
+      if (closing) {
+        if (stack.pop() !== m[0]) return false
+      } else {
+        opened = true
+        if (text[j - 1] !== '/') stack.push(m[0])
+      }
+      i = j + 1
+    }
+    if (i === -1) return false
+  }
+  return opened && stack.length === 0
+}
+
+/**
+ * Maven or Gradle from the build file's existence. pom.xml is read and its tags
+ * checked for balance (and nothing more; see xmlTagsBalanced). A Gradle script
+ * is neither read nor checked, per the operator's answer on #698: it is a
+ * program only Gradle can parse, and #436's one-time try catches a broken one,
+ * so this departs from the ticket's "does not parse" edge for Gradle on
+ * purpose. Gradle wins when both are present.
+ */
+const javaDetector: StackDetector = {
+  stack: 'Java',
+  async detect(reader) {
+    const notes: string[] = []
+    const none = (presence: 'absent' | 'unknown'): StackFinding => ({
+      presence,
+      install: null,
+      build: [],
+      skipped: [],
+      notes,
+    })
+    let gradle: string | null = null
+    let gradleUnknown: string | null = null
+    for (const file of GRADLE_FILES) {
+      const found = await hasOrUnknown(reader, file)
+      if (found === 'unknown') gradleUnknown ??= file
+      else if (found && gradle === null) gradle = file
+    }
+    const pom = await hasOrUnknown(reader, 'pom.xml')
+
+    let tool: 'Maven' | 'Gradle'
+    let because: string
+    if (gradle !== null) {
+      tool = 'Gradle'
+      because = `${gradle} is at the root`
+      if (pom === true) notes.push(`pom.xml is also at the root; ${gradle} was used`)
+    } else if (gradleUnknown !== null) {
+      // A Gradle file that may exist would decide, so pom.xml cannot stand in for it.
+      notes.push(`could not tell whether ${gradleUnknown} is at the root`)
+      return pom === true ? { ...none('absent'), presence: 'present' } : none('unknown')
+    } else if (pom === 'unknown') {
+      notes.push('could not tell whether pom.xml is at the root')
+      return none('unknown')
+    } else if (pom) {
+      tool = 'Maven'
+      because = 'pom.xml is at the root'
+    } else return none('absent')
+
+    if (tool === 'Maven') {
+      let text: string | null
+      try {
+        text = await reader.read('pom.xml')
+      } catch {
+        text = null
+      }
+      if (text === null) {
+        notes.push('pom.xml could not be read')
+        return { ...none('absent'), presence: 'present' }
+      }
+      if (!xmlTagsBalanced(text)) {
+        notes.push('pom.xml has unbalanced tags')
+        return { ...none('absent'), presence: 'present' }
+      }
+    }
+
+    const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
+    const wrapper = await hasOrUnknown(reader, wrapperName)
+    if (wrapper === 'unknown') {
+      notes.push(`could not tell whether ${wrapperName} is at the root`)
+      return { ...none('absent'), presence: 'present' }
+    }
+    const cmd = wrapper ? `./${wrapperName}` : tool === 'Maven' ? 'mvn' : 'gradle'
+    const java = wrapper ? { tool: 'java' } : {}
+    // `test`, never `verify` or `check`: those often run integration tests.
+    const build = [
+      {
+        name: 'test',
+        run: tool === 'Maven' ? `${cmd} -B test` : `${cmd} test`,
+        because,
+        ...java,
+      },
+    ]
+    if (tool === 'Gradle') notes.push(`Gradle has no separate install; ${cmd} test resolves dependencies itself`)
+    notes.push(
+      `a cold ${tool} build downloads its dependencies first and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out`,
+    )
+    return {
+      presence: 'present',
+      install: tool === 'Maven' ? { run: `${cmd} -B -q dependency:go-offline`, because, ...java } : null,
+      build,
+      skipped: [],
+      notes,
+    }
+  },
+}
+
+export const DETECTORS: readonly StackDetector[] = [nodeDetector, pythonDetector, goDetector, javaDetector]
 
 /**
  * Asks each detector in order, over the same reader. The first stack present

@@ -63,7 +63,10 @@ repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
 Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
 and its neighbours configure, and Go from `go.mod` (`go mod download`, then a
 `gofmt`, `go vet` and `go test` check, plus `golangci-lint run` only with a
-`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root). A Python project with only `requirements.txt` gets
+`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root), and Java from
+`pom.xml` (Maven: `dependency:go-offline`, then `test`) or `build.gradle(.kts)` (Gradle: `test`,
+no separate install), using `mvnw`/`gradlew` when it is at the root; Gradle wins when both
+are present. A Python project with only `requirements.txt` gets
 a note asking you to type the install command, not a suggestion.
 
 Open one ticket. This writes a complete request to a file and opens the ticket
