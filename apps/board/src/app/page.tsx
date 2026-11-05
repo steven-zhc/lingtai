@@ -44,14 +44,7 @@ import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
 import { Projects } from './projects.tsx'
-import {
-  QueuedAnswered,
-  QueuedCountAnswered,
-  QueuedCountPending,
-  QueuedFallback,
-  QueuedSegmentAnswered,
-  QueuedSegmentPending,
-} from './queued-stream.tsx'
+import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
 
 /**
@@ -83,8 +76,8 @@ import { Rail, Segs } from './rail.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects now — filter,
- * reading, health, headline — and the rule that keeps it four is stated at the
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Three objects now — filter,
+ * health, headline — and the rule that keeps it three is stated at the
  * end of the bar below, where the next chip would be added.
  *
  * **And so did the card, and two of its thirteen objects were sequences.** Same
@@ -611,13 +604,6 @@ async function AwaitedCount({ queue, logCount }: { queue: Promise<GithubQueue>; 
   return <QueuedCountAnswered github={await queue} logCount={logCount} />
 }
 
-async function AwaitedSegment({
-  queue,
-  ...props
-}: { queue: Promise<GithubQueue> } & Omit<ComponentProps<typeof QueuedSegmentAnswered>, 'github'>) {
-  return <QueuedSegmentAnswered github={await queue} {...props} />
-}
-
 /**
  * The board, optionally narrowed to one project.
  *
@@ -706,26 +692,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // `/spend` — a running total on a rail glanced at every few seconds is one
   // you learn to stop seeing (`the-bar.md`).
   const waiting = columns.find((c) => c.id === 'waiting')?.cards.length ?? 0
-  // And the rest, which is what `11 items` was a sum of. Said as its parts,
-  // because the parts mean different things and the sum meant nothing.
-  // Queued is the first column, and its count is GitHub's to finish: it
-  // streams in at the front, where Queued's count stood.
-  const logQueued = columns.find((c) => c.id === 'queued')?.cards.length ?? 0
-  const rest = columns
-    .filter((c) => c.id !== 'waiting' && c.id !== 'queued' && c.cards.length > 0)
-    .map((c) => `${c.cards.length} ${c.label.toLowerCase()}`)
-    .join(' · ')
-  // What follows the streamed Queued segment. `what this has cost` is only what
-  // an otherwise empty reading says, so a printed count replaces it.
-  const tail =
-    total === 0
-      ? only === undefined
-        ? 'nothing in the log yet'
-        : `nothing here for ${only}`
-      : rest === ''
-        ? 'what this has cost'
-        : rest
-  const tailOnlyAlone = total > 0 && rest === ''
   const queuedColumn = columns.find((c) => c.id === 'queued')
 
   // Where each card's ticket lives, from the owners already loaded — a lookup,
@@ -750,7 +716,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <span className="sep" />
         {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
-            four the rule below names, it has been a list of tabs since #81,
+            three the rule below names, it has been a list of tabs since #81,
             and a list gaining an action at its end is that object rather than
             a fifth one (#216). */}
         <Projects filters={filters} only={only} app={hasGitHubAuth()} />
@@ -788,14 +754,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 : 'everything that is not waiting on you — and what it has cost'
             }${today.short === null ? '' : ` — ${today.text}`}`}
           >
-            <Suspense fallback={<QueuedSegmentPending tail={tail} />}>
-              <AwaitedSegment queue={queue} logQueued={logQueued} tail={tail} tailOnlyAlone={tailOnlyAlone} />
-            </Suspense>
-            {today.short === null ? null : ` · ${today.short}`}
+            {today.short ?? 'spend'}
           </Link>
           {/* `/report` is a second way out of the reading and not a fifth
               object: the same tab-inside-the-object argument #216 made for
-              the `+`, and for the same reason the row still counts four
+              the `+`, and for the same reason the row still counts three
               (the-bar.md). */}
           <Link
             className="reading"
@@ -847,12 +810,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               Nothing waiting is the same sentence at ordinary weight and no
               colour at all: a bar where everything is emphasised is a bar where
               nothing is. */}
-          <span
-            className={`head${waiting > 0 ? ' sig' : ''}`}
-            title={waiting > 0 ? 'tickets that will not move until you decide' : 'nothing is waiting on you'}
-          >
-            {waiting > 0 ? `${waiting} waiting on you` : 'nothing waiting on you'}
-          </span>
+          {waiting > 0 ? (
+            <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
+              {`${waiting} waiting on you`}
+            </a>
+          ) : null}
           {/* **A chip is not free, and the row is the unit.**
               [the-bar.md](../../../../doc/design/the-bar.md)
 
@@ -866,7 +828,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               A bar carries what changes what you do next, and answers two
               questions and no third: *is anything waiting on me?* and *is the
               system doing what the code says?* Anything added here has to be
-              argued against the four that are left — filter, reading, health,
+              argued against the three that are left — filter, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
               limits are on `/spend`.
@@ -896,6 +858,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           // where something is happening (#81).
           <section
             key={col.id}
+            id={col.id === 'waiting' ? 'waiting' : undefined}
             className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
           >
             <header className="col-h">

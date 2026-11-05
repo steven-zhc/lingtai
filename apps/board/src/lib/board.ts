@@ -1056,22 +1056,6 @@ export async function githubQueue(
 }
 
 /**
- * The Queued count the bar prints, once GitHub has answered — or null when
- * there is nothing to say (#884).
- *
- * Never `0` for a queue that could not be asked: when every project that was
- * asked failed, the count is not known, and a log-only number would be passed
- * off as the total. `logQueued` is what the log holds in Queued.
- */
-export function queuedSegment(logQueued: number, github: GithubQueue): string | null {
-  if (github.asked > 0 && github.answered === 0) {
-    return logQueued > 0 ? `${logQueued}+ queued, GitHub uncounted` : 'queued uncounted'
-  }
-  const count = logQueued + github.cards.length
-  return count > 0 ? `${count} queued` : null
-}
-
-/**
  * Where each card's run got to, keyed by task id.
  *
  * **Three lanes, not one.** It was the Running lane alone, on the argument that

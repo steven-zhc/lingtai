@@ -35,15 +35,15 @@ const board = (over: Partial<Health> = {}): Health => ({
 
 /** A daemon holding code the repository has moved past — `#98`'s thirty-nine minutes. */
 const behind: CodeNews = {
-  wrong: 'daemon 4 behind',
-  action: 'restart it to take them',
+  wrong: 'daemon 4 commits behind',
+  command: 'lingtai restart',
   said: 'running d4fbd1a — 4 commit(s) behind origin/main, which has not taken effect in this process: 0c1a2b3 fix(end)',
 }
 
 /** Level with the base: something to say only on hover. */
 const level: CodeNews = {
   wrong: null,
-  action: null,
+  command: null,
   said: 'running d4fbd1a — level with origin/main',
 }
 
@@ -99,8 +99,8 @@ describe('the health dot', () => {
     const said = bearing('open', board(), behind)
 
     expect(said.tone).toBe('warn')
-    expect(said.why).toContain('daemon 4 behind')
-    expect(said.why).toContain('restart it')
+    expect(said.why).toBe('daemon 4 commits behind')
+    expect(said.command).toBe('lingtai restart')
   })
 
   /**
@@ -113,7 +113,7 @@ describe('the health dot', () => {
 
     expect(said.tone).toBe('warn')
     expect(said.label).toContain('no daemon')
-    expect(said.why).toContain('lingtai daemon --no-conduct')
+    expect(said.command).toBe('lingtai daemon --no-conduct')
     expect(said.title).toContain('4 commit(s) behind')
   })
 
@@ -475,7 +475,8 @@ describe('the health dot names a stopped projection (#840)', () => {
     const b = bearing('open', board({ stoppedProjections: [spend] }), null)
     expect(b.tone).toBe('warn')
     expect(b.label).toBe('spend stopped')
-    expect(b.why).toContain('rebuild first: lingtai projection rebuild spend, then lingtai restart')
+    expect(b.why).toContain('rebuild first, then restart')
+    expect(b.command).toBe('lingtai projection rebuild spend, then lingtai restart')
     expect(b.title).toContain('spend stopped at seq 12: boom')
   })
 
@@ -483,7 +484,7 @@ describe('the health dot names a stopped projection (#840)', () => {
     const b = bearing('open', board({ stoppedProjections: [{ name: 'task_view', checkpoint: '4', error: 'x' }] }), null)
     expect(b.label).toBe('task_view stopped')
     expect(b.why).toContain('not taking work')
-    expect(b.why).toContain('lingtai projection rebuild task_view')
+    expect(b.command).toContain('lingtai projection rebuild task_view')
   })
 
   it('counts several, and keeps the stopped remedy ahead of stale code', () => {
@@ -493,7 +494,9 @@ describe('the health dot names a stopped projection (#840)', () => {
       behind,
     )
     expect(b.label).toBe('2 projections stopped')
-    expect(b.why).toContain('rebuild spend, lingtai projection rebuild ticket_report, then lingtai restart')
+    expect(b.command).toBe(
+      'lingtai projection rebuild spend, lingtai projection rebuild ticket_report, then lingtai restart',
+    )
     expect(b.title).toContain('at an unread checkpoint')
     expect(b.title).toContain(behind.said)
   })
@@ -527,5 +530,55 @@ describe('the health dot names a stopped projection (#840)', () => {
     const wire = stoppedOnTheWire([{ name: 'spend', checkpoint: 12n, error: 'boom' }])
     expect(JSON.parse(JSON.stringify(board({ stoppedProjections: wire }))).stoppedProjections[0].checkpoint).toBe('12')
     expect(stoppedOnTheWire(null)).toBeNull()
+  })
+})
+
+describe('health keeps its command apart from its sentence (#904)', () => {
+  const COMMAND = /lingtai (restart|doctor|daemon|projection)/
+
+  it('has no command in any sentence, and the command the table gives', () => {
+    const want: (string | null)[] = [
+      null, // trouble: the remedy is a reload
+      null, // connecting
+      null, // asking
+      'lingtai doctor', // unreadable
+      'lingtai daemon', // never built
+      'lingtai daemon --no-conduct', // behind, no daemon
+      null, // catching up
+      null, // current
+    ]
+    EVERY_STATE.forEach(([socket, health], i) => {
+      const said = bearing(socket, health, null)
+      expect(said.command, `state ${i}`).toBe(want[i])
+      if (said.why !== null) expect(said.why, `state ${i}`).not.toMatch(COMMAND)
+    })
+  })
+
+  it('reads daemon 4 commits behind with lingtai restart for stale code', () => {
+    const said = bearing('open', board(), behind)
+    expect(said.why).toBe('daemon 4 commits behind')
+    expect(said.command).toBe('lingtai restart')
+  })
+
+  it('is silent when well: no sentence and no command', () => {
+    const said = bearing('open', board(), level)
+    expect(said.why).toBeNull()
+    expect(said.command).toBeNull()
+  })
+})
+
+describe('the home bar in page.tsx (#904)', () => {
+  const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
+  const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
+
+  it('has no queued segment and no quiet headline', () => {
+    expect(bar.length).toBeGreaterThan(0)
+    expect(page).not.toContain('QueuedSegment')
+    expect(bar).not.toContain('nothing waiting on you')
+  })
+
+  it('links the headline to the Waiting column, only while something waits', () => {
+    expect(bar).toMatch(/waiting > 0 \? \(\s*<a className="head sig" href="#waiting"/)
+    expect(page).toContain("id={col.id === 'waiting' ? 'waiting' : undefined}")
   })
 })
