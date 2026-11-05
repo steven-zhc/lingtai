@@ -519,13 +519,21 @@ export function unmention(markdown: string): string {
       let end = at
       while (text[end] === '`') end++
       const width = end - at
-      // A span cannot cross a block boundary: a blank line, or a line that opens a heading, quote,
-      // list item, thematic break or setext underline.
-      const brk = text
-        .slice(end)
-        .search(
-          /\n[ \t]*(?:\n|#{1,6}(?:[ \t]|\n|$)|>|[-*+][ \t]|\d{1,9}[.)][ \t]|(?:[-*_][ \t]*){3,}(?:\n|$)|=+[ \t]*(?:\n|$))/,
-        )
+      // A span cannot cross a block boundary: a blank line, or a line (indented at most three spaces)
+      // that opens a heading, quote, list item that may interrupt a paragraph (a bullet, or `1.`),
+      // thematic break or setext underline. An ATX heading's own line is the whole of its content.
+      const lineStart = text.lastIndexOf('\n', at - 1) + 1
+      const lineEndAt = text.indexOf('\n', end)
+      const heading = / {0,3}#{1,6}(?:[ \t]|$)/y
+      heading.lastIndex = lineStart
+      const inHeading = heading.test(text.slice(0, lineEndAt === -1 ? text.length : lineEndAt))
+      const brk = inHeading
+        ? (lineEndAt === -1 ? text.length : lineEndAt) - end
+        : text
+            .slice(end)
+            .search(
+              /\n(?:[ \t]*\n| {0,3}(?:#{1,6}(?:[ \t]|\n|$)|>|[-*+][ \t]+\S|1[.)][ \t]+\S|(?:[-*_][ \t]*){3,}(?:\n|$)|=+[ \t]*(?:\n|$)))/,
+            )
       const limit = brk === -1 ? text.length : end + brk
       let search = end
       let found = -1
@@ -585,17 +593,16 @@ export function unmention(markdown: string): string {
  * comment on a public issue must not (#896).
  */
 export function withoutLocalPaths(text: string): string {
-  // A home directory's name may hold spaces (`/Users/Alice Smith/`), so up to three words are read as
-  // the name when a separator follows; a `file://` prefix is part of the path, not a reason to skip it.
-  const word = '[^\\s\\\\/`\'"()\\[\\]<>]+'
-  const name = `(?:${word}(?: ${word}){0,2}[\\\\/])?`
+  // A home directory's name may hold spaces (`/Users/Alice Smith/`), so any run of characters up to the
+  // next separator is read as the name; a `file:` prefix (`file:/`, `file://`) is part of the path.
+  const name = '(?:[^\\n\\\\/`\'"()\\[\\]<>]+[\\\\/])?'
   const rest = '[^\\s`\'")\\],;]*'
   const unix = new RegExp(
-    `(?<![\\w.:/-])(?:file://(?:localhost)?)?(?:/(?:Users|home)/${name}|/(?:private|var|tmp|root|opt)/|~/|\\$HOME/)${rest}`,
+    `(?<![\\w.:/-])(?:file:(?:///?(?:localhost)?)?)?(?:/(?:Users|home)/${name}|/(?:private|var|tmp|root|opt)/|~/|\\$HOME/)${rest}`,
     'g',
   )
   const windows = new RegExp(
-    `(?<![\\w])(?:file:///)?[A-Za-z]:[\\\\/](?:Users|Documents and Settings)[\\\\/]${name}${rest}`,
+    `(?<![\\w])(?:file:/{1,3})?[A-Za-z]:[\\\\/](?:Users|Documents and Settings)[\\\\/]${name}${rest}`,
     'g',
   )
   return text.replace(unix, '[local path]').replace(windows, '[local path]')

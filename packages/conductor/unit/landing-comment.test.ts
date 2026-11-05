@@ -115,4 +115,19 @@ describe('the renderer and the redaction agree on the harder inputs (#896)', () 
     })
     expect(body).not.toMatch(/alice|Smith|\.lingtai/i)
   })
+
+  it('names no path in a single-slash file link, or under a home with many or spaced words', () => {
+    const body = landingComment({
+      ...landed,
+      summary:
+        '[a](file:/Users/alice/.lingtai/worktrees/app/pass-123/src/main.ts) /Users/Al  Ice Smith Jr Third/.lingtai/w/x.ts C:\\Users\\A  B C D E\\.lingtai\\w\\x.ts',
+    })
+    expect(body).not.toMatch(/alice|Smith|Third|\.lingtai/i)
+  })
+
+  it('a heading line holds its own span, and only a paragraph-interrupting line ends one', () => {
+    expect(unmention('# `unfinished\n@someone`')).toBe('# `unfinished\n@‍someone`')
+    expect(unmention('`code\n2. @types/node`')).toBe('`code\n2. @types/node`')
+    expect(unmention('`code\n    # @types/node`')).toBe('`code\n    # @types/node`')
+  })
 })
