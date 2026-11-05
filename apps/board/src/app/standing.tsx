@@ -234,7 +234,9 @@ function RunningPanel({ view, discussion }: { view: RunningPanelView; discussion
           <p className="triage-cause cause-chip">{chip}</p>
         </div>
         {line.kind === 'step' ? (
-          line.actions.length === 0 ? (
+          line.actions === null ? (
+            <p className="triage-summary">{UNREADABLE}</p>
+          ) : line.actions.length === 0 ? (
             <ol className="planlist">
               <li className="none">nothing configured at: {line.step}</li>
             </ol>

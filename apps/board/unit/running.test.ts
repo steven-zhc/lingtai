@@ -83,4 +83,17 @@ describe('runningPanelOf', () => {
     expect(runningPanelOf(run({ stepNow: at('build', 0), progress: plan({}) })).then).toBeNull()
     expect(runningPanelOf(run({ stepNow: at('build', 0), progress: null })).then).toBeNull()
   })
+
+  it('with no plan known the step row is unknown, not an empty list', () => {
+    const p = runningPanelOf(run({ stepNow: at('prepared', 0), progress: plan({}) }))
+    expect(p.line).toMatchObject({ kind: 'step', actions: null })
+  })
+
+  it('between steps, then starts after the leading steps that are done, not the furthest one that ran', () => {
+    const progress = plan({ implement: ['agent'], build: ['run'], review: ['agent'], merge: ['merge'] })
+    const states: Record<string, string> = { implement: 'passed', build: 'pending', review: 'failed', merge: 'pending' }
+    const steps = (progress as unknown as { steps: { step: string; state: string }[] }).steps
+    for (const s of steps) s.state = states[s.step]!
+    expect(runningPanelOf(run({ progress })).then).toEqual(['build', 'review', 'merge'])
+  })
 })

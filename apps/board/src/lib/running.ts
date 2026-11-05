@@ -10,7 +10,8 @@ export interface RunningPanelView {
   line:
     | { kind: 'fixing'; text: string; findings: Finding[]; evidence: null }
     | { kind: 'refused'; text: string; findings: Finding[]; evidence: string | null }
-    | { kind: 'step'; step: Step; actions: string[] }
+    /** `actions` is null where no plan is known at all, which is not the same as a step with nothing in it. */
+    | { kind: 'step'; step: Step; actions: string[] | null }
     | { kind: 'between' }
   ask: string
   /** The steps left that the recipe puts something at. Null when no plan is recorded. */
@@ -26,6 +27,7 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
   const now = run.stepNow
   const steps = run.progress?.steps ?? []
   const fix = now !== null && now.step === 'implement' && now.round > 0
+  const anyPlan = steps.some((p) => p.planned.length > 0)
   const planned = (s: Step): string[] => [...(steps.find((p) => p.step === s)?.planned ?? [])]
 
   let line: RunningPanelView['line']
@@ -50,15 +52,22 @@ export function runningPanelOf(run: AttemptView): RunningPanelView {
         evidence: r.evidence,
       }
   } else {
-    line = { kind: 'step', step: now.step, actions: planned(now.step) }
+    line = { kind: 'step', step: now.step, actions: anyPlan ? planned(now.step) : null }
   }
 
-  // After the step in flight, or after the last one that ran when none is.
-  const lastRan = steps.findLast((p) => p.state !== 'pending' && p.state !== 'skipped')
-  const anchor = now?.step ?? lastRan?.step
+  // After the step in flight. With none in flight, after the leading run of
+  // steps that are done in spine order: `findLast` would name the furthest step
+  // that ever ran, and a refused review from an earlier round sits beyond the
+  // implement a fix round just finished.
+  let anchor: Step | undefined = now?.step
+  if (anchor === undefined) {
+    for (const p of steps) {
+      if (p.state === 'passed' || p.state === 'skipped' || p.state === 'waived') anchor = p.step
+      else break
+    }
+  }
   const after = anchor === undefined ? -1 : STEPS.indexOf(anchor)
   const left = STEPS.filter((s, i) => i > after && planned(s).length > 0)
-  const anyPlan = steps.some((p) => p.planned.length > 0)
 
   return {
     head: { label: 'Running', step: now?.step ?? null, round: fix ? now!.round : null },

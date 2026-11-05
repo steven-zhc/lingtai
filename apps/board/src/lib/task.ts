@@ -1753,6 +1753,13 @@ export const readAttempts = cache(async (taskId: string) => {
     return { ...r, costUsd }
   })
 
+  // The running panel reads the attempt with the recipe's plan folded in, so it
+  // is drawn from `runs` and not from the `reduced` that `standingOf` saw.
+  if (standing.running != null) {
+    const enriched = runs.find((r) => r.runId === standing.runId)
+    standing.running = enriched === undefined ? null : runningPanelOf(enriched)
+  }
+
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
 })
 
