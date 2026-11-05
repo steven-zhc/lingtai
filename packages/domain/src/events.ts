@@ -1408,6 +1408,9 @@ export const BaseChecked = z.object({
  * field to agree with the three it was derived from. `offer.proposal` could
  * be recomputed from the `StepEnded` before this, and is kept on the event
  * anyway, so a reader of `PassRouted` alone never has to walk back to it.
+ * `offer.ended` names that `StepEnded` — its `version` on this stream and the
+ * deciding action's name — or is `null` where none produced the proposal, and
+ * absent on a route written before it (#931).
  *
  * A `Selected{candidate: 'restart'}` decision also appends
  * `TicketReleased{cause: Restart{restart}}` on the work item's stream, in

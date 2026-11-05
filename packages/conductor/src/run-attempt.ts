@@ -847,7 +847,7 @@ export interface AttemptOptions {
    * whose verdict was never recorded is the failure this design exists to
    * remove.*
    */
-  readonly emit: (event: AttemptEvent) => Promise<void> | void
+  readonly emit: (event: AttemptEvent) => Promise<number | void> | number | void
   /**
    * Where an agent action's prompt is recorded (#923), handed to the pipeline
    * beside `emit`. Not `emit`: that append re-raises the pass when refused, and
@@ -1023,6 +1023,15 @@ export interface RouteTaken {
   readonly offer: RouteOffer
   readonly reply: JudgeReply
   readonly decision: RouteDecision
+  /**
+   * The `StepEnded` the proposal was taken from (0100 §14, #931): the version
+   * `emit` answered when that visit's event was appended, and the deciding
+   * action's name. Null where the visit wrote none. Kept beside `offer` and
+   * merged in only at the append, so the offer a judge is shown is unchanged.
+   * Recorded at the emit because the routes are appended in one batch after the
+   * walk — position cannot say which `StepEnded` it was.
+   */
+  readonly ended: { readonly version: number; readonly action: string } | null
 }
 
 /** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
@@ -1314,6 +1323,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
     proposal: Proposal,
     reported: { step: Step; ending: StepReport } | null,
     arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
+    ended: RouteTaken['ended'],
   ): Promise<boolean> => {
     const offer = offerFor(
       proposal,
@@ -1350,6 +1360,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
           offer,
           reply,
           decision,
+          ended,
         })
         stopped = reported
         end = {
@@ -1411,6 +1422,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
       offer,
       reply,
       decision,
+      ended,
     })
 
     switch (next._tag) {
@@ -1494,6 +1506,8 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
      * calls rather than through `runStep` — so neither gets one either.
      */
     const visiting = at
+    // The version this lap's `StepEnded` was appended at (#931), caught where it is emitted.
+    const endedAt: { version: number | null } = { version: null }
     const reached = await runStep(
       spec,
       options,
@@ -1516,7 +1530,10 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
           recorded.outcome === undefined
             ? undefined
             : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
-        ).then(() => recorded)
+        ).then((version) => {
+          endedAt.version = typeof version === 'number' ? version : null
+          return recorded
+        })
       },
       // Inside the span too: the visit begins at the `StepStarted` write, and a
       // store that is slow to take it or refuses it is the step's time and
@@ -1562,6 +1579,11 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
     // excluded here rather than caught, so an empty `merge:` list keeps
     // today's ending too.
     const outcome = reached.outcome
+    // Not `reported`: that is null when `review` passes carrying findings, whose
+    // `StepEnded` is still the one the proposal came from.
+    const decided = outcome === undefined ? null : decidingAction(outcome)
+    const ended =
+      endedAt.version !== null && decided !== null ? { version: endedAt.version, action: decided.name } : null
     let next: AttemptNext | null = null
     if (outcome !== undefined && decidingAction(outcome) !== null) {
       try {
@@ -1585,7 +1607,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
     // `proposed`'s to answer either way.
     if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
       const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
-      if (await routing(proposal, { step: at, ending }, whatArrived(reached))) continue
+      if (await routing(proposal, { step: at, ending }, whatArrived(reached), ended)) continue
       break
     }
 
@@ -1626,7 +1648,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
       // through, carrying findings above the bar — which is the one `Propose`
       // with nothing of its own to report (0058 §3b).
       const reported = ending.ending === 'passed' ? null : { step: at, ending }
-      if (await routing(next.proposal, reported, whatArrived(reached))) continue
+      if (await routing(next.proposal, reported, whatArrived(reached), ended)) continue
       break
     }
 
@@ -1959,7 +1981,7 @@ async function runStepBody(
               ? options.from.grant
               : sentBackTo(spec.step, reached),
         },
-        emit: options.emit,
+        emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
         ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),
       })
       // Carried out whatever the step then did, because the verdicts are what a
@@ -1999,7 +2021,7 @@ async function runStepBody(
       // no cast.
       outcome: reaching.outcome,
       context: reaching.context,
-      emit: options.emit,
+      emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
     })
     return {
       step: spec.step,

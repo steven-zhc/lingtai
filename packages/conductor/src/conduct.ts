@@ -694,9 +694,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * row costs less than losing the ending it is about. Everything else uses
      * `appendNow`.
      */
-    const appendAt = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
+    const appendAt = async (stream: string, events: readonly ToAppend[]): Promise<number> => {
       const at = (await store.read(stream)).length
-      await store.append(stream, at, events)
+      const written = await store.append(stream, at, events)
+      // The version of the last event written: what a later event can name (#931).
+      return written.length > 0 ? written[written.length - 1]!.version : at
     }
 
     /**
@@ -722,9 +724,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * returns (see `unappended`), rather than having its report believed.
      */
     let unappended: unknown = null
-    const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
+    const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<number> => {
       try {
-        await appendAt(stream, events)
+        return await appendAt(stream, events)
       } catch (defect) {
         unappended ??= defect
         throw defect
@@ -2965,7 +2967,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     behind: { runId: behind.runId, issue: String(behind.issue) },
                   }),
                 },
-              ]),
+              ]).then(() => undefined),
           },
           () => landNow(on),
         )
@@ -3562,14 +3564,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `PipelineOptions` gives — *an action that ran but whose verdict was never
        * recorded is the failure this design exists to remove.*
        */
-      const emit = async (event: AttemptEvent): Promise<void> => {
+      const emit = async (event: AttemptEvent): Promise<number> => {
         // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
         if (event.type === 'RunSpent') {
           const costUsd = (event.data as { costUsd?: number | null }).costUsd
           if (costUsd === null || costUsd === undefined) spent.unknown += 1
           else spent.usd += costUsd
         }
-        await appendNow(runId, [
+        // The version it landed at, which is what a `PassRouted` names (#931).
+        return appendNow(runId, [
           {
             type: event.type,
             actor: 'conductor',
@@ -4364,7 +4367,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // second time; a reader of the event replays `routeNext`.
                 data: parsePayload('PassRouted', {
                   runId,
-                  offer: route.offer,
+                  // `ended` is the `StepEnded` the proposal was taken from, recorded
+                  // when it was emitted: this batch comes after every lap (#931).
+                  offer: { ...route.offer, ended: route.ended },
                   reply: route.reply,
                   decision: route.decision,
                 }),
