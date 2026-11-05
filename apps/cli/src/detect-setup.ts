@@ -535,50 +535,135 @@ const goDetector: StackDetector = {
 
 const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
 
+const XML_NAME = /[\p{L}_:][\p{L}\p{N}._:-]*/uy
+const XML_ENTITY = /&(?:#[0-9]+|#x[0-9a-fA-F]+|[\p{L}_:][\p{L}\p{N}._:-]*);/uy
+
 /**
- * Well-formedness only, no schema: every element closes in order and the
- * document has exactly one root. No XML parser is a dependency here, so this
- * is a tag stack over what is left after comments, CDATA and declarations.
+ * Well-formedness only, no schema and no DTD: names, attributes (quoted, no
+ * duplicates), entity references, and every element closing in order under
+ * exactly one root. No XML parser is a dependency here, so this is a scanner
+ * over what is left after comments, CDATA, declarations and processing
+ * instructions. A literal `>` in text is legal and accepted.
  */
 function xmlWellFormed(text: string): boolean {
   const body = text
     .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, 'x')
     .replace(/<\?[\s\S]*?\?>/g, '')
     .replace(/<!DOCTYPE[^>]*>/gi, '')
+  const name = (i: number): string | null => {
+    XML_NAME.lastIndex = i
+    const m = XML_NAME.exec(body)
+    return m === null ? null : m[0]
+  }
   const stack: string[] = []
   let roots = 0
-  let last = 0
-  const tag = /<(\/?)([^\s/>!?][^\s/>]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g
-  for (let m = tag.exec(body); m !== null; m = tag.exec(body)) {
-    if (/[<>]/.test(body.slice(last, m.index).replace(/&[a-z#0-9]+;/gi, ''))) return false
-    last = tag.lastIndex
-    if (m[1] === '/') {
-      if (stack.pop() !== m[2]) return false
+  let i = 0
+  while (i < body.length) {
+    const c = body[i]!
+    if (c === '&') {
+      XML_ENTITY.lastIndex = i
+      const m = XML_ENTITY.exec(body)
+      if (m === null) return false
+      if (stack.length === 0) return false
+      i += m[0].length
+    } else if (c !== '<') {
+      if (stack.length === 0 && !/\s/.test(c)) return false
+      i++
+    } else if (body[i + 1] === '/') {
+      const n = name(i + 2)
+      if (n === null) return false
+      i += 2 + n.length
+      while (/\s/.test(body[i] ?? '')) i++
+      if (body[i] !== '>' || stack.pop() !== n) return false
+      i++
     } else {
+      const n = name(i + 1)
+      if (n === null) return false
       if (stack.length === 0 && ++roots > 1) return false
-      if (m[4] !== '/') stack.push(m[2]!)
+      i += 1 + n.length
+      const seen = new Set<string>()
+      for (;;) {
+        const gap = i
+        while (/\s/.test(body[i] ?? '')) i++
+        if (body[i] === '>' || body[i] === '/') break
+        const a = i > gap ? name(i) : null
+        if (a === null || seen.has(a)) return false
+        seen.add(a)
+        i += a.length
+        while (/\s/.test(body[i] ?? '')) i++
+        if (body[i] !== '=') return false
+        i++
+        while (/\s/.test(body[i] ?? '')) i++
+        const q = body[i]
+        if (q !== '"' && q !== "'") return false
+        const end = body.indexOf(q, i + 1)
+        if (end === -1) return false
+        const value = body.slice(i + 1, end)
+        if (value.includes('<')) return false
+        if (value.replace(/&(?:#[0-9]+|#x[0-9a-fA-F]+|[\p{L}_:][\p{L}\p{N}._:-]*);/gu, '').includes('&')) return false
+        i = end + 1
+      }
+      if (body[i] === '/') {
+        if (body[i + 1] !== '>') return false
+        i += 2
+      } else {
+        stack.push(n)
+        i++
+      }
     }
   }
-  return stack.length === 0 && roots === 1 && !/[<>]/.test(body.slice(last))
+  return stack.length === 0 && roots === 1
 }
 
 /**
- * A Gradle script is a program (Groovy or Kotlin) that only Gradle can parse;
- * what can be told without it is that brackets pair up outside strings and
- * comments, and that nothing is left open at the end.
+ * A Gradle script is a program (Groovy or Kotlin) that only Gradle can parse.
+ * What can be told without it is lexical: brackets pair up outside strings
+ * (including Groovy slashy and dollar-slashy strings) and comments (Kotlin's
+ * nest, Groovy's do not), and nothing is left open at the end. It does not
+ * find a syntax error between balanced brackets.
  */
-function gradleBalanced(text: string): boolean {
+function gradleBalanced(text: string, kotlin: boolean): boolean {
   const stack: string[] = []
   const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
+  // A `/` opens a slashy string where an operand cannot precede it.
+  let prev = ''
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!
+    const wasPrev = prev
+    if (!/\s/.test(c)) prev = c
     if (c === '/' && text[i + 1] === '/') {
       while (i < text.length && text[i] !== '\n') i++
     } else if (c === '/' && text[i + 1] === '*') {
-      const end = text.indexOf('*/', i + 2)
-      if (end === -1) return false
-      i = end + 1
+      let depth = 1
+      i += 2
+      while (depth > 0) {
+        if (i >= text.length) return false
+        if (text.startsWith('*/', i)) {
+          depth--
+          i += 2
+        } else if (kotlin && text.startsWith('/*', i)) {
+          depth++
+          i += 2
+        } else i++
+      }
+      i--
+      prev = '*'
+    } else if (
+      !kotlin &&
+      (c === '/' || (c === '$' && text[i + 1] === '/')) &&
+      (c === '$' || wasPrev === '' || '=(,{[;:!&|?+-*%~<>'.includes(wasPrev))
+    ) {
+      const dollar = c === '$'
+      const close = dollar ? '/$' : '/'
+      i += dollar ? 2 : 1
+      for (; i < text.length && !text.startsWith(close, i); i++) {
+        if (text[i] === '\\' && !dollar) i++
+        else if (dollar && text[i] === '$') i++
+      }
+      if (i >= text.length) return false
+      i += close.length - 1
+      prev = '"'
     } else if (c === '"' || c === "'") {
       const triple = text.startsWith(c.repeat(3), i)
       const close = triple ? c.repeat(3) : c
@@ -597,8 +682,8 @@ function gradleBalanced(text: string): boolean {
 
 /**
  * Maven or Gradle from the build file's existence, once it has been read and
- * found to hold together: well-formed XML for pom.xml, balanced brackets for
- * a Gradle script (which only Gradle can truly parse — a subtler error fails
+ * found to hold together: well-formed XML for pom.xml, lexically balanced
+ * brackets for a Gradle script (which only Gradle can truly parse — a subtler error fails
  * in #436's trial). A file that cannot be read or does not hold together
  * suggests nothing and says so. Gradle wins when both are present.
  */
@@ -651,7 +736,7 @@ const javaDetector: StackDetector = {
       notes.push(`${buildFile} could not be read`)
       return { ...none('absent'), presence: 'present' }
     }
-    if (!(tool === 'Maven' ? xmlWellFormed(text) : gradleBalanced(text))) {
+    if (!(tool === 'Maven' ? xmlWellFormed(text) : gradleBalanced(text, buildFile.endsWith('.kts')))) {
       notes.push(`${buildFile} does not parse`)
       return { ...none('absent'), presence: 'present' }
     }

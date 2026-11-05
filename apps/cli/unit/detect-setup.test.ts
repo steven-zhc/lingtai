@@ -541,6 +541,27 @@ describe('detectSetup — Java', () => {
     expect(r.notes).toContain(`${file} does not parse`)
   })
 
+  it.each([
+    ['pom.xml', '<project><description>Requires Java > 8</description></project>'],
+    ['pom.xml', '<project a="1" b=\'2\'><d>Build &amp; test &#38; &#x26;</d><e/></project>'],
+    ['build.gradle', "plugins { id 'java' }\ndef pattern = /\\(/\n"],
+    ['build.gradle.kts', '/* outer /* inner */ } */\nplugins { java }\n'],
+  ])('%s that is valid still gets suggestions', async (file, text) => {
+    const r = await detectSetup(reader({ [file]: text }))
+    expect(r.build.length).toBe(1)
+    expect(r.notes).not.toContain(`${file} does not parse`)
+  })
+
+  it.each([
+    ['pom.xml', '<project><description>Build & test</description></project>'],
+    ['pom.xml', '<project><a b=c/></project>'],
+    ['pom.xml', '<project a="1" a="2"/>'],
+  ])('%s with bad entities or attributes does not parse', async (file, text) => {
+    const r = await detectSetup(reader({ [file]: text }))
+    expect(r.build).toEqual([])
+    expect(r.notes).toContain(`${file} does not parse`)
+  })
+
   it('a build file that cannot be read suggests nothing and says so', async () => {
     const r = await detectSetup(reader({ 'pom.xml': POM }, { haveNotRead: ['pom.xml'] }))
     expect(r.install).toBeNull()
