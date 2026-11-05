@@ -203,6 +203,11 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
     })
 
+    it('DiffTooLarge: Requeue, EditBodyAndRequeue, Split, Close — no Approve and no GrantFixRound', () => {
+      const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+    })
+
     it('InputNeeded: Requeue, EditBodyAndRequeue, Close — a question wants an answer', () => {
       const reason = parseProposed({ _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' })
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])

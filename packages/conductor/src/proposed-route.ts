@@ -16,6 +16,7 @@
 import type { ActionFinding } from '@lingtai/actions'
 import {
   decideRoute,
+  ImpossibleRouteError,
   offerFor,
   routeNext,
   type Candidate,
@@ -68,6 +69,11 @@ export function whenOf(proposal: Proposal): JudgeWhen {
       return 'base-moved'
     case 'BudgetExhausted':
       return 'budget-exhausted'
+    case 'DiffTooLarge':
+      // Never reached: `offerFor` offers only `hand-to-person` for it, so
+      // `replyFor` answers `NotAsked` before this is asked (0108 §14). Not
+      // mapped to `findings`, so a `judge … when: findings` cannot seem to cover it.
+      throw new ImpossibleRouteError('DiffTooLarge is never offered to a judge (0108 §14)')
   }
 }
 

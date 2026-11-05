@@ -340,6 +340,10 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
           return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
         case 'SetupRefused':
           return ['Requeue', 'Close']
+        // 0108 §14: no reviewer ran, so there is nothing to approve past (#892
+        // is that) and no round to grant. `Split` still waits on triage's plan.
+        case 'DiffTooLarge':
+          return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
       }
     case 'MergeRefused':
       return ['Approve', 'Requeue', 'Close']
@@ -523,6 +527,7 @@ export function continuationOf(
         case 'VerifyRed':
         case 'SetupRefused':
         case 'AnswerUnreadable':
+        case 'DiffTooLarge':
         case 'NothingProduced':
         case 'BudgetExhausted':
           return null
@@ -629,7 +634,11 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
     case 'AgentCrashed':
       return 'Requeue'
     case 'ProposedEscalated':
-      return reason.proposal._tag === 'BudgetExhausted' || reason.because._tag === 'BaseRed' ? 'Requeue' : null
+      return reason.proposal._tag === 'BudgetExhausted' ||
+        reason.proposal._tag === 'DiffTooLarge' ||
+        reason.because._tag === 'BaseRed'
+        ? 'Requeue'
+        : null
     case 'OwnQuestion':
     case 'AgentQuestion':
     case 'FixerDisagrees':

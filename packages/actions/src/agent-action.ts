@@ -379,6 +379,16 @@ ${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}
 Does what landed on the base change the behaviour this change relies on or alters? Name the line on each side. Report what you find through the findings below.`
 }
 
+/**
+ * Whether `buildReviewPrompt` would cut this diff. One expression for the clip
+ * and for the stop that precedes it (0108 §14), so the two cannot drift: the
+ * limit is compared with `diff.length`, UTF-16 code units though the field says
+ * bytes, and a diff of exactly `limit` is read whole.
+ */
+export function clippedAt(diff: string, limit: number): boolean {
+  return diff.length > limit
+}
+
 export function buildReviewPrompt(
   spec: AgentActionSpec,
   issue: ReviewIssue,
@@ -388,8 +398,9 @@ export function buildReviewPrompt(
   landed = '',
   delta?: ReviewDelta,
 ): string {
-  const clipped =
-    diff.length > limitBytes ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : diff
+  const clipped = clippedAt(diff, limitBytes)
+    ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
+    : diff
 
   return `You are reviewing a change you did not write. You have the ticket and the
 diff, and deliberately nothing else — no plan, no transcript, no reasoning from
@@ -604,6 +615,20 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         // Nothing to review is not the same as nothing wrong, and saying so is
         // cheaper than an agent call that reads an empty diff.
         return { verdict: 'passed', evidence: 'the diff is empty; nothing to review', findings: [] }
+      }
+
+      // 0108 §14: a diff the reviewer would read only part of ends the review
+      // before anything is paid — no ticket read, no dispatch, no spend. The
+      // string measured is the one `buildReviewPrompt` clips below.
+      if (clippedAt(diff, deps.limits.diffBytes)) {
+        const size = diff.length
+        const limit = deps.limits.diffBytes
+        return {
+          verdict: 'failed',
+          evidence: `the diff is ${size} characters and the reviewer reads ${limit}; no reviewer was run`,
+          findings: [],
+          diffTooLarge: { size, limit },
+        }
       }
 
       const issue = await deps.issue()

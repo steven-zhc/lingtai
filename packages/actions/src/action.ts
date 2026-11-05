@@ -196,6 +196,14 @@ export interface ActionResult {
    */
   unreadable?: true
   /**
+   * The diff was longer than the reviewer would read whole, so none was
+   * dispatched (0108 §14). `size` is `diff.length` and `limit` the
+   * `runtime.budget.diff` it was compared with, in the clip's own unit. The
+   * result is `failed` with no findings, which is what `ReviewEmpty` is — this
+   * field is how the conductor tells the two apart.
+   */
+  diffTooLarge?: { size: number; limit: number }
+  /**
    * **Which of the two kinds of refusal this is, in the action's own word** —
    * `lines` or `approach` (`REFUSED_ABOUT`), and absent on every result that did
    * not classify one (`#293`, and `#223` is what it is for).
@@ -669,6 +677,8 @@ export interface PipelineResult {
     because?: string
     /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
     unreadable?: true
+    /** That no reviewer was dispatched because the diff was too large. `ActionResult.diffTooLarge`. */
+    diffTooLarge?: { size: number; limit: number }
     /** Which kind of refusal it said this was, where it said. `ActionResult.about`. */
     about?: RefusedAbout
     /** The document it wrote, where it wrote one. `ActionResult.document`. */
@@ -877,6 +887,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // explicit `undefined` would read the same to a program and differently to
       // a person (`#279`).
       ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+      ...(result.diffTooLarge === undefined ? {} : { diffTooLarge: result.diffTooLarge }),
       // Spread for `head`'s reason a third time, and here *absent* is the whole
       // value: a reviewer that did not classify its refusal and one that said
       // `lines` must never reduce into the same row, because the only thing this
