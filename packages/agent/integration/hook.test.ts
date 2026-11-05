@@ -87,7 +87,7 @@ beforeAll(async () => {
     onLifecycle: (_runId, hook) => void lifecycle.push(hook),
   })
   await server.listen()
-  server.register(runId, 0, 'ticket@3')
+  server.register(runId, 0)
 }, 180_000)
 
 const env = () => ({ LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: runId })
@@ -273,34 +273,19 @@ describe('the lifecycle hooks', () => {
     JSON.stringify({ hook_event_name: name, ...extra })
 
   /**
-   * The prompt, and not two numbers about it.
-   *
-   * This recorded `{ promptVersion, bytes }` and nothing else, so the most
-   * expensive thing the system does — handing a document to an agent — left no
-   * trace of the document (#88). `promptVersion` is a template name and the
-   * ticket body it was filled with lives on GitHub, where it can be edited
-   * afterwards, so nothing could answer *what did we actually ask it to do*.
+   * The hook records no prompt since #928: the conductor writes the implementer's
+   * `RunPrompted` (with its `for`) before it registers the run. A second record
+   * here would be two per run and `prompts: 2`. The hook still answers allow and
+   * still tells `onLifecycle`.
    */
-  it('records a prompt with the version that produced it, and the prompt itself', async () => {
-    const before = (await store.read(runId)).filter((e) => e.type === 'RunPrompted').length
+  it('appends nothing on UserPromptSubmit and still answers allow', async () => {
+    const before = (await store.read(runId)).length
+    const seen = lifecycle.length
     const { code } = await runHook(binary, env(), hookPayload('UserPromptSubmit', { prompt: 'do the thing' }))
 
     expect(code).toBe(0)
-    const prompted = (await store.read(runId)).filter((e) => e.type === 'RunPrompted')
-    expect(prompted.length).toBe(before + 1)
-    const data = prompted[prompted.length - 1]!.data as {
-      promptVersion: string
-      bytes: number
-      prompt: string | null
-    }
-    // "Which prompt produced better work" is only answerable if the version is
-    // on the event.
-    expect(data.promptVersion).toBe('ticket@3')
-    // Verbatim and whole. A slice of a prompt explains nothing.
-    expect(data.prompt).toBe('do the thing')
-    // `bytes` still says what it always said, so a v1 event and this one are
-    // read the same way.
-    expect(data.bytes).toBe(12)
+    expect(await store.read(runId)).toHaveLength(before)
+    expect(lifecycle.slice(seen)).toEqual(['UserPromptSubmit'])
   })
 
   /**

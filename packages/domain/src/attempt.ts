@@ -148,6 +148,11 @@ export interface AttemptState {
    * which is `RunStarted`'s. Kept for a v1 event too, which has no text.
    */
   promptMeta: { version: string; bytes: number } | null
+  /**
+   * What the markers in `prompt` stand for (#928), as the record carried it.
+   * Null where the prompt was recorded whole. Expanding it is the board's.
+   */
+  promptRefs?: PayloadOf<'RunPrompted'>['refs'] | null
 
   /** Latest verdict per gate name, each carrying the sha it was made against. */
   steps: Readonly<Record<string, StepState>>
@@ -413,8 +418,10 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       const d = event.data as PayloadOf<'RunPrompted'>
       // A prompt with a `for` was handed to another call (#923) and is read off
       // the stream beside that call's `RunSpent`; the attempt's `prompt` stays
-      // the implementer's.
-      if (d.for !== undefined) return state
+      // the implementer's. That is the record with no `for` (written by the hook
+      // before #928) or the one the conductor writes for `implement` round 0.
+      if (d.for !== undefined && !(d.for._tag === 'Action' && d.for.step === 'implement' && d.for.round === 0))
+        return state
       // The count is what it always was; the text is what #88 added. A v1 event
       // has none, and leaving the previous one in place would be a lie about
       // which prompt this run was given.
@@ -423,6 +430,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         ...at,
         prompts: state.prompts + 1,
         prompt: d.prompt,
+        promptRefs: d.refs ?? null,
         promptMeta: { version: d.promptVersion, bytes: d.bytes },
       }
     }

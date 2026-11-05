@@ -25,6 +25,7 @@ import {
   RuntimeId,
   Step,
 } from './events.ts'
+import { PromptRefEntry } from './prompt-ref.ts'
 import type { Reducer } from './reducer.ts'
 import { firstDifference } from './ticket-codec.ts'
 
@@ -85,6 +86,8 @@ const StoredRun = z.strictObject({
   prompts: z.number(),
   prompt: z.string().nullable(),
   promptMeta: z.strictObject({ version: z.string(), bytes: z.number() }).nullable(),
+  /** #928; absent on a row written before it. */
+  promptRefs: z.array(PromptRefEntry).nullable().optional(),
   steps: z.record(z.string(), StepState),
   step: z.strictObject({ step: Step, round: z.number(), since: IsoDate }).nullable(),
   openedAt: IsoDate.nullable(),

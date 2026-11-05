@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { DIFF_FLAGS, utf8Bytes, type PromptRef, type PromptRefEntry, type PromptValue } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 
+import { valueOfStep } from './step-value.ts'
+
 /**
  * Turns the `refs` of a recorded `RunPrompted` back into the values they stand
  * for, for `expandPrompt` (#927, 0100 §14).
@@ -64,6 +66,19 @@ function fetchDiff(ref: Extract<PromptRef, { _tag: 'Diff' }>, ports: PromptRefPo
   })
 }
 
+function fetchStepValue(ref: Extract<PromptRef, { _tag: 'StepValue' }>, ports: PromptRefPorts): Promise<Fetched> {
+  return ports.store.read(ref.stream).then((events): Fetched => {
+    const at = events.find((event) => event.version === ref.version)
+    if (at === undefined) return { unresolved: `${ref.stream} has no event at version ${ref.version}` }
+    if (at.type !== 'StepEnded')
+      return { unresolved: `the event at ${ref.stream}@${ref.version} is a ${at.type}, not a StepEnded` }
+    const found = valueOfStep(at.data, ref.action, ref.field)
+    if (found === undefined)
+      return { unresolved: `the StepEnded at ${ref.stream}@${ref.version} holds no ${ref.field} for ${ref.action}` }
+    return { text: ref.trimmed === true ? found.trim() : found }
+  })
+}
+
 function resolveOne(
   entry: Pick<PromptRefEntry, 'ref' | 'bytes' | 'sha256'>,
   ports: PromptRefPorts,
@@ -71,7 +86,20 @@ function resolveOne(
   const { ref } = entry
   // Inside a `.then`, so a port that throws before it returns a promise is caught too.
   return Promise.resolve()
-    .then(() => (ref._tag === 'TicketBody' ? fetchBody(ref, ports) : fetchDiff(ref, ports)))
+    .then(() => {
+      switch (ref._tag) {
+        case 'TicketBody':
+          return fetchBody(ref, ports)
+        case 'Diff':
+          return fetchDiff(ref, ports)
+        case 'StepValue':
+          return fetchStepValue(ref, ports)
+        default: {
+          const never: never = ref
+          return never
+        }
+      }
+    })
     .then((got): PromptValue => {
       if ('unresolved' in got) return got
       const size = utf8Bytes(got.text)
