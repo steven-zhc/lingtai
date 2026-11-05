@@ -163,11 +163,14 @@ in the source.
     `noLog` values replaced by a digest. The empty-step entries for `claim`,
     `design`, `implement`, `build` and `review` are left out while they are empty,
     so an unchanged file keeps its hash. `StepsResolved` (`schemaVer` 4) carries
-    `configHash`, all ten steps with their action names, and `recipe`, the
-    canonical body the hash was taken over, so a reader can check one against the
-    other. It is a record. No code in `conductor`, `recipe` or `actions` reads it
-    back to decide anything (`conductor/unit/recorded-recipe.test.ts`). An event
-    that predates the field has no `recipe`, and readers say *not recorded*.
+    `configHash` and all ten steps with their action names. The canonical body
+    the hash was taken over is recorded once per hash, on a stream of its own
+    (0100 §14: a value already on the log is referenced, not copied), so a
+    reader can check one against the other. It is a record. No code in
+    `conductor`, `recipe` or `actions` reads it back to decide anything
+    (`conductor/unit/recorded-recipe.test.ts`). A `StepsResolved` written before
+    this carries its own `recipe`; one written before that field carries none,
+    and readers say *not recorded*.
 
 14. **The recipe is machine-managed, and its comments are not protected.**
     Lingtai's own questions write it, and a person edits a value now and then.

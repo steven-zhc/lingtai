@@ -186,7 +186,8 @@ same URL can be visible from a checkout and invisible to a daemon started from
     The runtime adds its own system prompt and tool definitions, which Lingtai
     cannot read, and the machine adds its own configuration (the user's
     `~/.claude` instructions, settings, plugins and servers). Of these, only the
-    runtime's version is recorded, on `RunStarted`, as the runtime reported it,
+    runtime's version is recorded, on every `RunPrompted` (every paid call has
+    one; only the implementer has a `RunStarted`), as the runtime reported it,
     so a change of behaviour across an upgrade can be told from one within a
     version. The repository's own instructions need no record: they are in git
     at `baseSha`.
