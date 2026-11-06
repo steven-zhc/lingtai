@@ -672,9 +672,11 @@ running to create the App on, or `--github-app skip`. The App is created next
 runs — until then, this is a recipe written for a project GitHub does not
 know about yet.
 
-**Or from the board, in any state it is in.** The `+` at the end of the project
-list on the bar goes to `/setup/repository` once the App exists and to
-`/setup/github-app` before it — the first is now one line pointing at this
+**Or from the board, in any state it is in.** *Add a repository*, in the
+filter's menu on the bar (#903), goes to `/setup/repository` once GitHub
+authentication is configured (an App, or `gh`) and to `/setup/github-app` before
+it (`apps/board/src/app/projects.tsx:37`, handed `hasGitHubAuth()` at
+`apps/board/src/app/page.tsx:740`) — the first is now one line pointing at this
 command (`#401`), since #391 put every setup decision in the terminal; the
 second still creates the App itself, the one step the terminal cannot do.
 Until then the slot was an entry with no projects, a caption with one and a
@@ -1782,7 +1784,7 @@ Every refusal names itself. The common ones:
 
 ## The report page
 
-`/report` on the board — the *report* link beside the bar's reading — shows how
+`/report` on the board — the *report* link in the footer — shows how
 the pipeline is doing over a window of local days: the figure tiles, fix rounds
 by bucket, the review survival curve, landings per day, spend per day, why work
 stopped to wait, a table per kind, and the eight tickets that went round most,
@@ -2354,8 +2356,8 @@ recipes and the environment files are all untouched.
   above does.
 - **What has been spent.** `spendProjection` is a reducer of `RunSpent` and
   nothing else (`packages/projector/src/spend.ts:1-12`, 0110 §11), so emptying
-  `events` erases every run's recorded cost — `/spend` and the bar's spend
-  objects read zero for all history once this section's own *After* step
+  `events` erases every run's recorded cost — `/spend` reads zero for all
+  history, and the footer's figure reads zero for today, once this section's own *After* step
   rebuilds the projection. Without the note in the *Before* step above, the
   totals are gone from `spend` for good — recoverable only by restoring the
   archive dump and re-querying `events`, the way the Check step above does,
