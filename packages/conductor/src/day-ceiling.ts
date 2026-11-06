@@ -127,7 +127,7 @@ function unknownWhyText(day: DaySpend): string {
   return ` (${shown.join(', ')})`
 }
 
-/** Said on `/spend` only, where an estimate is shown that part of it is not from the shipped card; empty otherwise. */
+/** Said only where an estimate is shown that part of it is not from the shipped card; empty otherwise. */
 export const fetchedNote = (day: { fetchedRuns: number }): string =>
   day.fetchedRuns > 0 ? ` (${day.fetchedRuns} at fetched LiteLLM prices)` : ''
 

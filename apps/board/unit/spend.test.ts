@@ -200,7 +200,7 @@ describe('unknownBill and withNoSpendFallback', () => {
    * A ticket like `ticket-lingtai-89` whose runs predate `RunSpent`: `billOf`
    * reduces its (empty) rows to five empty bills, which reads as nothing spent
    * rather than as unknown. `withNoSpendFallback` is the one place every
-   * reader (the card, `/spend`'s ledger) takes that fallback, credited to
+   * reader (the card, the task page) takes that fallback, credited to
    * Work since neither carries a per-attempt repair flag to split it by.
    */
   it('credits Work with one unknown run per attempt when spend has nothing at all', () => {

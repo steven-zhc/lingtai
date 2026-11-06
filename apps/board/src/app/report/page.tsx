@@ -1,7 +1,7 @@
 /**
  * How the pipeline is doing over time: how it converges, what it landed and
  * what it cost ([0123](../../../../../doc/decisions/0123-the-report-counts-what-the-log-holds.md)
- * §7, #689). `/spend` sums the board's window and stops there; this reads
+ * §7, #689). This reads
  * `ticket_report` and `spend` for a window of local days and lets
  * `@lingtai/conductor/report` compute every figure, the way `lingtai report`
  * does, so the two cannot disagree.

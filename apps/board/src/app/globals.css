@@ -2854,62 +2854,6 @@ a.ti { color: inherit; text-decoration: none; }
 a.ti:hover { text-decoration: underline; text-underline-offset: 2px; }
 a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-/* ----------------------------------------------------------------- spend --
-
-   What the bar stopped carrying. `$488.52` and `$81.83 repair` were two chips
-   on a rail glanced at every few seconds, and neither changes what you do in
-   the next minute; a running total you cannot act on is a number you learn to
-   stop seeing, and then it is not there when you do want it (#134). Here it is
-   read rather than glanced at, which is what buys the split per repository and
-   the policy underneath it.
-
-   The ledger's own frame, reused: these are rows of one table and the box is
-   drawn once. */
-.ledger.money {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-}
-.ledger.money th,
-.ledger.money td {
-  padding: 0.5rem 0.85rem;
-  border-bottom: 1px solid var(--rule);
-  text-align: right;
-  /* Tabular, because the whole reason a ledger beats a chip is that `$7.81`
-     sits over `$5.23` and the eye reads the money down. */
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-.ledger.money th:first-child,
-.ledger.money td:first-child { text-align: left; }
-.ledger.money thead th {
-  font-weight: 500; font-size: 0.72rem;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--muted);
-}
-.ledger.money tbody th { font-weight: 400; }
-/* The sum, and the only rule heavy enough to say so. */
-.ledger.money tfoot th,
-.ledger.money tfoot td {
-  border-bottom: 0; border-top: 1px solid var(--rule-2);
-  font-weight: 600;
-}
-
-/* The standing permission behind the answering column above it. 0025 §2 asks
-   that a repository be able to see what a pass may spend without reading
-   Lingtai's source; this is where that is answered, beside the bill it explains
-   rather than as a chip per project on the bar. */
-.policy { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
-.policy li {
-  display: grid;
-  grid-template-columns: minmax(9rem, auto) 1fr;
-  gap: 0.9rem;
-  align-items: baseline;
-  max-width: 82ch;
-}
-.policy .mono { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); }
-
 /* --- setting up -----------------------------------------------------------
    The GitHub App, created from a manifest (#169). A form and not a card: the
    three fields are the only choices on the page, because the permissions are
