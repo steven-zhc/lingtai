@@ -144,15 +144,15 @@ something else. That one still has to be argued for here.
 Today ▮▮▯ $26.15 + ~$22.03 of $200 · 65 landed · projections current · home ~/.lingtai
 ```
 
-One line at 1440. Nothing waiting and nothing wrong is quieter still: the
-headline loses its box and its colour and stays the same words, and the dot is
+One line at 1440. Nothing waiting and nothing wrong is quieter still: there is
+no headline at all (the Waiting column's own empty line says so), and the dot is
 green and says nothing.
 
 Where the facts that left the bar went:
 
 | | |
 |---|---|
-| `$488.52` · `$81.83 answering` | `/report`, off the bar. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried. Today's figure stays in the footer |
+| `$488.52` · `$81.83 answering` | `/report`, off the bar: the window's spend by purpose, which a chip could never have carried. Today's figure stays in the footer |
 | `<project>: rounds ×N` | `/recipe/<project>`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
