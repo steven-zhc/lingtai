@@ -23,10 +23,10 @@ import {
 } from '@lingtai/domain'
 import type { Usage } from '@lingtai/domain'
 import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
-import { type EventStore, readThroughSnapshot, type SnapshotStore } from '@lingtai/event-store'
-import { Effect, Result } from 'effect'
+import { type EventStore, type SnapshotStore } from '@lingtai/event-store'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
+import { readState as readStream } from './snapshot-state.ts'
 
 export interface DayRow {
   at: Date
@@ -140,11 +140,8 @@ const CEILING_REASON = 'daily ceiling reached — '
 
 /** The control state at `now`, read through the snapshot when this store has one. A failed read throws the store's own error. */
 async function readState(store: EventStore, now: Date, snapshots?: SnapshotStore): Promise<ControlState> {
-  const read = await Effect.runPromise(
-    Effect.result(readThroughSnapshot(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, { snapshots })),
-  )
-  if (Result.isFailure(read)) throw read.failure
-  return evaluateControl(read.success, now)
+  const state = await readStream<ControlState>(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, { snapshots })
+  return evaluateControl(state, now)
 }
 
 /**

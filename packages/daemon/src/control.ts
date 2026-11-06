@@ -1,4 +1,5 @@
 import { conductorWorker } from '@lingtai/conductor/claim'
+import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
@@ -74,17 +75,9 @@ import {
  * being taken is bounded by the sweep. That is the number 0031 is replacing:
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
-import {
-  ConcurrencyError,
-  type EventStore,
-  eventStore,
-  log,
-  readThroughSnapshot,
-  type SnapshotStore,
-} from '@lingtai/event-store'
+import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasks, type TaskCard } from '@lingtai/projector'
-import { Effect, Result } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -140,17 +133,11 @@ export async function readControl(
   const events = store ?? eventStore
   // The default snapshots belong to the default store's log; a store passed in has none of its own.
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
-  // Rethrown as the store's own error: `runPromise` would wrap it in a `FiberFailure`.
-  const read = await Effect.runPromise(
-    Effect.result(
-      readThroughSnapshot(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
-        snapshots,
-        writer: cache.writer,
-      }),
-    ),
-  )
-  if (Result.isFailure(read)) throw read.failure
-  const whole = evaluateControl(read.success, new Date())
+  const state = await readState<ControlState>(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
+    snapshots,
+    writer: cache.writer,
+  })
+  const whole = evaluateControl(state, new Date())
   return since <= 0 ? whole : scopeControl(whole, since)
 }
 
