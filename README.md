@@ -39,7 +39,7 @@ git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
 git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
-2. Register it, using a local SQLite log and holding for your approval before anything merges:
+2. Register it, using a local SQLite log and holding for your approval before anything merges (for Codex instead of Claude Code, pass `--agent codex --reviewer codex`):
 
 ```sh
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
@@ -62,11 +62,11 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
    lingtai board
    ```
 
-5. When the ticket is waiting on you, read the change on the board and press **Approve**, or approve from a terminal; then pull to see the merged change:
+5. When the ticket is waiting on you, read the change on the board and press **Approve**, or approve from a terminal; then pull to see the merged change (a new terminal has no `CHAPTER_GARDEN_DIR`, so the path is the one from step 1):
 
    ```sh
    lingtai approve chapter-garden --issue <ticket-number>
-   git -C "$CHAPTER_GARDEN_DIR" pull
+   git -C "$HOME/workspace/chapter-garden" pull
    ```
 
 Every option, Fish, a request to paste, and GitHub instead: [the tutorial](https://lingtai.hczhang.com/docs/tutorial/).

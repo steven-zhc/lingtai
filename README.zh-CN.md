@@ -36,7 +36,7 @@ git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
 git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
-2. 把它注册到 Lingtai，使用本地 SQLite 日志，并在任何合并之前等你批准：
+2. 把它注册到 Lingtai，使用本地 SQLite 日志，并在任何合并之前等你批准（用 Codex 而不是 Claude Code 时，改为 `--agent codex --reviewer codex`）：
 
 ```sh
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
@@ -59,11 +59,11 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
    lingtai board
    ```
 
-5. 当这张票在等你时，在看板上阅读改动并按下 **Approve**，也可以在终端里批准；然后 pull 就能看到合并后的改动：
+5. 当这张票在等你时，在看板上阅读改动并按下 **Approve**，也可以在终端里批准；然后 pull 就能看到合并后的改动（新开的终端里没有 `CHAPTER_GARDEN_DIR`，路径用第 1 步设置的那个）：
 
    ```sh
    lingtai approve chapter-garden --issue <ticket-number>
-   git -C "$CHAPTER_GARDEN_DIR" pull
+   git -C "$HOME/workspace/chapter-garden" pull
    ```
 
 全部选项、Fish、可直接粘贴的请求，以及改用 GitHub：见 [tutorial](https://lingtai.hczhang.com/docs/tutorial/)。
