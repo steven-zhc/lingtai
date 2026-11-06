@@ -10,6 +10,7 @@
  * answer here as data.
  */
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 
 import type { DaySpendReading } from '@/lib/day-spend'
 import type { FooterLag } from '@/lib/footer'
@@ -32,7 +33,7 @@ export function Footer({
 }: {
   day: DaySpendReading
   project: string | undefined
-  /** Absent off `/`: the link to `/landed` is not drawn rather than drawn as `0 landed`. */
+  /** Absent off `/`: the count is not drawn rather than drawn as `0 landed`; the `landed` link is drawn everywhere. */
   landed?: number
   /** The four projections' lag; null when it could not be read (#906). */
   lags: readonly FooterLag[] | null
@@ -40,13 +41,17 @@ export function Footer({
   const d = day.day
   const ceilingCents = day.ceilingUsd === undefined ? undefined : Math.round(day.ceilingUsd * 100)
 
-  let figures: string
+  let figures: ReactNode
   if (d === null) {
     figures = "today's spend could not be read"
   } else {
-    figures = `${day.figure} + ~${dollars(d.estimatedCents)}`
-    if (day.ceilingUsd !== undefined) figures += ` of $${day.ceilingUsd}`
-    if (d.unknown > 0) figures += ` + ${d.unknown} unknown`
+    figures = (
+      <>
+        <b>{day.figure}</b> + ~<b>{dollars(d.estimatedCents)}</b>
+        {day.ceilingUsd !== undefined ? ` of $${day.ceilingUsd}` : null}
+        {d.unknown > 0 ? ` + ${d.unknown} unknown` : null}
+      </>
+    )
   }
 
   let meter = null
@@ -82,11 +87,15 @@ export function Footer({
         </span>
       </span>
       {landed === undefined ? null : (
-        <Link href={withProject('/landed', project)} title="landed in the last 2 days">
-          {landed} landed
-        </Link>
+        <span>
+          <b>{landed}</b> landed
+        </span>
       )}
+      <Currency lags={lags} />
       <span className="links">
+        <Link href={withProject('/landed', project)} title="landed in the last 2 days">
+          landed
+        </Link>
         <Link
           href={withProject('/report', project)}
           title="how the pipeline converges, what it landed and what it cost"
@@ -97,7 +106,6 @@ export function Footer({
           spend
         </Link>
       </span>
-      <Currency lags={lags} />
     </footer>
   )
 }
