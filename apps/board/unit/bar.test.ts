@@ -266,21 +266,7 @@ describe("the bar's amber", () => {
 
   /** The guard above is only as good as its reading of the source. */
   it("reads the bar's classes, including the ones its components bring", () => {
-    for (const c of [
-      'bar',
-      'head',
-      'sig',
-      'reading',
-      'dot',
-      'chip',
-      'held',
-      'btn',
-      'why',
-      'filter',
-      'menu',
-      'tab',
-      'add',
-    ]) {
+    for (const c of ['bar', 'head', 'sig', 'dot', 'chip', 'held', 'btn', 'why', 'filter', 'menu', 'tab', 'add']) {
       expect(barClasses.has(c)).toBe(true)
     }
   })

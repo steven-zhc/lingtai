@@ -11,27 +11,24 @@ import { readRateSnapshot, readSpend } from '@lingtai/projector'
 export interface DaySpendReading {
   /** The full sentence, for a title or a page. */
   text: string
-  /** The short form for the bar's reading; null where no ceiling is set, and a failure to read is said here too. */
-  short: string | null
+  /** The day's figures; null exactly when the read failed. */
+  day: DaySpend | null
+  /** `dayFigure(day)` — the reported figure, never `$0.00` over unknown rows; null when `day` is. */
+  figure: string | null
+  /** The daily ceiling in dollars; undefined where none is set. */
+  ceilingUsd: number | undefined
 }
 
 /**
  * The pure half. `text` carries the fetched-prices note only when asked (the
- * `/spend` page); `short` never does, the bar is not `/spend`.
+ * `/spend` page); the footer draws `day` and never needs it.
  */
 export function dayReading(
   day: DaySpend,
   ceilingUsd: number | undefined,
   options: { fetchedNote?: boolean } = {},
 ): DaySpendReading {
-  const estimate = `~$${(day.estimatedCents / 100).toFixed(2)} est.`
-  return {
-    text: daySpendText(day, ceilingUsd, options),
-    short:
-      ceilingUsd === undefined
-        ? null
-        : `today ${dayFigure(day)} + ${estimate} + ${day.unknown} unknown / $${ceilingUsd}`,
-  }
+  return { text: daySpendText(day, ceilingUsd, options), day, figure: dayFigure(day), ceilingUsd }
 }
 
 /** Never throws: a board that cannot read it says so rather than saying nothing. */
@@ -44,6 +41,11 @@ export async function readDayReading(
     const day = daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot())
     return dayReading(day, ceilingUsd, options)
   } catch (err) {
-    return { text: `today's spend could not be read: ${(err as Error).message}`, short: 'today unreadable' }
+    return {
+      text: `today's spend could not be read: ${(err as Error).message}`,
+      day: null,
+      figure: null,
+      ceilingUsd: undefined,
+    }
   }
 }

@@ -39,6 +39,7 @@ import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 import { codeSpans } from './code-spans.tsx'
 import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
+import { Footer, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
 import { Home } from './home.tsx'
 import { NotSetUp } from './not-set-up.tsx'
@@ -77,9 +78,9 @@ import { Rail, Segs } from './rail.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects still — filter,
- * reading, health, headline — until the reading moves to a footer
- * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps it four is stated at the
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to filter, health,
+ * headline now that the reading has moved to the footer
+ * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps the row small is stated at the
  * end of the bar below, where the next chip would be added.
  *
  * **And so did the card, and two of its thirteen objects were sequences.** Same
@@ -680,7 +681,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         timed('projects.read', () => loadProjects()).catch(() => []),
         timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
-      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' })
+      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null })
       return [board, projects, control, day] as const
     },
     { label: '/' },
@@ -693,7 +694,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const queue: Promise<GithubQueue> = measure(() => timed('board.queue', () => githubQueue(askable, known)), {
     label: '/ queue',
   }).then(([github]) => github)
-  const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // reduced cleanly — a chip is not free, and this is the ordinary case — and
   // a sentence when it did not, because a card reading `unknown (1 run)`
@@ -718,107 +718,69 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     issueUrl(owners.get(card.project) ?? null, card.project, card.ref, ticketSources.get(card.project) ?? null)
 
   return (
-    <main>
-      <TimingMeta timings={timings} />
-      <div className="bar">
-        {/* An empty span carrying a background, not an `<img>`: which file the
+    <>
+      <main>
+        <TimingMeta timings={timings} />
+        <div className="bar">
+          {/* An empty span carrying a background, not an `<img>`: which file the
             mark is comes from `--mark`, so it follows the palette instead of
             being decided here. `aria-hidden` because the word beside it already
             says what it says. */}
-        <span className="brand">
-          <span className="mark" aria-hidden="true" />
-          Lingtai
-          <Home {...theHome()} />
-        </span>
-        <span className="sep" />
-        {/* The projects, and the way to add one — `projects.tsx`, which is
+          <span className="brand">
+            <span className="mark" aria-hidden="true" />
+            Lingtai
+            <Home {...theHome()} />
+          </span>
+          <span className="sep" />
+          {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
-            four the rule below names, it has been a list of tabs since #81,
+            objects the rule below names, it has been a list of tabs since #81,
             and a list gaining an action at its end is that object rather than
             a fifth one (#216). */}
-        <Projects filters={filters} only={only} app={hasGitHubAuth()} />
-        <span className="sep" />
-        {/* Everything from here is the right rail, and it is a rail rather than
-            four more children of `.bar` so that a narrow window breaks between
-            the filters and the reading rather than in the middle of the
-            reading. Its order is the eye's: what the board says, whether the
+          <Projects filters={filters} only={only} app={hasGitHubAuth()} />
+          <span className="sep" />
+          {/* Everything from here is the right rail, and it is a rail rather than
+            more children of `.bar` so that a narrow window breaks between
+            the filters and the rail rather than in the middle of the
+            rail. Its order is the eye's: whether the
             board can be believed, and — last, where the eye lands — the one
             thing that is asking for a person. */}
-        <span className="rail">
-          {/* The reading. Unboxed, because a box says *this is a thing* and
-              this is a reading: `11 items` was the sum of four columns that
-              mean different things (#81), and the parts are kept for that
-              reason. Nothing at all is still worth a word — an empty board and
-              an unbuilt projection look alike.
-
-              It is also the way to `/spend`, which costs the row nothing: the
-              board's numbers are already here, and what they cost is the one
-              more number about them.
-
-              **A link on every board, the empty one included.** `/spend` holds
-              the pass limits as well as the bill, and before anything has run
-              is exactly when 0025 §2 wants a spending default seen — there is
-              no bill yet, but there is already a permission to spend. Under a
-              filter, "the log" is not what is empty — it may be full of the
-              project you are not looking at — so the board says whose
-              emptiness this is, the way the columns below do (#86). */}
-          <Link
-            className="reading"
-            href={only === undefined ? '/spend' : `/spend?project=${encodeURIComponent(only)}`}
-            title={`${
-              total === 0
-                ? 'nothing has run — and what an attempt may spend when it does'
-                : 'everything that is not waiting on you — and what it has cost'
-            }${today.short === null ? '' : ` — ${today.text}`}`}
-          >
-            {today.short ?? 'spend'}
-          </Link>
-          {/* `/report` is a second way out of the reading and not a fifth
-              object: the same tab-inside-the-object argument #216 made for
-              the `+`, and for the same reason the row still counts four
-              (the-bar.md). */}
-          <Link
-            className="reading"
-            href={only === undefined ? '/report' : `/report?project=${encodeURIComponent(only)}`}
-            title="how the pipeline converges, what it landed and what it cost"
-          >
-            report
-          </Link>
-          {/* One health, out of two facts that were two chips. `#64` asks
+          <span className="rail">
+            {/* One health, out of two facts that were two chips. `#64` asks
               whether what you are looking at is current and `#98` asks whether
               the process that moves it is running the code we merged; both are
               real, and two boxes for one question is two things to learn to
               read. Green and silent when both are true, and a sentence with the
               action in it when either is not. Never amber — that is the
               headline's, below. */}
-          <Health />
-          {/* Nothing while `spend` reduced cleanly; the sentence when it did
+            <Health />
+            {/* Nothing while `spend` reduced cleanly; the sentence when it did
               not. Draws nothing in the ordinary case, the same reason
               `Paused` and `Draining` cost the quiet row nothing. */}
-          {spendCurrency.current ? null : (
-            <>
-              <span className="sep" />
-              <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
-                {spendCurrency.label}
-              </span>
-            </>
-          )}
-          {/* And whether anything is going to move, which is neither of those:
+            {spendCurrency.current ? null : (
+              <>
+                <span className="sep" />
+                <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
+                  {spendCurrency.label}
+                </span>
+              </>
+            )}
+            {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for
               four days without a word for it (#77). Draws nothing when it is
               not paused, which is why it costs the quiet row nothing. */}
-          {control.paused ? (
-            <>
-              <span className="sep" />
-              <Paused by={control.by} reason={control.reason} />
-            </>
-          ) : null}
-          {/* And whether it is on its way out, which is none of the above: a
+            {control.paused ? (
+              <>
+                <span className="sep" />
+                <Paused by={control.by} reason={control.reason} />
+              </>
+            ) : null}
+            {/* And whether it is on its way out, which is none of the above: a
               draining daemon is current, unpaused and finishing the last pass it
               will run (0030). Draws nothing when it is not. */}
-          <Draining />
-          {/* **The headline, and the last thing on the row.** It is the only
+            <Draining />
+            {/* **The headline, and the last thing on the row.** It is the only
               reason to look up: the only column that is asking for a person,
               and the only amber on the bar. Amber for the same reason the lane
               is amber — it is reserved for "a human is the thing being waited
@@ -827,12 +789,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               With nothing waiting there is no headline at all: the Waiting
               column's own empty line says so, and a bar where everything is
               emphasised is a bar where nothing is. */}
-          {waiting > 0 ? (
-            <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
-              {`${waiting} waiting on you`}
-            </a>
-          ) : null}
-          {/* **A chip is not free, and the row is the unit.**
+            {waiting > 0 ? (
+              <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
+                {`${waiting} waiting on you`}
+              </a>
+            ) : null}
+            {/* **A chip is not free, and the row is the unit.**
               [the-bar.md](../../../../doc/design/the-bar.md)
 
               Eleven objects stood here, nine of them boxed, wrapping to a second
@@ -845,51 +807,51 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               A bar carries what changes what you do next, and answers two
               questions and no third: *is anything waiting on me?* and *is the
               system doing what the code says?* Anything added here has to be
-              argued against the four that are left — filter, reading, health,
+              argued against the objects that are left — filter, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
               limits are on `/spend`.
 
-              **The four are not all on `.rail`, and #216 is where that
+              **The objects are not all on `.rail`, and #216 is where that
               mattered.** The filter is one of them, so *it is on the other
               side of the separator* is not an argument this rule accepts. What
               #216 added — a `+` that onboards a repository — passes instead by
               adding nothing to the count: the filter has been a list of tabs
               since #81, and a list gaining an action at its end is that object
-              and not a fifth one. A fifth object is still argued for here. */}
-        </span>
-      </div>
+              and not a fourth one. A fourth object is still argued for here. */}
+          </span>
+        </div>
 
-      {/* Repositories that are recorded and not yet conducted (#163). Above
+        {/* Repositories that are recorded and not yet conducted (#163). Above
           the lanes because it is not work — `loadProjects()` does not return
           one and nothing will take a ticket from it — and absent entirely
           when there are none, which is nearly always: this costs the ordinary
           board no room at all. */}
-      <Pending projects={pending} />
+        <Pending projects={pending} />
 
-      <div className="cols">
-        {columns.map((col) => (
-          // `quiet` is the width half of the same decision the rows below are
-          // the weight half of: Landed is a list of one-line rows and does not
-          // need a card's column, and what it gives back goes to the lanes
-          // where something is happening (#81).
-          <section
-            key={col.id}
-            id={col.id === 'waiting' ? 'waiting' : undefined}
-            className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
-          >
-            <header className="col-h">
-              <ColumnLabel id={col.id} label={col.label} only={only} />
-              {col.id === 'queued' ? (
-                <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
-                  <AwaitedCount queue={queue} logCount={col.cards.length} />
-                </Suspense>
-              ) : (
-                <span className="ct">{col.cards.length}</span>
-              )}
-            </header>
-            <div className="cards">
-              {/* **An empty column and an unanswerable one are different facts.**
+        <div className="cols">
+          {columns.map((col) => (
+            // `quiet` is the width half of the same decision the rows below are
+            // the weight half of: Landed is a list of one-line rows and does not
+            // need a card's column, and what it gives back goes to the lanes
+            // where something is happening (#81).
+            <section
+              key={col.id}
+              id={col.id === 'waiting' ? 'waiting' : undefined}
+              className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
+            >
+              <header className="col-h">
+                <ColumnLabel id={col.id} label={col.label} only={only} />
+                {col.id === 'queued' ? (
+                  <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
+                    <AwaitedCount queue={queue} logCount={col.cards.length} />
+                  </Suspense>
+                ) : (
+                  <span className="ct">{col.cards.length}</span>
+                )}
+              </header>
+              <div className="cards">
+                {/* **An empty column and an unanswerable one are different facts.**
                   They rendered identically until #76: a recipe that would not
                   parse took every issue out of Queued, and the column read
                   exactly like a repository with nothing to do. So the reason
@@ -900,18 +862,37 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                   listed (#76), the lane is empty because somebody stopped the
                   conductor (#77), and the lane is simply empty. Only the last
                   one means what it says. */}
-              {col.id === 'queued' ? (
-                // **GitHub's half streams in after the rest** (#884). The
-                // fallback is what the log already says, and the answer is
-                // the whole column again: one grouping and one *taken first*
-                // over the log's cards and GitHub's, as before.
-                <Suspense
-                  fallback={
-                    <QueuedFallback
-                      unreadable={col.problems ?? []}
+                {col.id === 'queued' ? (
+                  // **GitHub's half streams in after the rest** (#884). The
+                  // fallback is what the log already says, and the answer is
+                  // the whole column again: one grouping and one *taken first*
+                  // over the log's cards and GitHub's, as before.
+                  <Suspense
+                    fallback={
+                      <QueuedFallback
+                        unreadable={col.problems ?? []}
+                        logCards={col.cards}
+                        onBoard={onBoard}
+                        count={skeletonCount(askable.map((f) => f.project))}
+                        list={(cards, showProject, markNext, arriving) => (
+                          <Queued
+                            cards={cards}
+                            order={queueOrder}
+                            showProject={showProject}
+                            issue={ticket}
+                            paused={control.paused}
+                            markNext={markNext}
+                            arriving={arriving}
+                          />
+                        )}
+                      />
+                    }
+                  >
+                    <AwaitedQueued
+                      queue={queue}
+                      unreadable={queuedColumn?.problems ?? []}
                       logCards={col.cards}
                       onBoard={onBoard}
-                      count={skeletonCount(askable.map((f) => f.project))}
                       list={(cards, showProject, markNext, arriving) => (
                         <Queued
                           cards={cards}
@@ -923,50 +904,34 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                           arriving={arriving}
                         />
                       )}
+                      empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
                     />
-                  }
-                >
-                  <AwaitedQueued
-                    queue={queue}
-                    unreadable={queuedColumn?.problems ?? []}
-                    logCards={col.cards}
-                    onBoard={onBoard}
-                    list={(cards, showProject, markNext, arriving) => (
-                      <Queued
-                        cards={cards}
-                        order={queueOrder}
-                        showProject={showProject}
-                        issue={ticket}
-                        paused={control.paused}
-                        markNext={markNext}
-                        arriving={arriving}
-                      />
-                    )}
-                    empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
-                  />
-                </Suspense>
-              ) : null}
-              {col.id === 'queued' ? null : col.cards.length === 0 ? (
-                <p className={`empty${col.id === 'running' && control.paused ? ' held' : ''}`}>
-                  {emptyNote(col.id, control.paused, only)}
-                </p>
-              ) : col.id === 'landed' ? (
-                <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
-              ) : (
-                col.cards.map((card) => (
-                  <Card
-                    key={card.taskId}
-                    card={card}
-                    showProject={onBoard.size > 1}
-                    issue={ticket(card)}
-                    paused={control.paused}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-        ))}
-      </div>
-    </main>
+                  </Suspense>
+                ) : null}
+                {col.id === 'queued' ? null : col.cards.length === 0 ? (
+                  <p className={`empty${col.id === 'running' && control.paused ? ' held' : ''}`}>
+                    {emptyNote(col.id, control.paused, only)}
+                  </p>
+                ) : col.id === 'landed' ? (
+                  <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
+                ) : (
+                  col.cards.map((card) => (
+                    <Card
+                      key={card.taskId}
+                      card={card}
+                      showProject={onBoard.size > 1}
+                      issue={ticket(card)}
+                      paused={control.paused}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      </main>
+      {/* Outside `<main>`: a `<footer>` inside it has no `contentinfo` role. */}
+      <Footer day={today} project={only} landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])} />
+    </>
   )
 }

@@ -49,7 +49,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
     async () => {
       const board = await timed('board.load', () => loadBoard(only))
       const today = await timed('spend.day', () => readDayReading({ fetchedNote: true }), {
-        failed: (r) => r.short === 'today unreadable',
+        failed: (r) => r.day === null,
       })
       return [board, today] as const
     },

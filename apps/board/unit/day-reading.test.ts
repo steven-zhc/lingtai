@@ -1,6 +1,6 @@
 /**
  * `dayReading`, the pure half of the board's day reading: the fetched-prices
- * note is `/spend`'s `text` alone (#677), never the bar's `short`.
+ * note is `/spend`'s `text` alone (#677), never the footer's figures.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -25,8 +25,11 @@ describe('dayReading', () => {
     expect(dayReading(day, 200).text).not.toContain('LiteLLM')
   })
 
-  it('never puts it in short', () => {
-    expect(dayReading(day, 200, { fetchedNote: true }).short).not.toContain('LiteLLM')
-    expect(dayReading(day, 200).short).toBe('today $22.24 + ~$16.56 est. + 0 unknown / $200')
+  it('hands the footer structured figures, not a string', () => {
+    const r = dayReading(day, 200, { fetchedNote: true })
+    expect(r.day).toBe(day)
+    expect(r.figure).toBe('$22.24')
+    expect(r.ceilingUsd).toBe(200)
+    expect(dayReading(day, undefined).ceilingUsd).toBeUndefined()
   })
 })

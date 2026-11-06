@@ -14,10 +14,10 @@
  * that and the two come apart in both directions.
  *
  * The third claim is about the row. the-bar.md's *a chip is not free, and the
- * row is the unit* counts the filter among its four, so the `+` is inside the
+ * row is the unit* counts the filter among its three, so the `+` is inside the
  * rule and not beside it: what makes it allowed is that the filter was already
- * a list of tabs and gained one more. Nothing opens in `.rail`, the four are
- * still the four, and `bar.test.ts` now reads `projects.tsx` so that a class
+ * a list of tabs and gained one more. Nothing opens in `.rail`, the three are
+ * still the three, and `bar.test.ts` now reads `projects.tsx` so that a class
  * added here is still a class the bar's amber guard has seen.
  */
 import { readFileSync } from 'node:fs'
@@ -135,15 +135,15 @@ describe('which object on the row this is', () => {
   const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
 
   /**
-   * the-bar.md's rule counts four objects on the row, and the filter is one of
+   * the-bar.md's rule counts three objects on the row, and the filter is one of
    * them — so what this has to show is not that it escaped the count but that
    * it did not add to it. Nothing new opens inside `.rail`, and the `+` is a
    * tab in a list that was already a list of tabs.
    */
-  it('is mounted left of the rail, which keeps the four it was cut to', () => {
+  it('is mounted left of the rail, which keeps the objects it was cut to', () => {
     expect(bar.indexOf('<Projects')).toBeGreaterThan(-1)
     expect(bar.indexOf('<Projects')).toBeLessThan(bar.indexOf('className="rail"'))
-    // Nothing new inside the rail: the reading, the health dot, the
+    // Nothing new inside the rail: the health dot, the
     // paused/draining chip and the headline, as #134 left them.
     const rail = bar.slice(bar.indexOf('className="rail"'))
     for (const object of ['<Projects', '/setup/repository', '/setup/github-app']) {
@@ -152,7 +152,7 @@ describe('which object on the row this is', () => {
   })
 
   /**
-   * **The four are named in three files, and the way to get this wrong is to
+   * **The objects are named in three files, and the way to get this wrong is to
    * make the `+` fit by redefining them.** `page.tsx` says it twice — once in
    * the module's docstring and once in the rule itself, at the end of `.bar` —
    * and the-bar.md is where a later ticket goes to read what it must argue
@@ -169,7 +169,6 @@ describe('which object on the row this is', () => {
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
       ['filter', bar.includes('<Projects')],
-      ['reading', bar.includes('className="reading"')],
       ['health', bar.includes('<Health')],
       ['headline', bar.includes('className="head sig"')],
     ]
@@ -177,7 +176,7 @@ describe('which object on the row this is', () => {
       .map(([name]) => name)
     const named = rendered.join(', ')
 
-    expect(rendered).toEqual(['filter', 'reading', 'health', 'headline'])
+    expect(rendered).toEqual(['filter', 'health', 'headline'])
     // Twice in `page.tsx`, and once in `projects.tsx`: each says exactly what is rendered.
     expect(said(page).split(named)).toHaveLength(3)
     expect(said(read('../src/app/projects.tsx'))).toContain(named)
