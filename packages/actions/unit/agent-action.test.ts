@@ -1154,6 +1154,43 @@ describe('the action', () => {
       expect(fetched.n).toBe(0)
     })
 
+    it('approved to read it clipped, on this head: the reviewer runs once on the clipped diff and the result says so (#892)', async () => {
+      const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+      const result = await withDiff('x'.repeat(101), runtime, { n: 0 }).run({
+        ...context,
+        readClippedAt: context.onSha,
+      })
+
+      expect(result.verdict).toBe('passed')
+      expect(result.diffTooLarge).toBeUndefined()
+      expect(result.clipped).toEqual({ read: 100, of: 101 })
+      expect(runtime.seen).toHaveLength(1)
+      expect(runtime.seen[0]!.prompt).toContain('[diff truncated at 100 bytes]')
+    })
+
+    it('approved for another head: measured again, and stops', async () => {
+      const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+      const result = await withDiff('x'.repeat(101), runtime, { n: 0 }).run({
+        ...context,
+        readClippedAt: 'b'.repeat(40),
+      })
+
+      expect(result.diffTooLarge).toEqual({ size: 101, limit: 100 })
+      expect(result.clipped).toBeUndefined()
+      expect(runtime.seen).toHaveLength(0)
+    })
+
+    it('approved but the diff is within the limit: read whole, and not marked clipped', async () => {
+      const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
+      const result = await withDiff('x'.repeat(100), runtime, { n: 0 }).run({
+        ...context,
+        readClippedAt: context.onSha,
+      })
+
+      expect(result.clipped).toBeUndefined()
+      expect(runtime.seen).toHaveLength(1)
+    })
+
     it('exactly the limit is reviewed whole', async () => {
       const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
       const result = await withDiff('x'.repeat(100), runtime, { n: 0 }).run(context)

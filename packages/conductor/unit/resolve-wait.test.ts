@@ -1186,6 +1186,45 @@ describe('resolveWait', () => {
     })
   })
 
+  it('Approve on a DiffTooLarge wait needs no note, though the review it stopped is unpassed on the sha (#892)', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream(PROJECT, 12)
+    const item = makeStream(ticketId)
+    const run = anAttempt('pass-12')
+    const waitId = aWaitId()
+    await seed(store, ticketId, [
+      ...aClaim(item, 'pass-12'),
+      ...aWait(
+        item,
+        {
+          _tag: 'ProposedEscalated',
+          run: anAttemptRef('pass-12'),
+          proposal: { _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 },
+          because: { _tag: 'NotAsked' },
+        },
+        waitId,
+      ),
+    ])
+    await seed(store, 'pass-12', [
+      ...run.aStepEnded({ step: 'review', round: 0, actions: [refusedCheck(SHA, 'review')] }),
+      run.event('RunProposedCompletion', { headSha: SHA }),
+    ])
+
+    const result = await resolveWaitHolding(
+      {
+        ticketId,
+        issue: 12,
+        waitId,
+        resolution: { _tag: 'Approve', onSha: SHA },
+        by: 'human:steven',
+        client: fakeClient(SHA),
+        store,
+      },
+      ticketId,
+    )
+    expect(result).toEqual({ ok: true, ticketId })
+  })
+
   it('refuses on a version conflict — something else moved the item between the read and the append', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 11)

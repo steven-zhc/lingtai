@@ -2404,3 +2404,25 @@ it('draws a split plan as cards in waves, and nothing where triage proposed none
   expect(bare).not.toContain('Lay the groundwork')
   expect(bare).not.toContain('wave 2')
 })
+
+describe('Approve on a DiffTooLarge wait (#892)', () => {
+  it('says it reviews the clipped diff, and never merging', () => {
+    const html = render(
+      {
+        ...HELD,
+        awaitingSha: SHA,
+        failed: ['review'],
+        reason: {
+          _tag: 'ProposedEscalated',
+          run: { runId: RUN_2 },
+          proposal: { _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 },
+          because: { _tag: 'NotAsked' },
+        },
+      },
+      null,
+    )
+    expect(html).toContain('>Review the first 400000 anyway</button>')
+    expect(html).not.toContain('>Approve</button>')
+    expect(html).not.toContain('merging…')
+  })
+})

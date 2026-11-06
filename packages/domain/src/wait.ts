@@ -340,10 +340,11 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
           return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
         case 'SetupRefused':
           return ['Requeue', 'Close']
-        // 0108 §14: no reviewer ran, so there is nothing to approve past (#892
-        // is that) and no round to grant. `Split` still waits on triage's plan.
+        // 0108 §14: no reviewer ran, so `Approve` here waives nothing — it
+        // means *review the clipped diff anyway* (#892) — and there is no round
+        // to grant. `Split` still waits on triage's plan.
         case 'DiffTooLarge':
-          return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
+          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
       }
     case 'MergeRefused':
       return ['Approve', 'Requeue', 'Close']
@@ -490,6 +491,12 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
 export interface Continuation {
   readonly step: Step
   readonly waive: string | null
+  /**
+   * `Approve` on a `DiffTooLarge` wait (#892): the reviewer reads the clipped
+   * diff once, on the head the wait was raised on. Not a waiver — `waive` stays
+   * `null` — and derived from the approved wait alone, never accumulated.
+   */
+  readonly readClipped?: true
 }
 
 /**
@@ -534,6 +541,8 @@ export function continuationOf(
         case 'MergeRefused':
         case 'BaseMoved':
           return { step: 'merge', waive: null }
+        case 'DiffTooLarge':
+          return { step: proposal.from, waive: null, readClipped: true }
         case 'CheckRefused': {
           const step = fromOf(proposal)
           return {
@@ -547,7 +556,6 @@ export function continuationOf(
         case 'VerifyRed':
         case 'SetupRefused':
         case 'AnswerUnreadable':
-        case 'DiffTooLarge':
         case 'NothingProduced':
         case 'BudgetExhausted':
           return null

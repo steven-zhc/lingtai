@@ -689,7 +689,12 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // 0108 §14: a diff the reviewer would read only part of ends the review
       // before anything is paid — no ticket read, no dispatch, no spend. The
       // string measured is the one `buildReviewPrompt` clips below.
-      if (clippedAt(diff, deps.limits.diffBytes)) {
+      //
+      // Unless a person approved reading it clipped, for this head (#892): the
+      // review then runs once on what `buildReviewPrompt` keeps, and says so.
+      const overLimit = clippedAt(diff, deps.limits.diffBytes)
+      const approvedClipped = overLimit && context.readClippedAt === context.onSha
+      if (overLimit && !approvedClipped) {
         const size = diff.length
         const limit = deps.limits.diffBytes
         return {
@@ -830,7 +835,14 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       if (outcome === undefined) throw new Error('the review returned no outcome')
 
       const result = {
-        ...reviewAnswer(outcome, diff, context.log, deltaHunks, recheck),
+        ...reviewAnswer(
+          outcome,
+          diff,
+          context.log,
+          deltaHunks,
+          recheck,
+          approvedClipped ? { read: deps.limits.diffBytes, of: diff.length } : undefined,
+        ),
         spent: spentOf(outcome, deps.runtime),
       }
       // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
@@ -856,6 +868,7 @@ function reviewAnswer(
   log: RunTrace | undefined,
   deltaHunks?: DiffHunks,
   recheck: readonly ActionFinding[] = [],
+  clipped?: { readonly read: number; readonly of: number },
 ): ActionResult {
   if (outcome.failure) {
     /**
@@ -996,6 +1009,8 @@ function reviewAnswer(
     findings: kept,
     // On either verdict: a change that landed is one that passed (#890).
     ...(summary === undefined ? {} : { summary }),
+    // Only a reading that was cut (#892): the first `read` characters of `of`.
+    ...(clipped === undefined ? {} : { clipped }),
     /**
      * **The reviewer's own classification of its refusal, and only of a
      * refusal** (`#293`).

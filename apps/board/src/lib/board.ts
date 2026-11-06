@@ -180,6 +180,8 @@ export interface BoardCard {
     resolution: Resolution['_tag']
     onSha: string | null
     note: string | null
+    /** Set on Approve for a `DiffTooLarge` wait: the characters the reviewer will read (#892). */
+    clippedLimit?: number
     /** Triage's own resolution, present only where the recommendation overrides it (#652). */
     advised?: Resolution['_tag']
   } | null
@@ -629,7 +631,14 @@ function moveOf(
     case 'Approve':
       return t.awaitingSha === null
         ? null
-        : { resolution, onSha: t.awaitingSha, note: acceptedTriageNote(status.result.summary) }
+        : {
+            resolution,
+            onSha: t.awaitingSha,
+            note: acceptedTriageNote(status.result.summary),
+            ...(t.wait.reason._tag === 'ProposedEscalated' && t.wait.reason.proposal._tag === 'DiffTooLarge'
+              ? { clippedLimit: t.wait.reason.proposal.limit }
+              : {}),
+          }
     default:
       return { resolution, onSha: null, note: null }
   }

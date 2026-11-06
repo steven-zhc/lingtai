@@ -154,6 +154,23 @@ describe('loadTask does not wait for GitHub', () => {
   })
 })
 
+describe('a project read that fails is not a project that is absent', () => {
+  it('knowable and loadTask reject rather than answer null (a 404)', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    vi.mocked(loadProject).mockRejectedValue(new Error('stream read failed'))
+    await expect(knowable(taskId)).rejects.toThrow('stream read failed')
+    await expect(loadTask(taskId)).rejects.toThrow('stream read failed')
+  })
+
+  it('loadTaskAnswer says found: null with the problem, never found: false', async () => {
+    vi.mocked(eventStore.read).mockResolvedValue([])
+    vi.mocked(loadProject).mockRejectedValue(new Error('stream read failed'))
+    const answer = await loadTaskAnswer(taskId)
+    expect(answer.ticket).toMatchObject({ found: null, problem: 'stream read failed' })
+    expect(readProjectTicket).not.toHaveBeenCalled()
+  })
+})
+
 describe('loadTaskAnswer', () => {
   const issue = (over: object = {}) =>
     vi.mocked(readProjectTicket).mockResolvedValue({

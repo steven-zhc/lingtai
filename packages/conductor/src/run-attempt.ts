@@ -957,6 +957,22 @@ export interface AttemptOptions {
      */
     readonly waive: readonly { readonly name: string; readonly waitId: WaitId }[]
     /**
+     * `Approve` on a `DiffTooLarge` wait (#892): the head the review may read
+     * clipped. Applied to this step's first visit only, like `waive`, and the
+     * review action compares it with its own `onSha`.
+     */
+    readonly readClipped?: {
+      readonly onSha: string
+      /** Clipped reviews that already passed on this head: kept, not dispatched again. */
+      readonly kept?: readonly {
+        readonly name: string
+        readonly summary?: string
+        readonly findings: readonly ActionFinding[]
+        readonly evidence: string
+        readonly clipped: { readonly read: number; readonly of: number }
+      }[]
+    }
+    /**
      * What the held run had already spent, so a continuation does not start
      * the round budget over — `ceilings.rounds` bounds the pass's total, not
      * this one visit's.
@@ -1948,14 +1964,15 @@ async function runStepBody(
        * so a step that appears there has been visited before and a fix round
        * sending the pass back through it is not the visit the approval named.
        */
-      const waived =
-        options.from?.step === spec.step && !reached.some((visit) => visit.step === spec.step)
-          ? options.from.waive
-          : undefined
+      const firstVisitOfFrom = options.from?.step === spec.step && !reached.some((visit) => visit.step === spec.step)
+      const waived = firstVisitOfFrom ? options.from?.waive : undefined
+      const readClippedAt = firstVisitOfFrom ? options.from?.readClipped?.onSha : undefined
+      const readClippedKept = firstVisitOfFrom ? options.from?.readClipped?.kept : undefined
       const result = await runActionPipeline({
         step: spec.step,
         actions: pipelineActions,
         ...(waived === undefined ? {} : { waived }),
+        ...(readClippedKept === undefined ? {} : { kept: readClippedKept }),
         /**
          * **The two facts a plugin cannot read off `onSha`** (`#266`).
          *
@@ -1972,6 +1989,7 @@ async function runStepBody(
          */
         context: {
           ...reaching.context,
+          ...(readClippedAt === undefined ? {} : { readClippedAt }),
           design: designOn(reached),
           again:
             spec.step === 'implement' &&
