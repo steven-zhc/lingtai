@@ -291,6 +291,11 @@ export interface Offered {
   skipped: {
     ref: number
     reason: SkipReason
+    title: string
+    /** The recipe's kind for the issue, or null when it carries none. */
+    kind: string | null
+    /** Open blockers, as GitHub counted them; null when GitHub said nothing. Never coerced to 0. */
+    blockedBy: number | null
     parent: TicketListing['parent']
     subIssues: TicketListing['subIssues']
   }[]
@@ -433,7 +438,15 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
 
     const { skip } = considerIssue(issue, queue)
     if (skip) {
-      result.skipped.push({ ref: issue.number, reason: skip, parent: issue.parent, subIssues: issue.subIssues })
+      result.skipped.push({
+        ref: issue.number,
+        reason: skip,
+        title: issue.title,
+        kind: matched?.kind ?? null,
+        blockedBy: issue.dependencies?.blockedBy ?? null,
+        parent: issue.parent,
+        subIssues: issue.subIssues,
+      })
       continue
     }
     result.runnable.push({

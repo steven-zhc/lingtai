@@ -194,6 +194,12 @@ export type ProjectFilter =
        * is asked nothing of GitHub for its tickets.
        */
       tickets: TicketSource
+      /**
+       * What reads a ticket's blockers (#954): the GitHub client, and only when
+       * it is also `tickets`. A `db` project gets null even with an owner —
+       * link verbs are kept off `Tickets` on purpose (doc/design/601.md).
+       */
+      links: Pick<GitHubClient, 'listBlockedBy' | 'owner' | 'repo'> | null
     }
   | { project: string; ok: false; problem: string }
 
@@ -320,6 +326,7 @@ export async function projectFilter(
     let resolved: ResolvedRecipe
     let client: TicketSource
     let tickets: TicketSource
+    let links: Pick<GitHubClient, 'listBlockedBy' | 'owner' | 'repo'> | null = null
     if (state.owner === null) {
       resolved = await recipeFor(state, undefined)
       const refusal = ownerlessRefusal(project, resolved.recipe)
@@ -335,6 +342,7 @@ export async function projectFilter(
       resolved = await recipeFor(state, ghClient)
       tickets = await ticketsOf(state, resolved.recipe, ghClient)
       client = ghClient
+      links = tickets === ghClient ? ghClient : null
     }
     return {
       project,
@@ -361,6 +369,7 @@ export async function projectFilter(
       recipe: resolved.recipe,
       client,
       tickets,
+      links,
     }
   } catch (err) {
     return { project, ok: false, problem: oneLine((err as Error).message) }

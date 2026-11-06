@@ -28,6 +28,7 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   cards: [],
   problems: [],
   notes: [],
+  blocked: [],
   asked: 1,
   answered: 1,
   ...over,

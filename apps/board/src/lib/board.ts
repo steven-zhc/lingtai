@@ -25,6 +25,7 @@ import {
   type TriageStatus,
 } from '@lingtai/domain/wait'
 import { eventStore, log } from '@lingtai/event-store'
+import type { LinkedIssue } from '@lingtai/github'
 import type { SpendRow } from '@lingtai/projector'
 /**
  * The board's data: one table, plus one question put to GitHub.
@@ -61,6 +62,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
 import { savedFixWorkFromState } from './saved-fix-work.ts'
@@ -751,6 +753,84 @@ export function toCard(
  */
 export type AskableFilter = Extract<ProjectFilter, { ok: true }>
 
+/**
+ * One `blocked-by` skip as the board is told of it (#954): data only.
+ *
+ * `blockers: null` is two things, told apart by `unread`: false means no link
+ * reader was available and nothing was asked; true means the skip was past
+ * `BLOCKERS_READ_MOST` and was counted rather than read. A failure is the
+ * error's message, because this crosses into a client component.
+ */
+export type BlockedSkip = {
+  project: string
+  ref: number
+  title: string
+  kind: string | null
+  blockedBy: number | null
+  blockers: { ok: true; issues: LinkedIssue[] } | { ok: false; problem: string } | null
+  unread: boolean
+}
+
+/** The most `blocked-by` skips per project whose blockers are read, lowest number first. */
+export const BLOCKERS_READ_MOST = 20
+/** How long a read blocker list is trusted while the count is unchanged. */
+const BLOCKERS_FRESH_MS = 60_000
+
+type BlockerRead = NonNullable<BlockedSkip['blockers']>
+const blockerCache = new Map<string, { blockedBy: number | null; at: number; blockers: BlockerRead }>()
+
+/** Forgets every cached blocker list, so a test can start from *nothing read*. */
+export function forgetBlockers(): void {
+  blockerCache.clear()
+}
+
+/**
+ * Reads the blockers of each `blocked-by` skip, through the per-process cache.
+ * Never throws: one failed read is that skip's `ok: false`.
+ */
+async function readBlockers(
+  filter: AskableFilter,
+  skipped: Awaited<ReturnType<typeof runnableNow>>['skipped'],
+  now: () => number,
+): Promise<BlockedSkip[]> {
+  const blocked = skipped.filter((s) => s.reason === 'blocked-by').sort((a, b) => a.ref - b.ref)
+  const links = filter.links ?? null
+  const out: BlockedSkip[] = blocked.map((s, i) => ({
+    project: filter.project,
+    ref: s.ref,
+    title: s.title,
+    kind: s.kind,
+    blockedBy: s.blockedBy,
+    blockers: null,
+    unread: links !== null && i >= BLOCKERS_READ_MOST,
+  }))
+  if (links === null) return out
+  const at = now()
+  const reads = out.slice(0, BLOCKERS_READ_MOST).map((entry) => {
+    const key = `${filter.project}#${entry.ref}`
+    const hit = blockerCache.get(key)
+    if (hit && hit.blockedBy === entry.blockedBy && at - hit.at < BLOCKERS_FRESH_MS) {
+      entry.blockers = hit.blockers
+      return Effect.void
+    }
+    return Effect.tryPromise({
+      try: () => links.listBlockedBy(entry.ref),
+      catch: (e) => (e instanceof Error ? e.message : String(e)),
+    }).pipe(
+      Effect.match({
+        onSuccess: (issues): BlockerRead => ({ ok: true, issues }),
+        onFailure: (problem): BlockerRead => ({ ok: false, problem }),
+      }),
+      Effect.map((blockers) => {
+        entry.blockers = blockers
+        blockerCache.set(key, { blockedBy: entry.blockedBy, at, blockers })
+      }),
+    )
+  })
+  await Effect.runPromise(Effect.all(reads, { concurrency: 'unbounded' }))
+  return out
+}
+
 export type ProjectQueue =
   | { state: 'unanswered'; filter: AskableFilter; problem: string }
   | {
@@ -758,6 +838,8 @@ export type ProjectQueue =
       filter: AskableFilter
       offered: Awaited<ReturnType<typeof runnableNow>>
       runnable: Awaited<ReturnType<typeof selectRunnable>>
+      /** The `blocked-by` skips with their blockers read (#954). Never cards. */
+      blocked: BlockedSkip[]
     }
 
 /**
@@ -777,7 +859,7 @@ export type ProjectQueue =
  */
 export async function askProject(
   filter: AskableFilter,
-  options: { select?: typeof selectRunnable } = {},
+  options: { select?: typeof selectRunnable; now?: () => number } = {},
 ): Promise<ProjectQueue> {
   const select = options.select ?? selectRunnable
   try {
@@ -788,7 +870,8 @@ export async function askProject(
       kinds: filter.kinds,
       backoffMs: filter.backoffMs,
     })
-    return { state: 'listed', filter, offered, runnable }
+    const blocked = await readBlockers(filter, offered.skipped, options.now ?? Date.now)
+    return { state: 'listed', filter, offered, runnable, blocked }
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a
     // revoked installation. Named rather than dropped, for the same reason.
@@ -930,6 +1013,8 @@ export interface GithubQueue {
   problems: QueueProblem[]
   /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
   notes: QueueProblem[]
+  /** The `blocked-by` skips and their blockers (#954). Not cards: nothing counts them. */
+  blocked: BlockedSkip[]
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -958,6 +1043,7 @@ export async function githubQueue(
   const cards: BoardCard[] = []
   const problems: QueueProblem[] = []
   const notes: QueueProblem[] = []
+  const blocked: BlockedSkip[] = []
   let answered = 0
 
   // All of them at once, for the reason `queueFilters` gives (#112).
@@ -979,6 +1065,7 @@ export async function githubQueue(
     }
     answered += 1
     const offered = answer.offered
+    blocked.push(...answer.blocked)
     // What the repository says each of its kinds looks like. A project whose
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
@@ -1050,7 +1137,7 @@ export async function githubQueue(
     }
     lastOffered.set(filter.project, cards.length - before)
   }
-  return { cards, problems, notes, asked: askable.length, answered }
+  return { cards, problems, notes, blocked, asked: askable.length, answered }
 }
 
 /**
