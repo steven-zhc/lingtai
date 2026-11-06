@@ -91,7 +91,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
 
 5. **The conductor reaches git and the agent through ports a host provides.**
    `packages/conductor/src/ports.ts` declares `Repo` and `AgentHost` as
-   `Context.Tag`s over plain interfaces (`RepoPort`, `AgentHostPort`).
+   `Context.Service`s over plain interfaces (`RepoPort`, `AgentHostPort`).
    `packages/conductor/src/live.ts` is the one file that names the real
    implementations (`livePorts()`), and `conduct.ts` imports only types from
    `repo` and `agent`. The event store and the GitHub client are passed in as
@@ -99,7 +99,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
    and no socket. `packages/conductor/unit/conduct-a-whole-attempt.test.ts` is the
    test that says the seam holds.
 
-6. **Effect wherever there is IO.** `Context.Tag` names a
+6. **Effect wherever there is IO.** `Context.Service` names a
    port or a service, `Layer` provides one, and `Scope` ties each acquired resource to a
    lifetime, so a resource is released because of how the code is structured
    rather than because someone remembered to release it.
@@ -113,9 +113,14 @@ turn limit, so every idiom it adopts is paid for again on every run.
      command's entry, a board read or server action, and a test. Never inside
      backend code — a `runPromise` nested in an Effect starts a fiber with no
      parent, which loses the caller's scope, its interruption and its span.
+     A pass the scheduler starts detached runs with
+     `Effect.runPromiseWith(yield* Effect.context())`, which carries the
+     caller's services and its tracer into the new root fiber
+     (`packages/conductor/src/schedule.ts`).
    - **Tracing is Effect's**: a named operation is `Effect.withSpan` (or
      `Effect.fn`), and a host that has `telemetry.otlp_endpoint` provides
-     `@effect/opentelemetry`'s layer, exporting over OTLP/HTTP. A span carries
+     `tracingLayer` (`packages/conductor/src/telemetry.ts`, which is
+     `Layer.succeed(Tracer.Tracer, bridgedTracer)`), exporting over OTLP/HTTP. A span carries
      no URL, no token, no title and no body; the one identifying attribute it may
      carry is `lingtai.ticket`, the issue number. The board's own read spans
      (`apps/board/src/lib/telemetry.ts`) follow the same rules.
