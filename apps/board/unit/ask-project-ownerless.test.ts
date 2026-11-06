@@ -70,6 +70,7 @@ describe('askProject, for a project with no owner', () => {
       {
         ref: 3,
         reason: 'excluded-label',
+        label: 'agent:hold',
         title: 'held',
         kind: 'bug',
         blockedBy: 0,

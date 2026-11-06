@@ -17,7 +17,7 @@ import {
   type ListQueued,
 } from '../src/app/queued-stream.tsx'
 import type { BoardHalf } from '../src/lib/blocker-state.ts'
-import type { BlockedTicket, BoardCard, GithubQueue } from '../src/lib/board.ts'
+import type { BlockedTicket, BoardCard, EpicTicket, GithubQueue, HeldTicket } from '../src/lib/board.ts'
 
 const card = (project: string, ref: string) => ({ project, ref, taskId: `${project}-${ref}` }) as unknown as BoardCard
 
@@ -31,6 +31,7 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   notes: [],
   blocked: [],
   held: [],
+  epics: [],
   asked: 1,
   answered: 1,
   ...over,
@@ -170,6 +171,25 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
     ]),
     repositories: new Map([['p', 'o/r']]),
   }
+  const held = (ref: number, over: Partial<HeldTicket> = {}): HeldTicket => ({
+    project: 'p',
+    ref,
+    title: `held ${ref}`,
+    kind: 'bug',
+    kindColor: '#d73a4a',
+    label: 'agent:hold',
+    ...over,
+  })
+  const epic = (ref: number, over: Partial<EpicTicket> = {}): EpicTicket => ({
+    project: 'p',
+    ref,
+    title: `epic ${ref}`,
+    kind: 'feature',
+    kindColor: null,
+    closed: 3,
+    total: 7,
+    ...over,
+  })
   const draw = (g: Partial<GithubQueue>, runnable = 0) =>
     html(
       <QueuedAnswered
@@ -192,7 +212,7 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
         }),
         skip(11, { ok: true, issues: [] }),
       ],
-      held: [{ project: 'p', ref: 13 }],
+      held: [held(13)],
     })
     expect(out).toContain('class="card q-blocked"')
     expect(out).toContain('class="bkline"')
@@ -241,5 +261,29 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
     expect(out).toContain('+2 more waiting on a blocker')
     expect(out).toContain('<b>3</b> waiting on a blocker')
     expect(out.match(/q-blocked/g)).toHaveLength(1)
+  })
+
+  it('folds held tickets and epics into one closed line at the foot', () => {
+    const out = draw({
+      held: [held(5), held(6, { kind: null, kindColor: null, label: 'Needs-Design' })],
+      epics: [epic(7)],
+    })
+    expect(out).toContain('<details class="heldfold">')
+    expect(out).not.toMatch(/<details class="heldfold"[^>]* open/)
+    expect(out).toContain('<b>2</b> held · <b>1</b> epic<span class="hw">· a person lifts it</span>')
+    expect(out).toContain('<span class="hl">agent:hold</span>')
+    expect(out).toContain('<span class="hl">Needs-Design</span>')
+    expect(out).toContain('<span class="hl">epic · 3/7 closed</span>')
+    expect(out).toContain('#6 · no kind')
+    expect(out.indexOf('heldfold')).toBeGreaterThan(out.indexOf('EMPTY'))
+    // Only the coloured ones draw a dot; the kindless held row and the colourless epic do not.
+    expect(out.match(/class="kdot"/g)).toHaveLength(1)
+  })
+
+  it('words the summary for held only and for epics only, and draws nothing for neither', () => {
+    expect(draw({ held: [held(5)] })).toContain('<b>1</b> held<span class="hw">')
+    expect(draw({ epics: [epic(7), epic(8)] })).toContain('<b>2</b> epics<span class="hw">')
+    expect(draw({ epics: [epic(7), epic(8)] })).not.toContain('</b> held')
+    expect(draw({})).not.toContain('heldfold')
   })
 })

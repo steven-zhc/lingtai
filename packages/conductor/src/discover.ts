@@ -197,6 +197,11 @@ export interface Considered {
   issue: TicketListing
   /** Null when the issue should be discovered. */
   skip: SkipReason | null
+  /**
+   * The `source.exclude` entry that holds the issue, spelled as the recipe
+   * spells it — the first in the recipe's order. Null for every other outcome.
+   */
+  label: string | null
 }
 
 /**
@@ -206,11 +211,11 @@ export interface Considered {
  * which is the question the old loop's `pick_ticket` could never answer.
  */
 export function considerIssue(issue: TicketListing, queue: QueueSettings): Considered {
-  if (issue.state === 'closed') return { issue, skip: 'closed' }
+  if (issue.state === 'closed') return { issue, skip: 'closed', label: null }
 
   // Before any label is read: an epic is never work, which is more permanent
   // than a hold a person put on it.
-  if (isEpic(issue)) return { issue, skip: 'epic' }
+  if (isEpic(issue)) return { issue, skip: 'epic', label: null }
 
   const labels = issue.labels.map((l) => l.name.toLowerCase())
 
@@ -225,10 +230,10 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   // of it in `nextloom-ai-admin` — and it was skipped alongside `agent:hold`,
   // which means the opposite. A repository knows which of its labels are holds;
   // this file cannot.
-  const excluded = new Set(queue.exclude.map((l) => l.toLowerCase()))
-  if (labels.some((l) => excluded.has(l))) return { issue, skip: 'excluded-label' }
+  const held = queue.exclude.find((x) => labels.includes(x.toLowerCase()))
+  if (held !== undefined) return { issue, skip: 'excluded-label', label: held }
 
-  if (kindOf(issue, queue.kinds) === null) return { issue, skip: 'no-kind' }
+  if (kindOf(issue, queue.kinds) === null) return { issue, skip: 'no-kind', label: null }
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `agent:hold` is one a person is holding and a ticket of no kind is one this
@@ -242,14 +247,14 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   // Null is not zero. A repository whose GitHub said nothing about dependencies
   // is one this cannot answer for, and it degrades to the behaviour before this
   // existed rather than passing everything over — `runnableNow` is what says so.
-  if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: 'blocked-by' }
+  if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: 'blocked-by', label: null }
 
   // Last: whose work it is (#181). An issue both blocked and somebody else's
   // reports `blocked-by`, the reason that clears on its own.
   const assignee = assigneeSkip(issue, queue.assignee)
-  if (assignee) return { issue, skip: assignee }
+  if (assignee) return { issue, skip: assignee, label: null }
 
-  return { issue, skip: null }
+  return { issue, skip: null, label: null }
 }
 
 /**
@@ -291,6 +296,8 @@ export interface Offered {
   skipped: {
     ref: number
     reason: SkipReason
+    /** The `source.exclude` label behind an `excluded-label` skip, as the recipe spells it; null otherwise. */
+    label: string | null
     title: string
     /** The recipe's kind for the issue, or null when it carries none. */
     kind: string | null
@@ -436,11 +443,12 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
       result.kindColors[matched.kind] = matched.label.color
     }
 
-    const { skip } = considerIssue(issue, queue)
+    const { skip, label } = considerIssue(issue, queue)
     if (skip) {
       result.skipped.push({
         ref: issue.number,
         reason: skip,
+        label,
         title: issue.title,
         kind: matched?.kind ?? null,
         blockedBy: issue.dependencies?.blockedBy ?? null,
