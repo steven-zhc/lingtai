@@ -96,7 +96,7 @@ describe('which object on the row this is', () => {
   })
 
   const page = read('../src/app/page.tsx')
-  const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
 
   /**
    * the-bar.md's rule counts three objects on the row, and the filter is one of
@@ -129,7 +129,7 @@ describe('which object on the row this is', () => {
    */
   it('names the objects the bar actually renders, in the code', () => {
     const said = (src: string) => src.replace(/[\s*]+/g, ' ')
-    const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
+    const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
       ['filter', bar.includes('<Projects')],

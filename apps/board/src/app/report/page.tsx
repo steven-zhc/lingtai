@@ -12,11 +12,9 @@
  * sentence in place of the panels, never a 500.
  */
 import { report as buildReport, type Report } from '@lingtai/conductor/report'
-import Link from 'next/link'
 
-import { Home } from '@/app/home.tsx'
+import { Bar } from '@/app/bar.tsx'
 import { readDayReading } from '@/lib/day-spend'
-import { theHome } from '@/lib/home'
 import {
   currentReport,
   kindsOf,
@@ -94,18 +92,14 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     <>
       <main className="detail">
         <TimingMeta timings={timings} />
-        <div className="bar">
-          <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
-            ← Lingtai
-            <Home {...theHome()} />
-          </Link>
+        <Bar project={only} here="report">
           <span className="sep" />
           <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>
           <span className="sep" />
           <span className={`chip ${chip.tone}`} title={chip.title}>
             {chip.label}
           </span>
-        </div>
+        </Bar>
 
         <div className="detail-body rp">
           <Filters query={query} kinds={kinds} />

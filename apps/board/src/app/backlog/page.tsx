@@ -16,9 +16,8 @@ import type { BacklogEntry } from '@lingtai/projector'
  */
 import Link from 'next/link'
 
-import { Home } from '@/app/home.tsx'
+import { Bar } from '@/app/bar.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
-import { theHome } from '@/lib/home'
 
 import { FooterFetched } from '../footer-fetched'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
@@ -76,11 +75,7 @@ export default async function BacklogPage() {
   return (
     <>
       <main className="detail">
-        <div className="bar">
-          <Link className="brand" href="/">
-            ← Lingtai
-            <Home {...theHome()} />
-          </Link>
+        <Bar project={undefined}>
           <span className="sep" />
           <span>backlog</span>
           <span className="sep" />
@@ -89,7 +84,7 @@ export default async function BacklogPage() {
           <span className={`chip ${chip.tone}`} title={chip.title}>
             {chip.label}
           </span>
-        </div>
+        </Bar>
         <div className="detail-body">
           <section>
             <h2>Open</h2>

@@ -15,8 +15,7 @@ import type { ReactNode } from 'react'
 import type { DaySpendReading } from '@/lib/day-spend'
 import type { FooterLag } from '@/lib/footer'
 
-const withProject = (path: string, project: string | undefined): string =>
-  project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
+import { withProject } from './bar.tsx'
 
 /** The Landed column's cards that landed, not the closed ones it also holds. */
 export const landedCount = (cards: readonly { closed: boolean }[]): number => cards.filter((c) => !c.closed).length
@@ -61,6 +60,7 @@ export function Footer({
   project,
   landed,
   lags,
+  home,
 }: {
   day: DaySpendReading
   project: string | undefined
@@ -68,6 +68,8 @@ export function Footer({
   landed?: number
   /** The four projections' lag; null when it could not be read (#906). */
   lags: readonly FooterLag[] | null
+  /** Required, so a footer cannot forget the home (#767, #947): the last item, where a wrong home is still seen. */
+  home: { path: string; shown: string }
 }) {
   const d = day.day
 
@@ -114,6 +116,9 @@ export function Footer({
         <Link href={withProject('/spend', project)} title="the bill, and what an attempt may spend">
           spend
         </Link>
+      </span>
+      <span className="home-at mono" title={`${home.path} — the Lingtai home this board reads`}>
+        home <b>{home.shown}</b>
       </span>
     </footer>
   )

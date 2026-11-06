@@ -26,12 +26,10 @@
  * the log and not a project's lifetime. A total whose window is unstated is a
  * total nobody can use.
  */
-import Link from 'next/link'
 
-import { Home } from '@/app/home.tsx'
+import { Bar } from '@/app/bar.tsx'
 import { ledger, loadBoard } from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
-import { theHome } from '@/lib/home'
 import { spendChip } from '@/lib/spend'
 import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
@@ -64,11 +62,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
     <>
       <main className="detail">
         <TimingMeta timings={timings} />
-        <div className="bar">
-          <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
-            ← Lingtai
-            <Home {...theHome()} />
-          </Link>
+        <Bar project={only}>
           <span className="sep" />
           <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
           <span className="sep" />
@@ -78,7 +72,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
           <span className={`chip ${chip.tone}`} title={chip.title}>
             {chip.label}
           </span>
-        </div>
+        </Bar>
 
         <div className="detail-body">
           {/* Every project, whatever the filter: the ceiling covers the installation. */}

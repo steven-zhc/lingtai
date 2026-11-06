@@ -1,5 +1,3 @@
-import { theHome } from '@/lib/home'
-
 /**
  * The onboarding wizard's page (#164) is gone (#401, #391): writing a recipe
  * happens in the terminal now, through `pnpm lingtai add`. This path stays
@@ -13,5 +11,5 @@ import { TerminalScreen } from '../terminal.tsx'
 export const dynamic = 'force-dynamic'
 
 export default function Wizard() {
-  return <TerminalScreen gh={isGhMachine()} home={theHome()} />
+  return <TerminalScreen gh={isGhMachine()} />
 }

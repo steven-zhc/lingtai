@@ -11,6 +11,7 @@ import { Footer, landedCount } from '../src/app/footer.tsx'
 import { dayReading } from '../src/lib/day-spend.ts'
 import type { FooterLag } from '../src/lib/footer.ts'
 
+const HOME = { path: '/Users/x/.lingtai', shown: '~/.lingtai' }
 const run = { reportedRuns: 0, estimatedRuns: 0, fetchedRuns: 0, unknownWhy: [] }
 const day = { ...run, reportedRuns: 3, reportedCents: 2615, estimatedCents: 2203, unknown: 2 }
 const current = ['task_view', 'finding_backlog', 'spend', 'ticket_report'].map((name) => ({ name, lag: 0 }))
@@ -20,9 +21,16 @@ const render = (
   project?: string,
   landed: number | undefined = 3,
   lags: FooterLag[] | null = current,
-) => renderToStaticMarkup(<Footer day={r} project={project} landed={landed} lags={lags} />)
+) => renderToStaticMarkup(<Footer day={r} project={project} landed={landed} lags={lags} home={HOME} />)
 
 describe('Footer', () => {
+  it('ends with the home, titled with the full path', () => {
+    const html = render(dayReading(day, 200))
+    expect(html).toContain('home <b>~/.lingtai</b>')
+    expect(html).toContain('title="/Users/x/.lingtai — the Lingtai home this board reads"')
+    expect(html.indexOf('class="links"')).toBeLessThan(html.indexOf('home-at'))
+  })
+
   it('draws two segments, the two figures and the meter values', () => {
     const r = dayReading(day, 200)
     const html = render(r)
@@ -112,7 +120,7 @@ describe('Footer currency line', () => {
   })
 
   it('draws the three links but no landed count off /', () => {
-    const html = renderToStaticMarkup(<Footer day={r} project={undefined} lags={current} />)
+    const html = renderToStaticMarkup(<Footer day={r} project={undefined} lags={current} home={HOME} />)
     expect(html).toContain('landed</a>')
     expect(html.match(/href="[^"]*"/g)).toEqual(['href="/landed"', 'href="/report"', 'href="/spend"'])
     expect(html).not.toContain('</b> landed')
@@ -133,7 +141,9 @@ describe('footer source', () => {
   it('imports only react, next/link and types', () => {
     const imports = src.match(/^import .*$/gm) ?? []
     for (const line of imports) {
-      expect(line.startsWith('import type') || /from 'next\/link'|from 'react'/.test(line)).toBe(true)
+      expect(line.startsWith('import type') || /from 'next\/link'|from 'react'|from '\.\/bar\.tsx'/.test(line)).toBe(
+        true,
+      )
     }
     expect(src).not.toMatch(/from '@lingtai\//)
   })
@@ -141,7 +151,7 @@ describe('footer source', () => {
 
 describe('home page', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
-  const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
 
   it('has no reading or /report link in the bar, and hands Footer to the frame', () => {
     expect(bar).not.toContain('className="reading"')

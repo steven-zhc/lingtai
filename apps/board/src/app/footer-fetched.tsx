@@ -34,7 +34,8 @@ export function FooterFetched({ project }: { project: string | undefined }) {
       .catch(() => settle({ kind: 'failed' }))
   }, [])
 
-  if (state.kind === 'read') return <Footer day={state.reading.day} lags={state.reading.lags} project={project} />
+  if (state.kind === 'read')
+    return <Footer day={state.reading.day} lags={state.reading.lags} project={project} home={state.reading.home} />
   return (
     <footer className="footer">
       {state.kind === 'asking' ? (

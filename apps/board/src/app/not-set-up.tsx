@@ -3,14 +3,14 @@
  * brand, and one section. It reads no log and mounts no `Live`, `Health`,
  * `Projects` or `Paused` — each of those needs the log this home has not got.
  *
- * Props only, as `home.tsx` is: the page reads the environment and says
+ * Props only, as `bar.tsx` is: the page reads the environment and says
  * whether `nothing` is set up (`homeNotSetUp`). Where it is, this says so; for
  * every other refusal — a `config.yml` that names no store included — it says
  * the refusal's own sentence, which is what names the file.
  */
 import type { StoreRefused } from '@lingtai/env'
 
-import { Home } from './home.tsx'
+import { Bar } from './bar.tsx'
 
 export function NotSetUp({
   home,
@@ -23,13 +23,7 @@ export function NotSetUp({
 }) {
   return (
     <main className="detail">
-      <div className="bar">
-        <span className="brand">
-          <span className="mark" aria-hidden="true" />
-          Lingtai
-          <Home {...home} />
-        </span>
-      </div>
+      <Bar project={undefined} />
       <div className="detail-body">
         <section>
           <h2>
