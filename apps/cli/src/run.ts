@@ -675,7 +675,7 @@ export async function run(
   // and where a `Refused` becomes the line and the exit code it always was.
   const code = await Effect.runPromise(
     heedThePause(options.store, options.dayCeiling).pipe(
-      Effect.zipRight(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
+      Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
       // line is for.

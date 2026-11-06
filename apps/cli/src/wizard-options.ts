@@ -1,3 +1,4 @@
+import type { Option } from 'effect'
 /**
  * The options `init` and `add` share, written once (#620), and the one function
  * that turns what `@effect/cli` parsed back into the `{ flags, repeated }` pair
@@ -7,10 +8,9 @@
  * Every option is text on purpose: `--store` and `--port` are refused by
  * `init.ts` in its own words, and those words are what scripts and tests read.
  */
-import { Options } from '@effect/cli'
-import type { Option } from 'effect'
+import { Flag } from 'effect/cli'
 
-const text = (name: string) => Options.text(name).pipe(Options.optional)
+const text = (name: string) => Flag.String(name).pipe(Flag.optional)
 
 /** The recipe flags `init` and `add` both take. */
 export const recipeOptions = {
@@ -22,16 +22,16 @@ export const recipeOptions = {
   reviewer: text('reviewer'),
   'reviewer-model': text('reviewer-model'),
   install: text('install'),
-  build: Options.text('build').pipe(Options.repeated),
+  build: Flag.String('build').pipe(Flag.atLeast(0)),
   'check-build': text('check-build'),
   land: text('land'),
   rounds: text('rounds'),
   wall: text('wall'),
   budget: text('budget'),
-  defaults: Options.boolean('defaults'),
-  yes: Options.boolean('yes'),
+  defaults: Flag.Boolean('defaults').pipe(Flag.withDefault(false)),
+  yes: Flag.Boolean('yes').pipe(Flag.withDefault(false)),
   // `runCli` applies NO_COLOR itself; this only lets the parser accept the flag.
-  'no-color': Options.boolean('no-color'),
+  'no-color': Flag.Boolean('no-color').pipe(Flag.withDefault(false)),
 }
 
 export const initOptions = {

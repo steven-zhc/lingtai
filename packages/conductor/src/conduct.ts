@@ -2220,7 +2220,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // closure reads `head`, which this call never got to): the keep
             // may have failed for its own reason before this read did for a
             // different one, and both deserve a line on the durable row.
-            await noteRefs('refused', null, wipFailure === null ? at.failure.detail : `${at.failure.detail}; ${wipFailure}`)
+            await noteRefs(
+              'refused',
+              null,
+              wipFailure === null ? at.failure.detail : `${at.failure.detail}; ${wipFailure}`,
+            )
             return at.failure.detail
           }
           const head = at.success
@@ -3358,7 +3362,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             Promise.all(
               paths.map(async (path) => {
                 const got = await gitAsked(['diff', fromSha, toSha, '--', path])
-                return { path, diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success }
+                return {
+                  path,
+                  diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success,
+                }
               }),
             ),
           restore: restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt }),
@@ -4715,7 +4722,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             `refs/lingtai/unpushed/${options.issue}/`,
           ])
           if (Result.isFailure(refsHere)) {
-            runLog.note('push', `kept refs for #${options.issue} were not listed on landing — ${refsHere.failure.detail}`)
+            runLog.note(
+              'push',
+              `kept refs for #${options.issue} were not listed on landing — ${refsHere.failure.detail}`,
+            )
             return
           }
           for (const ref of refsHere.success.split('\n').filter(Boolean)) {

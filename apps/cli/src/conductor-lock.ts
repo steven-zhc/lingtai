@@ -47,10 +47,9 @@ export class LockUnreadable extends Data.TaggedError('LockUnreadable')<{
   readonly detail: string
 }> {}
 
-export class ConductorLock extends Context.Service<
-  ConductorLock,
-  { readonly key: string }
->()('lingtai/cli/ConductorLock') {}
+export class ConductorLock extends Context.Service<ConductorLock, { readonly key: string }>()(
+  'lingtai/cli/ConductorLock',
+) {}
 
 export interface ConductorLockOptions {
   /** The suite's own key, so a test does not fight the operator's daemon. */

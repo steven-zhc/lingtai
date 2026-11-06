@@ -1,12 +1,10 @@
 /**
- * There is one parser (#626): `@effect/cli`, behind `entry.ts`, and `lingtai.ts` is only the file a
+ * There is one parser (#626): `effect/cli`, behind `entry.ts`, and `lingtai.ts` is only the file a
  * supervisor's unit names. Read structurally where running would start a daemon.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { Command } from '@effect/cli'
-import { HashMap } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { root } from '../src/cli.ts'
@@ -15,7 +13,7 @@ import { routeOf } from '../src/migrated.ts'
 import { BOARD_JOB, DAEMON_JOB } from '../src/service.ts'
 
 describe('one parser', () => {
-  it('sends what a supervisor starts the file with to @effect/cli', () => {
+  it('sends what a supervisor starts the file with to effect/cli', () => {
     expect(routeOf(DAEMON_JOB.argv)).toBe('effect')
     expect(routeOf(BOARD_JOB.argv)).toBe('effect')
   })
@@ -31,7 +29,7 @@ describe('one parser', () => {
   })
 
   it('has a subcommand for every definition and a definition for every subcommand', () => {
-    const subcommands = [...HashMap.keys(Command.getSubcommands(root))].sort()
+    const subcommands = root.subcommands.flatMap((group) => group.commands.map((c) => c.name)).sort()
     expect(subcommands).toEqual(COMMANDS.map((c) => c.name).sort())
   })
 })

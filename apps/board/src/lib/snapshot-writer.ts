@@ -8,7 +8,9 @@ import { Context, Layer, ManagedRuntime } from 'effect'
  * starting another. Never disposed — pending offers are lost on exit, which
  * #870 allows. The board stays `async` and runs Effect here, at its edge (0101 §6).
  */
-class BoardSnapshotWriter extends Context.Service<BoardSnapshotWriter, SnapshotWriter>()('lingtai.board.SnapshotWriter') {}
+class BoardSnapshotWriter extends Context.Service<BoardSnapshotWriter, SnapshotWriter>()(
+  'lingtai.board.SnapshotWriter',
+) {}
 
 const KEY = Symbol.for('lingtai.board.snapshotWriter')
 

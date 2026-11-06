@@ -4,7 +4,7 @@ import { root } from './cli.ts'
  *
  * Two sources, one per field: `COMMANDS` owns the group, the task, the effect,
  * the usage prose and the examples — the same object `--help` is rendered from —
- * and the `@effect/cli` tree behind `root` owns the flags, since in `COMMANDS`
+ * and the `effect/cli` tree behind `root` owns the flags, since in `COMMANDS`
  * they exist only as prose. `cliManifest` joins them into the value `cli.json`
  * holds; `renderCliPage` is a function of that value and nothing else, which is
  * what makes the page render from `cli.json`. Both are pure; `scripts/cli-doc.ts`
@@ -35,48 +35,38 @@ type Node = Record<string, unknown>
 const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null
 
 /**
- * Every option's `fullName` under `node`. Only an `options` subtree is read —
- * an `Args` node carries a `name` too, and walking it would turn `project` into
- * `--project`. This is `@effect/cli` 0.73 internals; `cli-doc.test.ts` pins it.
+ * Every flag's name under `node`, as `--name`. Only a command's `config.flags`
+ * is read — an argument is a `Single` too, and walking `config.arguments` would
+ * turn `project` into `--project`. This is `effect/cli` 4.1 internals (a flag is
+ * a `Single` param whose `kind` is `flag`); `cli-doc.test.ts` pins it.
  */
-function optionNames(node: unknown, into: Set<string>): void {
-  if (Array.isArray(node)) return node.forEach((each) => optionNames(each, into))
+function flagNames(node: unknown, into: Set<string>): void {
+  if (Array.isArray(node)) return node.forEach((each) => flagNames(each, into))
   if (!isNode(node)) return
-  if (typeof node.fullName === 'string') into.add(`--${node.fullName.replace(/^-+/, '')}`)
-  for (const value of Object.values(node)) optionNames(value, into)
+  if (node._tag === 'Single' && node.kind === 'flag' && typeof node.name === 'string') into.add(`--${node.name}`)
+  for (const value of Object.values(node)) flagNames(value, into)
 }
 
-function walk(node: unknown, into: Set<string>): void {
-  if (Array.isArray(node)) return node.forEach((each) => walk(each, into))
-  if (!isNode(node)) return
-  for (const [key, value] of Object.entries(node)) {
-    if (key === 'options') optionNames(value, into)
-    else if (key !== 'args' && key !== 'description') walk(value, into)
-  }
+/** A command's own flags and every one of its verbs'. */
+function walk(command: unknown, into: Set<string>): void {
+  if (!isNode(command)) return
+  const config = command.config
+  if (isNode(config)) flagNames(config.flags, into)
+  const groups = command.subcommands
+  if (Array.isArray(groups))
+    for (const group of groups)
+      if (isNode(group) && Array.isArray(group.commands)) group.commands.forEach((c) => walk(c, into))
 }
 
 /** The flags the parser takes under each top-level command, by command name. */
 export function parserFlags(): ReadonlyMap<string, readonly string[]> {
   const out = new Map<string, readonly string[]>()
-  const children = (root as unknown as { descriptor: { children: readonly unknown[] } }).descriptor.children
-  for (const child of children) {
+  for (const child of root.subcommands.flatMap((group) => group.commands)) {
     const names = new Set<string>()
     walk(child, names)
-    const name = firstName(child)
-    if (name !== undefined) out.set(name, [...names].sort())
+    out.set(child.name, [...names].sort())
   }
   return out
-}
-
-/** The name of the first `Standard` under a child — the command itself, even when verbs sit beneath it. */
-function firstName(node: unknown): string | undefined {
-  if (!isNode(node)) return undefined
-  if (node._tag === 'Standard' && typeof node.name === 'string') return node.name
-  for (const key of ['command', 'parent']) {
-    const found = firstName(node[key])
-    if (found !== undefined) return found
-  }
-  return undefined
 }
 
 export function cliManifest(): Manifest {

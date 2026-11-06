@@ -149,16 +149,15 @@ describe('lingtai upgrade, rollback and uninstall', () => {
     ])
   })
 
-  it('answer an unknown flag or a second version with the parser’s usage error, exit 1, and `--x` as a version with the old sentence, exit 2', async () => {
+  it('answer an unknown flag or a second version with the parser’s usage error, exit 1', async () => {
     const up = recording<unknown>()
     const back = recording<unknown>()
     const un = recording<unknown>()
     expect((await capture(['upgrade', '--bogus'], { upgrade: up.run })).code).toBe(1)
     expect((await capture(['uninstall', '--bogus'], { uninstall: un.run })).code).toBe(1)
     expect((await capture(['rollback', 'a', 'b'], { rollback: back.run })).code).toBe(1)
-    const flag = await capture(['rollback', '--x'], { rollback: back.run })
-    expect(flag.code).toBe(2)
-    expect(flag.err).toBe('✗ lingtai rollback [<version>]\n')
+    // `--x` is an unknown flag on `effect/cli`, not a version as `@effect/cli` took it.
+    expect((await capture(['rollback', '--x'], { rollback: back.run })).code).toBe(1)
     expect([...up.seen, ...back.seen, ...un.seen]).toEqual([])
   })
 })

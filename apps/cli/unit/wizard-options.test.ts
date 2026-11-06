@@ -1,7 +1,7 @@
-/** `init` and `add` on `@effect/cli` (#620): what the options parse to, and the record the wizards read back out of it. */
-import { Args, Command } from '@effect/cli'
-import * as NodeContext from '@effect/platform-node/NodeContext'
+/** `init` and `add` on `effect/cli` (#620): what the options parse to, and the record the wizards read back out of it. */
+import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Effect } from 'effect'
+import { Argument, Command } from 'effect/cli'
 import { describe, expect, it } from 'vitest'
 
 import { addOptions, flagsOf, initOptions, valuelessFlag, type WizardFlags } from '../src/wizard-options.ts'
@@ -18,20 +18,19 @@ async function parsedBy(
   )
   const add = Command.make(
     'add',
-    { repo: Args.text({ name: 'owner/repo' }).pipe(Args.optional), ...addOptions },
+    { repo: Argument.String('owner/repo').pipe(Argument.optional), ...addOptions },
     ({ repo, ...rest }) =>
       Effect.sync(() => {
         seen = { ...(repo._tag === 'Some' ? { positional: repo.value } : {}), ...flagsOf(rest) }
       }),
   )
-  const run = Command.run(Command.make('lingtai').pipe(Command.withSubcommands([init, add])), {
-    name: 'lingtai',
+  const run = Command.runWith(Command.make('lingtai').pipe(Command.withSubcommands([init, add])), {
     version: 'test',
   })
   await Effect.runPromise(
-    run(['node', 'lingtai', command, ...argv]).pipe(
-      Effect.provide(NodeContext.layer),
-      Effect.catchAllCause(() => Effect.void),
+    run([command, ...argv]).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.catchCause(() => Effect.void),
     ),
   )
   return seen
