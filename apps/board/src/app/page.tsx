@@ -429,17 +429,26 @@ export function Card({
 }
 
 /**
- * A column's heading. Landed's is the way into `/landed` (#895), carrying
- * `?project=` as the `/report` link does; the others are words. A second way
- * out of the reading and not a fifth object in the bar (`the-bar.md`).
+ * A column's heading: a word, for every column. The way into `/landed` is the
+ * Landed column's count (#895, #949), see `LandedCount`. A second way out of
+ * the reading and not a fifth object in the bar (`the-bar.md`).
  */
-export function ColumnLabel({ id, label, only }: { id: string; label: string; only: string | undefined }) {
-  return id === 'landed' ? (
-    <Link href={landedLink(only)} title="what Lingtai changed, newest first">
-      {label}
+export function ColumnLabel({ label }: { label: string }) {
+  return <span>{label}</span>
+}
+
+/**
+ * The Landed column's count, drawn as a pill button to `/landed`, carrying
+ * `?project=` as the `/report` link does. The number is the column's own
+ * (landed and closed cards), not the footer's `landedCount`.
+ */
+export function LandedCount({ count, only }: { count: number; only: string | undefined }) {
+  return (
+    <Link className="ctbtn" href={landedLink(only)} title="what Lingtai changed, newest first">
+      <span className="ct">{count}</span>
+      <span className="lbl">all</span>
+      <span aria-hidden="true">→</span>
     </Link>
-  ) : (
-    <span>{label}</span>
   )
 }
 
@@ -832,11 +841,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
             >
               <header className="col-h">
-                <ColumnLabel id={col.id} label={col.label} only={only} />
+                <ColumnLabel label={col.label} />
                 {col.id === 'queued' ? (
                   <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
                     <AwaitedCount queue={queue} logCount={col.cards.length} />
                   </Suspense>
+                ) : col.id === 'landed' ? (
+                  <LandedCount count={col.cards.length} only={only} />
                 ) : (
                   <span className="ct">{col.cards.length}</span>
                 )}
