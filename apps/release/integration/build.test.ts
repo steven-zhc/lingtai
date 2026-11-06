@@ -252,10 +252,10 @@ async function startsEmptyPass(command: string, args: string[]): Promise<void> {
   let output = ''
   try {
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`no startup pass:\n${output}`)), 15_000)
+      const timer = setTimeout(() => reject(new Error(`no startup turn:\n${output}`)), 15_000)
       const collect = (chunk: Buffer) => {
         output += chunk.toString()
-        if (!output.includes('pass (startup):')) return
+        if (!output.includes('turn (startup):')) return
         clearTimeout(timer)
         resolve()
       }
@@ -266,7 +266,7 @@ async function startsEmptyPass(command: string, args: string[]): Promise<void> {
         reject(new Error(`daemon exited ${code ?? signal}:\n${output}`))
       })
     })
-    expect(output).toContain('pass (startup): 0 project(s), 0 run(s)')
+    expect(output).toContain('turn (startup): 0 project(s), 0 run(s)')
     expect(output).not.toContain('refused')
   } finally {
     child.kill()
