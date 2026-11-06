@@ -676,9 +676,9 @@ body {
    The priority order, said out loud.
 
    `source.kinds` is the order the conductor takes work in — earlier wins — and
-   until #85 the only way to know that was to read the recipe. A heading per
-   kind makes the column's position mean something; the note on the first group
-   that has anything runnable in it says which one is next.
+   the column walks it: cards in that order, an epic's group placed where its
+   first card falls (#956), and the one *taken first* marked on its own card's
+   id line with `.qnext`. There are no kind headings; every card keeps its dot.
 
    Muted, and never `--signal`: this is a fact about the queue's order, and
    amber is reserved for a person being waited on. */

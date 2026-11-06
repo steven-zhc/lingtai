@@ -354,6 +354,29 @@ describe('an epic group in the Queued column (#956)', () => {
     expect(out).toContain('heldfold')
   })
 
+  it('keeps a held child the log still has a card for out of the group, in the fold', () => {
+    const out = html(
+      <QueuedAnswered
+        unreadable={[]}
+        logCards={[card('lingtai', '10')]}
+        github={answer({
+          epics: [head],
+          held: [{ project: 'lingtai', ref: 10, title: 'held', kind: 'feature', kindColor: null, label: 'agent:hold' }],
+          parents: new Map([['lingtai#10', 9]]),
+        })}
+        onBoard={new Set(['lingtai'])}
+        list={list}
+        order={['feature']}
+        empty={<p>EMPTY</p>}
+      />,
+    )
+    expect(out).not.toContain('egroup')
+    expect(out).not.toContain('lingtai-10|')
+    expect(out).not.toContain('taken first')
+    expect(out).toContain('heldfold')
+    expect(out).toContain('the big piece')
+  })
+
   it('draws no group and no kind heading before GitHub answers', () => {
     const out = html(
       <QueuedFallback

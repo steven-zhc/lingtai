@@ -8,8 +8,9 @@
  * `await` is in `page.tsx`'s thin wrappers — so a test can render either with
  * literal values.
  *
- * The card list is handed in as `list` rather than imported: `Card` and
- * `Queued` live in `page.tsx`, which may export nothing but the page.
+ * One card is drawn through `list` rather than imported: `Card` lives in
+ * `page.tsx`, which may export nothing but the page. The grouping and the loop
+ * over it are here.
  */
 import { Fragment, type ReactNode } from 'react'
 
@@ -313,9 +314,9 @@ export function QueuedFallback({
 }
 
 /**
- * The Queued column's body once GitHub has answered: today's markup, one
- * `Queued` over the log's cards and GitHub's, so the grouping and the one
- * *taken first* are decided over the whole column.
+ * The Queued column's body once GitHub has answered: one `groupQueue` over the
+ * log's cards and GitHub's, so the epic groups and the one *taken first* are
+ * decided over the whole column.
  */
 export function QueuedAnswered({
   unreadable,
@@ -342,7 +343,10 @@ export function QueuedAnswered({
   /** What the page's columns say about a blocker (#960). */
   board?: BoardHalf
 }) {
-  const cards = [...logCards, ...github.cards]
+  // A ticket GitHub says is held is in the fold, whatever the log still holds
+  // for it: it is not runnable, so it neither joins a group nor is *taken first*.
+  const heldKeys = new Set(github.held.map((h) => `${h.project}#${h.ref}`))
+  const cards = [...logCards, ...github.cards].filter((c) => !heldKeys.has(`${c.project}#${c.ref}`))
   // A project only GitHub offers can name projects in this column without
   // changing the others (#884): accepted.
   const projects = new Set([
