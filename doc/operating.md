@@ -673,8 +673,10 @@ runs — until then, this is a recipe written for a project GitHub does not
 know about yet.
 
 **Or from the board, in any state it is in.** *Add a repository*, in the
-filter's menu on the bar (#903), goes to `/setup/repository` once the App exists
-and to `/setup/github-app` before it (`apps/board/src/app/projects.tsx:37`) — the first is now one line pointing at this
+filter's menu on the bar (#903), goes to `/setup/repository` once GitHub
+authentication is configured (an App, or `gh`) and to `/setup/github-app` before
+it (`apps/board/src/app/projects.tsx:37`, handed `hasGitHubAuth()` at
+`apps/board/src/app/page.tsx:740`) — the first is now one line pointing at this
 command (`#401`), since #391 put every setup decision in the terminal; the
 second still creates the App itself, the one step the terminal cannot do.
 Until then the slot was an entry with no projects, a caption with one and a

@@ -262,7 +262,8 @@ The bar answers two questions and no third — *is anything waiting on me?* and
 *is the system doing what the code says?* — and carries three objects to do it:
 the filter, health, the headline (#902,
 [doc/design/the-bar.md](doc/design/the-bar.md)). The reading is a footer on
-every page that reads the log: today's spend as two figures against the ceiling
+the pages that read the log (`/`, `/backlog`, `/recipe`, `/task`, `/spend`,
+`/report`; not `/landed` or `/setup`): today's spend as two figures against the ceiling
 (reported and estimated, never one sum), the landed count on `/` as a link to
 `/landed`, the projections' currency, and the links to `/report` and `/spend`.
 **A chip is not free, and the row is the unit**: it reached eleven objects
