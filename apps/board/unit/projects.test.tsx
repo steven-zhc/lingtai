@@ -143,7 +143,7 @@ describe('which object on the row this is', () => {
   it('is mounted left of the rail, which keeps the four it was cut to', () => {
     expect(bar.indexOf('<Projects')).toBeGreaterThan(-1)
     expect(bar.indexOf('<Projects')).toBeLessThan(bar.indexOf('className="rail"'))
-    // Nothing new inside the rail: the reading, the health dot, the
+    // Nothing new inside the rail: the health dot, the
     // paused/draining chip and the headline, as #134 left them.
     const rail = bar.slice(bar.indexOf('className="rail"'))
     for (const object of ['<Projects', '/setup/repository', '/setup/github-app']) {
@@ -169,7 +169,6 @@ describe('which object on the row this is', () => {
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
       ['filter', bar.includes('<Projects')],
-      ['reading', bar.includes('className="reading"')],
       ['health', bar.includes('<Health')],
       ['headline', bar.includes('className="head sig"')],
     ]
@@ -177,7 +176,7 @@ describe('which object on the row this is', () => {
       .map(([name]) => name)
     const named = rendered.join(', ')
 
-    expect(rendered).toEqual(['filter', 'reading', 'health', 'headline'])
+    expect(rendered).toEqual(['filter', 'health', 'headline'])
     // Twice in `page.tsx`, and once in `projects.tsx`: each says exactly what is rendered.
     expect(said(page).split(named)).toHaveLength(3)
     expect(said(read('../src/app/projects.tsx'))).toContain(named)

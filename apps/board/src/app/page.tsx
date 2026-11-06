@@ -39,6 +39,7 @@ import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 import { codeSpans } from './code-spans.tsx'
 import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
+import { Footer, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
 import { Home } from './home.tsx'
 import { NotSetUp } from './not-set-up.tsx'
@@ -77,9 +78,9 @@ import { Rail, Segs } from './rail.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects still — filter,
- * reading, health, headline — until the reading moves to a footer
- * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps it four is stated at the
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to filter, health,
+ * headline now that the reading has moved to the footer
+ * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps the row small is stated at the
  * end of the bar below, where the next chip would be added.
  *
  * **And so did the card, and two of its thirteen objects were sequences.** Same
@@ -680,7 +681,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         timed('projects.read', () => loadProjects()).catch(() => []),
         timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
-      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.short === 'today unreadable' })
+      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null })
       return [board, projects, control, day] as const
     },
     { label: '/' },
@@ -693,7 +694,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const queue: Promise<GithubQueue> = measure(() => timed('board.queue', () => githubQueue(askable, known)), {
     label: '/ queue',
   }).then(([github]) => github)
-  const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // Every card's money pill below is off this same `spend`. Silent when it
   // reduced cleanly — a chip is not free, and this is the ordinary case — and
   // a sentence when it did not, because a card reading `unknown (1 run)`
@@ -745,45 +745,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             board can be believed, and — last, where the eye lands — the one
             thing that is asking for a person. */}
         <span className="rail">
-          {/* The reading. Unboxed, because a box says *this is a thing* and
-              this is a reading: `11 items` was the sum of four columns that
-              mean different things (#81), and the parts are kept for that
-              reason. Nothing at all is still worth a word — an empty board and
-              an unbuilt projection look alike.
-
-              It is also the way to `/spend`, which costs the row nothing: the
-              board's numbers are already here, and what they cost is the one
-              more number about them.
-
-              **A link on every board, the empty one included.** `/spend` holds
-              the pass limits as well as the bill, and before anything has run
-              is exactly when 0025 §2 wants a spending default seen — there is
-              no bill yet, but there is already a permission to spend. Under a
-              filter, "the log" is not what is empty — it may be full of the
-              project you are not looking at — so the board says whose
-              emptiness this is, the way the columns below do (#86). */}
-          <Link
-            className="reading"
-            href={only === undefined ? '/spend' : `/spend?project=${encodeURIComponent(only)}`}
-            title={`${
-              total === 0
-                ? 'nothing has run — and what an attempt may spend when it does'
-                : 'everything that is not waiting on you — and what it has cost'
-            }${today.short === null ? '' : ` — ${today.text}`}`}
-          >
-            {today.short ?? 'spend'}
-          </Link>
-          {/* `/report` is a second way out of the reading and not a fifth
-              object: the same tab-inside-the-object argument #216 made for
-              the `+`, and for the same reason the row still counts four
-              (the-bar.md). */}
-          <Link
-            className="reading"
-            href={only === undefined ? '/report' : `/report?project=${encodeURIComponent(only)}`}
-            title="how the pipeline converges, what it landed and what it cost"
-          >
-            report
-          </Link>
           {/* One health, out of two facts that were two chips. `#64` asks
               whether what you are looking at is current and `#98` asks whether
               the process that moves it is running the code we merged; both are
@@ -845,7 +806,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               A bar carries what changes what you do next, and answers two
               questions and no third: *is anything waiting on me?* and *is the
               system doing what the code says?* Anything added here has to be
-              argued against the four that are left — filter, reading, health,
+              argued against the objects that are left — filter, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
               limits are on `/spend`.
@@ -967,6 +928,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           </section>
         ))}
       </div>
+      <Footer day={today} project={only} landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])} />
     </main>
   )
 }
