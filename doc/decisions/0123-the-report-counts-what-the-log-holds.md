@@ -172,7 +172,18 @@ The operator's decisions in epic #648 are the inputs here.
    facts of §2 (outcome and its time, attempts, fix rounds, reviews with their
    rounds, times and blocking counts, waits with their
    reasons and resolutions, machine time, cost by purpose, unknown count, and
-   the time of every attempt, so a window can place an open ticket). It is a reducer
+   the time of every attempt, so a window can place an open ticket) and, for a
+   landed ticket, **its landing facts**: title, merge commit, the landing
+   attempt's number, that attempt's fix rounds and last `RunProducedDiff`
+   (files, insertions, deletions), and the summary of its last review
+   (`reviewSummaryOf`, with how much of the diff that review read when it was
+   clipped). **The landing attempt is inferred**: `TicketLanded` is only
+   `{ mergeCommit, base }`, so it is the ticket's last claim (`claims.at(-1)`,
+   continuations excluded) and its number is `claims.length`. The last review
+   wins, a missing summary included, because an earlier summary describes a
+   diff that a fix round replaced; a landing run with no diff or no summary
+   holds null, never zero. `landed()` reads these newest landing first, a page at
+   a time, with a `(outcome_at, ticket)` cursor. It is a reducer
    and nothing else, kept current by the projector every appending process
    already holds (0022), and corrected only by
    `lingtai projection rebuild ticket_report`. **It reduces the log itself and

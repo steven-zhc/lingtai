@@ -48,11 +48,13 @@ import {
   isAttemptStream,
   isTicketStream,
   parseTicketStream,
+  reviewSummaryOf,
 } from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
+import { columnOf } from './store.ts'
 import type { Projection, ProjectionContext } from './store.ts'
 import { reduceStoredTicket } from './ticket-row.ts'
 
@@ -115,6 +117,15 @@ interface State {
   /** `stream:round`, each distinct pair once. */
   rounds: string[]
   open: OpenInterval[]
+  /** Per run: the last diff and the last review summary it produced. Read at `TicketLanded` for the landing run. */
+  byRun: Record<string, RunFacts>
+}
+
+/** What one run left that a landing page shows. A null is unknown, never zero. */
+interface RunFacts {
+  diff: { files: number; insertions: number; deletions: number } | null
+  summary: string | null
+  clipped: { read: number; of: number } | null
 }
 
 const json = <T>(value: unknown, fallback: T): T => {
@@ -143,12 +154,60 @@ export interface TicketReportRow {
   reviews: ReportReview[]
   waits: ReportWait[]
   cost: Record<string, PurposeCost>
+  /** The ticket's title, off the stored `ticket_state`. */
+  title: string | null
+  /** The merge commit, for a landed ticket. */
+  mergeCommit: string | null
+  /** The landing run: the ticket's last claim (a continuation is not one). Inferred: `TicketLanded` does not name it. */
+  landingRun: string | null
+  /** That run's number among the ticket's claims, from 1. */
+  landingAttempt: number | null
+  landingFixRounds: number | null
+  diffFiles: number | null
+  diffInsertions: number | null
+  diffDeletions: number | null
+  /** The reviewer's summary of the landing run's last review. */
+  summary: string | null
+  summaryClipped: { read: number; of: number } | null
 }
+
+/** The columns a landed read selects, named so that a table without one is drift and not a silent null. */
+export const TICKET_REPORT_COLUMNS = [
+  'ticket',
+  'project',
+  'kind',
+  'outcome',
+  'outcome_at',
+  'passes',
+  'fix_rounds',
+  'machine_ms',
+  'intervals_empty',
+  'intervals_open',
+  'unknown_claims',
+  'pass_times',
+  'reviews',
+  'waits',
+  'cost',
+  'ticket_state',
+  'landing_run',
+  'landing_attempt',
+  'landing_fix_rounds',
+  'diff_files',
+  'diff_insertions',
+  'diff_deletions',
+  'summary',
+  'summary_clipped',
+].join(', ')
+
+const orNull = <T>(value: unknown): T | null => (value === null || value === undefined ? null : (value as T))
+const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value))
 
 /** Both stores' one mapper: SQLite hands JSON back as text and Postgres as a value, `json` takes either. */
 export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow {
+  const ticket = String(row.ticket)
+  const state = decodeTicket(columnOf(row, TICKET_REPORT_TABLE, 'ticket_state'), TICKET_REPORT_TABLE, ticket)
   return {
-    ticket: String(row.ticket),
+    ticket,
     project: (row.project as string | null | undefined) ?? null,
     kind: (row.kind as string | null | undefined) ?? null,
     outcome: row.outcome as TicketReportRow['outcome'],
@@ -163,6 +222,18 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
     reviews: json(row.reviews, []),
     waits: json(row.waits, []),
     cost: json(row.cost, {}),
+    title: state.title,
+    mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
+    landingRun: orNull<string>(columnOf(row, TICKET_REPORT_TABLE, 'landing_run')),
+    landingAttempt: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_attempt')),
+    landingFixRounds: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_fix_rounds')),
+    diffFiles: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'diff_files')),
+    diffInsertions: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'diff_insertions')),
+    diffDeletions: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'diff_deletions')),
+    summary: orNull<string>(columnOf(row, TICKET_REPORT_TABLE, 'summary')),
+    summaryClipped: ((v) => (v === null ? null : json<{ read: number; of: number }>(v, null as never)))(
+      orNull(columnOf(row, TICKET_REPORT_TABLE, 'summary_clipped')),
+    ),
   }
 }
 
@@ -176,6 +247,7 @@ const fresh = (ticket: string): State => ({
   paid: [],
   rounds: [],
   open: [],
+  byRun: {},
 })
 
 /**
@@ -196,6 +268,7 @@ async function load(ctx: ProjectionContext, ticket: string): Promise<{ s: State;
       paid: json(row.paid, []),
       rounds: json(row.rounds, []),
       open: json(row.open_intervals, []),
+      byRun: json(row.by_run, {}),
     },
   }
 }
@@ -227,13 +300,20 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
   const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
   // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
   const outcomeAt = outcome === 'open' ? null : t.since
+  // The landing run is the last claim (`claims` already leaves continuations out); `TicketLanded` does not name it.
+  const landing = outcome === 'landed' ? (t.claims.at(-1) ?? null) : null
+  const facts = landing === null ? null : (s.byRun[landing.runId] ?? null)
+  const landingRounds =
+    landing === null ? null : s.rounds.filter((k) => k.slice(0, k.lastIndexOf(':')) === landing.runId).length
   await ctx.query(
     `insert into ticket_report
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
-        paid, rounds, open_intervals, ticket_state)
+        paid, rounds, open_intervals, ticket_state, by_run, landing_run, landing_attempt, landing_fix_rounds,
+        diff_files, diff_insertions, diff_deletions, summary, summary_clipped)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb,
-             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb)
+             $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb,
+             $20::jsonb, $21, $22, $23, $24, $25, $26, $27, $28::jsonb)
      on conflict (ticket) do update set
        project = excluded.project, kind = excluded.kind, outcome = excluded.outcome,
        outcome_at = excluded.outcome_at, passes = excluded.passes, fix_rounds = excluded.fix_rounds,
@@ -241,7 +321,11 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
        intervals_open = excluded.intervals_open, unknown_claims = excluded.unknown_claims,
        pass_times = excluded.pass_times, reviews = excluded.reviews, waits = excluded.waits,
        cost = excluded.cost, paid = excluded.paid, rounds = excluded.rounds,
-       open_intervals = excluded.open_intervals, ticket_state = excluded.ticket_state`,
+       open_intervals = excluded.open_intervals, ticket_state = excluded.ticket_state,
+       by_run = excluded.by_run, landing_run = excluded.landing_run, landing_attempt = excluded.landing_attempt,
+       landing_fix_rounds = excluded.landing_fix_rounds, diff_files = excluded.diff_files,
+       diff_insertions = excluded.diff_insertions, diff_deletions = excluded.diff_deletions,
+       summary = excluded.summary, summary_clipped = excluded.summary_clipped`,
     [
       s.ticket,
       project,
@@ -262,6 +346,15 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
       JSON.stringify(s.rounds),
       JSON.stringify(s.open),
       encodeTicket(t),
+      JSON.stringify(s.byRun),
+      landing?.runId ?? null,
+      landing === null ? null : t.claims.length,
+      landingRounds,
+      facts?.diff?.files ?? null,
+      facts?.diff?.insertions ?? null,
+      facts?.diff?.deletions ?? null,
+      facts?.summary ?? null,
+      facts?.clipped == null ? null : JSON.stringify(facts.clipped),
     ],
   )
 }
@@ -349,9 +442,21 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         paid            jsonb not null,
         rounds          jsonb not null,
         open_intervals  jsonb not null,
-        ticket_state    jsonb not null
+        ticket_state    jsonb not null,
+        by_run          jsonb not null,
+        landing_run        text,
+        landing_attempt    integer,
+        landing_fix_rounds integer,
+        diff_files         integer,
+        diff_insertions    integer,
+        diff_deletions     integer,
+        summary            text,
+        summary_clipped    jsonb
       )`)
     await ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
+    await ctx.query(
+      'create index if not exists ticket_report_landed_idx on ticket_report (outcome, outcome_at desc, ticket)',
+    )
     // Which ticket a pass or chat stream is about — this projection's own, never `spend_stream`.
     await ctx.query(`
       create table if not exists ticket_report_stream (
@@ -407,6 +512,9 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         }
 
         case 'TicketLanded':
+          change = endIntervals
+          break
+
         case 'WaitStarted':
         case 'TicketReleased':
         case 'TicketClosed':
@@ -418,6 +526,11 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
           ticket = (await ticketOf(ctx, d.runId)) ?? (await ticketOf(ctx, event.streamId))
           if (d.outcome.step !== 'review') break
           change = (s) => {
+            // The last review wins, a null too: an earlier summary describes a diff that is gone.
+            const r = reviewSummaryOf(d.outcome)
+            const facts = (s.byRun[d.runId] ??= { diff: null, summary: null, clipped: null })
+            facts.summary = r?.summary ?? null
+            facts.clipped = r?.clipped ?? null
             s.reviews.push({
               seq: event.seq.toString(),
               at: event.at.toISOString(),
@@ -425,6 +538,16 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
               blocking: blockingOf(d.outcome),
               cleared: d.outcome.actions.every(cleared),
             })
+          }
+          break
+        }
+
+        case 'RunProducedDiff': {
+          const d = event.data as PayloadOf<'RunProducedDiff'>
+          ticket = await ticketOf(ctx, event.streamId)
+          change = (s) => {
+            const facts = (s.byRun[event.streamId] ??= { diff: null, summary: null, clipped: null })
+            facts.diff = { files: d.files, insertions: d.insertions, deletions: d.deletions }
           }
           break
         }

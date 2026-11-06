@@ -23,6 +23,16 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   reviews: [],
   waits: [],
   cost: {},
+  title: null,
+  mergeCommit: null,
+  landingRun: null,
+  landingAttempt: null,
+  landingFixRounds: null,
+  diffFiles: null,
+  diffInsertions: null,
+  diffDeletions: null,
+  summary: null,
+  summaryClipped: null,
   ...over,
 })
 const five = (over: Partial<TicketReportRow> = {}) => Array.from({ length: 5 }, () => row(over))

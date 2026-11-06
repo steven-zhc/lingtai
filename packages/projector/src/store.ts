@@ -227,6 +227,8 @@ export interface BacklogQuery {
   project?: string
   status?: BacklogStatus
   key?: string
+  /** Only entries first raised for these tickets (stream ids). Empty reads nothing; absent filters nothing. */
+  taskIds?: readonly string[]
 }
 
 /**
@@ -238,6 +240,19 @@ export interface TicketReportQuery {
   /** Absent reads every project's tickets. */
   project?: string
 }
+
+/** `ticket_report`'s landed rows, newest first. The cap and the cursor's order are the store's. */
+export interface TicketReportLandedQuery {
+  project?: string
+  /** Rows strictly older than this `(outcome_at, ticket)`, the order they are read in. */
+  before?: { at: Date; ticket: string }
+  /** Clamped to 1..100. */
+  limit: number
+}
+
+export const LANDED_LIMIT_MAX = 100
+export const clampLanded = (limit: number): number =>
+  Math.min(LANDED_LIMIT_MAX, Math.max(1, Number.isFinite(limit) ? Math.trunc(limit) : 1))
 
 export interface SpendQuery {
   /** One ticket, or several — a board render asks for every card at once. */
@@ -343,6 +358,12 @@ export interface ProjectionStore {
    * A database no projector has ever started has no table, and that is no rows.
    */
   ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]>
+
+  /**
+   * Landed tickets only, newest landing first, ties broken by ticket descending —
+   * a page at a time, with `before` the last row of the page before.
+   */
+  landed(query: TicketReportLandedQuery): Promise<TicketReportRow[]>
 
   /** Releases whatever this store holds open. */
   close(): Promise<void>

@@ -39,7 +39,7 @@ import type { TriageResult } from '@lingtai/domain/wait'
 
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
-import { CheckpointRewoundError, columnOf } from './store.ts'
+import { CheckpointRewoundError, clampLanded, columnOf, ProjectionShapeError } from './store.ts'
 import type {
   BacklogQuery,
   ProjectionContext,
@@ -48,11 +48,12 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TicketReportLandedQuery,
   TicketReportQuery,
 } from './store.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
-import { ticketReportRowOf } from './ticket-report.ts'
+import { TICKET_REPORT_COLUMNS, ticketReportRowOf } from './ticket-report.ts'
 import type { TicketReportRow } from './ticket-report.ts'
 
 /**
@@ -715,6 +716,11 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         args.push(value)
         where.push(`${column} = ?`)
       }
+      if (query.taskIds !== undefined) {
+        if (query.taskIds.length === 0) return []
+        for (const id of query.taskIds) args.push(id)
+        where.push(`task_id in (${query.taskIds.map(() => '?').join(', ')})`)
+      }
       return read(() =>
         allOrEmpty(
           `select * from finding_backlog
@@ -760,6 +766,40 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           query.project === undefined ? [] : [query.project],
         ).map(ticketReportRowOf),
       )
+    },
+
+    async landed(query: TicketReportLandedQuery): Promise<TicketReportRow[]> {
+      const where = [`outcome = 'landed'`]
+      const args: unknown[] = []
+      if (query.project !== undefined) {
+        args.push(query.project)
+        where.push('project = ?')
+      }
+      if (query.before !== undefined) {
+        // `outcome_at` is the ISO text `save` wrote from a Date, so the cursor is written the same way.
+        args.push(query.before.at.toISOString(), query.before.ticket)
+        where.push('(outcome_at, ticket) < (?, ?)')
+      }
+      args.push(clampLanded(query.limit))
+      return read(() => {
+        try {
+          return allOrEmpty(
+            `select ${TICKET_REPORT_COLUMNS} from ticket_report
+             where ${where.join(' and ')}
+             order by outcome_at desc, ticket desc
+             limit ?`,
+            args,
+          ).map(ticketReportRowOf)
+        } catch (err) {
+          // A column the table lacks is drift, and drift names the rebuild.
+          if (err instanceof Error && /no such column/i.test(err.message)) {
+            throw new ProjectionShapeError('ticket_report', [
+              { table: 'ticket_report', missing: ['landing columns'], unexpected: [] },
+            ])
+          }
+          throw err
+        }
+      })
     },
 
     async close() {

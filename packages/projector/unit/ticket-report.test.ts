@@ -188,6 +188,88 @@ describe('ticket_report', () => {
     expect(closedAfterLanding).toMatchObject({ outcome: 'closed' })
   })
 
+  it('holds the landing attempt, its last diff, the last review’s summary and its fix rounds (#894)', async () => {
+    const t = makeStream(T)
+    const a = makeStream('pass-pin-a')
+    const b = makeStream('pass-pin-b')
+    const diff = (s: Stream, m: number, files: number): Envelope =>
+      s(
+        'RunProducedDiff',
+        { branch: 'agent/1', headSha: 'f'.repeat(40), files, insertions: files * 2, deletions: 1 },
+        { at: at(m) },
+      )
+    const review = (s: Stream, runId: string, round: number, summary: string | null, m: number): Envelope =>
+      s(
+        'StepEnded',
+        {
+          runId,
+          outcome: {
+            step: 'review',
+            round,
+            actions: [
+              {
+                plugin: 'agent',
+                name: 'review',
+                onSha: 'f'.repeat(40),
+                evidence: 'e',
+                yields: 'verdict',
+                result: {
+                  _tag: 'Completed',
+                  assessment: { verdict: 'accepted', findings: [], ...(summary === null ? {} : { summary }) },
+                },
+              },
+            ],
+          },
+        } as PayloadOf<'StepEnded'>,
+        { at: at(m) },
+      )
+    const row = await reduce([
+      [
+        claim(t, 'pass-pin-a', 'bug', 0),
+        diff(a, 1, 9),
+        review(a, 'pass-pin-a', 0, 'attempt one', 2),
+        t('TicketReleased', { runId: 'pass-pin-a', reason: 'died', cause: null }, { at: at(3) }),
+        claim(t, 'pass-pin-b', 'bug', 4),
+        t('TicketContinued', { runId: 'pass-pin-c', worker: 'local:1' }, { at: at(5) }),
+        diff(b, 6, 3),
+        review(b, 'pass-pin-b', 0, 'first look', 7),
+        diff(b, 8, 4),
+        spent(b, work(1), 9),
+        review(b, 'pass-pin-b', 1, 'after the fix', 10),
+        t('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(11) }),
+      ],
+    ])
+    expect(row).toMatchObject({
+      outcome: 'landed',
+      landing_run: 'pass-pin-b',
+      landing_attempt: 2,
+      landing_fix_rounds: 1,
+      diff_files: 4,
+      diff_insertions: 8,
+      diff_deletions: 1,
+      summary: 'after the fix',
+    })
+    expect(row?.summary_clipped).toBeNull()
+  })
+
+  it('leaves the landing facts null where the run produced no diff or summary, and for an open ticket (#894)', async () => {
+    const t = makeStream(T)
+    const landed = await reduce([
+      [claim(t, 'pass-pin-a', 'bug', 0), t('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(1) })],
+    ])
+    expect(landed).toMatchObject({
+      landing_run: 'pass-pin-a',
+      landing_attempt: 1,
+      landing_fix_rounds: 0,
+      diff_files: null,
+      diff_insertions: null,
+      diff_deletions: null,
+      summary: null,
+    })
+    const open = await reduce([[claim(makeStream(T), 'pass-pin-a', 'bug', 0)]])
+    expect(open).toMatchObject({ landing_run: null, landing_attempt: null, diff_files: null, summary: null })
+  })
+
   it('D4: a claim with a null kind keeps the kind an earlier one named', async () => {
     const t = makeStream(T)
     const row = await reduce([[claim(t, 'pass-pin-a', 'bug', 0), claim(t, 'pass-pin-b', null, 1)]])
