@@ -10,6 +10,7 @@ import { projectionLag } from '@lingtai/projector'
 import type { ProjectionLag } from '@lingtai/projector'
 
 import { type DaySpendReading, readDayReading } from './day-spend.ts'
+import { theHome } from './home.ts'
 import { measure, timed } from './timing.ts'
 
 /** The four projections. A copy of `PROJECTION_NAMES` in `apps/cli/src/commands.ts`, held equal by a test. */
@@ -25,6 +26,8 @@ export interface FooterReading {
   day: DaySpendReading
   /** null when the lag could not be read. */
   lags: FooterLag[] | null
+  /** The Lingtai home this board reads (#947), drawn at the footer's right end. */
+  home: { path: string; shown: string }
 }
 
 /** Every projection by name, so one that was never built is said rather than left out. */
@@ -45,5 +48,5 @@ export async function loadFooter(): Promise<FooterReading> {
       ]),
     { label: '/api/footer' },
   )
-  return { day, lags }
+  return { day, lags, home: theHome() }
 }

@@ -36,6 +36,7 @@ import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
+import { Bar } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
 import { codeSpans } from './code-spans.tsx'
@@ -44,7 +45,6 @@ import { Draining } from './draining.tsx'
 import { Footer, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
-import { Home } from './home.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
@@ -726,21 +726,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           lags={lags}
           project={only}
           landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
+          home={theHome()}
         />
       }
     >
       <>
         <TimingMeta timings={timings} />
-        <div className="bar">
-          {/* An empty span carrying a background, not an `<img>`: which file the
-            mark is comes from `--mark`, so it follows the palette instead of
-            being decided here. `aria-hidden` because the word beside it already
-            says what it says. */}
-          <span className="brand">
-            <span className="mark" aria-hidden="true" />
-            Lingtai
-            <Home {...theHome()} />
-          </span>
+        <Bar project={only}>
           <span className="sep" />
           {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
@@ -819,7 +811,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               since #81, and a list gaining an action at its end is that object
               and not a fourth one. A fourth object is still argued for here. */}
           </span>
-        </div>
+        </Bar>
 
         {/* Repositories that are recorded and not yet conducted (#163). Above
           the lanes because it is not work — `loadProjects()` does not return

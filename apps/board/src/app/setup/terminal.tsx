@@ -5,7 +5,7 @@
  * from it.
  *
  * It calls neither GitHub, the env nor the log — its imports are
- * `next/link` and `Home`. With `wizard.tsx` gone, nothing else under `setup/` is
+ * `Bar`. With `wizard.tsx` gone, nothing else under `setup/` is
  * `'use client'`, so no client bundle reaches a graph here at all. A
  * server-only import reaching a client graph is the risk
  * `apps/release/integration/build.test.ts` catches after the merge (#230),
@@ -21,30 +21,15 @@
  * `setup_action=request`, and that is the only place the organisation
  * owner's approval is ever mentioned (`setupReturn`).
  */
-import Link from 'next/link'
+import { Bar } from '../bar.tsx'
 
-import { Home } from '../home.tsx'
-
-export function TerminalScreen({
-  requested = false,
-  gh = false,
-  home,
-}: {
-  requested?: boolean
-  gh?: boolean
-  /** Required, so a page that draws this bar cannot forget the home (#767). */
-  home: { path: string; shown: string }
-}) {
+export function TerminalScreen({ requested = false, gh = false }: { requested?: boolean; gh?: boolean }) {
   return (
     <main className="detail">
-      <div className="bar">
-        <Link className="brand" href="/">
-          ← Lingtai
-          <Home {...home} />
-        </Link>
+      <Bar project={undefined}>
         <span className="sep" />
         <span className="mono">repository</span>
-      </div>
+      </Bar>
 
       <div className="detail-body">
         <section>

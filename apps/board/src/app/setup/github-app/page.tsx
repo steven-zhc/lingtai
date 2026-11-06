@@ -26,10 +26,8 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
  * would name a command that restarts the daemon and not this board, beside a
  * claim that it fixes both: #167's defect, one surface along.
  */
-import Link from 'next/link'
 
-import { Home } from '@/app/home.tsx'
-import { theHome } from '@/lib/home'
+import { Bar } from '@/app/bar.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,14 +48,10 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
 
   return (
     <main className="detail">
-      <div className="bar">
-        <Link className="brand" href="/">
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
+      <Bar project={undefined}>
         <span className="sep" />
         <span className="mono">github app</span>
-      </div>
+      </Bar>
 
       <div className="detail-body">
         <section>

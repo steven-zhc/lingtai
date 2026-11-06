@@ -149,8 +149,17 @@ body {
    the headline has to be. */
 .bar .rail {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin-left: auto;
 }
+/* Report, the bar's one link (#947): last, and pushed to the right edge by its
+   own auto margin, so the rail before it does not carry one. */
+.bar .topnav { display: flex; gap: 4px; margin-left: auto; }
+.navlink {
+  font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  padding: 5px 12px; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--surface, transparent);
+}
+.navlink:hover { border-color: var(--accent); color: var(--accent-ink); }
+.navlink.on { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* --- the footer: today's spend as a meter, landings, the way to /report and /spend --- */
 .footer {
@@ -172,6 +181,8 @@ body {
 .footer .meter .seg.est { opacity: 0.45; }
 .footer .currency { font: 11.5px var(--mono); opacity: 0.7; }
 .footer .links { margin-left: auto; display: inline-flex; gap: 16px; }
+.footer .home-at { color: var(--muted); font-size: 12.5px; }
+.footer .home-at b { font-weight: 500; color: var(--ink); }
 
 /* Health, as one dot: is this current (#64), and is the conductor running the
    code we merged (#98). Two chips for two facts was two things to learn to read
@@ -3159,13 +3170,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   .rp-grid { grid-template-columns: 1fr; }
   .rp-kinds { margin-left: 0; }
 }
-/* The home, inside the brand (#767): muted and small, a fact about the bar
-   rather than a chip in it. */
-.bar .brand .home {
-  font-weight: 400; font-size: 11px; color: var(--muted);
-  margin-left: 4px; letter-spacing: 0;
-}
-
 /* The board's one placeholder (0111 §15, #897): a waiting part drawn where its
    answer will go. The card outline matches `.card`'s box so that nothing
    moves when the real card replaces it. */

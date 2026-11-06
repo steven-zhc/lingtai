@@ -1,9 +1,7 @@
 import { loadProjects } from '@lingtai/conductor/projects'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { Home } from '@/app/home.tsx'
-import { theHome } from '@/lib/home'
+import { Bar } from '@/app/bar.tsx'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 
 import { FooterFetched } from '../../footer-fetched'
@@ -51,18 +49,13 @@ export const dynamic = 'force-dynamic'
  * — are assertable without a database or a `~/.lingtai/`.
  */
 export function Recipe({ view }: { view: ProjectRecipe }) {
-  const back = `/?project=${encodeURIComponent(view.project)}`
   return (
     <>
       <main className="detail">
-        <div className="bar">
-          <Link className="brand" href={back}>
-            ← Lingtai
-            <Home {...theHome()} />
-          </Link>
+        <Bar project={view.project}>
           <span className="sep" />
           <span className="mono">recipe · {view.project}</span>
-        </div>
+        </Bar>
 
         <div className="detail-body">
           <section>
