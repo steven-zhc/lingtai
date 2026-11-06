@@ -242,8 +242,8 @@ body {
 }
 
 /* The projects, as one control (the-bar.md, *Since 2026-11-05*): a <details>
-   whose summary names the project in view, with the projects, `recipe` and
-   *add a repository* in a menu under it. The menu is positioned, so opening it
+   whose summary names the project in view, with a row per repository (its name
+   and its own `recipe`) in a menu under it. The menu is positioned, so opening it
    never grows the filter and never pushes the rail onto a second line. */
 .filter { position: relative; }
 .filter > summary {
@@ -266,9 +266,19 @@ body {
 }
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
-/* The menu's own action, last in it (#216). Set apart from the list above so it
-   is not read as a project named *add a repository*. */
-.filter .add { margin-top: 3px; border-top: 1px solid var(--rule); }
+/* A row per repository: the name, which filters, and its `recipe` at the right. */
+.filter .menu.pm { min-width: 260px; padding: 6px; gap: 2px; }
+.prow {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 2px 2px 2px 0; border-radius: 2px;
+}
+.prow.on { background: var(--accent-soft); }
+.prow .pname { flex: 1; }
+.prow .rcp {
+  font-size: 10.5px; color: var(--accent-ink); border: 1px solid var(--rule);
+  border-radius: 3px; padding: 1px 7px;
+}
+.prow .rcp:hover { border-color: var(--accent); }
 
 /* Repositories on their way in (#163) — recorded, and not yet conducted.
 
