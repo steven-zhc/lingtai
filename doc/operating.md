@@ -2030,7 +2030,7 @@ and keep what it prints. Nothing here restores the figures inside `spend`
 itself; the note is the quick record. The archive the next step makes holds
 the same `RunSpent` rows, recoverable by restoring and querying it the way
 the Check step below restores and queries the rest of the dump, once
-`/spend` and the bar read zero for all history again.
+`/report` and the bar read zero for all history again.
 
 ### Archive — outside the repository, by default
 
@@ -2356,7 +2356,7 @@ recipes and the environment files are all untouched.
   above does.
 - **What has been spent.** `spendProjection` is a reducer of `RunSpent` and
   nothing else (`packages/projector/src/spend.ts:1-12`, 0110 §11), so emptying
-  `events` erases every run's recorded cost — `/spend` reads zero for all
+  `events` erases every run's recorded cost — `/report` reads zero for all
   history, and the footer's figure reads zero for today, once this section's own *After* step
   rebuilds the projection. Without the note in the *Before* step above, the
   totals are gone from `spend` for good — recoverable only by restoring the

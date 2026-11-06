@@ -1,18 +1,22 @@
 # The board's bar, weighted
 
-**Status** built · 2026-09-10 · `#134` · revised 2026-11-05 · `#902` · a picture at
+**Status** built · 2026-09-10 · `#134` · revised 2026-11-06 · `#953` · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
-Eleven objects, nine of them boxed, wrapping to a second line at 1440.
+## The bar is a frame and a row; the reading is in a footer
 
-## Since 2026-11-05: three objects on the bar, the reading in a footer (#902)
+The bar answers two questions, *is anything waiting on me?* and *is the system
+doing what the code says?*, and carries only what a person acts on. It is a
+**frame** that is the same on every page and a **row** that is the page's own.
 
-The bar still answers two questions, *is anything waiting on me?* and *is the
-system doing what the code says?*, and it now carries only what a person acts
-on. **Three objects: the filter, health, the headline.** The reading, which is
-looked at and not acted on, moves to a footer that every page has. The
-reasoning below, *a chip is not free and the row is the unit*, still holds; it
-is applied to two rows instead of one.
+- **The frame** is `Lingtai` at the left, which is the way home (it carries
+  `?project=`), and `Report` at the right (`apps/board/src/app/bar.tsx`), marked
+  current on `/report`. The frame does not grow either: a second destination
+  beside `Report` has to be argued here the way a fourth object is.
+- **The row** is three objects: **the filter, health, the headline.** The rule
+  below, *a chip is not free and the row is the unit*, governs the row.
+
+The row's objects:
 
 - **The filter** is one control: the project in view, with a row per
   repository in its menu, each carrying its own `recipe` (#948). There is no
@@ -30,20 +34,36 @@ is applied to two rows instead of one.
 - **The counts are not on the bar**: each column carries its own, so *2 queued
   · 3 running · 65 landed* was the same numbers twice. *nothing waiting on you*
   goes for the same reason.
-- **The footer** holds the reading: today's spend against the ceiling as a
-  meter of two segments, reported and estimated, written as two figures
-  (*$26.15 + ~$22.03 of $200*, unknown said and never $0, the whole sentence on
-  hover), how many landed, the
-  projections' currency in faint type, and the links to `/landed`, `/report`
-  and `/spend` (each carrying `?project=`); on the home page the landed count is
-  plain text. The `report` link's argument below
-  is kept: it was always *a second way out of the reading*, and the reading is
-  now the footer.
-- **⌘K** opens one search over projects, recipes, tickets and pages. It is a
-  key, not an object on the bar.
+
+**The footer** holds the reading, which is looked at and not acted on
+(`apps/board/src/app/footer.tsx`): today's spend against the ceiling as a meter
+of two segments, reported and estimated, written as two figures
+(*$26.15 + ~$22.03 of $200*, unknown said and never $0, the whole sentence on
+hover); on `/`, how many landed, as plain text; the projections' currency in
+faint type; and the home, last. **It carries no links.** `/landed` is reached
+from the Landed column's count on the board, the report from the bar, a card
+from its title, a repository's recipe from its row in the filter. Spend is a
+part of `/report`, and the recipe's pass limits are on the recipe page.
+
+**Why `Report` is on the bar.** The operator's choice of 2026-11-06: the report
+is the one page a person goes to on purpose. Everything else is glanced at (the
+bar, the footer) or reached from the thing it is about. A link to a page you
+visit on purpose is not a reading, so it does not belong in the footer, and a
+frame destination is not a fourth object in the row.
+
+**Why the home is in the footer.** Two boards on two homes were told apart by
+remembering which terminal was which, so the home is shown and never assumed
+(#767). Once `Lingtai` is the link home on every bar, the brand is a control.
+The home is a fact that never changes while the page is open, which is the
+definition of a reading, so it goes where the reading is: the footer's last
+item, whose prop is required so no page can drop it.
+
+**⌘K** opens one search over projects, recipes, tickets and pages. It is a
+key, not an object on the bar.
 
 The mock agreed with the operator is
 `https://claude.ai/artifact/4YVX98CsnwU8MSTcKZ3pTw` (`bar.html`).
+
 
 ## Every one of them earned its place, and nobody looked at the row
 
@@ -91,104 +111,54 @@ while working on something else. Two questions, and no third:
 | `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
 | `<project>: rounds ×N` | **to the recipe view** (`/recipe/<project>`, built by `#218`) | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
 
-Eleven to four: filters left, reading and health right, the headline last where
-the eye lands. Nothing new in the palette — amber returns to meaning one thing,
-and the health dot uses pass/fail, which are separate from the accent and always
-have been.
 
 ## The rule to keep
 
 **A chip is not free, and the row is the unit.** Anything added here has to be
-argued against the four that are left, not against the empty space beside them —
-which is the argument none of the six tickets above was asked to make.
+argued against the three objects that are there, not against the empty space
+beside them, which is the argument none of the six tickets above was asked to
+make. The frame is held to the same rule.
 
-It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx` — where
+It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx`, where
 the next chip would be added, and so where the argument has to be made.
+`apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
+headline*.
 
-### Which half of the row does it govern? Both
+### An affordance inside an object is not a new object
 
-The four are filter, reading, health, headline, and only three of them are on
-`.rail`: the filter sits left of the second separator, and it is counted. So
-*it is on the other side of the separator* is not an argument this rule
-accepts, and `paused` and `draining` are not two of the four either — they are
-chips, absent whenever there is nothing to say, which is the property that
-makes a chip affordable at all (below).
+`paused` and `draining` are not objects either: they are chips, absent whenever
+there is nothing to say, which is the property that makes a chip affordable at
+all (below).
 
-`#216` is the first ticket asked to make this argument, and it makes it by
-adding nothing to the count. The board offered a way to onboard a repository
-only while it had none: with one project the slot was a caption and with two a
-filter, and the only routes left were `lingtai add <owner>/<repo>` and typing
-`/setup/repository` from memory. What closed that is a `+` at the end of the
-project list — a `.tab` inside `.filter` (`apps/board/src/app/projects.tsx`).
-The filter has been a list of projects since `#81` and grew a tab when a third
-repository was registered; *a tab is not a chip* is already said below. The
-fourth object gained the affordance a list of things has, and the row still
-carries four.
-
-**None of which loosens anything**, and what it did cost is named rather than
-left to be found: a single-project board used to carry a bare caption and now
-carries a caption and one small tab. A list gaining its own action is not the
-same act as a fifth object arriving on a row that is glanced at while you work
-on something else — and that one still has to be argued for here.
-`apps/board/unit/projects.test.tsx` holds both halves of it: *is mounted left
-of the rail*, and *leaves the four what they were* — because the way this
-ticket could have gone wrong was to make the `+` fit by redefining the set.
-
-**The home is part of the brand, and the row still carries four** (#767). Two
-boards on two homes were told apart by remembering which terminal was which, and
-`lingtai board start` in a terminal still set to the wrong home served it and
-said nothing. The home now sits inside `.brand`, after the name — a muted mono
-`~/lingtai-trial/a`, the full path as its `title` — on every page that draws the
-bar, `~/.lingtai` included, so the default is read rather than assumed. It is
-the same act as the `+`: the brand is the first object and *which Lingtai this
-is* is a fact about it, where a chip would have been a fifth object for a fact
-that never changes while the page is open. It is one small server component
-(`apps/board/src/app/home.tsx`) handed the home as a string by each page, so the
-eight bars cannot drift and no client file reads the environment.
-
-## What #141 and #142 changed under this
-
-Two of the chips were renamed when
-[0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and the
-quotes above say the new names: `$N repair` became `$N answering` — the figure
-is `spend`'s round 1 and above `Action` rows (#498, read through
-`BoardCard.repairCostUsd`) and covers every round an attempt buys — and
-`<project>: repairs ×1` became `<project>: rounds ×2`, with `passCeiling`'s
-sentence as its title. Neither rename touched the argument.
+`#216` made the argument by adding nothing to the count: a way to act on a list
+of things belongs to the list. The filter has been a list of projects since
+`#81`, and the `recipe` link on each repository's row in its menu is the living
+example. It is the same act, a list gaining its own action, and it is not the
+same as a fourth object arriving on a row that is glanced at while you work on
+something else. That one still has to be argued for here.
 
 ## What it looks like now
 
 ```
-灵 Lingtai │ [all] lingtai nextloom-ai-admin  +     10 queued · 1 running · 45 landed  ●  [1 waiting on you]
+◆ Lingtai │ [lingtai ▾]   ●  [1 waiting on you]                 Report
+Today ▮▮▯ $26.15 + ~$22.03 of $200 · 65 landed · projections current · home ~/.lingtai
 ```
 
-One line at 1440, and one line with a third project: the filter grows a tab, and
-a tab is not a chip. Nothing waiting and nothing wrong is quieter still — the
-headline loses its box and its colour and stays the same words, the dot is green
-and says nothing, and the row is the reading and the dot.
+One line at 1440. Nothing waiting and nothing wrong is quieter still: the
+headline loses its box and its colour and stays the same words, and the dot is
+green and says nothing.
 
-Where the five that left went:
+Where the facts that left the bar went:
 
 | | |
 |---|---|
-| `$488.52` · `$81.83 answering` | `/spend`, off the reading. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried |
-| `<project>: rounds ×N` | `/spend`, under the bill it explains, in `passCeiling`'s sentence. The reading links there on every board — an empty one too, since before anything has run is exactly when 0025 §2 wants the default seen. **And `/recipe/<project>`, which is the view the row above named and which nothing built for a fortnight** (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
+| `$488.52` · `$81.83 answering` | `/report`, off the bar. Split per repository, which is the first thing anybody asks after the total and which a chip could never have carried. Today's figure stays in the footer |
+| `<project>: rounds ×N` | `/recipe/<project>`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
 `paused` and `draining` are still chips and still amber-free, because both are
-already absent when there is nothing to say — which is the property that makes a
-chip affordable at all. `recipe` in the filter is the same property, and `#218`
-is the second ticket asked to make `#216`'s argument. Since #948 it is a link on
-each repository's row inside the menu, present on `all` too, since the menu and
-not the bar row carries it.
-
-`report` (`#689`) is a third such link inside the reading, beside the one to
-`/spend`: how the pipeline converges, what it landed and what it cost, over a
-window rather than the board's cards. It is a second way out of the reading and
-not a fifth object, the same argument `#216` made for the `+` — the row still
-counts *filter, reading, health, headline*, and it carries `?project=` the way
-`/spend` does. The page's own currency (`ticket_report` and `spend` at the head)
-is a chip on that page's bar and not on this one.
+already absent when there is nothing to say. `recipe` in the filter is the same
+property, and `#218` is the second ticket asked to make `#216`'s argument.
 
 **A destination that is not built is a fact deleted.** The row above was right
 that `rounds ×N` does not belong on a rail glanced at every few seconds, and for
