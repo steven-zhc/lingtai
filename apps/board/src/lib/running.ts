@@ -41,6 +41,13 @@ export interface RunningPanelView {
   then: Step[] | null
   /** Null where the caller had no spend or recipe to measure against. */
   meters: RunningMeters | null
+  /**
+   * The tags the agent's prose is filed under in the phase in flight: null is the
+   * implementer's own, untagged. Empty when nothing is in flight or no plan is known.
+   * **A judge is not named** — it writes `judge:<when>` at `proposed`, which the plan
+   * names by entry and not by `when`, so while one decides nothing is quoted.
+   */
+  said: readonly (string | null)[]
 }
 
 const stepOfKey = (key: string): string => key.slice(0, key.indexOf(':') === -1 ? undefined : key.indexOf(':'))
@@ -143,5 +150,13 @@ export function runningPanelOf(run: AttemptView, ctx: RunningContext | null): Ru
     ask: 'Nothing is needed from you.',
     then: anyPlan ? left : null,
     meters: ctx === null ? null : metersOf(run, ctx),
+    said:
+      now === null
+        ? []
+        : fix
+          ? [`fix:${now.round}`]
+          : now.step === 'implement'
+            ? [null]
+            : planned(now.step).map((a) => `${now.step}:${a}`),
   }
 }
