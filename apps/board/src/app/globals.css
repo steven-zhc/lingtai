@@ -272,6 +272,21 @@ body {
 .pending .card { flex: 0 1 22rem; }
 .pending code { font-family: var(--mono); font-size: 11px; }
 
+.home {
+  /* The home page is a column at least the window's height (#939): `<main>`
+     takes what the footer leaves and `.cols` what the bar leaves, so no height
+     of either is written here. The fixed offset this replaced was the bar's height when
+     the board was scaffolded and went stale the day the footer arrived.
+     `flex: 1 0 auto` and not `flex: 1`: `.cols` scrolls sideways, which
+     makes it a scroll container whose automatic minimum height is 0, and the
+     lanes would be squeezed into a scrollbar of their own. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.home > main { display: flex; flex-direction: column; flex: 1 0 auto; }
+
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not
      equal: Landed is a list of one-line rows and does not need a card's width,
@@ -285,7 +300,7 @@ body {
   background: var(--rule);
   border-bottom: 1px solid var(--rule);
   overflow-x: auto;
-  min-height: calc(100vh - 41px);
+  flex: 1 0 auto;
 }
 .col { flex: 1 1 0; background: var(--surface-2); padding: 11px 10px 20px; min-width: 200px; }
 /* The lane that needs the least attention takes the least room — wide enough
