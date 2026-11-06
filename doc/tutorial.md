@@ -106,6 +106,23 @@ installed and signed in.
 
 </details>
 
+<details>
+<summary>Using your own repository?</summary>
+
+Setup suggests install and build commands from the stack it detects at the
+repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
+Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
+and its neighbours configure, and Go from `go.mod` (`go mod download`, then a
+`gofmt`, `go vet` and `go test` check, plus `golangci-lint run` only with a
+`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root), and Java from
+`pom.xml` (Maven: `dependency:go-offline`, then `test`) or `build.gradle(.kts)` (Gradle: `test`,
+no separate install), using `mvnw`/`gradlew` when it is at the root; Gradle wins when both
+are present. Rust from `Cargo.toml` (`cargo fetch`, then `cargo fmt --check`, `cargo clippy` and
+`cargo test`, with `--locked` when `Cargo.lock` is at the root). A Python project with only `requirements.txt` gets
+a note asking you to type the install command, not a suggestion.
+
+</details>
+
 ## Step 2 — Open one ticket
 
 Create one small, checkable task for the agent. Lingtai opens your editor:
@@ -143,6 +160,13 @@ Keep earlier chapters unchanged. Done when the new chapter appears on the site.
 Save and quit, then continue only when Lingtai prints `created #N`; that number is your ticket.
 The `feature` label makes it eligible for the queue; use `bug` or
 `documentation` when they fit better.
+
+To skip the editor, save that request to a file and run the command below, where
+`VISUAL="cp <path-to-the-file>"` stands in for the editor:
+
+```sh
+VISUAL="cp <path-to-the-file>" lingtai ticket new --project chapter-garden
+```
 
 ## Step 3 — Run the agent and checks
 

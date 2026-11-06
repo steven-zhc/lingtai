@@ -124,11 +124,11 @@ describe('the tutorial stays a first-run path', () => {
     expect(optional).toBeLessThan(part2)
     const words = body.trim().split(/\s+/).length
     expect(proseOf(body.slice(0, optional)), 'the first-run path has become a reference manual again').toBeLessThan(
-      1100,
+      1300, // #959: the README's per-stack rules and `VISUAL` paragraph moved into Steps 1-2
     )
     expect(proseOf(body.slice(optional, part2)), 'the optional step has become a manual').toBeLessThan(350)
     expect(proseOf(body.slice(part2)), 'the GitHub half has become a reference manual').toBeLessThan(600)
-    expect(words, 'the tutorial has too many command variants').toBeLessThan(2000)
+    expect(words, 'the tutorial has too many command variants').toBeLessThan(2250) // #959: see the first-run cap above
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)

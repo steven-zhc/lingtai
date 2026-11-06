@@ -18,7 +18,7 @@ covered by them.
 
 | | Claude Code, as Lingtai launches it | Claude Code with your own sandbox | Codex |
 | --- | --- | --- | --- |
-| **Which files can the agent read?** | Any file you can, including `~/.lingtai/config.yml` and `~/.ssh`. Lingtai gives it no filesystem sandbox (`README.md`, *Not contained*). | The paths in `filesystem.denyRead` are refused. Measured on a throwaway directory, not on `~/.ssh` (darwin, Claude Code 2.1.310, 2026-10-27). Any path you do not list: *not measured*. | *Not measured* without a profile. A profile's `deny` entries are refused. Measured on a throwaway directory, not on `~/.ssh` (darwin, codex-cli 0.164.0, 2026-11-01, #800). |
+| **Which files can the agent read?** | Any file you can, including `~/.lingtai/config.yml` and `~/.ssh`. Lingtai gives it no filesystem sandbox. | The paths in `filesystem.denyRead` are refused. Measured on a throwaway directory, not on `~/.ssh` (darwin, Claude Code 2.1.310, 2026-10-27). Any path you do not list: *not measured*. | *Not measured* without a profile. A profile's `deny` entries are refused. Measured on a throwaway directory, not on `~/.ssh` (darwin, codex-cli 0.164.0, 2026-11-01, #800). |
 | **Which directories can it write?** | Anywhere you can. Lingtai gives it no filesystem sandbox. | *Not measured* over a whole attempt. | The worktree, `$TMPDIR`, `/tmp` and the git directories Lingtai adds for committing. `workspace-write` refuses `$HOME` and `~/.lingtai` (#313; codex-cli 0.155.1, 2026-09-29; not measured on 0.164.0). |
 | **Can it reach the network?** | Yes. | Not limited by this setting: `denyRead` says nothing about the network. | *Not measured*. |
 | **What protects the run?** | Nothing beyond what Lingtai does at every tier (below). | Claude Code's sandbox, with `allowUnsandboxedCommands: false`. | `--sandbox workspace-write`. |
@@ -64,4 +64,4 @@ This is the state before a sandbox the agent cannot leave (#339).
   and we will reach you privately. See [SECURITY.md](../SECURITY.md).
 
 The `settings.json` that closes a path for Claude Code is in the
-[README](../README.md#what-an-agent-can-reach).
+[operating guide](operating.md#what-your-own-runtime-configuration-can-narrow).

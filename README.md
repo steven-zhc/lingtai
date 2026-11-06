@@ -16,24 +16,20 @@ step is written to a log on your machine as a result you can check: what the
 agent was given, what it produced, what passed, who let it through, and what it
 cost.
 
+<a href="doc/img/shot-board-full.png"><img src="doc/img/shot-board.png" alt="The board — queued, running, waiting on you, landed" width="880"></a>
+*The board — queued, running, waiting on you, landed*
+
 ## Install
 
-You need Git and Claude Code, signed in, plus Node.js and npm for the
-example below; [requirements](doc/requirements.md) lists the rest.
+You need Git and Claude Code or Codex, signed in, plus Node.js and npm for the example below. The rest is on [requirements](https://lingtai.hczhang.com/docs/requirements/).
 
 ```sh
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 ```
 
-## Quickstart
+## Try it in five minutes
 
-This takes you from nothing to one ticket merged on this machine, with no
-GitHub account. It uses [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
-a small Astro site. These are the POSIX shell commands; the
-[tutorial](doc/tutorial.md) has Fish, and explains every option.
-
-Clone it, and make a bare repository beside it the checkout's `origin`, so
-Lingtai pushes and merges there and the original is never touched:
+1. Clone the example, and make a bare repository beside it the checkout's `origin`, so Lingtai pushes and merges there and the original is never touched:
 
 ```sh
 export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
@@ -43,8 +39,7 @@ git clone --bare "$CHAPTER_GARDEN_DIR" "$CHAPTER_GARDEN_DIR.git"
 git -C "$CHAPTER_GARDEN_DIR" remote set-url origin "$CHAPTER_GARDEN_DIR.git"
 ```
 
-Register it with Lingtai, using a local SQLite log and holding for your
-approval before anything merges:
+2. Register it, using a local SQLite log and holding for your approval before anything merges (for Codex instead of Claude Code, pass `--agent codex --reviewer codex`):
 
 ```sh
 lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
@@ -54,165 +49,41 @@ lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
   --build 'npm run build' --defaults --land hold
 ```
 
-Interactive setup offers to run the confirmed install and build commands once in a
-throwaway worktree before it finishes (`--check-build yes|no` answers it, `yes` is
-the default). `--defaults` skips that trial unless `--check-build yes` is given.
+3. Open a ticket. Your editor opens on a form: write the request there, and continue when Lingtai prints `created #N`.
 
-Setup suggests install and build commands from the stack it detects at the
-repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
-Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
-and its neighbours configure, and Go from `go.mod` (`go mod download`, then a
-`gofmt`, `go vet` and `go test` check, plus `golangci-lint run` only with a
-`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root), and Java from
-`pom.xml` (Maven: `dependency:go-offline`, then `test`) or `build.gradle(.kts)` (Gradle: `test`,
-no separate install), using `mvnw`/`gradlew` when it is at the root; Gradle wins when both
-are present. Rust from `Cargo.toml` (`cargo fetch`, then `cargo fmt --check`, `cargo clippy` and
-`cargo test`, with `--locked` when `Cargo.lock` is at the root). A Python project with only `requirements.txt` gets
-a note asking you to type the install command, not a suggestion.
+   ```sh
+   lingtai ticket new --project chapter-garden
+   ```
 
-Open one ticket. This writes a complete request to a file and opens the ticket
-from it. Continue when Lingtai prints `created #N`, which is the number you
-approve below:
+4. Start Lingtai in one terminal and leave it running. In a second terminal, open the board:
 
-```sh
-cat > "${TMPDIR:-/tmp}/chapter-garden-ticket.md" <<'EOF'
-Add the next chapter to After the Rain
-labels: feature
+   ```sh
+   lingtai start
+   lingtai board
+   ```
 
-Find the latest chapter of this story and write one new chapter that continues it.
-Follow the story's existing language, chapter numbering, and Markdown layout.
-Keep earlier chapters unchanged. Done when the new chapter appears on the site.
-EOF
-VISUAL="cp ${TMPDIR:-/tmp}/chapter-garden-ticket.md" lingtai ticket new --project chapter-garden
-```
+5. When the ticket is waiting on you, read the change on the board and press **Approve**, or approve from a terminal; then pull to see the merged change (a new terminal has no `CHAPTER_GARDEN_DIR`, so the path is the one from step 1):
 
-`VISUAL="cp …"` stands in for an editor, so you do not need `cp`; plain
-`lingtai ticket new --project chapter-garden` opens your own editor on the same
-form. To pick another story, change the title on the first line: the titles are
-on the [bookshelf](https://cg.hczhang.com/en/) and in the
-[tutorial's table](doc/tutorial.md#step-2--open-one-ticket), and `labels:` takes
-`feature`, `bug` or `documentation`.
+   ```sh
+   lingtai approve chapter-garden --issue <ticket-number>
+   git -C "$HOME/workspace/chapter-garden" pull
+   ```
 
-Start Lingtai in one terminal and leave it running; it stays in the foreground.
-In a second terminal, open the board:
+Every option, Fish, a request to paste, and GitHub instead: [the tutorial](https://lingtai.hczhang.com/docs/tutorial/).
 
-```sh
-lingtai start
-lingtai board
-```
+## Before you run it
 
-When the ticket is waiting on you, read the change on the board and press
-**Approve**, or do it from a terminal:
+- The agent runs on your machine, as you, in its own worktree; Lingtai's own credentials are not in its environment.
+- Claude Code has no sandbox unless you turn one on: it can read any file you can, `~/.ssh` included. Codex runs sandboxed for writes.
+- How to narrow it, per runtime: [safety](https://lingtai.hczhang.com/docs/safety/).
+- Report a vulnerability: [SECURITY.md](SECURITY.md).
 
-```sh
-lingtai status chapter-garden --all
-lingtai approve chapter-garden --issue <ticket-number>
-```
+## Learn more
 
-Run `git pull` in your Chapter Garden checkout to see the merged change.
-
-To work from GitHub issues instead, sign in with the GitHub CLI and register
-the repository. Lingtai's labels, comments and pushes then appear as that
-account, and commits are authored by the machine's git identity
-(`user.name`, `user.email`), which Lingtai does not set. A team uses a GitHub
-App instead; see [GitHub](doc/github.md).
-
-```sh
-gh auth login --hostname github.com --scopes repo,workflow
-lingtai init --project github --github-auth gh
-lingtai add <owner>/<repo>
-```
-
-## What an agent can reach
-
-An agent Lingtai dispatches runs on your machine, as your user. Here is what
-that does and does not protect.
-
-**Contained**
-
-- The agent works in its own git worktree, not in your checkout.
-- Its environment is filtered to `PATH`, `HOME`, `TMPDIR`, `LANG`, `USER` and
-  `LOGNAME`, plus the variables your project declares. Lingtai's own
-  `LINGTAI_*` credentials and database URL are not handed to it in its
-  environment, though it can read the file they are kept in (see below).
-- The recipe that sets its gates is not in the agent's worktree, so a change it
-  commits cannot weaken its own checks.
-
-**Not contained**
-
-- Lingtai gives the Claude Code runtime no filesystem sandbox. Unless you
-  configure one, that agent can read any file you can, including
-  `~/.lingtai/config.yml` (the database URL and GitHub App settings) and `~/.ssh`,
-  and it has network access. Your own Claude Code sandbox with
-  `allowUnsandboxedCommands: false` does hold under Lingtai; see
-  [what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
-  Under `gh` your `gh` login is on the machine too, so an agent without a
-  sandbox can run `gh` as you. Lingtai does not hand it a token.
-- The Codex runtime does run in a sandbox (`--sandbox workspace-write`), which
-  refuses writes outside its working directory, `$TMPDIR` and `/tmp`, and a few
-  directories Lingtai adds for committing. A recipe with `tier: sandboxed` is served only by a
-  runtime like that one, not by Claude Code. Do not assume the sandbox covers
-  reads, or the network.
-  The `deny` entries of a permission profile in your own `~/.codex/config.toml`
-  narrow the run; `sandbox_mode` there keeps the old behaviour (the profile does
-  not apply). See
-  [the measurements](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
-
-**How to limit it**
-
-Lingtai adds no file-access policy of its own. An agent is limited by Claude
-Code's and Codex's own configuration, which Lingtai leaves in force for Claude
-Code, and for Codex narrows by a profile's denies (below). Measured on darwin,
-with Claude Code 2.1.310 (2026-10-27) and codex-cli 0.164.0 (2026-11-01); the rows are in
-[what your own settings can narrow](doc/operating.md#what-your-own-runtime-configuration-can-narrow).
-
-- Claude Code: put exactly this in `~/.claude/settings.json`:
-
-  ```json
-  {
-    "sandbox": {
-      "enabled": true,
-      "allowUnsandboxedCommands": false,
-      "filesystem": { "denyRead": ["~/.lingtai-probe"] }
-    }
-  }
-  ```
-
-  Replace the path with the ones you want closed. The measurement used only a
-  throwaway directory, not `~/.lingtai/config.yml` or `~/.ssh`. It does not
-  stop these reads:
-  - `permissions.deny` alone covers Claude Code's own Read tool and not a
-    subprocess, so it is not a remedy.
-  - The sandbox without `allowUnsandboxedCommands: false` can be escaped under
-    Lingtai: `bypassPermissions` approves the unsandboxed retry without asking.
-  - Not measured: Linux without bubblewrap, where there is no sandbox; a full
-    attempt under this sandbox, where a commit writes outside the worktree and the
-    agent may fail visibly; other runtime versions; and `CLAUDE_CONFIG_DIR`,
-    which an attempt drops, so Claude Code reads `~/.claude`.
-  - `denyRead` says nothing about the network, and this setting does not limit
-    it.
-- Codex: the `deny` entries of the profile named by `default_permissions` in
-  `~/.codex/config.toml` narrow the run on top of the role, and cannot widen it
-  (codex-cli 0.164.0, `codex sandbox`: the read was refused, the control read).
-  A `sandbox_mode` there keeps the old behaviour: the profile does not apply
-  and reads succeed.
-
-**What to do**
-
-- Run Lingtai under a user or machine whose files you are willing to expose to
-  the agent.
-- To report a vulnerability, open an issue titled "security" with no details
-  and we will reach you privately. See [SECURITY.md](SECURITY.md).
-
-## Next
-
-- [Why it is built this way](doc/why.md): the log, the goals, and the architecture.
-- [The tutorial](doc/tutorial.md): the same path in full, with Fish, and Part 2, which moves the project to GitHub.
-- [The ten steps of an attempt](doc/the-attempt.html): how one ticket gets built.
-- [Architecture](doc/architecture.html): which process you are in, who appends to the log, and where state lives.
-- [Operating](doc/operating.md): everything you type, and what every refusal means.
-- [Reference](doc/reference.md): every term, the event types and the action kinds.
-- [The decision log](doc/README.md) and the [roadmap](doc/roadmap.md).
+- [Concepts](https://lingtai.hczhang.com/docs/concepts/)
+- [The tutorial](https://lingtai.hczhang.com/docs/tutorial/)
+- [The guide](https://lingtai.hczhang.com/docs/guide/)
+- [Why it is built this way](doc/why.md)
 
 ## License
 
