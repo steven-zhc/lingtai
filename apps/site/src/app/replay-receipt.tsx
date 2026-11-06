@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { Receipt, type ReceiptProps, type ReceiptStatus } from './receipt'
 
 /**
- * The one receipt beside the hero and the replay.
+ * The one receipt beside the replay.
  *
  * It renders only the side column. The scenes are server markup in `page.tsx`
  * (`.rp-scene[data-step]`); this finds them in an effect and shows the step in

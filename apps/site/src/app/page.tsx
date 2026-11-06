@@ -6,6 +6,7 @@ import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
 import { ReplayReceipt } from './replay-receipt'
+import { Shots } from './shots'
 
 /** The agent alone against Lingtai: the left column says who decides, never that an agent fails. */
 const LEDGER = [
@@ -33,31 +34,34 @@ export function HomePage({ books }: { books: Books | null }) {
       <Bar />
       <main className="home">
         <div className="wrap">
+          <div className="hero-row">
+            <section className="hero" aria-labelledby="hero-title">
+              <div className="hero-copy">
+                <p className="kicker">For Claude Code and Codex</p>
+                <h1 id="hero-title">Agents do the work. Lingtai keeps the books.</h1>
+                <p className="lede">
+                  The agent writes the change. Your checks and a cold review decide whether it lands &mdash; and every
+                  ticket ends in a receipt you can check.
+                </p>
+                <div className="install">
+                  <CopyCommand command={`curl -fsSL ${INSTALL_URL} | sh`} />
+                  <p className="install-note">macOS and Linux &middot; runs on your machine &middot; no signup</p>
+                </div>
+                <div className="hero-actions">
+                  <a className="way-in" href="#setup">
+                    Set up Lingtai <span aria-hidden="true">↓</span>
+                  </a>
+                  <a className="watch" href="#replay">
+                    Watch an example <span aria-hidden="true">↓</span>
+                  </a>
+                </div>
+              </div>
+            </section>
+            <Shots />
+          </div>
+
           <div className="tale">
             <div className="tale-main">
-              <section className="hero" aria-labelledby="hero-title">
-                <div className="hero-copy">
-                  <p className="kicker">For Claude Code and Codex</p>
-                  <h1 id="hero-title">Agents do the work. Lingtai keeps the books.</h1>
-                  <p className="lede">
-                    The agent writes the change. Your checks and a cold review decide whether it lands &mdash; and every
-                    ticket ends in a receipt you can check.
-                  </p>
-                  <div className="install">
-                    <CopyCommand command={`curl -fsSL ${INSTALL_URL} | sh`} />
-                    <p className="install-note">macOS and Linux &middot; runs on your machine &middot; no signup</p>
-                  </div>
-                  <div className="hero-actions">
-                    <a className="way-in" href="#setup">
-                      Set up Lingtai <span aria-hidden="true">↓</span>
-                    </a>
-                    <a className="watch" href="#replay">
-                      Watch an example <span aria-hidden="true">↓</span>
-                    </a>
-                  </div>
-                </div>
-              </section>
-
               <section className="replay" id="replay" aria-labelledby="replay-title">
                 <p className="kicker">
                   Replay <span className="tag ill">ILLUSTRATION</span>
