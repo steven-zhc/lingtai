@@ -140,6 +140,32 @@ export function totalsOf(rows: readonly TicketReportRow[]): LandedTotals {
   return t
 }
 
+/** Pages already shown, summed: the header's totals stay for what is on the screen as pages append. */
+export const addTotals = (a: LandedTotals, b: LandedTotals): LandedTotals => ({
+  landed: a.landed + b.landed,
+  money: addMoney(a.money, b.money),
+  insertions: a.insertions + b.insertions,
+  deletions: a.deletions + b.deletions,
+})
+
+/** `landed,reported,estimated,unknown,insertions,deletions`: the totals as the page hands them to the next fetch. */
+export const sumText = (t: LandedTotals): string =>
+  [t.landed, t.money.reportedCents, t.money.estimatedCents, t.money.unknown, t.insertions, t.deletions].join(',')
+
+/** Null unless the text is six non-negative integers. */
+export function parseSum(text: string | undefined): LandedTotals | null {
+  if (text === undefined || !/^\d+(,\d+){5}$/.test(text)) return null
+  const [landed, reportedCents, estimatedCents, unknown, insertions, deletions] = text.split(',').map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ]
+  return { landed, money: { reportedCents, estimatedCents, unknown }, insertions, deletions }
+}
+
 export const SQUARES = 5
 
 /** Five squares, additions then deletions in proportion, the rest neutral. */

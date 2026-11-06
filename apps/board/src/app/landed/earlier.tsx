@@ -36,12 +36,19 @@ export function Earlier({ href }: { href: string }) {
       if (loading.has(a)) return
       loading.add(a)
       try {
-        const res = await fetch(a.href, { headers: { accept: 'text/html' } })
+        // The header's totals are for what is on screen, so the server is told what that is already.
+        const url = new URL(a.href)
+        const sum = document.querySelector('[data-landed-sum]')?.getAttribute('data-landed-sum')
+        if (sum) url.searchParams.set('carry', sum)
+        const res = await fetch(url, { headers: { accept: 'text/html' } })
         if (!res.ok) return
         const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
         const page = doc.querySelector('[data-landed-page]')
         const mine = a.closest('[data-landed-page]')
         if (page === null || mine === null) return
+        const totals = doc.querySelector('.ld-totals')
+        const shown = document.querySelector('.ld-totals')
+        if (totals !== null && shown !== null) shown.replaceWith(document.importNode(totals, true))
         const added = document.importNode(page, true)
         mine.after(added)
         seen.unobserve(a)

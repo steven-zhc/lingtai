@@ -3009,13 +3009,13 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .ld-date .my { font-size: 13px; color: var(--ink-2); }
 .ld-date .ct { font-size: 11.5px; color: var(--muted); }
 .ld-date .mix { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 8px; gap: 1px; }
-.ld-rail { list-style: none; margin: 0; padding: 0 0 0 36px; position: relative; display: flex; flex-direction: column; gap: 16px; }
-.ld-rail::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: var(--rule-2); }
+.ld-rail { list-style: none; margin: 0; padding: 0 0 0 84px; position: relative; display: flex; flex-direction: column; gap: 16px; }
+.ld-rail::before { content: ""; position: absolute; left: 55px; top: 8px; bottom: 8px; width: 1px; background: var(--rule-2); }
 .ld-rail > li { position: relative; }
-.ld-rail > li > time { position: absolute; left: -36px; top: 0; font-size: 11px; color: var(--muted); transform: translateX(-100%); margin-left: 28px; }
-.ld-rail > li::before { content: ""; position: absolute; left: -36px; top: 6px; width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box; }
-.ld-rail > li.card::before { background: var(--ink-2); }
-.ld-rail > li.line::before { border: 1.5px solid var(--ink-2); background: var(--surface); }
+.ld-rail > li > time { position: absolute; right: calc(100% + 44px); top: 0; font-size: 11px; color: var(--muted); }
+.ld-rail > li::before { content: ""; position: absolute; left: -32px; top: 6px; width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box; }
+.ld-rail > li.ld-has-card::before { background: var(--ink-2); }
+.ld-rail > li.ld-has-line::before { border: 1.5px solid var(--ink-2); background: var(--surface); }
 .ld-card { position: relative; overflow: hidden; background: var(--surface); border-radius: 12px; padding: 22px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; gap: 10px; }
 .ld-mark { position: absolute; top: -14px; right: 14px; font: 400 120px/1 var(--serif); opacity: 0.07; pointer-events: none; }
 .ld-caption { margin: 0; font-size: 12.5px; color: var(--muted); }

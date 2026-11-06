@@ -27,7 +27,10 @@ import {
   type LandedData,
   type LandedQuery,
   ticketRef,
+  addTotals,
+  sumText,
   totalsOf,
+  type LandedTotals,
   type LandedDay,
 } from '@/lib/landed.ts'
 import { leadOf } from '@/lib/markdown.ts'
@@ -217,10 +220,21 @@ export function KindFilter({ query, kinds }: { query: LandedQuery; kinds: readon
   )
 }
 
-export function LandedView({ data, query, env }: { data: LandedData; query: LandedQuery; env: LandedEnv }) {
+export function LandedView({
+  data,
+  query,
+  env,
+  carry = null,
+}: {
+  data: LandedData
+  query: LandedQuery
+  env: LandedEnv
+  /** The pages already on a reader's screen, when this one is fetched to append to them. */
+  carry?: LandedTotals | null
+}) {
   const colour = kindColourOf(env.kinds)
   const days = groupDays(data.rows)
-  const totals = totalsOf(data.rows)
+  const totals = carry === null ? totalsOf(data.rows) : addTotals(carry, totalsOf(data.rows))
   const empty =
     query.project !== null
       ? `nothing landed for ${query.project}`
@@ -234,7 +248,7 @@ export function LandedView({ data, query, env }: { data: LandedData; query: Land
           <h1>landed</h1>
           <p>what Lingtai changed, newest first</p>
         </div>
-        <dl className="ld-totals">
+        <dl className="ld-totals" data-landed-sum={sumText(totals)}>
           <div>
             <dt>landed</dt>
             <dd>{totals.landed}</dd>
@@ -252,10 +266,10 @@ export function LandedView({ data, query, env }: { data: LandedData; query: Land
         </dl>
       </header>
       <KindFilter query={query} kinds={env.kinds} />
-      {data.backlogError === null ? null : (
-        <p className="rp-note">the backlog could not be read, so findings are not shown: {data.backlogError}</p>
-      )}
       <div data-landed-page="">
+        {data.backlogError === null ? null : (
+          <p className="rp-note">the backlog could not be read, so findings are not shown: {data.backlogError}</p>
+        )}
         {days.length === 0 ? (
           <p className="rp-empty">{empty}</p>
         ) : (
@@ -264,7 +278,7 @@ export function LandedView({ data, query, env }: { data: LandedData; query: Land
               <DateColumn day={day} colour={colour} />
               <ol className="ld-rail">
                 {day.rows.map((row) => (
-                  <li key={row.ticket} className={row.summary === null ? 'line' : 'card'}>
+                  <li key={row.ticket} className={row.summary === null ? 'ld-has-line' : 'ld-has-card'}>
                     <time className="mono" dateTime={row.outcomeAt!.toISOString()}>
                       {minuteOf(row.outcomeAt!)}
                     </time>

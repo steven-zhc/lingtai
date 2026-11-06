@@ -12,7 +12,14 @@ import Link from 'next/link'
 
 import { Home } from '@/app/home.tsx'
 import { theHome } from '@/lib/home'
-import { currentLanded, landedContext, landedQuery, type LandedData, type LandedParams } from '@/lib/landed.ts'
+import {
+  currentLanded,
+  landedContext,
+  landedQuery,
+  parseSum,
+  type LandedData,
+  type LandedParams,
+} from '@/lib/landed.ts'
 import { projectionChip, type ReportChip } from '@/lib/report.ts'
 import { measure, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
@@ -20,6 +27,8 @@ import { TimingMeta } from '@/lib/timing-meta'
 import { LandedView } from './view.tsx'
 
 export const dynamic = 'force-dynamic'
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
 export default async function LandedPage({ searchParams }: { searchParams: Promise<LandedParams> }) {
   const params = await searchParams
@@ -60,7 +69,7 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
         {data === null ? (
           <p className="rp-empty">landed could not be read: {failure}</p>
         ) : (
-          <LandedView data={data} query={query} env={env} />
+          <LandedView data={data} query={query} env={env} carry={parseSum(first(params.carry))} />
         )}
       </div>
     </main>

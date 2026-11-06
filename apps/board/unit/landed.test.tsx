@@ -18,6 +18,9 @@ import {
   landedLink,
   landedQuery,
   parseCursor,
+  parseSum,
+  sumText,
+  totalsOf,
   type LandedData,
 } from '../src/lib/landed.ts'
 import { projectionChip } from '../src/lib/report.ts'
@@ -140,6 +143,29 @@ describe('/landed page', () => {
     const out = html(data([row()], { backlogError: 'boom' }))
     expect(out).toContain('the backlog could not be read')
     expect(out).toContain('<article')
+  })
+})
+
+describe('/landed appended pages', () => {
+  it('totals the pages already shown with this one, and a carry survives the round trip', () => {
+    const carry = totalsOf([row(), row({ ticket: 'ticket-lingtai-2' })])
+    expect(parseSum(sumText(carry))).toEqual(carry)
+    expect(parseSum('1,2')).toBeNull()
+    const out = renderToStaticMarkup(<LandedView data={data([row()])} query={query} env={env} carry={carry} />)
+    expect(out).toContain('<dd>3</dd>')
+    expect(out).toContain('$4.50')
+    expect(out).toContain(`data-landed-sum="${sumText(totalsOf([row(), row(), row()]))}"`)
+  })
+
+  it('keeps the backlog failure inside the page fragment that is copied on append', () => {
+    const out = html(data([row()], { backlogError: 'boom' }))
+    const page = out.slice(out.indexOf('data-landed-page'))
+    expect(page).toContain('the backlog could not be read')
+  })
+
+  it('does not put the unprefixed card or line class on the rail item', () => {
+    const out = html(data([row(), row({ ticket: 'ticket-lingtai-2', summary: null })]))
+    expect(out).not.toMatch(/<li[^>]*class="(card|line)"/)
   })
 })
 
