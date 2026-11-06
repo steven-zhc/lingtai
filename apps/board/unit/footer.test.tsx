@@ -14,6 +14,7 @@ import type { FooterLag } from '../src/lib/footer.ts'
 const run = { reportedRuns: 0, estimatedRuns: 0, fetchedRuns: 0, unknownWhy: [] }
 const day = { ...run, reportedRuns: 3, reportedCents: 2615, estimatedCents: 2203, unknown: 2 }
 const current = ['task_view', 'finding_backlog', 'spend', 'ticket_report'].map((name) => ({ name, lag: 0 }))
+const text = (html: string): string => html.replace(/<[^>]+>/g, '')
 const render = (
   r: ReturnType<typeof dayReading>,
   project?: string,
@@ -27,7 +28,7 @@ describe('Footer', () => {
     const html = render(r)
     expect(html).toContain('width:13.075%')
     expect(html).toContain('width:11.015%')
-    expect(html).toContain('$26.15 + ~$22.03 of $200 + 2 unknown')
+    expect(text(html)).toContain('$26.15 + ~$22.03 of $200 + 2 unknown')
     expect(html).toContain('role="meter"')
     expect(html).toContain('aria-valuemin="0"')
     expect(html).toContain('aria-valuemax="200"')
@@ -45,7 +46,7 @@ describe('Footer', () => {
   it('draws no meter without a ceiling', () => {
     const html = render(dayReading(day, undefined))
     expect(html).not.toContain('role="meter"')
-    expect(html).toContain('$26.15 + ~$22.03')
+    expect(text(html)).toContain('$26.15 + ~$22.03')
   })
 
   it('says a failed read and draws no meter', () => {
@@ -62,7 +63,7 @@ describe('Footer', () => {
 
   it('fills the meter and prints the real figures over the ceiling', () => {
     const html = render(dayReading({ ...run, reportedCents: 15000, estimatedCents: 6200, unknown: 0 }, 200))
-    expect(html).toContain('$150.00 + ~$62.00 of $200')
+    expect(text(html)).toContain('$150.00 + ~$62.00 of $200')
     expect(html).toContain('width:75%')
     expect(html).toContain('width:25%')
     expect(html).toContain('aria-valuenow="200"')
@@ -73,7 +74,7 @@ describe('Footer', () => {
     for (const path of ['/landed', '/report', '/spend']) expect(filtered).toContain(`href="${path}?project=a%20b"`)
     const plain = render(dayReading(day, 200))
     for (const path of ['/landed', '/report', '/spend']) expect(plain).toContain(`href="${path}"`)
-    expect(plain).toContain('3 landed')
+    expect(text(plain)).toContain('3 landed')
   })
 
   it('counts landed cards and not closed ones', () => {
@@ -110,10 +111,19 @@ describe('Footer currency line', () => {
     expect(html).not.toContain('projections current')
   })
 
-  it('draws no /landed link without a landed count', () => {
+  it('draws the three links but no landed count off /', () => {
     const html = renderToStaticMarkup(<Footer day={r} project={undefined} lags={current} />)
-    expect(html).not.toContain('/landed')
-    expect(html).not.toContain('landed</a>')
+    expect(html).toContain('landed</a>')
+    expect(html.match(/href="[^"]*"/g)).toEqual(['href="/landed"', 'href="/report"', 'href="/spend"'])
+    expect(html).not.toContain('</b> landed')
+  })
+
+  it('draws the amounts and the count in <b>, the count as text, and the links in order', () => {
+    const html = render(r)
+    expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> of $200 + 2 unknown')
+    expect(html).toContain('<b>3</b> landed</span>')
+    expect(html).not.toMatch(/<a [^>]*>[^<]*<b>/)
+    expect(html.match(/href="[^"]*"/g)).toEqual(['href="/landed"', 'href="/report"', 'href="/spend"'])
   })
 })
 

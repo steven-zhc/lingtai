@@ -34,9 +34,9 @@ is applied to two rows instead of one.
   meter of two segments, reported and estimated, written as two figures
   (*$26.15 + ~$22.03 of $200*, unknown said and never $0, the whole sentence on
   hover), how many landed, the
-  projections' currency in faint type, and the links to `/report` and `/spend`
-  (each carrying `?project=`); on the home page the landed count links to
-  `/landed`. The `report` link's argument below
+  projections' currency in faint type, and the links to `/landed`, `/report`
+  and `/spend` (each carrying `?project=`); on the home page the landed count is
+  plain text. The `report` link's argument below
   is kept: it was always *a second way out of the reading*, and the reading is
   now the footer.
 - **⌘K** opens one search over projects, recipes, tickets and pages. It is a
