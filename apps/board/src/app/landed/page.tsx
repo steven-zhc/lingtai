@@ -8,10 +8,8 @@
  * A read that fails is a sentence in place of the page, never a 500; a table
  * without the landing columns says the rebuild it needs.
  */
-import Link from 'next/link'
 
-import { Home } from '@/app/home.tsx'
-import { theHome } from '@/lib/home'
+import { Bar } from '@/app/bar.tsx'
 import {
   currentLanded,
   landedContext,
@@ -52,18 +50,14 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
   return (
     <main className="detail">
       <TimingMeta timings={timings} />
-      <div className="bar">
-        <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
+      <Bar project={only}>
         <span className="sep" />
         <span className="mono">landed{only === undefined ? '' : ` · ${only}`}</span>
         <span className="sep" />
         <span className={`chip ${chip.tone}`} title={chip.title}>
           {chip.label}
         </span>
-      </div>
+      </Bar>
 
       <div className="detail-body ld">
         {data === null ? (

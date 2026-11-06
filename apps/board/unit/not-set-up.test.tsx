@@ -24,7 +24,7 @@ import Page from '../src/app/page.tsx'
 const HOME = { path: '/Users/x/lingtai-trial/a', shown: '~/lingtai-trial/a' }
 
 describe('the setup screen', () => {
-  it('names the home, lingtai init and the reload, inside the brand', () => {
+  it('names the home, lingtai init and the reload, ', () => {
     const html = renderToStaticMarkup(
       <NotSetUp
         home={HOME}
@@ -35,7 +35,6 @@ describe('the setup screen', () => {
     expect(html).toContain('Nothing is set up in ~/lingtai-trial/a.')
     expect(html).toContain('lingtai init')
     expect(html).toContain('eload this page after lingtai init')
-    expect(html).toMatch(/class="brand"[^]*~\/lingtai-trial\/a[^]*<\/span><\/div>/)
   })
 
   it('says the refusal, not "nothing is set up", for any other', () => {
@@ -68,8 +67,8 @@ describe('/ with the store refused', () => {
   })
 })
 
-describe('Home stays a server component', () => {
-  it.each(['../src/app/home.tsx', '../src/app/not-set-up.tsx'])(
+describe('the bar and the setup screen stay server components', () => {
+  it.each(['../src/app/bar.tsx', '../src/app/footer.tsx', '../src/app/not-set-up.tsx'])(
     '%s imports no @lingtai/env value and is not "use client"',
     (path) => {
       const src = readFileSync(new URL(path, import.meta.url), 'utf8')

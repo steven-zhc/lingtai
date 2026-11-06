@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`a blocked task > is arranged as the four questions, then the record 1`] = `
-"coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from Attempt 1 of 1 ↓ #147 ↗
+"coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from Attempt 1 of 1 ↓ Report #147 ↗
 state: waiting on you 4h 33m
 subject: the reviewer crashes on a reused session id The whole ticket ↓ claim admit prepared design implement build review proposed merge end proposed:review refused
 where: Where it is
@@ -14,7 +14,7 @@ record: Ticket · Attempt 1"
 `;
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
-"coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from Attempt 1 of 1 ↓ #147 ↗
+"coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from Attempt 1 of 1 ↓ Report #147 ↗
 state: running 20m
 subject: the reviewer crashes on a reused session id The whole ticket ↓ claim admit prepared design implement build review proposed merge end agent 4h33m
 running: Running between steps Between steps. Nothing is needed from you.

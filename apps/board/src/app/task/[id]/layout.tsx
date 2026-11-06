@@ -3,8 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
 
-import { Home } from '@/app/home.tsx'
-import { theHome } from '@/lib/home'
+import { Bar } from '@/app/bar.tsx'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
 import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } from '@/lib/task'
@@ -147,11 +146,7 @@ export function TaskBody({
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <div className="bar">
-          <Link className="brand" href="/">
-            ← Lingtai
-            <Home {...theHome()} />
-          </Link>
+        <Bar project={task.ticket?.project ?? undefined}>
           <span className="sep" />
           {/* Rank 8: one muted line, each identifier once. */}
           <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
@@ -163,7 +158,7 @@ export function TaskBody({
           )}
           {/* Nothing while the page follows the log; the sentence when it stopped. */}
           <Following />
-        </div>
+        </Bar>
 
         {/* A link written before the record had tabs, `#attempt-N` or
           `#record-ticket`, is sent to the tab it meant. */}
