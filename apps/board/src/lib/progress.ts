@@ -1,4 +1,5 @@
 import type { StepPlan } from '@lingtai/conductor/filter'
+import { STEPS, type AttemptState, type Step } from '@lingtai/domain'
 /**
  * Where a run has got to *now*, drawn from its `AttemptState` (`progressOf`).
  *
@@ -32,7 +33,7 @@ import type { StepPlan } from '@lingtai/conductor/filter'
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { STEPS, type AttemptState, type Step } from '@lingtai/domain'
+import { plannedAt } from '@lingtai/recipe/defaults'
 
 /**
  * What a point has come to on *this* run.
@@ -62,19 +63,17 @@ import { STEPS, type AttemptState, type Step } from '@lingtai/domain'
  * list left it for a plugin.** `runPlugin` took `build` and `agentPlugin` took
  * `review` on 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`),
  * `queuePlugin` took `claim` (`#269`), `agentPlugin` took `design` (`#265`) and
- * the same plugin took `implement` (`#266`). **`admit`, `claim` and `implement`
+ * the same plugin took `implement` (`#266`). **`admit` and `implement`
  * are the ones that are unlike the others here**: each runs a **default**
- * action where the recipe declares nothing
- * (0065 §2), so a **verdict** is recorded at them on every run rather than only
- * on a recipe that configured them — while the *plan* stays empty, because
- * `stepPlan` reads `recipe.steps[step]` and a default is written nowhere in the
- * file. `design` is the one opening with no default and so is not one of them,
- * which is the paragraph above. `stateOf` is what keeps that pair honest: `skipped` wants an empty plan
- * **and** nothing seen, so a point the recipe leaves empty and a default filled
- * draws the verdict it got, with the action named among the ones the plan did
- * not. A `claim` segment reading `failed` is the take declining —
- * `passed-over`, `not-claimed` — and not a point nobody configured, which is
- * what this comment used to say was impossible.
+ * action where the recipe declares nothing (0065 §2), so a **verdict** is
+ * recorded at them on every run rather than only on a recipe that configured
+ * them. `claim` has the default but not the verdict: it runs before the walk
+ * and gets no step events (#463), so `progressOf` draws it `passed` itself — an
+ * attempt stream exists only after a claim passed. The *plan* is not empty at
+ * any of them: `plannedAt` fills a step the recipe leaves empty with its
+ * default action's name. `design` has no default and so is not one of them,
+ * which is the paragraph above. `stateOf` keeps that honest: `skipped` wants an
+ * empty plan **and** nothing seen.
  */
 export type StepState =
   | 'skipped'
@@ -385,11 +384,17 @@ export function progressOf(
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
     const recorded = state.resolved?.steps.find((s) => s.step === step)
-    const planned = recorded?.actions ?? (plan.get(step) ?? []).map((a) => a.name)
+    const planned = plannedAt(step, recorded?.actions ?? (plan.get(step) ?? []).map((a) => a.name))
     const prefix = `${step}:`
     const mine: (readonly [string, StepState])[] = Object.entries(state.steps)
       .filter(([k]) => k.startsWith(prefix))
       .map(([k, v]) => [k.slice(prefix.length), v.verdict] as const)
+    // `claim` runs before the walk and gets no step events (#463), but an attempt
+    // stream exists only after a claim passed (`conduct.ts`), so it is drawn
+    // passed. A verdict the stream does carry wins over the one made up here.
+    if (step === 'claim') {
+      for (const name of planned) if (!mine.some(([n]) => n === name)) mine.push([name, 'passed'])
+    }
     // The step in flight is drawn running on `${step}:` (an empty action name),
     // after the keys an earlier round left — `extra` below names it.
     if (state.step?.step === step) mine.push(['', 'running'])

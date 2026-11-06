@@ -192,7 +192,7 @@ describe("the recipe beside an attempt's actions", () => {
     const { client, atHead } = fake({ [BASE]: RECIPE })
     const html = render({ ...run, recipe: await recipeOfAttempt(run, client, atHead) })
 
-    for (const step of ['admit', 'prepared', 'merge', 'end']) {
+    for (const step of ['prepared', 'design', 'build', 'review', 'end']) {
       expect(html).toMatch(new RegExp(`<span class="actstep">${step}</span><span class="empty">skipped</span>`))
     }
     // One command, for the one action configured.

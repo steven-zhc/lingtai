@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./defaults": "./src/defaults.ts",
     "./duration": "./src/duration.ts",
     "./settings": "./src/settings.ts"
   },

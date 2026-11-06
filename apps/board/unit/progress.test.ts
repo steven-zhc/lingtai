@@ -111,6 +111,27 @@ const stateOf = (steps: readonly { step: string; state: StepState }[], step: str
   steps.find((p) => p.step === step)?.state
 
 describe('where a run has got to', () => {
+  // #941: `claim` runs before the walk and has no step events, but an attempt
+  // exists only after a claim passed.
+  it('draws claim as passed with its default action, running or landed', () => {
+    const running = progressOf(reduceAttempt(timeline()), PLAN)?.steps ?? []
+    expect(stateOf(running, 'claim')).toBe('passed')
+    expect(running.find((p) => p.step === 'claim')?.actions).toEqual([{ name: 'take the ticket', state: 'passed' }])
+
+    const landed = progressOf(reduceAttempt(timeline()), PLAN, true)?.steps ?? []
+    expect(stateOf(landed, 'claim')).toBe('passed')
+  })
+
+  it('has one cell for a default action that did run, not a pending one beside it', () => {
+    const events = [
+      ...timeline(),
+      at('2026-09-04T17:12:21Z', 'StepEnded', ended('admit', [verdictAction('cut the branch', 'accepted', 'ok')])),
+    ]
+    const admit = progressOf(reduceAttempt(events), PLAN)?.steps.find((p) => p.step === 'admit')
+    expect(admit?.state).toBe('passed')
+    expect(admit?.actions).toEqual([{ name: 'cut the branch', state: 'passed' }])
+  })
+
   it('names the point it is at, with no per-action budget to show', () => {
     const progress = progressOf(reduceAttempt(timeline()), PLAN)
 
@@ -158,10 +179,13 @@ describe('where a run has got to', () => {
     const steps = progressOf(reduceAttempt(timeline()), PLAN)?.steps ?? []
 
     expect(steps.map((p) => p.step)).toEqual([...STEPS])
-    expect(stateOf(steps, 'admit')).toBe('skipped')
+    // `admit` and `merge` are empty in the recipe but default-filled (#941), so
+    // they are planned, not skipped; `design` has no default and is skipped.
+    expect(stateOf(steps, 'admit')).toBe('pending')
+    expect(stateOf(steps, 'design')).toBe('skipped')
     expect(stateOf(steps, 'prepared')).toBe('passed')
     expect(stateOf(steps, 'proposed')).toBe('running')
-    expect(stateOf(steps, 'merge')).toBe('skipped')
+    expect(stateOf(steps, 'merge')).toBe('pending')
     // Configured, not reached. Not the same fact as nothing being there.
     expect(stateOf(steps, 'end')).toBe('pending')
   })
@@ -177,7 +201,9 @@ describe('where a run has got to', () => {
 
     expect(stateOf(steps, 'proposed')).toBe('pending')
     expect(steps.find((p) => p.step === 'proposed')?.planned).toEqual(['build'])
-    expect(stateOf(steps, 'merge')).toBe('skipped')
+    // Empty in the recipe, but `merge` has a default action (#941).
+    expect(stateOf(steps, 'merge')).toBe('pending')
+    expect(stateOf(steps, 'design')).toBe('skipped')
   })
 
   it('reads a failure at a point as failed, whatever else that point did', () => {

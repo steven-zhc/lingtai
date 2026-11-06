@@ -35,6 +35,7 @@ import { held as heldBy } from '@lingtai/daemon/control'
  * *no queue position*, and only the reason tells them apart (#76).
  */
 import { reduceTicket, STEPS, type Envelope } from '@lingtai/domain'
+import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
 
@@ -193,7 +194,12 @@ export function planOf(
 ): PlanView {
   return {
     steps: STEPS.map((step) => {
-      const actions = (plan.get(step) ?? []).map((a) => a.name)
+      const actions = [
+        ...plannedAt(
+          step,
+          (plan.get(step) ?? []).map((a) => a.name),
+        ),
+      ]
       return { step, actions, skipped: actions.length === 0 }
     }),
     turns: runtime.limits.turns,
