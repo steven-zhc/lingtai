@@ -221,7 +221,7 @@ describe('what GitHub offers', () => {
 
     expect(result.problems).toEqual([])
     expect(result.notes).toEqual([
-      { project: 'lingtai', reason: '3 passed over — excluded-label 2, blocked-by 1' },
+      { project: 'lingtai', reason: '2 passed over — excluded-label 2' },
       { project: 'lingtai', reason: DEPENDENCIES_UNREAD },
     ])
   })

@@ -16,7 +16,8 @@ import {
   QueuedFallback,
   type ListQueued,
 } from '../src/app/queued-stream.tsx'
-import type { BoardCard, GithubQueue } from '../src/lib/board.ts'
+import type { BoardHalf } from '../src/lib/blocker-state.ts'
+import type { BlockedTicket, BoardCard, GithubQueue } from '../src/lib/board.ts'
 
 const card = (project: string, ref: string) => ({ project, ref, taskId: `${project}-${ref}` }) as unknown as BoardCard
 
@@ -29,6 +30,7 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   problems: [],
   notes: [],
   blocked: [],
+  held: [],
   asked: 1,
   answered: 1,
   ...over,
@@ -139,5 +141,105 @@ describe('the Queued column once GitHub has answered', () => {
     expect(
       html(<QueuedCountAnswered logCount={1} github={answer({ cards: [card('a', '1'), card('a', '2')] })} />),
     ).toContain('>3<')
+  })
+})
+
+describe('the Queued column draws the tickets a blocker holds (#960)', () => {
+  const issue = (number: number, state: 'open' | 'closed' = 'open', repository = 'o/r') =>
+    ({ number, state, repository }) as never
+  const skip = (
+    ref: number,
+    blockers: BlockedTicket['blockers'],
+    over: Partial<BlockedTicket> = {},
+  ): BlockedTicket => ({
+    project: 'p',
+    ref,
+    title: `ticket ${ref}`,
+    kind: 'bug',
+    blockedBy: 1,
+    blockers,
+    unread: false,
+    kindColor: null,
+    ...over,
+  })
+  const board: BoardHalf = {
+    columns: new Map([
+      ['p#1', 'running'],
+      ['p#2', 'waiting'],
+      ['p#3', 'queued'],
+    ]),
+    repositories: new Map([['p', 'o/r']]),
+  }
+  const draw = (g: Partial<GithubQueue>, runnable = 0) =>
+    html(
+      <QueuedAnswered
+        unreadable={[]}
+        logCards={[]}
+        github={answer({ cards: Array.from({ length: runnable }, (_, i) => card('p', String(100 + i))), ...g })}
+        onBoard={new Set(['p'])}
+        list={list}
+        empty={<p>EMPTY</p>}
+        board={board}
+      />,
+    )
+
+  it('says each blocker’s state in the table’s class and word, and strikes a closed one', () => {
+    const out = draw({
+      blocked: [
+        skip(10, {
+          ok: true,
+          issues: [issue(1), issue(2), issue(3), issue(11), issue(12, 'closed'), issue(13), issue(5, 'open', 'x/y')],
+        }),
+        skip(11, { ok: true, issues: [] }),
+      ],
+      held: [{ project: 'p', ref: 13 }],
+    })
+    expect(out).toContain('class="card q-blocked"')
+    expect(out).toContain('class="bkline"')
+    expect(out).toContain('<span class="bk run">#1 <span class="bst">running</span>')
+    expect(out).toContain('<span class="bk run">#2 <span class="bst">waiting on you</span>')
+    expect(out).toContain('<span class="bk q">#3 <span class="bst">queued</span>')
+    expect(out).toContain('<span class="bk wait">#11 <span class="bst">blocked</span>')
+    expect(out).toContain('<span class="bk done">#12 <span class="bst">closed</span>')
+    expect(out).toContain('<span class="bk">#13 <span class="bst">held</span>')
+    expect(out).toContain('<span class="bk">x/y#5 <span class="bst">open</span>')
+  })
+
+  it('names the open blockers a ticket starts on, or says it starts on the next turn', () => {
+    const out = draw({
+      blocked: [
+        skip(10, { ok: true, issues: [issue(1), issue(2)] }),
+        skip(20, { ok: true, issues: [issue(1), issue(4, 'closed')] }),
+        skip(30, { ok: true, issues: [issue(4, 'closed')] }),
+      ],
+    })
+    expect(out).toContain('starts when #1, #2 land')
+    expect(out).toContain('starts when #1 lands')
+    expect(out).toContain('starts on the next turn')
+  })
+
+  it('summarises with and without runnable tickets, and leaves the header alone', () => {
+    const blocked = [skip(10, { ok: true, issues: [issue(1)] })]
+    expect(draw({ blocked }, 2)).toContain('<b>2</b> runnable · <b>1</b> waiting on a blocker')
+    const none = draw({ blocked })
+    expect(none).toContain('nothing runnable · <b>1</b> waiting on a blocker')
+    expect(none).not.toContain('EMPTY')
+    expect(draw({}, 2)).toContain('<b>2</b> runnable</p>')
+    expect(draw({})).not.toContain('qsum')
+    expect(draw({})).toContain('EMPTY')
+  })
+
+  it('says a read failed, and counts a skip past the read limit without a card', () => {
+    const out = draw({
+      blocked: [
+        skip(10, { ok: false, problem: 'boom' }),
+        skip(11, null, { unread: true }),
+        skip(12, null, { unread: true }),
+      ],
+    })
+    expect(out).toContain('blockers could not be read')
+    expect(out).toContain('+2 more waiting on a blocker')
+    expect(out).toContain('<b>3</b> waiting on a blocker')
+    expect(out.match(/q-blocked/g)).toHaveLength(1)
   })
 })

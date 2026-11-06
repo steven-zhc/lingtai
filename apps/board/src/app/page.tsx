@@ -12,6 +12,7 @@ import { projectionLag } from '@lingtai/projector'
 import Link from 'next/link'
 import { type ComponentProps, Fragment, Suspense } from 'react'
 
+import { type BoardHalf } from '@/lib/blocker-state'
 import {
   emptyNote,
   githubQueue,
@@ -713,6 +714,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
+  // What a blocker chip needs from the columns (#960): where each ticket the
+  // log holds stands, and each project's own repository. The table is
+  // `blockerChip`'s; the inputs can only be built here.
+  const boardHalf: BoardHalf = {
+    columns: new Map(
+      columns.flatMap((c): [string, 'running' | 'waiting' | 'queued'][] => {
+        const id = c.id
+        return id === 'landed' ? [] : c.cards.map((card): [string, typeof id] => [`${card.project}#${card.ref}`, id])
+      }),
+    ),
+    repositories: new Map(
+      askable.flatMap((f) => (f.links === null ? [] : [[f.project, `${f.links.owner}/${f.links.repo}`] as const])),
+    ),
+  }
 
   // The one number an operator acts on *in the next minute*: how many need me.
   // What it has cost is the other number #81 wanted, and it is a click away on
@@ -905,6 +920,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                           arriving={arriving}
                         />
                       )}
+                      board={boardHalf}
                       empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
                     />
                   </Suspense>

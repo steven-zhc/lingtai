@@ -15,6 +15,7 @@ import {
   isPending,
   isRegistered,
   attemptReducer,
+  ticketStream,
   waitWords,
 } from '@lingtai/domain'
 import {
@@ -771,6 +772,9 @@ export type BlockedSkip = {
   unread: boolean
 }
 
+/** A `BlockedSkip` with the colour its repository gives its kind, taken as cards take theirs (#960). */
+export type BlockedTicket = BlockedSkip & { kindColor: string | null }
+
 /** The most `blocked-by` skips per project whose blockers are read, lowest number first. */
 export const BLOCKERS_READ_MOST = 20
 /** How long a read blocker list is trusted while the count is unchanged. */
@@ -1014,7 +1018,9 @@ export interface GithubQueue {
   /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
   notes: QueueProblem[]
   /** The `blocked-by` skips and their blockers (#954). Not cards: nothing counts them. */
-  blocked: BlockedSkip[]
+  blocked: BlockedTicket[]
+  /** The `excluded-label` skips, by project and number: a blocker among them reads *held* (#960). Refs only. */
+  held: { project: string; ref: number }[]
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1043,7 +1049,8 @@ export async function githubQueue(
   const cards: BoardCard[] = []
   const problems: QueueProblem[] = []
   const notes: QueueProblem[] = []
-  const blocked: BlockedSkip[] = []
+  const blocked: BlockedTicket[] = []
+  const held: { project: string; ref: number }[] = []
   let answered = 0
 
   // All of them at once, for the reason `queueFilters` gives (#112).
@@ -1065,15 +1072,23 @@ export async function githubQueue(
     }
     answered += 1
     const offered = answer.offered
-    blocked.push(...answer.blocked)
+    // The row wins, as for the runnable cards below: a blocked ticket the log
+    // already has a card for is drawn there and not counted here.
+    for (const s of answer.blocked) {
+      if (known.has(ticketStream(filter.project, s.ref))) continue
+      blocked.push({ ...s, kindColor: s.kind === null ? null : (offered.kindColors[s.kind] ?? null) })
+    }
+    for (const s of offered.skipped) {
+      if (s.reason === 'excluded-label') held.push({ project: filter.project, ref: s.ref })
+    }
     // What the repository says each of its kinds looks like. A project whose
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
     lastKindColors.set(filter.project, offered.kindColors)
     const before = cards.length
-    // The same two sentences `lingtai status` prints, from the same functions,
-    // so the column and the terminal cannot count a held ticket differently.
-    const passed = passedOver(offered.skipped)
+    // `lingtai status` prints every skip; the column draws the `blocked-by` ones
+    // as cards of their own (#960), so its note counts only the skips it does not.
+    const passed = passedOver(offered.skipped.filter((s) => s.reason !== 'blocked-by'))
     if (passed !== null) notes.push({ project: filter.project, reason: passed })
     if (offered.dependenciesUnread !== null) {
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
@@ -1137,7 +1152,7 @@ export async function githubQueue(
     }
     lastOffered.set(filter.project, cards.length - before)
   }
-  return { cards, problems, notes, blocked, asked: askable.length, answered }
+  return { cards, problems, notes, blocked, held, asked: askable.length, answered }
 }
 
 /**

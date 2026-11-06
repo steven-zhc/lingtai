@@ -13,7 +13,9 @@
  */
 import { type ReactNode } from 'react'
 
-import { type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
+import { EMPTY_BOARD_HALF, blockerChip, type BoardHalf } from '@/lib/blocker-state'
+import { type BlockedTicket, type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
+import { kindDot } from '@/lib/kind-colour'
 
 import { Skeleton } from './skeleton'
 
@@ -42,6 +44,56 @@ function Problems({ problems }: { problems: readonly QueueProblem[] }) {
         </p>
       ))}
     </>
+  )
+}
+
+/**
+ * One `blocked-by` skip (#960): greyed and dashed, what it waits on as chips,
+ * and when it starts. A plain card — a skip has no standing, moves or attempts.
+ */
+function BlockedCard({
+  skip,
+  showProject,
+  board,
+  github,
+}: {
+  skip: BlockedTicket
+  showProject: boolean
+  board: BoardHalf
+  github: GithubQueue
+}) {
+  const dot = kindDot(skip.kindColor)
+  const read = skip.blockers !== null && skip.blockers.ok ? skip.blockers.issues : null
+  const chips = read === null ? null : read.map((b) => ({ b, chip: blockerChip(b, skip.project, board, github) }))
+  const open = chips === null ? [] : chips.filter(({ b }) => b.state !== 'closed').map(({ chip }) => chip.label)
+  return (
+    <div className="card q-blocked">
+      <div className="ti">
+        {dot === null ? null : <span className="kdot" style={{ background: dot }} aria-hidden="true" />}
+        {showProject ? <span className="mono">{skip.project} </span> : null}
+        <span className="mono">#{skip.ref}</span> {skip.kind === null ? null : <span>{skip.kind} </span>}
+        {skip.title}
+      </div>
+      {chips === null ? (
+        <p className="bkwhen">blockers could not be read</p>
+      ) : (
+        <>
+          <div className="bkline">
+            <span className="bkk">waits on</span>
+            {chips.map(({ b, chip }) => (
+              <span key={`${b.repository}#${b.number}`} className={`bk${chip.cls === '' ? '' : ` ${chip.cls}`}`}>
+                {chip.label} <span className="bst">{chip.word}</span>
+              </span>
+            ))}
+          </div>
+          <p className="bkwhen">
+            {open.length === 0
+              ? 'starts on the next turn'
+              : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -81,6 +133,7 @@ export function QueuedAnswered({
   onBoard,
   list,
   empty,
+  board = EMPTY_BOARD_HALF,
 }: {
   unreadable: readonly QueueProblem[]
   logCards: BoardCard[]
@@ -89,26 +142,61 @@ export function QueuedAnswered({
   list: ListQueued
   /** What an empty column says, from `emptyNote`. */
   empty: ReactNode
+  /** What the page's columns say about a blocker (#960). */
+  board?: BoardHalf
 }) {
   const cards = [...logCards, ...github.cards]
   // A project only GitHub offers can name projects in this column without
   // changing the others (#884): accepted.
-  const projects = new Set([...onBoard, ...github.cards.map((c) => c.project)])
+  const projects = new Set([...onBoard, ...github.cards.map((c) => c.project), ...github.blocked.map((b) => b.project)])
   const problems = [...unreadable, ...github.problems]
   const arriving = new Set(github.cards.map((c) => c.taskId))
+  const waiting = github.blocked.length
+  const drawn = github.blocked.filter((b) => !b.unread)
+  const unread = waiting - drawn.length
+  const summary =
+    waiting === 0 ? (
+      cards.length === 0 ? null : (
+        <p className="qsum">
+          <b>{cards.length}</b> runnable
+        </p>
+      )
+    ) : (
+      <p className="qsum">
+        {cards.length === 0 ? (
+          'nothing runnable'
+        ) : (
+          <>
+            <b>{cards.length}</b> runnable
+          </>
+        )}{' '}
+        · <b>{waiting}</b> waiting on a blocker
+      </p>
+    )
   return (
     <>
+      {summary}
       <Problems problems={problems} />
       {github.notes.map((n) => (
         <p key={`${n.project}:${n.reason}`} className="empty">
           <strong>{n.project}</strong>: {n.reason}
         </p>
       ))}
-      {cards.length === 0 && problems.length === 0
+      {cards.length === 0 && problems.length === 0 && waiting === 0
         ? empty
         : cards.length > 0
           ? list(cards, projects.size > 1, true, arriving)
           : null}
+      {drawn.map((skip) => (
+        <BlockedCard
+          key={`${skip.project}#${skip.ref}`}
+          skip={skip}
+          showProject={projects.size > 1}
+          board={board}
+          github={github}
+        />
+      ))}
+      {unread > 0 ? <p className="qsum">+{unread} more waiting on a blocker</p> : null}
     </>
   )
 }
