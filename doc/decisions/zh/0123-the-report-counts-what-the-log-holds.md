@@ -16,7 +16,7 @@
 
 ## 背景
 
-`/spend` 只汇总看板上正显示的卡片（`apps/board/src/app/spend/page.tsx` 写着它是 *"the same window as the board"*）。它没有按票的视图，没有时间，也不统计尝试了几次、几轮。无人值守跑了一夜之后，操作者想问的几个问题都没有地方回答：做完了多少，一张票合并要花多少，为什么某张票比另一张贵十倍。而这些事实都已经记录下来了：
+花费曾只汇总看板上正显示的卡片，窗口与看板相同。它没有按票的视图，没有时间，也不统计尝试了几次、几轮。无人值守跑了一夜之后，操作者想问的几个问题都没有地方回答：做完了多少，一张票合并要花多少，为什么某张票比另一张贵十倍。而这些事实都已经记录下来了：
 
 - 票的事件流上有 `TicketClaimed`、`TicketLanded`、`TicketClosed`、`TicketReleased`、`WaitStarted`、`WaitResolved` 和 `WaitTriaged`；
 - `RunSpent` 带着用途（`SpentFor`，0110 §9）和轮次，由 `spend` 投影（`packages/projector/src/spend.ts`）关联到票。

@@ -166,11 +166,10 @@ about something else are the three whose spend is not recorded.
    may come from a fetched, dated snapshot, read after the shipped rows and
    never fetched while pricing.
 
-7. **`/spend` shows the `spend` projection, split by purpose.**
-   `apps/board/src/app/spend/page.tsx` shows one row per project, with the
-   purposes read off `for` and never reduced together, each total kept apart by
-   the rule below. The recipe limits that authorised the spend are shown beneath
-   the bill.
+7. **`/report` shows the `spend` projection, split by purpose.**
+   It shows the window's spend with the purposes read off `for` and never
+   reduced together, each total kept apart by the rule below. The recipe limits
+   that authorised the spend are on the recipe page.
 
    **A reader shows a reported dollar as fact, an estimate as an estimate, and
    an unknown as unknown, never as $0.** Where `costUsd` was reported, that is
@@ -235,7 +234,7 @@ about something else are the three whose spend is not recorded.
     `estimate_fetched`), and `kind`, the ticket's kind as its run's claim
     carried it when the row was reduced (0123 §3). The reducer fills `ticket` from the attempt stream's `RunStarted`, the
     ticket stream itself, or the discussion's `DiscussionRequested`, each of
-    which it has read by then. A card's total, `/spend`'s rows and the task
+    which it has read by then. A card's total, `/report`'s figures and the task
     page's list of calls are all queries over it. It is a row per run, not a
     total per ticket, because an estimate (decision 5) needs each run's model,
     tokens and time, and because spend per day is a query over it.
@@ -255,7 +254,7 @@ about something else are the three whose spend is not recorded.
     with it (#506 dropped the columns). `TriageAgent` never carried them: a
     triage agent's cost is a `RunSpent` and nothing else
     ([0118](0118-a-hold-explains-itself.md) §3). The `spend` reduce reads
-    `RunSpent` and no other event, and the card, `/spend` and the task page
+    `RunSpent` and no other event, and the card, `/report` and the task page
     all read `spend`. What the old fields recorded before the reset is not
     carried into `spend`: the reset forgot it with the rest of the log.
 

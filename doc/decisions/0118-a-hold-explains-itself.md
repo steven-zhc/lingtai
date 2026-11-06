@@ -843,7 +843,7 @@ which kind a wait was got inferred again in each place that needed it, from
 
 - **Every wait that is a judgement or a machine failure costs one triage
   run**, whether or not anybody opens it. Its cost is a `RunSpent { for: Triage }`,
-  so it shows in `/spend`, and a recipe that does not want it does not declare it.
+  so it shows in the report, and a recipe that does not want it does not declare it.
 - **Triage is billed at least once, and at most twice, per wait.** The only
   second payment is a daemon that stopped during the call, whose attempt is
   tried again on the next start.

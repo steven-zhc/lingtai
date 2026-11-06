@@ -49,8 +49,8 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 
 6. **价格表是一个由人追加的文件。** `doc/rate-card.md` 每个（model、mode、`from` 日期）一行，带每百万 token 的输入、输出、缓存读取和缓存写入价格。推理输出按输出价格收费。价格变动时加一行新的，绝不修改旧行，所以旧的运行仍按它发生时生效的价格定价。没有价格行的模型是「未定价」的，按第 7 条，它的运行是未知。Codex 目前没有价格行。价格表不从 Models API 获取（它不带价格），也不从定价页面抓取。不在随代码发布的价格表里的行，可以来自一份抓取下来的、带日期的快照，它在发布的行之后读取，而且定价时绝不去抓取。
 
-7. **`/spend` 显示 `spend` projection，按用途拆分。**
-   `apps/board/src/app/spend/page.tsx` 每个项目显示一行，各用途从 `for` 读出，绝不合并，每个总数都按下面的规则分开。授权这些花费的 recipe 限额显示在账单下方。
+7. **`/report` 显示 `spend` projection，按用途拆分。**
+   它显示窗口内的花费，各用途从 `for` 读出，绝不合并，每个总数都按下面的规则分开。授权这些花费的 recipe 限额在 recipe 页上。
 
    **读者把上报的美元显示为事实，估价显示为估价，未知显示为未知，绝不显示为 $0。** 上报了 `costUsd` 的，就用这个数字。没有上报、但上报了 token，而且价格表在 `at` 时有该模型和模式的生效行的，就用 token 定价，并标为估价。两者都不满足的，这次运行的花费是未知，就显示为未知。**总数把三者分开：上报的总数；估价列在它旁边，绝不加进去；以及未知运行的条数。** 看板、`lingtai status` 和任何报表都读存好的 `cost_usd` 和 `estimated_usd` 并求和；没有一个在显示时定价。
 
@@ -83,12 +83,12 @@ Lingtai 在六个地方启动付费进程，它们结束时的事件种类并不
 
     triage 目前还没有调度；有了以后，它就是第七种，追加 `RunSpent { for: Triage }`。新增一个启动付费进程的地方，只追加 `RunSpent`，不改动任何其他事件。
 
-11. **`spend` projection 每个 `RunSpent` 一行**：`seq`、`at`、`ticket`、`pass`（不在尝试事件流上时为 null）、`for` 及其 `step`、`action` 和 `round`、`runtime`、`turns`、`duration_ms`、`cost_usd` 和 `usage`（jsonb），以及第 5 条的估价：`estimated_usd` 和 `estimate_fetched`，以及 `kind`：折叠这一行时，这次运行所属的领取带的票的类型（0123 §3）。折叠从尝试事件流的 `RunStarted`、票事件流本身，或者讨论的 `DiscussionRequested` 填入 `ticket`，这些到那时它都已经读过了。卡片上的总数、`/spend` 的各行和任务页上的调用列表，都是对它的查询。它是每次运行一行，而不是每张票一个总数，因为估价（第 5 条）需要每次运行的模型、token 和时间，也因为每天的花费是对它的一个查询。
+11. **`spend` projection 每个 `RunSpent` 一行**：`seq`、`at`、`ticket`、`pass`（不在尝试事件流上时为 null）、`for` 及其 `step`、`action` 和 `round`、`runtime`、`turns`、`duration_ms`、`cost_usd` 和 `usage`（jsonb），以及第 5 条的估价：`estimated_usd` 和 `estimate_fetched`，以及 `kind`：折叠这一行时，这次运行所属的领取带的票的类型（0123 §3）。折叠从尝试事件流的 `RunStarted`、票事件流本身，或者讨论的 `DiscussionRequested` 填入 `ticket`，这些到那时它都已经读过了。卡片上的总数、`/report` 的各项数字和任务页上的调用列表，都是对它的查询。它是每次运行一行，而不是每张票一个总数，因为估价（第 5 条）需要每次运行的模型、token 和时间，也因为每天的花费是对它的一个查询。
 
 12. **上限属于 runtime，不读日志上的任何东西。**
     `runtime.limits.usd` 限制一次运行，由 runtime（`--max-budget-usd`）按它自己的计数执行，和 `turns`、`wall` 一样。Lingtai 不对每次尝试或每张票执行美元上限。它自己唯一的上限是每日上限，触发时暂停领取新工作，不杀掉任何东西（[0122](../0122-several-passes-share-one-conductor.md) §5）。
 
-13. **除了 `RunSpent`，没有事件带花费。** 旧字段，即 `RunFinished`、`DiscussionAnswered` 和 `DiscussionHeld` 上的 `turns`、`costUsd` 和 `usage`，以及 `task_view` 的 `cost_usd` 和 `repair_costs`，只在改变存储事件的那次重置之前和 `RunSpent` 并存（[0120](../0120-a-reason-is-a-type.md) 的第二阶段，#502），随那次重置一起消失了（#506 删除了这些列）。`TriageAgent` 从来没带过它们：triage agent 的花费是一个 `RunSpent`，别的什么都不是（[0118](../0118-a-hold-explains-itself.md) §3）。`spend` 折叠只读 `RunSpent`，不读其他事件，而卡片、`/spend` 和任务页都读 `spend`。旧字段在重置之前记录的内容不会带进 `spend`：重置把它和日志的其余部分一起忘掉了。
+13. **除了 `RunSpent`，没有事件带花费。** 旧字段，即 `RunFinished`、`DiscussionAnswered` 和 `DiscussionHeld` 上的 `turns`、`costUsd` 和 `usage`，以及 `task_view` 的 `cost_usd` 和 `repair_costs`，只在改变存储事件的那次重置之前和 `RunSpent` 并存（[0120](../0120-a-reason-is-a-type.md) 的第二阶段，#502），随那次重置一起消失了（#506 删除了这些列）。`TriageAgent` 从来没带过它们：triage agent 的花费是一个 `RunSpent`，别的什么都不是（[0118](../0118-a-hold-explains-itself.md) §3）。`spend` 折叠只读 `RunSpent`，不读其他事件，而卡片、`/report` 和任务页都读 `spend`。旧字段在重置之前记录的内容不会带进 `spend`：重置把它和日志的其余部分一起忘掉了。
 
 ## 后果
 

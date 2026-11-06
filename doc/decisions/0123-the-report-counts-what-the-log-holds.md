@@ -22,9 +22,9 @@ span of time the report covers.
 
 ## Context
 
-`/spend` sums the cards the board is showing (`apps/board/src/app/spend/page.tsx`
-says it is *"the same window as the board"*). It has no per-ticket view, no
-time, and no count of attempts or rounds. The questions the operator asks after a
+Spend was summed over the cards the board is showing, the same window as the
+board. That had no per-ticket view, no time, and no count of attempts or
+rounds. The questions the operator asks after a
 night of unattended work have no surface: how much got done, what a landing
 takes, and why one ticket cost ten times another. The facts are all recorded:
 
@@ -252,8 +252,8 @@ The operator's decisions in epic #648 are the inputs here.
    - A ticket without a summary is one line: time, number, title, diff, cost.
    - Every fact comes from the log through `ticket_report`; nothing is asked of
      GitHub. Kind colours are §7's series, and amber is not used.
-   - It is reached from the board's Landed column, whose heading links to it
-     (carrying `?project=`), and so adds nothing to the bar's row (the-bar.md).
+   - It is reached from the board's Landed column, whose count is a pill
+     button linking to it (carrying `?project=`), and so adds nothing to the bar's row (the-bar.md).
 
 ## Consequences
 
