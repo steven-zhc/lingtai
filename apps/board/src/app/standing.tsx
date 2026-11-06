@@ -295,6 +295,7 @@ function RunningPanel({
         )}
         <p className="triage-ask">{view.ask}</p>
         {view.meters === null ? null : <Meters m={view.meters} serverNow={serverNow} />}
+        {view.watch === null ? null : <LastEvent watch={view.watch} serverNow={serverNow} />}
         <SaidLast />
         {line.kind === 'fixing' ? (
           <ul className="findings">
@@ -410,6 +411,7 @@ import {
 import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
 import { EditPromptAction } from './edit-prompt.tsx'
+import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'

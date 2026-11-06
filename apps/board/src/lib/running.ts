@@ -3,6 +3,7 @@ import { SEVERITIES, STEPS, type Finding, type Step } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 
 import { billOf, billText, grantedOf, spendChip, totalBill, type SpendCurrency } from './spend.ts'
+import type { RunningWatch } from './stuck.ts'
 import type { AttemptView } from './task.ts'
 
 /** What only the caller that has read `spend` and the recipe can hand in. */
@@ -48,6 +49,8 @@ export interface RunningPanelView {
    * names by entry and not by `when`, so while one decides nothing is quoted.
    */
   said: readonly (string | null)[]
+  /** What `stuckOf` reads (#918). Null where the caller had no stream to take the newest event from. */
+  watch: RunningWatch | null
 }
 
 const stepOfKey = (key: string): string => key.slice(0, key.indexOf(':') === -1 ? undefined : key.indexOf(':'))
@@ -93,7 +96,11 @@ function metersOf(run: AttemptView, ctx: RunningContext): RunningMeters | null {
   }
 }
 
-export function runningPanelOf(run: AttemptView, ctx: RunningContext | null): RunningPanelView {
+export function runningPanelOf(
+  run: AttemptView,
+  ctx: RunningContext | null,
+  lastEvent: RunningWatch['lastEvent'] = null,
+): RunningPanelView {
   const now = run.stepNow
   const steps = run.progress?.steps ?? []
   const fix = now !== null && now.step === 'implement' && now.round > 0
@@ -158,5 +165,15 @@ export function runningPanelOf(run: AttemptView, ctx: RunningContext | null): Ru
           : now.step === 'implement'
             ? [null]
             : planned(now.step).map((a) => `${now.step}:${a}`),
+    watch:
+      lastEvent === null
+        ? null
+        : {
+            runId: run.runId,
+            lastEvent,
+            phase:
+              run.progress?.now == null ? null : { since: run.progress.now.since, budgetMs: run.progress.now.budgetMs },
+            step: now?.step ?? null,
+          },
   }
 }

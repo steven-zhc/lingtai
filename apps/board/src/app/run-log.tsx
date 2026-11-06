@@ -341,6 +341,8 @@ interface Followed {
   below: boolean
   lines: readonly string[]
   state: TailState
+  /** Whether a writer holds the run log (#132); null unless the run is live and the route has said. */
+  writing: boolean | null
   open: boolean
   setOpen: (open: boolean) => void
   tags: readonly (string | null)[]
@@ -381,10 +383,12 @@ export function FollowedLog({
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
   const open = openFor(opened, shown)
-  const { lines, state } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
+  const { lines, state, writing } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
   const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
   return (
-    <FollowedContext.Provider value={{ shown, live, below, lines, state, open, setOpen, tags, place }}>
+    <FollowedContext.Provider
+      value={{ shown, live, below, lines, state, writing: live ? writing : null, open, setOpen, tags, place }}
+    >
       {children}
     </FollowedContext.Provider>
   )
@@ -515,4 +519,9 @@ function say(state: TailState, count: number): string {
   if (state === 'reading') return `${count} lines · following`
   if (state === 'removed') return `${count} lines · the log has been deleted`
   return `${count} lines · ends here`
+}
+
+/** The `writing` bit of the shared tail; null outside a followed, live run. */
+export function useWriting(): boolean | null {
+  return useContext(FollowedContext)?.writing ?? null
 }
