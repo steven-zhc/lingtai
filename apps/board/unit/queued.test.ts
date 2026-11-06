@@ -11,7 +11,14 @@ import type { TaskCard } from '@lingtai/projector/task-view'
  */
 import { describe, expect, it } from 'vitest'
 
-import { groupQueue, queuedStanding, toCard } from '../src/lib/board.ts'
+import {
+  groupQueue,
+  queuedStanding,
+  toCard,
+  type BlockedTicket,
+  type EpicTicket,
+  type QueueEntry,
+} from '../src/lib/board.ts'
 import { runNowCaption, type QueuedView } from '../src/lib/queued.ts'
 
 function queued(over: Partial<TaskCard> & { issue: string; kind: string }): TaskCard {
@@ -53,55 +60,194 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
 
 const card = (issue: string, kind: string, heldUntil: Date | null = null) => toCard(queued({ issue, kind }), heldUntil)
 
-describe('the Queued column, grouped', () => {
-  it("groups by kind in the recipe's order, not in the order cards arrive", () => {
-    const groups = groupQueue(
-      [card('62', 'feature'), card('74', 'bug'), card('75', 'tech-debt'), card('79', 'feature')],
-      ['bug', 'tech-debt', 'feature'],
-    )
+const NO_PARENTS = new Map<string, number>()
+const refs = (entries: readonly QueueEntry[]) =>
+  entries.map((e) =>
+    e.type === 'card'
+      ? e.card.ref
+      : e.type === 'blocked'
+        ? `b${e.ticket.ref}`
+        : `e${e.epic.ref}[${[...e.cards.map((c) => c.ref), ...e.blocked.map((t) => `b${t.ref}`)].join(',')}]`,
+  )
 
-    expect(groups.map((g) => g.kind)).toEqual(['bug', 'tech-debt', 'feature'])
-    expect(groups.map((g) => g.cards.map((c) => c.ref))).toEqual([['74'], ['75'], ['62', '79']])
+const epic = (ref: number, closed = 1, total = 4): EpicTicket => ({
+  project: 'esctest',
+  ref,
+  title: `epic ${ref}`,
+  kind: 'feature',
+  kindColor: null,
+  closed,
+  total,
+})
+
+const blockedTicket = (ref: number, kind: string | null = 'feature'): BlockedTicket => ({
+  project: 'esctest',
+  ref,
+  title: `blocked ${ref}`,
+  kind,
+  blockedBy: 1,
+  blockers: null,
+  unread: false,
+  kindColor: null,
+})
+
+const parentsOf = (pairs: Record<string, number>) => new Map(Object.entries(pairs).map(([k, v]) => [`esctest#${k}`, v]))
+
+describe('the Queued column, in selectRunnable order', () => {
+  it("walks the recipe's order, not the order cards arrive", () => {
+    const { entries } = groupQueue(
+      [card('62', 'feature'), card('74', 'bug'), card('75', 'tech-debt'), card('79', 'feature')],
+      [],
+      ['bug', 'tech-debt', 'feature'],
+      NO_PARENTS,
+      [],
+    )
+    expect(refs(entries)).toEqual(['74', '75', '62', '79'])
   })
 
   /** `selectRunnable`'s tiebreak: #402 before #409, and both before #4100. */
-  it('orders within a group by issue number, as the conductor does', () => {
-    const [bugs] = groupQueue([card('4100', 'bug'), card('409', 'bug'), card('402', 'bug')], ['bug'])
-    expect(bugs?.cards.map((c) => c.ref)).toEqual(['402', '409', '4100'])
+  it('orders by issue number within a kind, as the conductor does', () => {
+    const { entries } = groupQueue(
+      [card('4100', 'bug'), card('409', 'bug'), card('402', 'bug')],
+      [],
+      ['bug'],
+      NO_PARENTS,
+      [],
+    )
+    expect(refs(entries)).toEqual(['402', '409', '4100'])
   })
 
-  it('names the group the next claim comes from', () => {
-    const groups = groupQueue([card('79', 'feature'), card('74', 'bug')], ['bug', 'feature'])
-    expect(groups.filter((g) => g.next).map((g) => g.kind)).toEqual(['bug'])
+  it('marks the first runnable card taken first', () => {
+    const { next } = groupQueue([card('79', 'feature'), card('74', 'bug')], [], ['bug', 'feature'], NO_PARENTS, [])
+    expect(next).toBe('ticket-esctest-74')
   })
 
-  /**
-   * The distinction #95 put on the cards, kept in the heading. A kind whose
-   * only queued items are backing off is not the kind that gets taken next, and
-   * a heading that said it was would be the lie the cards stopped telling.
-   */
-  it('skips a group whose every card is being held back by the backoff', () => {
+  it('does not mark a card the backoff is holding back', () => {
     const held = new Date('2099-01-01T00:00:00Z')
-    const groups = groupQueue([card('74', 'bug', held), card('79', 'feature')], ['bug', 'feature'])
-
-    expect(groups.map((g) => g.kind)).toEqual(['bug', 'feature'])
-    expect(groups.filter((g) => g.next).map((g) => g.kind)).toEqual(['feature'])
+    const { entries, next } = groupQueue(
+      [card('74', 'bug', held), card('79', 'feature')],
+      [],
+      ['bug', 'feature'],
+      NO_PARENTS,
+      [],
+    )
+    expect(refs(entries)).toEqual(['74', '79'])
+    expect(next).toBe('ticket-esctest-79')
   })
 
-  /**
-   * A recipe that drops a kind leaves items in the log named by it, and they
-   * come back to the queue under a label nothing prioritises any more. They are
-   * still work and still rendered — after everything the order does name, since
-   * nothing says where else they go.
-   */
+  it('marks nothing when asked not to', () => {
+    expect(groupQueue([card('74', 'bug')], [], ['bug'], NO_PARENTS, [], false).next).toBeNull()
+  })
+
   it('puts a kind the order does not name after the ones it does', () => {
-    const groups = groupQueue([card('9', 'chore'), card('74', 'bug')], ['bug'])
-    expect(groups.map((g) => g.kind)).toEqual(['bug', 'chore'])
+    const { entries } = groupQueue([card('9', 'chore'), card('74', 'bug')], [], ['bug'], NO_PARENTS, [])
+    expect(refs(entries)).toEqual(['74', '9'])
   })
 
   it('has no order to show when no recipe could be read, and still shows every card', () => {
-    const groups = groupQueue([card('74', 'bug'), card('62', 'feature')], [])
-    expect(groups.flatMap((g) => g.cards.map((c) => c.ref)).sort()).toEqual(['62', '74'])
+    const { entries } = groupQueue([card('74', 'bug'), card('62', 'feature')], [], [], NO_PARENTS, [])
+    expect(refs(entries).sort()).toEqual(['62', '74'])
+  })
+})
+
+describe('the Queued column, grouped by epic (#956)', () => {
+  const order = ['bug', 'tech-debt', 'feature']
+
+  it("places an epic's group where its first card falls, runnable then blocked", () => {
+    const { entries, headed } = groupQueue(
+      [card('10', 'feature'), card('11', 'feature')],
+      [blockedTicket(12)],
+      order,
+      parentsOf({ '10': 5, '11': 5, '12': 5 }),
+      [epic(5)],
+    )
+    expect(refs(entries)).toEqual(['e5[10,11,b12]'])
+    expect([...headed]).toEqual(['esctest#5'])
+  })
+
+  it('interleaves two epics with ungrouped cards at each first card', () => {
+    const { entries } = groupQueue(
+      [
+        card('1', 'bug'),
+        card('20', 'feature'),
+        card('21', 'feature'),
+        card('30', 'tech-debt'),
+        card('31', 'tech-debt'),
+      ],
+      [],
+      order,
+      parentsOf({ '20': 7, '30': 8, '21': 8, '31': 7 }),
+      [epic(7), epic(8)],
+    )
+    // #30 (tech-debt) is the first card of epic 8; #31 the first of epic 7.
+    expect(refs(entries)).toEqual(['1', 'e8[30,21]', 'e7[31,20]'])
+  })
+
+  it('groups an epic with only blocked cards, at its first blocked card', () => {
+    const { entries, next } = groupQueue(
+      [card('90', 'feature')],
+      [blockedTicket(40, 'bug'), blockedTicket(41, 'bug')],
+      order,
+      parentsOf({ '40': 6, '41': 6 }),
+      [epic(6)],
+    )
+    expect(refs(entries)).toEqual(['e6[b40,b41]', '90'])
+    expect(next).toBe('ticket-esctest-90')
+  })
+
+  it('leaves a blocked card with no epic below every card and group', () => {
+    const { entries } = groupQueue(
+      [card('10', 'feature'), card('90', 'documentation')],
+      [blockedTicket(2, 'bug'), blockedTicket(12)],
+      [...order, 'documentation'],
+      parentsOf({ '10': 5, '12': 5 }),
+      [epic(5)],
+    )
+    expect(refs(entries)).toEqual(['e5[10,b12]', '90', 'b2'])
+  })
+
+  it('leaves a child ungrouped when its parent is not a known epic', () => {
+    const { entries, headed } = groupQueue(
+      [card('10', 'feature')],
+      [blockedTicket(12)],
+      order,
+      parentsOf({ '10': 5, '12': 5 }),
+      [],
+    )
+    expect(refs(entries)).toEqual(['10', 'b12'])
+    expect(headed.size).toBe(0)
+  })
+
+  it('marks the first runnable card even when its group sits below a held-back card', () => {
+    const held = new Date('2099-01-01T00:00:00Z')
+    const { entries, next } = groupQueue(
+      [card('5', 'bug', held), card('60', 'tech-debt'), card('70', 'feature')],
+      [],
+      order,
+      parentsOf({ '60': 9 }),
+      [epic(9)],
+    )
+    expect(refs(entries)).toEqual(['5', 'e9[60]', '70'])
+    expect(next).toBe('ticket-esctest-60')
+  })
+
+  it('marks the card taken first inside a group an earlier-kind blocked child pulled up', () => {
+    const { entries, next } = groupQueue(
+      [card('1', 'tech-debt'), card('50', 'feature')],
+      [blockedTicket(30, 'bug')],
+      order,
+      parentsOf({ '30': 9, '50': 9 }),
+      [epic(9)],
+    )
+    expect(refs(entries)).toEqual(['e9[50,b30]', '1'])
+    // #1 is first in today's order, though its group sits lower.
+    expect(next).toBe('ticket-esctest-1')
+  })
+
+  it('never joins a group across projects', () => {
+    const other = { ...epic(5), project: 'elsewhere' }
+    const { entries } = groupQueue([card('10', 'feature')], [], order, parentsOf({ '10': 5 }), [other])
+    expect(refs(entries)).toEqual(['10'])
   })
 })
 

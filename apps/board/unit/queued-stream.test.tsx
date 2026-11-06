@@ -19,11 +19,12 @@ import {
 import type { BoardHalf } from '../src/lib/blocker-state.ts'
 import type { BlockedTicket, BoardCard, EpicTicket, GithubQueue, HeldTicket } from '../src/lib/board.ts'
 
-const card = (project: string, ref: string) => ({ project, ref, taskId: `${project}-${ref}` }) as unknown as BoardCard
+const card = (project: string, ref: string) =>
+  ({ project, ref, taskId: `${project}-${ref}`, runnableAt: null }) as unknown as BoardCard
 
 /** Names the cards and whether *taken first* was marked, which is all the list is asked. */
-const list: ListQueued = (cards, showProject, markNext, arriving) =>
-  `[${cards.map((c) => c.taskId).join(',')}|projects=${showProject}|next=${markNext}|arriving=${[...arriving].join(',')}]`
+const list: ListQueued = (c, showProject, next, arrive) =>
+  `[${c.taskId}|projects=${showProject}|next=${next}|arrive=${arrive}]`
 
 const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   cards: [],
@@ -32,6 +33,7 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   blocked: [],
   held: [],
   epics: [],
+  parents: new Map(),
   asked: 1,
   answered: 1,
   ...over,
@@ -46,12 +48,13 @@ describe('the Queued column while GitHub is being asked', () => {
       logCards={[card('lingtai', '1')]}
       onBoard={new Set(['lingtai'])}
       list={list}
+      order={[]}
       count={2}
     />,
   )
 
   it('shows the log’s cards at once, without a claim about what is taken first', () => {
-    expect(out).toContain('[lingtai-1|projects=false|next=false|arriving=]')
+    expect(out).toContain('[lingtai-1|projects=false|next=false|arrive=false]')
   })
 
   it('shows a recipe that will not read, which GitHub cannot change', () => {
@@ -62,7 +65,7 @@ describe('the Queued column while GitHub is being asked', () => {
     expect(out).toContain(ASKING_COLUMN)
     expect(ASKING_COLUMN).toBe('asking GitHub for runnable issues…')
     expect(
-      html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} count={2} />),
+      html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} order={[]} count={2} />),
     ).not.toContain('Nothing here')
   })
 
@@ -73,7 +76,7 @@ describe('the Queued column while GitHub is being asked', () => {
   })
 
   const fallback = (count: number) =>
-    html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} count={count} />)
+    html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} order={[]} count={count} />)
 
   it('draws as many card skeletons as it is told, under the label', () => {
     expect(fallback(3).match(/class="sk-card"/g)).toHaveLength(3)
@@ -101,13 +104,16 @@ describe('the Queued column once GitHub has answered', () => {
         github={github}
         onBoard={new Set(logCards.map((c) => c.project))}
         list={list}
+        order={[]}
         empty={empty}
       />,
     )
 
   it('draws the log’s cards and GitHub’s as one list, with the first marked', () => {
     const out = render(answer({ cards: [card('lingtai', '2')] }))
-    expect(out).toContain('[lingtai-1,lingtai-2|projects=false|next=true|arriving=lingtai-2]')
+    expect(out).toContain(
+      '[lingtai-1|projects=false|next=true|arrive=false][lingtai-2|projects=false|next=false|arrive=true]',
+    )
     expect(out).not.toContain(ASKING_COLUMN)
   })
 
@@ -198,6 +204,7 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
         github={answer({ cards: Array.from({ length: runnable }, (_, i) => card('p', String(100 + i))), ...g })}
         onBoard={new Set(['p'])}
         list={list}
+        order={[]}
         empty={<p>EMPTY</p>}
         board={board}
       />,
@@ -285,5 +292,80 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
     expect(draw({ epics: [epic(7), epic(8)] })).toContain('<b>2</b> epics<span class="hw">')
     expect(draw({ epics: [epic(7), epic(8)] })).not.toContain('</b> held')
     expect(draw({})).not.toContain('heldfold')
+  })
+})
+
+describe('an epic group in the Queued column (#956)', () => {
+  const child = (ref: number): BlockedTicket => ({
+    project: 'lingtai',
+    ref,
+    title: `child ${ref}`,
+    kind: 'feature',
+    kindColor: null,
+    blockedBy: 1,
+    blockers: null,
+    unread: false,
+  })
+  const head: EpicTicket = {
+    project: 'lingtai',
+    ref: 9,
+    title: 'the big piece',
+    kind: 'feature',
+    kindColor: null,
+    closed: 2,
+    total: 7,
+  }
+  const draw = (github: GithubQueue) =>
+    html(
+      <QueuedAnswered
+        unreadable={[]}
+        logCards={[]}
+        github={github}
+        onBoard={new Set(['lingtai'])}
+        list={list}
+        order={['feature']}
+        empty={<p>EMPTY</p>}
+      />,
+    )
+
+  it('draws the head with one arc and a count line that leaves a zero part out', () => {
+    const out = draw(
+      answer({
+        blocked: [child(10), child(11)],
+        epics: [head],
+        parents: new Map([
+          ['lingtai#10', 9],
+          ['lingtai#11', 9],
+        ]),
+      }),
+    )
+    expect(out.match(/class="rg-landed"/g)).toHaveLength(1)
+    expect(out).toContain('class="egroup"')
+    expect(out).toContain('#9')
+    expect(out).toContain('the big piece')
+    expect(out).toContain('<b>2</b> of 7 closed · 2 blocked')
+    expect(out).not.toContain('queued')
+    expect(out).not.toContain('heldfold')
+  })
+
+  it('leaves an epic that heads nothing in the fold', () => {
+    const out = draw(answer({ epics: [head] }))
+    expect(out).not.toContain('egroup')
+    expect(out).toContain('heldfold')
+  })
+
+  it('draws no group and no kind heading before GitHub answers', () => {
+    const out = html(
+      <QueuedFallback
+        unreadable={[]}
+        logCards={[card('lingtai', '1')]}
+        onBoard={new Set(['lingtai'])}
+        list={list}
+        order={['feature']}
+        count={1}
+      />,
+    )
+    expect(out).not.toContain('egroup')
+    expect(out).not.toContain('qgroup')
   })
 })

@@ -1049,6 +1049,12 @@ export interface GithubQueue {
   held: HeldTicket[]
   /** The `epic` skips (#955): an epic with nothing queued, with how much of it is closed. */
   epics: EpicTicket[]
+  /**
+   * Each child's parent issue (#956), keyed `project#ref` to the parent's
+   * number. Only a parent in the project's own repository: another
+   * repository's issue number means nothing here.
+   */
+  parents: Map<string, number>
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1080,6 +1086,7 @@ export async function githubQueue(
   const blocked: BlockedTicket[] = []
   const held: HeldTicket[] = []
   const epics: EpicTicket[] = []
+  const parents = new Map<string, number>()
   let answered = 0
 
   // All of them at once, for the reason `queueFilters` gives (#112).
@@ -1101,6 +1108,14 @@ export async function githubQueue(
     }
     answered += 1
     const offered = answer.offered
+    const links = filter.links ?? null
+    const own = links === null ? null : `${links.owner}/${links.repo}`.toLowerCase()
+    const adopt = (ref: string | number, parent: { repository: string; number: number } | null) => {
+      if (parent === null || own === null || parent.repository.toLowerCase() !== own) return
+      parents.set(`${filter.project}#${ref}`, parent.number)
+    }
+    for (const r of offered.runnable) adopt(r.ref, r.parent)
+    for (const s of offered.skipped) adopt(s.ref, s.parent)
     // The row wins, as for the runnable cards below: a blocked ticket the log
     // already has a card for is drawn there and not counted here.
     for (const s of answer.blocked) {
@@ -1202,7 +1217,7 @@ export async function githubQueue(
     }
     lastOffered.set(filter.project, cards.length - before)
   }
-  return { cards, problems, notes, blocked, held, epics, asked: askable.length, answered }
+  return { cards, problems, notes, blocked, held, epics, parents, asked: askable.length, answered }
 }
 
 /**
@@ -1662,77 +1677,101 @@ export function queuedStanding(
   }
 }
 
-/**
- * One kind's worth of the Queued column, and whether it is the group the next
- * claim comes out of.
- */
-export interface QueueGroup {
-  kind: string
-  cards: BoardCard[]
-  /**
-   * Whether the conductor's next claim comes from here.
-   *
-   * The first group in priority order that holds a card nothing is holding
-   * back — not simply the first group. A kind whose only queued items are
-   * backing off is not the kind that gets taken next, and saying it was would
-   * be the same lie #95 removed from the cards themselves: a held item looks
-   * exactly like one nobody has got to yet, and the difference is the whole
-   * point of showing it.
-   *
-   * It says nothing about *when*. A paused conductor takes nothing at all, and
-   * the bar says so (#77).
-   */
-  next: boolean
+/** One thing the Queued column draws, in render order (#956). */
+export type QueueEntry =
+  | { type: 'card'; card: BoardCard }
+  | { type: 'epic'; epic: EpicTicket; cards: BoardCard[]; blocked: BlockedTicket[] }
+  | { type: 'blocked'; ticket: BlockedTicket }
+
+export interface QueueLayout {
+  entries: QueueEntry[]
+  /** The task id of the card *taken first*, or null. */
+  next: string | null
+  /** `project#ref` of every epic that heads a group, so the fold leaves it out. */
+  headed: Set<string>
 }
 
 /**
- * The Queued column, grouped by kind in the order the recipe prioritises them.
+ * The Queued column in `selectRunnable`'s own order — kind by the recipe's
+ * `order`, then issue number — over runnable cards and the blocked cards that
+ * belong to an epic. The first time a member of an epic appears, the whole
+ * epic's group is placed there: its runnable cards, then its blocked ones.
+ * Blocked cards with no epic come last, below every card and group (#960).
  *
- * **In Queued, order beats colour.** `source.kinds` is the priority order —
- * earlier wins — so within this column the kind *is* the position, and a
- * grouping says what a hue cannot: which work gets taken next. Nothing here is
- * a new rule; it is `selectRunnable`'s own sort, rendered. The kinds come from
- * the recipes (`Board.queueOrder`) rather than from the cards, so a kind with
- * nothing queued does not silently reorder the ones that have.
+ * A kind the order does not name goes after the ones it does, in the order
+ * they first appear; a recipe that drops a kind leaves claimed items under it.
  *
- * A kind the order does not name goes after the ones it does, in the order the
- * cards arrived. That is a real case rather than a defensive one: a recipe that
- * drops a kind leaves the items already claimed under it in the log, and they
- * return to the queue named by a label the recipe no longer prioritises.
- *
- * Within a group, by issue number — `selectRunnable`'s own tiebreak, so the
- * card at the top of a group is the one that would actually be claimed first.
+ * *Taken first* is the first runnable card nothing holds back, in that same
+ * order, wherever its group places it.
  */
-export function groupQueue(cards: readonly BoardCard[], order: readonly string[], markNext = true): QueueGroup[] {
-  const byKind = new Map<string, BoardCard[]>()
-  for (const card of cards) {
-    const group = byKind.get(card.kind)
-    if (group) group.push(card)
-    else byKind.set(card.kind, [card])
+export function groupQueue(
+  cards: readonly BoardCard[],
+  blocked: readonly BlockedTicket[],
+  order: readonly string[],
+  parents: ReadonlyMap<string, number>,
+  epics: readonly EpicTicket[],
+  markNext = true,
+): QueueLayout {
+  const epicOf = new Map(epics.map((e) => [`${e.project}#${e.ref}`, e]))
+  const rank = new Map<string, number>()
+  const rankOf = (kind: string | null): number => {
+    const named = kind === null ? -1 : order.indexOf(kind)
+    if (named >= 0) return named
+    const key = kind ?? ''
+    let r = rank.get(key)
+    if (r === undefined) {
+      r = order.length + rank.size
+      rank.set(key, r)
+    }
+    return r
+  }
+  for (const item of [...cards, ...blocked]) rankOf(item.kind)
+  const number = (ref: string | number) => (Number.isFinite(Number(ref)) ? Number(ref) : Number.MAX_SAFE_INTEGER)
+  const compare = (
+    a: { kind: string | null; ref: string | number },
+    b: { kind: string | null; ref: string | number },
+  ) => rankOf(a.kind) - rankOf(b.kind) || number(a.ref) - number(b.ref)
+  const groupOf = (project: string, ref: string | number): string | null => {
+    const parent = parents.get(`${project}#${ref}`)
+    if (parent === undefined) return null
+    const key = `${project}#${parent}`
+    return epicOf.has(key) ? key : null
   }
 
-  const named = order.filter((kind) => byKind.has(kind))
-  const rest = [...byKind.keys()].filter((kind) => !order.includes(kind))
+  type Member = { card: BoardCard } | { ticket: BlockedTicket }
+  const memberOf = (m: Member) => ('card' in m ? m.card : m.ticket)
+  const pool: Member[] = [
+    ...cards.map((card): Member => ({ card })),
+    ...blocked.filter((t) => groupOf(t.project, t.ref) !== null).map((ticket): Member => ({ ticket })),
+  ].sort((a, b) => compare(memberOf(a), memberOf(b)))
 
-  const groups = [...named, ...rest].map((kind) => ({
-    kind,
-    cards: [...(byKind.get(kind) ?? [])].sort(byIssueNumber),
-    next: false,
-  }))
+  const entries: QueueEntry[] = []
+  const headed = new Set<string>()
+  for (const m of pool) {
+    const item = memberOf(m)
+    const key = groupOf(item.project, item.ref)
+    if (key === null) {
+      if ('card' in m) entries.push({ type: 'card', card: m.card })
+      continue
+    }
+    if (headed.has(key)) continue
+    headed.add(key)
+    const epic = epicOf.get(key)!
+    entries.push({
+      type: 'epic',
+      epic,
+      cards: cards.filter((c) => groupOf(c.project, c.ref) === key).sort(compare),
+      blocked: blocked.filter((t) => groupOf(t.project, t.ref) === key).sort(compare),
+    })
+  }
+  for (const ticket of blocked.filter((t) => groupOf(t.project, t.ref) === null).sort(compare)) {
+    entries.push({ type: 'blocked', ticket })
+  }
 
-  const takenNext = groups.find((g) => g.cards.some((c) => c.runnableAt === null))
-  if (takenNext && markNext) takenNext.next = true
-  return groups
-}
-
-/**
- * Numerically, not lexically: #402 comes before #409 and both before #4100 —
- * `selectRunnable` says the same thing about the same refs, and the column is
- * only readable as a priority if the two agree.
- */
-function byIssueNumber(a: BoardCard, b: BoardCard): number {
-  const n = (c: BoardCard) => (Number.isFinite(Number(c.ref)) ? Number(c.ref) : Number.MAX_SAFE_INTEGER)
-  return n(a) - n(b)
+  const first = markNext
+    ? pool.find((m): m is { card: BoardCard } => 'card' in m && m.card.runnableAt === null)
+    : undefined
+  return { entries, next: first === undefined ? null : first.card.taskId, headed }
 }
 
 /**
