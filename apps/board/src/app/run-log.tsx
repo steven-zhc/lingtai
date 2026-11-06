@@ -189,7 +189,7 @@ export function useLogTail(
     if (source.current) return
     // An awaited follower keeps what it has until a new trace opens: asking
     // again after a removal must not blank the box for the length of a 404.
-    if (!awaited) setLines([])
+    if (!asksNow.current) setLines([])
     // `reading` when the stream opens and not before: a 404 never opens, and a
     // box that said *reading* for the length of one would claim, for a moment,
     // that a daemon had started on a question nothing has picked up.
@@ -198,7 +198,7 @@ export function useLogTail(
     source.current = es
     es.onopen = () => {
       // From byte zero, so what it had is replaced rather than appended to.
-      if (awaited) setLines([])
+      if (asksNow.current) setLines([])
       setMisses(0)
       setWriting(null)
       setState('reading')
@@ -237,7 +237,7 @@ export function useLogTail(
     // second round trip is not worth it.
     es.onerror = () => {
       setState((was) =>
-        was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, asksNow.current) ? 'gone' : was,
+        was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, awaited) ? 'gone' : was,
       )
       // Counted here and not when asking, so a second 404 in a row — the same
       // state, which React would not re-render for — still schedules the next.
@@ -265,10 +265,13 @@ export function useLogTail(
   // an ending too, for an awaited follower (`asksAgain`).
   // Never while a connection is open or opening: that one has not answered yet.
   useEffect(() => {
-    if (!following || !asksAgain(state, asks) || source.current !== null) return
+    // A live run's tail (`retry`) asks again only after its connection dropped
+    // (`gone`), never after an ending: the file is deleted when the run lands,
+    // and asking then would blank the lines the reader is looking at.
+    if (!following || !(asksAgain(state, awaited) || (retry && state === 'gone')) || source.current !== null) return
     const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(Math.max(misses - 1, 0)))
     return () => clearTimeout(timer)
-  }, [following, asks, state, again, misses])
+  }, [following, awaited, retry, state, again, misses])
 
   return { lines, state: reported(state, awaited, misses), writing }
 }
