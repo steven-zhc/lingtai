@@ -855,7 +855,9 @@ describe('the retired names in doc/reference.md', () => {
       'src/ holds a file the rule does not read and doc/reference.md does not name — read it, or name it there',
     ).toEqual(
       [
+        'apps/board/src/app/fonts/OFL-Fraunces.txt',
         'apps/board/src/app/fonts/OFL.txt',
+        'apps/board/src/app/fonts/fraunces-latin-700-normal.woff2',
         'apps/board/src/app/fonts/ibm-plex-mono-latin-400-normal.woff2',
         'apps/board/src/app/fonts/ibm-plex-mono-latin-500-normal.woff2',
         'apps/board/src/app/fonts/ibm-plex-mono-latin-600-normal.woff2',
