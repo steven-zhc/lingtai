@@ -95,7 +95,10 @@ export function Tiles({
   const skipped = intervals.empty + intervals.open
   const denominator = centsOf(spend.total)
   const answering = spend.byPurpose.find((p) => p.purpose === 'Answering')?.money
-  const answeringShare = answering === undefined || denominator === 0 ? null : centsOf(answering) / denominator
+  // No Answering runs at all is a known zero; Answering runs with only unknown cost is not.
+  const answeringKnown = answering === undefined || centsOf(answering) > 0 || answering.unknown === 0
+  const answeringShare =
+    denominator === 0 || !answeringKnown ? null : (answering === undefined ? 0 : centsOf(answering)) / denominator
   const cost = landed.cost
   const perTicket =
     cost.medianCents === null
@@ -147,9 +150,11 @@ export function Tiles({
         k="answering refusals"
         v={percent(answeringShare)}
         s={
-          answering === undefined || denominator === 0
+          denominator === 0
             ? `nothing known spent in the window${unknownText(answering?.unknown ?? spend.total.unknown)}`
-            : `${dollars(centsOf(answering))} of ${dollars(denominator)}${unknownText(answering.unknown)}`
+            : !answeringKnown
+              ? `nothing known spent on it of ${dollars(denominator)}${unknownText(answering!.unknown)}`
+              : `${dollars(answering === undefined ? 0 : centsOf(answering))} of ${dollars(denominator)}${unknownText(answering?.unknown ?? 0)}`
         }
         title="the share of the window's spend that went to answering a refusal"
       />
@@ -195,12 +200,22 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
           <li key={r.series.key}>
             <i style={{ background: r.series.colour }} />
             <span className="n">{r.series.name}</span>
-            <span className="v">{dollars(centsOf(r.money))}</span>
-            <span className="p">{percent(centsOf(r.money) / total)}</span>
-            <span className="d">
-              {dollars(r.money.reportedCents)} reported · ~{dollars(r.money.estimatedCents)} est.
-              {unknownText(r.money.unknown)}
-            </span>
+            {centsOf(r.money) === 0 ? (
+              <>
+                <span className="v">{r.money.unknown} unknown</span>
+                <span className="p">—</span>
+                <span className="d">no known cost</span>
+              </>
+            ) : (
+              <>
+                <span className="v">{dollars(centsOf(r.money))}</span>
+                <span className="p">{percent(centsOf(r.money) / total)}</span>
+                <span className="d">
+                  {dollars(r.money.reportedCents)} reported · ~{dollars(r.money.estimatedCents)} est.
+                  {unknownText(r.money.unknown)}
+                </span>
+              </>
+            )}
           </li>
         ))}
       </ul>

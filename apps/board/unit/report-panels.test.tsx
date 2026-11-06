@@ -317,6 +317,27 @@ describe('the report page', () => {
     expect(zero).not.toContain('>0%<')
   })
 
+  it('keeps an absent purpose a zero and an unknown-only purpose unknown beside known spend', () => {
+    const base = { counts: { landed: 1, closed: 0, open: 0 }, intervals: { empty: 0, open: 0 }, landed: figures() }
+    const total = { reportedCents: 1000, estimatedCents: 0, unknown: 2 }
+    const work = { purpose: 'Work', money: { reportedCents: 1000, estimatedCents: 0, unknown: 0 } }
+    const absent = renderToStaticMarkup(
+      <Tiles report={{ ...base, spend: { total, days: [], byPurpose: [work] } }} day={today} />,
+    )
+    expect(absent).toContain('<span class="v">0%</span>')
+    expect(absent).toContain('$0.00 of $10.00')
+    const unknownOnly = [work, { purpose: 'Answering', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }]
+    const tile = renderToStaticMarkup(
+      <Tiles report={{ ...base, spend: { total, days: [], byPurpose: unknownOnly } }} day={today} />,
+    )
+    expect(tile).toContain('<span class="v">—</span>')
+    expect(tile).not.toContain('$0.00 of')
+    const panel = renderToStaticMarkup(<WhereItWentPanel byPurpose={unknownOnly} />)
+    expect(panel).toContain('2 unknown')
+    expect(panel).not.toContain('$0.00')
+    expect(panel).not.toContain('>0%<')
+  })
+
   it('draws where it went, triage and discussion as one row, unknown beside its purpose', () => {
     const out = renderToStaticMarkup(<WhereItWentPanel byPurpose={byPurpose} />)
     expect(out).toContain('triage and discussion')
