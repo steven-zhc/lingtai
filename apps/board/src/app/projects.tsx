@@ -1,7 +1,7 @@
 /**
  * The left half of the bar: which repositories there are, and how to add one.
  *
- * **The filter is one of the four, and it is one control** (the-bar.md, *Since
+ * **The filter is one of the three, and it is one control** (the-bar.md, *Since
  * 2026-11-05*). The objects are filter, health, headline — the filter
  * among them, left of the separator. The `<summary>` names the project
  * in view, and the menu under it lists the projects, `recipe` for the project

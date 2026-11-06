@@ -142,7 +142,7 @@ body {
 
 /* --- the right rail -------------------------------------------------------
 
-   Reading, health, and the headline last. A rail rather than four more children
+   Health, and the headline last. A rail rather than more children
    of `.bar` so a narrow window breaks between the filters and this group rather
    than inside it, and so the whole group sits at the far edge, which is where
    the headline has to be. */
