@@ -108,7 +108,9 @@
 .shot-box { border: 0; padding: 0; background: transparent; max-width: 94vw; max-height: 94vh; overflow: auto; }
 .shot-box::backdrop { background: rgba(15, 24, 28, .8); }
 .shot-box img { display: block; width: 100%; max-width: 1440px; height: auto; background: #fff; }
-.shot-box p { margin: 0; padding: 10px 14px; background: var(--surface); color: var(--ink-2); font-size: 14px; }
+.shot-nav { position: sticky; bottom: 0; display: flex; justify-content: center; gap: 8px; padding: 8px; background: var(--surface); border-top: 1px solid var(--rule); }
+.shot-step { font: 600 16px var(--sans); min-width: 44px; min-height: 44px; border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink-2); border-radius: 999px; cursor: pointer; }
+.shot-box p {margin: 0; padding: 10px 14px; background: var(--surface); color: var(--ink-2); font-size: 14px; }
 .home .hero-actions .watch { color: var(--ink-2); text-decoration: none; font-size: 15px; }
 .home .hero-actions .watch:hover { color: var(--accent-ink); }
 .home .replay { border-top: 1px solid var(--rule); }

@@ -319,6 +319,13 @@ describe('the replay receipt', () => {
     expect(html).toContain('width="1440" height="600"')
   })
 
+  it('gives the lightbox tappable previous, next and close controls', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    for (const label of ['Previous screenshot', 'Next screenshot', 'Close']) {
+      expect(html).toContain(`aria-label="${label}"`)
+    }
+  })
+
   it('puts the replay heading after the hero in the page source', async () => {
     const text = await prose()
     expect(text.indexOf('The agent got it wrong. Twice.')).toBeGreaterThan(text.indexOf('Agents do the work'))
