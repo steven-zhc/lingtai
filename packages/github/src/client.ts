@@ -161,6 +161,17 @@ export interface Issue {
    * listing already fetched, as `dependencies` is.
    */
   assignees: string[]
+  /**
+   * The issue this one is a sub-issue of, off `parent_issue_url`, and null when
+   * it has none or the URL is not one we can read. The repository is carried
+   * because a parent may live elsewhere; readers decide what to do about that.
+   */
+  parent: { repository: string; number: number } | null
+  /**
+   * GitHub's `sub_issues_summary`, and **null when it said nothing** — not
+   * `{ total: 0, completed: 0 }`. An epic is `total > completed` (#957).
+   */
+  subIssues: { total: number; completed: number } | null
 }
 
 export interface GitHubClient {
@@ -492,6 +503,26 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     return { blockedBy: open, totalBlockedBy: total }
   }
 
+  /**
+   * The parent named by `parent_issue_url`
+   * (`https://api.github.com/repos/o/r/issues/n`). Refused rather than
+   * repaired, as `dependenciesOf` is: anything else is null.
+   */
+  function parentOf(url: string | null | undefined): Issue['parent'] {
+    const m = typeof url === 'string' ? /^https?:\/\/[^/]+\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(url) : null
+    if (!m) return null
+    const number = Number(m[2])
+    return Number.isSafeInteger(number) && number > 0 ? { repository: m[1]!, number } : null
+  }
+
+  /** `sub_issues_summary`, or null unless both counts are numbers. */
+  function subIssuesOf(summary: { total?: number; completed?: number } | null | undefined): Issue['subIssues'] {
+    if (!summary) return null
+    const { total, completed } = summary
+    if (typeof total !== 'number' || typeof completed !== 'number') return null
+    return { total, completed }
+  }
+
   /** The internal id of an issue in this repository. A 404 throws: there is no such issue to link. */
   async function idOf(number: number): Promise<number> {
     const raw = await request<{ id: number }>('GET', `/repos/${owner}/${repo}/issues/${number}`)
@@ -549,9 +580,13 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     html_url: string
     issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
     assignees?: ({ login?: string } | null)[] | null
+    parent_issue_url?: string | null
+    sub_issues_summary?: { total?: number; completed?: number } | null
   }): Issue {
     return {
       dependencies: dependenciesOf(raw),
+      parent: parentOf(raw.parent_issue_url),
+      subIssues: subIssuesOf(raw.sub_issues_summary),
       // Off the listing, never `/issues/{n}/assignees`: a pass considers every
       // open issue, and one request each would be the cost `dependenciesOf`
       // refuses for the same reason.

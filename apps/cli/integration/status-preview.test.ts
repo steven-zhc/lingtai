@@ -45,6 +45,8 @@ const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?:
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  parent: null,
+  subIssues: null,
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === 'string' ? { name: l, color: null } : l)),
 })

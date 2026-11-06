@@ -443,6 +443,8 @@ export const issue: Issue = {
   url: 'https://example.invalid/7',
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  parent: null,
+  subIssues: null,
 }
 
 export const project: ProjectState = {

@@ -66,7 +66,7 @@ describe('askProject, for a project with no owner', () => {
     // Creation order over the seeded store, not the recipe's kind-priority
     // order — that reordering is `selectRunnable`'s and is bypassed above.
     expect(queue.offered.runnable.map((r) => r.ref)).toEqual(['1', '2'])
-    expect(queue.offered.skipped).toEqual([{ ref: 3, reason: 'excluded-label' }])
+    expect(queue.offered.skipped).toEqual([{ ref: 3, reason: 'excluded-label', parent: null, subIssues: null }])
     expect(queue.runnable.map((r) => r.issue)).toEqual(['1', '2'])
   })
 })

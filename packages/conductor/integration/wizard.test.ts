@@ -83,6 +83,8 @@ const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?:
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  parent: null,
+  subIssues: null,
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === 'string' ? { name: l, color: null } : l)),
 })
@@ -251,10 +253,10 @@ describe('the queue preview', () => {
 
     expect(pass.passedOver).toBe(
       passedOver([
-        { ref: 88, reason: 'excluded-label' },
-        { ref: 99, reason: 'excluded-label' },
-        { ref: 101, reason: 'no-kind' },
-        { ref: 102, reason: 'no-kind' },
+        { ref: 88, reason: 'excluded-label', parent: null, subIssues: null },
+        { ref: 99, reason: 'excluded-label', parent: null, subIssues: null },
+        { ref: 101, reason: 'no-kind', parent: null, subIssues: null },
+        { ref: 102, reason: 'no-kind', parent: null, subIssues: null },
       ]),
     )
     expect(pass.line).toBe('4 runnable · 4 passed over — excluded-label 2, no-kind 2')

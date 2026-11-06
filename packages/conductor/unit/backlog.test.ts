@@ -113,6 +113,8 @@ function fakeGitHub(hooks: { beforeCreate?: () => Promise<void>; afterCreate?: (
         url: `https://example/${212 + issues.length}`,
         dependencies: null,
         assignees: [],
+        parent: null,
+        subIssues: null,
       }
       issues.push(issue)
       const after = afterCreate

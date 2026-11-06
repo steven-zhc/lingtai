@@ -49,6 +49,8 @@ function fakeClient(labels: readonly string[]) {
       state: 'open' as const,
       url: `https://example.invalid/${n}`,
       dependencies: { blockedBy: 0, totalBlockedBy: 0 },
+      parent: null,
+      subIssues: null,
       assignees: [],
     }),
     setLabels: async () => {},
