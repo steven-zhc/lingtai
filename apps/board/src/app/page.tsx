@@ -43,6 +43,7 @@ import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { Footer, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
+import { HomeFrame } from './home-frame.tsx'
 import { Home } from './home.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
@@ -718,8 +719,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     issueUrl(owners.get(card.project) ?? null, card.project, card.ref, ticketSources.get(card.project) ?? null)
 
   return (
-    <>
-      <main>
+    <HomeFrame
+      footer={
+        <Footer
+          day={today}
+          lags={lags}
+          project={only}
+          landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
+        />
+      }
+    >
+      <>
         <TimingMeta timings={timings} />
         <div className="bar">
           {/* An empty span carrying a background, not an `<img>`: which file the
@@ -918,14 +928,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             </section>
           ))}
         </div>
-      </main>
-      {/* Outside `<main>`: a `<footer>` inside it has no `contentinfo` role. */}
-      <Footer
-        day={today}
-        lags={lags}
-        project={only}
-        landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
-      />
-    </>
+      </>
+    </HomeFrame>
   )
 }

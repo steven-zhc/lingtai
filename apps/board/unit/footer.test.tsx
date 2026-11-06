@@ -133,10 +133,11 @@ describe('home page', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
   const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
 
-  it('has no reading or /report link in the bar, and mounts Footer after the columns', () => {
+  it('has no reading or /report link in the bar, and hands Footer to the frame', () => {
     expect(bar).not.toContain('className="reading"')
     expect(bar).not.toContain('/report')
     expect(bar).not.toContain('spendChip')
-    expect(page.indexOf('<Footer')).toBeGreaterThan(page.indexOf('<div className="cols">'))
+    // The frame (#939) renders it after `</main>`; the page only hands it over.
+    expect(page).toMatch(/<HomeFrame\s+footer=\{\s*<Footer/)
   })
 })
