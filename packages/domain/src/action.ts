@@ -32,6 +32,8 @@ export const Assessment = z.object({
   findings: z.array(Finding),
   /** The cold reviewer's summary of the change (0103 §3, #890); absent on a row written before it. */
   summary: z.string().optional(),
+  /** Set when the reviewer read only the first `read` of `of` characters of the diff (#892); absent means not clipped. */
+  clipped: z.object({ read: z.number().int().nonnegative(), of: z.number().int().nonnegative() }).optional(),
 })
 export type Assessment = z.infer<typeof Assessment>
 
@@ -390,22 +392,27 @@ export function designOf(outcome: StepOutcome): Design | null {
 }
 
 /**
- * The review's summary of the change (0103 §3, #890): the last `verdict` action
- * of a `review` step that completed with one. Every reader calls this and none
- * picks its own. `clipped` is left unset until #892.
+ * What the review of the change recorded about itself: the last `verdict`
+ * action of a `review` step that completed, with its `summary` (0103 §3, #890)
+ * and `clipped` (#892) where it has them. `null` when it has neither. Every
+ * reader calls this and none picks its own.
  */
-export function reviewSummaryOf(outcome: StepOutcome): { summary: string; clipped?: boolean } | null {
+export function reviewSummaryOf(
+  outcome: StepOutcome,
+): { summary?: string; clipped?: { read: number; of: number } } | null {
   if (outcome.step !== 'review') return null
-  let found: string | null = null
+  let found: Assessment | null = null
   for (const action of outcome.actions) {
-    if (
-      action.yields === 'verdict' &&
-      action.result._tag === 'Completed' &&
-      typeof action.result.assessment.summary === 'string'
-    )
-      found = action.result.assessment.summary
+    if (action.yields === 'verdict' && action.result._tag === 'Completed') {
+      const a = action.result.assessment
+      if (typeof a.summary === 'string' || a.clipped !== undefined) found = a
+    }
   }
-  return found === null ? null : { summary: found }
+  if (found === null) return null
+  return {
+    ...(typeof found.summary === 'string' ? { summary: found.summary } : {}),
+    ...(found.clipped === undefined ? {} : { clipped: found.clipped }),
+  }
 }
 
 /**

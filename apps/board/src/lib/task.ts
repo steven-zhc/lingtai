@@ -1441,7 +1441,8 @@ async function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise
   const parsed = parseTicketStream(taskId)
   if (!parsed) return null
   const { project, issue } = parsed
-  const state = await loadProject(project).catch(() => null)
+  // A read that fails throws: it is not an unregistered project, and a 404 would say it was.
+  const state = await loadProject(project)
   if (!state) return null
 
   const reduced = reduceTicket(own)
@@ -1504,7 +1505,8 @@ export const loadTicketAnswer = cache(async (taskId: string): Promise<TicketAnsw
   try {
     const parsed = parseTicketStream(taskId)
     if (!parsed) return { ...NO_ANSWER, found: false, problem: 'this id is not a ticket' }
-    const state = await loadProject(parsed.project).catch(() => null)
+    // A failed read is the catch below (found: null, with the problem), never `found: false`.
+    const state = await loadProject(parsed.project)
     if (!state) return { ...NO_ANSWER, found: false, problem: `${parsed.project} is not a registered project` }
     const read = await timed('github.issue', () => readProjectTicket(state, Number(parsed.issue)), {
       failed: (r) => !r.ok,
@@ -1551,7 +1553,8 @@ export const loadTicketAnswer = cache(async (taskId: string): Promise<TicketAnsw
 export async function knowable(taskId: string): Promise<boolean> {
   const parsed = parseTicketStream(taskId)
   if (!parsed) return false
-  return (await loadProject(parsed.project).catch(() => null)) !== null
+  // A failed read throws, so the page errors rather than claiming the project is not registered.
+  return (await loadProject(parsed.project)) !== null
 }
 
 /**

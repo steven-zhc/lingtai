@@ -203,9 +203,14 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
     })
 
-    it('DiffTooLarge: Requeue, EditBodyAndRequeue, Split, Close — no Approve and no GrantFixRound', () => {
+    it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Split, Close — and no GrantFixRound', () => {
       const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+    })
+
+    it('DiffTooLarge: Approve continues at review, waives nothing, and reads the diff clipped (#892)', () => {
+      const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
+      expect(continuationOf(reason, [])).toEqual({ step: 'review', waive: null, readClipped: true })
     })
 
     it('InputNeeded: Requeue, EditBodyAndRequeue, Close — a question wants an answer', () => {

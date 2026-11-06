@@ -358,7 +358,7 @@ export async function resolveWaitHolding(options: ResolveWaitOptions, ticketId: 
   }
 
   if (resolution._tag === 'Approve') {
-    const refused = await checkApprove(options, store, ticketId, block.runId, resolution.onSha, note)
+    const refused = await checkApprove(options, store, ticketId, block.runId, resolution.onSha, note, block.reason)
     if (refused !== null) return refused
   }
 
@@ -573,6 +573,7 @@ async function checkApprove(
   runId: string | null,
   onSha: string,
   note: string,
+  reason: WaitReason,
 ): Promise<ResolveWaitResult | null> {
   if (runId === null) {
     return {
@@ -616,7 +617,13 @@ async function checkApprove(
   // **Approve absorbs the waiver** (#150). A refusal still standing on this
   // sha is waived by this same resolution, and there is no way past it
   // without saying why.
-  const refusing = refusingOn(run, onSha)
+  //
+  // Except where Approve waives nothing: on a `DiffTooLarge` wait it means *review
+  // the clipped diff anyway* (#892), and the refusal on the sha is the very size
+  // stop being approved past, so it needs no note. Any other step's refusal still does.
+  const stoppedAt =
+    reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'DiffTooLarge' ? reason.proposal.from : null
+  const refusing = refusingOn(run, onSha).filter((key) => key.split(':')[0] !== stoppedAt)
   if (refusing.length > 0 && !note) {
     return {
       ok: false,

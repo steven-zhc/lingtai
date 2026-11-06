@@ -19,7 +19,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
-import { RESOLUTION_COPY } from '@/lib/resolution-copy'
+import { clippedApproveCopy, RESOLUTION_COPY } from '@/lib/resolution-copy'
 
 import {
   answerCard,
@@ -75,6 +75,7 @@ export function Decide({
   waitId,
   refusing,
   recommended,
+  clippedLimit,
 }: {
   project: string
   issue: number
@@ -108,6 +109,11 @@ export function Decide({
    * only when it is recommended; an absent recommendation marks no control.
    */
   recommended?: Recommended
+  /**
+   * Set on a `DiffTooLarge` wait (#892): Approve there reviews the first N
+   * characters rather than merging, so the button says that.
+   */
+  clippedLimit?: number
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -143,6 +149,10 @@ export function Decide({
 
   if (done) return <p className="decided">{done}</p>
 
+  const clipped = clippedLimit !== undefined
+  const idle = clipped ? clippedApproveCopy(clippedLimit).title : 'Approve'
+  const busy = clipped ? 'reviewing…' : 'merging…'
+
   if (asking) {
     return (
       <div className="decide">
@@ -160,7 +170,7 @@ export function Decide({
         </label>
         <div className="btnrow">
           <button className="btn pri" disabled={!note.trim() || pending} onClick={() => approve(note)}>
-            {pending ? 'merging…' : 'Approve'}
+            {pending ? busy : idle}
           </button>
           <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
             Cancel
@@ -179,7 +189,7 @@ export function Decide({
           disabled={pending}
           onClick={() => (refusing ? setAsking(true) : approve(''))}
         >
-          {pending ? 'merging…' : 'Approve'}
+          {pending ? busy : idle}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
@@ -867,13 +877,16 @@ export function TriageMove({
   issue: number
   taskId: string
   waitId: WaitId
-  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null }
+  move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null; clippedLimit?: number }
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [, startTransition] = useTransition()
-  const label = RESOLUTION_COPY[move.resolution].title
+  const label =
+    move.resolution === 'Approve' && move.clippedLimit !== undefined
+      ? clippedApproveCopy(move.clippedLimit).title
+      : RESOLUTION_COPY[move.resolution].title
 
   const run = (act: () => Promise<ActionResult>) => {
     setPending(true)

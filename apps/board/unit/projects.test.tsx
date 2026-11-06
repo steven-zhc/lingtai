@@ -163,14 +163,25 @@ describe('which object on the row this is', () => {
    * Line breaks and comment stars are not the claim, so they are collapsed
    * before the membership is read.
    */
-  it('leaves the three what they were, in the code and in the doc', () => {
+  it('names the objects the bar actually renders, in the code', () => {
     const said = (src: string) => src.replace(/[\s*]+/g, ' ')
-    const three = 'filter, health, headline'
+    const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
+    // What the bar draws, read off its markup rather than off its comments.
+    const rendered = [
+      ['filter', bar.includes('<Projects')],
+      ['reading', bar.includes('className="reading"')],
+      ['health', bar.includes('<Health')],
+      ['headline', bar.includes('className="head sig"')],
+    ]
+      .filter(([, present]) => present)
+      .map(([name]) => name)
+    const named = rendered.join(', ')
 
-    // Twice in `page.tsx`: the docstring and the rule it points at.
-    expect(said(page).split(three)).toHaveLength(3)
-    expect(said(read('../src/app/projects.tsx'))).toContain(three)
-    expect(said(read('../../../doc/design/the-bar.md'))).toContain('Three objects: the filter, health, the headline')
+    expect(rendered).toEqual(['filter', 'reading', 'health', 'headline'])
+    // Twice in `page.tsx`, and once in `projects.tsx`: each says exactly what is rendered.
+    expect(said(page).split(named)).toHaveLength(3)
+    expect(said(read('../src/app/projects.tsx'))).toContain(named)
+    expect(said(page)).not.toContain('Three objects')
   })
 
   /** It is a control in the list, and `.reading` is text for the opposite reason. */

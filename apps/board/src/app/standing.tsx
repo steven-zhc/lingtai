@@ -32,7 +32,7 @@ import {
   type QueuedView,
 } from '@/lib/queued'
 import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
-import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle } from '@/lib/resolution-copy'
+import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle, resolutionCopyFor } from '@/lib/resolution-copy'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
 import { stateWord, type DiscussionView, type StandingView, type TaskAnswer } from '@/lib/task'
@@ -1473,7 +1473,7 @@ export function Standing({
                       {resolutionCards.map((tag) => {
                         const visible = standing.state === 'blocked' && allowed.includes(tag)
                         const waitId = standing.waitId
-                        const copy = RESOLUTION_COPY[tag]
+                        const copy = resolutionCopyFor(tag, standing.reason)
                         const fixUnavailable =
                           tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
                         const consequenceOf = (sendable: number | null) =>
@@ -1545,8 +1545,20 @@ export function Standing({
                                   issue={issue}
                                   onSha={standing.awaitingSha}
                                   waitId={waitId}
-                                  refusing={standing.failed.length > 0}
+                                  refusing={
+                                    standing.failed.length > 0 &&
+                                    !(
+                                      standing.reason?._tag === 'ProposedEscalated' &&
+                                      standing.reason.proposal._tag === 'DiffTooLarge'
+                                    )
+                                  }
                                   recommended={recommended === 'Approve' ? 'approve' : null}
+                                  clippedLimit={
+                                    standing.reason?._tag === 'ProposedEscalated' &&
+                                    standing.reason.proposal._tag === 'DiffTooLarge'
+                                      ? standing.reason.proposal.limit
+                                      : undefined
+                                  }
                                 />
                               ) : null}
                               {visible && tag === 'Approve' && standing.awaitingSha === null ? (

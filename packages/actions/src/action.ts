@@ -125,6 +125,8 @@ export interface ActionResult {
   findings: ActionFinding[]
   /** The cold reviewer's summary of the change, where it wrote one (0103 §3, #890). */
   summary?: string
+  /** Set when the reviewer read only the first `read` of `of` characters of an oversized diff, approved to (#892). */
+  clipped?: { read: number; of: number }
   /**
    * **Where this action left the worktree**, and absent on every kind that only
    * judged one (0065 §2, `#268`).
@@ -473,6 +475,12 @@ export interface SentBack {
 export interface ActionContext {
   runId: string
   /**
+   * The head a person approved reviewing **clipped** (#892). The review action
+   * skips its size stop only when this equals `onSha`, so a fix round's new head
+   * is measured again. A fact about this run of the pipeline, as `recheck` is.
+   */
+  readClippedAt?: string
+  /**
    * Records the prompt an agent action is about to hand `runtime.run` (#923),
    * before it does. The pipeline fills it in with the `for` its `RunSpent` will
    * carry, which the action does not know; absent where nothing records.
@@ -679,6 +687,8 @@ export interface PipelineResult {
     findings: ActionFinding[]
     /** The reviewer's summary of the change, where it wrote one. `ActionResult.summary`. */
     summary?: string
+    /** `ActionResult.clipped`. */
+    clipped?: { read: number; of: number }
     /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
     head?: string
     /** Its own word for why it said no, where it has one. `ActionResult.because`. */
@@ -756,6 +766,20 @@ export interface PipelineOptions {
    * have.
    */
   waived?: readonly { readonly name: string; readonly waitId: WaitId }[]
+  /**
+   * Actions that already completed on this head and are **kept rather than run
+   * again** (#892): a clipped review that passed, when a later approval on the
+   * same head (a human signoff) resumes the step. Re-dispatching it would reuse
+   * its deterministic session id, which the runtime refuses. The first action
+   * with each name consumes the entry, as `waived` does.
+   */
+  kept?: readonly {
+    readonly name: string
+    readonly summary?: string
+    readonly findings: readonly ActionFinding[]
+    readonly evidence: string
+    readonly clipped: { readonly read: number; readonly of: number }
+  }[]
 }
 
 /**
@@ -792,8 +816,23 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
   // entry declared under the same name is not the one an approval waived
   // (`PipelineOptions.waived`'s own doc).
   const waiversSpent = new Set<string>()
+  const keptSpent = new Set<string>()
 
   for (const [index, action] of actions.entries()) {
+    const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
+    if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
+      keptSpent.add(kept.name)
+      context.log?.note(`${step}:${action.name}`, 'kept — it already passed on this head, reading it clipped')
+      results.push({
+        action: action.name,
+        verdict: 'passed',
+        evidence: kept.evidence,
+        findings: [...kept.findings],
+        ...(kept.summary === undefined ? {} : { summary: kept.summary }),
+        clipped: kept.clipped,
+      })
+      continue
+    }
     const waiver = options.waived?.find((w) => w.name === action.name && !waiversSpent.has(w.name))
     if (waiver !== undefined) {
       waiversSpent.add(waiver.name)
@@ -911,6 +950,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       ...(result.head === undefined ? {} : { head: result.head }),
       // Spread for `head`'s reason: no summary is an absent key (#890).
       ...(result.summary === undefined ? {} : { summary: result.summary }),
+      ...(result.clipped === undefined ? {} : { clipped: result.clipped }),
       // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
       // same `?? "action-refused"` fallback: an explicit `undefined` would be a
       // kind claiming to have a word for its refusal and then not having one.

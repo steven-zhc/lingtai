@@ -76,8 +76,9 @@ import { Rail, Segs } from './rail.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Three objects now — filter,
- * health, headline — and the rule that keeps it three is stated at the
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Four objects still — filter,
+ * reading, health, headline — until the reading moves to a footer
+ * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps it four is stated at the
  * end of the bar below, where the next chip would be added.
  *
  * **And so did the card, and two of its thirteen objects were sequences.** Same
@@ -716,7 +717,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <span className="sep" />
         {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
-            three the rule below names, it has been a list of tabs since #81,
+            four the rule below names, it has been a list of tabs since #81,
             and a list gaining an action at its end is that object rather than
             a fifth one (#216). */}
         <Projects filters={filters} only={only} app={hasGitHubAuth()} />
@@ -758,7 +759,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           </Link>
           {/* `/report` is a second way out of the reading and not a fifth
               object: the same tab-inside-the-object argument #216 made for
-              the `+`, and for the same reason the row still counts three
+              the `+`, and for the same reason the row still counts four
               (the-bar.md). */}
           <Link
             className="reading"
@@ -807,9 +808,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               is amber — it is reserved for "a human is the thing being waited
               on" — and it is the *only* one, because a second amber dilutes the
               first, which is the entire reason the palette carries the rule.
-              Nothing waiting is the same sentence at ordinary weight and no
-              colour at all: a bar where everything is emphasised is a bar where
-              nothing is. */}
+              With nothing waiting there is no headline at all: the Waiting
+              column's own empty line says so, and a bar where everything is
+              emphasised is a bar where nothing is. */}
           {waiting > 0 ? (
             <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
               {`${waiting} waiting on you`}
@@ -828,7 +829,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               A bar carries what changes what you do next, and answers two
               questions and no third: *is anything waiting on me?* and *is the
               system doing what the code says?* Anything added here has to be
-              argued against the three that are left — filter, health,
+              argued against the four that are left — filter, reading, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend and the pass
               limits are on `/spend`.

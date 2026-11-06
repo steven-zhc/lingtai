@@ -1188,6 +1188,50 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
         onSha: approvedOnSha,
+        // `Approve` on a `DiffTooLarge` wait (#892), keyed to the head it approved. Carried
+        // forward from every such approval on this run at this head, as waivers are, so a
+        // later approval on the same head (a signoff after the clipped review) does not
+        // measure the unchanged diff again. A new head (a fix round) matches none.
+        ...(waitsFromState(reduced).some(
+          (w) =>
+            w.resolution?._tag === 'Approve' &&
+            w.resolution.onSha === approvedOnSha &&
+            w.reason._tag === 'ProposedEscalated' &&
+            w.reason.proposal._tag === 'DiffTooLarge' &&
+            w.reason.run.runId === options.continuing!.runId &&
+            w.reason.proposal.from === next.step,
+        )
+          ? {
+              readClipped: {
+                onSha: approvedOnSha,
+                // A clipped review that already passed on this head is kept, never dispatched
+                // again: its session id is deterministic and the runtime refuses a reused one.
+                kept: stepOutcomesOf(runEvents)
+                  .filter((o) => o.step === next.step)
+                  .flatMap((o) =>
+                    o.actions.flatMap((a) =>
+                      a.yields === 'verdict' &&
+                      a.onSha === approvedOnSha &&
+                      a.result._tag === 'Completed' &&
+                      a.result.assessment.verdict === 'accepted' &&
+                      a.result.assessment.clipped !== undefined
+                        ? [
+                            {
+                              name: a.name,
+                              ...(a.result.assessment.summary === undefined
+                                ? {}
+                                : { summary: a.result.assessment.summary }),
+                              findings: a.result.assessment.findings,
+                              evidence: a.evidence,
+                              clipped: a.result.assessment.clipped,
+                            },
+                          ]
+                        : [],
+                    ),
+                  ),
+              },
+            }
+          : {}),
         // The wait this continuation resumes: a fresh UUID per wait, so it is
         // what tells one continuation's judge from the next one's (#580).
         resumedWaitId: approvedWaitId,
@@ -4353,6 +4397,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 from: {
                   step: continuation.step,
                   waive: continuation.waive,
+                  ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                   roundsSpent: continuation.roundsSpent,
                   ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                   ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),

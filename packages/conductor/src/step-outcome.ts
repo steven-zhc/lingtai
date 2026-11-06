@@ -124,7 +124,11 @@ function notReachedOf(action: Action, onSha: string): DomainAction {
 /** No `default` — a new `ActionVerdict` must be given a cell here. */
 function verdictResultOf(outcome: ActionOutcomeEntry): ResultOf<'verdict'> {
   // Spread, so no summary is an absent key and not `summary: undefined` (#890).
-  const summary = outcome.summary === undefined ? {} : { summary: outcome.summary }
+  const summary = {
+    ...(outcome.summary === undefined ? {} : { summary: outcome.summary }),
+    // Likewise (#892): not clipped is an absent key.
+    ...(outcome.clipped === undefined ? {} : { clipped: outcome.clipped }),
+  }
   switch (outcome.verdict) {
     case 'waived':
       return { _tag: 'Waived', waitId: outcome.waitId! }
