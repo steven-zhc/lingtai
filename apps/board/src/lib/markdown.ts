@@ -8,6 +8,7 @@
  * |---|---|
  * | `ticket-body` — a GitHub issue body | **rendered**, sanitised, no raw HTML, remote images blocked |
  * | `prompt` — the document an agent was given | **raw**, with a rendered view one click away |
+ * | `summary` — the reviewer's summary of a change (0103 §3) | **rendered inline**: paragraphs, `code`, emphasis and strong only |
  * | `log` — gate output, a failed run's detail, a retired repair's detail, everything else | **never** |
  *
  * **Never sniffed.** A build log is full of things that parse as markdown and
@@ -49,12 +50,14 @@
  * claim about the author, which is the only thing that settles whether markdown
  * is the right reading of the bytes.
  */
-export type DocumentSource = 'ticket-body' | 'prompt' | 'log'
+export type DocumentSource = 'ticket-body' | 'prompt' | 'summary' | 'log'
 
 /** What the page is allowed to do with a source's documents. */
 export type Rendering =
   /** Markdown, sanitised. */
   | 'rendered'
+  /** Markdown limited to `p`, `code`, `em` and `strong`; anything else shows as its text. */
+  | 'inline'
   /** Raw, with a rendered view offered beside it. */
   | 'on request'
   /** Raw, and nothing else. No renderer ever sees it. */
@@ -63,6 +66,7 @@ export type Rendering =
 const RENDERING: Record<DocumentSource, Rendering> = {
   'ticket-body': 'rendered',
   prompt: 'on request',
+  summary: 'inline',
   log: 'never',
 }
 
@@ -84,4 +88,46 @@ export function renderingFor(source: DocumentSource): Rendering {
 export function sourceOfPayloadDocument(type: string | undefined, field: string): DocumentSource {
   if (type === 'RunPrompted' && field === 'prompt') return 'prompt'
   return 'log'
+}
+
+/**
+ * A summary split at its first sentence, which the page shows as the lead.
+ * The sentence ends at `.`, `!` or `?` followed by whitespace or the end, outside
+ * a code span (a run of backticks closed by a run of the same length), and any
+ * `*` or `_` closing emphasis right after the mark stays in the lead; with no
+ * such boundary the whole text is the lead.
+ */
+export function leadOf(summary: string): { lead: string; rest: string } {
+  const text = summary.trim()
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (c === '`') {
+      let n = 1
+      while (text[i + n] === '`') n++
+      // The span closes at the next run of exactly this length; with none, the backticks are literal.
+      let j = i + n
+      let close = -1
+      while (j < text.length) {
+        if (text[j] !== '`') {
+          j++
+          continue
+        }
+        let m = 1
+        while (text[j + m] === '`') m++
+        if (m === n) {
+          close = j + m
+          break
+        }
+        j += m
+      }
+      i = close === -1 ? i + n - 1 : close - 1
+    } else if (c === '.' || c === '!' || c === '?') {
+      let end = i + 1
+      while (text[end] === '*' || text[end] === '_') end++
+      if (end === text.length || /\s/.test(text[end] ?? '')) {
+        return { lead: text.slice(0, end), rest: text.slice(end).trim() }
+      }
+    }
+  }
+  return { lead: text, rest: '' }
 }

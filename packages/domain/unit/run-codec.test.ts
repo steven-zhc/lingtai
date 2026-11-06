@@ -86,3 +86,25 @@ describe('decodeRun refuses another shape', () => {
     expect(() => decodeRun('{', 'task_view', 'pass-x')).toThrow(/not JSON.*lingtai projection rebuild task_view/s)
   })
 })
+
+describe('a stored step without summary or clipped (#893)', () => {
+  it('decodes and re-encodes identically', () => {
+    const base = JSON.parse(encodeRun(emptyAttempt))
+    const step = {
+      step: 'review:x',
+      onSha: 'a',
+      by: null,
+      reason: null,
+      verdict: 'passed',
+      evidence: null,
+      findings: [],
+    }
+    const stored = JSON.stringify({ ...base, steps: { 'review:x': step } })
+    expect(encodeRun(decodeRun(stored, 'task_view'))).toBe(stored)
+    const withSummary = JSON.stringify({
+      ...base,
+      steps: { 'review:x': { ...step, summary: 'It moves.', clipped: { read: 1, of: 2 } } },
+    })
+    expect(encodeRun(decodeRun(withSummary, 'task_view'))).toBe(withSummary)
+  })
+})

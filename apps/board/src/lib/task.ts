@@ -328,6 +328,11 @@ export interface AttemptView {
    */
   awaitingSha: string | null
   steps: StepVerdict[]
+  /**
+   * The reviewer's summary of the change and whether it read a clipped diff (0103 §3, #893).
+   * Null when no review wrote a summary: nothing is shown, and nothing stands in for it.
+   */
+  review: { summary: string; clipped: { read: number; of: number } | null } | null
   /** The step in flight and the round it was entered on (`AttemptState.step`), ISO `since`. */
   stepNow: { step: Step; round: number; since: string } | null
   /**
@@ -1201,6 +1206,7 @@ export function presentAttempt(
     // The sha `lingtai approve` would approve (D3).
     awaitingSha: approvalSha(state),
     steps,
+    review: reviewOf(state),
     stepNow:
       state.step === null
         ? null
@@ -1209,6 +1215,23 @@ export function presentAttempt(
     refusal: refusalOf(state),
     progress,
   }
+}
+
+/**
+ * The summary of the latest review that wrote one. `state.steps` keys are
+ * `step:action`, so several `review:` entries are possible; the reducer drops
+ * every earlier review's summary when a new review round ends, so at most the
+ * latest round's summaries remain and insertion order is not asked to mean
+ * recency. A clip with no summary is nothing: its line sits under one.
+ */
+function reviewOf(state: DomainRunState): AttemptView['review'] {
+  let found: AttemptView['review'] = null
+  for (const s of Object.values(state.steps)) {
+    if (s.step.startsWith('review:') && s.summary !== undefined) {
+      found = { summary: s.summary, clipped: s.clipped ?? null }
+    }
+  }
+  return found
 }
 
 function refusalOf(state: DomainRunState): AttemptView['refusal'] {
