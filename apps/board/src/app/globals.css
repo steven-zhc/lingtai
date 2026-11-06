@@ -2985,6 +2985,60 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   color: #8a3b12;
 }
 
+/* /landed (#895). Everything is prefixed `ld-`. A kind's colour arrives as
+   --kind, one of /report's series; amber is never used, because amber means a
+   person is waited on, and a past decision is written in ink. */
+.ld { gap: 1.25rem; max-width: 1040px; margin: 0 auto; }
+.ld-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
+.ld-header h1 { font: 500 44px/1.05 var(--serif); margin: 0; letter-spacing: -0.01em; }
+.ld-header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.ld-totals { display: flex; gap: 28px; margin: 0; }
+.ld-totals div { text-align: right; }
+.ld-totals dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.ld-totals dd { margin: 2px 0 0; font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
+.ld .add { color: var(--pass); font-weight: 500; }
+.ld .del { color: var(--fail); font-weight: 500; }
+.ld-filter { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--rule); border-radius: 6px; align-self: flex-start; }
+.ld-filter a { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 4px; font-size: 12.5px; color: var(--ink-2); text-decoration: none; }
+.ld-filter a[aria-current] { background: var(--surface-2); color: var(--ink); }
+.ld-filter i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.ld-day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 20px; padding: 18px 0; }
+.ld-date { position: sticky; top: 12px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.ld-date .wd { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
+.ld-date .dn { font: 400 56px/1 var(--serif); }
+.ld-date .my { font-size: 13px; color: var(--ink-2); }
+.ld-date .ct { font-size: 11.5px; color: var(--muted); }
+.ld-date .mix { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 8px; gap: 1px; }
+.ld-rail { list-style: none; margin: 0; padding: 0 0 0 36px; position: relative; display: flex; flex-direction: column; gap: 16px; }
+.ld-rail::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: var(--rule-2); }
+.ld-rail > li { position: relative; }
+.ld-rail > li > time { position: absolute; left: -36px; top: 0; font-size: 11px; color: var(--muted); transform: translateX(-100%); margin-left: 28px; }
+.ld-rail > li::before { content: ""; position: absolute; left: -36px; top: 6px; width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box; }
+.ld-rail > li.card::before { background: var(--ink-2); }
+.ld-rail > li.line::before { border: 1.5px solid var(--ink-2); background: var(--surface); }
+.ld-card { position: relative; overflow: hidden; background: var(--surface); border-radius: 12px; padding: 22px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; gap: 10px; }
+.ld-mark { position: absolute; top: -14px; right: 14px; font: 400 120px/1 var(--serif); opacity: 0.07; pointer-events: none; }
+.ld-caption { margin: 0; font-size: 12.5px; color: var(--muted); }
+.ld-head { font: 700 24px/1.3 var(--sans); }
+.ld-head p, .ld-rest p { margin: 0; }
+.ld-head p { background: linear-gradient(transparent 58%, color-mix(in srgb, var(--kind) 50%, transparent) 58%); display: inline; }
+.ld-rest { font-size: 15px; line-height: 1.7; color: var(--ink-2); }
+.ld-notes { font-size: 13px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
+.ld-notes p { margin: 0; }
+.ld-decision { color: var(--ink); }
+.ld-notes ul { margin: 4px 0 0; padding-left: 18px; }
+.ld-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--muted); }
+.ld-links { margin-left: auto; display: inline-flex; gap: 12px; }
+.ld-sq { display: inline-flex; gap: 2px; vertical-align: middle; }
+.ld-sq i { width: 8px; height: 8px; border-radius: 1px; background: var(--rule-2); }
+.ld-sq i.add { background: var(--pass); }
+.ld-sq i.del { background: var(--fail); }
+.ld-line { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.ld-line .ld-title { flex: 1; min-width: 0; }
+.ld-line .mono { color: var(--muted); font-size: 12px; }
+.ld-more { text-align: center; padding: 12px 0 24px; }
+.ld-earlier { font-size: 13px; }
+
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
 .rp { gap: 1rem; }

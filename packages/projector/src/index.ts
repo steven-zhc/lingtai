@@ -77,6 +77,7 @@ export {
   type TicketReportRow,
 } from './ticket-report.ts'
 export { readTicketReport, type ReadTicketReportOptions } from './read-ticket-report.ts'
+export { readLanded, type ReadLandedOptions } from './read-landed.ts'
 export {
   SPEND_TABLE,
   spendProjectionWith,

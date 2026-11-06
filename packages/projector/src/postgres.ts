@@ -457,6 +457,10 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         args.push(query.project)
         where.push(`project = $${args.length}`)
       }
+      if (query.kind !== undefined) {
+        args.push(query.kind)
+        where.push(`kind = $${args.length}`)
+      }
       if (query.before !== undefined) {
         args.push(query.before.at, query.before.ticket)
         where.push(`(outcome_at, ticket) < ($${args.length - 1}::timestamptz, $${args.length})`)
