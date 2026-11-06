@@ -10,7 +10,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel } from '../src/app/report/charts.tsx'
-import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel } from '../src/app/report/panels.tsx'
+import {
+  CostliestPanel,
+  Filters,
+  KindsPanel,
+  Tiles,
+  TopPanel,
+  WaitsPanel,
+  WhereItWentPanel,
+} from '../src/app/report/panels.tsx'
+import { dayReading, type DaySpendReading } from '../src/lib/day-spend.ts'
 import { reportQuery } from '../src/lib/report.ts'
 
 const NOW = new Date(2026, 9, 28, 12)
@@ -30,6 +39,19 @@ const figures = (over: Partial<LandedFigures> = {}): LandedFigures => ({
   ...over,
 })
 const money = { reportedCents: 500, estimatedCents: 40, unknown: 2 }
+const today = dayReading({ reportedCents: 1200, estimatedCents: 300, unknown: 0 } as never, 50)
+const unread: DaySpendReading = {
+  text: 'today’s spend could not be read: boom',
+  day: null,
+  figure: null,
+  ceilingUsd: undefined,
+}
+const byPurpose = [
+  { purpose: 'Work', money: { reportedCents: 300, estimatedCents: 100, unknown: 0 } },
+  { purpose: 'Answering', money: { reportedCents: 100, estimatedCents: 100, unknown: 1 } },
+  { purpose: 'Triage', money: { reportedCents: 50, estimatedCents: 0, unknown: 0 } },
+  { purpose: 'Discussion', money: { reportedCents: 50, estimatedCents: 0, unknown: 0 } },
+]
 
 describe('the report page', () => {
   it('draws the fix rounds by bucket, stacked by kind, with the figures in the hover', () => {
@@ -160,7 +182,10 @@ describe('the report page', () => {
     const counts = { landed: 4, closed: 1, open: 2 }
     const intervals = { empty: 1, open: 0 }
     const out = renderToStaticMarkup(
-      <Tiles report={{ counts, intervals, landed: figures(), spend: { total: money, days: [] } }} />,
+      <Tiles
+        report={{ counts, intervals, landed: figures(), spend: { total: money, days: [], byPurpose } }}
+        day={today}
+      />,
     )
     expect(out).toContain('25%')
     expect(out).toContain('1h 05m')
@@ -178,8 +203,9 @@ describe('the report page', () => {
             zeroOrOneShare: null,
             fiveOrMoreShare: null,
           }),
-          spend: { total: { reportedCents: 0, estimatedCents: 0, unknown: 0 }, days: [] },
+          spend: { total: { reportedCents: 0, estimatedCents: 0, unknown: 0 }, days: [], byPurpose: [] },
         }}
+        day={today}
       />,
     )
     expect(none).toContain('title="no landed tickets in this window"')
@@ -240,5 +266,101 @@ describe('the report page', () => {
       expect(text).not.toMatch(/--(signal|pass|fail)\b/)
     }
     expect(lib).not.toContain("from './kind-colour")
+  })
+
+  it('tiles spent today: unread is never a figure, no ceiling no meter, a filter says whose', () => {
+    const base = { counts: { landed: 1, closed: 0, open: 0 }, intervals: { empty: 0, open: 0 }, landed: figures() }
+    const spend = { total: { reportedCents: 1000, estimatedCents: 0, unknown: 0 }, days: [], byPurpose }
+    const read = renderToStaticMarkup(<Tiles report={{ ...base, spend }} day={today} />)
+    expect(read).toContain('role="meter"')
+    expect(read).toContain('of $50')
+    const lost = renderToStaticMarkup(<Tiles report={{ ...base, spend }} day={unread} />)
+    expect(lost).toContain('could not be read')
+    expect(lost).not.toContain('role="meter"')
+    const open = renderToStaticMarkup(<Tiles report={{ ...base, spend }} day={{ ...today, ceilingUsd: undefined }} />)
+    expect(open).not.toContain('role="meter"')
+    expect(open).not.toContain('est. of $')
+    const filtered = renderToStaticMarkup(
+      <Tiles report={{ ...base, spend }} day={today} query={{ project: 'lingtai' }} />,
+    )
+    expect(filtered).toContain('the installation')
+  })
+
+  it('shows the answering share, and a dash where nothing was spent', () => {
+    const base = { counts: { landed: 1, closed: 0, open: 0 }, intervals: { empty: 0, open: 0 }, landed: figures() }
+    const out = renderToStaticMarkup(
+      <Tiles
+        report={{
+          ...base,
+          spend: { total: { reportedCents: 500, estimatedCents: 200, unknown: 1 }, days: [], byPurpose },
+        }}
+        day={today}
+      />,
+    )
+    expect(out).toContain('29%')
+    expect(out).toContain('median ~$1.00 per landed ticket + 1 unknown')
+    const zero = renderToStaticMarkup(
+      <Tiles
+        report={{
+          ...base,
+          spend: {
+            total: { reportedCents: 0, estimatedCents: 0, unknown: 2 },
+            days: [],
+            byPurpose: [{ purpose: 'Answering', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }],
+          },
+        }}
+        day={today}
+      />,
+    )
+    expect(zero).toContain('<span class="v">—</span>')
+    expect(zero).toContain('nothing known spent in the window + 2 unknown')
+    expect(zero).not.toContain('>0%<')
+  })
+
+  it('draws where it went, triage and discussion as one row, unknown beside its purpose', () => {
+    const out = renderToStaticMarkup(<WhereItWentPanel byPurpose={byPurpose} />)
+    expect(out).toContain('triage and discussion')
+    expect(out).toContain('$1.00')
+    expect(out).toContain('+ 1 unknown')
+    const none = renderToStaticMarkup(
+      <WhereItWentPanel
+        byPurpose={[{ purpose: 'Work', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }]}
+      />,
+    )
+    expect(none).toContain('nothing spent in the window + 2 unknown')
+    expect(none).not.toContain('$0.00')
+    expect(renderToStaticMarkup(<WhereItWentPanel byPurpose={[]} />)).toContain('nothing spent in the window')
+  })
+
+  it('lists the costliest tickets, a non-landed one with its outcome, unknown never $0.00', () => {
+    const t = (over: Partial<TopTicket>): TopTicket => ({
+      ticket: 'ticket-lingtai-7',
+      kind: 'bug',
+      outcome: 'landed',
+      passes: 1,
+      fixRounds: 2,
+      cost: money,
+      purposeShares: [{ purpose: 'Answering', share: 1 }],
+      waits: [],
+      sentence: '',
+      ...over,
+    })
+    const out = renderToStaticMarkup(
+      <CostliestPanel
+        tickets={[
+          t({}),
+          t({ ticket: 'ticket-lingtai-8', outcome: 'closed' }),
+          t({
+            ticket: 'ticket-lingtai-9',
+            cost: { reportedCents: 0, estimatedCents: 0, unknown: 3 },
+            purposeShares: [],
+          }),
+        ]}
+      />,
+    )
+    expect(out).toContain('href="/task/ticket-lingtai-7"')
+    expect(out).toContain('closed · ')
+    expect(out).toContain('3 unknown')
+    expect(out).not.toContain('$0.00')
   })
 })
