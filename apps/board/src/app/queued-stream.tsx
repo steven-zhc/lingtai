@@ -14,7 +14,14 @@
 import { type ReactNode } from 'react'
 
 import { EMPTY_BOARD_HALF, blockerChip, type BoardHalf } from '@/lib/blocker-state'
-import { type BlockedTicket, type BoardCard, type GithubQueue, type QueueProblem } from '@/lib/board'
+import {
+  type BlockedTicket,
+  type BoardCard,
+  type EpicTicket,
+  type GithubQueue,
+  type HeldTicket,
+  type QueueProblem,
+} from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 
 import { Skeleton } from './skeleton'
@@ -44,6 +51,68 @@ function Problems({ problems }: { problems: readonly QueueProblem[] }) {
         </p>
       ))}
     </>
+  )
+}
+
+function HeldRow({ row, showProject, tag }: { row: HeldTicket | EpicTicket; showProject: boolean; tag: string }) {
+  const dot = kindDot(row.kindColor)
+  return (
+    <li>
+      <span className="id">
+        {dot === null ? null : <span className="kdot" style={{ background: dot }} aria-hidden="true" />}
+        {showProject ? `${row.project} ` : null}#{row.ref} · {row.kind ?? 'no kind'}
+      </span>
+      <span className="ti">{row.title}</span>
+      <span className="hl">{tag}</span>
+    </li>
+  )
+}
+
+/**
+ * The foot of Queued (#955): tickets a person holds and epics with nothing
+ * queued, folded into one closed line so they are counted and named without
+ * taking the column.
+ */
+function HeldFold({
+  held,
+  epics,
+  showProject,
+}: {
+  held: readonly HeldTicket[]
+  epics: readonly EpicTicket[]
+  showProject: boolean
+}) {
+  if (held.length + epics.length === 0) return null
+  return (
+    <details className="heldfold">
+      <summary>
+        {held.length > 0 ? (
+          <>
+            <b>{held.length}</b> held
+          </>
+        ) : null}
+        {held.length > 0 && epics.length > 0 ? ' · ' : null}
+        {epics.length > 0 ? (
+          <>
+            <b>{epics.length}</b> {epics.length === 1 ? 'epic' : 'epics'}
+          </>
+        ) : null}
+        <span className="hw">· a person lifts it</span>
+      </summary>
+      <ul className="heldlist">
+        {held.map((h) => (
+          <HeldRow key={`${h.project}#${h.ref}`} row={h} showProject={showProject} tag={h.label} />
+        ))}
+        {epics.map((e) => (
+          <HeldRow
+            key={`${e.project}#${e.ref}`}
+            row={e}
+            showProject={showProject}
+            tag={`epic · ${e.closed}/${e.total} closed`}
+          />
+        ))}
+      </ul>
+    </details>
   )
 }
 
@@ -148,7 +217,13 @@ export function QueuedAnswered({
   const cards = [...logCards, ...github.cards]
   // A project only GitHub offers can name projects in this column without
   // changing the others (#884): accepted.
-  const projects = new Set([...onBoard, ...github.cards.map((c) => c.project), ...github.blocked.map((b) => b.project)])
+  const projects = new Set([
+    ...onBoard,
+    ...github.cards.map((c) => c.project),
+    ...github.blocked.map((b) => b.project),
+    ...github.held.map((h) => h.project),
+    ...github.epics.map((e) => e.project),
+  ])
   const problems = [...unreadable, ...github.problems]
   const arriving = new Set(github.cards.map((c) => c.taskId))
   const waiting = github.blocked.length
@@ -197,6 +272,7 @@ export function QueuedAnswered({
         />
       ))}
       {unread > 0 ? <p className="qsum">+{unread} more waiting on a blocker</p> : null}
+      <HeldFold held={github.held} epics={github.epics} showProject={projects.size > 1} />
     </>
   )
 }

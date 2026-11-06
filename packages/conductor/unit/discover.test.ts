@@ -120,6 +120,14 @@ describe('considerIssue', () => {
     expect(considerIssue(issue({ number: 5, labels: ['bug', 'agent:followup'] }), queue).skip).toBeNull()
   })
 
+  it("names the first exclude entry in the recipe's order and spelling", () => {
+    const q = { ...queue, exclude: ['Needs-Design', 'agent:wip'] }
+    const held = considerIssue(issue({ number: 6, labels: ['bug', 'agent:wip', 'needs-design'] }), q)
+    expect(held.label).toBe('Needs-Design')
+    expect(considerIssue(issue({ number: 7, labels: ['bug'] }), q).label).toBeNull()
+    expect(considerIssue(issue({ number: 8, labels: [] }), q)).toMatchObject({ skip: 'no-kind', label: null })
+  })
+
   it("honours the recipe's own exclude list", () => {
     expect(considerIssue(issue({ number: 4, labels: ['bug', 'blocked'] }), queue).skip).toBe('excluded-label')
     expect(considerIssue(issue({ number: 5, labels: ['bug', 'Needs-Design'] }), queue).skip).toBe('excluded-label')
@@ -285,10 +293,46 @@ describe('what a pass says it did not take', () => {
   it('counts each reason by name, most first', () => {
     expect(
       passedOver([
-        { ref: 1, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
-        { ref: 2, reason: 'no-kind', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
-        { ref: 3, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
-        { ref: 4, reason: 'blocked-by', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        {
+          ref: 1,
+          reason: 'excluded-label',
+          label: 'agent:wip',
+          title: 't',
+          kind: null,
+          blockedBy: null,
+          parent: null,
+          subIssues: null,
+        },
+        {
+          ref: 2,
+          reason: 'no-kind',
+          label: null,
+          title: 't',
+          kind: null,
+          blockedBy: null,
+          parent: null,
+          subIssues: null,
+        },
+        {
+          ref: 3,
+          reason: 'excluded-label',
+          label: 'agent:wip',
+          title: 't',
+          kind: null,
+          blockedBy: null,
+          parent: null,
+          subIssues: null,
+        },
+        {
+          ref: 4,
+          reason: 'blocked-by',
+          label: null,
+          title: 't',
+          kind: null,
+          blockedBy: null,
+          parent: null,
+          subIssues: null,
+        },
       ]),
     ).toBe('4 passed over — excluded-label 2, blocked-by 1, no-kind 1')
     expect(passedOver([])).toBeNull()
@@ -423,13 +467,23 @@ describe('runnableNow', () => {
       {
         ref: 103,
         reason: 'excluded-label',
+        label: 'agent:wip',
         title: 'issue 103',
         kind: 'bug',
         blockedBy: 0,
         parent: null,
         subIssues: null,
       },
-      { ref: 104, reason: 'no-kind', title: 'issue 104', kind: null, blockedBy: 0, parent: null, subIssues: null },
+      {
+        ref: 104,
+        reason: 'no-kind',
+        label: null,
+        title: 'issue 104',
+        kind: null,
+        blockedBy: 0,
+        parent: null,
+        subIssues: null,
+      },
     ])
   })
 
@@ -455,7 +509,16 @@ describe('runnableNow', () => {
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
     expect(result.skipped).toEqual([
-      { ref: 123, reason: 'blocked-by', title: 'issue 123', kind: 'bug', blockedBy: 2, parent: null, subIssues: null },
+      {
+        ref: 123,
+        reason: 'blocked-by',
+        label: null,
+        title: 'issue 123',
+        kind: 'bug',
+        blockedBy: 2,
+        parent: null,
+        subIssues: null,
+      },
     ])
     expect(result.dependenciesUnread).toBeNull()
   })
@@ -498,7 +561,16 @@ describe('runnableNow', () => {
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
     expect(result.skipped).toEqual([
-      { ref: 123, reason: 'blocked-by', title: 'issue 123', kind: 'bug', blockedBy: 1, parent: null, subIssues: null },
+      {
+        ref: 123,
+        reason: 'blocked-by',
+        label: null,
+        title: 'issue 123',
+        kind: 'bug',
+        blockedBy: 1,
+        parent: null,
+        subIssues: null,
+      },
     ])
     expect(result.dependenciesUnread).toBe('GitHub sent no dependency summary for #122 — it is not held by a blocker')
   })
@@ -539,6 +611,7 @@ describe('runnableNow', () => {
       {
         ref: 403,
         reason: 'excluded-label',
+        label: 'blocked',
         title: 'issue 403',
         kind: 'bug',
         blockedBy: 0,

@@ -1010,6 +1010,29 @@ export function skeletonCount(projects: readonly string[]): number {
   return seen ? Math.min(sum, SKELETON_MOST) : SKELETON_UNKNOWN
 }
 
+export interface HeldTicket {
+  project: string
+  ref: number
+  title: string
+  kind: string | null
+  kindColor: string | null
+  /** The `source.exclude` label that holds it, as the recipe spells it. */
+  label: string
+}
+
+export interface EpicTicket {
+  project: string
+  ref: number
+  title: string
+  kind: string | null
+  kindColor: string | null
+  closed: number
+  total: number
+}
+
+/** The skips the Queued column draws itself, so its note leaves them out. */
+const DRAWN_SKIPS: ReadonlySet<string> = new Set(['blocked-by', 'excluded-label', 'epic'])
+
 export interface GithubQueue {
   /** What GitHub offers that the log has no card for. */
   cards: BoardCard[]
@@ -1019,8 +1042,13 @@ export interface GithubQueue {
   notes: QueueProblem[]
   /** The `blocked-by` skips and their blockers (#954). Not cards: nothing counts them. */
   blocked: BlockedTicket[]
-  /** The `excluded-label` skips, by project and number: a blocker among them reads *held* (#960). Refs only. */
-  held: { project: string; ref: number }[]
+  /**
+   * The `excluded-label` skips (#955): a blocker among them reads *held* (#960),
+   * and the foot of the column names each with the label that holds it.
+   */
+  held: HeldTicket[]
+  /** The `epic` skips (#955): an epic with nothing queued, with how much of it is closed. */
+  epics: EpicTicket[]
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1050,7 +1078,8 @@ export async function githubQueue(
   const problems: QueueProblem[] = []
   const notes: QueueProblem[] = []
   const blocked: BlockedTicket[] = []
-  const held: { project: string; ref: number }[] = []
+  const held: HeldTicket[] = []
+  const epics: EpicTicket[] = []
   let answered = 0
 
   // All of them at once, for the reason `queueFilters` gives (#112).
@@ -1079,7 +1108,27 @@ export async function githubQueue(
       blocked.push({ ...s, kindColor: s.kind === null ? null : (offered.kindColors[s.kind] ?? null) })
     }
     for (const s of offered.skipped) {
-      if (s.reason === 'excluded-label') held.push({ project: filter.project, ref: s.ref })
+      const kindColor = s.kind === null ? null : (offered.kindColors[s.kind] ?? null)
+      if (s.reason === 'excluded-label') {
+        held.push({
+          project: filter.project,
+          ref: s.ref,
+          title: s.title,
+          kind: s.kind,
+          kindColor,
+          label: s.label ?? 'held',
+        })
+      } else if (s.reason === 'epic' && s.subIssues !== null) {
+        epics.push({
+          project: filter.project,
+          ref: s.ref,
+          title: s.title,
+          kind: s.kind,
+          kindColor,
+          closed: s.subIssues.completed,
+          total: s.subIssues.total,
+        })
+      }
     }
     // What the repository says each of its kinds looks like. A project whose
     // queue could not be listed contributes none, and its cards render the
@@ -1087,8 +1136,9 @@ export async function githubQueue(
     lastKindColors.set(filter.project, offered.kindColors)
     const before = cards.length
     // `lingtai status` prints every skip; the column draws the `blocked-by` ones
-    // as cards of their own (#960), so its note counts only the skips it does not.
-    const passed = passedOver(offered.skipped.filter((s) => s.reason !== 'blocked-by'))
+    // as cards (#960) and the held and epic ones as its fold (#955), so its note
+    // counts only the skips it does not.
+    const passed = passedOver(offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason)))
     if (passed !== null) notes.push({ project: filter.project, reason: passed })
     if (offered.dependenciesUnread !== null) {
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
@@ -1152,7 +1202,7 @@ export async function githubQueue(
     }
     lastOffered.set(filter.project, cards.length - before)
   }
-  return { cards, problems, notes, blocked, held, asked: askable.length, answered }
+  return { cards, problems, notes, blocked, held, epics, asked: askable.length, answered }
 }
 
 /**

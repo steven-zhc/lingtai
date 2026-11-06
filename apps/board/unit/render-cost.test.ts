@@ -188,6 +188,7 @@ describe('what GitHub offers', () => {
               {
                 ref: 123,
                 reason: 'blocked-by',
+                label: null,
                 title: 't',
                 kind: null,
                 blockedBy: null,
@@ -197,6 +198,7 @@ describe('what GitHub offers', () => {
               {
                 ref: 9,
                 reason: 'excluded-label',
+                label: 'agent:hold',
                 title: 't',
                 kind: null,
                 blockedBy: null,
@@ -205,7 +207,18 @@ describe('what GitHub offers', () => {
               },
               {
                 ref: 10,
-                reason: 'excluded-label',
+                reason: 'epic',
+                label: null,
+                title: 'e',
+                kind: 'feature',
+                blockedBy: null,
+                parent: null,
+                subIssues: { total: 7, completed: 3 },
+              },
+              {
+                ref: 11,
+                reason: 'no-kind',
+                label: null,
                 title: 't',
                 kind: null,
                 blockedBy: null,
@@ -220,8 +233,14 @@ describe('what GitHub offers', () => {
     )
 
     expect(result.problems).toEqual([])
+    expect(result.held).toEqual([
+      { project: 'lingtai', ref: 9, title: 't', kind: null, kindColor: null, label: 'agent:hold' },
+    ])
+    expect(result.epics).toEqual([
+      { project: 'lingtai', ref: 10, title: 'e', kind: 'feature', kindColor: null, closed: 3, total: 7 },
+    ])
     expect(result.notes).toEqual([
-      { project: 'lingtai', reason: '2 passed over — excluded-label 2' },
+      { project: 'lingtai', reason: '1 passed over — no-kind 1' },
       { project: 'lingtai', reason: DEPENDENCIES_UNREAD },
     ])
   })
