@@ -8,7 +8,7 @@
  * still lists them. All the logic is `buildIndex`, which a test can reach.
  */
 import { loadProjects } from '@lingtai/conductor/projects'
-import { hasGitHubAuth, storeChoice } from '@lingtai/env'
+import { storeChoice } from '@lingtai/env'
 import { readTasks } from '@lingtai/projector/task-view'
 
 import { emptyIfUnbuilt, onBoardProjects } from '@/lib/board'
@@ -19,11 +19,10 @@ export const dynamic = 'force-dynamic'
 const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)))
 
 export async function GET(): Promise<Response> {
-  const app = hasGitHubAuth()
   const choice = storeChoice()
   if ('refused' in choice) {
     const refused = new Error(choice.refused)
-    return Response.json(buildIndex({ tasks: refused, projects: refused, app }))
+    return Response.json(buildIndex({ tasks: refused, projects: refused }))
   }
   const [tasks, logged, registered] = await Promise.all([
     readTasks({}).catch((e: unknown) => {
@@ -41,5 +40,5 @@ export async function GET(): Promise<Response> {
   if (logged instanceof Error) projects = logged
   else if (registered instanceof Error) projects = registered
   else projects = [...logged, ...registered.flatMap((p) => (p.project === null ? [] : [p.project]))]
-  return Response.json(buildIndex({ tasks, projects, app }))
+  return Response.json(buildIndex({ tasks, projects }))
 }

@@ -279,7 +279,8 @@ describe("the bar's amber", () => {
       'filter',
       'menu',
       'tab',
-      'add',
+      'prow',
+      'rcp',
     ]) {
       expect(barClasses.has(c)).toBe(true)
     }

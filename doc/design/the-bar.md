@@ -14,9 +14,9 @@ looked at and not acted on, moves to a footer that every page has. The
 reasoning below, *a chip is not free and the row is the unit*, still holds; it
 is applied to two rows instead of one.
 
-- **The filter** is one control: the project in view, with its recipe and
-  *add a repository* in its menu. `recipe` and `+` are no longer objects of their
-  own.
+- **The filter** is one control: the project in view, with a row per
+  repository in its menu, each carrying its own `recipe` (#948). There is no
+  *add a repository* in it. `recipe` is not an object of its own.
 - **Health** is silent when well: a green dot and nothing else. When it is
   not, one sentence names the fault and the command that fixes it
   (*daemon 17 commits behind · `lingtai restart`*, written bare as every
@@ -178,8 +178,9 @@ Where the five that left went:
 `paused` and `draining` are still chips and still amber-free, because both are
 already absent when there is nothing to say — which is the property that makes a
 chip affordable at all. `recipe` in the filter is the same property, and `#218`
-is the second ticket asked to make `#216`'s argument: one control, naming the
-project in view, absent on `all` where there is no single recipe to name.
+is the second ticket asked to make `#216`'s argument. Since #948 it is a link on
+each repository's row inside the menu, present on `all` too, since the menu and
+not the bar row carries it.
 
 `report` (`#689`) is a third such link inside the reading, beside the one to
 `/spend`: how the pipeline converges, what it landed and what it cost, over a

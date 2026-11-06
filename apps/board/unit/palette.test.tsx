@@ -13,7 +13,6 @@ const card = (issue: string, title: string, project = 'lingtai', state = 'runnin
 const index: Index = buildIndex({
   tasks: [card('874', 'the shape of the bar'), card('12', 'lingtai docs'), card('900', 'empty', 'other', 'waiting')],
   projects: ['lingtai'],
-  app: true,
 })
 
 describe('search', () => {
@@ -37,24 +36,20 @@ describe('search', () => {
     const many = buildIndex({
       tasks: Array.from({ length: 30 }, (_, i) => card(String(100 + i), 'same')),
       projects: [],
-      app: true,
     })
     expect(search(many, 'same')).toHaveLength(8)
   })
-  it('points add-a-repository by whether the App answers', () => {
-    const href = (app: boolean) =>
-      buildIndex({ tasks: [], projects: [], app }).entries.find((e) => e.label === 'add a repository')?.href
-    expect(href(true)).toBe('/setup/repository')
-    expect(href(false)).toBe('/setup/github-app')
+  it('has no entry that adds a repository', () => {
+    expect(buildIndex({ tasks: [], projects: [] }).entries.some((e) => e.label === 'add a repository')).toBe(false)
   })
   it('says a failed read in problems and leaves its group out', () => {
-    const i = buildIndex({ tasks: new Error('boom'), projects: ['lingtai'], app: true })
+    const i = buildIndex({ tasks: new Error('boom'), projects: ['lingtai'] })
     expect(i.problems[0]).toContain('tickets could not be read: boom')
     expect(i.entries.some((e) => e.group === 'Tickets')).toBe(false)
   })
   it('shows an empty title as the number alone', () => {
     expect(index.entries.find((e) => e.href.endsWith('-900'))?.label).toBe('#900 empty')
-    const i = buildIndex({ tasks: [card('5', '')], projects: [], app: true })
+    const i = buildIndex({ tasks: [card('5', '')], projects: [] })
     expect(i.entries.find((e) => e.group === 'Tickets')?.label).toBe('#5')
   })
 })
@@ -147,8 +142,8 @@ describe('the client graph', () => {
 
 describe('the page list', () => {
   const EXCLUDED: Record<string, string> = {
-    '/setup/github-app': 'the target of add a repository, chosen by the server',
-    '/setup/repository': 'the target of add a repository, chosen by the server',
+    '/setup/github-app': "reached from the empty board's link and the wizard, not the palette",
+    '/setup/repository': "reached from the empty board's link and the wizard, not the palette",
     '/setup/wizard': 'a bookmark kept so old links answer something',
     '/dev/waiting': 'a developer page',
   }

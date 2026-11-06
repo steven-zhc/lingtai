@@ -1,24 +1,16 @@
 /**
- * Adding a repository from the board, in all three states (#216).
+ * The project menu: a row per repository, each with its own recipe (#948).
  *
- * The slot the projects live in already was the entry and then stopped being
- * one: with no projects it linked to the wizard, with one it was plain text,
- * and with two it was a filter — so the only routes to a second repository
- * were `lingtai add <owner>/<repo>` and typing `/setup/repository` from
- * memory. The one-project state is the one most installs sit in and the one
- * with nothing at all today, so it is asserted first.
+ * The menu used to be the projects as tabs, one `recipe` for the project in
+ * view, and *add a repository* — a link to a page that cannot add one today. It
+ * is now `all projects` (with two or more), then a row each: the name, which
+ * filters, and at the right its own `recipe`. The add entry is gone from the
+ * menu; the board with no project configured keeps its link to setup (#169),
+ * which is how a first run reaches the wizard.
  *
- * Two claims a reducer cannot catch, which is why they are markup: **every state
- * can reach the wizard**, and **the target follows the App** rather than
- * whether anything is registered — `filters.length === 0` was the proxy for
- * that and the two come apart in both directions.
- *
- * The third claim is about the row. the-bar.md's *a chip is not free, and the
- * row is the unit* counts the filter among its three, so the `+` is inside the
- * rule and not beside it: what makes it allowed is that the filter was already
- * a list of tabs and gained one more. Nothing opens in `.rail`, the three are
- * still the three, and `bar.test.ts` now reads `projects.tsx` so that a class
- * added here is still a class the bar's amber guard has seen.
+ * Claims about markup rather than a reducer, since a reducer alone cannot catch
+ * a row that renders without its link. `bar.test.ts` reads `projects.tsx` so a
+ * class added here is one the bar's amber guard has seen.
  */
 import { readFileSync } from 'node:fs'
 
@@ -30,29 +22,7 @@ import { Projects } from '../src/app/projects.tsx'
 const html = (filters: string[], app: boolean, only?: string) =>
   renderToStaticMarkup(<Projects filters={filters} only={only} app={app} />)
 
-describe('adding a repository from the board', () => {
-  /**
-   * The state that had neither an entry nor a filter, and the one a board with
-   * a single repository — which is most of them — sits in for ever.
-   */
-  it('offers it beside the one project, which had no affordance at all', () => {
-    const out = html(['lingtai'], true)
-
-    expect(out).toContain('lingtai')
-    expect(out).toContain('href="/setup/repository"')
-  })
-
-  /** A list of things gains the action at its end, however long the list is. */
-  it('offers it at the end of the filter, and leaves the filter a filter', () => {
-    const out = html(['lingtai', 'nextloom-ai-admin'], true, 'lingtai')
-
-    expect(out).toContain('href="/"')
-    expect(out).toContain('href="/?project=nextloom-ai-admin"')
-    expect(out).toContain('href="/setup/repository"')
-    // The action is last, after every project.
-    expect(out.indexOf('href="/setup/repository"')).toBeGreaterThan(out.indexOf('nextloom-ai-admin'))
-  })
-
+describe('the empty board', () => {
   /** #169's slot, unchanged: the sentence is the link, and there is no second one. */
   it("keeps the empty board's one object, and does not add a second beside it", () => {
     const out = html([], false)
@@ -63,31 +33,27 @@ describe('adding a repository from the board', () => {
   })
 })
 
-/**
- * The other thing this list leads to (#218): what the project in view is
- * configured to do. One control and not one per project — the-bar.md moved a
- * chip per project *off* the row, and putting one back inside the filter would
- * be the same act with a different parent.
- */
-describe('the recipe view, from the project list', () => {
-  it('offers it for the one project a single-project board is showing', () => {
+describe('a recipe per repository', () => {
+  it('offers it on the one row of a single-project board', () => {
     const out = html(['lingtai'], true)
 
     expect(out).toContain('href="/recipe/lingtai"')
+    expect(out).toContain('class="prow on"')
   })
 
-  it('offers it for the project the filter is on, and names that one', () => {
-    const out = html(['lingtai', 'nextloom-ai-admin'], true, 'nextloom-ai-admin')
+  it('offers each repository its own, on the filter and on all', () => {
+    for (const only of ['nextloom-ai-admin', undefined]) {
+      const out = html(['lingtai', 'nextloom-ai-admin'], true, only)
 
-    expect(out).toContain('href="/recipe/nextloom-ai-admin"')
-    expect(out).not.toContain('href="/recipe/lingtai"')
+      expect(out).toContain('href="/recipe/lingtai"')
+      expect(out).toContain('href="/recipe/nextloom-ai-admin"')
+    }
   })
 
-  /** `all` is not a project, so there is no single recipe to point at. */
-  it('offers nothing on all, where there is no one recipe to show', () => {
-    const out = html(['lingtai', 'nextloom-ai-admin'], true)
+  it('escapes a name a URL must', () => {
+    const out = html(['a b'], true)
 
-    expect(out).not.toContain('/recipe/')
+    expect(out).toContain('href="/recipe/a%20b"')
   })
 
   /** And a board with no project has no recipe either — the slot keeps its one object. */
@@ -109,15 +75,13 @@ describe('where it lands', () => {
     expect(out).not.toContain('/setup/github-app')
   })
 
-  /**
-   * And the other direction: cards can outlive an App's credentials, so a
-   * board with projects and no App is step 0 and not the picker, which would
-   * only tell it there is no App configured yet.
-   */
-  it('sends a board with projects to step 0 when there is no App', () => {
-    for (const out of [html(['lingtai'], false), html(['lingtai', 'esctest'], false)]) {
-      expect(out).toContain('href="/setup/github-app"')
-      expect(out).not.toContain('/setup/repository')
+  /** The menu no longer offers to add one, whatever the App says. */
+  it('offers no way to setup from a menu that lists repositories', () => {
+    for (const app of [true, false]) {
+      for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
+        expect(out).not.toContain('/setup/')
+        expect(out).not.toContain('add a repository')
+      }
     }
   })
 })
@@ -187,7 +151,8 @@ describe('which object on the row this is', () => {
   it('is a tab and not a reading', () => {
     const out = html(['lingtai'], true)
 
-    expect(out).toContain('class="tab add"')
+    expect(out).toContain('class="tab pname"')
+    expect(out).toContain('class="tab rcp"')
     expect(out).not.toContain('reading')
   })
 })
@@ -203,40 +168,31 @@ describe('the filter is one menu', () => {
     expect(out.match(/href=/g)).toHaveLength(1)
   })
 
-  it('names the one project and lists recipe, then add', () => {
+  it('names the one project and lists its row, with its recipe', () => {
     const out = html(['lingtai'], true)
 
     expect(out).toMatch(/<summary>lingtai <span aria-hidden="true">▾<\/span><\/summary>/)
-    expect(ascending(order(out, ['/recipe/lingtai', '/setup/repository']))).toBe(true)
+    expect(ascending(order(out, ['/?project=lingtai', '/recipe/lingtai']))).toBe(true)
     expect(out).not.toContain('aria-current')
+    expect(out).not.toContain('all projects</a>')
   })
 
   it('names all projects on all, and marks all current', () => {
     const out = html(['a', 'b'], true)
 
     expect(out).toContain('<summary>all projects ')
-    expect(ascending(order(out, ['/', '/?project=a', '/?project=b', '/setup/repository']))).toBe(true)
+    expect(ascending(order(out, ['/', '/?project=a', '/recipe/a', '/?project=b', '/recipe/b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
-    expect(out).toMatch(/aria-current="page"[^>]*>all</)
+    expect(out).toMatch(/aria-current="page"[^>]*>all projects</)
+    expect(out).not.toContain('prow on')
   })
 
-  it('names the project in view and puts recipe before add', () => {
+  it('names the project in view, highlights its row and marks its name current', () => {
     const out = html(['a', 'b'], true, 'b')
 
     expect(out).toContain('<summary>b ')
-    expect(ascending(order(out, ['/', '/?project=a', '/?project=b', '/recipe/b', '/setup/repository']))).toBe(true)
+    expect(ascending(order(out, ['/', '/?project=a', '/recipe/a', '/?project=b', '/recipe/b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
-    expect(out).toMatch(/class="tab on"[^>]*aria-current="page"[^>]*>b</)
-  })
-
-  it('links add to the App-dependent target in every state', () => {
-    for (const [filters, only] of [
-      [['a'], undefined],
-      [['a', 'b'], undefined],
-      [['a', 'b'], 'a'],
-    ] as const) {
-      expect(html([...filters], true, only)).toContain('href="/setup/repository"')
-      expect(html([...filters], false, only)).toContain('href="/setup/github-app"')
-    }
+    expect(out).toMatch(/class="prow on"><a class="tab pname" aria-current="page" href="\/\?project=b">b</)
   })
 })
