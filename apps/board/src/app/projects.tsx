@@ -7,7 +7,7 @@
  * in view, and the menu under it lists the projects, `recipe` for the project
  * in view, and *add a repository*. `recipe` (#218) and `+` (#216) are entries
  * in that menu and no longer objects of their own, so nothing here may be
- * cited to put a fifth on the row.
+ * cited to put a fourth on the row.
  *
  * With no project configured there is no menu: the slot is the link to setup
  * (#169), the same object saying *there is nothing here yet*.
@@ -42,7 +42,7 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
   const inView = filters.length === 1 ? filters[0] : only
 
   // Nothing configured is the one board with somewhere to go, and it is the
-  // same object rather than a fifth one: the slot already says *there is
+  // same object rather than a fourth one: the slot already says *there is
   // nothing here yet*, so the sentence is the link (#169).
   if (filters.length === 0) {
     return (
