@@ -66,22 +66,14 @@ const reason = (e: Error): string => e.message.split('\n')[0] ?? 'unknown'
 export function buildIndex({
   tasks,
   projects,
-  app,
 }: {
   tasks: readonly TaskCard[] | Error
   projects: readonly string[] | Error
-  app: boolean
 }): Index {
   const entries: Entry[] = []
   const problems: string[] = []
 
   for (const p of PAGES) entries.push({ group: 'Pages', label: p.label, href: p.href, keys: [p.label, p.href] })
-  entries.push({
-    group: 'Pages',
-    label: 'add a repository',
-    href: app ? '/setup/repository' : '/setup/github-app',
-    keys: ['add a repository', 'setup'],
-  })
 
   const names = new Set<string>()
   if (projects instanceof Error) problems.push(`projects could not be read: ${reason(projects)}`)

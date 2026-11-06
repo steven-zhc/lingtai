@@ -1,13 +1,13 @@
 /**
- * The left half of the bar: which repositories there are, and how to add one.
+ * The left half of the bar: which repositories there are, and each one's recipe.
  *
  * **The filter is one of the three, and it is one control** (the-bar.md, *Since
  * 2026-11-05*). The objects are filter, health, headline — the filter
  * among them, left of the separator. The `<summary>` names the project
- * in view, and the menu under it lists the projects, `recipe` for the project
- * in view, and *add a repository*. `recipe` (#218) and `+` (#216) are entries
- * in that menu and no longer objects of their own, so nothing here may be
- * cited to put a fourth on the row.
+ * in view, and the menu under it is a row per repository: its name, and its own
+ * `recipe` (#218, #948). There is no *add a repository* in it until the page it
+ * led to can add one. The recipe is an entry in that menu and not an object of
+ * its own, so nothing here may be cited to put a fourth on the row.
  *
  * With no project configured there is no menu: the slot is the link to setup
  * (#169), the same object saying *there is nothing here yet*.
@@ -68,38 +68,25 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
         </>
       }
     >
-      <div className="menu">
+      <div className="menu pm">
         {filters.length > 1 ? (
-          <>
-            <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
-              all
-            </Link>
-            {filters.map((p) => (
-              <Link
-                key={p}
-                className={`tab${only === p ? ' on' : ''}`}
-                href={`/?project=${encodeURIComponent(p)}`}
-                {...(only === p ? current : {})}
-              >
-                {p}
-              </Link>
-            ))}
-          </>
-        ) : null}
-        {/* What the project in view is configured to do, and which file each
-            value came from (#218). On `all` there is no single recipe. */}
-        {inView === undefined ? null : (
-          <Link
-            className="tab"
-            href={`/recipe/${encodeURIComponent(inView)}`}
-            title={`what ${inView}'s recipe says today`}
-          >
-            recipe
+          <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
+            all projects
           </Link>
-        )}
-        <Link className="tab add" href={where} title={why}>
-          add a repository
-        </Link>
+        ) : null}
+        {/* A row per repository: its name, which filters, and at the right its
+            own recipe — what it is configured to do, and which file each value
+            came from (#218, #948). */}
+        {filters.map((p) => (
+          <div key={p} className={`prow${inView === p ? ' on' : ''}`}>
+            <Link className="tab pname" href={`/?project=${encodeURIComponent(p)}`} {...(only === p ? current : {})}>
+              {p}
+            </Link>
+            <Link className="tab rcp" href={`/recipe/${encodeURIComponent(p)}`} title={`what ${p}'s recipe says today`}>
+              recipe
+            </Link>
+          </div>
+        ))}
       </div>
     </FilterMenu>
   )
