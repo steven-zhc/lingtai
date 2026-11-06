@@ -199,6 +199,18 @@ export function kindColourOf(kinds: readonly string[]): (kind: string | null) =>
   return (kind) => (kind === null ? OTHER.colour : (by.get(kind)?.colour ?? OTHER.colour))
 }
 
+const POP: Record<string, string> = {
+  'tech-debt': '#ffc65a',
+  feature: '#55e6dd',
+  bug: '#ff8f7e',
+  documentation: '#b9a8ff',
+}
+
+/** The bright marker colour of a kind's headline, keyed on the kind's name (#940), not its series slot. */
+export function kindPopOf(kind: string | null): string {
+  return (kind !== null && Object.hasOwn(POP, kind) ? POP[kind] : undefined) ?? '#c9d3d5'
+}
+
 // --- links -------------------------------------------------------------------------
 
 /** A commit's page, under `issueUrl`'s rule: no owner or no known GitHub source is no link. */

@@ -14,6 +14,7 @@ import {
   diffSquares,
   groupDays,
   kindColourOf,
+  kindPopOf,
   landedHref,
   landedLink,
   landedQuery,
@@ -190,6 +191,14 @@ describe('/landed address and pieces', () => {
     expect(colour(null)).toBe('var(--muted)')
     expect(colour('unheard-of')).toBe('var(--muted)')
     expect(kindColourOf(env.kinds)('feature')).toBe(colour('feature'))
+  })
+
+  it('gives each kind its marker colour by name, and a grey to the rest', () => {
+    expect(kindPopOf('tech-debt')).toBe('#ffc65a')
+    expect(kindPopOf('feature')).toBe('#55e6dd')
+    expect(kindPopOf(null)).toBe('#c9d3d5')
+    expect(kindPopOf('unheard-of')).toBe('#c9d3d5')
+    expect(kindPopOf('constructor')).toBe('#c9d3d5')
   })
 
   it('groups by local day, newest first', () => {

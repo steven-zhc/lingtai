@@ -44,6 +44,12 @@ const serif = localFont({
   display: 'swap',
 })
 
+const poster = localFont({
+  src: [{ path: './fonts/fraunces-latin-700-normal.woff2', weight: '700', style: 'normal' }],
+  variable: '--font-poster',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
   title: 'Lingtai',
   description: 'Event-sourced scheduler for autonomous code agents',
@@ -68,7 +74,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable} ${poster.variable}`}>
       <body>
         {children}
         <Palette />
