@@ -36,7 +36,6 @@ export const PER_GROUP = 8
  */
 export const PAGES: readonly { label: string; href: string }[] = [
   { label: 'board', href: '/' },
-  { label: 'spend', href: '/spend' },
   { label: 'report', href: '/report' },
   { label: 'landed', href: '/landed' },
   { label: 'backlog', href: '/backlog' },

@@ -3,7 +3,7 @@
  * ([0110](../../../../doc/decisions/0110-tokens-on-the-event-money-at-display.md)
  * §7, §11, §13, `#498`).
  *
- * Three readers — `/spend`, the card and the task page — used to read three
+ * Three readers — the report, the card and the task page — used to read three
  * different sources for the same bill: `task_view.cost_usd`, which `RunFinished`
  * assigns once per run and a card therefore shows its *last pass's implement*
  * alone, and `repair_costs`, summed with a null read as zero. This file is the
@@ -18,7 +18,7 @@
  *
  * **Every row goes to exactly one of three arms, and only one of them is
  * money.** `costUsd !== null` is *reported*, counted in cents once and never
- * recomputed from a float a second time (`ledger`'s own rule, carried here).
+ * recomputed from a float a second time (the rule `billOf` keeps).
  * Otherwise the row carries the reducer's stored *estimate* (`estimatedUsd`, 0110 §5) — shown
  * beside the total and never reduced into it (0110 §7). Anything left over is
  * *unknown*, and **no path through this file prints `$0.00` for a bill that has
@@ -37,7 +37,7 @@ export const PURPOSES: readonly Purpose[] = ['Work', 'Answering', 'Judge', 'Tria
 
 /** What one purpose's rows add up to — facts, in three piles, never a price invented here. */
 export interface Bill {
-  /** Cents, summed from rows rounded to the cent once each (`ledger`'s rule). */
+  /** Cents, summed from rows rounded to the cent once each (`billOf`'s rule). */
   reportedCents: number
   /** How many rows reported a figure. */
   reportedRuns: number
@@ -74,7 +74,7 @@ export function totalBill(bills: Readonly<Record<Purpose, Bill>>): Bill {
   return PURPOSES.reduce((sum, p) => addBill(sum, bills[p]), emptyBill())
 }
 
-/** Five empty bills, one per purpose — `billOf`'s own starting point, and `ledger`'s running total. */
+/** Five empty bills, one per purpose — `billOf`'s own starting point, and the running total. */
 export function emptyBills(): Record<Purpose, Bill> {
   return { Work: emptyBill(), Answering: emptyBill(), Judge: emptyBill(), Triage: emptyBill(), Discussion: emptyBill() }
 }

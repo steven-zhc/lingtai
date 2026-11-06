@@ -45,7 +45,6 @@ describe('FooterFetched', () => {
 describe('where the footer is mounted', () => {
   const mounted = [
     'app/task/[id]/layout.tsx',
-    'app/spend/page.tsx',
     'app/report/page.tsx',
     'app/backlog/page.tsx',
     'app/recipe/[project]/page.tsx',

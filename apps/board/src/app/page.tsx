@@ -716,7 +716,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
   // The one number an operator acts on *in the next minute*: how many need me.
   // What it has cost is the other number #81 wanted, and it is a click away on
-  // `/spend` — a running total on a rail glanced at every few seconds is one
+  // `/report` — a running total on a rail glanced at every few seconds is one
   // you learn to stop seeing (`the-bar.md`).
   const waiting = columns.find((c) => c.id === 'waiting')?.cards.length ?? 0
   const queuedColumn = columns.find((c) => c.id === 'queued')
@@ -808,8 +808,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               system doing what the code says?* Anything added here has to be
               argued against the objects that are left — filter, health,
               headline — and not against the empty space beside them. A fact
-              that does not fit that test has a page: spend and the pass
-              limits are on `/spend`.
+              that does not fit that test has a page: spend is on the report
+              and the pass limits are on the recipe page.
 
               **The objects are not all on `.rail`, and #216 is where that
               mattered.** The filter is one of them, so *it is on the other

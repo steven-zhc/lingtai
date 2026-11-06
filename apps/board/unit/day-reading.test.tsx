@@ -1,6 +1,6 @@
 /**
  * `dayReading`, the pure half of the board's day reading: the fetched-prices
- * note is `/spend`'s `text` alone (#677), never the footer's figures.
+ * note is never in `text` (#677) nor the footer's figures.
  */
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -21,16 +21,12 @@ const day = {
 }
 
 describe('dayReading', () => {
-  it('puts the note in text when asked', () => {
-    expect(dayReading(day, 200, { fetchedNote: true }).text).toContain('(18 at fetched LiteLLM prices)')
-  })
-
-  it('leaves it out of text by default', () => {
+  it('leaves the fetched-prices note out of text', () => {
     expect(dayReading(day, 200).text).not.toContain('LiteLLM')
   })
 
   it('hands the footer structured figures, not a string', () => {
-    const r = dayReading(day, 200, { fetchedNote: true })
+    const r = dayReading(day, 200)
     expect(r.day).toBe(day)
     expect(r.figure).toBe('$22.24')
     expect(r.ceilingUsd).toBe(200)

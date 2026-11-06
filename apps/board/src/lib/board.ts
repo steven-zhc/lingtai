@@ -66,15 +66,12 @@ import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress }
 import { savedFixWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
-  addBills,
   billOf,
   currentSpend,
   emptyBill,
-  emptyBills,
   grantedOf,
   withNoSpendFallback,
   type Bill,
-  type Purpose,
   type SpendCurrency,
 } from './spend.ts'
 import { timed } from './timing.ts'
@@ -311,13 +308,13 @@ export interface BoardCard {
  * unconfigured gate point is shown as `skipped` rather than omitted (0025 §2). A
  * default that is invisible when it is off is a default nobody can audit.
  *
- * **On `/spend`, and no longer on the bar.** 0025 §2 asks that a repository be
+ * **On the recipe page, as an attempt, and not on the bar.** 0025 §2 asks that a repository be
  * able to see what it spends without being asked, and it is right — but
  * *visible* is not *permanently on screen*. It changes about once a quarter and
  * cost a chip per project on a rail read at a glance
- * ([the-bar.md](../../../../doc/design/the-bar.md)), so it sits beside the bill
- * it explains instead: what answering refusals spent, and the standing
- * permission that let it (#84).
+ * ([the-bar.md](../../../../doc/design/the-bar.md)), so it sits on the recipe
+ * page (`lib/recipe.ts`) instead: what answering refusals may spend, and the
+ * standing permission that lets it (#84).
  *
  * **`summary` is `attemptCeiling`'s sentence and not the board's own**
  * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -347,8 +344,6 @@ export interface AttemptLimitsView {
 
 export interface Board {
   columns: BoardColumn[]
-  /** One per project whose recipe could be read. */
-  limits: AttemptLimitsView[]
   /**
    * The priority order the Queued column groups by — `source.kinds`, earlier
    * first, which is the order `selectRunnable` sorts on.
@@ -400,12 +395,6 @@ export interface Board {
   askable: AskableFilter[]
   /** The log's task ids, which GitHub's cards must not duplicate. */
   known: Set<string>
-  /**
-   * This board's own `spend` — the same rows every card's bill came from, so
-   * `/spend`'s `ledger` reads the one this render already paid for rather than
-   * asking a second time.
-   */
-  spend: { rows: SpendRow[]; currency: SpendCurrency }
 }
 
 /**
@@ -1307,7 +1296,6 @@ export async function loadBoard(project?: string): Promise<Board> {
     columns: toColumns(fromLog, queued.problems),
     askable: queued.askable,
     known,
-    limits: queued.limits,
     queueOrder: queued.kindOrder,
     ticketSources: queued.ticketSources,
     // Unfiltered, deliberately. This is the list the filter is chosen *from*,
@@ -1318,7 +1306,6 @@ export async function loadBoard(project?: string): Promise<Board> {
     // saying which repository they are looking at, and another one arriving is
     // as much a distraction here as a card would be.
     pending: pending.filter((p) => project === undefined || p.project === project),
-    spend,
   }
 }
 
@@ -1607,73 +1594,6 @@ function byIssueNumber(a: BoardCard, b: BoardCard): number {
 function newestFirst(a: BoardCard, b: BoardCard): number {
   const when = (c: BoardCard) => (c.updatedAt === null ? 0 : Date.parse(c.updatedAt))
   return when(b) - when(a)
-}
-
-/**
- * One repository's — or the board's own — bill, by purpose. See `Purpose`.
- */
-export interface LedgerRow {
-  project: string
-  /** How many cards that is, so the total can say what it totals. */
-  cards: number
-  byPurpose: Record<Purpose, Bill>
-}
-
-/**
- * What the board's cards cost, per repository and in all — the `/spend` page
- * (`#498`, 0110 §7, §11, §13).
- *
- * **Reads `spend` and nothing off the cards.** `row.costUsd`, `t.costUsd` and
- * `repair_costs` are three names for the bill this file used to read off
- * `task_view` — `RunFinished`'s alone, so a card showed its *last pass's
- * implement* and nothing before it, and a null repair summed as zero (0110
- * §13). `rows` is `spend`'s own, read once for the whole board by `loadBoard`.
- *
- * **The cards on the screen decide which rows count, and whose project they
- * count under.** A `SpendRow` whose `ticket` is not a card on this board is
- * not counted — the `/spend` page's own claim is "the cards the board is
- * showing", not a window over the log — and a row's project is the *card's*
- * `project`, never `row.project`: a card can outlive the project that made it.
- *
- * **One reduce, and the total is the sum of the rows as printed.** `billOf`
- * rounds each row to the cent once; grouping the rows by ticket first and
- * summing the cards' own bills, rather than grouping by project directly,
- * changes nothing about what gets summed — a row is still rounded exactly
- * once, inside `billOf` — so a column always adds up to its own footer.
- *
- * **Reads `attempts` off the cards, and otherwise nothing.** A card whose
- * ticket contributed not one row to `spend` — one that predates `RunSpent` —
- * takes the same `withNoSpendFallback` the card's own pill takes (0110 §7):
- * unknown rather than nothing, when `attempts` says it ran.
- */
-export function ledger(
-  columns: readonly BoardColumn[],
-  rows: readonly SpendRow[],
-): { rows: LedgerRow[]; total: LedgerRow } {
-  const cards = columns.flatMap((c) => c.cards)
-
-  const rowsByTicket = new Map<string, SpendRow[]>()
-  for (const row of rows) {
-    if (row.ticket === null) continue
-    const list = rowsByTicket.get(row.ticket)
-    if (list) list.push(row)
-    else rowsByTicket.set(row.ticket, [row])
-  }
-
-  const byProject = new Map<string, { cards: number; byPurpose: Record<Purpose, Bill> }>()
-  let totalBills = emptyBills()
-  for (const card of cards) {
-    const ticketRows = rowsByTicket.get(card.taskId) ?? []
-    const bill = withNoSpendFallback(billOf(ticketRows), card.attempts, ticketRows)
-    totalBills = addBills(totalBills, bill)
-    const row = byProject.get(card.project) ?? { cards: 0, byPurpose: emptyBills() }
-    byProject.set(card.project, { cards: row.cards + 1, byPurpose: addBills(row.byPurpose, bill) })
-  }
-
-  return {
-    rows: [...byProject.entries()].map(([project, r]) => ({ project, cards: r.cards, byPurpose: r.byPurpose })),
-    total: { project: 'all', cards: cards.length, byPurpose: totalBills },
-  }
 }
 
 /**

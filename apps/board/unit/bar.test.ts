@@ -10,17 +10,12 @@
  * and neither is a matter of taste. **The health dot is one indicator over two
  * independent facts**, and the thing a later edit can silently get wrong is the
  * order they are weighed in and whether the one that loses is still reachable.
- * **The spend that left the bar is a ledger now**, and a ledger that does not
- * add up is worse than the chip it replaced.
  */
 import { readFileSync } from 'node:fs'
 
-import type { SpendRow } from '@lingtai/projector'
-import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
 import { bearing, type CodeNews } from '../src/lib/bearing.ts'
-import { ledger, toCard, toColumns } from '../src/lib/board.ts'
 import type { Health } from '../src/lib/health.ts'
 import { stoppedOnTheWire } from '../src/lib/stopped.ts'
 
@@ -306,159 +301,6 @@ describe("the bar's amber", () => {
     for (const [socket, health] of EVERY_STATE) {
       expect(amber).not.toContain(`.bar.dot.${bearing(socket, health, level).tone}`)
     }
-  })
-})
-
-function task(over: Partial<TaskCard> = {}): TaskCard {
-  return {
-    taskId: `ticket-${over.project ?? 'lingtai'}-${over.issue ?? '1'}`,
-    project: 'lingtai',
-    issue: '1',
-    title: 'a task',
-    kind: 'bug',
-    state: 'landed',
-    tier: 'guarded',
-    runId: null,
-    turns: null,
-    passed: 0,
-    failed: 0,
-    waived: 0,
-    approved: 0,
-    baseSha: null,
-    headSha: null,
-    files: null,
-    insertions: null,
-    deletions: null,
-    note: null,
-    updatedAt: new Date('2026-09-10T04:27:22Z'),
-    closedAt: null,
-    attempts: 0,
-    lastAttemptAt: null,
-    awaitingSha: null,
-    awaitingApproval: false,
-    wait: null,
-    answer: null,
-    split: null,
-    triage: { started: null, result: null },
-    triageHeadSha: null,
-    repairPending: false,
-    restarts: 0,
-    restartsOf: 0,
-    ...over,
-  }
-}
-
-/** `spend` fixtures: `round: 0` is work, `round: 1` or above is answering (0039 §3). */
-function spendRow(ticket: string, costUsd: number | null, over: Partial<SpendRow> = {}): SpendRow {
-  return {
-    seq: '1',
-    at: new Date('2026-09-10T04:27:22Z'),
-    streamId: `pass-${ticket}`,
-    ticket,
-    project: null,
-    pass: `pass-${ticket}`,
-    purpose: 'Action',
-    step: 'proposed',
-    action: 'build',
-    round: 0,
-    runtime: 'claude-code',
-    turns: 1,
-    durationMs: 1000,
-    costUsd,
-    usage: [],
-    estimatedUsd: null,
-    estimateFetched: null,
-    grant: null,
-    kind: null,
-    ...over,
-  }
-}
-
-describe('the spend the bar handed to a page', () => {
-  /**
-   * `$488.52` was one figure over two repositories, because a figure per
-   * repository is a chip per repository. The page has room for the split, and
-   * the split is the first thing anybody asks for after the total.
-   */
-  it('splits the same money by repository', () => {
-    const columns = toColumns([
-      toCard(task({ project: 'lingtai', issue: '1' })),
-      toCard(task({ project: 'lingtai', issue: '2' })),
-      toCard(task({ project: 'nextloom-ai-admin', issue: '3' })),
-    ])
-    const rows = [
-      spendRow('ticket-lingtai-1', 2.5),
-      spendRow('ticket-lingtai-1', 0.75, { round: 1 }),
-      spendRow('ticket-lingtai-2', 1.5),
-      spendRow('ticket-nextloom-ai-admin-3', 4.0),
-    ]
-
-    const byProject = ledger(columns, rows).rows
-    expect(byProject.map((r) => r.project)).toEqual(['lingtai', 'nextloom-ai-admin'])
-    expect(byProject.map((r) => r.cards)).toEqual([2, 1])
-    expect(byProject.map((r) => r.byPurpose.Work.reportedCents)).toEqual([400, 400])
-    expect(byProject.map((r) => r.byPurpose.Answering.reportedCents)).toEqual([75, 0])
-  })
-
-  /**
-   * `#84`'s point has to survive the move: answering a refusal is default-on
-   * and spends an agent without being asked again, so its money is its own
-   * column and never added into the work's.
-   */
-  it("keeps answering's spend out of the work's, per repository", () => {
-    const columns = toColumns([toCard(task({ project: 'lingtai' }))])
-    const rows = [spendRow('ticket-lingtai-1', 1.0), spendRow('ticket-lingtai-1', 9.0, { round: 1 })]
-
-    const row = ledger(columns, rows).rows[0]!
-    expect(row.byPurpose.Work.reportedCents).toBe(100)
-    expect(row.byPurpose.Answering.reportedCents).toBe(900)
-  })
-
-  /**
-   * A card can outlive the project that made it, which is why the rows are
-   * built from the cards and not from the register. `retired` is the case that
-   * matters — a repository nothing registers any more, whose cards are still on
-   * the board.
-   */
-  it('puts every card in exactly one row', () => {
-    const columns = toColumns([
-      toCard(task({ project: 'lingtai', issue: '1' })),
-      toCard(task({ project: 'retired', issue: '2' })),
-      // Never claimed, so it cost nothing — still a card, and still counted.
-      toCard(task({ project: 'retired', issue: '3' })),
-    ])
-    const rows = [spendRow('ticket-lingtai-1', 2.5), spendRow('ticket-retired-2', 3.25)]
-
-    const { rows: byProject, total } = ledger(columns, rows)
-    expect(byProject.map((r) => r.project)).toEqual(['lingtai', 'retired'])
-    expect(total.cards).toBe(3)
-  })
-
-  /**
-   * **What is printed adds up.** Three repositories at $0.005 each print $0.01
-   * apiece; a footer summed over the cards and rounded on its own prints $0.01
-   * too — under a column that reads $0.03. The page's comment said that could
-   * not happen, and it could, because the rows and the footer were two reduces.
-   * They are one now, because `billOf` rounds each row to the cent exactly
-   * once, whichever way the rows are grouped.
-   */
-  it('prints a column that adds up to its printed footer', () => {
-    const columns = toColumns(['a', 'b', 'c'].map((project, i) => toCard(task({ project, issue: String(i) }))))
-    const rows = ['a', 'b', 'c'].map((project, i) => spendRow(`ticket-${project}-${i}`, 0.005))
-
-    const { rows: byProject, total } = ledger(columns, rows)
-    const work = (r: (typeof byProject)[number]) => r.byPurpose.Work.reportedCents
-
-    expect(total.byPurpose.Work.reportedCents).toBe(3)
-    expect(byProject.reduce((n, r) => n + work(r), 0)).toBe(total.byPurpose.Work.reportedCents)
-  })
-
-  /** And no row for a repository that has nothing on this board. */
-  it('has nothing to say about a board with nothing on it', () => {
-    const { rows, total } = ledger(toColumns([]), [])
-    expect(rows).toEqual([])
-    expect(total.cards).toBe(0)
-    expect(total.byPurpose.Work.reportedRuns).toBe(0)
   })
 })
 

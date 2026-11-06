@@ -21,27 +21,17 @@ export interface DaySpendReading {
   ceilingUsd: number | undefined
 }
 
-/**
- * The pure half. `text` carries the fetched-prices note only when asked (the
- * `/spend` page); the footer draws `day` and never needs it.
- */
-export function dayReading(
-  day: DaySpend,
-  ceilingUsd: number | undefined,
-  options: { fetchedNote?: boolean } = {},
-): DaySpendReading {
-  return { text: daySpendText(day, ceilingUsd, options), day, figure: dayFigure(day), ceilingUsd }
+/** The pure half. `text` never carries the fetched-prices note; the footer draws `day`. */
+export function dayReading(day: DaySpend, ceilingUsd: number | undefined): DaySpendReading {
+  return { text: daySpendText(day, ceilingUsd), day, figure: dayFigure(day), ceilingUsd }
 }
 
 /** Never throws: a board that cannot read it says so rather than saying nothing. */
-export async function readDayReading(
-  options: { fetchedNote?: boolean } = {},
-  now: Date = new Date(),
-): Promise<DaySpendReading> {
+export async function readDayReading(now: Date = new Date()): Promise<DaySpendReading> {
   try {
     const ceilingUsd = machineDayCeiling()
     const day = daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot())
-    return dayReading(day, ceilingUsd, options)
+    return dayReading(day, ceilingUsd)
   } catch (err) {
     return {
       text: `today's spend could not be read: ${(err as Error).message}`,
