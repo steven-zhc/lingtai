@@ -20,6 +20,7 @@ import { Home } from '@/app/home.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
 import { theHome } from '@/lib/home'
 
+import { FooterFetched } from '../footer-fetched'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -73,49 +74,52 @@ export default async function BacklogPage() {
   const decided = entries.filter((e) => !owed(e))
 
   return (
-    <main className="detail">
-      <div className="bar">
-        <Link className="brand" href="/">
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
-        <span className="sep" />
-        <span>backlog</span>
-        <span className="sep" />
-        <span className="chip idle">{open.length} open</span>
-        <span className="sep" />
-        <span className={`chip ${chip.tone}`} title={chip.title}>
-          {chip.label}
-        </span>
-      </div>
-      <div className="detail-body">
-        <section>
-          <h2>Open</h2>
-          {open.length === 0 ? (
-            <p className="why">
-              {chip.current ? 'nothing open' : `nothing open that this page could read — ${chip.title}`}
-            </p>
-          ) : (
-            <ul>
-              {open.map((e) => (
-                <Entry key={`${e.project}:${e.key}`} entry={e} />
-              ))}
-            </ul>
-          )}
-        </section>
-        <section>
-          <h2>Decided</h2>
-          {decided.length === 0 ? (
-            <p className="why">nothing decided yet</p>
-          ) : (
-            <ul>
-              {decided.map((e) => (
-                <Entry key={`${e.project}:${e.key}`} entry={e} />
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-    </main>
+    <>
+      <main className="detail">
+        <div className="bar">
+          <Link className="brand" href="/">
+            ← Lingtai
+            <Home {...theHome()} />
+          </Link>
+          <span className="sep" />
+          <span>backlog</span>
+          <span className="sep" />
+          <span className="chip idle">{open.length} open</span>
+          <span className="sep" />
+          <span className={`chip ${chip.tone}`} title={chip.title}>
+            {chip.label}
+          </span>
+        </div>
+        <div className="detail-body">
+          <section>
+            <h2>Open</h2>
+            {open.length === 0 ? (
+              <p className="why">
+                {chip.current ? 'nothing open' : `nothing open that this page could read — ${chip.title}`}
+              </p>
+            ) : (
+              <ul>
+                {open.map((e) => (
+                  <Entry key={`${e.project}:${e.key}`} entry={e} />
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h2>Decided</h2>
+            {decided.length === 0 ? (
+              <p className="why">nothing decided yet</p>
+            ) : (
+              <ul>
+                {decided.map((e) => (
+                  <Entry key={`${e.project}:${e.key}`} entry={e} />
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </main>
+      <FooterFetched project={undefined} />
+    </>
   )
 }

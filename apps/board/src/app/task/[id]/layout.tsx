@@ -12,6 +12,7 @@ import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
 import type { Answered } from '../../deferred.tsx'
+import { FooterFetched } from '../../footer-fetched'
 import { Follow, Following } from '../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
 import { DeferredCoords, DeferredStanding, detailClass } from '../../standing.tsx'
@@ -144,85 +145,88 @@ export function TaskBody({
   const spendCurrency = spendChip(task.spendCurrency)
 
   return (
-    <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-      <div className="bar">
-        <Link className="brand" href="/">
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
-        <span className="sep" />
-        {/* Rank 8: one muted line, each identifier once. */}
-        <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
-        <WaitingNav waiting={task.waiting} />
-        {spendCurrency.current ? null : (
-          <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
-            {spendCurrency.label}
-          </span>
-        )}
-        {/* Nothing while the page follows the log; the sentence when it stopped. */}
-        <Following />
-      </div>
+    <>
+      <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
+        <div className="bar">
+          <Link className="brand" href="/">
+            ← Lingtai
+            <Home {...theHome()} />
+          </Link>
+          <span className="sep" />
+          {/* Rank 8: one muted line, each identifier once. */}
+          <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
+          <WaitingNav waiting={task.waiting} />
+          {spendCurrency.current ? null : (
+            <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
+              {spendCurrency.label}
+            </span>
+          )}
+          {/* Nothing while the page follows the log; the sentence when it stopped. */}
+          <Following />
+        </div>
 
-      {/* A link written before the record had tabs, `#attempt-N` or
+        {/* A link written before the record had tabs, `#attempt-N` or
           `#record-ticket`, is sent to the tab it meant. */}
-      <LegacyFragment taskId={task.taskId} />
+        <LegacyFragment taskId={task.taskId} />
 
-      <div className="detail-body">
-        <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
-        {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
-        <DeferredStanding
-          answer={github}
-          untouched={task.events === 0}
-          standing={task.standing}
-          // What is being decided about, named where the decision is. The log
-          // carries the ref and the title; GitHub carries the URL, and a null
-          // one is a page that still says which ticket this is.
-          subject={
-            task.ticket
-              ? {
-                  ref: task.ticket.ref,
-                  title: task.ticket.title,
-                  url: task.ticket.url,
-                  askedGitHub: false,
-                }
-              : null
-          }
-          inFlight={task.inFlight}
-          startEstimate={task.startEstimate}
-          want={task.want}
-          compareUrl={task.ticket?.compareUrl ?? null}
-          taskId={task.taskId}
-          discussions={task.discussions}
-          discussionBill={task.totals.byPurpose.Discussion}
-          project={task.ticket?.project ?? null}
-          // The controls act on a GitHub issue. An id that is not `ticket-<p>-<n>`
-          // has none, and the block states the state without offering a move.
-          issue={issueNumber}
-          // The attempt the state names, which for a running item is the run
-          // in flight — the one `loadTask` reduced with the recipe's bounds.
-          progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
-          // The same budget line the board's card draws under its own rail —
-          // `loadTask`'s, so the two cannot word one ticket's hold two ways.
-          held={task.held}
-          now={now}
-        />
-
-        <section className="record" data-rank="record">
-          <RecordTabRow
+        <div className="detail-body">
+          <UnpushedBanner unpushed={task.standing.unpushed} mirror={task.unpushedMirror} />
+          {/* Ranks 1 to 6: the answer, and the moves, on the first screen. */}
+          <DeferredStanding
+            answer={github}
+            untouched={task.events === 0}
+            standing={task.standing}
+            // What is being decided about, named where the decision is. The log
+            // carries the ref and the title; GitHub carries the URL, and a null
+            // one is a page that still says which ticket this is.
+            subject={
+              task.ticket
+                ? {
+                    ref: task.ticket.ref,
+                    title: task.ticket.title,
+                    url: task.ticket.url,
+                    askedGitHub: false,
+                  }
+                : null
+            }
+            inFlight={task.inFlight}
+            startEstimate={task.startEstimate}
+            want={task.want}
+            compareUrl={task.ticket?.compareUrl ?? null}
             taskId={task.taskId}
-            attempts={task.runs.map((r) => ({
-              attempt: r.attempt,
-              outcome: r.outcome.state,
-              cost: billText(r.costUsd),
-            }))}
-            deciding={task.standing.state === 'blocked' ? (task.standing.deciding?.attempt ?? null) : null}
-            events={task.events}
-            fallback={defaultTabOf(task.standing, task.runs)}
+            discussions={task.discussions}
+            discussionBill={task.totals.byPurpose.Discussion}
+            project={task.ticket?.project ?? null}
+            // The controls act on a GitHub issue. An id that is not `ticket-<p>-<n>`
+            // has none, and the block states the state without offering a move.
+            issue={issueNumber}
+            // The attempt the state names, which for a running item is the run
+            // in flight — the one `loadTask` reduced with the recipe's bounds.
+            progress={task.runs.find((r) => r.runId === task.standing.runId)?.progress ?? null}
+            // The same budget line the board's card draws under its own rail —
+            // `loadTask`'s, so the two cannot word one ticket's hold two ways.
+            held={task.held}
+            now={now}
           />
-          <div className="rbody">{children}</div>
-        </section>
-      </div>
-    </main>
+
+          <section className="record" data-rank="record">
+            <RecordTabRow
+              taskId={task.taskId}
+              attempts={task.runs.map((r) => ({
+                attempt: r.attempt,
+                outcome: r.outcome.state,
+                cost: billText(r.costUsd),
+              }))}
+              deciding={task.standing.state === 'blocked' ? (task.standing.deciding?.attempt ?? null) : null}
+              events={task.events}
+              fallback={defaultTabOf(task.standing, task.runs)}
+            />
+            <div className="rbody">{children}</div>
+          </section>
+        </div>
+      </main>
+      <FooterFetched project={task.ticket?.project ?? undefined} />
+    </>
   )
 }
 
