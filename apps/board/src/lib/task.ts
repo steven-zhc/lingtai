@@ -104,7 +104,7 @@ import {
   type WaitingNeighbour,
 } from './board.ts'
 import { shownOf, type PromptShown } from './expand-prompts.ts'
-import { type HistoryLine, toLine } from './history.ts'
+import { type HistoryLine, summarise, toLine } from './history.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
 import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
@@ -1766,15 +1766,31 @@ export const readAttempts = cache(async (taskId: string) => {
     standing.running =
       enriched === undefined
         ? null
-        : runningPanelOf(enriched, {
-            rows: spend.filter((row) => row.pass === enriched.runId),
-            currency: spendFold.currency,
-            rounds: limits?.rounds ?? null,
-          })
+        : runningPanelOf(
+            enriched,
+            {
+              rows: spend.filter((row) => row.pass === enriched.runId),
+              currency: spendFold.currency,
+              rounds: limits?.rounds ?? null,
+            },
+            newestEvent(
+              streams[claims.findIndex((c) => c.runId === enriched.runId)]?.at(-1),
+              new Map(claims.map((c, i) => [c.runId, i + 1])),
+            ),
+          )
   }
 
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
 })
+
+/** The newest event on an attempt's stream, in the Events list's words (#918). */
+function newestEvent(
+  envelope: Envelope | undefined,
+  attempts: ReadonlyMap<string, number>,
+): { at: string; sentence: string } | null {
+  if (envelope === undefined) return null
+  return { at: envelope.at.toISOString(), sentence: summarise(envelope, { attempts }) }
+}
 
 /**
  * `inFlightOf` for a queued ticket only; an unreadable ceiling or recipe is

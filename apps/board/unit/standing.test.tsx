@@ -1201,6 +1201,7 @@ describe('the block, rendered', () => {
       ask: 'Nothing is needed from you.',
       then: ['review', 'merge'],
       said: [],
+      watch: null,
       meters: {
         runId: 'r1',
         round: { since: '2026-11-05T00:00:00.000Z', budget: '1h', of: 'round 1 of 4' },
@@ -1241,6 +1242,43 @@ describe('the block, rendered', () => {
     expect(html).not.toContain('an agent is working')
     expect(html.match(/data-rank="discussion"/g)).toHaveLength(1)
     expect(html).not.toContain('data-rank="so-what"')
+  })
+
+  it('draws the last event in the running panel, and says possibly stuck when the props make it hold', () => {
+    const at = '2026-11-05T00:00:00.000Z'
+    const running: RunningPanelView = {
+      head: { label: 'Running', step: 'implement', round: null },
+      line: { kind: 'step', step: 'implement', actions: ['agent'] },
+      ask: 'Nothing is needed from you.',
+      then: ['review', 'merge'],
+      said: [null],
+      meters: null,
+      watch: {
+        runId: 'r1',
+        lastEvent: { at, sentence: 'wrote a.ts' },
+        phase: { since: at, budgetMs: null },
+        step: 'implement',
+      },
+    }
+    const draw = (now: number) =>
+      renderToStaticMarkup(
+        <Standing
+          subject={null}
+          standing={{ ...HELD, state: 'running', onYou: false, who: 'an agent is working', question: null, running }}
+          project="lingtai"
+          issue={112}
+          taskId="ticket-lingtai-112"
+          discussions={[]}
+          outgoing={null}
+          queued={null}
+          now={now}
+        />,
+      )
+    const fresh = draw(Date.parse(at) + 5000)
+    expect(fresh).toContain('Last event')
+    expect(fresh).toContain('wrote a.ts')
+    expect(fresh).not.toContain('Possibly stuck:')
+    expect(draw(Date.parse(at) + 30 * 60_000)).toContain('Possibly stuck:')
   })
 
   it('states the state with no move at all when the id is not a work item', () => {

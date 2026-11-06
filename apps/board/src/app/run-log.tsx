@@ -149,6 +149,12 @@ export function useLogTail(
   following: boolean,
   /** Whether a missing file is *not yet* rather than *never*. See `AGAIN_MS`. */
   awaited = false,
+  /**
+   * Ask again after the stream goes away, as an awaited follower does, without
+   * `awaited`'s other readings (a run's log that is live must come back after a
+   * board restart, and must not say `waiting`).
+   */
+  retry = false,
 ): { lines: readonly string[]; state: TailState; writing: boolean | null } {
   const [lines, setLines] = useState<readonly string[]>([])
   const [state, setState] = useState<TailState>('off')
@@ -165,6 +171,14 @@ export function useLogTail(
   // trace that opened and then went away says a daemon was running a moment ago.
   const [misses, setMisses] = useState(0)
   const source = useRef<EventSource | null>(null)
+  const asks = awaited || retry
+  // Read by the error handler when it fires, and not a dependency of `start`:
+  // `retry` goes false when the run lands, and that must not restart an open
+  // tail and blank the log the reader is looking at.
+  const asksNow = useRef(asks)
+  useEffect(() => {
+    asksNow.current = asks
+  }, [asks])
 
   const stop = useCallback(() => {
     source.current?.close()
@@ -175,7 +189,7 @@ export function useLogTail(
     if (source.current) return
     // An awaited follower keeps what it has until a new trace opens: asking
     // again after a removal must not blank the box for the length of a 404.
-    if (!awaited) setLines([])
+    if (!asksNow.current) setLines([])
     // `reading` when the stream opens and not before: a 404 never opens, and a
     // box that said *reading* for the length of one would claim, for a moment,
     // that a daemon had started on a question nothing has picked up.
@@ -184,7 +198,7 @@ export function useLogTail(
     source.current = es
     es.onopen = () => {
       // From byte zero, so what it had is replaced rather than appended to.
-      if (awaited) setLines([])
+      if (asksNow.current) setLines([])
       setMisses(0)
       setWriting(null)
       setState('reading')
@@ -205,6 +219,7 @@ export function useLogTail(
     es.addEventListener('end', (event) => {
       const { ended } = JSON.parse((event as MessageEvent<string>).data) as { ended: Ended }
       setState(ended)
+      setWriting(null)
       // The server closed its side; without this the browser reconnects on its
       // own and re-reads the whole file for ever.
       stop()
@@ -212,6 +227,7 @@ export function useLogTail(
 
     es.addEventListener('trouble', () => {
       setState('trouble')
+      setWriting(null)
       stop()
     })
 
@@ -225,7 +241,9 @@ export function useLogTail(
       )
       // Counted here and not when asking, so a second 404 in a row — the same
       // state, which React would not re-render for — still schedules the next.
-      if (awaited) setMisses((n) => n + 1)
+      // A writer that cannot be heard is unknown, not the last thing it said.
+      setWriting(null)
+      if (asksNow.current) setMisses((n) => n + 1)
       stop()
     }
   }, [id, awaited, stop])
@@ -247,10 +265,13 @@ export function useLogTail(
   // an ending too, for an awaited follower (`asksAgain`).
   // Never while a connection is open or opening: that one has not answered yet.
   useEffect(() => {
-    if (!following || !asksAgain(state, awaited) || source.current !== null) return
+    // A live run's tail (`retry`) asks again only after its connection dropped
+    // (`gone`), never after an ending: the file is deleted when the run lands,
+    // and asking then would blank the lines the reader is looking at.
+    if (!following || !(asksAgain(state, awaited) || (retry && state === 'gone')) || source.current !== null) return
     const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(Math.max(misses - 1, 0)))
     return () => clearTimeout(timer)
-  }, [following, awaited, state, again, misses])
+  }, [following, awaited, retry, state, again, misses])
 
   return { lines, state: reported(state, awaited, misses), writing }
 }
@@ -341,6 +362,8 @@ interface Followed {
   below: boolean
   lines: readonly string[]
   state: TailState
+  /** Whether a writer holds the run log (#132); null unless the run is live and the route has said. */
+  writing: boolean | null
   open: boolean
   setOpen: (open: boolean) => void
   tags: readonly (string | null)[]
@@ -381,10 +404,12 @@ export function FollowedLog({
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
   const open = openFor(opened, shown)
-  const { lines, state } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
+  const { lines, state, writing } = useLogTail(shown ?? '', shown !== null && tailRule(live, open), false, live)
   const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
   return (
-    <FollowedContext.Provider value={{ shown, live, below, lines, state, open, setOpen, tags, place }}>
+    <FollowedContext.Provider
+      value={{ shown, live, below, lines, state, writing: live ? writing : null, open, setOpen, tags, place }}
+    >
       {children}
     </FollowedContext.Provider>
   )
@@ -515,4 +540,9 @@ function say(state: TailState, count: number): string {
   if (state === 'reading') return `${count} lines · following`
   if (state === 'removed') return `${count} lines · the log has been deleted`
   return `${count} lines · ends here`
+}
+
+/** The `writing` bit of the shared tail; null outside a followed, live run. */
+export function useWriting(): boolean | null {
+  return useContext(FollowedContext)?.writing ?? null
 }
