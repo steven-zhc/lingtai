@@ -149,6 +149,12 @@ export function useLogTail(
   following: boolean,
   /** Whether a missing file is *not yet* rather than *never*. See `AGAIN_MS`. */
   awaited = false,
+  /**
+   * Ask again after the stream goes away, as an awaited follower does, without
+   * `awaited`'s other readings (a run's log that is live must come back after a
+   * board restart, and must not say `waiting`).
+   */
+  retry = false,
 ): { lines: readonly string[]; state: TailState; writing: boolean | null } {
   const [lines, setLines] = useState<readonly string[]>([])
   const [state, setState] = useState<TailState>('off')
@@ -165,6 +171,7 @@ export function useLogTail(
   // trace that opened and then went away says a daemon was running a moment ago.
   const [misses, setMisses] = useState(0)
   const source = useRef<EventSource | null>(null)
+  const asks = awaited || retry
 
   const stop = useCallback(() => {
     source.current?.close()
@@ -205,6 +212,7 @@ export function useLogTail(
     es.addEventListener('end', (event) => {
       const { ended } = JSON.parse((event as MessageEvent<string>).data) as { ended: Ended }
       setState(ended)
+      setWriting(null)
       // The server closed its side; without this the browser reconnects on its
       // own and re-reads the whole file for ever.
       stop()
@@ -212,6 +220,7 @@ export function useLogTail(
 
     es.addEventListener('trouble', () => {
       setState('trouble')
+      setWriting(null)
       stop()
     })
 
@@ -220,15 +229,15 @@ export function useLogTail(
     // would need a `fetch` first, and the two sentences are close enough that a
     // second round trip is not worth it.
     es.onerror = () => {
-      setState((was) =>
-        was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, awaited) ? 'gone' : was,
-      )
+      setState((was) => (was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, asks) ? 'gone' : was))
       // Counted here and not when asking, so a second 404 in a row — the same
       // state, which React would not re-render for — still schedules the next.
-      if (awaited) setMisses((n) => n + 1)
+      // A writer that cannot be heard is unknown, not the last thing it said.
+      setWriting(null)
+      if (asks) setMisses((n) => n + 1)
       stop()
     }
-  }, [id, awaited, stop])
+  }, [id, awaited, asks, stop])
 
   // One connection for as long as it is followed, and none at all while it is
   // not. The cleanup is also what closing the tab or navigating away runs — the
@@ -247,10 +256,10 @@ export function useLogTail(
   // an ending too, for an awaited follower (`asksAgain`).
   // Never while a connection is open or opening: that one has not answered yet.
   useEffect(() => {
-    if (!following || !asksAgain(state, awaited) || source.current !== null) return
+    if (!following || !asksAgain(state, asks) || source.current !== null) return
     const timer = setTimeout(() => setAgain((n) => n + 1), againAfter(Math.max(misses - 1, 0)))
     return () => clearTimeout(timer)
-  }, [following, awaited, state, again, misses])
+  }, [following, asks, state, again, misses])
 
   return { lines, state: reported(state, awaited, misses), writing }
 }
@@ -383,7 +392,7 @@ export function FollowedLog({
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
   const open = openFor(opened, shown)
-  const { lines, state, writing } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
+  const { lines, state, writing } = useLogTail(shown ?? '', shown !== null && tailRule(live, open), false, live)
   const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
   return (
     <FollowedContext.Provider

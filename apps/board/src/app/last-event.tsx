@@ -45,7 +45,7 @@ export function LastEvent({ watch, serverNow }: { watch: RunningWatch; serverNow
   return <Ticking key={watch.runId} watch={watch} serverNow={serverNow} />
 }
 
-function Ticking({ watch, serverNow }: { watch: RunningWatch; serverNow: number }) {
+export function Ticking({ watch, serverNow }: { watch: RunningWatch; serverNow: number }) {
   const [now, setNow] = useState(serverNow)
   useEffect(() => {
     setNow(Date.now())
