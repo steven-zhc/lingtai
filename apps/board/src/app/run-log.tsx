@@ -172,6 +172,13 @@ export function useLogTail(
   const [misses, setMisses] = useState(0)
   const source = useRef<EventSource | null>(null)
   const asks = awaited || retry
+  // Read by the error handler when it fires, and not a dependency of `start`:
+  // `retry` goes false when the run lands, and that must not restart an open
+  // tail and blank the log the reader is looking at.
+  const asksNow = useRef(asks)
+  useEffect(() => {
+    asksNow.current = asks
+  }, [asks])
 
   const stop = useCallback(() => {
     source.current?.close()
@@ -229,15 +236,17 @@ export function useLogTail(
     // would need a `fetch` first, and the two sentences are close enough that a
     // second round trip is not worth it.
     es.onerror = () => {
-      setState((was) => (was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, asks) ? 'gone' : was))
+      setState((was) =>
+        was === 'reading' || was === 'gone' || was === 'off' || asksAgain(was, asksNow.current) ? 'gone' : was,
+      )
       // Counted here and not when asking, so a second 404 in a row — the same
       // state, which React would not re-render for — still schedules the next.
       // A writer that cannot be heard is unknown, not the last thing it said.
       setWriting(null)
-      if (asks) setMisses((n) => n + 1)
+      if (asksNow.current) setMisses((n) => n + 1)
       stop()
     }
-  }, [id, awaited, asks, stop])
+  }, [id, awaited, stop])
 
   // One connection for as long as it is followed, and none at all while it is
   // not. The cleanup is also what closing the tab or navigating away runs — the
