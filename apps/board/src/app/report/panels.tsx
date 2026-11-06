@@ -172,28 +172,27 @@ export function Tiles({
 export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['byPurpose'] }) {
   const rows = purposeRows(byPurpose)
   const total = rows.reduce((n, r) => n + centsOf(r.money), 0)
-  if (total === 0) {
-    const unknown = rows.reduce((n, r) => n + r.money.unknown, 0)
-    return <Empty>{`nothing spent in the window${unknownText(unknown)}`}</Empty>
-  }
+  if (rows.length === 0) return <Empty>nothing spent in the window</Empty>
   const width = (cents: number) => `${Number(((cents / total) * 100).toFixed(3))}%`
   return (
     <>
       <div className="sw-bar">
-        {rows.flatMap((r) => [
-          <span
-            key={`${r.series.key}-rep`}
-            className="sw-seg"
-            style={{ width: width(r.money.reportedCents), background: r.series.colour }}
-            title={`${r.series.name}: ${dollars(r.money.reportedCents)} reported`}
-          />,
-          <span
-            key={`${r.series.key}-est`}
-            className="sw-seg est"
-            style={{ width: width(r.money.estimatedCents), background: r.series.colour }}
-            title={`${r.series.name}: ~${dollars(r.money.estimatedCents)} estimated`}
-          />,
-        ])}
+        {total === 0
+          ? null
+          : rows.flatMap((r) => [
+              <span
+                key={`${r.series.key}-rep`}
+                className="sw-seg"
+                style={{ width: width(r.money.reportedCents), background: r.series.colour }}
+                title={`${r.series.name}: ${dollars(r.money.reportedCents)} reported`}
+              />,
+              <span
+                key={`${r.series.key}-est`}
+                className="sw-seg est"
+                style={{ width: width(r.money.estimatedCents), background: r.series.colour }}
+                title={`${r.series.name}: ~${dollars(r.money.estimatedCents)} estimated`}
+              />,
+            ])}
       </div>
       <ul className="sw-rows">
         {rows.map((r) => (

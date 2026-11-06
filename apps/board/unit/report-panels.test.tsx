@@ -348,7 +348,8 @@ describe('the report page', () => {
         byPurpose={[{ purpose: 'Work', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }]}
       />,
     )
-    expect(none).toContain('nothing spent in the window + 2 unknown')
+    expect(none).toContain('2 unknown')
+    expect(none).toContain('no known cost')
     expect(none).not.toContain('$0.00')
     expect(renderToStaticMarkup(<WhereItWentPanel byPurpose={[]} />)).toContain('nothing spent in the window')
   })
