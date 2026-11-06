@@ -10,13 +10,12 @@ import { readControl } from '@lingtai/daemon/control'
 import { hasGitHubAuth, storeChoice } from '@lingtai/env'
 import { projectionLag } from '@lingtai/projector'
 import Link from 'next/link'
-import { type ComponentProps, Fragment, Suspense } from 'react'
+import { type ComponentProps, Suspense } from 'react'
 
 import { type BoardHalf } from '@/lib/blocker-state'
 import {
   emptyNote,
   githubQueue,
-  groupQueue,
   issueUrl,
   loadBoard,
   queuedStanding,
@@ -184,12 +183,15 @@ export function Card({
   issue,
   paused,
   arrive = false,
+  next = false,
 }: {
   card: BoardCard
   showProject: boolean
   issue: string | null
   /** Fades in: GitHub's card, newly on the board (#897). */
   arrive?: boolean
+  /** The card `selectRunnable` takes first (#956). */
+  next?: boolean
   /**
    * Whether the conductor is taking anything at all — one fact about the whole
    * installation, and one of the three states a Queued card can be in (#100).
@@ -262,6 +264,9 @@ export function Card({
         <KindDot card={card} />
         {showProject ? <span className="proj">{card.project} </span> : null}
         <IssueRef href={issue} issue={card.ref} /> · {card.kind}
+        {/* Not amber, and not any of the state colours: "taken first" is a
+            fact about the queue's order, not about a person being waited on. */}
+        {next ? <span className="qnext"> — taken first</span> : null}
       </span>
 
       {/* The whole card title is the link. Anything smaller is a target you
@@ -562,64 +567,6 @@ function Landed({
 }
 
 /**
- * Queued, grouped by kind, in the order the recipe takes them.
- *
- * **Order beats colour here, and it is the only column where that is true.**
- * `source.kinds` is a priority order — earlier wins — so in this column the
- * kind *is* the position, and a heading that says which group is taken next
- * carries what a hue cannot: it tells you what happens, not what a card is.
- * A person had to know that `source.kinds` was ordered to read any of it.
- *
- * The grouping is `groupQueue`'s, not this component's, so the column and
- * `selectRunnable` cannot come to disagree about which ticket is first.
- */
-function Queued({
-  cards,
-  order,
-  showProject,
-  issue,
-  paused,
-  markNext = true,
-  arriving,
-}: {
-  cards: BoardCard[]
-  order: string[]
-  showProject: boolean
-  issue: (card: BoardCard) => string | null
-  paused: boolean
-  /** False while GitHub is still being asked: which group is taken first is not known yet (#884). */
-  markNext?: boolean
-  /** Cards that have just arrived from GitHub, which fade in (#897). */
-  arriving: ReadonlySet<string>
-}) {
-  return (
-    <>
-      {groupQueue(cards, order, markNext).map((group) => (
-        <Fragment key={group.kind}>
-          {/* Not amber, and not any of the state colours. "This is taken first"
-              is a fact about the queue's order, not about a person being
-              waited on — the one thing amber is allowed to mean. */}
-          <p className="qgroup">
-            {group.kind}
-            {group.next ? <span className="qnext"> — taken first</span> : null}
-          </p>
-          {group.cards.map((card) => (
-            <Card
-              key={card.taskId}
-              card={card}
-              showProject={showProject}
-              issue={issue(card)}
-              paused={paused}
-              arrive={arriving.has(card.taskId)}
-            />
-          ))}
-        </Fragment>
-      ))}
-    </>
-  )
-}
-
-/**
  * The three places the page waits for GitHub (#884), each an `await` of the one
  * promise `Page` started and nothing else — what they draw is
  * `queued-stream.tsx`'s, which a test renders without a promise.
@@ -631,8 +578,8 @@ async function AwaitedQueued({
   return <QueuedAnswered github={await queue} {...props} />
 }
 
-async function AwaitedCount({ queue, logCount }: { queue: Promise<GithubQueue>; logCount: number }) {
-  return <QueuedCountAnswered github={await queue} logCount={logCount} />
+async function AwaitedCount({ queue, logCards }: { queue: Promise<GithubQueue>; logCards: BoardCard[] }) {
+  return <QueuedCountAnswered github={await queue} logCards={logCards} />
 }
 
 /**
@@ -858,7 +805,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 <ColumnLabel label={col.label} />
                 {col.id === 'queued' ? (
                   <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
-                    <AwaitedCount queue={queue} logCount={col.cards.length} />
+                    <AwaitedCount queue={queue} logCards={col.cards} />
                   </Suspense>
                 ) : col.id === 'landed' ? (
                   <LandedCount count={col.cards.length} only={only} />
@@ -890,15 +837,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                         logCards={col.cards}
                         onBoard={onBoard}
                         count={skeletonCount(askable.map((f) => f.project))}
-                        list={(cards, showProject, markNext, arriving) => (
-                          <Queued
-                            cards={cards}
-                            order={queueOrder}
+                        order={queueOrder}
+                        list={(card, showProject, next, arrive) => (
+                          <Card
+                            card={card}
                             showProject={showProject}
-                            issue={ticket}
+                            issue={ticket(card)}
                             paused={control.paused}
-                            markNext={markNext}
-                            arriving={arriving}
+                            next={next}
+                            arrive={arrive}
                           />
                         )}
                       />
@@ -909,15 +856,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       unreadable={queuedColumn?.problems ?? []}
                       logCards={col.cards}
                       onBoard={onBoard}
-                      list={(cards, showProject, markNext, arriving) => (
-                        <Queued
-                          cards={cards}
-                          order={queueOrder}
+                      order={queueOrder}
+                      epicHref={(project, ref) =>
+                        issueUrl(owners.get(project) ?? null, project, String(ref), ticketSources.get(project) ?? null)
+                      }
+                      list={(card, showProject, next, arrive) => (
+                        <Card
+                          card={card}
                           showProject={showProject}
-                          issue={ticket}
+                          issue={ticket(card)}
                           paused={control.paused}
-                          markNext={markNext}
-                          arriving={arriving}
+                          next={next}
+                          arrive={arrive}
                         />
                       )}
                       board={boardHalf}

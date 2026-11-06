@@ -676,12 +676,25 @@ body {
    The priority order, said out loud.
 
    `source.kinds` is the order the conductor takes work in — earlier wins — and
-   until #85 the only way to know that was to read the recipe. A heading per
-   kind makes the column's position mean something; the note on the first group
-   that has anything runnable in it says which one is next.
+   the column walks it: cards in that order, an epic's group placed where its
+   first card falls (#956), and the one *taken first* marked on its own card's
+   id line with `.qnext`. There are no kind headings; every card keeps its dot.
 
    Muted, and never `--signal`: this is a fact about the queue's order, and
    amber is reserved for a person being waited on. */
+.egroup { border: 1px solid var(--rule); background: color-mix(in srgb, var(--surface) 55%, transparent); border-radius: 5px; padding: 10px 10px 4px; margin-bottom: 12px; }
+.eg-h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.eg-n { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); text-decoration: none; font-weight: 500; }
+.eg-t { font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eg-h2 { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.eg-hx { min-width: 0; flex: 1; }
+.eg-h2 .eg-h { margin-bottom: 2px; }
+.ering { flex: 0 0 auto; }
+.ering circle { fill: none; stroke-width: 4; }
+.ering .rg-bg { stroke: var(--rule); }
+.ering .rg-landed { stroke: var(--pass); }
+.eg-l2 { margin: 0; font-size: 11.5px; color: var(--muted); }
+.eg-l2 b { color: var(--ink); font-weight: 600; }
 .qgroup {
   margin: 6px 0 0; padding: 0 3px 3px;
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
