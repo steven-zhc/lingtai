@@ -8,6 +8,8 @@ import { type DaySpend, dayFigure, daySpend, daySpendText, startOfLocalDay } fro
 import { machineDayCeiling } from '@lingtai/env'
 import { readRateSnapshot, readSpend } from '@lingtai/projector'
 
+import { dollars } from './report.ts'
+
 export interface DaySpendReading {
   /** The full sentence, for a title or a page. */
   text: string
@@ -48,4 +50,17 @@ export async function readDayReading(
       ceilingUsd: undefined,
     }
   }
+}
+
+/**
+ * The home bar's warning (the-bar.md): once reported plus estimated cents pass
+ * 80 % of the ceiling — the sum `ceilingReached` compares, in integers — the
+ * figures as two, never one sum. Null when unread, unset, or below.
+ */
+export function nearCeiling(day: DaySpend | null, ceilingUsd: number | undefined): string | null {
+  if (day === null || ceilingUsd === undefined) return null
+  const ceilingCents = Math.round(ceilingUsd * 100)
+  if ((day.reportedCents + day.estimatedCents) * 5 < ceilingCents * 4) return null
+  const unknown = day.unknown > 0 ? ` + ${day.unknown} unknown` : ''
+  return `today ${dayFigure(day)} + ~${dollars(day.estimatedCents)} of ${dollars(ceilingCents)}${unknown}`
 }

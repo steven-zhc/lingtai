@@ -304,7 +304,14 @@ export function Said({ said }: { said: Bearing }) {
   )
 }
 
-export function Live({ code }: { code: CodeNews | null }) {
+export function Live({ code, near }: { code: CodeNews | null; near: string | null }) {
   const { socket, health } = useFollow()
-  return <Said said={bearing(socket, health, code)} />
+  return (
+    <>
+      <Said said={bearing(socket, health, code)} />
+      {/* Today's spend, only near the ceiling, after whatever the bearing said
+          and never instead of it. The fail colour, never amber. */}
+      {near ? <span className="near">{near}</span> : null}
+    </>
+  )
 }

@@ -24,7 +24,7 @@ import {
   type GithubQueue,
   LANDED_OPEN,
 } from '@/lib/board'
-import { readDayReading } from '@/lib/day-spend'
+import { nearCeiling, readDayReading } from '@/lib/day-spend'
 import { footerLags } from '@/lib/footer'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
@@ -753,7 +753,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               read. Green and silent when both are true, and a sentence with the
               action in it when either is not. Never amber — that is the
               headline's, below. */}
-            <Health />
+            <Health near={nearCeiling(today.day, today.ceilingUsd)} />
             {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for
