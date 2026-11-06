@@ -451,6 +451,26 @@ agent is never given it. **Every name Lingtai reads for itself begins
 `LINGTAI_`** (#63) — a project's own file keeps its own names, so `DATABASE_URL`
 there is the project's application, never this one.
 
+## New IO is an Effect, and the ratchet only goes down
+
+**0101 §6: every backend function that does IO is an Effect**, and
+`Effect.run*` runs only at a host's edge. #790 moves the code that is not yet;
+`packages/domain/unit/effect-ratchet.test.ts` counts, per package, the `async`
+functions and the `Effect.run*` calls still left, against
+`effect-ratchet.baseline.json`.
+
+**Never raise a number in `effect-ratchet.baseline.json`.** When the ratchet
+goes red because a change added an `async` function or an `Effect.run*`, the
+change is wrong, not the baseline: write the new IO as an Effect
+(`Effect.gen`, `Effect.tryPromise` around a library's promise) and call it from
+the Effect that needs it. A baseline only ever moves down, in the commit that
+removed what it counted. From 2026-10-31 to 2026-11-05 agents raised it from
+920 `async` to 937 to get their own tickets green, and the ratchet held nothing.
+A run that must start a fiber of its own carries its caller's services with
+`Effect.runPromiseWith(yield* Effect.context())`, which the ratchet does not
+count (`packages/conductor/src/schedule.ts`). A diff that raises the baseline is
+a blocking review finding.
+
 ## Commits
 
 **Never write `close`, `closes`, `fixes` or `resolves` next to a `#number` unless
