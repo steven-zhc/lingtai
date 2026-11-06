@@ -8,6 +8,7 @@ import { Bar, DOCS_MENU } from '@/app/chrome'
 import { HomePage } from '@/app/page'
 import { Receipt } from '@/app/receipt'
 import { dollars, receiptAt } from '@/app/replay-receipt'
+import { SHOTS } from '@/app/shots'
 import { parseBooks } from '@/lib/books'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
 
@@ -275,6 +276,54 @@ describe('the replay receipt', () => {
     expect(html).toContain('href="#replay"')
     expect(html).toContain('id="replay"')
     expect(html.indexOf('id="replay"')).toBeGreaterThan(html.indexOf('id="hero-title"'))
+  })
+
+  it('holds the hero and the shots in one row, and the receipt beside the replay', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    const mark = html.indexOf('class="hero-row"')
+    expect(mark).toBeGreaterThan(-1)
+    const start = html.lastIndexOf('<div', mark)
+    // The row's own contents: walk the divs from its opening tag to the one that closes it.
+    let depth = 0
+    let end = -1
+    for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
+      depth += m[0] === '</div>' ? -1 : 1
+      if (depth === 0) {
+        end = start + m.index
+        break
+      }
+    }
+    expect(end).toBeGreaterThan(start)
+    const row = html.slice(start, end)
+    expect(row).toContain('id="hero-title"')
+    expect(row).toContain('shot-tab')
+    expect(row).not.toContain('id="replay"')
+    expect(html.indexOf('class="rcpt')).toBeGreaterThan(html.indexOf('id="replay"'))
+  })
+
+  it('shows the four screenshots with their captions, each linking to its full page', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    expect(SHOTS.map((s) => s.caption)).toEqual([
+      'The board — queued, running, waiting on you, landed',
+      'One ticket — every step, the review, what it cost',
+      "Landed — what changed, with the reviewer's summary",
+      'Report — how the work converges and what it cost',
+    ])
+    for (const s of SHOTS) {
+      const caption = s.caption.replace(/'/g, '&#x27;')
+      expect(html).toContain(`alt="${caption}"`)
+      expect(html).toContain(`>${caption}<`)
+      expect(html).toContain(`href="/img/docs/shot-${s.name}-full.png"`)
+      expect(html).toContain(`src="/img/docs/shot-${s.name}.png"`)
+    }
+    expect(html).toContain('width="1440" height="600"')
+  })
+
+  it('gives the lightbox tappable previous, next and close controls', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    for (const label of ['Previous screenshot', 'Next screenshot', 'Close']) {
+      expect(html).toContain(`aria-label="${label}"`)
+    }
   })
 
   it('puts the replay heading after the hero in the page source', async () => {
