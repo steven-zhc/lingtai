@@ -578,8 +578,8 @@ async function AwaitedQueued({
   return <QueuedAnswered github={await queue} {...props} />
 }
 
-async function AwaitedCount({ queue, logCount }: { queue: Promise<GithubQueue>; logCount: number }) {
-  return <QueuedCountAnswered github={await queue} logCount={logCount} />
+async function AwaitedCount({ queue, logCards }: { queue: Promise<GithubQueue>; logCards: BoardCard[] }) {
+  return <QueuedCountAnswered github={await queue} logCards={logCards} />
 }
 
 /**
@@ -805,7 +805,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 <ColumnLabel label={col.label} />
                 {col.id === 'queued' ? (
                   <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
-                    <AwaitedCount queue={queue} logCount={col.cards.length} />
+                    <AwaitedCount queue={queue} logCards={col.cards} />
                   </Suspense>
                 ) : col.id === 'landed' ? (
                   <LandedCount count={col.cards.length} only={only} />

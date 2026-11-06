@@ -146,8 +146,26 @@ describe('the Queued column once GitHub has answered', () => {
 
   it('counts the log and GitHub together', () => {
     expect(
-      html(<QueuedCountAnswered logCount={1} github={answer({ cards: [card('a', '1'), card('a', '2')] })} />),
+      html(
+        <QueuedCountAnswered
+          logCards={[card('a', '0')]}
+          github={answer({ cards: [card('a', '1'), card('a', '2')] })}
+        />,
+      ),
     ).toContain('>3<')
+  })
+
+  it('leaves a held log card out of the count, as the body does', () => {
+    expect(
+      html(
+        <QueuedCountAnswered
+          logCards={[card('a', '0')]}
+          github={answer({
+            held: [{ project: 'a', ref: 0, title: 't', kind: 'feature', kindColor: null, label: 'agent:hold' }],
+          })}
+        />,
+      ),
+    ).toContain('>0<')
   })
 })
 

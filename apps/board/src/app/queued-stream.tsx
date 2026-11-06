@@ -273,6 +273,12 @@ function QueuedList({
   )
 }
 
+/** The log's cards GitHub does not say are held: a held ticket is in the fold, whatever the log still holds. */
+function withoutHeld(logCards: readonly BoardCard[], github: GithubQueue): BoardCard[] {
+  const heldKeys = new Set(github.held.map((h) => `${h.project}#${h.ref}`))
+  return logCards.filter((c) => !heldKeys.has(`${c.project}#${c.ref}`))
+}
+
 /** The Queued column's body before GitHub has answered: what the log holds, and one line saying more is coming. */
 export function QueuedFallback({
   unreadable,
@@ -345,8 +351,7 @@ export function QueuedAnswered({
 }) {
   // A ticket GitHub says is held is in the fold, whatever the log still holds
   // for it: it is not runnable, so it neither joins a group nor is *taken first*.
-  const heldKeys = new Set(github.held.map((h) => `${h.project}#${h.ref}`))
-  const cards = [...logCards, ...github.cards].filter((c) => !heldKeys.has(`${c.project}#${c.ref}`))
+  const cards = [...withoutHeld(logCards, github), ...github.cards]
   // A project only GitHub offers can name projects in this column without
   // changing the others (#884): accepted.
   const projects = new Set([
@@ -423,6 +428,7 @@ export function QueuedCountPending({ logCount }: { logCount: number }) {
   )
 }
 
-export function QueuedCountAnswered({ logCount, github }: { logCount: number; github: GithubQueue }) {
-  return <span className="ct">{logCount + github.cards.length}</span>
+export function QueuedCountAnswered({ logCards, github }: { logCards: readonly BoardCard[]; github: GithubQueue }) {
+  // The same exclusion the body makes: a held ticket is in the fold, not counted.
+  return <span className="ct">{withoutHeld(logCards, github).length + github.cards.length}</span>
 }
