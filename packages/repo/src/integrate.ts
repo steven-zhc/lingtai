@@ -69,7 +69,7 @@ import {
 } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { Effect, Either } from 'effect'
+import { Effect, Result } from 'effect'
 
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { landingSubject } from './landing-subject.ts'
@@ -373,7 +373,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   const unexpected = (defect: unknown): Effect.Effect<IntegrateResult> => {
     const detail = `the integration failed unexpectedly: ${defect instanceof Error ? defect.message : String(defect)}`
     return refuse('unexpected', detail).pipe(
-      Effect.catchAllDefect(() => Effect.succeed({ ok: false, reason: 'unexpected', detail } as IntegrateResult)),
+      Effect.catchDefect(() => Effect.succeed({ ok: false, reason: 'unexpected', detail } as IntegrateResult)),
     )
   }
 
@@ -574,10 +574,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // reads `Merge branch '<branch>' into HEAD` and never a lane id.
       // `--no-ff` is why `git log --first-parent <base>` reads one line per
       // landing, whether or not the base moved.
-      const mergedIn = yield* Effect.either(
+      const mergedIn = yield* Effect.result(
         at(['merge', '--no-ff', '-m', landingSubject(options.branch), laneBranch], cwd),
       )
-      if (Either.isLeft(mergedIn)) {
+      if (Result.isFailure(mergedIn)) {
         // `-z`: git's own quoting of a path with a non-ASCII, backslash,
         // quote or control character (`core.quotePath`, on by default) turns
         // the name-only `\n`-joined form into a C-quoted string rather than
@@ -596,7 +596,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         if (paths.length === 0) {
           return yield* refuse(
             'unexpected',
-            `${options.branch} does not merge into ${options.base}:\n${mergedIn.left.detail}`,
+            `${options.branch} does not merge into ${options.base}:\n${mergedIn.failure.detail}`,
           )
         }
         const headSha = yield* at(['rev-parse', laneBranch], mirror)
@@ -661,15 +661,15 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // because nothing is wrong with the branch and nobody's judgement is
       // owed. Only a base that beats every one of those pushes becomes an
       // `IntegrationRefused`, at the loop below — see `LostPush`.
-      const pushed = yield* Effect.either(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd))
-      if (Either.isLeft(pushed)) {
+      const pushed = yield* Effect.result(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd))
+      if (Result.isFailure(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
-        if (BASE_PROTECTED.test(pushed.left.detail)) {
-          return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.left.detail}`)
+        if (BASE_PROTECTED.test(pushed.failure.detail)) {
+          return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.failure.detail}`)
         }
-        if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left)
-        return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush
+        if (!PUSH_REJECTED.test(pushed.failure.detail)) return yield* Effect.fail(pushed.failure)
+        return { lostThePush: true, detail: pushed.failure.detail } satisfies LostPush
       }
       // The mirror's `refs/heads/<base>` is Lingtai's own copy of the truth;
       // leaving it stale would make a reader of the mirror alone see a base
@@ -694,7 +694,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
       // system can see has already been handled one line up.
-      Effect.catchAllDefect(unexpected),
+      Effect.catchDefect(unexpected),
     ),
   )
 
@@ -750,5 +750,5 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     // The append at the top and the refusal just above are appends like any
     // other, and `attempt`'s own handlers are inside it and never see them.
     // This is what covers both — and whatever gets past `attempt`'s.
-  }).pipe(Effect.catchAllDefect(unexpected))
+  }).pipe(Effect.catchDefect(unexpected))
 }

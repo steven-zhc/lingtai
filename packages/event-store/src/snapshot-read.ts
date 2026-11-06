@@ -53,7 +53,7 @@ export function readThroughSnapshot<S>(
   return Effect.gen(function* () {
     const key = { streamId, reducer: reducer.name, reducerVersion: reducer.version }
     const row = yield* attempt(() => snapshots.latest(key)).pipe(
-      Effect.catchAll((e) => {
+      Effect.catch((e) => {
         sayOnce(reducer.name, 'latest', e)
         return Effect.succeed(null)
       }),

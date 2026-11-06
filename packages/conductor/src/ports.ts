@@ -166,5 +166,5 @@ export interface RunPorts {
  * `runOnce` actually does, rather than taking a `RunPorts` parameter a host
  * had to unpack from these same two tags.
  */
-export class Repo extends Context.Tag('@lingtai/conductor/Repo')<Repo, RepoPort>() {}
-export class AgentHost extends Context.Tag('@lingtai/conductor/AgentHost')<AgentHost, AgentHostPort>() {}
+export class Repo extends Context.Service<Repo, RepoPort>()('@lingtai/conductor/Repo') {}
+export class AgentHost extends Context.Service<AgentHost, AgentHostPort>()('@lingtai/conductor/AgentHost') {}

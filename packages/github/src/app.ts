@@ -25,7 +25,7 @@ import { createSign } from 'node:crypto'
  * No dependency for the JWT: `node:crypto` signs RS256, which is the whole of
  * what GitHub asks for.
  */
-import { Cause, Effect, Exit } from 'effect'
+import { Cause, Effect, Exit, Semaphore } from 'effect'
 
 export const GITHUB_API = 'https://api.github.com'
 
@@ -247,7 +247,7 @@ interface CachedToken {
  */
 export function installationToken(auth: AppAuth, installationId: number): Effect.Effect<string, GitHubError> {
   let cached: CachedToken | null = null
-  const refreshing = Effect.runSync(Effect.makeSemaphore(1))
+  const refreshing = Effect.runSync(Semaphore.make(1))
   const fresh = () => cached !== null && cached.expiresAtMs - Date.now() > 60_000
 
   const fetchToken = Effect.tryPromise({

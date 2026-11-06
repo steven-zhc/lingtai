@@ -36,7 +36,7 @@ import { type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/e
 import { parseDuration, type Recipe } from '@lingtai/recipe'
 import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
-import { Effect, Runtime as EffectRuntime } from 'effect'
+import { Effect } from 'effect'
 
 import { type TurnClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNow } from './discover.ts'
@@ -165,11 +165,13 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
     let started = 0
     const waiting = new Set<string>()
     let envRefused = false
-    // The runtime and not `Effect.context`: a pass started detached runs in a root
-    // fiber of its own, and only a runtime carries the caller's tracer into it —
-    // with the context alone, every concurrent `conductor.run` went to the
-    // default tracer and never exported (#791, 0101 §6).
-    const runtime = options.slots ? yield* Effect.runtime<Repo | AgentHost>() : undefined
+    // The caller's whole context, run with `Effect.runPromiseWith`: a pass started
+    // detached runs in a root fiber of its own, and it must carry the caller's
+    // tracer into it — without it every concurrent `conductor.run` went to the
+    // default tracer and never exported (#791, 0101 §6). On Effect 4 the tracer is
+    // a `Context.Reference`, so `Effect.context` holds it; on Effect 3 only a
+    // `Runtime` did.
+    const runtime = options.slots ? yield* Effect.context<Repo | AgentHost>() : undefined
     /** Whether this pass has already reported a GitHub that reports no dependencies. */
     let saidDependenciesUnread = false
 
@@ -278,7 +280,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           told(() => options.took?.(entry))
           const leave = set.enter({ project: name, issue: entry.issue, files })
           started += 1
-          const pass = EffectRuntime.runPromise(runtime!)(
+          const pass = Effect.runPromiseWith(runtime!)(
             runOnce({
               project: options.project,
               client: options.client,
@@ -372,7 +374,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       if (result.ok === false && result.stage === 'env') return finish('env')
     }
   })
-  return queue.pipe(Effect.withSpan('conductor.queue', { captureStackTrace: false }))
+  return queue.pipe(Effect.withSpan('conductor.queue', {}, { captureStackTrace: false }))
 }
 
 /**

@@ -15,7 +15,7 @@ import { promisify } from 'node:util'
  * this fix.
  */
 import { WIP_COMMIT_PREFIX } from '@lingtai/domain'
-import { Either } from 'effect'
+import { Result } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { commitWipExceptPlanted, type GitHere, keptRunPort, restoreAfterReview } from '../src/kept-run-port.ts'
@@ -28,9 +28,9 @@ function gitHere(cwd: string): GitHere {
   return async (args) => {
     try {
       const { stdout } = await exec('git', args, { cwd })
-      return Either.right(stdout.trim())
+      return Result.succeed(stdout.trim())
     } catch (error) {
-      return Either.left({ detail: (error as Error).message })
+      return Result.fail({ detail: (error as Error).message })
     }
   }
 }

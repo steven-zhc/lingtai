@@ -102,13 +102,13 @@ async function releaseSecondary(
  * when the scope closes, whichever way control left it, including a typed
  * refusal raised before the projector was ever read.
  */
-export class Projector extends Context.Tag('lingtai/cli/Projector')<
+export class Projector extends Context.Service<
   Projector,
   { readonly following: boolean; readonly failure: unknown }
->() {}
+>()('lingtai/cli/Projector') {}
 
 export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projector> =>
-  Layer.scoped(
+  Layer.effect(
     Projector,
     Effect.acquireRelease(
       Effect.promise(async () => {

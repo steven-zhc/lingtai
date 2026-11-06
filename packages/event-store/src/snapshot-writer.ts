@@ -47,12 +47,12 @@ export function makeSnapshotWriter(
         Effect.map(() => {
           failing.delete(key)
         }),
-        Effect.catchAll((cause) =>
+        Effect.catch((cause) =>
           Effect.suspend(() => {
             if (failing.has(key)) return Effect.void
             failing.add(key)
             return say(
-              `snapshot write failed for stream ${s.streamId} reducer ${s.reducer} v${s.reducerVersion}: ${String(cause.error)}`,
+              `snapshot write failed for stream ${s.streamId} reducer ${s.reducer} v${s.reducerVersion}: ${String(cause.cause)}`,
             )
           }),
         ),
@@ -86,7 +86,7 @@ export function makeSnapshotWriter(
         // delete first so a replaced key goes to the end of the insertion order
         pending.delete(key)
         pending.set(key, s)
-        Queue.unsafeOffer(wake, undefined)
+        Queue.offerUnsafe(wake, undefined)
       },
     }
   })

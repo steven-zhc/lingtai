@@ -45,7 +45,13 @@ interface Counts {
   run: Hit[]
 }
 
-const RUN = /^run[A-Z]/
+/**
+ * A run that starts a fiber of its own. `Effect.runPromiseWith(services)` and the
+ * other `*With` runs are not one: they carry the caller's services, its tracer
+ * among them (`Effect.context()`, Effect 4), which is what `Runtime.runPromise(rt)`
+ * was on Effect 3 and was never counted.
+ */
+const RUN = /^run[A-Z](?!\w*With$)/
 const EFFECT_MODULES = new Set(['effect', 'effect/Effect'])
 
 /** Parse once; a syntax error comes back as a tree, so read the diagnostics. */
@@ -151,6 +157,14 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       `import { Effect } from 'effect'\nEffect.runPromise(a)\nEffect.runSync(b)\nEffect.runPromiseExit(c)\nEffect.runFork(d)\n`,
     )
     expect(c.run).toHaveLength(4)
+  })
+
+  it('does not count a run that carries the caller’s services (runPromiseWith, runForkWith)', () => {
+    const c = count(
+      'a.ts',
+      `import { Effect } from 'effect'\nEffect.runPromiseWith(s)(a)\nEffect.runForkWith(s)(b)\nEffect.runSyncExitWith(s)(c)\n`,
+    )
+    expect(c.run).toEqual([])
   })
 
   it('counts an aliased runPromise imported from effect', () => {

@@ -84,7 +84,7 @@ import {
 } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasks, type TaskCard } from '@lingtai/projector'
-import { Effect, Either } from 'effect'
+import { Effect, Result } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -142,15 +142,15 @@ export async function readControl(
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
   // Rethrown as the store's own error: `runPromise` would wrap it in a `FiberFailure`.
   const read = await Effect.runPromise(
-    Effect.either(
+    Effect.result(
       readThroughSnapshot(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
         snapshots,
         writer: cache.writer,
       }),
     ),
   )
-  if (Either.isLeft(read)) throw read.left
-  const whole = evaluateControl(read.right, new Date())
+  if (Result.isFailure(read)) throw read.failure
+  const whole = evaluateControl(read.success, new Date())
   return since <= 0 ? whole : scopeControl(whole, since)
 }
 

@@ -9,7 +9,7 @@
  */
 import type { EventType, Reducer } from '@lingtai/domain'
 import { readThroughSnapshot, type EventStore, type SnapshotReadOptions } from '@lingtai/event-store'
-import { Effect, Either } from 'effect'
+import { Effect, Result } from 'effect'
 
 export async function readState<S>(
   store: Pick<EventStore, 'readTypes' | 'read'>,
@@ -18,7 +18,7 @@ export async function readState<S>(
   types: readonly EventType[] | 'all',
   options: SnapshotReadOptions = {},
 ): Promise<S> {
-  const result = await Effect.runPromise(Effect.either(readThroughSnapshot(store, reducer, streamId, types, options)))
-  if (Either.isLeft(result)) throw result.left
-  return result.right
+  const result = await Effect.runPromise(Effect.result(readThroughSnapshot(store, reducer, streamId, types, options)))
+  if (Result.isFailure(result)) throw result.failure
+  return result.success
 }

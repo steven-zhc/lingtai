@@ -30,10 +30,10 @@
 import { posix } from 'node:path'
 
 import type { CleanAnswer, KeptRunAnswer, RestoreAnswer } from '@lingtai/actions'
-import { Either } from 'effect'
+import { Result } from 'effect'
 
 /** A git command in the worktree, the shape `conduct.ts`'s `gitAsked` already has. */
-export type GitHere = (args: string[]) => Promise<Either.Either<string, { readonly detail: string }>>
+export type GitHere = (args: string[]) => Promise<Result.Result<string, { readonly detail: string }>>
 
 export interface KeptRunPortOptions {
   git: GitHere
@@ -62,9 +62,9 @@ export async function stageEverythingExceptPlanted(
   plantAt: string,
 ): Promise<{ ok: true } | { failed: string }> {
   const added = await git(['add', '-A'])
-  if (Either.isLeft(added)) return { failed: `git add refused it: ${added.left.detail}` }
+  if (Result.isFailure(added)) return { failed: `git add refused it: ${added.failure.detail}` }
   const unstaged = await git(['reset', '-q', '--', plantAt])
-  if (Either.isLeft(unstaged)) return { failed: `git reset refused it: ${unstaged.left.detail}` }
+  if (Result.isFailure(unstaged)) return { failed: `git reset refused it: ${unstaged.failure.detail}` }
   return { ok: true }
 }
 
@@ -98,7 +98,7 @@ export async function commitWipExceptPlanted(
     '-m',
     message,
   ])
-  if (Either.isLeft(committed)) return { failed: `git commit refused it: ${committed.left.detail}` }
+  if (Result.isFailure(committed)) return { failed: `git commit refused it: ${committed.failure.detail}` }
   return { ok: true }
 }
 
@@ -110,9 +110,9 @@ export function keptRunPort(options: KeptRunPortOptions): {
 
   const clean = async (): Promise<CleanAnswer> => {
     const reset = await git(['reset', '--hard', 'HEAD'])
-    if (Either.isLeft(reset)) return { failed: `git reset refused it: ${reset.left.detail}` }
+    if (Result.isFailure(reset)) return { failed: `git reset refused it: ${reset.failure.detail}` }
     const cleaned = await git(['clean', '-fd', '-e', `/${plantAt}`])
-    if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
+    if (Result.isFailure(cleaned)) return { failed: `git clean refused it: ${cleaned.failure.detail}` }
     return { ok: true }
   }
 
@@ -127,13 +127,13 @@ export function keptRunPort(options: KeptRunPortOptions): {
     if ('failed' in staged) return staged
     // `--quiet` implies `--exit-code`: a right is *nothing staged*.
     const diffed = await git(['diff', '--cached', '--quiet'])
-    if (!Either.isLeft(diffed)) return { nothing: true }
+    if (!Result.isFailure(diffed)) return { nothing: true }
     const committed = await git(['commit', '-m', `chore(implement): ${name} for #${issue}`])
-    if (Either.isLeft(committed)) return { failed: `git commit refused it: ${committed.left.detail}` }
+    if (Result.isFailure(committed)) return { failed: `git commit refused it: ${committed.failure.detail}` }
     const head = await git(['rev-parse', 'HEAD'])
-    if (Either.isLeft(head)) return { failed: `git rev-parse refused it: ${head.left.detail}` }
-    await recordCompletion(head.right)
-    return { committed: head.right }
+    if (Result.isFailure(head)) return { failed: `git rev-parse refused it: ${head.failure.detail}` }
+    await recordCompletion(head.success)
+    return { committed: head.success }
   }
 
   return { clean, keep }
@@ -181,26 +181,26 @@ export function restoreAfterReview(options: {
   const plantAt = posix.normalize(options.plantAt)
   return async (onSha) => {
     const head = await git(['rev-parse', 'HEAD'])
-    if (Either.isLeft(head)) return { failed: `git rev-parse refused it: ${head.left.detail}` }
+    if (Result.isFailure(head)) return { failed: `git rev-parse refused it: ${head.failure.detail}` }
     // Per file, not per directory: plain porcelain collapses an untracked
     // directory to `?? private/`, which would never equal `?? private/.env.local`.
     const status = await git(STATUS)
-    if (Either.isLeft(status)) return { failed: `git status refused it: ${status.left.detail}` }
+    if (Result.isFailure(status)) return { failed: `git status refused it: ${status.failure.detail}` }
     // The worktree is cut detached. A branch checked out in it is the
     // reviewer's doing, and `reset` would move that branch's tip.
     const symbolic = await git(['symbolic-ref', '-q', 'HEAD'])
-    const branch = Either.isRight(symbolic) ? symbolic.right.trim() : ''
-    const moved = head.right.trim() !== onSha || branch !== ''
-    const dirty = !onlyThePlantedFileIsDirty(status.right, plantAt)
+    const branch = Result.isSuccess(symbolic) ? symbolic.success.trim() : ''
+    const moved = head.success.trim() !== onSha || branch !== ''
+    const dirty = !onlyThePlantedFileIsDirty(status.success, plantAt)
     if (!moved && !dirty) return { untouched: true }
 
-    const paths = statusLines(status.right)
+    const paths = statusLines(status.success)
       .filter((line) => line !== `?? ${plantAt}`)
       .map((line) => line.slice(3))
     const shown = paths.slice(0, 10).join(', ') + (paths.length > 10 ? `, and ${paths.length - 10} more` : '')
     const found = [
       moved
-        ? `HEAD was ${head.right.trim().slice(0, 7)}${branch === '' ? '' : ` on ${branch}`}, not ${onSha.slice(0, 7)}`
+        ? `HEAD was ${head.success.trim().slice(0, 7)}${branch === '' ? '' : ` on ${branch}`}, not ${onSha.slice(0, 7)}`
         : undefined,
       dirty ? `${paths.length} path${paths.length === 1 ? '' : 's'} changed (${shown})` : undefined,
     ].filter((part) => part !== undefined)
@@ -217,25 +217,25 @@ export function restoreAfterReview(options: {
     // reviewer committed on the branch, before anything could spare it. The
     // `reset` below clears the merge state.
     if (branch !== '') {
-      const detached = await git(['update-ref', '--no-deref', 'HEAD', head.right.trim()])
-      if (Either.isLeft(detached)) return { failed: `git update-ref refused it: ${detached.left.detail}` }
+      const detached = await git(['update-ref', '--no-deref', 'HEAD', head.success.trim()])
+      if (Result.isFailure(detached)) return { failed: `git update-ref refused it: ${detached.failure.detail}` }
     }
     const reset = await git(['reset', '--mixed', onSha])
-    if (Either.isLeft(reset)) return { failed: `git reset refused it: ${reset.left.detail}` }
+    if (Result.isFailure(reset)) return { failed: `git reset refused it: ${reset.failure.detail}` }
     const checkout = await git(['checkout', '--', '.'])
-    if (Either.isLeft(checkout)) return { failed: `git checkout refused it: ${checkout.left.detail}` }
+    if (Result.isFailure(checkout)) return { failed: `git checkout refused it: ${checkout.failure.detail}` }
     // `-ff`: a single `-f` skips a nested repository and exits 0.
     // `-e` takes a gitignore pattern, so a path with `[`, `*`, `?` or `\` in it
     // would name some other file, or none: escape it to the one literal path.
     const literal = plantAt.replace(/[\\*?[\] ]/g, '\\$&')
     const cleaned = await git(['clean', '-ffd', '-e', `/${literal}`])
-    if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
+    if (Result.isFailure(cleaned)) return { failed: `git clean refused it: ${cleaned.failure.detail}` }
     // A command that exited 0 has not shown the tree is clean: ask again.
     const after = await git(STATUS)
-    if (Either.isLeft(after)) return { failed: `git status refused it: ${after.left.detail}` }
-    if (!onlyThePlantedFileIsDirty(after.right, plantAt)) {
+    if (Result.isFailure(after)) return { failed: `git status refused it: ${after.failure.detail}` }
+    if (!onlyThePlantedFileIsDirty(after.success, plantAt)) {
       return {
-        failed: `the worktree is still dirty after the restore: ${statusLines(after.right).slice(0, 10).join(', ')}`,
+        failed: `the worktree is still dirty after the restore: ${statusLines(after.success).slice(0, 10).join(', ')}`,
       }
     }
     return { restored: `the reviewer changed the worktree — ${found.join('; ')} — restored to ${onSha.slice(0, 7)}` }

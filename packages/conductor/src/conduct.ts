@@ -211,7 +211,7 @@ import {
 } from '@lingtai/recipe'
 import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
 import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
-import { Effect, Either } from 'effect'
+import { Effect, Result } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
 import {
@@ -313,21 +313,21 @@ function splitClosedComment(waitId: string, children: readonly SplitChildState[]
  * `fallback`, and each is noted. Never throws.
  */
 export const ownChangeStart = async (port: {
-  git: (args: string[]) => Promise<Either.Either<string, { detail: string }>>
+  git: (args: string[]) => Promise<Result.Result<string, { detail: string }>>
   note: (line: string) => void
   base: string
   fallback: string
 }): Promise<string> => {
   const { git, note, base, fallback } = port
   const fetched = await git(['fetch', 'origin', `refs/heads/${base}`])
-  const fetchOk = Either.isRight(fetched)
-  if (!fetchOk) note(`fetching ${base} failed, using the local ref: ${fetched.left.detail}`)
+  const fetchOk = Result.isSuccess(fetched)
+  if (!fetchOk) note(`fetching ${base} failed, using the local ref: ${fetched.failure.detail}`)
   const got = await git(['merge-base', fetchOk ? 'FETCH_HEAD' : `refs/heads/${base}`, 'HEAD'])
-  if (Either.isLeft(got)) {
-    note(`merge-base with ${base} failed, measuring from ${fallback}: ${got.left.detail}`)
+  if (Result.isFailure(got)) {
+    note(`merge-base with ${base} failed, measuring from ${fallback}: ${got.failure.detail}`)
     return fallback
   }
-  const lines = got.right.split('\n').filter((l) => l.trim() !== '')
+  const lines = got.success.split('\n').filter((l) => l.trim() !== '')
   const sha = lines.length === 1 ? lines[0]!.trim() : ''
   if (!/^[0-9a-f]{40}$/.test(sha)) {
     note(`merge-base with ${base} printed ${lines.length} lines, measuring from ${fallback}`)
@@ -791,7 +791,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // ---- 1. the recipe, from this machine -----------------------------------
     // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
     // other command that conducts makes.
-    const recipeAt: Either.Either<ResolvedRecipe, string> = yield* Effect.either(
+    const recipeAt: Result.Result<ResolvedRecipe, string> = yield* Effect.result(
       Effect.tryPromise({
         try: () => (options.recipe ?? (() => currentRecipe(options.project, options.client)))(),
         // An unreadable or non-compliant recipe must stop the run rather than
@@ -799,10 +799,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         catch: (err) => (err as Error).message,
       }),
     )
-    if (Either.isLeft(recipeAt)) {
-      return { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: recipeAt.left }
+    if (Result.isFailure(recipeAt)) {
+      return { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: recipeAt.failure }
     }
-    const resolved = recipeAt.right
+    const resolved = recipeAt.success
     const recipe = resolved.recipe
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
@@ -927,7 +927,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // worktree, no agent, no money. It used to be a log line, after which the
     // run claimed the ticket and spent $0.97 producing nothing against a
     // database it could not reach (0020).
-    const asked = yield* Effect.either(
+    const asked = yield* Effect.result(
       host.resolveEnv({
         project,
         // All three, because all three are the recipe's: `required` refuses,
@@ -939,10 +939,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         home,
       }),
     )
-    if (Either.isLeft(asked)) {
-      return { ok: false, ticketId: null, runId: null, stage: 'env', detail: asked.left.detail }
+    if (Result.isFailure(asked)) {
+      return { ok: false, ticketId: null, runId: null, stage: 'env', detail: asked.failure.detail }
     }
-    const env = asked.right
+    const env = asked.success
     if (env.refusal) {
       return { ok: false, ticketId: null, runId: null, stage: 'env', detail: env.refusal }
     }
@@ -963,7 +963,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // The tripwire over every extension's declared values, here and not only
     // when `envForExtension` is first called: a denied production value would
     // otherwise first throw mid-run, past the claim, as a defect.
-    const extensionRefusal = Either.try(() => {
+    const extensionRefusal = Result.try(() => {
       for (const step of Object.values(recipe.steps)) {
         for (const action of step) {
           if ('run' in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts))
@@ -973,9 +973,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         extensionEnv(env.merged, subscriber.env, productionPatterns(recipe.env.refuseHosts))
       }
     })
-    if (Either.isLeft(extensionRefusal)) {
+    if (Result.isFailure(extensionRefusal)) {
       const detail =
-        extensionRefusal.left instanceof Error ? extensionRefusal.left.message : String(extensionRefusal.left)
+        extensionRefusal.failure instanceof Error ? extensionRefusal.failure.message : String(extensionRefusal.failure)
       return { ok: false, ticketId: null, runId: null, stage: 'env', detail }
     }
 
@@ -1038,7 +1038,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }).pipe(
         // A pause that would not append must not replace the reason the run
         // ended with the reason the pause failed.
-        Effect.catchAllDefect((defect) =>
+        Effect.catchDefect((defect) =>
           Effect.sync(() => {
             log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`)
             return { kind: 'failed' as const }
@@ -1775,7 +1775,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const openTheRunLog = async (): Promise<void> => {
         opened = await Effect.runPromise(
           host.runLog({ path: runLogPath(home, project, runId) }).pipe(
-            Effect.catchAll((err) =>
+            Effect.catch((err) =>
               Effect.sync(() => {
                 log(`no run log: ${err.detail}`)
                 return NO_RUN_LOG satisfies RunLog
@@ -1825,7 +1825,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const gitHere = (args: string[]) => repo.git(args, { token: options.token, env: options.gitEnv, cwd })
       /** …as a promise, for the ports. A failure here is a defect, not a verdict. */
       const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
-      const gitAsked = (args: string[]) => Effect.runPromise(Effect.either(gitHere(args)))
+      const gitAsked = (args: string[]) => Effect.runPromise(Effect.result(gitHere(args)))
 
       /**
        * `git diff <DIFF_FLAGS> from...HEAD`, the one spelling the reviewer, the
@@ -1838,7 +1838,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const diffBetween = (from: string): Promise<DiffRead> => {
         const shaOf = (rev: string): Promise<string | null> =>
           gitAsked(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]).then((got) =>
-            Either.isLeft(got) ? null : got.right.trim() || null,
+            Result.isFailure(got) ? null : got.success.trim() || null,
           )
         return Promise.all([shaOf(from), shaOf('HEAD')]).then(([a, b]) =>
           a !== null && b !== null
@@ -1932,8 +1932,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const keepHead = async (head: string): Promise<void> => {
         const wrote = await gitAsked(['update-ref', keptRef, head])
-        if (Either.isLeft(wrote)) {
-          runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.left.detail}`)
+        if (Result.isFailure(wrote)) {
+          runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.failure.detail}`)
           return
         }
         kept = { _tag: 'Mirror', ref: keptRef, sha: head, arm: `refs/heads/${arm}` }
@@ -1941,8 +1941,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** Deletes `keptRef`, where the commits it pointed at reached origin another way. */
       const dropKept = async (): Promise<void> => {
         const dropped = await gitAsked(['update-ref', '-d', keptRef])
-        if (Either.isLeft(dropped)) {
-          runLog.note('push', `${keptRef} was not dropped — ${dropped.left.detail}`)
+        if (Result.isFailure(dropped)) {
+          runLog.note('push', `${keptRef} was not dropped — ${dropped.failure.detail}`)
         }
         kept = null
       }
@@ -2095,21 +2095,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // go on telling later `RunRefsPublished` rows the tree was not kept.
         wipFailure = null
         const dirty = await gitAsked(['status', '--porcelain'])
-        if (Either.isLeft(dirty)) {
-          wipFailure = `the dirty tree could not be checked — ${dirty.left.detail}`
+        if (Result.isFailure(dirty)) {
+          wipFailure = `the dirty tree could not be checked — ${dirty.failure.detail}`
           runLog.note('push', wipFailure)
           return
         }
-        if (dirty.right.trim() === '') return
+        if (dirty.success.trim() === '') return
         // **Dirt that is only the planted env file is not agent work to
         // keep** (`#468`) — a porcelain line for it alone must read the same
         // as a clean tree, not send `git add`/`git commit` at a tree with
         // nothing else for them to touch. Porcelain's own format is two
         // status characters, a space, then the path.
-        if (onlyThePlantedFileIsDirty(dirty.right, recipe.env.plantAt)) return
+        if (onlyThePlantedFileIsDirty(dirty.success, recipe.env.plantAt)) return
         const parent = await gitAsked(['rev-parse', 'HEAD'])
-        if (Either.isLeft(parent)) {
-          wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.left.detail}`
+        if (Result.isFailure(parent)) {
+          wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.failure.detail}`
           runLog.note('push', wipFailure)
           return
         }
@@ -2137,13 +2137,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // it (`#468`) — `wip` itself is filled in from `wipParent` by
         // `publishWhatIsCommitted`'s own `rev-parse HEAD`, the read that
         // already has to succeed for anything past it to run.
-        wipParent = { parent: parent.right, stoppedBy }
+        wipParent = { parent: parent.success, stoppedBy }
         const after = await gitAsked(['rev-parse', 'HEAD'])
         runLog.note(
           'push',
-          Either.isRight(after)
-            ? `kept the dirty tree as ${after.right.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`
-            : `kept the dirty tree on ${arm}, stopped by ${stoppedBy} — its own sha could not be confirmed: ${after.left.detail}`,
+          Result.isSuccess(after)
+            ? `kept the dirty tree as ${after.success.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`
+            : `kept the dirty tree on ${arm}, stopped by ${stoppedBy} — its own sha could not be confirmed: ${after.failure.detail}`,
         )
       }
 
@@ -2214,16 +2214,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         try {
           await keepUncommittedWork()
           const at = await gitAsked(['rev-parse', 'HEAD'])
-          if (Either.isLeft(at)) {
-            runLog.note('push', `${branch} was not pushed — ${at.left.detail}`)
+          if (Result.isFailure(at)) {
+            runLog.note('push', `${branch} was not pushed — ${at.failure.detail}`)
             // `wipFailure`, not `withWipFailure` (not yet in scope — that
             // closure reads `head`, which this call never got to): the keep
             // may have failed for its own reason before this read did for a
             // different one, and both deserve a line on the durable row.
-            await noteRefs('refused', null, wipFailure === null ? at.left.detail : `${at.left.detail}; ${wipFailure}`)
-            return at.left.detail
+            await noteRefs('refused', null, wipFailure === null ? at.failure.detail : `${at.failure.detail}; ${wipFailure}`)
+            return at.failure.detail
           }
-          const head = at.right
+          const head = at.success
           headRead = head
           headNow = head
           // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
@@ -2333,17 +2333,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
             `+HEAD:refs/heads/${arm}`,
           ])
-          if (Either.isLeft(pushed)) {
+          if (Result.isFailure(pushed)) {
             // **One exit code for two refspecs, so a failure is asked which**
             // (`#251`). `git push` is not atomic: origin takes the forced arm,
             // rejects the leased `agent/<n>`, and exits non-zero with the commits
             // on origin. Forced and at the same head, this second push is a no-op
             // where the arm already went and fails again where the transport broke.
             const armAlone = await gitAsked(['push', 'origin', `+HEAD:refs/heads/${arm}`])
-            if (Either.isRight(armAlone)) {
+            if (Result.isSuccess(armAlone)) {
               runLog.note(
                 'push',
-                `${branch} was not pushed — ${pushed.left.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
+                `${branch} was not pushed — ${pushed.failure.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
               )
               // The arm is up even though the command exited non-zero, which is
               // the whole point of asking it separately.
@@ -2354,7 +2354,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // directly: there is nothing in the mirror to point at.
               await dropKept()
               kept = { _tag: 'Arm', ref: `refs/heads/${arm}`, sha: head }
-              await noteRefs('arm-only', head, withWipFailure(pushed.left.detail))
+              await noteRefs('arm-only', head, withWipFailure(pushed.failure.detail))
               // Only where there is a real commit for the arm to carry —
               // `RunKeptUncommitted`, not this, is the account of a WIP — and
               // `branchHead`, never `head`: once a WIP exists `head` is the WIP
@@ -2362,22 +2362,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // edits as though they were reviewed (`#468`).
               if (branchHead !== null) await recordDiff(arm, branchHead)
               if (wip !== null) await noteKept(wip)
-              return pushed.left.detail
+              return pushed.failure.detail
             }
             // **Kept before the account is written, not after** (`#421`) —
             // the worktree holding these commits is removed when the pass
             // ends, so the ref has to exist before anything describes where
             // the work went.
             await keepHead(head)
-            runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
+            runLog.note('push', `${branch} was not pushed — ${pushed.failure.detail}`)
             // `branchHead`, never `head`: once a WIP exists `head` is the WIP
             // sha, which was never pushed anywhere — neither push attempt
             // above landed it on `branch` or `arm` — and naming it here is
             // the sha a person rescuing by hand would push onto `branch`
             // itself, landing the WIP commit on the one ref the merge lane
             // reads (`#468`).
-            await noteRefs('refused', branchHead, withWipFailure(pushed.left.detail))
-            return pushed.left.detail
+            await noteRefs('refused', branchHead, withWipFailure(pushed.failure.detail))
+            return pushed.failure.detail
           }
           if (branchHead !== null) {
             lease = branchHead
@@ -2626,14 +2626,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * with nothing cut, which is true, and the item is then blocked or
          * released by the ending like any other machine fact.
          */
-        const settings = await Effect.runPromise(Effect.either(host.unhookedSettings({ runId, label: 'review', home })))
-        if (Either.isLeft(settings)) {
-          return { notCut: `the cold reviewer had no settings: ${settings.left.detail}` }
+        const settings = await Effect.runPromise(Effect.result(host.unhookedSettings({ runId, label: 'review', home })))
+        if (Result.isFailure(settings)) {
+          return { notCut: `the cold reviewer had no settings: ${settings.failure.detail}` }
         }
-        reviewSettingsPath = settings.right
+        reviewSettingsPath = settings.success
 
         const provisioned = await Effect.runPromise(
-          Effect.either(
+          Effect.result(
             repo.provision({
               project,
               // '' when there is no owner: `remote` is always set then —
@@ -2665,14 +2665,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             }),
           ),
         )
-        if (Either.isLeft(provisioned)) return { notCut: provisioned.left.detail }
-        worktree = provisioned.right
-        lease = provisioned.right.remoteHead
-        log(`worktree ${provisioned.right.path} at ${provisioned.right.baseSha.slice(0, 7)}`)
+        if (Result.isFailure(provisioned)) return { notCut: provisioned.failure.detail }
+        worktree = provisioned.success
+        lease = provisioned.success.remoteHead
+        log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
         // `head` is the whole of what moves `onSha`, and the action puts it on
         // its result for the pass to read (`ActionResult.head`). The `Worktree`
         // itself stays here, where the finalizer that removes it already is.
-        return { head: provisioned.right.baseSha, where: provisioned.right.path }
+        return { head: provisioned.success.baseSha, where: provisioned.success.path }
       }
 
       /**
@@ -2783,9 +2783,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `PassRouted.why` and the run log can be read after the fact (`#314`,
         // 0070 §2).
         const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
-        const settings = await Effect.runPromise(Effect.either(host.unhookedSettings({ runId, label: 'judge', home })))
-        if (Either.isLeft(settings)) {
-          return held(`the "${named}" judge had no settings: ${settings.left.detail}`)
+        const settings = await Effect.runPromise(Effect.result(host.unhookedSettings({ runId, label: 'judge', home })))
+        if (Result.isFailure(settings)) {
+          return held(`the "${named}" judge had no settings: ${settings.failure.detail}`)
         }
         judgements += 1
         log(`judging a "${on.when}" with ${asKnown} — ${named}`)
@@ -2841,7 +2841,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         cwd: worktree?.path ?? home,
                         prompt: judgePromptText,
                         ...(declared.model === undefined ? {} : { model: declared.model }),
-                        settingsPath: settings.right,
+                        settingsPath: settings.success,
                         log: taggedTrace(runLog, `judge:${on.when}`),
                         traceTools: true,
                         env: judgeEnv,
@@ -3029,8 +3029,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           'origin',
           `HEAD:refs/heads/${branch}`,
         ])
-        if (Either.isLeft(pushed)) {
-          return { notMerged: { reason: 'push-rejected', detail: pushed.left.detail } }
+        if (Result.isFailure(pushed)) {
+          return { notMerged: { reason: 'push-rejected', detail: pushed.failure.detail } }
         }
         lease = on.onSha
         // The branch and not the arm: the lane is about to merge this ref, and
@@ -3110,7 +3110,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const mergeBase = async (toSha: string): Promise<{ head: string } | { failed: string }> => {
         const fetched = await gitAsked(['fetch', 'origin', `refs/heads/${base}`])
-        if (Either.isLeft(fetched)) return { failed: `fetching ${base} failed: ${fetched.left.detail}` }
+        if (Result.isFailure(fetched)) return { failed: `fetching ${base} failed: ${fetched.failure.detail}` }
         const merged = await gitAsked([
           'merge',
           '--no-edit',
@@ -3118,13 +3118,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           `Merge ${base} at ${toSha.slice(0, 7)} into ${branch}`,
           toSha,
         ])
-        if (Either.isLeft(merged)) {
+        if (Result.isFailure(merged)) {
           await gitAsked(['merge', '--abort'])
-          return { failed: merged.left.detail }
+          return { failed: merged.failure.detail }
         }
         const head = await gitAsked(['rev-parse', 'HEAD'])
-        if (Either.isLeft(head)) return { failed: head.left.detail }
-        return { head: head.right.trim() }
+        if (Result.isFailure(head)) return { failed: head.failure.detail }
+        return { head: head.success.trim() }
       }
 
       /**
@@ -3161,7 +3161,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           tree: {
             cut: async (path, sha) => {
               const cut = await gitAsked(['worktree', 'add', '--force', '--detach', path, sha])
-              if (Either.isLeft(cut)) throw new Error(cut.left.detail)
+              if (Result.isFailure(cut)) throw new Error(cut.failure.detail)
               if (submodulesOf(recipe)) {
                 // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
                 await Effect.runPromise(
@@ -3175,7 +3175,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
             remove: async (path) => {
               const gone = await gitAsked(['worktree', 'remove', '--force', path])
-              if (Either.isLeft(gone)) throw new Error(gone.left.detail)
+              if (Result.isFailure(gone)) throw new Error(gone.failure.detail)
             },
             plant: async (path) => {
               const plantedAt = resolve(path, recipe.env.plantAt)
@@ -3247,12 +3247,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // Narrow by construction — the argument is the one path just written,
         // and `--only` below keeps the commit to it too.
         const added = await gitAsked(['add', '-f', '--', spec.path])
-        if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` }
+        if (Result.isFailure(added)) return { notKept: `git add refused it: ${added.failure.detail}` }
         // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
         // and a left is a difference to commit — the one place in this file where
         // the failing branch is the ordinary one.
         const staged = await gitAsked(['diff', '--cached', '--quiet', '--', spec.path])
-        if (Either.isLeft(staged)) {
+        if (Result.isFailure(staged)) {
           // `--only`, so a commit at `design` cannot pick up anything else the
           // worktree happens to be holding: what this action is answering for is
           // the one path it wrote.
@@ -3264,12 +3264,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             '--',
             spec.path,
           ])
-          if (Either.isLeft(committed)) {
-            return { notKept: `git commit refused it: ${committed.left.detail}` }
+          if (Result.isFailure(committed)) {
+            return { notKept: `git commit refused it: ${committed.failure.detail}` }
           }
         }
         const head = await gitAsked(['rev-parse', 'HEAD'])
-        return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right }
+        return Result.isFailure(head) ? { at: spec.path } : { at: spec.path, head: head.success }
       }
 
       /**
@@ -3358,7 +3358,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             Promise.all(
               paths.map(async (path) => {
                 const got = await gitAsked(['diff', fromSha, toSha, '--', path])
-                return { path, diff: Either.isLeft(got) ? `[could not read this diff: ${got.left.detail}]` : got.right }
+                return { path, diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success }
               }),
             ),
           restore: restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt }),
@@ -3723,15 +3723,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * exactly the one the guard is for.
          */
         const startedAt = await gitOrDie(['rev-parse', 'HEAD'])
-        const wired = await Effect.runPromise(Effect.either(host.wire({ runId, hookBinary: options.hookBinary, home })))
-        if (Either.isLeft(wired)) return { stopped: `the hook was not wired: ${wired.left.detail}` }
-        const wiring = wired.right
+        const wired = await Effect.runPromise(Effect.result(host.wire({ runId, hookBinary: options.hookBinary, home })))
+        if (Result.isFailure(wired)) return { stopped: `the hook was not wired: ${wired.failure.detail}` }
+        const wiring = wired.success
 
-        const smoke = await Effect.runPromise(Effect.either(host.smokeTest(options.hookBinary, runBinary)))
-        if (Either.isLeft(smoke)) {
-          return { stopped: `the hook's smoke test did not run: ${smoke.left.detail}` }
+        const smoke = await Effect.runPromise(Effect.result(host.smokeTest(options.hookBinary, runBinary)))
+        if (Result.isFailure(smoke)) {
+          return { stopped: `the hook's smoke test did not run: ${smoke.failure.detail}` }
         }
-        if (!smoke.right.ok) return { stopped: `the hook did not fail closed: ${smoke.right.detail}` }
+        if (!smoke.success.ok) return { stopped: `the hook did not fail closed: ${smoke.success.detail}` }
 
         // The action's own bound where it declared one (`#314`). A fix round is
         // this same `implement` entry again, so a narrowed `implement` bounds the
@@ -3749,7 +3749,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         })
 
         const ran = await Effect.runPromise(
-          Effect.either(
+          Effect.result(
             Effect.scoped(
               Effect.gen(function* () {
                 const server = yield* host.serve({
@@ -3892,10 +3892,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ),
           ),
         )
-        if (Either.isLeft(ran)) {
-          return { stopped: `the hook socket was not served: ${ran.left.detail}` }
+        if (Result.isFailure(ran)) {
+          return { stopped: `the hook socket was not served: ${ran.failure.detail}` }
         }
-        const { outcome, version } = ran.right
+        const { outcome, version } = ran.success
 
         if (outcome.failure) {
           runLog.note('run', `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`)
@@ -4058,10 +4058,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         runLog.note('fix', `round ${round} for ${from}`)
 
         const settings = await Effect.runPromise(
-          Effect.either(host.unhookedSettings({ runId, label: `fix-${round}`, home })),
+          Effect.result(host.unhookedSettings({ runId, label: `fix-${round}`, home })),
         )
-        if (Either.isLeft(settings)) {
-          return { stopped: `the fixing agent had no settings: ${settings.left.detail}` }
+        if (Result.isFailure(settings)) {
+          return { stopped: `the fixing agent had no settings: ${settings.failure.detail}` }
         }
 
         // The merge-base with the base, so a base merge anybody made is not the
@@ -4138,7 +4138,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     cwd: tree.path,
                     prompt: fixPrompt,
                     ...(spec.model === undefined ? {} : { model: spec.model }),
-                    settingsPath: settings.right,
+                    settingsPath: settings.success,
                     log: taggedTrace(runLog, `fix:${round}`),
                     traceTools: true,
                     env: fixEnv,
@@ -4714,14 +4714,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             '--format=%(refname)',
             `refs/lingtai/unpushed/${options.issue}/`,
           ])
-          if (Either.isLeft(refsHere)) {
-            runLog.note('push', `kept refs for #${options.issue} were not listed on landing — ${refsHere.left.detail}`)
+          if (Result.isFailure(refsHere)) {
+            runLog.note('push', `kept refs for #${options.issue} were not listed on landing — ${refsHere.failure.detail}`)
             return
           }
-          for (const ref of refsHere.right.split('\n').filter(Boolean)) {
+          for (const ref of refsHere.success.split('\n').filter(Boolean)) {
             const dropped = await gitAsked(['update-ref', '-d', ref])
-            if (Either.isLeft(dropped))
-              runLog.note('push', `${ref} was not dropped on landing — ${dropped.left.detail}`)
+            if (Result.isFailure(dropped))
+              runLog.note('push', `${ref} was not dropped on landing — ${dropped.failure.detail}`)
           }
         })
         didLand = true
@@ -5033,7 +5033,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     })
 
     return yield* Effect.scoped(claimed).pipe(
-      Effect.catchAllDefect((defect) => {
+      Effect.catchDefect((defect) => {
         const detail = defect instanceof Error ? defect.message : String(defect)
         return release(`unexpected failure: ${detail}`).pipe(
           Effect.as({
@@ -5060,10 +5060,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     ),
     // A root: `runQueue` calls this once per ticket, and a pass is one trace
     // rather than a branch of the queue's (#791). No stack trace — it is a path.
-    Effect.withSpan('conductor.run', {
-      root: true,
-      captureStackTrace: false,
-      attributes: { 'lingtai.ticket': options.issue },
-    }),
+    Effect.withSpan(
+      'conductor.run',
+      { root: true, attributes: { 'lingtai.ticket': options.issue } },
+      { captureStackTrace: false },
+    ),
   )
 }

@@ -1,11 +1,11 @@
-import { Either } from 'effect'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { ownChangeStart } from '../src/conduct.ts'
 
 const SHA = 'a'.repeat(40)
 
-const scripted = (answers: Record<string, Either.Either<string, { detail: string }>>) => {
+const scripted = (answers: Record<string, Result.Result<string, { detail: string }>>) => {
   const asked: string[][] = []
   const notes: string[] = []
   return {
@@ -14,7 +14,7 @@ const scripted = (answers: Record<string, Either.Either<string, { detail: string
     port: {
       git: async (args: string[]) => {
         asked.push(args)
-        return answers[args[0]!] ?? Either.right('')
+        return answers[args[0]!] ?? Result.succeed('')
       },
       note: (l: string) => void notes.push(l),
       base: 'main',
@@ -25,7 +25,7 @@ const scripted = (answers: Record<string, Either.Either<string, { detail: string
 
 describe('ownChangeStart (#937)', () => {
   it('asks merge-base FETCH_HEAD HEAD after a fetch and returns its sha', async () => {
-    const s = scripted({ fetch: Either.right(''), 'merge-base': Either.right(`${SHA}\n`) })
+    const s = scripted({ fetch: Result.succeed(''), 'merge-base': Result.succeed(`${SHA}\n`) })
     expect(await ownChangeStart(s.port)).toBe(SHA)
     expect(s.asked).toEqual([
       ['fetch', 'origin', 'refs/heads/main'],
@@ -35,7 +35,7 @@ describe('ownChangeStart (#937)', () => {
   })
 
   it('uses the local base ref and notes it when the fetch fails', async () => {
-    const s = scripted({ fetch: Either.left({ detail: 'mirror busy' }), 'merge-base': Either.right(SHA) })
+    const s = scripted({ fetch: Result.fail({ detail: 'mirror busy' }), 'merge-base': Result.succeed(SHA) })
     expect(await ownChangeStart(s.port)).toBe(SHA)
     expect(s.asked[1]).toEqual(['merge-base', 'refs/heads/main', 'HEAD'])
     expect(s.notes).toHaveLength(1)
@@ -43,14 +43,14 @@ describe('ownChangeStart (#937)', () => {
   })
 
   it('returns the fallback and notes it when merge-base fails', async () => {
-    const s = scripted({ fetch: Either.right(''), 'merge-base': Either.left({ detail: 'no common ancestor' }) })
+    const s = scripted({ fetch: Result.succeed(''), 'merge-base': Result.fail({ detail: 'no common ancestor' }) })
     expect(await ownChangeStart(s.port)).toBe('FALLBACK')
     expect(s.notes[0]).toContain('no common ancestor')
   })
 
   it('returns the fallback when merge-base prints nothing or more than one line', async () => {
     for (const out of ['', `${SHA}\n${'b'.repeat(40)}\n`]) {
-      const s = scripted({ fetch: Either.right(''), 'merge-base': Either.right(out) })
+      const s = scripted({ fetch: Result.succeed(''), 'merge-base': Result.succeed(out) })
       expect(await ownChangeStart(s.port)).toBe('FALLBACK')
       expect(s.notes).toHaveLength(1)
     }

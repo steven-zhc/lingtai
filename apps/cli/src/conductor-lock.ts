@@ -47,10 +47,10 @@ export class LockUnreadable extends Data.TaggedError('LockUnreadable')<{
   readonly detail: string
 }> {}
 
-export class ConductorLock extends Context.Tag('lingtai/cli/ConductorLock')<
+export class ConductorLock extends Context.Service<
   ConductorLock,
   { readonly key: string }
->() {}
+>()('lingtai/cli/ConductorLock') {}
 
 export interface ConductorLockOptions {
   /** The suite's own key, so a test does not fight the operator's daemon. */
@@ -62,7 +62,7 @@ export interface ConductorLockOptions {
 export const ConductorLockLive = (
   options: ConductorLockOptions = {},
 ): Layer.Layer<ConductorLock, ConductorBusy | LockUnreadable> =>
-  Layer.scoped(
+  Layer.effect(
     ConductorLock,
     Effect.acquireRelease(
       Effect.tryPromise({

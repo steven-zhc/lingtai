@@ -24,6 +24,12 @@ import { Context, Exit, Layer, Option, Tracer } from 'effect'
  */
 export const ATTRIBUTES: ReadonlySet<string> = new Set(['lingtai.ticket', 'lingtai.round', 'lingtai.index'])
 
+/** What `Tracer.span` is handed for each span it starts. */
+type SpanStart = Parameters<Tracer.Tracer['span']>[0]
+
+/** The key a fiber evaluates a primitive by (`Tracer.EffectPrimitive`). */
+const EVALUATE = '~effect/Effect/evaluate'
+
 const hrtime = (nanos: bigint): [number, number] => [Number(nanos / 1_000_000_000n), Number(nanos % 1_000_000_000n)]
 
 class BridgedSpan implements Tracer.Span {
@@ -39,24 +45,18 @@ class BridgedSpan implements Tracer.Span {
   status: Tracer.SpanStatus
   readonly name: string
   readonly parent: Option.Option<Tracer.AnySpan>
-  readonly context: Context.Context<never>
+  readonly annotations: Context.Context<never>
   readonly kind: Tracer.SpanKind
 
-  constructor(
-    name: string,
-    parent: Option.Option<Tracer.AnySpan>,
-    ctx: Context.Context<never>,
-    startTime: bigint,
-    kind: Tracer.SpanKind,
-  ) {
-    this.name = name
-    this.parent = parent
-    this.context = ctx
-    this.kind = kind
-    this.status = { _tag: 'Started', startTime }
+  constructor(options: SpanStart) {
+    this.name = options.name
+    this.parent = options.parent
+    this.annotations = options.annotations
+    this.kind = options.kind
+    this.status = { _tag: 'Started', startTime: options.startTime }
     let parentContext = ROOT_CONTEXT
-    if (Option.isSome(parent)) {
-      const p = parent.value
+    if (Option.isSome(options.parent)) {
+      const p = options.parent.value
       parentContext = trace.setSpan(
         ROOT_CONTEXT,
         p instanceof BridgedSpan
@@ -64,7 +64,7 @@ class BridgedSpan implements Tracer.Span {
           : trace.wrapSpanContext({ traceId: p.traceId, spanId: p.spanId, traceFlags: p.sampled ? 1 : 0 }),
       )
     }
-    this.otel = trace.getTracer(SCOPE).startSpan(name, { startTime: hrtime(startTime) }, parentContext)
+    this.otel = trace.getTracer(SCOPE).startSpan(options.name, { startTime: hrtime(options.startTime) }, parentContext)
     const { traceId, spanId, traceFlags } = this.otel.spanContext()
     this.traceId = traceId
     this.spanId = spanId
@@ -98,16 +98,21 @@ class BridgedSpan implements Tracer.Span {
 }
 
 export const bridgedTracer: Tracer.Tracer = Tracer.make({
-  span: (name, parent, ctx, _links, startTime, kind) => new BridgedSpan(name, parent, ctx, startTime, kind),
-  context: (f, fiber) => {
-    const span = fiber.currentSpan
-    if (!(span instanceof BridgedSpan)) return f()
-    return context.with(withSink(trace.setSpan(context.active(), span.otel), span.sink), f)
+  span: (options) => new BridgedSpan(options),
+  // Called for every primitive the fiber evaluates: it runs each one with the
+  // fiber's span as the active OpenTelemetry span, which is what an api span
+  // started in a promise underneath finds as its parent.
+  context: (primitive, fiber) => {
+    const span = fiber.cache.span
+    if (!(span instanceof BridgedSpan)) return primitive[EVALUATE](fiber)
+    return context.with(withSink(trace.setSpan(context.active(), span.otel), span.sink), () =>
+      primitive[EVALUATE](fiber),
+    )
   },
 })
 
 /** Provide this beside `PortsLive`. */
-export const tracingLayer: Layer.Layer<never> = Layer.setTracer(bridgedTracer)
+export const tracingLayer: Layer.Layer<never> = Layer.succeed(Tracer.Tracer, bridgedTracer)
 
 export type Tracing = {
   readonly layer: Layer.Layer<never>

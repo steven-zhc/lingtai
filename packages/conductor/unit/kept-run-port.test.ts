@@ -8,18 +8,18 @@
  * pathspec whose path is itself gitignored — so this only pins call order; the
  * exit-code trap is `integration/kept-run-port.test.ts`'s.
  */
-import { Either } from 'effect'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type GitHere, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from '../src/kept-run-port.ts'
 
 const PLANT = 'apps/web/.env.local'
 
-function fakeGit(answers: Record<string, Either.Either<string, { detail: string }>> = {}) {
+function fakeGit(answers: Record<string, Result.Result<string, { detail: string }>> = {}) {
   const asked: string[][] = []
   const git: GitHere = async (args) => {
     asked.push(args)
-    return answers[args.join(' ')] ?? Either.right('')
+    return answers[args.join(' ')] ?? Result.succeed('')
   }
   return { git, asked }
 }
@@ -36,7 +36,7 @@ describe('keptRunPort.clean', () => {
   })
 
   it('stops at a refused reset, and says which call refused', async () => {
-    const { git, asked } = fakeGit({ 'reset --hard HEAD': Either.left({ detail: 'index.lock exists' }) })
+    const { git, asked } = fakeGit({ 'reset --hard HEAD': Result.fail({ detail: 'index.lock exists' }) })
     const port = keptRunPort({ git, plantAt: PLANT, issue: '390', recordCompletion: async () => {} })
     expect(await port.clean()).toEqual({ failed: 'git reset refused it: index.lock exists' })
     expect(asked).toHaveLength(1)
@@ -48,8 +48,8 @@ describe('keptRunPort.keep', () => {
     const recorded: string[] = []
     const { git, asked } = fakeGit({
       // `--quiet` implies `--exit-code`: a left is *something is staged*.
-      'diff --cached --quiet': Either.left({ detail: 'exit 1' }),
-      'rev-parse HEAD': Either.right('abc1234'),
+      'diff --cached --quiet': Result.fail({ detail: 'exit 1' }),
+      'rev-parse HEAD': Result.succeed('abc1234'),
     })
     const port = keptRunPort({
       git,
@@ -88,7 +88,7 @@ describe('keptRunPort.keep', () => {
 
   it('stops at a refused add, and never reaches the commit', async () => {
     const recorded: string[] = []
-    const { git, asked } = fakeGit({ 'add -A': Either.left({ detail: 'index.lock exists' }) })
+    const { git, asked } = fakeGit({ 'add -A': Result.fail({ detail: 'index.lock exists' }) })
     const port = keptRunPort({
       git,
       plantAt: PLANT,
@@ -131,8 +131,8 @@ describe('restoreAfterReview (#587)', () => {
 
   it('reads only, and answers untouched, when HEAD is onSha and only the planted file is untracked', async () => {
     const { git, asked } = fakeGit({
-      'rev-parse HEAD': Either.right(ON),
-      'status --porcelain -z --untracked-files=all': Either.right(`?? ${PLANT}`),
+      'rev-parse HEAD': Result.succeed(ON),
+      'status --porcelain -z --untracked-files=all': Result.succeed(`?? ${PLANT}`),
     })
     expect(await restoreAfterReview({ git, plantAt: PLANT })(ON)).toEqual({ untouched: true })
     expect(asked).toEqual([
@@ -144,15 +144,15 @@ describe('restoreAfterReview (#587)', () => {
 
   it('reads an unnormalized plantAt as the file porcelain reports, and spares that path', async () => {
     const { git, asked } = fakeGit({
-      'rev-parse HEAD': Either.right(ON),
-      'status --porcelain -z --untracked-files=all': Either.right('?? .env.local'),
+      'rev-parse HEAD': Result.succeed(ON),
+      'status --porcelain -z --untracked-files=all': Result.succeed('?? .env.local'),
     })
     expect(await restoreAfterReview({ git, plantAt: './.env.local' })(ON)).toEqual({ untouched: true })
     expect(asked.some((args) => args[0] === 'clean')).toBe(false)
 
     const dirty = fakeGit({
-      'rev-parse HEAD': Either.right('b'.repeat(40)),
-      'status --porcelain -z --untracked-files=all': Either.right('?? .env.local'),
+      'rev-parse HEAD': Result.succeed('b'.repeat(40)),
+      'status --porcelain -z --untracked-files=all': Result.succeed('?? .env.local'),
     })
     await restoreAfterReview({ git: dirty.git, plantAt: './.env.local' })(ON)
     expect(dirty.asked).toContainEqual(['clean', '-ffd', '-e', '/.env.local'])
@@ -163,9 +163,9 @@ describe('restoreAfterReview (#587)', () => {
     const asked: string[][] = []
     const git: GitHere = async (args) => {
       asked.push(args)
-      if (args[0] === 'rev-parse') return Either.right('b'.repeat(40))
-      if (args[0] === 'status') return Either.right(statuses.shift() ?? '')
-      return Either.right('')
+      if (args[0] === 'rev-parse') return Result.succeed('b'.repeat(40))
+      if (args[0] === 'status') return Result.succeed(statuses.shift() ?? '')
+      return Result.succeed('')
     }
     const answer = await restoreAfterReview({ git, plantAt: PLANT })(ON)
 
@@ -182,8 +182,8 @@ describe('restoreAfterReview (#587)', () => {
   it('escapes pattern characters in plantAt, so the clean spares that literal file', async () => {
     const plant = '.env[local]*?'
     const { git, asked } = fakeGit({
-      'rev-parse HEAD': Either.right('b'.repeat(40)),
-      'status --porcelain -z --untracked-files=all': Either.right(`?? ${plant}`),
+      'rev-parse HEAD': Result.succeed('b'.repeat(40)),
+      'status --porcelain -z --untracked-files=all': Result.succeed(`?? ${plant}`),
     })
     await restoreAfterReview({ git, plantAt: plant })(ON)
     expect(asked).toContainEqual(['clean', '-ffd', '-e', '/.env\\[local\\]\\*\\?'])
@@ -191,9 +191,9 @@ describe('restoreAfterReview (#587)', () => {
 
   it('detaches from a branch the reviewer checked out before it resets, so the branch is not moved', async () => {
     const { git, asked } = fakeGit({
-      'rev-parse HEAD': Either.right(ON),
-      'symbolic-ref -q HEAD': Either.right('refs/heads/other\n'),
-      'status --porcelain -z --untracked-files=all': Either.right(`?? ${PLANT}`),
+      'rev-parse HEAD': Result.succeed(ON),
+      'symbolic-ref -q HEAD': Result.succeed('refs/heads/other\n'),
+      'status --porcelain -z --untracked-files=all': Result.succeed(`?? ${PLANT}`),
     })
     const answer = await restoreAfterReview({ git, plantAt: PLANT })(ON)
 
@@ -205,11 +205,11 @@ describe('restoreAfterReview (#587)', () => {
   })
 
   it('fails when the tree is still dirty after the clean, whatever the exit codes said', async () => {
-    const answers = [Either.right('b'.repeat(40)), Either.right('?? nested/')]
+    const answers = [Result.succeed('b'.repeat(40)), Result.succeed('?? nested/')]
     const git: GitHere = async (args) => {
       if (args[0] === 'rev-parse') return answers[0]!
       if (args[0] === 'status') return answers[1]!
-      return Either.right('')
+      return Result.succeed('')
     }
     expect(await restoreAfterReview({ git, plantAt: PLANT })(ON)).toMatchObject({
       failed: expect.stringContaining('still dirty'),
@@ -218,8 +218,8 @@ describe('restoreAfterReview (#587)', () => {
 
   it('fails by name when the reset is refused', async () => {
     const { git } = fakeGit({
-      'rev-parse HEAD': Either.right('b'.repeat(40)),
-      [`reset --mixed ${ON}`]: Either.left({ detail: 'index.lock exists' }),
+      'rev-parse HEAD': Result.succeed('b'.repeat(40)),
+      [`reset --mixed ${ON}`]: Result.fail({ detail: 'index.lock exists' }),
     })
     expect(await restoreAfterReview({ git, plantAt: PLANT })(ON)).toEqual({
       failed: 'git reset refused it: index.lock exists',

@@ -2128,7 +2128,7 @@ runtime:
 
   /**
    * **#493**: a crash is a `RunOutcome` too — `firstDispatch` never reaches
-   * the hook-not-served early return (`Either.isLeft(ran)`), so the failure
+   * the hook-not-served early return (`Result.isFailure(ran)`), so the failure
    * batch is the one `appendFrom` call that writes `RunFailed` and
    * `RunSpent` together. `costUsd: null` is carried through rather than
    * defaulted to zero (0110 §4).
