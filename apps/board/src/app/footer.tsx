@@ -1,21 +1,19 @@
 /**
  * The home page's footer (#905, the-bar.md): today's spend against the ceiling
  * as a meter of two segments — reported and estimated — written as two figures,
- * never one sum; how many landed; and the way to `/report` and `/spend`.
+ * never one sum; how many landed; the projections' currency; and the home. It
+ * carries no links (#950): Report and Landed are reached from elsewhere.
  *
- * Pure, with no import but React, `next/link` and types: #906 mounts it in a
+ * Pure, with no import but React and types: #906 mounts it in a
  * client component, and a server-only import reaching a `"use client"` graph is
  * seen only by the Next build. The rule that unknown is never `$0.00` stays in
  * `@lingtai/conductor`'s `dayFigure`; `DaySpendReading.figure` carries its
  * answer here as data.
  */
-import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import type { DaySpendReading } from '@/lib/day-spend'
 import type { FooterLag } from '@/lib/footer'
-
-import { withProject } from './bar.tsx'
 
 /** The Landed column's cards that landed, not the closed ones it also holds. */
 export const landedCount = (cards: readonly { closed: boolean }[]): number => cards.filter((c) => !c.closed).length
@@ -26,14 +24,12 @@ const dollars = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 
 export function Footer({
   day,
-  project,
   landed,
   lags,
   home,
 }: {
   day: DaySpendReading
-  project: string | undefined
-  /** Absent off `/`: the count is not drawn rather than drawn as `0 landed`; the `landed` link is drawn everywhere. */
+  /** Absent off `/`: the count is not drawn rather than drawn as `0 landed`. */
   landed?: number
   /** The four projections' lag; null when it could not be read (#906). */
   lags: readonly FooterLag[] | null
@@ -94,20 +90,6 @@ export function Footer({
         </span>
       )}
       <Currency lags={lags} />
-      <span className="links">
-        <Link href={withProject('/landed', project)} title="landed in the last 2 days">
-          landed
-        </Link>
-        <Link
-          href={withProject('/report', project)}
-          title="how the pipeline converges, what it landed and what it cost"
-        >
-          report
-        </Link>
-        <Link href={withProject('/spend', project)} title="the bill, and what an attempt may spend">
-          spend
-        </Link>
-      </span>
       <span className="home-at mono" title={`${home.path} — the Lingtai home this board reads`}>
         home <b>{home.shown}</b>
       </span>

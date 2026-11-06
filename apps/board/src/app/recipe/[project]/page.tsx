@@ -148,7 +148,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
           </p>
         </div>
       </main>
-      <FooterFetched project={view.project} />
+      <FooterFetched />
     </>
   )
 }

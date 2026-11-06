@@ -733,7 +733,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <Footer
           day={today}
           lags={lags}
-          project={only}
           landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
           home={theHome()}
         />
