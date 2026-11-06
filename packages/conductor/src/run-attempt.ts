@@ -1283,6 +1283,8 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
   let approvedAt: string | null =
     options.from !== undefined &&
     options.from.grant === undefined &&
+    // An approval to read the diff clipped is not a head that was read whole (#892).
+    options.from.readClipped === undefined &&
     (options.from.step === 'proposed' || options.from.step === 'merge')
       ? options.context.onSha
       : null
@@ -1575,7 +1577,11 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
           (r.verdict === 'passed' || r.verdict === 'failed') &&
           r.unreadable !== true,
       )
-      if (read) reviewedSha = visitContext.onSha
+      // A clipped read covered the first part of the diff only (#892): the head is
+      // not one a later review may treat as read, or a defect in the unread tail
+      // would be demoted as lying outside the fix delta.
+      const clippedRead = reached.results.some((r) => r.clipped !== undefined)
+      if (read && !clippedRead) reviewedSha = visitContext.onSha
     }
     const ending = reached.ending
     if (ending.ending === 'routed') {
