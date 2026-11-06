@@ -367,7 +367,8 @@ which kind a wait was got inferred again in each place that needed it, from
      Each tab is addressed by the URL, so a link opens it and the page works
      without JavaScript.
      - **An attempt's tab is always in the same order:** one summary line (its
-       outcome, turns, time, cost, the size of its diff and its date); its
+       outcome, turns, time, cost, the size of its diff and its date); the
+       reviewer's summary of the change, where there is one; its
        steps, as the rail and one line per step with that step's verdict; where
        this is the attempt a person is deciding on, the wait's reasoning
        (what was done and the recommendation, whole); then **Changes**,

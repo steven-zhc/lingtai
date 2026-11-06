@@ -89,6 +89,15 @@ function Rendered({ text }: { text: string }) {
   )
 }
 
+/** The reviewer's summary: react-markdown's own allowlist, so a heading or list keeps its text and loses its element. */
+function Inline({ text }: { text: string }) {
+  return (
+    <ReactMarkdown rehypePlugins={[rehypeSanitize]} allowedElements={['p', 'code', 'em', 'strong']} unwrapDisallowed>
+      {text}
+    </ReactMarkdown>
+  )
+}
+
 /**
  * A document, in the form its source earns.
  *
@@ -100,6 +109,7 @@ export function DocumentBody({ source, text, rawClass }: { source: DocumentSourc
   const rendering = renderingFor(source)
 
   if (rendering === 'rendered') return <Rendered text={text} />
+  if (rendering === 'inline') return <Inline text={text} />
 
   return (
     <>

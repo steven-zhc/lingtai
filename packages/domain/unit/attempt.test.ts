@@ -176,6 +176,30 @@ describe('reduceAttempt', () => {
     expect(moved.produced).toMatchObject({ files: 3, insertions: 40, deletions: 2 })
   })
 
+  it('keeps the review summary and clip on the action that wrote them alone (#893)', () => {
+    const e = makeStream('pass-01JX')
+    const done = (extra: object) => ({
+      _tag: 'Completed' as const,
+      assessment: { verdict: 'accepted' as const, findings: [], ...extra },
+    })
+    const outcome: StepOutcome = {
+      step: 'review',
+      round: 0,
+      actions: [
+        verdictAction('one', 'sha-a', done({ summary: 'Moves it. Then more.', clipped: { read: 10, of: 40 } })),
+        verdictAction('two', 'sha-a', done({})),
+      ],
+    }
+    const s = reduceAttempt([
+      e('RunStarted', started),
+      e('RunProposedCompletion', { headSha: 'sha-a' }),
+      e('StepEnded', { runId: 'pass-01JX', outcome }),
+    ])
+    expect(s.steps['review:one']).toMatchObject({ summary: 'Moves it. Then more.', clipped: { read: 10, of: 40 } })
+    expect('summary' in s.steps['review:two']!).toBe(false)
+    expect('clipped' in s.steps['review:two']!).toBe(false)
+  })
+
   it('enters gating on a proposed completion and collects verdicts', () => {
     const e = makeStream('pass-01JX')
     const outcome: StepOutcome = {

@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 import { HistoryRow } from '../src/app/history-row.tsx'
 import { DocumentBody } from '../src/app/markdown.tsx'
 import { splitPayload, toLine } from '../src/lib/history.ts'
-import { renderingFor, sourceOfPayloadDocument } from '../src/lib/markdown.ts'
+import { leadOf, renderingFor, sourceOfPayloadDocument } from '../src/lib/markdown.ts'
 
 /** The real failure the rule is written against, from 2026-09-08. */
 const TYPECHECK = [
@@ -200,5 +200,14 @@ describe('the ticket body, which anyone who can file an issue writes', () => {
     expect(html).toContain('the <em>answer</em>, written for a hold')
     expect(html).toContain('inline')
     expect(html).toContain('marker')
+  })
+})
+
+describe('leadOf (#893)', () => {
+  it('splits at the first sentence end outside a code span', () => {
+    expect(leadOf('Moves `a.b` to c. Then d.')).toEqual({ lead: 'Moves `a.b` to c.', rest: 'Then d.' })
+  })
+  it('takes the whole text as the lead with no boundary', () => {
+    expect(leadOf('no stop here')).toEqual({ lead: 'no stop here', rest: '' })
   })
 })

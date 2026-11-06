@@ -23,6 +23,7 @@ const run = (attempt: number, over: Partial<AttemptView> = {}): AttemptView =>
     awaitingSha: null,
     steps: [],
     progress: null,
+    review: null,
     ...over,
   }) as unknown as AttemptView
 
@@ -66,6 +67,28 @@ describe("an attempt's tab (#885)", () => {
     expect(at.every((i) => i >= 0)).toBe(true)
     expect(at).toEqual([...at].sort((a, b) => a - b))
     expect(html).not.toContain('open=""')
+  })
+
+  it('shows the reviewer’s summary under the summary line and before Steps, the first sentence as the lead (#893)', () => {
+    const html = tab(
+      run(1, { review: { summary: 'Moves `a.b` to c. It also tidies d.', clipped: null } }),
+      standing({ state: 'landed', diagnosis: null }),
+    )
+    const at = html.indexOf('class="areview"')
+    expect(at).toBeGreaterThan(html.indexOf('class="asum"'))
+    expect(at).toBeLessThan(html.indexOf('>Steps<'))
+    expect(html).toMatch(/class="alead"[^>]*><p>Moves <code>a\.b<\/code> to c\.<\/p>/)
+    expect(html).toMatch(/class="arest"[^>]*><p>It also tidies d\.<\/p>/)
+    expect(html).not.toContain('the reviewer read the first')
+  })
+
+  it('says how much a clipped review read (#893)', () => {
+    const html = tab(run(1, { review: { summary: 'Moves it.', clipped: { read: 100, of: 900 } } }), standing())
+    expect(html).toContain('the reviewer read the first 100 of 900')
+  })
+
+  it('renders nothing for no summary (#893)', () => {
+    expect(tab(run(1), standing())).not.toContain('areview')
   })
 
   it('puts the wait’s reasoning only on the attempt the page is deciding on, before the sections', () => {

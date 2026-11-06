@@ -66,6 +66,8 @@ const StepState = z.strictObject({
   verdict: z.enum(['passed', 'failed', 'never-ran', 'did-not-finish', 'asked', 'waived']),
   evidence: z.string().nullable(),
   findings: z.array(Finding),
+  summary: z.string().optional(),
+  clipped: z.strictObject({ read: z.number(), of: z.number() }).optional(),
 })
 
 const StoredRun = z.strictObject({
@@ -169,7 +171,9 @@ export const attemptReducer: Reducer<AttemptState> = {
   // version-1 snapshot may have been cut by a reducer that ignored it.
   // 3: a `ProposalRouted` folds like a `PassRouted` (#932), and `refusal` names
   // the `StepEnded` version and action it came from.
-  version: 3,
+  // 4: a `StepState` keeps the review's `summary` and `clipped` (#893); a snapshot
+  // cut before this lacks them.
+  version: 4,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

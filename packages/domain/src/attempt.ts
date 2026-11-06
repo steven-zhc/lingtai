@@ -15,7 +15,7 @@
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */
-import { isReached, type Reached, type StepOutcome } from './action.ts'
+import { isReached, reviewSummaryOf, type Reached, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
 import { routeMove, type StoredRoute } from './routing.ts'
@@ -60,6 +60,10 @@ export interface StepState {
   onSha: string
   evidence: string | null
   findings: readonly StepFinding[]
+  /** The reviewer's summary of the change, on the review action that wrote it (0103 §3, #893). Absent, never empty. */
+  summary?: string
+  /** The reviewer read the first `read` of `of` of a clipped diff (#892). Absent when it read the whole. */
+  clipped?: { read: number; of: number }
   /** Set for a waiver, and for an approval. A waiver is recorded, never silent. */
   by: string | null
   reason: string | null
@@ -386,8 +390,10 @@ function questionOf(action: Reached): string | null {
 }
 
 /** One reached `Action` (0120 §1) as the `StepState` this aggregate keeps. */
-function stepStateOf(key: string, action: Reached): StepState {
+function stepStateOf(key: string, action: Reached, outcome: StepOutcome): StepState {
   const verdict = verdictOf(action)
+  // `reviewSummaryOf` reads a whole outcome; hand it this one action so the summary stays on the action that wrote it.
+  const review = reviewSummaryOf({ ...outcome, actions: [action] })
   return {
     step: key,
     onSha: action.onSha,
@@ -397,6 +403,8 @@ function stepStateOf(key: string, action: Reached): StepState {
     evidence: verdict === 'waived' ? null : (questionOf(action) ?? action.evidence),
     findings:
       action.yields === 'verdict' && action.result._tag === 'Completed' ? action.result.assessment.findings : [],
+    ...(review?.summary === undefined ? {} : { summary: review.summary }),
+    ...(review?.clipped === undefined ? {} : { clipped: review.clipped }),
   }
 }
 
@@ -539,7 +547,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       for (const action of d.outcome.actions) {
         if (!isReached(action)) continue
         const key = `${d.outcome.step}:${action.name}`
-        next = { ...next, steps: withStep(next, stepStateOf(key, action)) }
+        next = { ...next, steps: withStep(next, stepStateOf(key, action, d.outcome)) }
         if (
           action.yields === 'verdict' &&
           action.result._tag === 'Completed' &&

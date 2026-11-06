@@ -192,6 +192,7 @@ describe('the attempt tab draws the prompt as handed (#933)', () => {
       awaitingSha: null,
       steps: [],
       progress: null,
+      review: null,
     }) as never
 
   it('shows an implementer prompt with a body ref and a step-value ref byte for byte', async () => {

@@ -1,6 +1,7 @@
 import { inWords } from '@lingtai/conductor/queue'
 import { describeWaitLines } from '@lingtai/projector/task-view'
 
+import { leadOf } from '@/lib/markdown'
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
 import { billText } from '@/lib/spend'
@@ -19,7 +20,7 @@ import { RawEvidence } from './standing.tsx'
  * 0118 §2). Before it, one attempt's diff, verdicts, prompt and steps were in
  * four tabs that each listed every attempt.
  *
- * In this order: one summary line; where it started and ended; **Steps**, the
+ * In this order: one summary line; the reviewer's summary of the change, where there is one; where it started and ended; **Steps**, the
  * rail and what each step said; the reasoning of the wait, only on the attempt
  * the page is deciding on; then five closed sections — Changes, Prompt, Recipe,
  * Run log and Events. They are closed and their content is in the page: that is
@@ -36,6 +37,27 @@ export function outcomeClass(state: AttemptView['outcome']['state']): string {
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+function ReviewSummary({ review }: { review: NonNullable<AttemptView['review']> }) {
+  const { lead, rest } = leadOf(review.summary)
+  return (
+    <div className="areview">
+      <div className="alead">
+        <DocumentBody source="summary" text={lead} rawClass="" />
+      </div>
+      {rest === '' ? null : (
+        <div className="arest">
+          <DocumentBody source="summary" text={rest} rawClass="" />
+        </div>
+      )}
+      {review.clipped === null ? null : (
+        <p className="aclip">
+          the reviewer read the first {review.clipped.read} of {review.clipped.of}
+        </p>
+      )}
+    </div>
+  )
 }
 
 export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDetail; now?: number }) {
@@ -73,6 +95,8 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
           {run.at.slice(0, 10)} · {inWords(now - Date.parse(run.at))} ago
         </span>
       </p>
+
+      {run.review === null ? null : <ReviewSummary review={run.review} />}
 
       {/* The run id is in the title only: the tab is the attempt's name. */}
       <p className="ameta" title={run.runId}>
