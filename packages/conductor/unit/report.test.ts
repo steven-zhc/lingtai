@@ -303,6 +303,59 @@ describe('waits and the top eight', () => {
     expect(top.map((t) => t.ticket)).toEqual(['b', 'a'])
   })
 
+  describe('costliest and spend by purpose', () => {
+    const c = (cents: number, unknown = 0) => ({
+      Work: { reportedCents: cents, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown },
+    })
+
+    it('is cost first whatever sortBy says, any outcome, unknown last', () => {
+      const tickets = [
+        ticket({ ticket: 'a', fixRounds: 9, cost: c(1) }),
+        ticket({ ticket: 'b', outcome: 'closed', cost: c(50) }),
+        ticket({ ticket: 'o', outcome: 'open', outcomeAt: null, cost: c(20) }),
+        ticket({ ticket: 'u', fixRounds: 12, cost: c(0, 3) }),
+      ]
+      const byRounds = run(tickets, { sortBy: 'rounds' })
+      const byCost = run(tickets, { sortBy: 'cost' })
+      expect(byRounds.costliest.map((t) => t.ticket)).toEqual(['b', 'o', 'a', 'u'])
+      expect(byCost.costliest).toEqual(byRounds.costliest)
+      expect(byRounds.top[0]!.ticket).toBe('u')
+      expect(byRounds.costliest.map((t) => t.outcome)).toEqual(['closed', 'open', 'landed', 'landed'])
+      expect(byRounds.costliest[3]!.cost.unknown).toBe(3)
+      expect(run(Array.from({ length: 10 }, (_, i) => ticket({ ticket: `x${i}` }))).costliest).toHaveLength(8)
+    })
+
+    it('sums the days’ purposes to the total, field by field', () => {
+      const day2 = new Date(2026, 9, 29, 12)
+      const rows = [
+        spend({ purpose: 'Action', costUsd: null, estimatedUsd: 0.004 }),
+        spend({ purpose: 'Action', costUsd: null, estimatedUsd: 0.004 }),
+        spend({ purpose: 'Judge', costUsd: null, estimatedUsd: 0.004 }),
+        spend({ purpose: 'Judge', costUsd: 2.5 }),
+        spend({ purpose: 'Judge', costUsd: null, estimatedUsd: null }),
+        spend({ at: day2, purpose: 'Action', costUsd: null, estimatedUsd: 0.004 }),
+        spend({ at: day2, purpose: 'Judge', costUsd: null, estimatedUsd: 0.004 }),
+        spend({ at: day2, purpose: 'Judge', costUsd: null, estimatedUsd: 0.004 }),
+      ]
+      const r = run([], { spend: rows, window: { from: W.from, to: new Date(2026, 9, 30) } })
+      const sum = r.spend.byPurpose.reduce(
+        (n, p) => ({
+          reportedCents: n.reportedCents + p.money.reportedCents,
+          estimatedCents: n.estimatedCents + p.money.estimatedCents,
+          unknown: n.unknown + p.money.unknown,
+        }),
+        { reportedCents: 0, estimatedCents: 0, unknown: 0 },
+      )
+      expect(sum).toEqual(r.spend.total)
+      expect(r.spend.byPurpose.reduce((n, p) => n + p.money.unknown, 0)).toBe(1)
+      expect(r.spend.byPurpose.map((p) => p.purpose)).toEqual(r.spend.byPurpose.map((p) => p.purpose).sort())
+    })
+
+    it('is empty over a window with no runs', () => {
+      expect(run([]).spend.byPurpose).toEqual([])
+    })
+  })
+
   it('writes the sentence from the ticket’s own facts', () => {
     const cost = {
       Answering: { reportedCents: 72, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
