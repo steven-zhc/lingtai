@@ -305,6 +305,37 @@ function splitClosedComment(waitId: string, children: readonly SplitChildState[]
   )
 }
 
+/**
+ * Where this branch's own change starts: `git merge-base <base tip> HEAD` (#937).
+ * Asked on every call and never kept, because an agent may merge the base
+ * mid-attempt. A failed fetch uses the local base ref, which is only ever older
+ * (a larger diff, never a smaller one); a merge-base that cannot be read is
+ * `fallback`, and each is noted. Never throws.
+ */
+export const ownChangeStart = async (port: {
+  git: (args: string[]) => Promise<Either.Either<string, { detail: string }>>
+  note: (line: string) => void
+  base: string
+  fallback: string
+}): Promise<string> => {
+  const { git, note, base, fallback } = port
+  const fetched = await git(['fetch', 'origin', `refs/heads/${base}`])
+  const fetchOk = Either.isRight(fetched)
+  if (!fetchOk) note(`fetching ${base} failed, using the local ref: ${fetched.left.detail}`)
+  const got = await git(['merge-base', fetchOk ? 'FETCH_HEAD' : `refs/heads/${base}`, 'HEAD'])
+  if (Either.isLeft(got)) {
+    note(`merge-base with ${base} failed, measuring from ${fallback}: ${got.left.detail}`)
+    return fallback
+  }
+  const lines = got.right.split('\n').filter((l) => l.trim() !== '')
+  const sha = lines.length === 1 ? lines[0]!.trim() : ''
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    note(`merge-base with ${base} printed ${lines.length} lines, measuring from ${fallback}`)
+    return fallback
+  }
+  return sha
+}
+
 export const changedFilesArgs = (baseSha: string): string[] => [
   'diff',
   '--name-only',
@@ -1790,7 +1821,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * whose head is not `HEAD` once a WIP commit has moved it on
        * (`keepUncommittedWork`, `#468`).
        */
-      const numstat = async (from = baseShaOr('HEAD'), to = 'HEAD') => {
+      const changeStart = (fallback: string = baseShaOr('HEAD')) =>
+        ownChangeStart({ git: gitAsked, note: (l) => runLog.note('base', l), base, fallback })
+
+      const numstat = async (from?: string, to = 'HEAD') => {
+        from ??= await changeStart()
         const stat = await gitOrDie(['diff', '--numstat', `${from}..${to}`]).catch(() => '')
         const rows = stat
           .split('\n')
@@ -3113,35 +3148,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
-       * The base commit an earlier lap of a **held** run merged in, for a
-       * continuation's review (#594). The pass that merged it is over and its
-       * in-memory record with it, but the merge commit is in the branch: ours,
-       * subject `Merge <base> at <sha> into <branch>`, and its second parent is
-       * the `toSha`. Without it a human-granted fix round's review would diff
-       * against the original cut and show everything the base landed. `null` for
-       * a pass that is not a continuation, or whose branch holds no such merge.
-       */
-      const heldBaseMerge = async (): Promise<string | null> => {
-        if (continuation === null) return null
-        const log = await gitAsked([
-          'log',
-          '--first-parent',
-          '--merges',
-          '--fixed-strings',
-          `--grep=Merge ${base} at `,
-          '--format=%P%x09%s',
-        ])
-        if (Either.isLeft(log)) return null
-        for (const line of log.right.split('\n')) {
-          const [parents = '', subject = ''] = line.split('\t')
-          const second = parents.split(' ')[1]
-          if (second !== undefined && subject.startsWith(`Merge ${base} at `) && subject.endsWith(` into ${branch}`))
-            return second
-        }
-        return null
-      }
-
-      /**
        * `design` — the document into the worktree, and onto the branch (0066 §5,
        * `#300`).
        *
@@ -3301,7 +3307,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksFromState(reduced),
-          diff: async (from?: string) => diffBetween(from ?? (await heldBaseMerge()) ?? baseShaOr('HEAD')),
+          diff: async (from?: string) => diffBetween(from ?? (await changeStart())),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
           landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
@@ -3340,7 +3346,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         runtimeFor: runtimeNamed,
         watch: {
           changedFiles: async () => {
-            const names = await gitOrDie(changedFilesArgs(baseShaOr('HEAD')))
+            const names = await gitOrDie(changedFilesArgs(await changeStart()))
             return names.split('\n').filter(Boolean)
           },
         },
@@ -4014,13 +4020,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return { stopped: `the fixing agent had no settings: ${settings.left.detail}` }
         }
 
-        // Never `tree.baseSha` alone once there is a continuation — see
-        // `baseShaOr`'s own comment: `tree.baseSha` is this re-cut's own
-        // head, and a fixing agent briefed against its own starting point
-        // would be shown nothing to fix.
+        // The merge-base with the base, so a base merge anybody made is not the
+        // ticket's change (#937). The fallback is never `tree.baseSha` alone once
+        // there is a continuation — see `baseShaOr`'s own comment.
         // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
         // two should be looking at the same change, and the two shas it ran between.
-        const underReview = await diffBetween(continuation?.diffBaseSha ?? tree.baseSha)
+        const underReview = await diffBetween(await changeStart(continuation?.diffBaseSha ?? tree.baseSha))
         // The same flag `firstDispatch` sets before its own dispatch, and for
         // the same reason (`#468`): an agent is running, and nothing has
         // judged what it leaves in the worktree if it is interrupted here.
