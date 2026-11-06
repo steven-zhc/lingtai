@@ -272,7 +272,7 @@ body {
 .pending .card { flex: 0 1 22rem; }
 .pending code { font-family: var(--mono); font-size: 11px; }
 
-.home {
+.home-frame {
   /* The home page is a column at least the window's height (#939): `<main>`
      takes what the footer leaves and `.cols` what the bar leaves, so no height
      of either is written here. The fixed offset this replaced was the bar's height when
@@ -285,7 +285,7 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
 }
-.home > main { display: flex; flex-direction: column; flex: 1 0 auto; }
+.home-frame > main { display: flex; flex-direction: column; flex: 1 0 auto; }
 
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not

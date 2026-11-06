@@ -21,7 +21,7 @@ describe('HomeFrame', () => {
   )
 
   it('is one wrapper holding main and then a footer that is not inside it', () => {
-    expect(html.startsWith('<div class="home"><main>')).toBe(true)
+    expect(html.startsWith('<div class="home-frame"><main>')).toBe(true)
     expect(html.endsWith('</main><footer>f</footer></div>')).toBe(true)
     expect(html.indexOf('class="bar"')).toBeLessThan(html.indexOf('class="cols"'))
     expect(html.indexOf('class="cols"')).toBeLessThan(html.indexOf('</main>'))
@@ -31,7 +31,14 @@ describe('HomeFrame', () => {
 describe('the frame stylesheet', () => {
   it('sizes the page from the window and no number', () => {
     expect(css).not.toContain('calc(100vh - 41px)')
-    expect(css).toMatch(/\.home\s*\{[^}]*min-height:\s*100dvh/)
+    expect(css).toMatch(/\.home-frame\s*\{[^}]*min-height:\s*100dvh/)
     expect(css).not.toMatch(/\.cols\s*\{[^}]*min-height/)
+  })
+})
+
+describe('the frame class', () => {
+  it("is not the bar label's class, which the stylesheet already styles", () => {
+    expect(css).not.toMatch(/^\.home\s*\{/m)
+    expect(css).not.toMatch(/^\.home\s*>/m)
   })
 })
