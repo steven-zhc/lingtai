@@ -285,10 +285,10 @@ describe('what a pass says it did not take', () => {
   it('counts each reason by name, most first', () => {
     expect(
       passedOver([
-        { ref: 1, reason: 'excluded-label', parent: null, subIssues: null },
-        { ref: 2, reason: 'no-kind', parent: null, subIssues: null },
-        { ref: 3, reason: 'excluded-label', parent: null, subIssues: null },
-        { ref: 4, reason: 'blocked-by', parent: null, subIssues: null },
+        { ref: 1, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 2, reason: 'no-kind', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 3, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 4, reason: 'blocked-by', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
       ]),
     ).toBe('4 passed over — excluded-label 2, blocked-by 1, no-kind 1')
     expect(passedOver([])).toBeNull()
@@ -420,8 +420,16 @@ describe('runnableNow', () => {
       subIssues: null,
     })
     expect(result.skipped).toEqual([
-      { ref: 103, reason: 'excluded-label', parent: null, subIssues: null },
-      { ref: 104, reason: 'no-kind', parent: null, subIssues: null },
+      {
+        ref: 103,
+        reason: 'excluded-label',
+        title: 'issue 103',
+        kind: 'bug',
+        blockedBy: 0,
+        parent: null,
+        subIssues: null,
+      },
+      { ref: 104, reason: 'no-kind', title: 'issue 104', kind: null, blockedBy: 0, parent: null, subIssues: null },
     ])
   })
 
@@ -446,7 +454,9 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
-    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by', parent: null, subIssues: null }])
+    expect(result.skipped).toEqual([
+      { ref: 123, reason: 'blocked-by', title: 'issue 123', kind: 'bug', blockedBy: 2, parent: null, subIssues: null },
+    ])
     expect(result.dependenciesUnread).toBeNull()
   })
 
@@ -487,7 +497,9 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
-    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by', parent: null, subIssues: null }])
+    expect(result.skipped).toEqual([
+      { ref: 123, reason: 'blocked-by', title: 'issue 123', kind: 'bug', blockedBy: 1, parent: null, subIssues: null },
+    ])
     expect(result.dependenciesUnread).toBe('GitHub sent no dependency summary for #122 — it is not held by a blocker')
   })
 
@@ -523,7 +535,17 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable).toEqual([])
-    expect(result.skipped).toEqual([{ ref: 403, reason: 'excluded-label', parent: null, subIssues: null }])
+    expect(result.skipped).toEqual([
+      {
+        ref: 403,
+        reason: 'excluded-label',
+        title: 'issue 403',
+        kind: 'bug',
+        blockedBy: 0,
+        parent: null,
+        subIssues: null,
+      },
+    ])
     expect(result.kindColors).toEqual({ bug: '#d73a4a' })
   })
 

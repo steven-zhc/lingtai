@@ -253,10 +253,10 @@ describe('the queue preview', () => {
 
     expect(pass.passedOver).toBe(
       passedOver([
-        { ref: 88, reason: 'excluded-label', parent: null, subIssues: null },
-        { ref: 99, reason: 'excluded-label', parent: null, subIssues: null },
-        { ref: 101, reason: 'no-kind', parent: null, subIssues: null },
-        { ref: 102, reason: 'no-kind', parent: null, subIssues: null },
+        { ref: 88, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 99, reason: 'excluded-label', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 101, reason: 'no-kind', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
+        { ref: 102, reason: 'no-kind', title: 't', kind: null, blockedBy: null, parent: null, subIssues: null },
       ]),
     )
     expect(pass.line).toBe('4 runnable · 4 passed over — excluded-label 2, no-kind 2')
