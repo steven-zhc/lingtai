@@ -221,6 +221,13 @@ body {
   white-space: nowrap;
 }
 
+/* Today's spend near the ceiling: the fail colour, never amber. Not `.why`,
+   which truncates; the figures are the part that must not be cut. */
+.bar .near {
+  font-family: var(--mono); font-size: 12px; color: var(--fail);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
 /* The projects, as one control (the-bar.md, *Since 2026-11-05*): a <details>
    whose summary names the project in view, with the projects, `recipe` and
    *add a repository* in a menu under it. The menu is positioned, so opening it

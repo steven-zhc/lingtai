@@ -88,6 +88,6 @@ async function news(): Promise<CodeNews | null> {
   }
 }
 
-export async function Health() {
-  return <Live code={await news()} />
+export async function Health({ near }: { near: string | null }) {
+  return <Live code={await news()} near={near} />
 }
