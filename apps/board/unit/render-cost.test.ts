@@ -184,9 +184,9 @@ describe('what GitHub offers', () => {
           offered: {
             runnable: [],
             skipped: [
-              { ref: 123, reason: 'blocked-by' },
-              { ref: 9, reason: 'excluded-label' },
-              { ref: 10, reason: 'excluded-label' },
+              { ref: 123, reason: 'blocked-by', parent: null, subIssues: null },
+              { ref: 9, reason: 'excluded-label', parent: null, subIssues: null },
+              { ref: 10, reason: 'excluded-label', parent: null, subIssues: null },
             ],
             kindColors: {},
             dependenciesUnread: DEPENDENCIES_UNREAD,

@@ -64,6 +64,8 @@ const client = {
       labels: [{ name: 'bug', color: null }],
       assignees: [],
       dependencies: { blockedBy: i.blockedBy ?? 0 },
+      parent: null,
+      subIssues: null,
     })),
   getIssue: async (n: number) => {
     if (world.failBody.has(n)) throw new Error('boom')

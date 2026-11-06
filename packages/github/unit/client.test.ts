@@ -119,6 +119,35 @@ describe('listOpenIssues', () => {
     expect((await (await client()).listOpenIssues())[0]!.dependencies).toBeNull()
   })
 
+  /** #957: the parent and the sub-issue counts arrive on the listing, and nothing is repaired. */
+  it('reads the parent and the sub-issue summary off the listing', async () => {
+    const api = 'https://api.github.com/repos'
+    stub([
+      raw({ number: 1, parent_issue_url: `${api}/o/r/issues/946`, sub_issues_summary: { total: 7, completed: 5 } }),
+      raw({
+        number: 2,
+        parent_issue_url: `${api}/other/place/issues/3`,
+        sub_issues_summary: { total: 7, completed: 7 },
+      }),
+      raw({ number: 3, sub_issues_summary: { total: 0, completed: 0 } }),
+      raw({ number: 4, parent_issue_url: 'https://api.github.com/nonsense', sub_issues_summary: { total: 1 } }),
+      raw({ number: 5, parent_issue_url: null, sub_issues_summary: null }),
+    ])
+
+    const [a, b, c, d, e] = await (await client()).listOpenIssues()
+
+    expect(a!.parent).toEqual({ repository: 'o/r', number: 946 })
+    expect(a!.subIssues).toEqual({ total: 7, completed: 5 })
+    expect(b!.parent).toEqual({ repository: 'other/place', number: 3 })
+    expect(b!.subIssues).toEqual({ total: 7, completed: 7 })
+    expect(c!.parent).toBeNull()
+    expect(c!.subIssues).toEqual({ total: 0, completed: 0 })
+    expect(d!.parent).toBeNull()
+    expect(d!.subIssues).toBeNull()
+    expect(e!.parent).toBeNull()
+    expect(e!.subIssues).toBeNull()
+  })
+
   /**
    * Whose work a ticket is (#181), off the listing a pass already makes. One
    * request for the page and none per issue: a second request per candidate is

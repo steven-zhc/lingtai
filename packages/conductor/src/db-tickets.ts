@@ -177,6 +177,8 @@ function toListing(row: Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>
     // Never null: this implementation has no notion of an unread dependency,
     // only of one that is clear (CLAUDE.md, "Null is not zero").
     dependencies: { blockedBy: 0 },
+    parent: null,
+    subIssues: null,
   }
 }
 

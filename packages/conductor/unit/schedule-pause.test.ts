@@ -93,6 +93,8 @@ describe('runQueue under a pause', () => {
           labels: [{ name: 'bug', color: null }],
           assignees: [],
           dependencies: { blockedBy: 0 },
+          parent: null,
+          subIssues: null,
         },
       ],
     }

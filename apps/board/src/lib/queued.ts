@@ -102,6 +102,7 @@ export interface PlanView {
 /** Why GitHub is not offering this issue to the conductor, in words. */
 const NOT_OFFERED: Record<SkipReason, string> = {
   closed: 'the issue is closed',
+  epic: 'it has open sub-issues, so it is an epic and is never taken',
   'no-kind': 'it carries no label this recipe takes',
   'excluded-label': 'it carries a label this recipe excludes',
   'already-discovered': 'the log already has it',

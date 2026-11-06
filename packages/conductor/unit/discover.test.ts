@@ -58,6 +58,8 @@ const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?:
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  parent: null,
+  subIssues: null,
   ...over,
   labels: (over.labels ?? []).map((l) => (typeof l === 'string' ? { name: l, color: null } : l)),
 })
@@ -135,6 +137,21 @@ describe('considerIssue', () => {
     expect(considerIssue(issue({ number: 6, labels: ['tech-debt'] }), queue).skip).toBe('no-kind')
     expect(considerIssue(issue({ number: 7, labels: [] }), queue).skip).toBe('no-kind')
     expect(considerIssue(issue({ number: 8, labels: ['bug'], state: 'closed' }), queue).skip).toBe('closed')
+  })
+
+  /** #957: open sub-issues make an epic, whatever its labels; closed ones do not. */
+  it('passes over an epic before it reads a label, and offers a ticket whose sub-issues are all closed', () => {
+    const epic = { total: 7, completed: 5 }
+    expect(considerIssue(issue({ number: 1, labels: ['bug'], subIssues: epic }), queue).skip).toBe('epic')
+    expect(considerIssue(issue({ number: 2, labels: ['bug', 'agent:hold'], subIssues: epic }), queue).skip).toBe('epic')
+    expect(
+      considerIssue(issue({ number: 3, labels: ['bug'], subIssues: { total: 7, completed: 7 } }), queue).skip,
+    ).toBe(null)
+    expect(
+      considerIssue(issue({ number: 4, labels: ['bug'], subIssues: { total: 0, completed: 0 } }), queue).skip,
+    ).toBe(null)
+    expect(considerIssue(issue({ number: 5, labels: ['bug'], subIssues: null }), queue).skip).toBe(null)
+    expect(considerIssue(issue({ number: 6, state: 'closed', subIssues: epic }), queue).skip).toBe('closed')
   })
 
   /**
@@ -268,10 +285,10 @@ describe('what a pass says it did not take', () => {
   it('counts each reason by name, most first', () => {
     expect(
       passedOver([
-        { ref: 1, reason: 'excluded-label' },
-        { ref: 2, reason: 'no-kind' },
-        { ref: 3, reason: 'excluded-label' },
-        { ref: 4, reason: 'blocked-by' },
+        { ref: 1, reason: 'excluded-label', parent: null, subIssues: null },
+        { ref: 2, reason: 'no-kind', parent: null, subIssues: null },
+        { ref: 3, reason: 'excluded-label', parent: null, subIssues: null },
+        { ref: 4, reason: 'blocked-by', parent: null, subIssues: null },
       ]),
     ).toBe('4 passed over — excluded-label 2, blocked-by 1, no-kind 1')
     expect(passedOver([])).toBeNull()
@@ -395,10 +412,16 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['101', '102'])
-    expect(result.runnable[0]).toEqual({ ref: '101', title: 'a race in the importer', kind: 'bug' })
+    expect(result.runnable[0]).toEqual({
+      ref: '101',
+      title: 'a race in the importer',
+      kind: 'bug',
+      parent: null,
+      subIssues: null,
+    })
     expect(result.skipped).toEqual([
-      { ref: 103, reason: 'excluded-label' },
-      { ref: 104, reason: 'no-kind' },
+      { ref: 103, reason: 'excluded-label', parent: null, subIssues: null },
+      { ref: 104, reason: 'no-kind', parent: null, subIssues: null },
     ])
   })
 
@@ -423,7 +446,7 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
-    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by' }])
+    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by', parent: null, subIssues: null }])
     expect(result.dependenciesUnread).toBeNull()
   })
 
@@ -464,7 +487,7 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
-    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by' }])
+    expect(result.skipped).toEqual([{ ref: 123, reason: 'blocked-by', parent: null, subIssues: null }])
     expect(result.dependenciesUnread).toBe('GitHub sent no dependency summary for #122 — it is not held by a blocker')
   })
 
@@ -500,7 +523,7 @@ describe('runnableNow', () => {
     const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable).toEqual([])
-    expect(result.skipped).toEqual([{ ref: 403, reason: 'excluded-label' }])
+    expect(result.skipped).toEqual([{ ref: 403, reason: 'excluded-label', parent: null, subIssues: null }])
     expect(result.kindColors).toEqual({ bug: '#d73a4a' })
   })
 

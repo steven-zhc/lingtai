@@ -46,6 +46,8 @@ class FakeGitHub {
       url: '',
       dependencies: null,
       assignees: [],
+      parent: null,
+      subIssues: null,
     }
   }
 

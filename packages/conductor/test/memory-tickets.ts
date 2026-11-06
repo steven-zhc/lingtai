@@ -68,6 +68,8 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets
       // Never null: this implementation has no notion of an unread dependency,
       // only of one that is clear (CLAUDE.md, "Null is not zero").
       dependencies: { blockedBy: 0 },
+      parent: null,
+      subIssues: null,
     }
   }
 

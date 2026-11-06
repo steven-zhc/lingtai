@@ -53,6 +53,26 @@ export interface TicketListing {
    * `undefined` the same way, so every ticket would go silently clear.
    */
   dependencies: { blockedBy: number } | null
+  /**
+   * The issue this is a sub-issue of; null when it has none or the source does
+   * not say. Required for the same reason `dependencies` is (#957).
+   */
+  parent: { repository: string; number: number } | null
+  /**
+   * GitHub's sub-issue counts; null is *said nothing*, which is not an epic.
+   * Required and nullable, like `dependencies`.
+   */
+  subIssues: { total: number; completed: number } | null
+}
+
+/**
+ * An epic is a ticket with **open** sub-issues, whatever its labels (#957). Not
+ * *any* sub-issue: a split parent has all of its children attached, and comes
+ * back to be closed once they have closed (0118 §12.9). `{0,0}` and null are
+ * not epics.
+ */
+export function isEpic(t: { subIssues: { total: number; completed: number } | null }): boolean {
+  return t.subIssues !== null && t.subIssues.total > t.subIssues.completed
 }
 
 /**
@@ -132,6 +152,8 @@ function normaliseLabel(label: string): string {
  */
 export type SkipReason =
   | 'closed'
+  /** It has open sub-issues, so it is a container of work and never work itself (#957). */
+  | 'epic'
   | 'no-kind'
   | 'excluded-label'
   | 'already-discovered'
@@ -185,6 +207,10 @@ export interface Considered {
  */
 export function considerIssue(issue: TicketListing, queue: QueueSettings): Considered {
   if (issue.state === 'closed') return { issue, skip: 'closed' }
+
+  // Before any label is read: an epic is never work, which is more permanent
+  // than a hold a person put on it.
+  if (isEpic(issue)) return { issue, skip: 'epic' }
 
   const labels = issue.labels.map((l) => l.name.toLowerCase())
 
@@ -254,9 +280,20 @@ export function assigneeSkip(issue: TicketListing, rule: AssigneeRule | undefine
 
 export interface Offered {
   /** Issues GitHub lists that the recipe will take. */
-  runnable: { ref: string; title: string; kind: string }[]
+  runnable: {
+    ref: string
+    title: string
+    kind: string
+    parent: TicketListing['parent']
+    subIssues: TicketListing['subIssues']
+  }[]
   /** Every issue that was not runnable, with the reason. */
-  skipped: { ref: number; reason: SkipReason }[]
+  skipped: {
+    ref: number
+    reason: SkipReason
+    parent: TicketListing['parent']
+    subIssues: TicketListing['subIssues']
+  }[]
   /**
    * What colour this repository gives each kind, `#rrggbb`, keyed by the kind
    * as the recipe names it.
@@ -396,7 +433,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
 
     const { skip } = considerIssue(issue, queue)
     if (skip) {
-      result.skipped.push({ ref: issue.number, reason: skip })
+      result.skipped.push({ ref: issue.number, reason: skip, parent: issue.parent, subIssues: issue.subIssues })
       continue
     }
     result.runnable.push({
@@ -404,6 +441,8 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
       title: issue.title,
       // `considerIssue` already refused a null kind, so this is a string.
       kind: matched!.kind,
+      parent: issue.parent,
+      subIssues: issue.subIssues,
     })
   }
 
