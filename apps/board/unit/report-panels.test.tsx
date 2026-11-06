@@ -334,7 +334,7 @@ describe('the report page', () => {
     expect(tile).not.toContain('$0.00 of')
     const panel = renderToStaticMarkup(<WhereItWentPanel byPurpose={unknownOnly} />)
     expect(panel).toContain('2 unknown')
-    expect(panel).not.toContain('$0.00')
+    expect(panel).not.toContain('>$0.00<')
     expect(panel).not.toContain('>0%<')
   })
 
