@@ -7,7 +7,7 @@
  *
  * The run log is a trace (0111 §13): nothing is decided from what this returns.
  */
-import { runLogSaid, runLogStarted } from '@lingtai/agent/run-log-format'
+import { runLogSaid, runLogStarted, runLogStartedTag } from '@lingtai/agent/run-log-format'
 
 export const SAID_LINES = 3
 
@@ -18,16 +18,19 @@ export interface Said {
 
 /**
  * The newest `n` said lines of the phase in flight. Scans newest to oldest and
- * stops at the first `started ·` line of any tag: it is either this phase's own
- * start, or a later phase's — and either way nothing older belongs to this round,
- * which needs no round arithmetic.
+ * stops at a `started ·` line that is a phase boundary: one of another step's, or
+ * the phase's first action (`tags[0]`). A later action of the same phase (a second
+ * reviewer) is only an action boundary, and the earlier action's speech still
+ * belongs to this round. No round arithmetic.
  */
 export function saidLast(lines: readonly string[], tags: readonly (string | null)[], n = SAID_LINES): Said[] {
   const out: Said[] = []
   if (tags.length === 0) return out
   for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
     const line = lines[i]!
-    if (runLogStarted(line)) break
+    const started = runLogStartedTag(line)
+    if (started !== null && (started === tags[0] || !tags.includes(started))) break
+    if (started !== null) continue
     for (const tag of tags) {
       const said = runLogSaid(line, tag)
       if (said !== null) {

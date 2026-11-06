@@ -20,6 +20,13 @@ describe('saidLast', () => {
     expect(saidLast(lines, ['review:review'])).toEqual([])
     expect(saidLast([...lines, say(3, 'new', 'review:review')], ['review:review']).map((s) => s.text)).toEqual(['new'])
   })
+  it("keeps the first action's speech when a second action of the phase starts", () => {
+    const tags = ['review:first', 'review:second']
+    const lines = [start(1, 'review:first'), say(2, 'one', 'review:first'), start(3, 'review:second')]
+    expect(saidLast(lines, tags).map((s) => s.text)).toEqual(['one'])
+    expect(saidLast([...lines, say(4, 'two', 'review:second')], tags).map((s) => s.text)).toEqual(['two', 'one'])
+    expect(saidLast([say(0, 'old', 'review:first'), start(1, 'review:first')], tags)).toEqual([])
+  })
   it('says nothing with no tags', () => {
     expect(saidLast([say(1, 'a')], [])).toEqual([])
   })

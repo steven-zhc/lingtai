@@ -111,6 +111,8 @@ export function runLogSaid(line: string, tag: string | null): { at: string; text
   }
   text = text.trim()
   if (text === '' || text.startsWith('{') || text.startsWith('[')) return null
+  // A line the adapter clipped ends in its notice (`clip` in claude-code.ts): partial prose is not quoted.
+  if (/ … \(\d+ more characters; the transcript has all of it\)$/.test(text)) return null
   return { at, text }
 }
 
@@ -120,10 +122,16 @@ export function runLogSaid(line: string, tag: string | null): { at: string; text
  * `:`, which an adapter's own label never does.
  */
 export function runLogStarted(line: string): boolean {
+  return runLogStartedTag(line) !== null
+}
+
+/** The tag of an action's start line (`review:second`), or null where the line is not one. */
+export function runLogStartedTag(line: string): string | null {
   const tagged = line.slice(LABEL_AT).trimEnd()
-  if (tagged.startsWith('agent'.padEnd(LABEL_WIDTH))) return false
+  if (tagged.startsWith('agent'.padEnd(LABEL_WIDTH))) return null
   const i = tagged.indexOf(' started · ')
-  if (i < 0) return false
-  if (!tagged.slice(0, i).includes(':')) return false
-  return /^started · \S+ on [0-9a-f]{7}( · round \d+)?$/.test(tagged.slice(i + 1))
+  if (i < 0) return null
+  const tag = tagged.slice(0, i)
+  if (!tag.includes(':')) return null
+  return /^started · \S+ on [0-9a-f]{7}( · round \d+)?$/.test(tagged.slice(i + 1)) ? tag : null
 }

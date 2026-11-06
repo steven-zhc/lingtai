@@ -344,6 +344,8 @@ interface Followed {
   open: boolean
   setOpen: (open: boolean) => void
   tags: readonly (string | null)[]
+  /** The reader's place in the raw log: it outlives the element, which is replaced when the run ends. */
+  place: { current: { top: number; pinned: boolean } }
 }
 
 const FollowedContext = createContext<Followed | null>(null)
@@ -374,6 +376,7 @@ export function FollowedLog({
     setHeld((was) => heldRun(was, running))
   }, [running])
   const [opened, setOpened] = useState<string | null>(null)
+  const place = useRef({ top: 0, pinned: true })
   const shown = heldRun(held, running)
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
@@ -381,7 +384,7 @@ export function FollowedLog({
   const { lines, state } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
   const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
   return (
-    <FollowedContext.Provider value={{ shown, live, below, lines, state, open, setOpen, tags }}>
+    <FollowedContext.Provider value={{ shown, live, below, lines, state, open, setOpen, tags, place }}>
       {children}
     </FollowedContext.Provider>
   )
@@ -447,11 +450,15 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
   const tail = useRef<HTMLDivElement | null>(null)
   const lines = f?.lines
   const open = f?.open
-  // Follow the bottom, which is where a running log is — and on a remount, so a
-  // log that moved from the panel lands on the newest line.
+  const place = f?.place
+  // Follow the bottom while the reader is at it. A reader who scrolled back keeps
+  // their place, including across the remount when the run ends and the log moves
+  // from the panel: the element is new, so the place is restored from the provider.
   useEffect(() => {
-    tail.current?.scrollTo({ top: tail.current.scrollHeight })
-  }, [lines, open])
+    const el = tail.current
+    if (el === null || !place) return
+    el.scrollTo({ top: place.current.pinned ? el.scrollHeight : place.current.top })
+  }, [lines, open, place])
   if (f === null || f.shown === null) return null
   if (where === 'running' ? !f.live : !f.below) return null
   const count = f.lines.length
@@ -473,7 +480,15 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
           is exactly what is still owed an explanation (0034).
         </p>
       ) : (
-        <div className="alogbody" ref={tail}>
+        <div
+          className="alogbody"
+          ref={tail}
+          onScroll={(event) => {
+            const el = event.currentTarget
+            if (place)
+              place.current = { top: el.scrollTop, pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 8 }
+          }}
+        >
           <pre className="hdoctext">{f.lines.join('\n')}</pre>
         </div>
       )}

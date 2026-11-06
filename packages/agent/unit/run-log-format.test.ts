@@ -21,6 +21,11 @@ describe('runLogSaid', () => {
       text: 'All green. Committing.',
     })
   })
+  it('does not read a clipped line', () => {
+    const clipped = `${'x'.repeat(4000)} … (12 more characters; the transcript has all of it)`
+    expect(runLogSaid(lines(null, 'agent', clipped), null)).toBeNull()
+    expect(runLogSaid(lines('fix:1', 'agent', clipped), 'fix:1')).toBeNull()
+  })
   it('does not read what is not said', () => {
     expect(runLogSaid(lines('review:review', 'agent', '{ "findings": [] }'), 'review:review')).toBeNull()
     expect(runLogSaid(lines(null, 'agent', '[1]'), null)).toBeNull()
