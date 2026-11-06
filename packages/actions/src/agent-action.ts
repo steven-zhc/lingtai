@@ -676,11 +676,9 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
 
     async run(context: ActionContext): Promise<ActionResult> {
       const moved = context.landedOnBase
-      // After a base merge the original cut is still the merge-base, so the
-      // branch's own change is `toSha...HEAD`; otherwise the base's changes would
-      // be in it twice.
-      const from = context.mergedOnto ?? moved?.toSha
-      const read = readOf(await (from === undefined ? deps.diff() : deps.diff(from)))
+      // No start: the port answers the merge-base with the base, wherever
+      // anybody's base merge has put it (#937).
+      const read = readOf(await deps.diff())
       const diff = read.text
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is

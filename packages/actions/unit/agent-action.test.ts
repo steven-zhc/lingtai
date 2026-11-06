@@ -2019,7 +2019,7 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(prompt).toContain('+changed src/b.ts')
     expect(prompt).toContain(QUESTION)
     expect(landedAsked).toEqual([MOVED])
-    expect(diffFrom).toEqual(['base0002'])
+    expect(diffFrom).toEqual([undefined])
   })
 
   it('leaves an ordinary review’s prompt as it was', async () => {
@@ -2032,10 +2032,10 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(prompt).toBe(buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES, []))
   })
 
-  it('diffs against the merged commit in a later round, once the section has been dropped', async () => {
+  it('asks the first diff with no start even when mergedOnto is set, once the section has been dropped', async () => {
     const { runtime, diffFrom, landedAsked } = await run({ mergedOnto: 'base0002' })
 
-    expect(diffFrom).toEqual(['base0002'])
+    expect(diffFrom).toEqual([undefined])
     expect(landedAsked).toEqual([])
     expect(runtime.seen[0]?.prompt ?? '').not.toContain(HEADING)
   })
@@ -2191,7 +2191,7 @@ describe('a finding outside every hunk of the reviewed diff (#670)', () => {
     expect(result.findings[0]?.severity).toBe('blocker')
   })
 
-  it('classifies against the diff taken from mergedOnto, unclipped', async () => {
+  it('classifies against the first diff, asked with no start, unclipped', async () => {
     const froms: (string | undefined)[] = []
     const action = createAgentAction(
       { name: 'review', prompt: '' },
@@ -2200,7 +2200,7 @@ describe('a finding outside every hunk of the reviewed diff (#670)', () => {
         issue: async () => ISSUE,
         diff: async (from) => {
           froms.push(from)
-          return from === 'base0002' ? HUNK_DIFF.replace('@@ -40,5 +40,5 @@', '@@ -898,5 +898,5 @@') : HUNK_DIFF
+          return from === undefined ? HUNK_DIFF.replace('@@ -40,5 +40,5 @@', '@@ -898,5 +898,5 @@') : HUNK_DIFF
         },
         restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
@@ -2209,7 +2209,7 @@ describe('a finding outside every hunk of the reviewed diff (#670)', () => {
     )
     const result = await action.run({ ...context, mergedOnto: 'base0002' })
 
-    expect(froms).toEqual(['base0002'])
+    expect(froms).toEqual([undefined])
     expect(result.verdict).toBe('failed')
   })
 
@@ -2313,13 +2313,17 @@ describe('a review after a fix round reviews the fix (#671)', () => {
   })
 
   it('shows the delta and the landed-on-base block after an approved merge', async () => {
+    const froms: (string | undefined)[] = []
     const runtime = reviewer(answer([finding()]))
     const action = createAgentAction(
       { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async (from) => (from === SECOND.reviewedSha ? DELTA : FULL),
+        diff: async (from) => {
+          froms.push(from)
+          return from === SECOND.reviewedSha ? DELTA : FULL
+        },
         landed: async () => [{ path: 'src/y.ts', diff: 'landed change' }],
         restore: async () => ({ untouched: true as const }),
         settingsPath: '/tmp/settings.json',
@@ -2332,6 +2336,7 @@ describe('a review after a fix round reviews the fix (#671)', () => {
       landedOnBase: { paths: ['src/y.ts'], fromSha: 'd'.repeat(40), toSha: 'c'.repeat(40) },
     })
 
+    expect(froms).toEqual([undefined, SECOND.reviewedSha])
     expect(runtime.seen[0]!.prompt).toContain('## What the fix changed')
     expect(runtime.seen[0]!.prompt).toContain('While this change was being built the base moved')
     expect(result.findings[0]?.severity).toBe('minor')
