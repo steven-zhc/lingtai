@@ -244,6 +244,8 @@ export interface TicketReportQuery {
 /** `ticket_report`'s landed rows, newest first. The cap and the cursor's order are the store's. */
 export interface TicketReportLandedQuery {
   project?: string
+  /** Only landed tickets of this kind. */
+  kind?: string
   /** Rows strictly older than this `(outcome_at, ticket)`, the order they are read in. */
   before?: { at: Date; ticket: string }
   /** Clamped to 1..100. */

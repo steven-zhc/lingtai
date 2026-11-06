@@ -775,6 +775,10 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         args.push(query.project)
         where.push('project = ?')
       }
+      if (query.kind !== undefined) {
+        args.push(query.kind)
+        where.push('kind = ?')
+      }
       if (query.before !== undefined) {
         // `outcome_at` is the ISO text `save` wrote from a Date, so the cursor is written the same way.
         args.push(query.before.at.toISOString(), query.before.ticket)

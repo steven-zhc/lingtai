@@ -26,6 +26,7 @@ import {
 import { readDayReading } from '@/lib/day-spend'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
+import { landedLink } from '@/lib/landed'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText, spendChip } from '@/lib/spend'
@@ -420,6 +421,21 @@ export function Card({
         </div>
       ) : null}
     </article>
+  )
+}
+
+/**
+ * A column's heading. Landed's is the way into `/landed` (#895), carrying
+ * `?project=` as the `/report` link does; the others are words. A second way
+ * out of the reading and not a fifth object in the bar (`the-bar.md`).
+ */
+export function ColumnLabel({ id, label, only }: { id: string; label: string; only: string | undefined }) {
+  return id === 'landed' ? (
+    <Link href={landedLink(only)} title="what Lingtai changed, newest first">
+      {label}
+    </Link>
+  ) : (
+    <span>{label}</span>
   )
 }
 
@@ -863,7 +879,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
           >
             <header className="col-h">
-              <span>{col.label}</span>
+              <ColumnLabel id={col.id} label={col.label} only={only} />
               {col.id === 'queued' ? (
                 <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
                   <AwaitedCount queue={queue} logCount={col.cards.length} />

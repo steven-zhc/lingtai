@@ -157,39 +157,53 @@ export interface ReportChip {
   title: string
 }
 
-/** One chip for the pair, worded as `spendChip` is, naming the projection that is behind and how to repair it. */
-export function reportChip(c: ReportCurrency): ReportChip {
-  const parts: { label: string; tone: 'idle' | 'warn'; title: string }[] = []
-  for (const [name, p] of [
-    ['ticket_report', c.ticketReport],
-    ['spend', c.spend],
-  ] as const) {
-    const repair = `lingtai projection rebuild ${name}`
-    if (p.error) {
-      parts.push({
-        label: p.lag === null ? `${name} not current` : `${name} behind ${p.lag}`,
-        tone: 'warn',
-        title: `${name}'s lag could not be read: ${p.error} — ${repair}`,
-      })
-    } else if (p.lag === null) {
-      parts.push({ label: `${name} unknown`, tone: 'warn', title: `could not read ${name}'s lag — ${repair}` })
-    } else if (p.lag > 0) {
-      parts.push({
-        label: `${name} behind ${p.lag}`,
-        tone: 'idle',
-        title: `${p.lag} event(s) are not in ${name} yet — it catches up when something next appends with a projector, or ${repair}`,
-      })
+type ChipPart = { label: string; tone: 'idle' | 'warn'; title: string }
+
+/** What one projection's lag says, or null when it is at the head. */
+function projectionPart(name: string, p: SpendCurrency): ChipPart | null {
+  const repair = `lingtai projection rebuild ${name}`
+  if (p.error) {
+    return {
+      label: p.lag === null ? `${name} not current` : `${name} behind ${p.lag}`,
+      tone: 'warn',
+      title: `${name}'s lag could not be read: ${p.error} — ${repair}`,
     }
   }
-  if (parts.length === 0) {
-    return { current: true, label: 'current', tone: 'live', title: 'ticket_report and spend are at the head' }
+  if (p.lag === null) {
+    return { label: `${name} unknown`, tone: 'warn', title: `could not read ${name}'s lag — ${repair}` }
   }
+  if (p.lag > 0) {
+    return {
+      label: `${name} behind ${p.lag}`,
+      tone: 'idle',
+      title: `${p.lag} event(s) are not in ${name} yet — it catches up when something next appends with a projector, or ${repair}`,
+    }
+  }
+  return null
+}
+
+function chipOf(parts: ChipPart[], currentTitle: string): ReportChip {
+  if (parts.length === 0) return { current: true, label: 'current', tone: 'live', title: currentTitle }
   return {
     current: false,
     label: parts.map((p) => p.label).join(' · '),
     tone: parts.some((p) => p.tone === 'warn') ? 'warn' : 'idle',
     title: parts.map((p) => p.title).join('; '),
   }
+}
+
+/** One chip for the pair, worded as `spendChip` is, naming the projection that is behind and how to repair it. */
+export function reportChip(c: ReportCurrency): ReportChip {
+  const parts = [projectionPart('ticket_report', c.ticketReport), projectionPart('spend', c.spend)].filter(
+    (p): p is ChipPart => p !== null,
+  )
+  return chipOf(parts, 'ticket_report and spend are at the head')
+}
+
+/** The chip for a page that reads one projection (`/landed`), worded as `reportChip` is. */
+export function projectionChip(name: string, p: SpendCurrency): ReportChip {
+  const part = projectionPart(name, p)
+  return chipOf(part === null ? [] : [part], `${name} is at the head`)
 }
 
 // --- money and durations, in words -------------------------------------------------

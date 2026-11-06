@@ -122,6 +122,21 @@ describe('ProjectionStore.landed (#894)', () => {
     })
   })
 
+  it('narrows by kind before the limit, so a filtered page is still full', async () => {
+    const feat = makeStream('ticket-a-5')
+    const events = [
+      ...land('ticket-a-1', 0),
+      feat('TicketClaimed', { runId: 'pass-a-5', worker: 'local:1', title: null, kind: 'feature' }, { at: at(10) }),
+      feat('TicketLanded', { mergeCommit: 'x', base: 'main' }, { at: at(11) }),
+      ...land('ticket-a-2', 20),
+    ]
+    await withStore(events, async (store) => {
+      expect((await store.landed({ kind: 'bug', limit: 2 })).map((r) => r.ticket)).toEqual(['ticket-a-2', 'ticket-a-1'])
+      expect((await store.landed({ kind: 'feature', limit: 5 })).map((r) => r.ticket)).toEqual(['ticket-a-5'])
+      expect(await store.landed({ kind: 'documentation', limit: 5 })).toEqual([])
+    })
+  })
+
   it('caps the limit at 100', async () => {
     const events: Envelope[] = []
     for (let i = 0; i < 105; i++) events.push(...land(`ticket-a-${i + 1}`, i))
