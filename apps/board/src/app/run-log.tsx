@@ -345,7 +345,7 @@ interface Followed {
   setOpen: (open: boolean) => void
   tags: readonly (string | null)[]
   /** The reader's place in the raw log: it outlives the element, which is replaced when the run ends. */
-  place: { current: { top: number; pinned: boolean } }
+  place: { current: { run: string | null; top: number; pinned: boolean } }
 }
 
 const FollowedContext = createContext<Followed | null>(null)
@@ -376,7 +376,7 @@ export function FollowedLog({
     setHeld((was) => heldRun(was, running))
   }, [running])
   const [opened, setOpened] = useState<string | null>(null)
-  const place = useRef({ top: 0, pinned: true })
+  const place = useRef({ run: null as string | null, top: 0, pinned: true })
   const shown = heldRun(held, running)
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
@@ -451,14 +451,17 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
   const lines = f?.lines
   const open = f?.open
   const place = f?.place
+  const shown = f?.shown ?? null
   // Follow the bottom while the reader is at it. A reader who scrolled back keeps
   // their place, including across the remount when the run ends and the log moves
   // from the panel: the element is new, so the place is restored from the provider.
   useEffect(() => {
     const el = tail.current
     if (el === null || !place) return
-    el.scrollTo({ top: place.current.pinned ? el.scrollHeight : place.current.top })
-  }, [lines, open, place])
+    // A place is about one run: another run's log starts pinned to its bottom.
+    const mine = place.current.run === shown ? place.current : null
+    el.scrollTo({ top: mine === null || mine.pinned ? el.scrollHeight : mine.top })
+  }, [lines, open, place, shown])
   if (f === null || f.shown === null) return null
   if (where === 'running' ? !f.live : !f.below) return null
   const count = f.lines.length
@@ -486,7 +489,11 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
           onScroll={(event) => {
             const el = event.currentTarget
             if (place)
-              place.current = { top: el.scrollTop, pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 8 }
+              place.current = {
+                run: f.shown,
+                top: el.scrollTop,
+                pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 8,
+              }
           }}
         >
           <pre className="hdoctext">{f.lines.join('\n')}</pre>
