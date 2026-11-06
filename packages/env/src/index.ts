@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Config, ConfigProvider, Effect, Either, Option } from 'effect'
+import { Config, ConfigProvider, Effect, Option, Result } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
 /**
@@ -72,7 +72,7 @@ export function environmentProvider(from: NodeJS.ProcessEnv = process.env): Conf
 function exportedProvider(from: NodeJS.ProcessEnv): ConfigProvider.ConfigProvider {
   const set = new Map<string, string>()
   for (const [name, value] of Object.entries(from)) if (value) set.set(name, value)
-  return ConfigProvider.fromMap(set, { pathDelim: '_' })
+  return ConfigProvider.fromEnv({ env: Object.fromEntries(set) })
 }
 
 /** `~/.lingtai/config.yml`, as it is on disk now — or why it could not be read. */
@@ -120,7 +120,7 @@ export function absent(err: unknown): boolean {
 
 /** A parsed YAML document as a `ConfigProvider`: `github.app_id` is `github: { app_id }`. */
 export function yamlProvider(parsed: unknown): ConfigProvider.ConfigProvider {
-  return ConfigProvider.fromJson(parsed !== null && typeof parsed === 'object' ? parsed : {})
+  return ConfigProvider.fromUnknown(parsed !== null && typeof parsed === 'object' ? parsed : {})
 }
 
 /** The file, read and parsed now. Total: every failure is `unreadable`, never thrown. */
@@ -159,18 +159,18 @@ export function machineFileFrom(path: string, text: string | null): MachineFile 
 }
 
 /** One `Config` against one provider, as data rather than a thrown `ConfigError`. */
-function readConfig<A>(config: Config.Config<A>, provider: ConfigProvider.ConfigProvider): Either.Either<A, string> {
-  return Either.mapLeft(Effect.runSync(Effect.either(Effect.withConfigProvider(config, provider))), String)
+function readConfig<A>(config: Config.Config<A>, provider: ConfigProvider.ConfigProvider): Result.Result<A, string> {
+  return Result.mapError(Effect.runSync(Effect.result(config.parse(provider))), String)
 }
 
 /** A string at `path` in one provider, or undefined. A non-string there is no string. */
 function stringAt(provider: ConfigProvider.ConfigProvider, ...path: [string, ...string[]]): string | undefined {
   const [name, ...outer] = [...path].reverse() as [string, ...string[]]
-  let config: Config.Config<Option.Option<string>> = Config.option(Config.string(name))
+  let config: Config.Config<Option.Option<string>> = Config.option(Config.String(name))
   for (const section of outer) config = Config.nested(config, section)
-  return Either.match(readConfig(config, provider), {
-    onLeft: () => undefined,
-    onRight: (value) => Option.getOrUndefined(Option.filter(value, (v) => v !== '')),
+  return Result.match(readConfig(config, provider), {
+    onFailure: () => undefined,
+    onSuccess: (value) => Option.getOrUndefined(Option.filter(value, (v) => v !== '')),
   })
 }
 
@@ -826,27 +826,27 @@ export function machineBoardPort(
   from: NodeJS.ProcessEnv = process.env,
   file: MachineFile = machineFile(from),
 ): number | undefined {
-  const port = Config.option(Config.nested(Config.port('port'), 'board'))
+  const port = Config.option(Config.nested(Config.Port('port'), 'board'))
   const exported = readConfig(port, environmentProvider(from))
-  if (Either.isLeft(exported)) {
+  if (Result.isFailure(exported)) {
     throw new Error(
-      `${PREFIX}BOARD_PORT is not a port number, so no port was read: ${exported.left} — ` +
+      `${PREFIX}BOARD_PORT is not a port number, so no port was read: ${exported.failure} — ` +
         `unset it to have the default, ${BOARD_PORT}`,
     )
   }
-  if (Option.isSome(exported.right)) return exported.right.value
+  if (Option.isSome(exported.success)) return exported.success.value
   if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its board.port could not be read`)
   const written = readConfig(port, file.provider)
-  if (Either.isLeft(written)) {
+  if (Result.isFailure(written)) {
     // Not "17820 is the default": nothing fell back to it, and a sentence that
     // named the default beside the refusal read as though the value had been
     // ignored and the board served on 17820 anyway.
     throw new Error(
-      `${file.path} sets board.port to something that is not a port number, so no port was read: ${written.left} — ` +
+      `${file.path} sets board.port to something that is not a port number, so no port was read: ${written.failure} — ` +
         `take that line out to have the default, ${BOARD_PORT}`,
     )
   }
-  return Option.getOrUndefined(written.right)
+  return Option.getOrUndefined(written.success)
 }
 
 /** An IP literal a URL can name: a scoped IPv6 (`fe80::1%en0`) is one `isIP` accepts and the URL parser does not. */
@@ -877,13 +877,13 @@ export function machineBoardHost(
         `unset it to have the default, ${BOARD_HOST}`,
     )
   }
-  const host = Config.option(Config.nested(Config.string('host'), 'board'))
+  const host = Config.option(Config.nested(Config.String('host'), 'board'))
   const exported = readConfig(host, environmentProvider(from))
-  if (Either.isLeft(exported)) {
-    throw new Error(`${PREFIX}BOARD_HOST could not be read, so no address was read: ${exported.left}`)
+  if (Result.isFailure(exported)) {
+    throw new Error(`${PREFIX}BOARD_HOST could not be read, so no address was read: ${exported.failure}`)
   }
-  if (Option.isSome(exported.right)) {
-    const v = exported.right.value
+  if (Option.isSome(exported.success)) {
+    const v = exported.success.value
     if (!isBoardHost(v)) {
       throw new Error(
         `${PREFIX}BOARD_HOST is ${JSON.stringify(v)}, which is not an unscoped IP address, so no address was read — ` +
@@ -894,19 +894,19 @@ export function machineBoardHost(
   }
   if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its board.host could not be read`)
   const written = readConfig(host, file.provider)
-  if (Either.isLeft(written)) {
+  if (Result.isFailure(written)) {
     throw new Error(
-      `${file.path} sets board.host to something that could not be read, so no address was read: ${written.left} — ` +
+      `${file.path} sets board.host to something that could not be read, so no address was read: ${written.failure} — ` +
         `take that line out to have the default, ${BOARD_HOST}`,
     )
   }
-  if (Option.isSome(written.right) && !isBoardHost(written.right.value)) {
+  if (Option.isSome(written.success) && !isBoardHost(written.success.value)) {
     throw new Error(
-      `${file.path} sets board.host to ${JSON.stringify(written.right.value)}, which is not an unscoped IP address, so no address was read — ` +
+      `${file.path} sets board.host to ${JSON.stringify(written.success.value)}, which is not an unscoped IP address, so no address was read — ` +
         `take that line out to have the default, ${BOARD_HOST}`,
     )
   }
-  return Option.getOrUndefined(written.right)
+  return Option.getOrUndefined(written.success)
 }
 
 /** Every address: where a board listens when nothing says otherwise (0111 §2). */
@@ -942,29 +942,29 @@ export function machineOtlpEndpoint(
   from: NodeJS.ProcessEnv = process.env,
   file: MachineFile = machineFile(from),
 ): string | undefined {
-  const endpoint = Config.option(Config.nested(Config.string('otlp_endpoint'), 'telemetry'))
+  const endpoint = Config.option(Config.nested(Config.String('otlp_endpoint'), 'telemetry'))
   const web = (value: string): boolean => {
     if (!URL.canParse(value)) return false
     const protocol = new URL(value).protocol
     return protocol === 'http:' || protocol === 'https:'
   }
   const exported = readConfig(endpoint, environmentProvider(from))
-  if (Either.isLeft(exported) || (Option.isSome(exported.right) && !web(exported.right.value))) {
+  if (Result.isFailure(exported) || (Option.isSome(exported.success) && !web(exported.success.value))) {
     throw new Error(
       `${PREFIX}TELEMETRY_OTLP_ENDPOINT is not an http or https URL, so no endpoint was read — unset it or correct it`,
     )
   }
-  if (Option.isSome(exported.right)) return exported.right.value
+  if (Option.isSome(exported.success)) return exported.success.value
   if (file.unreadable !== undefined) {
     throw new Error(`${file.path} could not be read, so telemetry.otlp_endpoint could not be read`)
   }
   const written = readConfig(endpoint, file.provider)
-  if (Either.isLeft(written) || (Option.isSome(written.right) && !web(written.right.value))) {
+  if (Result.isFailure(written) || (Option.isSome(written.success) && !web(written.success.value))) {
     throw new Error(
       `${file.path} sets telemetry.otlp_endpoint to something that is not an http or https URL, so no endpoint was read`,
     )
   }
-  return Option.getOrUndefined(written.right)
+  return Option.getOrUndefined(written.success)
 }
 
 /**
@@ -980,24 +980,24 @@ export function machineDayCeiling(
   from: NodeJS.ProcessEnv = process.env,
   file: MachineFile = machineFile(from),
 ): number | undefined {
-  const ceiling = Config.option(Config.nested(Config.number('day_usd'), 'limits'))
+  const ceiling = Config.option(Config.nested(Config.Number('day_usd'), 'limits'))
   const positive = (n: number) => Number.isFinite(n) && n > 0
   const exported = readConfig(ceiling, environmentProvider(from))
-  if (Either.isLeft(exported) || (Option.isSome(exported.right) && !positive(exported.right.value))) {
+  if (Result.isFailure(exported) || (Option.isSome(exported.success) && !positive(exported.success.value))) {
     throw new Error(
       `${PREFIX}LIMITS_DAY_USD is not a positive number of dollars, so no ceiling was read — unset it or correct it`,
     )
   }
-  if (Option.isSome(exported.right)) return exported.right.value
+  if (Option.isSome(exported.success)) return exported.success.value
   if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its limits.day_usd could not be read`)
   const written = readConfig(ceiling, file.provider)
-  if (Either.isLeft(written) || (Option.isSome(written.right) && !positive(written.right.value))) {
+  if (Result.isFailure(written) || (Option.isSome(written.success) && !positive(written.success.value))) {
     throw new Error(
       `${file.path} sets limits.day_usd to something that is not a positive number of dollars, so no ceiling was read — ` +
         `correct it or take that line out for no ceiling`,
     )
   }
-  return Option.getOrUndefined(written.right)
+  return Option.getOrUndefined(written.success)
 }
 
 /** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
@@ -1317,11 +1317,11 @@ export interface GitHubAppCredentials {
  */
 const GITHUB_APP = Config.nested(
   Config.all({
-    appId: Config.option(Config.string('app_id')),
-    privateKeyPath: Config.option(Config.string('app_private_key_path')),
-    privateKey: Config.option(Config.string('app_private_key')),
-    webhookSecret: Config.option(Config.string('webhook_secret')),
-    auth: Config.option(Config.string('auth')),
+    appId: Config.option(Config.String('app_id')),
+    privateKeyPath: Config.option(Config.String('app_private_key_path')),
+    privateKey: Config.option(Config.String('app_private_key')),
+    webhookSecret: Config.option(Config.String('webhook_secret')),
+    auth: Config.option(Config.String('auth')),
   }),
   'github',
 )
@@ -1338,9 +1338,9 @@ export interface GitHubAppSection {
 
 /** `github:` as one provider has it. Total: a malformed section is an empty one. */
 export function githubSection(provider: ConfigProvider.ConfigProvider): GitHubAppSection {
-  return Either.match(readConfig(GITHUB_APP, provider), {
-    onLeft: () => ({}),
-    onRight: (section) => {
+  return Result.match(readConfig(GITHUB_APP, provider), {
+    onFailure: () => ({}),
+    onSuccess: (section) => {
       const out: GitHubAppSection = {}
       for (const [name, value] of Object.entries(section) as [keyof GitHubAppSection, Option.Option<string>][]) {
         if (Option.isSome(value) && value.value !== '') out[name] = value.value
