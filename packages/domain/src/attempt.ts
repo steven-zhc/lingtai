@@ -544,6 +544,19 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
       let next = state
+      // A review round replaces the earlier ones' summaries: an action it did not reach keeps its old
+      // verdict, but not an old summary, so insertion order never has to stand for recency (#893).
+      if (d.outcome.step === 'review') {
+        const steps: Record<string, StepState> = {}
+        for (const [k, s] of Object.entries(state.steps)) {
+          if (!k.startsWith('review:')) steps[k] = s
+          else {
+            const { summary: _summary, clipped: _clipped, ...kept } = s
+            steps[k] = kept
+          }
+        }
+        next = { ...state, steps }
+      }
       for (const action of d.outcome.actions) {
         if (!isReached(action)) continue
         const key = `${d.outcome.step}:${action.name}`

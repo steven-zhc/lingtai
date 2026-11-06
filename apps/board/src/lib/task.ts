@@ -1219,8 +1219,10 @@ export function presentAttempt(
 
 /**
  * The summary of the latest review that wrote one. `state.steps` keys are
- * `step:action`, so several `review:` entries are possible; the last in
- * insertion order wins. A clip with no summary is nothing: its line sits under one.
+ * `step:action`, so several `review:` entries are possible; the reducer drops
+ * every earlier review's summary when a new review round ends, so at most the
+ * latest round's summaries remain and insertion order is not asked to mean
+ * recency. A clip with no summary is nothing: its line sits under one.
  */
 function reviewOf(state: DomainRunState): AttemptView['review'] {
   let found: AttemptView['review'] = null

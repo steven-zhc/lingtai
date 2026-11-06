@@ -200,6 +200,35 @@ describe('reduceAttempt', () => {
     expect('clipped' in s.steps['review:two']!).toBe(false)
   })
 
+  it('a later review round replaces an earlier round’s summary, including on an action it did not reach (#893)', () => {
+    const e = makeStream('pass-01JX')
+    const done = (extra: object) => ({
+      _tag: 'Completed' as const,
+      assessment: { verdict: 'accepted' as const, findings: [], ...extra },
+    })
+    const round0: StepOutcome = {
+      step: 'review',
+      round: 0,
+      actions: [
+        verdictAction('a', 'sha-a', done({ summary: 'Old a.' })),
+        verdictAction('b', 'sha-a', done({ summary: 'Old b.' })),
+      ],
+    }
+    const round1: StepOutcome = {
+      step: 'review',
+      round: 1,
+      actions: [verdictAction('a', 'sha-b', done({ summary: 'New a.' }))],
+    }
+    const s = reduceAttempt([
+      e('RunStarted', started),
+      e('RunProposedCompletion', { headSha: 'sha-a' }),
+      e('StepEnded', { runId: 'pass-01JX', outcome: round0 }),
+      e('StepEnded', { runId: 'pass-01JX', outcome: round1 }),
+    ])
+    expect(s.steps['review:a']).toMatchObject({ summary: 'New a.' })
+    expect('summary' in s.steps['review:b']!).toBe(false)
+  })
+
   it('enters gating on a proposed completion and collects verdicts', () => {
     const e = makeStream('pass-01JX')
     const outcome: StepOutcome = {

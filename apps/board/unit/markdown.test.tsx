@@ -207,6 +207,18 @@ describe('leadOf (#893)', () => {
   it('splits at the first sentence end outside a code span', () => {
     expect(leadOf('Moves `a.b` to c. Then d.')).toEqual({ lead: 'Moves `a.b` to c.', rest: 'Then d.' })
   })
+  it('keeps closing emphasis in the lead', () => {
+    expect(leadOf('**Moves data.** It also updates tests.')).toEqual({
+      lead: '**Moves data.**',
+      rest: 'It also updates tests.',
+    })
+  })
+  it('treats a double-backtick span as code', () => {
+    expect(leadOf('Handles ``a. b`` safely. It also updates tests.')).toEqual({
+      lead: 'Handles ``a. b`` safely.',
+      rest: 'It also updates tests.',
+    })
+  })
   it('takes the whole text as the lead with no boundary', () => {
     expect(leadOf('no stop here')).toEqual({ lead: 'no stop here', rest: '' })
   })

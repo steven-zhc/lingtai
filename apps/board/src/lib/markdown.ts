@@ -93,20 +93,40 @@ export function sourceOfPayloadDocument(type: string | undefined, field: string)
 /**
  * A summary split at its first sentence, which the page shows as the lead.
  * The sentence ends at `.`, `!` or `?` followed by whitespace or the end, outside
- * a backtick span; with no such boundary the whole text is the lead.
+ * a code span (a run of backticks closed by a run of the same length), and any
+ * `*` or `_` closing emphasis right after the mark stays in the lead; with no
+ * such boundary the whole text is the lead.
  */
 export function leadOf(summary: string): { lead: string; rest: string } {
   const text = summary.trim()
-  let inCode = false
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
-    if (c === '`') inCode = !inCode
-    else if (
-      !inCode &&
-      (c === '.' || c === '!' || c === '?') &&
-      (i + 1 === text.length || /\s/.test(text[i + 1] ?? ''))
-    ) {
-      return { lead: text.slice(0, i + 1), rest: text.slice(i + 1).trim() }
+    if (c === '`') {
+      let n = 1
+      while (text[i + n] === '`') n++
+      // The span closes at the next run of exactly this length; with none, the backticks are literal.
+      let j = i + n
+      let close = -1
+      while (j < text.length) {
+        if (text[j] !== '`') {
+          j++
+          continue
+        }
+        let m = 1
+        while (text[j + m] === '`') m++
+        if (m === n) {
+          close = j + m
+          break
+        }
+        j += m
+      }
+      i = close === -1 ? i + n - 1 : close - 1
+    } else if (c === '.' || c === '!' || c === '?') {
+      let end = i + 1
+      while (text[end] === '*' || text[end] === '_') end++
+      if (end === text.length || /\s/.test(text[end] ?? '')) {
+        return { lead: text.slice(0, end), rest: text.slice(end).trim() }
+      }
     }
   }
   return { lead: text, rest: '' }
