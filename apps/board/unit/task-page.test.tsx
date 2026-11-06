@@ -604,10 +604,13 @@ describe('a running task', () => {
     expect(arrangement(page(running()))).toMatchSnapshot()
   })
 
-  it("follows the run's log at rank 2, open, in the slot and the teal", () => {
+  it("follows the run's log inside the running panel, closed, in the slot and the teal", () => {
     const html = page(running())
-    const why = html.slice(html.indexOf('data-rank="why"'), html.indexOf('data-rank="so-what"'))
-    expect(why).toContain('<details class="alog slog" open=""')
+    const panel = html.slice(html.indexOf('data-rank="running"'), html.indexOf('data-rank="discussion"'))
+    expect(panel).toContain('<details class="alog slog"')
+    expect(panel).not.toContain('<details class="alog slog" open=""')
+    expect(html).not.toContain('class="swhere"')
+    expect(html).not.toContain('Where it is')
     expect(html).toContain('class="standing live"')
     // One follower for one file: the attempt row points up instead.
     expect(html.split('<details class="alog').length - 1).toBe(1)

@@ -1200,6 +1200,7 @@ describe('the block, rendered', () => {
       line: { kind: 'step', step: 'build', actions: ['pnpm test'] },
       ask: 'Nothing is needed from you.',
       then: ['review', 'merge'],
+      said: [],
       meters: {
         runId: 'r1',
         round: { since: '2026-11-05T00:00:00.000Z', budget: '1h', of: 'round 1 of 4' },

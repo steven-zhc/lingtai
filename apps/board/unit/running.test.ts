@@ -216,3 +216,12 @@ describe('sinceText', () => {
     expect(sinceText(SINCE, t - 5_000)).toBe('0s')
   })
 })
+
+describe('runningPanelOf said', () => {
+  it('names the tags the phase in flight writes under', () => {
+    expect(panelOf(run({})).said).toEqual([])
+    expect(panelOf(run({ stepNow: at('implement', 0) })).said).toEqual([null])
+    expect(panelOf(run({ stepNow: at('implement', 2) })).said).toEqual(['fix:2'])
+    expect(panelOf(run({ stepNow: at('review', 1) })).said).toEqual(['review:agent'])
+  })
+})

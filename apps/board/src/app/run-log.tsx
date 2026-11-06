@@ -35,7 +35,9 @@
  * ticket leaves this outside it rather than have the board invent a second one
  * for the same facts.
  */
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+
+import { openFor, saidLast, scannedAll, tailRule } from '@/lib/said'
 
 import { useLatch } from './latch.tsx'
 
@@ -48,7 +50,7 @@ import { useLatch } from './latch.tsx'
  * the start, and the interesting end of a run that is still going is the
  * bottom. `lingtai attach` has no such bound and neither does the file.
  */
-const KEEP_LINES = 2_000
+export const KEEP_LINES = 2_000
 
 /**
  * How long to wait before asking again for a log that is not there yet, the
@@ -333,38 +335,150 @@ export function logBelow(shown: string | null, running: string | null): boolean 
   return shown !== null && shown !== running
 }
 
+interface Followed {
+  shown: string | null
+  live: boolean
+  below: boolean
+  lines: readonly string[]
+  state: TailState
+  open: boolean
+  setOpen: (open: boolean) => void
+  tags: readonly (string | null)[]
+}
+
+const FollowedContext = createContext<Followed | null>(null)
+
 /**
- * Rank 2's `RunLog`, for an item that is running — and still there, no longer
- * live, once it has stopped. See `heldRun`. A page loaded after the run ended
- * starts with nothing held and shows nothing, because nobody was reading.
+ * The one tail for a running ticket's page, and the state the views over it share
+ * (#917). It is rendered in the same place whatever the ticket's state, so that
+ * the views — `SaidLast` and `RawRunLog` — may mount and unmount inside it
+ * without the tail, the lines or the reader's open log going with them. See
+ * `heldRun`: the run that ends under a reader leaves their log where they left it.
  *
- * `children` are rank 2's other lines. The log is above them while it follows
- * and under them, shorter, once it has ended (`logBelow`); both are keyed, so
- * the move is a reorder and not a remount, and the reader keeps its lines.
+ * It follows while the run is live **or** the reader has opened the raw log
+ * (`tailRule`), so the quoted lines fill in with the raw log closed. Open is the
+ * reader's alone, and about one run (`openFor`).
  */
 export function FollowedLog({
   running,
-  className = 'alog',
+  tags = [],
   children,
 }: {
   running: string | null
-  className?: string
+  /** The tags the agent's prose is filed under in the phase in flight. See `RunningPanelView.said`. */
+  tags?: readonly (string | null)[]
   children?: ReactNode
 }) {
   const [held, setHeld] = useState(running)
   useEffect(() => {
     setHeld((was) => heldRun(was, running))
   }, [running])
+  const [opened, setOpened] = useState<string | null>(null)
   const shown = heldRun(held, running)
   const below = logBelow(shown, running)
-  // Keyed by run, so a different run is a new follower rather than this one's
-  // open state and lines carried over to a file they were not about.
-  const log =
-    shown === null ? null : (
-      <RunLog key={shown} runId={shown} live={running === shown} className={below ? `${className} ended` : className} />
-    )
-  const rest = <Fragment key="rest">{children}</Fragment>
-  return <>{below ? [rest, log] : [log, rest]}</>
+  const live = shown !== null && running === shown
+  const open = openFor(opened, shown)
+  const { lines, state } = useLogTail(shown ?? '', shown !== null && tailRule(live, open))
+  const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
+  return (
+    <FollowedContext.Provider value={{ shown, live, below, lines, state, open, setOpen, tags }}>
+      {children}
+    </FollowedContext.Provider>
+  )
+}
+
+/** What the agent said last, from the run log: a trace, and nothing here is decided from it (0111 §13). */
+export function SaidLast() {
+  const f = useContext(FollowedContext)
+  if (f === null || !f.live) return null
+  const said = saidLast(f.lines, f.tags)
+  return (
+    <div className="saidlast" data-rank="said">
+      <p className="triage-then">
+        <b>What the agent said last</b> · from the run log, newest first
+      </p>
+      {f.state === 'gone' ? (
+        <p className="empty">
+          No run log for this attempt, so what the agent said cannot be shown; the steps above are from the log of
+          events.
+        </p>
+      ) : (
+        <>
+          {f.state === 'trouble' ? <p className="empty">The run log could not be followed.</p> : null}
+          {said.length === 0 ? (
+            <p className="empty">
+              {scannedAll(f.lines, KEEP_LINES)
+                ? `Nothing said in the last ${KEEP_LINES.toLocaleString('en-US')} lines.`
+                : 'Nothing said yet in this round.'}
+            </p>
+          ) : (
+            <ul className="saidlines">
+              {said.map((l, i) => (
+                <li key={`${l.at}-${i}`}>
+                  <span className="mono">{l.at}</span>{' '}
+                  <span
+                    title={l.text}
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {l.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The raw run log, closed until the reader opens it. `running` draws it in the
+ * running panel; `ended` draws the same state where `logBelow` puts it once the
+ * run has ended — so the log they opened stays open (#152).
+ */
+export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
+  const f = useContext(FollowedContext)
+  const tail = useRef<HTMLDivElement | null>(null)
+  const lines = f?.lines
+  const open = f?.open
+  // Follow the bottom, which is where a running log is — and on a remount, so a
+  // log that moved from the panel lands on the newest line.
+  useEffect(() => {
+    tail.current?.scrollTo({ top: tail.current.scrollHeight })
+  }, [lines, open])
+  if (f === null || f.shown === null) return null
+  if (where === 'running' ? !f.live : !f.below) return null
+  const count = f.lines.length
+  return (
+    <details
+      className={where === 'running' ? 'alog slog' : 'alog slog ended'}
+      open={f.open}
+      onToggle={(event) => f.setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span className="hdocname">The run log</span>
+        <span className="hdocsize">
+          {f.open || !f.live ? say(f.state, count) : `${count} lines · follows live when open`}
+        </span>
+      </summary>
+      {f.state === 'gone' ? (
+        <p className="empty">
+          No run log for this attempt. A run log is deleted when the attempt lands or the ticket closes — what is kept
+          is exactly what is still owed an explanation (0034).
+        </p>
+      ) : (
+        <div className="alogbody" ref={tail}>
+          <pre className="hdoctext">{f.lines.join('\n')}</pre>
+        </div>
+      )}
+    </details>
+  )
 }
 
 /** What the right of the summary says, and it is about the file, never the run. */
