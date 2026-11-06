@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { LandedView, type LandedEnv } from '../src/app/landed/view.tsx'
-import { ColumnLabel } from '../src/app/page.tsx'
+import { ColumnLabel, LandedCount } from '../src/app/page.tsx'
 import {
   costText,
   cursorText,
@@ -214,12 +214,21 @@ describe('/landed address and pieces', () => {
   })
 })
 
-describe('the home page Landed heading', () => {
-  it('links to /landed, carrying the project filter', () => {
-    expect(renderToStaticMarkup(<ColumnLabel id="landed" label="Landed" only="my repo" />)).toContain(
-      'href="/landed?project=my%20repo"',
-    )
+describe('the home page Landed heading and count', () => {
+  it('headings are plain text for every column', () => {
+    for (const label of ['Landed', 'Queued', 'Waiting']) {
+      expect(renderToStaticMarkup(<ColumnLabel label={label} />)).not.toContain('<a')
+    }
+  })
+
+  it('the Landed count is a pill linking to /landed, carrying the project filter', () => {
+    const html = renderToStaticMarkup(<LandedCount count={73} only="my repo" />)
+    expect(html).toContain('href="/landed?project=my%20repo"')
+    expect(html).toContain('class="ctbtn"')
+    expect(html).toContain('73')
+    expect(html).toContain('all')
+    expect(renderToStaticMarkup(<LandedCount count={1} only={undefined} />)).toContain('href="/landed"')
+    expect(renderToStaticMarkup(<LandedCount count={0} only={undefined} />)).toContain('>0<')
     expect(landedLink(undefined)).toBe('/landed')
-    expect(renderToStaticMarkup(<ColumnLabel id="queued" label="Queued" only="p" />)).not.toContain('<a')
   })
 })
