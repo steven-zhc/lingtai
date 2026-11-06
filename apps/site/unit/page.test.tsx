@@ -280,11 +280,24 @@ describe('the replay receipt', () => {
 
   it('holds the hero and the shots in one row, and the receipt beside the replay', () => {
     const html = renderToStaticMarkup(<HomePage books={null} />)
-    const row = html.indexOf('class="hero-row"')
-    expect(row).toBeGreaterThan(-1)
-    expect(html.indexOf('id="hero-title"')).toBeGreaterThan(row)
-    expect(html.indexOf('shot-tab')).toBeGreaterThan(html.indexOf('id="hero-title"'))
-    expect(html.indexOf('shot-tab')).toBeLessThan(html.indexOf('id="replay"'))
+    const mark = html.indexOf('class="hero-row"')
+    expect(mark).toBeGreaterThan(-1)
+    const start = html.lastIndexOf('<div', mark)
+    // The row's own contents: walk the divs from its opening tag to the one that closes it.
+    let depth = 0
+    let end = -1
+    for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
+      depth += m[0] === '</div>' ? -1 : 1
+      if (depth === 0) {
+        end = start + m.index
+        break
+      }
+    }
+    expect(end).toBeGreaterThan(start)
+    const row = html.slice(start, end)
+    expect(row).toContain('id="hero-title"')
+    expect(row).toContain('shot-tab')
+    expect(row).not.toContain('id="replay"')
     expect(html.indexOf('class="rcpt')).toBeGreaterThan(html.indexOf('id="replay"'))
   })
 
