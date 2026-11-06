@@ -154,7 +154,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           )}
         </div>
       </main>
-      <FooterFetched project={only} />
+      <FooterFetched />
     </>
   )
 }

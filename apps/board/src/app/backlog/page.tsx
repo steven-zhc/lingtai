@@ -114,7 +114,7 @@ export default async function BacklogPage() {
           </section>
         </div>
       </main>
-      <FooterFetched project={undefined} />
+      <FooterFetched />
     </>
   )
 }

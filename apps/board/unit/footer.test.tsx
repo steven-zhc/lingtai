@@ -1,6 +1,5 @@
 /**
- * The home footer (#905): two figures on a meter, unknown never `$0`, links that
- * carry `?project=`, and a source that stays free of server imports.
+ * The home footer (#905): two figures on a meter, unknown never `$0`, no links (#950), and a source that stays free of server imports.
  */
 import { readFileSync } from 'node:fs'
 
@@ -16,19 +15,16 @@ const run = { reportedRuns: 0, estimatedRuns: 0, fetchedRuns: 0, unknownWhy: [] 
 const day = { ...run, reportedRuns: 3, reportedCents: 2615, estimatedCents: 2203, unknown: 2 }
 const current = ['task_view', 'finding_backlog', 'spend', 'ticket_report'].map((name) => ({ name, lag: 0 }))
 const text = (html: string): string => html.replace(/<[^>]+>/g, '')
-const render = (
-  r: ReturnType<typeof dayReading>,
-  project?: string,
-  landed: number | undefined = 3,
-  lags: FooterLag[] | null = current,
-) => renderToStaticMarkup(<Footer day={r} project={project} landed={landed} lags={lags} home={HOME} />)
+const render = (r: ReturnType<typeof dayReading>, landed: number | undefined = 3, lags: FooterLag[] | null = current) =>
+  renderToStaticMarkup(<Footer day={r} landed={landed} lags={lags} home={HOME} />)
 
 describe('Footer', () => {
   it('ends with the home, titled with the full path', () => {
     const html = render(dayReading(day, 200))
     expect(html).toContain('home <b>~/.lingtai</b>')
     expect(html).toContain('title="/Users/x/.lingtai — the Lingtai home this board reads"')
-    expect(html.indexOf('class="links"')).toBeLessThan(html.indexOf('home-at'))
+    expect(html.indexOf('home-at')).toBeGreaterThan(html.indexOf('projections current'))
+    expect(html.endsWith('</span></footer>')).toBe(true)
   })
 
   it('draws two segments, the two figures and the meter values', () => {
@@ -77,12 +73,8 @@ describe('Footer', () => {
     expect(html).toContain('aria-valuenow="200"')
   })
 
-  it('carries ?project= on every link, and none when unfiltered', () => {
-    const filtered = render(dayReading(day, 200), 'a b')
-    for (const path of ['/landed', '/report', '/spend']) expect(filtered).toContain(`href="${path}?project=a%20b"`)
-    const plain = render(dayReading(day, 200))
-    for (const path of ['/landed', '/report', '/spend']) expect(plain).toContain(`href="${path}"`)
-    expect(text(plain)).toContain('3 landed')
+  it('draws the landed count on /', () => {
+    expect(text(render(dayReading(day, 200)))).toContain('3 landed')
   })
 
   it('counts landed cards and not closed ones', () => {
@@ -98,7 +90,7 @@ describe('Footer currency line', () => {
   })
 
   it('names what is behind, with its rebuild command', () => {
-    const html = render(r, undefined, 3, [
+    const html = render(r, 3, [
       { name: 'task_view', lag: 0 },
       { name: 'spend', lag: 3 },
     ])
@@ -108,42 +100,40 @@ describe('Footer currency line', () => {
   })
 
   it('says a projection that was never built', () => {
-    const html = render(r, undefined, 3, [{ name: 'ticket_report', lag: null }])
+    const html = render(r, 3, [{ name: 'ticket_report', lag: null }])
     expect(html).toContain('ticket_report not built')
     expect(html).toContain('lingtai projection rebuild ticket_report')
   })
 
   it('reads unreadable, never current, when the lag could not be read', () => {
-    const html = render(r, undefined, 3, null)
+    const html = render(r, 3, null)
     expect(html).toContain('projections unreadable')
     expect(html).not.toContain('projections current')
   })
 
-  it('draws the three links but no landed count off /', () => {
-    const html = renderToStaticMarkup(<Footer day={r} project={undefined} lags={current} home={HOME} />)
-    expect(html).toContain('landed</a>')
-    expect(html.match(/href="[^"]*"/g)).toEqual(['href="/landed"', 'href="/report"', 'href="/spend"'])
-    expect(html).not.toContain('</b> landed')
+  it('draws no landed count off /, and no link anywhere', () => {
+    const off = renderToStaticMarkup(<Footer day={r} lags={current} home={HOME} />)
+    expect(off).not.toContain('</b> landed')
+    for (const html of [off, render(r)]) {
+      expect(html).not.toContain('<a ')
+      expect(html).not.toContain('href=')
+    }
   })
 
-  it('draws the amounts and the count in <b>, the count as text, and the links in order', () => {
+  it('draws the amounts and the count in <b>, the count as text, and no links', () => {
     const html = render(r)
     expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> of $200 + 2 unknown')
     expect(html).toContain('<b>3</b> landed</span>')
-    expect(html).not.toMatch(/<a [^>]*>[^<]*<b>/)
-    expect(html.match(/href="[^"]*"/g)).toEqual(['href="/landed"', 'href="/report"', 'href="/spend"'])
   })
 })
 
 describe('footer source', () => {
   const src = readFileSync(new URL('../src/app/footer.tsx', import.meta.url), 'utf8')
 
-  it('imports only react, next/link and types', () => {
+  it('imports only react and types', () => {
     const imports = src.match(/^import .*$/gm) ?? []
     for (const line of imports) {
-      expect(line.startsWith('import type') || /from 'next\/link'|from 'react'|from '\.\/bar\.tsx'/.test(line)).toBe(
-        true,
-      )
+      expect(line.startsWith('import type') || /from 'react'/.test(line)).toBe(true)
     }
     expect(src).not.toMatch(/from '@lingtai\//)
   })

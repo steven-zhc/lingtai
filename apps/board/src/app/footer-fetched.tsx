@@ -15,11 +15,11 @@ import { Skeleton } from './skeleton.tsx'
 
 type State = { kind: 'asking' } | { kind: 'failed' } | { kind: 'read'; reading: FooterReading }
 
-export function FooterFetched({ project }: { project: string | undefined }) {
+export function FooterFetched() {
   const [state, setState] = useState<State>({ kind: 'asking' })
   const latest = useRef(0)
 
-  // Mount only: `project` builds hrefs, and a different project is a different page.
+  // Mount only: the reading is the board's, not a project's, so it is fetched once.
   useEffect(() => {
     const mine = ++latest.current
     const settle = (next: State) => {
@@ -35,7 +35,7 @@ export function FooterFetched({ project }: { project: string | undefined }) {
   }, [])
 
   if (state.kind === 'read')
-    return <Footer day={state.reading.day} lags={state.reading.lags} project={project} home={state.reading.home} />
+    return <Footer day={state.reading.day} lags={state.reading.lags} home={state.reading.home} />
   return (
     <footer className="footer">
       {state.kind === 'asking' ? (

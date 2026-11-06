@@ -25,7 +25,7 @@ const read = (path: string) => readFileSync(new URL(`../src/${path}`, import.met
 
 describe('FooterFetched', () => {
   it('draws the skeleton inside a footer before an answer', () => {
-    const html = renderToStaticMarkup(<FooterFetched project={undefined} />)
+    const html = renderToStaticMarkup(<FooterFetched />)
     expect(html).toContain('<footer')
     expect(html).toContain('class="skeleton"')
   })

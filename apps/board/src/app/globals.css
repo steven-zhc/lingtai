@@ -161,21 +161,19 @@ body {
 .navlink:hover { border-color: var(--accent); color: var(--accent-ink); }
 .navlink.on { border-color: var(--accent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
-/* --- the footer: today's spend as a meter, landings, the way to /report and /spend --- */
+/* --- the footer: today's spend as a meter, landings, currency and the home; no links (#950) --- */
 .footer {
-  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
-  padding: 10px 16px; margin-top: 8px;
+  display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  padding: 10px 20px; margin-top: 8px;
   border-top: 1px solid var(--rule);
-  font: 12.5px var(--sans); color: var(--muted);
+  font: 14px var(--sans); color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .footer b { color: var(--ink); font-weight: 500; }
-.footer a { color: var(--accent-ink); text-decoration: none; }
-.footer a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .footer .spend { display: inline-flex; align-items: center; gap: 8px; }
 .footer .meter {
-  display: inline-flex; width: 140px; height: 6px; overflow: hidden;
-  border-radius: 3px; background: color-mix(in srgb, var(--muted) 20%, transparent);
+  display: inline-flex; width: 180px; height: 8px; overflow: hidden;
+  border-radius: 4px; background: color-mix(in srgb, var(--muted) 20%, transparent);
 }
 .footer .meter .seg { display: block; height: 100%; background: var(--accent); }
 .footer .meter .seg.est { opacity: 0.45; }
@@ -186,8 +184,7 @@ body {
 .sp-today .meter .seg { display: block; height: 100%; background: var(--accent); }
 .sp-today .meter .seg.est { opacity: 0.45; }
 .footer .currency { font: 11.5px var(--mono); opacity: 0.7; }
-.footer .links { margin-left: auto; display: inline-flex; gap: 16px; }
-.footer .home-at { color: var(--muted); font-size: 12.5px; }
+.footer .home-at { margin-left: auto; color: var(--muted); font-size: 12.5px; }
 .footer .home-at b { font-weight: 500; color: var(--ink); }
 
 /* Health, as one dot: is this current (#64), and is the conductor running the

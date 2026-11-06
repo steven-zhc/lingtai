@@ -133,7 +133,7 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
           </section>
         </div>
       </main>
-      <FooterFetched project={only} />
+      <FooterFetched />
     </>
   )
 }

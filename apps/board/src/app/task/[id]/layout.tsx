@@ -220,7 +220,7 @@ export function TaskBody({
           </section>
         </div>
       </main>
-      <FooterFetched project={task.ticket?.project ?? undefined} />
+      <FooterFetched />
     </>
   )
 }
