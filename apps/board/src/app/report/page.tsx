@@ -29,6 +29,7 @@ import {
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import { FooterFetched } from '../footer-fetched'
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
 import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel } from './panels.tsx'
 
@@ -87,64 +88,67 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   }
 
   return (
-    <main className="detail">
-      <TimingMeta timings={timings} />
-      <div className="bar">
-        <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
-        <span className="sep" />
-        <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>
-        <span className="sep" />
-        <span className={`chip ${chip.tone}`} title={chip.title}>
-          {chip.label}
-        </span>
-      </div>
+    <>
+      <main className="detail">
+        <TimingMeta timings={timings} />
+        <div className="bar">
+          <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
+            ← Lingtai
+            <Home {...theHome()} />
+          </Link>
+          <span className="sep" />
+          <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>
+          <span className="sep" />
+          <span className={`chip ${chip.tone}`} title={chip.title}>
+            {chip.label}
+          </span>
+        </div>
 
-      <div className="detail-body rp">
-        <Filters query={query} kinds={kinds} />
-        {query.note === null ? null : <p className="rp-note">{query.note}</p>}
+        <div className="detail-body rp">
+          <Filters query={query} kinds={kinds} />
+          {query.note === null ? null : <p className="rp-note">{query.note}</p>}
 
-        {report === null ? (
-          <p className="rp-empty">
-            the report could not be read: {failure} — lingtai projection rebuild ticket_report, and spend
-          </p>
-        ) : (
-          <>
-            <Tiles report={report} />
-            <section className="rp-grid">
-              <Panel title="fix rounds" sub="landed tickets, stacked by kind · convergence is the right-hand column">
-                <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
-              </Panel>
-              <Panel title="reviews to pass" sub="share still not passed after k reviews">
-                <SurvivalPanel steps={report.survival} />
-              </Panel>
-              <Panel title="landed per day" sub="stacked by kind">
-                <LandingsPanel days={report.landingDays} kinds={kindsOfReport(report)} />
-              </Panel>
-              <Panel title="spend per day" sub="every run in the window, landed or not · stacked by purpose">
-                <SpendPanel days={report.spend.days} />
-              </Panel>
-              <Panel
-                title="why work stopped to wait"
-                sub="rows are the reason, columns what triage found · darker is more often"
-                wide
-              >
-                <WaitsPanel cells={report.waitCauses} />
-              </Panel>
-            </section>
-            <section className="rp-panel">
-              <h2>by kind</h2>
-              <KindsPanel kinds={report.kinds} />
-            </section>
-            <section className="rp-panel">
-              <h2>the tickets that went round most</h2>
-              <TopPanel top={report.top} query={query} />
-            </section>
-          </>
-        )}
-      </div>
-    </main>
+          {report === null ? (
+            <p className="rp-empty">
+              the report could not be read: {failure} — lingtai projection rebuild ticket_report, and spend
+            </p>
+          ) : (
+            <>
+              <Tiles report={report} />
+              <section className="rp-grid">
+                <Panel title="fix rounds" sub="landed tickets, stacked by kind · convergence is the right-hand column">
+                  <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
+                </Panel>
+                <Panel title="reviews to pass" sub="share still not passed after k reviews">
+                  <SurvivalPanel steps={report.survival} />
+                </Panel>
+                <Panel title="landed per day" sub="stacked by kind">
+                  <LandingsPanel days={report.landingDays} kinds={kindsOfReport(report)} />
+                </Panel>
+                <Panel title="spend per day" sub="every run in the window, landed or not · stacked by purpose">
+                  <SpendPanel days={report.spend.days} />
+                </Panel>
+                <Panel
+                  title="why work stopped to wait"
+                  sub="rows are the reason, columns what triage found · darker is more often"
+                  wide
+                >
+                  <WaitsPanel cells={report.waitCauses} />
+                </Panel>
+              </section>
+              <section className="rp-panel">
+                <h2>by kind</h2>
+                <KindsPanel kinds={report.kinds} />
+              </section>
+              <section className="rp-panel">
+                <h2>the tickets that went round most</h2>
+                <TopPanel top={report.top} query={query} />
+              </section>
+            </>
+          )}
+        </div>
+      </main>
+      <FooterFetched project={only} />
+    </>
   )
 }

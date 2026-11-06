@@ -36,6 +36,7 @@ import { spendChip } from '@/lib/spend'
 import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import { FooterFetched } from '../footer-fetched'
 import { SpendTable } from '../spend-table.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -60,58 +61,60 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
   const { rows: byProject, total } = ledger(board.columns, board.spend.rows)
 
   return (
-    <main className="detail">
-      <TimingMeta timings={timings} />
-      <div className="bar">
-        <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
-        <span className="sep" />
-        <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
-        <span className="sep" />
-        {/* `backlog/page.tsx`'s own chip, for the same reason: a reducer that
+    <>
+      <main className="detail">
+        <TimingMeta timings={timings} />
+        <div className="bar">
+          <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
+            ← Lingtai
+            <Home {...theHome()} />
+          </Link>
+          <span className="sep" />
+          <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
+          <span className="sep" />
+          {/* `backlog/page.tsx`'s own chip, for the same reason: a reducer that
             failed or never ran reads identically to a board on which nothing
             was spent unless something here says so (`#498`'s review). */}
-        <span className={`chip ${chip.tone}`} title={chip.title}>
-          {chip.label}
-        </span>
-      </div>
+          <span className={`chip ${chip.tone}`} title={chip.title}>
+            {chip.label}
+          </span>
+        </div>
 
-      <div className="detail-body">
-        {/* Every project, whatever the filter: the ceiling covers the installation. */}
-        <p className="mono">{today.text}</p>
-        <section>
-          <h2>
-            <span className="hlab">Spend</span>
-            <span className="hfact">
-              {total.cards} card(s) on the board{only === undefined ? '' : `, ${only} only`} — not a window over the log
-            </span>
-          </h2>
-          {total.cards === 0 ? (
-            <p className="empty">
-              {only === undefined
-                ? 'Nothing in the log yet, so nothing has been spent.'
-                : `Nothing here for ${only}, so nothing has been spent on it.`}
-            </p>
-          ) : (
-            <>
-              <SpendTable rows={byProject} total={total} />
-              {/* A reported dollar is a floor and not the whole of it (0110
+        <div className="detail-body">
+          {/* Every project, whatever the filter: the ceiling covers the installation. */}
+          <p className="mono">{today.text}</p>
+          <section>
+            <h2>
+              <span className="hlab">Spend</span>
+              <span className="hfact">
+                {total.cards} card(s) on the board{only === undefined ? '' : `, ${only} only`} — not a window over the
+                log
+              </span>
+            </h2>
+            {total.cards === 0 ? (
+              <p className="empty">
+                {only === undefined
+                  ? 'Nothing in the log yet, so nothing has been spent.'
+                  : `Nothing here for ${only}, so nothing has been spent on it.`}
+              </p>
+            ) : (
+              <>
+                <SpendTable rows={byProject} total={total} />
+                {/* A reported dollar is a floor and not the whole of it (0110
                   §2): a run killed before it returned appends nothing, so
                   this total can only be short of what actually happened,
                   never long. */}
-              <p className="hfact">this total is a floor — a run that did not finish records nothing</p>
-            </>
-          )}
-        </section>
+                <p className="hfact">this total is a floor — a run that did not finish records nothing</p>
+              </>
+            )}
+          </section>
 
-        <section>
-          <h2>
-            <span className="hlab">Standing permission</span>
-            <span className="hfact">what a failure may spend without being asked</span>
-          </h2>
-          {/* Shown when it buys nothing as well as when it buys something,
+          <section>
+            <h2>
+              <span className="hlab">Standing permission</span>
+              <span className="hfact">what a failure may spend without being asked</span>
+            </h2>
+            {/* Shown when it buys nothing as well as when it buys something,
               the way an unconfigured gate point is shown as `skipped` rather
               than omitted (0025 §2). A default that spends money and is
               invisible until it fires is one nobody can audit — and the audit
@@ -121,20 +124,22 @@ export default async function Spend({ searchParams }: { searchParams: Promise<{ 
               The sentence is `attemptCeiling`'s, the one `lingtai add` prints and
               the drain says (0039 §3), so the page cannot word a recipe
               differently from the CLI. */}
-          {limits.length === 0 ? (
-            <p className="empty">No recipe could be read, so nothing here can say what an attempt would spend.</p>
-          ) : (
-            <ul className="policy">
-              {limits.map((l) => (
-                <li key={l.project}>
-                  <span className="mono">{l.project}</span>
-                  <span>{l.summary}.</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-    </main>
+            {limits.length === 0 ? (
+              <p className="empty">No recipe could be read, so nothing here can say what an attempt would spend.</p>
+            ) : (
+              <ul className="policy">
+                {limits.map((l) => (
+                  <li key={l.project}>
+                    <span className="mono">{l.project}</span>
+                    <span>{l.summary}.</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </main>
+      <FooterFetched project={only} />
+    </>
   )
 }

@@ -12,6 +12,7 @@
 import Link from 'next/link'
 
 import type { DaySpendReading } from '@/lib/day-spend'
+import type { FooterLag } from '@/lib/footer'
 
 const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
@@ -27,10 +28,14 @@ export function Footer({
   day,
   project,
   landed,
+  lags,
 }: {
   day: DaySpendReading
   project: string | undefined
-  landed: number
+  /** Absent off `/`: the link to `/landed` is not drawn rather than drawn as `0 landed`. */
+  landed?: number
+  /** The four projections' lag; null when it could not be read (#906). */
+  lags: readonly FooterLag[] | null
 }) {
   const d = day.day
   const ceilingCents = day.ceilingUsd === undefined ? undefined : Math.round(day.ceilingUsd * 100)
@@ -76,9 +81,11 @@ export function Footer({
           {figures}
         </span>
       </span>
-      <Link href={withProject('/landed', project)} title="landed in the last 2 days">
-        {landed} landed
-      </Link>
+      {landed === undefined ? null : (
+        <Link href={withProject('/landed', project)} title="landed in the last 2 days">
+          {landed} landed
+        </Link>
+      )}
       <span className="links">
         <Link
           href={withProject('/report', project)}
@@ -90,6 +97,26 @@ export function Footer({
           spend
         </Link>
       </span>
+      <Currency lags={lags} />
     </footer>
+  )
+}
+
+/** The projections' currency, in faint type. Being behind is not a fault, so no tone. */
+function Currency({ lags }: { lags: readonly FooterLag[] | null }) {
+  if (lags === null) return <span className="currency">projections unreadable</span>
+  const behind = lags.filter((l) => l.lag !== 0)
+  if (behind.length === 0) return <span className="currency">projections current</span>
+  return (
+    <span className="currency">
+      {behind.map((l, i) => (
+        <span key={l.name}>
+          {i === 0 ? '' : ' · '}
+          <span title={`lingtai projection rebuild ${l.name}`}>
+            {l.name} {l.lag === null ? 'not built' : `behind ${l.lag}`}
+          </span>
+        </span>
+      ))}
+    </span>
   )
 }

@@ -9,11 +9,17 @@ import { describe, expect, it } from 'vitest'
 
 import { Footer, landedCount } from '../src/app/footer.tsx'
 import { dayReading } from '../src/lib/day-spend.ts'
+import type { FooterLag } from '../src/lib/footer.ts'
 
 const run = { reportedRuns: 0, estimatedRuns: 0, fetchedRuns: 0, unknownWhy: [] }
 const day = { ...run, reportedRuns: 3, reportedCents: 2615, estimatedCents: 2203, unknown: 2 }
-const render = (r: ReturnType<typeof dayReading>, project?: string, landed = 3) =>
-  renderToStaticMarkup(<Footer day={r} project={project} landed={landed} />)
+const current = ['task_view', 'finding_backlog', 'spend', 'ticket_report'].map((name) => ({ name, lag: 0 }))
+const render = (
+  r: ReturnType<typeof dayReading>,
+  project?: string,
+  landed: number | undefined = 3,
+  lags: FooterLag[] | null = current,
+) => renderToStaticMarkup(<Footer day={r} project={project} landed={landed} lags={lags} />)
 
 describe('Footer', () => {
   it('draws two segments, the two figures and the meter values', () => {
@@ -75,6 +81,42 @@ describe('Footer', () => {
   })
 })
 
+describe('Footer currency line', () => {
+  const r = dayReading(day, 200)
+
+  it('reads current when every lag is 0', () => {
+    expect(render(r)).toContain('projections current')
+  })
+
+  it('names what is behind, with its rebuild command', () => {
+    const html = render(r, undefined, 3, [
+      { name: 'task_view', lag: 0 },
+      { name: 'spend', lag: 3 },
+    ])
+    expect(html).toContain('spend behind 3')
+    expect(html).toContain('title="lingtai projection rebuild spend"')
+    expect(html).not.toContain('projections current')
+  })
+
+  it('says a projection that was never built', () => {
+    const html = render(r, undefined, 3, [{ name: 'ticket_report', lag: null }])
+    expect(html).toContain('ticket_report not built')
+    expect(html).toContain('lingtai projection rebuild ticket_report')
+  })
+
+  it('reads unreadable, never current, when the lag could not be read', () => {
+    const html = render(r, undefined, 3, null)
+    expect(html).toContain('projections unreadable')
+    expect(html).not.toContain('projections current')
+  })
+
+  it('draws no /landed link without a landed count', () => {
+    const html = renderToStaticMarkup(<Footer day={r} project={undefined} lags={current} />)
+    expect(html).not.toContain('/landed')
+    expect(html).not.toContain('landed</a>')
+  })
+})
+
 describe('footer source', () => {
   const src = readFileSync(new URL('../src/app/footer.tsx', import.meta.url), 'utf8')
 
@@ -94,6 +136,7 @@ describe('home page', () => {
   it('has no reading or /report link in the bar, and mounts Footer after the columns', () => {
     expect(bar).not.toContain('className="reading"')
     expect(bar).not.toContain('/report')
+    expect(bar).not.toContain('spendChip')
     expect(page.indexOf('<Footer')).toBeGreaterThan(page.indexOf('<div className="cols">'))
   })
 })

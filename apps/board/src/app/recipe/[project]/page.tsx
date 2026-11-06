@@ -6,6 +6,8 @@ import { Home } from '@/app/home.tsx'
 import { theHome } from '@/lib/home'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 
+import { FooterFetched } from '../../footer-fetched'
+
 /**
  * What one project's recipe says today, and which file each value came from
  * (#218).
@@ -51,48 +53,49 @@ export const dynamic = 'force-dynamic'
 export function Recipe({ view }: { view: ProjectRecipe }) {
   const back = `/?project=${encodeURIComponent(view.project)}`
   return (
-    <main className="detail">
-      <div className="bar">
-        <Link className="brand" href={back}>
-          ← Lingtai
-          <Home {...theHome()} />
-        </Link>
-        <span className="sep" />
-        <span className="mono">recipe · {view.project}</span>
-      </div>
+    <>
+      <main className="detail">
+        <div className="bar">
+          <Link className="brand" href={back}>
+            ← Lingtai
+            <Home {...theHome()} />
+          </Link>
+          <span className="sep" />
+          <span className="mono">recipe · {view.project}</span>
+        </div>
 
-      <div className="detail-body">
-        <section>
-          <h2>
-            <span className="hlab">Recipe</span>
-            {/* The hash and the branch, so a reader can hold this against an
+        <div className="detail-body">
+          <section>
+            <h2>
+              <span className="hlab">Recipe</span>
+              {/* The hash and the branch, so a reader can hold this against an
                 attempt's on the task page — which is the comparison that
                 matters on the day they differ (#217). */}
-            <span className="hfact">
-              {view.ok
-                ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
-                : view.fault === 'recipe'
-                  ? 'it could not be read, so nothing will be taken from this project'
-                  : 'it could not be resolved, so nothing will be taken from this project'}
-            </span>
-          </h2>
+              <span className="hfact">
+                {view.ok
+                  ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
+                  : view.fault === 'recipe'
+                    ? 'it could not be read, so nothing will be taken from this project'
+                    : 'it could not be resolved, so nothing will be taken from this project'}
+              </span>
+            </h2>
 
-          {view.ok ? (
-            /* `lingtai status`'s rows, in `lingtai status`'s words, and one
+            {view.ok ? (
+              /* `lingtai status`'s rows, in `lingtai status`'s words, and one
                column it does not have: where the value came from. Two files
                decide one project and `provenance` is the only thing that says
                which of them won. */
-            <dl className="rread sourced">
-              {view.rows.map((row) => (
-                <div key={row.name}>
-                  <dt>{row.name}</dt>
-                  <dd>{row.says}</dd>
-                  <dd className="rfrom">← {sourceOf(row, view.provenance) ?? 'not said'}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            /* Named, never an empty page: a recipe that will not parse is the
+              <dl className="rread sourced">
+                {view.rows.map((row) => (
+                  <div key={row.name}>
+                    <dt>{row.name}</dt>
+                    <dd>{row.says}</dd>
+                    <dd className="rfrom">← {sourceOf(row, view.provenance) ?? 'not said'}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              /* Named, never an empty page: a recipe that will not parse is the
                failure that cost this project a whole queue while every surface
                rendered as though there were simply nothing to do (#76).
 
@@ -103,55 +106,57 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                a page that said *the recipe could not be read* would have its
                reader open that file twice over and find nothing wrong, while
                the one to edit went unnamed. */
-            <p className="refusal">
-              {view.fault === 'recipe' ? (
-                <>
-                  The recipe at <span className="mono">{underHome(view.at)}</span> could not be read: {view.problem}.
-                </>
-              ) : (
-                <>
-                  The recipe was not resolved, and the fault is in this machine&apos;s{' '}
-                  <span className="mono">{underHome(view.at)}</span> rather than in the recipe: {view.problem}.
-                </>
-              )}
-            </p>
-          )}
-        </section>
+              <p className="refusal">
+                {view.fault === 'recipe' ? (
+                  <>
+                    The recipe at <span className="mono">{underHome(view.at)}</span> could not be read: {view.problem}.
+                  </>
+                ) : (
+                  <>
+                    The recipe was not resolved, and the fault is in this machine&apos;s{' '}
+                    <span className="mono">{underHome(view.at)}</span> rather than in the recipe: {view.problem}.
+                  </>
+                )}
+              </p>
+            )}
+          </section>
 
-        {view.ok ? (
-          <section>
-            <h2>
-              <span className="hlab">Where every value came from</span>
-              <span className="hfact">
-                the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
-                <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
-                detection, or a default
-              </span>
-            </h2>
-            {/* `lingtai doctor`'s own block, which has printed since #180 and
+          {view.ok ? (
+            <section>
+              <h2>
+                <span className="hlab">Where every value came from</span>
+                <span className="hfact">
+                  the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
+                  <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
+                  detection, or a default
+                </span>
+              </h2>
+              {/* `lingtai doctor`'s own block, which has printed since #180 and
                 which no surface with a screen has ever shown. Longer than the
                 reading and exhaustive where it is grouped — `repo.base` and
                 `env.required` are here and in no row above. */}
-            <ul className="prov">
-              {provenanceRows(view.provenance).map((row) => (
-                <li key={row.key}>
-                  <span className="rpath mono">{row.key}</span>
-                  <span className="pval">{row.value}</span>
-                  <span className="rfrom">← {row.from}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+              <ul className="prov">
+                {provenanceRows(view.provenance).map((row) => (
+                  <li key={row.key}>
+                    <span className="rpath mono">{row.key}</span>
+                    <span className="pval">{row.value}</span>
+                    <span className="rfrom">← {row.from}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-        <p className="rnote">
-          Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an omission: 0046 §4
-          retired <span className="mono">tamper</span> because the recipe sits outside every worktree and nothing an
-          agent can reach may write it. Edit <span className="mono">{underHome(view.at)}</span> and this page says so on
-          the next render — the file is read on every resolve, so a daemon holds nothing stale.
-        </p>
-      </div>
-    </main>
+          <p className="rnote">
+            Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an omission: 0046 §4
+            retired <span className="mono">tamper</span> because the recipe sits outside every worktree and nothing an
+            agent can reach may write it. Edit <span className="mono">{underHome(view.at)}</span> and this page says so
+            on the next render — the file is read on every resolve, so a daemon holds nothing stale.
+          </p>
+        </div>
+      </main>
+      <FooterFetched project={view.project} />
+    </>
   )
 }
 

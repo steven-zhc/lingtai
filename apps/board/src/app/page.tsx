@@ -8,6 +8,7 @@ import { readControl } from '@lingtai/daemon/control'
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a reducer over its arguments (#216).
 import { hasGitHubAuth, storeChoice } from '@lingtai/env'
+import { projectionLag } from '@lingtai/projector'
 import Link from 'next/link'
 import { type ComponentProps, Fragment, Suspense } from 'react'
 
@@ -24,12 +25,13 @@ import {
   LANDED_OPEN,
 } from '@/lib/board'
 import { readDayReading } from '@/lib/day-spend'
+import { footerLags } from '@/lib/footer'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
-import { billHasAny, billText, spendChip } from '@/lib/spend'
+import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
@@ -668,10 +670,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // total could be read before today's `RunSpent` events were projected.
   const [
     [
-      { columns, queueOrder, ticketSources, projects: filters, pending, spend, askable, known },
+      { columns, queueOrder, ticketSources, projects: filters, pending, askable, known },
       registered,
       control,
       today,
+      lags,
     ],
     timings,
   ] = await measure(
@@ -681,8 +684,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         timed('projects.read', () => loadProjects()).catch(() => []),
         timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
-      const day = await timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null })
-      return [board, projects, control, day] as const
+      const [day, lags] = await Promise.all([
+        timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null }),
+        timed('projections.lag', () => projectionLag()).then(footerLags, () => null),
+      ])
+      return [board, projects, control, day, lags] as const
     },
     { label: '/' },
   )
@@ -694,12 +700,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const queue: Promise<GithubQueue> = measure(() => timed('board.queue', () => githubQueue(askable, known)), {
     label: '/ queue',
   }).then(([github]) => github)
-  // Every card's money pill below is off this same `spend`. Silent when it
-  // reduced cleanly — a chip is not free, and this is the ordinary case — and
-  // a sentence when it did not, because a card reading `unknown (1 run)`
-  // after a failed reduce is indistinguishable from a ticket that predates
-  // `RunSpent` without one (`#498`'s review).
-  const spendCurrency = spendChip(spend.currency)
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
@@ -754,17 +754,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               action in it when either is not. Never amber — that is the
               headline's, below. */}
             <Health />
-            {/* Nothing while `spend` reduced cleanly; the sentence when it did
-              not. Draws nothing in the ordinary case, the same reason
-              `Paused` and `Draining` cost the quiet row nothing. */}
-            {spendCurrency.current ? null : (
-              <>
-                <span className="sep" />
-                <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
-                  {spendCurrency.label}
-                </span>
-              </>
-            )}
             {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for
@@ -931,7 +920,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </div>
       </main>
       {/* Outside `<main>`: a `<footer>` inside it has no `contentinfo` role. */}
-      <Footer day={today} project={only} landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])} />
+      <Footer
+        day={today}
+        lags={lags}
+        project={only}
+        landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
+      />
     </>
   )
 }
