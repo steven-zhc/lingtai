@@ -279,6 +279,8 @@ export interface ReadBacklogOptions {
   /** Absent reads every status. */
   status?: BacklogStatus
   key?: string
+  /** Only entries first raised for these tickets. */
+  taskIds?: readonly string[]
   url?: string
 }
 
@@ -297,6 +299,7 @@ export async function readBacklog(options: ReadBacklogOptions = {}): Promise<Bac
       project: options.project,
       status: options.status,
       key: options.key,
+      taskIds: options.taskIds,
     }),
   )
 }

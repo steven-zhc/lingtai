@@ -314,6 +314,14 @@
   {
     "file": "packages/projector/src/ticket-report.ts",
     "function": "reduce",
+    "type": "RunProducedDiff",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps each run's last diff counts so the landing run's can be copied onto the row at TicketLanded; AttemptState.produced is not this projection's to read (0123 §6)."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
     "type": "RunSpent",
     "count": 1,
     "class": "join",

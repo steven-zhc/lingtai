@@ -736,6 +736,21 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('reads the backlog for some tickets only, and none for an empty list (#894)', async () => {
+      const f = await make()
+      const task = f.stream('wi', '44')
+      const run = f.stream('run', 'backlog-ids')
+      try {
+        const written = await f.events.append(run, 0, [started(task), ...stepPassed(run, [minor])])
+        await made(f, backlogProjection, written)
+        expect((await f.store.backlog({ project: f.project, taskIds: [task] })).map((e) => e.taskId)).toEqual([task])
+        expect(await f.store.backlog({ project: f.project, taskIds: [] })).toEqual([])
+        expect(await f.store.backlog({ project: f.project, taskIds: [`${task}-nobody`] })).toEqual([])
+      } finally {
+        await f.close()
+      }
+    })
+
     it('fills ticket and project on a RunSpent through the RunStarted on its own stream', async () => {
       const f = await make()
       const task = f.stream('wi', '44')

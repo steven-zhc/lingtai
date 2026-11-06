@@ -7,8 +7,20 @@ import { COMMANDS } from '../src/commands.ts'
 import { describeLags, moneyText, parseReport, runReport, type ReportOptions, type ReportPorts } from '../src/report.ts'
 
 // The reader's row and the aggregation's must stay one shape: a field added to one is a type error here.
+// The landing facts (#894) are `/landed`'s, not the report's, so the aggregation's row does not carry them.
+type Landing =
+  | 'title'
+  | 'mergeCommit'
+  | 'landingRun'
+  | 'landingAttempt'
+  | 'landingFixRounds'
+  | 'diffFiles'
+  | 'diffInsertions'
+  | 'diffDeletions'
+  | 'summary'
+  | 'summaryClipped'
 const _same: ReportTicketRow = {} as TicketReportRow
-const _back: TicketReportRow = {} as ReportTicketRow
+const _back: Omit<TicketReportRow, Landing> = {} as ReportTicketRow
 void _same
 void _back
 
@@ -31,6 +43,16 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   reviews: [],
   waits: [],
   cost: { Work: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
+  title: null,
+  mergeCommit: null,
+  landingRun: null,
+  landingAttempt: null,
+  landingFixRounds: null,
+  diffFiles: null,
+  diffInsertions: null,
+  diffDeletions: null,
+  summary: null,
+  summaryClipped: null,
   ...over,
 })
 

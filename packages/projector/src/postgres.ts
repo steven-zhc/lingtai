@@ -19,7 +19,7 @@ import pg from 'pg'
 
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
-import { CheckpointRewoundError, columnOf } from './store.ts'
+import { CheckpointRewoundError, clampLanded, columnOf, ProjectionShapeError } from './store.ts'
 import type {
   BacklogQuery,
   ProjectionContext,
@@ -27,11 +27,12 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TicketReportLandedQuery,
   TicketReportQuery,
 } from './store.ts'
 import { waitOf } from './task-view.ts'
 import type { TaskCard, TaskState } from './task-view.ts'
-import { ticketReportRowOf } from './ticket-report.ts'
+import { TICKET_REPORT_COLUMNS, TICKET_REPORT_TABLE, ticketReportRowOf } from './ticket-report.ts'
 import type { TicketReportRow } from './ticket-report.ts'
 
 /**
@@ -383,6 +384,11 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         args.push(value)
         where.push(`${column} = $${args.length}`)
       }
+      if (query.taskIds !== undefined) {
+        if (query.taskIds.length === 0) return []
+        args.push([...query.taskIds])
+        where.push(`task_id = any($${args.length}::text[])`)
+      }
       try {
         const r = await pool.query(
           `select * from finding_backlog
@@ -440,6 +446,39 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
       } catch (err) {
         // `spend`'s own reason: no table is no tickets, not a failure.
         if ((err as { code?: string }).code === '42P01') return []
+        throw err
+      }
+    },
+
+    async landed(query: TicketReportLandedQuery): Promise<TicketReportRow[]> {
+      const where = [`outcome = 'landed'`]
+      const args: unknown[] = []
+      if (query.project !== undefined) {
+        args.push(query.project)
+        where.push(`project = $${args.length}`)
+      }
+      if (query.before !== undefined) {
+        args.push(query.before.at, query.before.ticket)
+        where.push(`(outcome_at, ticket) < ($${args.length - 1}::timestamptz, $${args.length})`)
+      }
+      args.push(clampLanded(query.limit))
+      try {
+        const r = await pool.query(
+          `select ${TICKET_REPORT_COLUMNS} from ticket_report
+           where ${where.join(' and ')}
+           order by outcome_at desc, ticket desc
+           limit $${args.length}`,
+          args,
+        )
+        return r.rows.map(ticketReportRowOf)
+      } catch (err) {
+        if ((err as { code?: string }).code === '42P01') return []
+        // A column the table lacks is drift, and drift names the rebuild.
+        if ((err as { code?: string }).code === '42703') {
+          throw new ProjectionShapeError(TICKET_REPORT_TABLE, [
+            { table: TICKET_REPORT_TABLE, missing: ['landing columns'], unexpected: [] },
+          ])
+        }
         throw err
       }
     },
