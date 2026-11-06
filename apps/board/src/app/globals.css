@@ -335,6 +335,9 @@ body {
   color: var(--muted); padding: 0 3px 9px;
 }
 .col-h .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.ctbtn { display: inline-flex; align-items: baseline; gap: 6px; text-decoration: none; color: var(--accent-ink); border: 1px solid var(--rule-2); border-radius: 999px; padding: 3px 10px 4px; background: var(--surface); }
+.ctbtn .lbl { font-size: 11px; letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
+.ctbtn:hover { border-color: var(--accent); }
 .col.hot .col-h { color: var(--signal); }
 
 /* The Waiting lane is a compact reading list at the reference's 440px width.
