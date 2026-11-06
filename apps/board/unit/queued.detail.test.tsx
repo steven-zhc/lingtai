@@ -241,22 +241,11 @@ describe('what will happen', () => {
       'merge',
       'end',
     ])
-    // Seven of the ten, from two lists that do not overlap: the four no plugin
-    // implements — `claim`, `admit`, `design`, `implement` — and `build`,
-    // `review` and `merge`, which *this recipe* leaves empty. Four plus three,
-    // with nothing counted twice. The first four can never be anything else;
-    // the other three are a fact about the file, and this one still declares
-    // its build and its reviewer at `proposed:`. The sibling assertion below
-    // counts the same seven in rendered HTML.
-    expect(PLAN.steps.filter((p) => p.skipped).map((p) => p.step)).toEqual([
-      'claim',
-      'admit',
-      'design',
-      'implement',
-      'build',
-      'review',
-      'merge',
-    ])
+    // Three of the ten: `design`, `build` and `review`, which this recipe leaves
+    // empty and which have no default action. `claim`, `admit`, `implement` and
+    // `merge` are empty too but default-filled, so the plan names them (#941).
+    // The sibling assertion below counts the same three in rendered HTML.
+    expect(PLAN.steps.filter((p) => p.skipped).map((p) => p.step)).toEqual(['design', 'build', 'review'])
     expect(PLAN.steps[7]?.actions).toEqual(['build', 'review'])
   })
 
@@ -281,11 +270,11 @@ describe('what will happen', () => {
     expect(html).toContain('prepared')
     expect(html).toContain('install')
     expect(html).toContain('close the ticket')
-    // Seven steps run nothing here: the four no plugin implements, and `build`,
-    // `review` and `merge`, which this recipe leaves empty. Each is named in one
-    // muted line rather than omitted — 0016 §4 — and none gets a row of its own.
-    expect(html).toContain('nothing configured at: claim, admit, design, implement, build, review, merge')
-    expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 7)
+    // Three steps run nothing here: `design`, `build` and `review`, which this
+    // recipe leaves empty and which have no default. Each is named in one muted
+    // line rather than omitted — 0016 §4 — and none gets a row of its own.
+    expect(html).toContain('nothing configured at: design, build, review')
+    expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 3)
     expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
   })
 

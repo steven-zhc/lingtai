@@ -209,7 +209,7 @@ import {
   type ResolvedRecipe,
   type StepAction,
 } from '@lingtai/recipe'
-import { isBuiltInJudge } from '@lingtai/recipe'
+import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
 import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Either } from 'effect'
 
@@ -3567,10 +3567,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const defaultsAt = (step: Step): readonly Action[] => {
         if (step === 'claim') {
-          return [createQueueAction({ name: 'take the ticket', ...queueOf(recipe) }, { take })]
+          return [createQueueAction({ name: DEFAULT_ACTION.claim, ...queueOf(recipe) }, { take })]
         }
         if (step === 'admit') {
-          return [createWorktreeAction({ name: 'cut the branch', base, submodules: submodulesOf(recipe) }, { cut })]
+          return [createWorktreeAction({ name: DEFAULT_ACTION.admit, base, submodules: submodulesOf(recipe) }, { cut })]
         }
         if (step === 'implement') {
           /**
@@ -3589,7 +3589,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * reviewer follows — so the default adding nothing is the default
            * changing nothing.
            */
-          return [createWorkAction({ name: 'write the change', prompt: '' }, { work: dispatch })]
+          return [createWorkAction({ name: DEFAULT_ACTION.implement, prompt: '' }, { work: dispatch })]
         }
         if (step === 'merge') {
           // The strategy `mergePlugin`'s schema defaults to, because `integrate`
@@ -3597,7 +3597,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // the base is one value that flows, and `land` above already has it, so
           // *the default merge* and *a pasted block that says what the default
           // did* cannot land onto different branches (0061 §4).
-          return [createMergeAction({ name: 'land the branch', strategy: 'merge-commit' }, { land })]
+          return [createMergeAction({ name: DEFAULT_ACTION.merge, strategy: 'merge-commit' }, { land })]
         }
         return []
       }

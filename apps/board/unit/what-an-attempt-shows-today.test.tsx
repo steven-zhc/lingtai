@@ -682,7 +682,7 @@ it('1. lands with no rounds spent', () => {
   expect(stripOf(runEvents, true)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -1555,7 +1555,7 @@ it('2. lands after one fix round (review lines, judge, implement, green)', () =>
   expect(stripOf(runEvents, true)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -3014,7 +3014,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -3046,7 +3046,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -3536,7 +3536,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -3568,7 +3568,7 @@ it('6. `implement` produces no commits at round 0 (`StepDidNotFinish`, `DidNotFi
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -4335,7 +4335,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -4367,7 +4367,7 @@ it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', (
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -5128,7 +5128,7 @@ it('9. a check before the lane at `merge` refuses (`CheckRed`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -5845,7 +5845,7 @@ it('10a. the merge lane refuses on a conflict (`Routed{when: "conflict"}`)', () 
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -6562,7 +6562,7 @@ it('10b. the merge lane refuses on a dirty base (`MergeRefused`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -6914,7 +6914,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -6930,7 +6930,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
     },
     {
       step: 'implement',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'build',
@@ -6946,7 +6946,7 @@ it('11. an agent asks a question (`StepAsked`)', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -7518,7 +7518,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -7550,7 +7550,7 @@ it('12. a declared `human:` at `proposed` (`Human`)', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -8281,7 +8281,7 @@ it('13. a judge answer is unreadable', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -8313,7 +8313,7 @@ it('13. a judge answer is unreadable', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -8960,7 +8960,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -8992,7 +8992,7 @@ it("13b. the cold reviewer's own answer is unreadable", () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -9522,7 +9522,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -9554,7 +9554,7 @@ it('14a. the turn ceiling is hit mid-run (`Ceiling`)', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -10008,7 +10008,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -10040,7 +10040,7 @@ it('14b. the wall is hit mid-run (`DidNotFinish`, not `Ceiling`)', () => {
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -10817,7 +10817,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -10849,7 +10849,7 @@ it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the 
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',
@@ -11485,7 +11485,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
   expect(stripOf(runEvents, false)).toEqual([
     {
       step: 'claim',
-      state: 'skipped',
+      state: 'passed',
     },
     {
       step: 'admit',
@@ -11517,7 +11517,7 @@ it("14d. the cold reviewer's own wall is `DidNotFinish`, not a `Ceiling` nobody 
     },
     {
       step: 'merge',
-      state: 'skipped',
+      state: 'pending',
     },
     {
       step: 'end',

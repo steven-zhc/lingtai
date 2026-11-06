@@ -509,17 +509,20 @@ describe('a running card', () => {
     const html = render({}, running())
 
     expect(segments(html)).toEqual([
-      // `claim` — no plugin implements it, so nothing can be configured there.
-      'skipped',
-      'skipped',
+      // `claim` ran, or there would be no attempt (#941); `admit` has a default
+      // action and has not been reached.
       'passed',
-      // `design`, `implement`, `build`, `review` — the same.
+      'pending',
+      'passed',
+      // `design`, `build`, `review` — nothing configured and no default.
       'skipped',
-      'skipped',
+      // `implement` has a default action and is not reached yet.
+      'pending',
       'skipped',
       'skipped',
       'running',
-      'skipped',
+      // `merge` has a default action, not reached yet.
+      'pending',
       'pending',
     ])
     expect(labels(html).map(([, name]) => name)).toEqual([...STEPS])
@@ -562,15 +565,15 @@ describe('a running card', () => {
    */
   it('gives each name the weight its step has earned', () => {
     expect(labels(render({}, running()))).toEqual([
-      ['l-off', 'claim'],
-      ['l-off', 'admit'],
+      ['l-done', 'claim'],
+      ['l-done', 'admit'],
       ['l-done', 'prepared'],
       ['l-off', 'design'],
-      ['l-off', 'implement'],
+      ['l-done', 'implement'],
       ['l-off', 'build'],
       ['l-off', 'review'],
       ['l-at', 'proposed'],
-      ['l-off', 'merge'],
+      ['l-done', 'merge'],
       ['l-done', 'end'],
     ])
     expect(CSS).toMatch(/\.slab\.l-off\s*\{[^}]*font-style:\s*italic/)
@@ -989,7 +992,7 @@ describe('the eight states', () => {
     )
 
     expect(cellsAt(html, 'merge')).toEqual(['t-never'])
-    expect(cellsAt(html, 'admit')).toEqual(['t-skipped'])
+    expect(cellsAt(html, 'design')).toEqual(['t-skipped'])
     expect(cellsAt(html, 'end')).toEqual(['t-pending'])
 
     // Three classes is not three treatments. The stylesheet is where that is
@@ -1077,15 +1080,15 @@ describe('the hatch, and what may not draw it', () => {
     )
 
     expect(segments(html)).toEqual([
-      'skipped',
-      'skipped',
+      'passed',
+      'pending',
       'failed',
-      'skipped',
-      'skipped',
-      'skipped',
       'skipped',
       'pending',
       'skipped',
+      'skipped',
+      'pending',
+      'pending',
       'pending',
     ])
     expect(cells(html)).not.toContain('t-never')
@@ -1110,15 +1113,15 @@ describe('the hatch, and what may not draw it', () => {
     const over = progressOf(reduceAttempt(noPlanRecorded()), PLAN, true)
 
     expect(over?.steps.map((p) => p.state)).toEqual([
-      'skipped',
+      'passed',
+      'pending',
+      'pending',
       'skipped',
       'pending',
       'skipped',
       'skipped',
-      'skipped',
-      'skipped',
       'pending',
-      'skipped',
+      'pending',
       'pending',
     ])
   })

@@ -214,7 +214,7 @@ describe('one attempt', () => {
 
     // `progress.ts`'s reduce, which is the one the rail reads (#189).
     expect(run.progress?.steps).toHaveLength(10)
-    expect(run.progress?.steps.filter((p) => p.state === 'skipped')).toHaveLength(9)
+    expect(run.progress?.steps.filter((p) => p.state === 'skipped')).toHaveLength(5)
   })
 })
 
