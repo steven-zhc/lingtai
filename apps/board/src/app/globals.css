@@ -179,6 +179,12 @@ body {
 }
 .footer .meter .seg { display: block; height: 100%; background: var(--accent); }
 .footer .meter .seg.est { opacity: 0.45; }
+.sp-today .meter {
+  display: flex; width: 100%; height: 6px; margin: 5px 0 3px; overflow: hidden;
+  border-radius: 3px; background: color-mix(in srgb, var(--muted) 20%, transparent);
+}
+.sp-today .meter .seg { display: block; height: 100%; background: var(--accent); }
+.sp-today .meter .seg.est { opacity: 0.45; }
 .footer .currency { font: 11.5px var(--mono); opacity: 0.7; }
 .footer .links { margin-left: auto; display: inline-flex; gap: 16px; }
 .footer .home-at { color: var(--muted); font-size: 12.5px; }
@@ -3134,6 +3140,34 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 }
 .rp-tile .k, .rp-tile .s { color: var(--muted); font-size: 11.5px; }
 .rp-tile .v { font: 600 22px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+.rp-tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .rp-tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .rp-tiles.four { grid-template-columns: minmax(0, 1fr); } }
+.sw-bar { display: flex; height: 22px; border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+.sw-seg.est { opacity: 0.45; }
+.sw-rows { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 22px; }
+.sw-rows li { display: grid; grid-template-columns: 10px 1fr auto; grid-template-areas: "i n p" ". v v" ". d d"; column-gap: 8px; font-size: 12px; }
+.sw-rows i { grid-area: i; width: 10px; height: 10px; border-radius: 2px; margin-top: 3px; }
+.sw-rows .n { grid-area: n; color: var(--ink-2); }
+.sw-rows .p { grid-area: p; color: var(--muted); font-family: var(--mono); }
+.sw-rows .v { grid-area: v; font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.sw-rows .d { grid-area: d; color: var(--muted); font-size: 11px; }
+.tc { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.tc li {
+  display: grid; grid-template-columns: 44px 64px 60px 1fr 62px; grid-template-areas: "tk kd rd tb tv" ". . . why why";
+  align-items: center; column-gap: 8px; font-size: 12px;
+}
+.tc .tk { grid-area: tk; font-family: var(--mono); color: var(--accent-ink); }
+.tc .kd { grid-area: kd; color: var(--muted); }
+.tc .rd { grid-area: rd; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.tc .tb {
+  grid-area: tb; display: flex; height: 9px; border-radius: 2px; overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+.tc .b.rep { background: var(--s2); }
+.tc .b.est { background: var(--s2); opacity: 0.45; }
+.tc .tv { grid-area: tv; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.tc .why { grid-area: why; color: var(--muted); font-size: 11px; margin-top: -3px; }
 .rp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .rp-panel {
   background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px;

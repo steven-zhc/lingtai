@@ -169,12 +169,14 @@ export interface Report {
   /** Placed landed tickets, by the day of their landing. */
   landingDays: LandingDay[]
   /** Every run whose `at` is in the window, whatever its ticket's outcome. */
-  spend: { total: Money; days: SpendDay[] }
+  spend: { total: Money; days: SpendDay[]; byPurpose: { purpose: string; money: Money }[] }
   kinds: KindRow[]
   /** Tickets whose first review is in the window, any outcome. */
   survival: SurvivalStep[]
   waitCauses: WaitCauseCell[]
   top: TopTicket[]
+  /** The eight placed tickets that cost most, any outcome; its own order, whatever `sortBy` says. */
+  costliest: TopTicket[]
 }
 
 export interface ReportInput {
@@ -493,6 +495,20 @@ export function report(input: ReportInput): Report {
       return first || second || a.t.ticket.localeCompare(b.t.ticket)
     })
 
+  const costliest = placed
+    .map((t) => ({ t, cost: ordering(ticketMoney(t)) }))
+    .sort((a, b) => b.cost - a.cost || b.t.fixRounds - a.t.fixRounds || a.t.ticket.localeCompare(b.t.ticket))
+
+  // The window's purposes are the days' parts added up, so they add up to `total` exactly.
+  const purposes = new Map<string, Money>()
+  for (const d of days)
+    for (const p of d.byPurpose)
+      purposes.set(
+        p.purpose,
+        addMoney(purposes.get(p.purpose) ?? { reportedCents: 0, estimatedCents: 0, unknown: 0 }, p.money),
+      )
+  const byPurpose = [...purposes].sort(([a], [b]) => a.localeCompare(b)).map(([purpose, money]) => ({ purpose, money }))
+
   const cells = new Map<string, WaitCauseCell>()
   for (const t of filtered) {
     for (const wait of t.waits) {
@@ -530,7 +546,7 @@ export function report(input: ReportInput): Report {
       const of = landed.filter((t) => dayKey(t.outcomeAt!) === day)
       return { day, total: of.length, kinds: countKinds(of.map((t) => t.kind)) }
     }),
-    spend: { total, days },
+    spend: { total, days, byPurpose },
     kinds: kindKeys.map((kind) => ({
       kind,
       ...landedFigures(landed.filter((t) => t.kind === kind)),
@@ -541,5 +557,6 @@ export function report(input: ReportInput): Report {
       (a, b) => b.count - a.count || a.reason.localeCompare(b.reason) || (a.cause ?? '').localeCompare(b.cause ?? ''),
     ),
     top: ranked.slice(0, 8).map((r) => topTicket(r.t)),
+    costliest: costliest.slice(0, 8).map((r) => topTicket(r.t)),
   }
 }

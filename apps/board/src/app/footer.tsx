@@ -24,6 +24,37 @@ const pct = (share: number): string => `${Number((share * 100).toFixed(3))}%`
 
 const dollars = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 
+/**
+ * Today's spend against the ceiling as two segments, reported and estimated,
+ * capped at the ceiling. Null where the day or the ceiling is unknown. The
+ * footer and `/report`'s spent-today tile draw the same arithmetic.
+ */
+export function DayMeter({ day }: { day: DaySpendReading }) {
+  const d = day.day
+  const ceilingUsd = day.ceilingUsd
+  if (d === null || ceilingUsd === undefined) return null
+  const ceilingCents = Math.round(ceilingUsd * 100)
+  const share = (cents: number) => (ceilingCents === 0 ? 1 : cents / ceilingCents)
+  const reported = Math.min(share(d.reportedCents), 1)
+  const estimated = Math.min(share(d.estimatedCents), 1 - reported)
+  const now = Math.min(d.reportedCents + d.estimatedCents, ceilingCents) / 100
+  return (
+    <span
+      className="meter"
+      role="meter"
+      aria-label="today's spend against the daily ceiling"
+      aria-valuemin={0}
+      aria-valuemax={ceilingUsd}
+      aria-valuenow={now}
+      aria-valuetext={day.text}
+      title={day.text}
+    >
+      <span className="seg rep" style={{ width: pct(reported) }} />
+      <span className="seg est" style={{ width: pct(estimated) }} />
+    </span>
+  )
+}
+
 export function Footer({
   day,
   project,
@@ -41,7 +72,6 @@ export function Footer({
   home: { path: string; shown: string }
 }) {
   const d = day.day
-  const ceilingCents = day.ceilingUsd === undefined ? undefined : Math.round(day.ceilingUsd * 100)
 
   let figures: ReactNode
   if (d === null) {
@@ -56,35 +86,14 @@ export function Footer({
     )
   }
 
-  let meter = null
-  if (d !== null && ceilingCents !== undefined && day.ceilingUsd !== undefined) {
-    const share = (cents: number) => (ceilingCents === 0 ? 1 : cents / ceilingCents)
-    const reported = Math.min(share(d.reportedCents), 1)
-    const estimated = Math.min(share(d.estimatedCents), 1 - reported)
-    const now = Math.min(d.reportedCents + d.estimatedCents, ceilingCents) / 100
-    meter = (
-      <span
-        className="meter"
-        role="meter"
-        aria-label="today's spend against the daily ceiling"
-        aria-valuemin={0}
-        aria-valuemax={day.ceilingUsd}
-        aria-valuenow={now}
-        aria-valuetext={day.text}
-        title={day.text}
-      >
-        <span className="seg rep" style={{ width: pct(reported) }} />
-        <span className="seg est" style={{ width: pct(estimated) }} />
-      </span>
-    )
-  }
+  const hasMeter = d !== null && day.ceilingUsd !== undefined
 
   return (
     <footer className="footer">
       <span className="spend">
         <span>Today</span>
-        {meter}
-        <span className="figures" title={meter === null ? day.text : undefined}>
+        <DayMeter day={day} />
+        <span className="figures" title={hasMeter ? undefined : day.text}>
           {figures}
         </span>
       </span>

@@ -14,6 +14,7 @@
 import { report as buildReport, type Report } from '@lingtai/conductor/report'
 
 import { Bar } from '@/app/bar.tsx'
+import { readDayReading } from '@/lib/day-spend'
 import {
   currentReport,
   kindsOf,
@@ -29,7 +30,7 @@ import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../footer-fetched'
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
-import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel } from './panels.tsx'
+import { CostliestPanel, Filters, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from './panels.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   let chip: ReportChip
   let failure: string | null = null
   let timings: readonly Timing[] = []
+  // Never throws, and outside the try: a failed report read leaves the day's figure, and the reverse.
+  const dayReading = readDayReading()
   try {
     const [data, measured] = await measure(
       () => timed('report.read', () => currentReport(query.project, query.window.from)),
@@ -108,7 +111,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             </p>
           ) : (
             <>
-              <Tiles report={report} />
+              <Tiles report={report} day={await dayReading} query={query} />
               <section className="rp-grid">
                 <Panel title="fix rounds" sub="landed tickets, stacked by kind · convergence is the right-hand column">
                   <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
@@ -121,6 +124,15 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                 </Panel>
                 <Panel title="spend per day" sub="every run in the window, landed or not · stacked by purpose">
                   <SpendPanel days={report.spend.days} />
+                </Panel>
+                <Panel
+                  title="where it went"
+                  sub="every run in the window · by purpose · solid is reported, pale is estimated"
+                >
+                  <WhereItWentPanel byPurpose={report.spend.byPurpose} />
+                </Panel>
+                <Panel title="the costliest tickets" sub="placed in the window, any outcome · dearest first">
+                  <CostliestPanel tickets={report.costliest} />
                 </Panel>
                 <Panel
                   title="why work stopped to wait"
