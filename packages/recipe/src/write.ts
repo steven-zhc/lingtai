@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 /**
  * Writing a project's recipe down (#395) — the part `editRecipe` (#162) does
@@ -34,38 +34,55 @@ export interface RecipeFiles {
   exclusive?: <A>(path: string, run: () => Promise<A>) => Promise<A>
 }
 
-/** A lock older than this was left by a process that died holding it. */
+/** A lock nobody has refreshed for this long was left by a process that died holding it. */
 const LOCK_STALE_MS = 30_000
 const LOCK_WAIT_MS = 15_000
 
+const readToken = (lock: string): Promise<string | null> => readFile(lock, 'utf8').catch(() => null)
+
 /**
- * `<path>.lock`, made with `wx` so exactly one process creates it. Another
- * board, or a `lingtai add`, waits its turn; a lock nobody has touched for
- * `LOCK_STALE_MS` is taken to be a dead holder's and is removed.
+ * `<path>.lock`, made with `wx` so exactly one process creates it, holding a
+ * token only its maker knows. The holder touches the lock while it runs, so its
+ * age means "nobody is alive behind this" and not "this has been slow". A
+ * waiter removes a stale lock only if it still holds the token the waiter saw,
+ * and the holder releases only a lock that still holds its own token, so
+ * neither removes a lock another process now owns. Only callers that pass
+ * through `files.exclusive` wait (the board's recipe save); `lingtai add`'s
+ * `setRecipe` does not take it.
  */
 async function exclusiveOn<A>(path: string, run: () => Promise<A>): Promise<A> {
   const lock = `${path}.lock`
+  const token = randomUUID()
   await mkdir(dirname(path), { recursive: true })
   const until = Date.now() + LOCK_WAIT_MS
   for (;;) {
     try {
-      await writeFile(lock, String(process.pid), { flag: 'wx' })
+      await writeFile(lock, token, { flag: 'wx' })
       break
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
       try {
-        if (Date.now() - (await stat(lock)).mtimeMs > LOCK_STALE_MS) await unlink(lock)
+        const seen = await readToken(lock)
+        if (Date.now() - (await stat(lock)).mtimeMs > LOCK_STALE_MS && (await readToken(lock)) === seen) {
+          await unlink(lock)
+        }
       } catch {
-        // gone between the two calls: try to take it again
+        // gone between the calls: try to take it again
       }
       if (Date.now() > until) throw new Error(`another save of ${path} holds ${lock}; try again`)
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
   }
+  const beat = setInterval(() => {
+    const now = new Date()
+    void utimes(lock, now, now).catch(() => undefined)
+  }, LOCK_STALE_MS / 3)
+  beat.unref()
   try {
     return await run()
   } finally {
-    await unlink(lock).catch(() => undefined)
+    clearInterval(beat)
+    if ((await readToken(lock)) === token) await unlink(lock).catch(() => undefined)
   }
 }
 
