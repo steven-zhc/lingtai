@@ -38,6 +38,7 @@ describe('a recipe per repository', () => {
     const out = html(['lingtai'], true)
 
     expect(out).toContain('href="/recipe/lingtai"')
+    expect(out).toContain('href="/setup/recipe/lingtai"')
     expect(out).toContain('class="prow on"')
   })
 
@@ -79,7 +80,9 @@ describe('where it lands', () => {
   it('offers no way to setup from a menu that lists repositories', () => {
     for (const app of [true, false]) {
       for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
-        expect(out).not.toContain('/setup/')
+        // The per-repository `edit` link (#973) is under /setup/ and is not a way in.
+        expect(out).not.toContain('/setup/repository')
+        expect(out).not.toContain('/setup/github-app')
         expect(out).not.toContain('add a repository')
       }
     }

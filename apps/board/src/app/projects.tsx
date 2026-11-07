@@ -85,6 +85,9 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
             <Link className="tab rcp" href={`/recipe/${encodeURIComponent(p)}`} title={`what ${p}'s recipe says today`}>
               recipe
             </Link>
+            <Link className="tab rcp" href={`/setup/recipe/${encodeURIComponent(p)}`} title={`edit ${p}'s recipe`}>
+              edit
+            </Link>
           </div>
         ))}
       </div>

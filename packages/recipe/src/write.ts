@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 /**
@@ -46,7 +47,7 @@ export const diskFiles: RecipeFiles = {
   read: readIfThere,
   replace: async (path, text) => {
     await mkdir(dirname(path), { recursive: true })
-    const partial = `${path}.${process.pid}.partial`
+    const partial = `${path}.${process.pid}.${randomUUID()}.partial`
     await writeFile(partial, text)
     await rename(partial, path)
   },

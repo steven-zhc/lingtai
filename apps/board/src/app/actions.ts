@@ -42,7 +42,7 @@ import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
 import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
-import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe, loadAllProjects, loadProject, loadProjects } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
 import { readState } from '@lingtai/conductor/snapshot-state'
@@ -63,16 +63,19 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
+import { diskFiles, machinePath, recipePath } from '@lingtai/recipe'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
+import { Effect } from 'effect'
 import { revalidatePath } from 'next/cache'
 
 // Who is acting — next door for the same reason, and so a test can hold the
 // CLI's actor to this one rather than to a copy.
 import { actor } from '@/lib/actor'
+import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
-import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
+import { saveRecipeText, type SaveResult } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
@@ -909,6 +912,40 @@ export async function splitCard(input: {
     if (refused !== 'started') return { ok: refused.ok, detail: refused.detail }
     revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
     return { ok: true, detail: 'writing the split' }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * Save a project's recipe (#973): the draft is resolved in memory with the
+ * resolver doctor's `recipe: resolves` uses, and written only if it resolves.
+ * This is the host's edge, so the one `Effect.runPromise` is here. It appends
+ * no event: the next pass records what it ran as `RecipeRecorded`.
+ */
+export async function saveRecipe(input: { project: string; draft: string; loaded: string }): Promise<SaveResult> {
+  try {
+    const state = (await loadProjects()).find((p) => p.project === input.project)
+    if (state === undefined) return { ok: false, detail: `no registered project ${input.project}` }
+    const path = recipePath(input.project)
+    const result = await Effect.runPromise(
+      saveRecipeText({
+        files: diskFiles,
+        path,
+        machineAt: machinePath(),
+        draft: input.draft,
+        loaded: input.loaded,
+        check: (draft) =>
+          currentRecipe(state, undefined, undefined, {
+            read: (p) => (p === path ? Promise.resolve(draft) : diskFiles.read(p)),
+          }),
+      }),
+    )
+    if (result.ok) {
+      revalidatePath(`/recipe/${encodeURIComponent(input.project)}`)
+      revalidatePath(`/setup/recipe/${encodeURIComponent(input.project)}`)
+    }
+    return result
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
