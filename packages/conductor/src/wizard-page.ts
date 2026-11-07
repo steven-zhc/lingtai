@@ -199,7 +199,7 @@ export interface WizardState {
   reopened: DecisionId | null
   /** The scan, or the file, has nothing to check a diff with — what flips the merge question's default. */
   noChecksFound: boolean
-  /** What the reading could not settle, in `proposeRecipe`'s words. */
+  /** What the reading could not settle, in a repository read's words. */
   doubts: string[]
 }
 
@@ -300,7 +300,7 @@ export interface ScannedScript {
 }
 
 /**
- * The page for a repository read back by `proposeRecipe`.
+ * The page for a repository read back from a repository read.
  *
  * **The one default that flips.** When the scan found no checks at all, the
  * merge question's default is *a person approves*, and `mergeArgument` says

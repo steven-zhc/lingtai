@@ -32,7 +32,7 @@ import {
   wizardReducer,
 } from '../src/wizard-page.ts'
 
-// What `proposeRecipe` makes of a repository with `typecheck` and `test` at its root.
+// What a repository read makes of a repository with `typecheck` and `test` at its root.
 const scanned = (
   proposed: object[] = [{ name: 'build', run: 'pnpm typecheck && pnpm test', timeout: '20m', env: [] }],
 ) =>

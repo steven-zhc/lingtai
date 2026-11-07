@@ -24,10 +24,10 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
+    "@lingtai/setup": "workspace:*",
     "effect": "^4.1.2",
     "ora": "^9.4.1",
     "pg": "^8.16.3",
-    "smol-toml": "^1.9.1",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

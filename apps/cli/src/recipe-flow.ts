@@ -37,9 +37,9 @@ import {
   type Said,
   setRecipe,
 } from '@lingtai/recipe'
+import type { SetupReader } from '@lingtai/setup'
 
 import { askAgents } from './agents.ts'
-import type { SetupReader } from './detect-setup.ts'
 import { askLanding, askLimits } from './landing.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound } from './runtimes.ts'

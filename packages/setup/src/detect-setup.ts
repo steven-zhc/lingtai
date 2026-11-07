@@ -79,7 +79,7 @@ const BUILD_ORDER: { key: string; names: readonly string[] }[] = [
 /** A script name that says, by itself, "this does not fit inside a pass" (CLAUDE.md, 803s). */
 const INTEGRATION_NAME = /integration|e2e/i
 
-/** A command that needs a browser or a running app — found, never picked (`propose.ts`'s `NEEDS_A_WORLD`). */
+/** A command that needs a browser or a running app — found, never picked. */
 const NEEDS_A_WORLD = /(e2e|playwright|cypress|puppeteer|selenium|webdriver)/i
 
 /** Script names Yarn 1 answers with its own built-in, so `yarn <name>` never reaches the script. */

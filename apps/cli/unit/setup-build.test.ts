@@ -5,9 +5,9 @@
  * hands a `RecipeChange[]` to `setRecipe` directly.
  */
 import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
+import type { SetupReader } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import type { SetupReader } from '../src/detect-setup.ts'
 import { acceptingDefaults } from '../src/question.ts'
 import {
   askInstallAndBuild,

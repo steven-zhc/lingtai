@@ -1,12 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 /**
  * `askBeforeGithubAdd` on a `gh` machine (#708): the saved login's access is
  * checked where the App check is on an App machine, before a recipe answer is
  * written, and the App is never consulted.
  */
-import type { SetupReader } from '../src/detect-setup.ts'
+import type { SetupReader } from '@lingtai/setup'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 
 const SLUG = 'acme/widgets'
 const PREVIOUS_ENV = { ...process.env }

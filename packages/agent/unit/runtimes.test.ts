@@ -165,7 +165,7 @@ describe('every runtime, for asking all of them something', () => {
 
 describe('the preference order, where more than one is signed in', () => {
   /**
-   * `propose.ts` picks among ids *already signed in* — it constructs nothing, so
+   * The old recipe proposal picked among ids *already signed in* — it constructs nothing, so
    * it does not read `RUNTIMES` — and what it needs is an order. The enum has one,
    * and it is the same order the ternary hardcoded.
    */

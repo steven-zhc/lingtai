@@ -1,8 +1,8 @@
 import type { RecipeFiles } from '@lingtai/recipe'
+import type { SetupReader } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { type AddWorld, addFlow } from '../src/add.ts'
-import type { SetupReader } from '../src/detect-setup.ts'
 import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
 /**
  * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no

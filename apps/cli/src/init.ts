@@ -142,11 +142,11 @@ import {
   type RecipeFiles,
   type SignedIn,
 } from '@lingtai/recipe'
+import type { SetupReader } from '@lingtai/setup'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
-import type { SetupReader } from './detect-setup.ts'
 import {
   chooseFirstProject,
   type FirstProjectWorld,

@@ -27,8 +27,8 @@ import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
+import { EMPTY_SETUP_READER, type SetupReader } from '@lingtai/setup'
 
-import { EMPTY_SETUP_READER, type SetupReader } from './detect-setup.ts'
 import { livePicker } from './first-project.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
