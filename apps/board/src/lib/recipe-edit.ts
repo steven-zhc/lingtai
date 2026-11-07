@@ -54,11 +54,12 @@ export function refusal(err: unknown, recipeAt: string, machineAt: string): Save
 }
 
 /**
- * One save at a time. The board is one process, and a save awaits the resolver
- * between its stale-file check and its write: without this, two tabs that loaded
- * the same text both pass the check and the later write silently replaces the
- * earlier one. Inside the lock the second save sees the first's file and is
- * refused as stale.
+ * One save at a time in this process, and — through `files.exclusive`, a lock
+ * file beside the recipe — across processes: separate boards can serve one home
+ * on different ports. A save awaits the resolver between its stale-file check
+ * and its write; without the lock, two tabs that loaded the same text both pass
+ * the check and the later write silently replaces the earlier one. Inside it the
+ * second save sees the first's file and is refused as stale.
  */
 const oneSave = Semaphore.makeUnsafe(1)
 
@@ -74,28 +75,36 @@ export function saveRecipeText(input: {
 }): Effect.Effect<SaveResult> {
   const { files, path, draft: raw } = input
   const draft = normalise(raw)
+  const guarded = <A>(body: Effect.Effect<A, { cause?: unknown }>) =>
+    files.exclusive === undefined
+      ? body
+      : Effect.tryPromise(() => files.exclusive!(path, () => Effect.runPromise(body))).pipe(
+          Effect.mapError((e) => e as { cause?: unknown }),
+        )
   return oneSave
     .withPermits(1)(
-      Effect.gen(function* () {
-        const current = yield* Effect.tryPromise(() => files.read(path))
-        if (hashOf(current) !== input.loaded) {
-          return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
-        }
-        const checked = yield* Effect.tryPromise(() => input.check(draft)).pipe(
-          Effect.map(() => null),
-          Effect.catch((e) => Effect.succeed(refusal(e.cause, path, input.machineAt))),
-        )
-        if (checked !== null) return checked
-        if (current !== null && normalise(current) === draft) return { ok: true, detail: 'nothing changed' }
-        // The resolver was awaited: look again, so a writer that is not this lock's
-        // (a `lingtai add`, another process) is refused rather than overwritten.
-        const now = yield* Effect.tryPromise(() => files.read(path))
-        if (hashOf(now) !== input.loaded) {
-          return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
-        }
-        yield* Effect.tryPromise(() => files.replace(path, draft))
-        return { ok: true, detail: SAVED }
-      }),
+      guarded(
+        Effect.gen(function* () {
+          const current = yield* Effect.tryPromise(() => files.read(path))
+          if (hashOf(current) !== input.loaded) {
+            return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
+          }
+          const checked = yield* Effect.tryPromise(() => input.check(draft)).pipe(
+            Effect.map(() => null),
+            Effect.catch((e) => Effect.succeed(refusal(e.cause, path, input.machineAt))),
+          )
+          if (checked !== null) return checked
+          if (current !== null && normalise(current) === draft) return { ok: true, detail: 'nothing changed' }
+          // The resolver was awaited: look again, so a writer that does not take the
+          // lock (an editor, a hand edit) is refused rather than overwritten.
+          const now = yield* Effect.tryPromise(() => files.read(path))
+          if (hashOf(now) !== input.loaded) {
+            return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
+          }
+          yield* Effect.tryPromise(() => files.replace(path, draft))
+          return { ok: true, detail: SAVED }
+        }),
+      ),
     )
     .pipe(
       Effect.catch((e) =>

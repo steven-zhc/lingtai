@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 /**
  * Writing a project's recipe down (#395) — the part `editRecipe` (#162) does
@@ -26,6 +26,47 @@ export interface RecipeFiles {
   /** Null when the file is not there. */
   read: (path: string) => Promise<string | null>
   replace: (path: string, text: string) => Promise<void>
+  /**
+   * Runs `run` while no other process holds the same path's lock, so a
+   * read-check-replace is one step against every writer that takes it. Absent
+   * where the seam is one process's (a test's `Map`).
+   */
+  exclusive?: <A>(path: string, run: () => Promise<A>) => Promise<A>
+}
+
+/** A lock older than this was left by a process that died holding it. */
+const LOCK_STALE_MS = 30_000
+const LOCK_WAIT_MS = 15_000
+
+/**
+ * `<path>.lock`, made with `wx` so exactly one process creates it. Another
+ * board, or a `lingtai add`, waits its turn; a lock nobody has touched for
+ * `LOCK_STALE_MS` is taken to be a dead holder's and is removed.
+ */
+async function exclusiveOn<A>(path: string, run: () => Promise<A>): Promise<A> {
+  const lock = `${path}.lock`
+  await mkdir(dirname(path), { recursive: true })
+  const until = Date.now() + LOCK_WAIT_MS
+  for (;;) {
+    try {
+      await writeFile(lock, String(process.pid), { flag: 'wx' })
+      break
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+      try {
+        if (Date.now() - (await stat(lock)).mtimeMs > LOCK_STALE_MS) await unlink(lock)
+      } catch {
+        // gone between the two calls: try to take it again
+      }
+      if (Date.now() > until) throw new Error(`another save of ${path} holds ${lock}; try again`)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  try {
+    return await run()
+  } finally {
+    await unlink(lock).catch(() => undefined)
+  }
 }
 
 async function readIfThere(path: string): Promise<string | null> {
@@ -45,6 +86,7 @@ async function readIfThere(path: string): Promise<string | null> {
  */
 export const diskFiles: RecipeFiles = {
   read: readIfThere,
+  exclusive: exclusiveOn,
   replace: async (path, text) => {
     await mkdir(dirname(path), { recursive: true })
     const partial = `${path}.${process.pid}.${randomUUID()}.partial`
