@@ -108,6 +108,7 @@ replaces.
 | [0122](decisions/0122-several-passes-share-one-conductor.md)              | **Several attempts, one conductor** — slots per project, tickets that collide never run together, one landing at a time, a drain waits for every attempt, and a daily dollar ceiling that stops new work and kills nothing                              | accepted; not yet built      |
 | [0123](decisions/0123-the-report-counts-what-the-log-holds.md)            | **The report** — one `ticket_report` row per ticket, spend by day from `spend`, convergence as the share of tickets at five or more rounds and as a review survival curve, and the tickets that went round most explained from facts | accepted                     |
 | [0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) | **Snapshots** — a stream's reducer saved every fifth event by the daemon or the board, read as snapshot plus tail, void when the reducer's version changes or its anchor event is not in the log; events only gain optional fields | accepted |
+| [0125](decisions/0125-setup-is-one-module-two-inputs.md) | **Setup** — one module, `@lingtai/setup`; `lingtai add` and the board are two inputs to it, and an existing project is changed by editing its recipe | accepted; not yet built |
 
 ## Experiments
 
