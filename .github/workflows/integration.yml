@@ -1,0 +1,148 @@
+# The integration half, after every merge into main (#963) — T11 of
+# doc/design/the-pipeline.md, 0060 §1's other half.
+#
+# Two legs of one job, because `LINGTAI_TEST_DATABASE_URL` picks the store for
+# every integration file, not only the `ON_POSTGRES` ones
+# (`packages/event-store/test-support/teardown.ts` returns before it makes the
+# SQLite file; `storeChoice` answers postgres). So the `sqlite` leg is the
+# default product store with the Postgres-only files skipped, and the
+# `postgres` leg runs the whole half against a throwaway container.
+#
+# No `LINGTAI_*` secret goes anywhere near this workflow, and never
+# `LINGTAI_DATABASE_URL`: the service container is the only database and dies
+# with the job. The URL is the container's own port — no pooler (#157).
+#
+# Not a required check on `main`: the merge lane lands by `git merge` and a
+# push, never a pull request (see check.yml).
+#
+# A red run is reported by the `report` job alone, so two legs cannot each
+# open an issue. The issue is `bug` + `agent:hold`: a person reads it first.
+name: integration
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: integration-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: integration (${{ matrix.store }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        store: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: lingtai-ci
+          POSTGRES_DB: lingtai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Integration tests drive the real `git` binary; a runner has no identity.
+      - name: git identity
+        run: |
+          git config --global user.name "lingtai-ci"
+          git config --global user.email "ci@lingtai.invalid"
+      - name: point the suite at the container
+        if: matrix.store == 'postgres'
+        run: echo "LINGTAI_TEST_DATABASE_URL=postgres://postgres:lingtai-ci@127.0.0.1:5432/lingtai_test" >> "$GITHUB_ENV"
+      - name: test
+        run: pnpm test:integration --reporter=default --reporter=json --outputFile.json=integration-${{ matrix.store }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-${{ matrix.store }}
+          path: integration-${{ matrix.store }}.json
+          if-no-files-found: ignore
+
+  report:
+    needs: integration
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RESULT: ${{ needs.integration.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+      TITLE: integration tests are red on main
+    steps:
+      - uses: actions/download-artifact@v4
+        if: needs.integration.result == 'failure'
+        continue-on-error: true
+        with:
+          path: reports
+      - name: report
+        run: |
+          set -euo pipefail
+          case "$RESULT" in
+            failure | success) ;;
+            *) echo "result is $RESULT; nothing to report"; exit 0 ;;
+          esac
+
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)] | first | .number // empty')
+
+          if [ "$RESULT" = success ]; then
+            if [ -n "$open" ]; then
+              gh issue comment "$open" --body "green again on $SHA ($RUN_URL)"
+            fi
+            exit 0
+          fi
+
+          body="Run: $RUN_URL
+          Commit: $SHA
+          "
+          for store in sqlite postgres; do
+            f="reports/integration-$store/integration-$store.json"
+            if [ -f "$f" ]; then
+              files=$(jq -r '.testResults[] | select(.status == "failed") | .name' "$f" \
+                | sed "s|^$GITHUB_WORKSPACE/||")
+              if [ -n "$files" ]; then
+                body="$body
+          **$store** — failing files:
+          $(printf '%s\n' "$files" | sed 's/^/- `/; s/$/`/')
+          "
+              else
+                body="$body
+          **$store** — no failing file in the report (see the run).
+          "
+              fi
+            else
+              body="$body
+          **$store** — no report; it failed before vitest finished, or passed. See the run.
+          "
+            fi
+          done
+
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$TITLE" --label bug --label agent:hold --body "$body"
+          fi

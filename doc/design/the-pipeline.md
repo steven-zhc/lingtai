@@ -332,11 +332,11 @@ bail has nothing left to bail from.
 | | |
 |---|---|
 | **T11** | The full suite runs after the merge |
-| kind | `feature` |
+| kind | `feature` · **landed as [#963](https://github.com/steven-zhc/lingtai/issues/963)**, `.github/workflows/integration.yml` |
 | blocked by | T10 |
-| what | A separate system, triggered by the merge into `main`, runs `integration`. A failure arrives as an issue with a `kind` label, which the queue takes on its next turn. |
+| what | A separate system, triggered by the merge into `main`, runs `integration`. A failure arrives as one issue labelled `bug` and `agent:hold`, so a person reads it before the queue takes anything. |
 | watch out | **`LINGTAI_TEST_DATABASE_URL` must not go through a pooler** ([#157](https://github.com/steven-zhc/lingtai/issues/157)) — on the pooler the same suite went `30 passed → 10 failed → 31 passed` on one commit inside an hour. And **`LINGTAI_DATABASE_URL` is never given to it**: that is this system's own log. |
-| open | Whether that system opens the issue itself or a person does. The queue does not care; *who closes it* does. |
+| open | Answered: the workflow opens the issue and comments on it; a person closes it. |
 
 ## 5. What is done when this is done
 
