@@ -250,6 +250,57 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
   })
 
+  it('a bare add with recipe flags still reaches the picker, and the flags go on with the pick (#969)', async () => {
+    const { world, errors } = githubHarness()
+    world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: false,
+        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+      }),
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh', '--agent', 'claude-code'])
+
+    const code = await addFlow(parsed, world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+  })
+
+  it('an installation the App could not list is said, not shown as empty (#969)', async () => {
+    const { world, logged } = githubHarness()
+    world.project.ask = async (prompt) => (/owner\/repo/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'app',
+        picker: {
+          installUrl: null,
+          installations: [
+            {
+              installation: {
+                id: 7,
+                account: 'acme',
+                permissions: {},
+                repositorySelection: 'all',
+                htmlUrl: null,
+                appSlug: null,
+              },
+              unanswered: '502 on /installation/repositories: Bad Gateway',
+              gaps: [],
+              repositories: [],
+            },
+          ],
+        },
+      }),
+    }
+
+    await addFlow(flagsFromArgv(['--project', 'github', '--github-auth', 'gh']), world)
+    expect(logged.join('\n')).toContain("could not list acme's repositories — 502 on /installation/repositories")
+  })
+
   it('a bare add with no terminal still refuses with exit 2 and reads nothing (#969)', async () => {
     const { world, errors } = githubHarness()
     let read = false
