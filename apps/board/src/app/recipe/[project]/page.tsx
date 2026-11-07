@@ -22,13 +22,12 @@ import { FooterFetched } from '../../footer-fetched'
  * words: nothing in the repository says Lingtai is in use, and a file under a
  * home directory is not discoverable by cloning. A page is.
  *
- * **Read-only, and that is not fastidiousness.** 0046 §4 retired `tamper` on
- * one sentence — with the recipe in `~/.lingtai/`, an agent cannot reach it, so
- * the guard has nothing left to guard. A board that could *write* the recipe
- * would be a process that can write it, reachable over HTTP from the machine an
- * agent runs on, and that argument would have to be made again. Reading changes
- * nothing about reach; writing does. Editing is #206's, and it is where the
- * question belongs.
+ * **This view writes nothing.** 0046 §4 retired `tamper` on the argument that
+ * an agent cannot reach a recipe under `~/.lingtai/`; a writer is a process that
+ * can, so the writer is kept to one place: the `edit` segment beside this page,
+ * which saves through `app/actions.ts`'s `saveRecipe` and writes only a recipe
+ * that resolves ([0125](../../../../../doc/decisions/0125-setup-is-one-module-two-inputs.md)
+ * §6, #973). Editing is not here.
  *
  * So there is nothing here to press and no way to post. `recipe.test.tsx` reads
  * this segment's whole tree as text — and the modules the page imports — and

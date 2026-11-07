@@ -350,6 +350,9 @@ describe('read-only', () => {
   const page = fileURLToPath(PAGE)
   const segment = filesUnder(new URL('../src/app/recipe/', import.meta.url))
   const reached = importedBy(page)
+  // The view and what it imports; `edit/` is the one writer (#973, 0125 §6).
+  const editDir = fileURLToPath(new URL('../src/app/recipe/[project]/edit/', import.meta.url))
+  const view = segment.filter((f) => !f.startsWith(editDir))
 
   /** A scan that found nothing would pass every assertion below saying nothing. */
   it('is reading the route, and what the route pulls in', () => {
@@ -367,13 +370,20 @@ describe('read-only', () => {
   })
 
   it('declares no server action, in the segment or in anything the page imports', () => {
-    for (const file of new Set([...segment, ...reached])) {
+    for (const file of new Set([...view, ...reached])) {
       expect(readFileSync(file, 'utf8'), file).not.toContain('use server')
     }
-    // The board's one writer is `app/actions.ts`; nothing here imports it.
-    for (const file of segment) {
-      expect(readFileSync(file, 'utf8'), file).not.toMatch(/from\s+["'][^"']*actions["']/)
+    // The board's one writer is `app/actions.ts`; the view does not import it.
+    for (const file of view) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(/from\s+["'][^"']*actions(?:\.ts)?["']/)
     }
+  })
+
+  it('lets only edit/ reach the writer, and gives it no server directive of its own', () => {
+    const edit = segment.filter((f) => f.startsWith(editDir))
+    expect(edit.length).toBeGreaterThan(0)
+    expect(edit.some((f) => /from\s+["'][^"']*actions(?:\.ts)?["']/.test(readFileSync(f, 'utf8')))).toBe(true)
+    for (const file of edit) expect(readFileSync(file, 'utf8'), file).not.toContain('use server')
   })
 
   it('touches no filesystem under the segment', () => {

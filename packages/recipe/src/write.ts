@@ -16,7 +16,7 @@ import { isNode, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
 
 import { commentWritten, type RecipeChange, type Said, editRecipe } from './emit.ts'
-import { recipePath } from './local.ts'
+import { recipePath, resolveLocalRecipe, type SignedIn } from './local.ts'
 import { RECIPE_VERSION } from './recipe.ts'
 import { RecipeInvalidError, resolveSource } from './resolve.ts'
 
@@ -221,4 +221,48 @@ export async function readRecipeKey(
   if (text === null) return null
   const value = parseDocument(text).getIn(path)
   return value === undefined ? null : isNode(value) ? value.toJSON() : value
+}
+
+export type SaveRecipeTextResult =
+  | { ok: true; path: string; written: boolean }
+  /** `stale`: the file is not what the page loaded. `missing`: there is no file. `invalid`: the resolver refused. */
+  | { ok: false; reason: 'stale' | 'missing' | 'invalid'; message: string }
+
+/**
+ * Save a recipe a person typed (#973): resolve the text in memory, and write it
+ * exactly as typed only if it resolves.
+ *
+ * Three steps and one comparison. The file must still be byte-for-byte what the
+ * page loaded; the text must resolve with `resolveLocalRecipe`, the judgement
+ * `currentRecipe` and doctor's `recipe: resolves for every project` make, so the
+ * machine file and the signed-in runtimes count too; then `files.replace` — the
+ * temp-and-rename — writes it. Comments and formatting survive because nothing
+ * here re-serialises. Doctor's `agentRefusal` row lives in `apps/cli` and is not
+ * carried over. No lock: the board is one person's local app (0111).
+ */
+export async function saveRecipeText(
+  project: string,
+  input: { loaded: string; text: string },
+  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn },
+): Promise<SaveRecipeTextResult> {
+  const files = options.files ?? diskFiles
+  const path = recipePath(project, options.home)
+  const current = await files.read(path)
+  if (current === null) return { ok: false, reason: 'missing', message: `no recipe at ${path}` }
+  if (current !== input.loaded) {
+    return { ok: false, reason: 'stale', message: `${path} changed on disk since this page loaded — reload it` }
+  }
+  try {
+    await resolveLocalRecipe(project, {
+      ...(options.home === undefined ? {} : { home: options.home }),
+      base: options.base ?? null,
+      signedIn: options.signedIn,
+      read: async (p) => (p === path ? input.text : files.read(p)),
+    })
+  } catch (err) {
+    return { ok: false, reason: 'invalid', message: err instanceof Error ? err.message : String(err) }
+  }
+  if (input.text === current) return { ok: true, path, written: false }
+  await files.replace(path, input.text)
+  return { ok: true, path, written: true }
 }
