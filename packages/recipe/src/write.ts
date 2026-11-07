@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 /**
  * Writing a project's recipe down (#395) — the part `editRecipe` (#162) does
@@ -34,25 +35,71 @@ export interface RecipeFiles {
   exclusive?: <A>(path: string, run: () => Promise<A>) => Promise<A>
 }
 
-/** A lock nobody has refreshed for this long was left by a process that died holding it. */
-const LOCK_STALE_MS = 30_000
+/** A lock held from another machine is judged by age, since its pid means nothing here. */
+const LOCK_STALE_MS = 60_000
 const LOCK_WAIT_MS = 15_000
 
-const readToken = (lock: string): Promise<string | null> => readFile(lock, 'utf8').catch(() => null)
+const readLock = (lock: string): Promise<string | null> => readFile(lock, 'utf8').catch(() => null)
+
+/** The lock file is `token\npid\nhost`; a holder is dead only if its pid is gone from this host. */
+function holderIsDead(content: string | null): boolean {
+  if (content === null) return false
+  const [, pid, host] = content.split('\n')
+  if (host !== hostname()) return false
+  try {
+    process.kill(Number(pid), 0)
+    return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
 
 /**
- * `<path>.lock`, made with `wx` so exactly one process creates it, holding a
- * token only its maker knows. The holder touches the lock while it runs, so its
- * age means "nobody is alive behind this" and not "this has been slow". A
- * waiter removes a stale lock only if it still holds the token the waiter saw,
- * and the holder releases only a lock that still holds its own token, so
- * neither removes a lock another process now owns. Only callers that pass
- * through `files.exclusive` wait (the board's recipe save); `lingtai add`'s
- * `setRecipe` does not take it.
+ * Removes the lock only if its holder is dead, and only while holding
+ * `<lock>.break`, itself made with `wx`. A holder never removes a lock
+ * except its own, and a dead holder's lock is removed by exactly one breaker
+ * at a time, who re-reads it under the guard, so no delayed unlink can ever
+ * hit a lock another process made after the one that was judged. A process
+ * that is merely suspended is alive and keeps its lock.
+ */
+async function breakIfDead(lock: string): Promise<void> {
+  const guard = `${lock}.break`
+  try {
+    await writeFile(guard, '', { flag: 'wx' })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    // A guard is held for milliseconds; one this old was left by a breaker that died.
+    const dead = `${guard}.${randomUUID()}`
+    if (Date.now() - (await stat(guard).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs > LOCK_STALE_MS) {
+      await rename(guard, dead).then(
+        () => unlink(dead),
+        () => undefined,
+      )
+    }
+    return
+  }
+  try {
+    const content = await readLock(lock)
+    const foreign = content !== null && content.split('\n')[2] !== hostname()
+    const old =
+      foreign && Date.now() - (await stat(lock).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs > LOCK_STALE_MS
+    if (holderIsDead(content) || old) await unlink(lock).catch(() => undefined)
+  } finally {
+    await unlink(guard).catch(() => undefined)
+  }
+}
+
+/**
+ * `<path>.lock`, made with `wx` so exactly one process creates it. It names its
+ * holder's pid and host, so a waiter takes it over only when that process is
+ * gone (`breakIfDead`), never because it is slow or suspended. The holder
+ * touches it while it runs so a lock held from another machine can be judged by
+ * age. Only callers that pass through `files.exclusive` wait (the board's
+ * recipe save); `lingtai add`'s `setRecipe` does not take it.
  */
 async function exclusiveOn<A>(path: string, run: () => Promise<A>): Promise<A> {
   const lock = `${path}.lock`
-  const token = randomUUID()
+  const token = `${randomUUID()}\n${process.pid}\n${hostname()}`
   await mkdir(dirname(path), { recursive: true })
   const until = Date.now() + LOCK_WAIT_MS
   for (;;) {
@@ -61,14 +108,7 @@ async function exclusiveOn<A>(path: string, run: () => Promise<A>): Promise<A> {
       break
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-      try {
-        const seen = await readToken(lock)
-        if (Date.now() - (await stat(lock)).mtimeMs > LOCK_STALE_MS && (await readToken(lock)) === seen) {
-          await unlink(lock)
-        }
-      } catch {
-        // gone between the calls: try to take it again
-      }
+      await breakIfDead(lock)
       if (Date.now() > until) throw new Error(`another save of ${path} holds ${lock}; try again`)
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
@@ -82,7 +122,7 @@ async function exclusiveOn<A>(path: string, run: () => Promise<A>): Promise<A> {
     return await run()
   } finally {
     clearInterval(beat)
-    if ((await readToken(lock)) === token) await unlink(lock).catch(() => undefined)
+    if ((await readLock(lock)) === token) await unlink(lock).catch(() => undefined)
   }
 }
 
