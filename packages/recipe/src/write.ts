@@ -224,7 +224,7 @@ export async function readRecipeKey(
 }
 
 export type SaveRecipeTextResult =
-  | { ok: true; path: string; written: boolean }
+  | { ok: true; path: string; written: boolean; /** The bytes the file holds now. */ content: string }
   /** `stale`: the file is not what the page loaded. `missing`: there is no file. `invalid`: the resolver refused. */
   | { ok: false; reason: 'stale' | 'missing' | 'invalid'; message: string }
 
@@ -249,14 +249,14 @@ export async function saveRecipeText(
   const path = recipePath(project, options.home)
   const current = await files.read(path)
   if (current === null) return { ok: false, reason: 'missing', message: `no recipe at ${path}` }
-  // A form field travels as multipart, which turns every line ending into CRLF; compare on LF.
-  const lf = (t: string) => t.replace(/\r\n?/g, '\n')
-  if (lf(current) !== lf(input.loaded)) {
+  // `loaded` is carried exactly (the form JSON-encodes it), so this is byte for byte.
+  if (current !== input.loaded) {
     return { ok: false, reason: 'stale', message: `${path} changed on disk since this page loaded — reload it` }
   }
-  // The same transport changed the typed text; write it with the line endings the file already had.
-  const eol = current.includes('\r\n') ? '\r\n' : '\n'
-  const text = lf(input.text).replaceAll('\n', eol)
+  // A textarea's value and multipart transport rewrite line endings, so the typed text arrives
+  // LF or CRLF whatever the file held; give it CRLF only if every line ending in the file is one.
+  const crlfOnly = current.includes('\r\n') && !/(^|[^\r])\n/.test(current)
+  const text = input.text.replace(/\r\n?/g, '\n').replaceAll('\n', crlfOnly ? '\r\n' : '\n')
   try {
     await resolveLocalRecipe(project, {
       ...(options.home === undefined ? {} : { home: options.home }),
@@ -267,7 +267,7 @@ export async function saveRecipeText(
   } catch (err) {
     return { ok: false, reason: 'invalid', message: err instanceof Error ? err.message : String(err) }
   }
-  if (text === current) return { ok: true, path, written: false }
+  if (text === current) return { ok: true, path, written: false, content: current }
   await files.replace(path, text)
-  return { ok: true, path, written: true }
+  return { ok: true, path, written: true, content: text }
 }

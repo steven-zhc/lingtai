@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 
 import { saveRecipe } from '@/app/actions.ts'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
@@ -13,13 +13,17 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
     text: initial,
     message: '',
   } satisfies SaveRecipeState)
+  // Controlled: React resets an uncontrolled field when an action completes, which would drop
+  // edits typed while Save was pending and the draft a refusal should keep.
+  const [draft, setDraft] = useState(initial)
   return (
     <form action={run} className="redit">
       <input type="hidden" name="project" value={project} />
-      <input type="hidden" name="loaded" value={state.loaded} />
+      <input type="hidden" name="loaded" value={JSON.stringify(state.loaded)} />
       <textarea
         name="text"
-        defaultValue={initial}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
         style={{ width: '100%', boxSizing: 'border-box' }}
         spellCheck={false}
         rows={32}

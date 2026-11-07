@@ -925,15 +925,21 @@ export async function splitCard(input: {
  */
 export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Promise<SaveRecipeState> {
   const name = String(form.get('project') ?? '')
-  const loaded = String(form.get('loaded') ?? '')
   const text = String(form.get('text') ?? '')
+  // `loaded` is JSON-encoded by the form: multipart rewrites bare line endings of a plain field.
+  let loaded = ''
+  try {
+    loaded = JSON.parse(String(form.get('loaded') ?? '""')) as string
+  } catch {
+    return { ok: false, loaded, text, message: 'the form was malformed — reload the page' }
+  }
   try {
     const state = await loadProject(name)
     if (!state) return { ok: false, loaded, text, message: `no project named "${name}"` }
     const result = await saveRecipeText(name, { loaded, text }, { base: state.base ?? null, signedIn: signedInHere })
     if (!result.ok) return { ok: false, loaded, text, message: result.message }
     revalidatePath(`/recipe/${encodeURIComponent(name)}`)
-    return { ok: true, loaded: text, text, message: result.written ? 'saved' : 'nothing changed' }
+    return { ok: true, loaded: result.content, text, message: result.written ? 'saved' : 'nothing changed' }
   } catch (err) {
     return { ok: false, loaded, text, message: (err as Error).message }
   }

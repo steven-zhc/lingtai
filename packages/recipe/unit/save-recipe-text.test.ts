@@ -76,6 +76,7 @@ describe('saveRecipeText', () => {
       ok: true,
       path: PATH,
       written: true,
+      content: text,
     })
     expect(store.get(PATH)).toBe(text)
     expect(replaced).toEqual([{ path: PATH, text }])
@@ -100,22 +101,28 @@ describe('saveRecipeText', () => {
     expect(replaced).toEqual([])
   })
 
-  it('accepts a form-transported LF file whose fields arrived with CRLF, and keeps LF on disk', async () => {
+  it('takes CRLF-transported text onto an LF file and keeps LF on disk', async () => {
     const { files, store } = mapFiles({ [PATH]: GOOD })
-    const crlf = (t: string) => t.replaceAll('\n', '\r\n')
     const text = GOOD.replace('[bug]', '[bug, feature]')
-    expect(await saveRecipeText('app', { loaded: crlf(GOOD), text: crlf(text) }, options(files))).toMatchObject({
-      ok: true,
-      written: true,
-    })
+    const result = await saveRecipeText('app', { loaded: GOOD, text: text.replaceAll('\n', '\r\n') }, options(files))
+    expect(result).toMatchObject({ ok: true, written: true, content: text })
     expect(store.get(PATH)).toBe(text)
+  })
+
+  it('refuses an LF-loaded file some of whose lines were externally made CRLF', async () => {
+    const mixed = GOOD.replace('version: 2\n', 'version: 2\r\n')
+    const { files, store, replaced } = mapFiles({ [PATH]: mixed })
+    const result = await saveRecipeText('app', { loaded: GOOD, text: GOOD.replace('bug', 'feature') }, options(files))
+    expect(result).toMatchObject({ ok: false, reason: 'stale' })
+    expect(store.get(PATH)).toBe(mixed)
+    expect(replaced).toEqual([])
   })
 
   it('keeps CRLF on a CRLF file', async () => {
     const crlf = (t: string) => t.replaceAll('\n', '\r\n')
     const { files, store } = mapFiles({ [PATH]: crlf(GOOD) })
     const text = GOOD.replace('[bug]', '[bug, feature]')
-    await saveRecipeText('app', { loaded: GOOD, text }, options(files))
+    await saveRecipeText('app', { loaded: crlf(GOOD), text }, options(files))
     expect(store.get(PATH)).toBe(crlf(text))
   })
 })
