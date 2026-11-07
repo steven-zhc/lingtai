@@ -10,6 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lingtai/actions": "workspace:*",
+    "@lingtai/agent": "workspace:*",
+    "@lingtai/agent-env": "workspace:*",
+    "@lingtai/conductor": "workspace:*",
+    "@lingtai/domain": "workspace:*",
+    "@lingtai/event-store": "workspace:*",
+    "@lingtai/recipe": "workspace:*",
+    "@lingtai/repo": "workspace:*",
+    "effect": "^4.1.2",
     "smol-toml": "^1.9.1",
     "yaml": "^2.8.1"
   },

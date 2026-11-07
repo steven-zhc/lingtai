@@ -1,5 +1,5 @@
 import type { RecipeFiles } from '@lingtai/recipe'
-import type { SetupReader } from '@lingtai/setup'
+import { type SetupReader, type RuntimeFound } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { type AddWorld, addFlow } from '../src/add.ts'
@@ -10,7 +10,6 @@ import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
 import { stripColour } from '../src/output.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const before = process.env['NO_COLOR']

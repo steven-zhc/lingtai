@@ -665,6 +665,33 @@ importers:
 
   packages/setup:
     dependencies:
+      '@lingtai/actions':
+        specifier: workspace:*
+        version: link:../actions
+      '@lingtai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@lingtai/agent-env':
+        specifier: workspace:*
+        version: link:../agent-env
+      '@lingtai/conductor':
+        specifier: workspace:*
+        version: link:../conductor
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../event-store
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@lingtai/repo':
+        specifier: workspace:*
+        version: link:../repo
+      effect:
+        specifier: ^4.1.2
+        version: 4.1.2
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1

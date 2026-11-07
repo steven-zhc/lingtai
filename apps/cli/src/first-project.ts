@@ -72,7 +72,7 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
-import type { SetupReader } from '@lingtai/setup'
+import { type SetupReader, askRuntimes, type RuntimeFound, liveTrialBuild, liveHistory } from '@lingtai/setup'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -89,11 +89,8 @@ import { askGithubAuth, liveMachineText, writeGithubAuth } from './github-auth.t
 import { waitForKeypress } from './keypress.ts'
 import { acceptingDefaults, question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
-import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe } from './setup-card.ts'
-import { liveHistory } from './source.ts'
-import { liveTrialBuild } from './trial-build.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'

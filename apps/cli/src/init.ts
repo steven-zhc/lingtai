@@ -142,7 +142,7 @@ import {
   type RecipeFiles,
   type SignedIn,
 } from '@lingtai/recipe'
-import type { SetupReader } from '@lingtai/setup'
+import { type SetupReader, askRuntimes, runtimeStateSentence, type RuntimeFound, liveHistory } from '@lingtai/setup'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -163,9 +163,7 @@ import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-st
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { question, spun, type QuestionWorld } from './question.ts'
-import { askRuntimes, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
-import { liveHistory } from './source.ts'
 import type { WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --

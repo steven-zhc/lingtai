@@ -8,10 +8,10 @@ import { basename } from 'node:path'
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type Recipe, baseOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
 import { heading, symbol, width } from './output.ts'
-import type { RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
 
 interface CardAgent {

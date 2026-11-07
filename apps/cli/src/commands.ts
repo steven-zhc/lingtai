@@ -65,7 +65,7 @@ export const COMMANDS = [
       '      db only (#396)',
       '  --kinds <a,b,c>',
       '      which labels are work, first taken first.',
-      '      default: bug, feature, documentation',
+      '      default: bug, feature, tech-debt, documentation',
       '  --agent <claude-code|codex>  which agent writes the change',
       "  --model <name>, or --model ''",
       "      the writer's model; '' for the runtime's own default",

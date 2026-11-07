@@ -1,20 +1,16 @@
+import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
 /**
  * `askInstallAndBuild` (#397): the two questions over `detect-setup.ts`'s
  * suggestion, returned as `RecipeChange[]` for the caller to hand to
  * `setRecipe` — never written here, as `packages/recipe/unit/write.test.ts`
  * hands a `RecipeChange[]` to `setRecipe` directly.
  */
-import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
+import type { TrialResult } from '@lingtai/setup'
 import type { SetupReader } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { acceptingDefaults } from '../src/question.ts'
-import {
-  askInstallAndBuild,
-  type AskInstallAndBuildInput,
-  type SetupWorld,
-  type TrialResult,
-} from '../src/setup-build.ts'
+import { askInstallAndBuild, type AskInstallAndBuildInput, type SetupWorld } from '../src/setup-build.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {

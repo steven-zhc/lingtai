@@ -1,4 +1,5 @@
 import { SQLITE_MACHINE, postgresUrl, githubApp, githubAppKeyMissing, lockDir, renamedNote } from '@lingtai/env'
+import { DIFFERENT_SOURCE_CLASH } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -17,7 +18,6 @@ import {
 } from '../src/doctor.js'
 import { exportedUrlRefusal, sqliteEditSentence, sqliteExportedRefusal } from '../src/init.js'
 import { dollarCeilingNote } from '../src/landing.js'
-import { DIFFERENT_SOURCE_CLASH } from '../src/source.js'
 
 /**
  * What `init`, `add` and `doctor` print to a user must not cite an ADR, an

@@ -27,16 +27,20 @@ import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER, type SetupReader } from '@lingtai/setup'
+import {
+  EMPTY_SETUP_READER,
+  type SetupReader,
+  askRuntimes,
+  type RuntimeFound,
+  liveTrialBuild,
+  liveHistory,
+} from '@lingtai/setup'
 
 import { livePicker } from './first-project.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
-import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
-import { liveHistory } from './source.ts'
-import { liveTrialBuild } from './trial-build.ts'
 
 /**
  * How this machine reaches the repository: through the App's installation on

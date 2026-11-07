@@ -210,12 +210,14 @@ describe('askTickets', () => {
 })
 
 describe('askKinds', () => {
-  it('the default with no file is bug, feature, documentation', async () => {
+  it('the default with no file is bug, feature, tech-debt, documentation', async () => {
     const files = mapFiles()
     const { world: w, asked } = world([''])
     const result = await askKinds(w, PROJECT, null, { home: HOME, files })
-    expect(asked[0]).toContain('[bug, feature, documentation]')
-    expect(result).toEqual({ changes: [{ path: ['source', 'kinds'], value: ['bug', 'feature', 'documentation'] }] })
+    expect(asked[0]).toContain('[bug, feature, tech-debt, documentation]')
+    expect(result).toEqual({
+      changes: [{ path: ['source', 'kinds'], value: ['bug', 'feature', 'tech-debt', 'documentation'] }],
+    })
   })
 
   it('--kinds feature,bug is written as [feature, bug]', async () => {

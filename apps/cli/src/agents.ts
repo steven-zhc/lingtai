@@ -25,9 +25,9 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
 import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
+import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 
 import { question, type Answered, type QuestionWorld } from './question.ts'
-import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from './runtimes.ts'
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
 function whyMissing(r: RuntimeFound): string {

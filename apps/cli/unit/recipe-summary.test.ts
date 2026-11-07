@@ -5,13 +5,12 @@
  */
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { type RecipeFiles } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER } from '@lingtai/setup'
+import { EMPTY_SETUP_READER, type RuntimeFound } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 
 import { stripColour } from '../src/output.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipe, ENV_PLANT_AT, priceHints, type RecipeAt, type Summary } from '../src/recipe-flow.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 
 const HOME = '/home/me/.lingtai'
 const CONFIRM = /register anyway\?/
