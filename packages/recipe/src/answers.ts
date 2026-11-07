@@ -156,10 +156,7 @@ export function ticketsChange(value: TicketSource): RecipeChange {
 
 /**
  * #396's default for "which labels are work" — asked once, at setup, and
- * distinct from `PROPOSED_KINDS` (`propose.ts`), which answers a different
- * question: which of a GitHub repository's *existing* labels to propose as
- * kinds. Editing that constant for this one would change what `propose.ts`
- * matches against a repository's labels.
+ * asked for here rather than read off a repository's existing labels.
  */
 export const SETUP_KINDS = ['bug', 'feature', 'documentation'] as const
 

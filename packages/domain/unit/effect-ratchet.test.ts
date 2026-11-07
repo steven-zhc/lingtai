@@ -1,6 +1,6 @@
 /**
  * 0101 §6: every backend function that does IO is an Effect, and `Effect.run*`
- * runs only at a host's edge. #790 moves the ten packages below over one at a
+ * runs only at a host's edge. #790 moves the eleven packages below over one at a
  * time; this holds each package's `async` functions and `Effect.run*`
  * references to only go down (#792).
  *
@@ -32,6 +32,7 @@ const PACKAGES = [
   'packages/conductor',
   'packages/daemon',
   'packages/telegram',
+  'packages/setup',
 ] as const
 
 /** Paths under a counted `src/` that are excluded, each with its reason. Empty today. */
@@ -199,7 +200,7 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     expect(() => count('broken.ts', 'async function (')).toThrow(/broken\.ts:1/)
   })
 
-  it('has the ten packages of 0101 §6 as the baseline keys', () => {
+  it('has the eleven packages of 0101 §6 as the baseline keys', () => {
     expect(Object.keys(baseline).sort()).toEqual([...PACKAGES].sort())
   })
 

@@ -19,6 +19,7 @@ const config: NextConfig = {
     '@lingtai/env',
     '@lingtai/github',
     '@lingtai/event-store',
+    '@lingtai/setup',
   ],
   // What `pnpm build` ships (#183, 0049): a `server.js` and only the files it
   // traces, rather than a tree that needs `pnpm install` beside it.

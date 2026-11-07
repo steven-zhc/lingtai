@@ -6,10 +6,10 @@
  * 0060 §1.
  */
 import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { EMPTY_SETUP_READER } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
-import { EMPTY_SETUP_READER } from '../src/detect-setup.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipe, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'

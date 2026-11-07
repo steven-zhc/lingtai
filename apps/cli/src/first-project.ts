@@ -72,11 +72,11 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
+import type { SetupReader } from '@lingtai/setup'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt } from './board.ts'
-import type { SetupReader } from './detect-setup.ts'
 import {
   APP_WAIT_MS,
   appComeBackLine,

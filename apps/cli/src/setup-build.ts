@@ -18,8 +18,8 @@ import {
   recipePath,
   resolveSource,
 } from '@lingtai/recipe'
+import { type DetectedSetup, type SetupReader, detectSetup } from '@lingtai/setup'
 
-import { type DetectedSetup, type SetupReader, detectSetup } from './detect-setup.ts'
 import { type QuestionWorld, question } from './question.ts'
 
 export type SetupWorld = QuestionWorld

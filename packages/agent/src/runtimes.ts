@@ -3,7 +3,7 @@
  *
  * Before `#313` there were eight: five `createClaudeCodeRuntime()` calls in the
  * CLI, a written-out pair in `projects.ts`'s sign-in probe, and a ternary in
- * `propose.ts` picking a preference by name. `runtime.agent: codex` was a field
+ * the old recipe proposal picking a preference by name. `runtime.agent: codex` was a field
  * the recipe carried, the log recorded and nothing read — so naming it did not
  * run Codex, it made `agentRefusal` refuse every pass. **A `RuntimeId` is
  * dispatchable now because it has a row here and for no other reason.**

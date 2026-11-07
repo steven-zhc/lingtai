@@ -26,6 +26,7 @@ steps:
         - "packages/agent-env/**"
         - "packages/env/**"
         - "packages/repo/**"
+        - "packages/setup/**"
         - "packages/projector/**"
         - "packages/daemon/**"
         # `extension` because the CLI loads it by relative path, which the
