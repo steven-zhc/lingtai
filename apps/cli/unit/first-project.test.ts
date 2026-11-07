@@ -7,11 +7,11 @@
 import { resolve } from 'node:path'
 
 import { ownerlessRefusal } from '@lingtai/conductor'
-import { listRepositories } from '@lingtai/conductor/pick-repository'
 import type { ProjectState } from '@lingtai/domain'
-import { GitHubError, type GhRun, type GhStatus } from '@lingtai/github'
+import { type AppReader, GitHubError, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
-import type { SetupReader } from '@lingtai/setup'
+import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
@@ -177,6 +177,19 @@ function harness(options: {
  * entirely (#433).
  */
 const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', ''] as const
+
+/** The App machine's list, run: the function lives in `@lingtai/setup` and is an Effect. */
+async function listRepositories(o: {
+  reader: AppReader
+  projects: readonly ProjectState[]
+  installUrl: string | null
+}): Promise<Picker> {
+  const out = await Effect.runPromise(
+    list({ auth: 'app', projects: o.projects, app: { reader: o.reader, installUrl: o.installUrl } }),
+  )
+  if (out.kind !== 'app') throw new Error('expected the App list')
+  return out.picker
+}
 
 describe('chooseFirstProject — the local branch (#394)', () => {
   it('--local <dir> registers once, with owner: null and both repo.base and repo.remote written', async () => {

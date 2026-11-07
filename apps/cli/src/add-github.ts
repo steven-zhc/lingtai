@@ -23,11 +23,11 @@
  * GitHub one picked on the board, reach none of this yet.
  */
 import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conductor/onboard'
-import { alreadyOnboarded, choose, type Choice, type Picker, refusalLines } from '@lingtai/conductor/pick-repository'
+import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER, type SetupReader } from '@lingtai/setup'
+import { EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 
 import { livePicker } from './first-project.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'

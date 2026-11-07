@@ -1,5 +1,6 @@
 import type { ProjectState } from '@lingtai/domain'
 import { GitHubError } from '@lingtai/github'
+import { installLink, listRepositories as list, type Picker } from '@lingtai/setup'
 /**
  * Step 0: picking a repository from what the App can see (#168).
  *
@@ -7,17 +8,10 @@ import { GitHubError } from '@lingtai/github'
  * fixture and **fails any other method**, so every test here is also the test
  * that nothing is written — the assertion #161's proposal carries.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  alreadyOnboarded,
-  choose,
-  installLink,
-  listRepositories,
-  type Picker,
-  setupReturn,
-  verifiedInstallation,
-} from '../src/pick-repository.ts'
+import { alreadyOnboarded, choose, setupReturn, verifiedInstallation } from '../src/pick-repository.ts'
 
 const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }
 
@@ -83,27 +77,22 @@ const project = (name: string, owner: string | null, configHash: string | null):
   lastSeq: 1n,
 })
 
+/** The App machine's list, run: the function under test lives in `@lingtai/setup`. */
+async function listRepositories(o: {
+  reader: ReturnType<typeof fakeReader>
+  projects: readonly ProjectState[]
+  installUrl: string | null
+}): Promise<Picker> {
+  const out = await Effect.runPromise(
+    list({ auth: 'app', projects: o.projects, app: { reader: o.reader, installUrl: o.installUrl } }),
+  )
+  if (out.kind !== 'app') throw new Error('expected the App list')
+  return out.picker
+}
+
 const INSTALL = 'https://github.com/apps/lingtai-steven/installations/new'
 
-describe('listRepositories', () => {
-  it('lists what each installation can see, with GET and nothing else', async () => {
-    const reader = fakeReader([
-      { id: 7, account: 'steven-zhc', repositories: ['lingtai', 'nextloom-ai-admin'] },
-      { id: 9, account: 'acme', selection: 'all', repositories: ['app'] },
-    ])
-
-    const picker = await listRepositories({ reader, projects: [], installUrl: INSTALL })
-
-    expect(picker.installations.map((l) => l.repositories.map((r) => r.slug))).toEqual([
-      ['steven-zhc/lingtai', 'steven-zhc/nextloom-ai-admin'],
-      ['acme/app'],
-    ])
-    expect(picker.installations[0]!.installation.htmlUrl).toBe('https://github.com/settings/installations/7')
-    expect(reader.calls.every((c) => c.startsWith('GET '))).toBe(true)
-    // The blunt endpoint, with the installation's token — there is no user token to use the finer one.
-    expect(reader.calls).toContain('GET /installation/repositories?per_page=100&page=1 as 7')
-  })
-
+describe('choose over the App list', () => {
   it('shows a repository already on the log as such, rather than offering it twice', async () => {
     const reader = fakeReader([{ id: 7, account: 'steven-zhc', repositories: ['lingtai', 'admin', 'fresh'] }])
 
@@ -125,15 +114,6 @@ describe('listRepositories', () => {
     const pending = choose(picker, 'steven-zhc/admin')
     expect(pending).toMatchObject({ ok: false, why: /Recheck on the board's pending card/ })
     expect(!pending.ok && pending.why).not.toMatch(/pull request|landed|merge/i)
-  })
-
-  it('is an empty list with an install link carrying a state when nothing is installed', async () => {
-    const picker = await listRepositories({ reader: fakeReader([]), projects: [], installUrl: INSTALL })
-
-    expect(picker.installations).toEqual([])
-    const link = new URL(picker.installUrl!)
-    expect(`${link.origin}${link.pathname}`).toBe(INSTALL)
-    expect(link.searchParams.get('state')).toMatch(/^[\w-]{16,}$/)
   })
 
   it('lists the installations that answer when one of them does not', async () => {
@@ -203,14 +183,6 @@ describe('listRepositories', () => {
     const choice = choose(picker, 'acme/lingtai')
     expect(choice).toMatchObject({ ok: false, why: /cannot tell which it is/ })
     expect(!choice.ok && choice.why).not.toMatch(/already onboarded/)
-  })
-
-  it('still calls an ownerless project onboarded when one account has the name and every installation answered', async () => {
-    const reader = fakeReader([{ id: 7, account: 'steven-zhc', repositories: ['lingtai'] }])
-
-    const picker = await listRepositories({ reader, projects: [project('lingtai', null, 'abc')], installUrl: INSTALL })
-
-    expect(picker.installations[0]!.repositories[0]!.onboarded).toBe('registered')
   })
 
   it('names the missing scopes individually', async () => {

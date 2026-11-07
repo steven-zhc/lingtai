@@ -1,4 +1,4 @@
-import type { RecipeFiles } from '@lingtai/recipe'
+import { type RecipeFiles, recipePath } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -146,6 +146,23 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     expect(asked.length).toBeGreaterThan(1)
   })
 
+  it('a bare add that goes local at the prompt keeps the recipe flags it was given (#969)', async () => {
+    const { world, errors } = ttyHarness()
+    world.repositories = {
+      interactive: () => true,
+      list: async () => {
+        throw new Error('local was chosen: the list must not be read')
+      },
+    }
+
+    const code = await addFlow(flagsFromArgv(['--budget', '7']), world)
+
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+    const recipe = await world.project.files.read(recipePath('repo', HOME))
+    expect(recipe).toMatch(/usd:\s*7\b/)
+  })
+
   it('a local add prints the card with add <project> and doctor’s count (#773)', async () => {
     const { world, logged } = ttyHarness()
     expect(await addFlow(flagsFromArgv([]), world)).toBe(0)
@@ -213,6 +230,126 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
     expect(text).not.toContain('a dump line')
     expect(text).not.toContain('tier guarded')
+  })
+
+  it('a bare add on a gh machine offers the login’s repositories and adds the one picked (#969)', async () => {
+    const { world, logged, errors, asked } = githubHarness()
+    const offered: string[] = []
+    world.project.ask = async (prompt, shape) => {
+      asked.push(prompt)
+      if (/which repository/.test(prompt)) {
+        offered.push(...(shape?.choices ?? []))
+        return 'acme/widgets'
+      }
+      return ''
+    }
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: true,
+        repositories: [
+          { owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null },
+          { owner: 'acme', repo: 'old', private: false, slug: 'acme/old', onboarded: 'registered' },
+        ],
+      }),
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
+
+    const code = await addFlow(parsed, world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+    expect(errors).toEqual([])
+    expect(logged).toContain('more not shown — type owner/repo')
+    // Only what is not already registered is offered, then the way to type one.
+    expect(offered).toEqual(['acme/widgets', 'type owner/repo'])
+    expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a bare add with recipe flags still reaches the picker, and the flags go on with the pick (#969)', async () => {
+    const { world, errors } = githubHarness()
+    world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: false,
+        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+      }),
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh', '--agent', 'claude-code'])
+
+    const code = await addFlow(parsed, world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+  })
+
+  it('recipe flags also reach the picker when GitHub is chosen at the prompt, not named (#969)', async () => {
+    const { world, errors } = githubHarness()
+    world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: false,
+        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+      }),
+    }
+    const code = await addFlow(flagsFromArgv(['--github-auth', 'gh', '--agent', 'claude-code']), world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+  })
+
+  it('an installation the App could not list is said, not shown as empty (#969)', async () => {
+    const { world, logged } = githubHarness()
+    world.project.ask = async (prompt) => (/owner\/repo/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'app',
+        picker: {
+          installUrl: null,
+          installations: [
+            {
+              installation: {
+                id: 7,
+                account: 'acme',
+                permissions: {},
+                repositorySelection: 'all',
+                htmlUrl: null,
+                appSlug: null,
+              },
+              unanswered: '502 on /installation/repositories: Bad Gateway',
+              gaps: [],
+              repositories: [],
+            },
+          ],
+        },
+      }),
+    }
+
+    await addFlow(flagsFromArgv(['--project', 'github', '--github-auth', 'gh']), world)
+    expect(logged.join('\n')).toContain("could not list acme's repositories — 502 on /installation/repositories")
+  })
+
+  it('a bare add with no terminal still refuses with exit 2 and reads nothing (#969)', async () => {
+    const { world, errors } = githubHarness()
+    let read = false
+    world.repositories = {
+      interactive: () => false,
+      list: async () => {
+        read = true
+        throw new Error('must not be asked')
+      },
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
+
+    expect(await addFlow(parsed, world)).toBe(2)
+    expect(read).toBe(false)
+    expect(errors.join('\n')).toContain('no repository was picked')
   })
 
   it('prints a warning add reported before the card', async () => {
