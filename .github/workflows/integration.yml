@@ -60,6 +60,11 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      # Two tests build a bun-compiled hook (`packages/agent/integration/hook.test.ts`,
+      # `apps/release/src/build.ts`); the version is release.yml's.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.6
       - run: pnpm install --frozen-lockfile
       # Integration tests drive the real `git` binary; a runner has no identity.
       - name: git identity
@@ -69,6 +74,20 @@ jobs:
       - name: point the suite at the container
         if: matrix.store == 'postgres'
         run: echo "LINGTAI_TEST_DATABASE_URL=postgres://postgres:lingtai-ci@127.0.0.1:5432/lingtai_test" >> "$GITHUB_ENV"
+      # A fresh container holds an empty database and nothing in the suite makes
+      # the tables: `createSchema` is `lingtai init`'s (`apps/cli/src/init.ts`),
+      # which this workflow never runs. Teardown's `disable rule` needs them too.
+      - name: create the schema in the container
+        if: matrix.store == 'postgres'
+        working-directory: packages/event-store
+        run: |
+          node --input-type=module -e "
+          import pg from 'pg'
+          import { createSchema } from '@lingtai/event-store/schema'
+          const c = new pg.Client({ connectionString: process.env.LINGTAI_TEST_DATABASE_URL })
+          await c.connect()
+          try { console.log(await createSchema(c)) } finally { await c.end() }
+          "
       - name: test
         run: pnpm test:integration --reporter=default --reporter=json --outputFile.json=integration-${{ matrix.store }}.json
       - uses: actions/upload-artifact@v4
