@@ -8,7 +8,8 @@
 # that second witness.
 #
 # It is the unit project only (0060 §1), never `pnpm test:integration`: that
-# half takes 803s and belongs to T11, after the merge, on a separate system.
+# half takes 803s and belongs to T11, after the merge, on a separate system:
+# `integration.yml` is that system (#963).
 # No `LINGTAI_*` secret goes anywhere near this workflow.
 #
 # It is deliberately not a required status check on `main`. The merge lane
