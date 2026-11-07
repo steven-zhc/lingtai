@@ -306,6 +306,7 @@ export async function askRecipe(
   const setup = await askInstallAndBuild(askWorld, {
     project: at.project,
     reader: at.reader,
+    ...(at.proposal?.detected.known === true ? { detected: at.proposal.detected.value } : {}),
     given: {
       install: at.flags['install'] ?? null,
       build: at.buildFlags.length === 0 ? null : [...at.buildFlags],

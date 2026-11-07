@@ -104,6 +104,48 @@ describe('proposeSetup', () => {
   })
 })
 
+describe('proposeSetup — what accepting the CLI defaults produces', () => {
+  it('holds nothing by default, closes nothing for a local project, and has no turn ceiling for codex', async () => {
+    const only = readers({ runtimes: async () => [rt('claude-code', false), rt('codex', true)] })
+    const local = await run({ kind: 'local', path: '/w/widget' }, only)
+    expect(local.heldBy).toMatchObject({ known: true, value: null })
+    expect(local.end).toMatchObject({ known: true, value: [] })
+    expect(local.limits).toMatchObject({ known: true, value: { turns: 'unbounded' } })
+    const gh = await run({ kind: 'github', owner: 'acme', repo: 'widget' }, readers())
+    expect(gh.end.known && gh.end.value.length).toBe(2)
+    expect(gh.limits).toMatchObject({ value: { turns: 300 } })
+  })
+})
+
+describe('proposeSetup — a failure is not a result', () => {
+  it('a file that exists but cannot be read is unknown', async () => {
+    const flaky = { has: async () => true, read: async () => null }
+    const p = await run({ kind: 'github', owner: 'acme', repo: 'widget' }, readers({ setupReader: flaky }))
+    expect(p.checks.known).toBe(false)
+    expect(p.install.known).toBe(false)
+  })
+  it('a default branch that cannot be found is unknown', async () => {
+    const p = await run({ kind: 'github', owner: 'acme', repo: 'widget' }, readers({ defaultBranch: async () => null }))
+    expect(p.base).toMatchObject({ known: false, default: null })
+  })
+  it('a runtime that did not start is unknown, not signed out', async () => {
+    const dead: RuntimeFound = { id: 'codex', state: 'did-not-start', signedIn: false, detail: 'timed out' }
+    const p = await run(
+      { kind: 'github', owner: 'acme', repo: 'widget' },
+      readers({ runtimes: async () => [rt('claude-code', false), dead] }),
+    )
+    expect(p.runtimes.known).toBe(false)
+    expect(p.writer.known).toBe(false)
+  })
+  it('an origin lookup that fails is unknown, even where history exists', async () => {
+    const boom = readers({ origin: async () => Promise.reject(new Error('not a git repository')) })
+    const p = await run({ kind: 'local', path: '/w/widget' }, boom)
+    expect(p.tickets).toMatchObject({ known: false, reason: 'not a git repository' })
+    const q = await run({ kind: 'local', path: '/w/widget' }, { ...boom, history: async () => ['db ticket #1'] })
+    expect(q.tickets).toMatchObject({ known: false, default: { source: 'db' } })
+  })
+})
+
 describe('defaultAgents', () => {
   it('prefers a different signed-in runtime as reviewer, else the writer', () => {
     expect(defaultAgents(['claude-code', 'codex'])).toEqual({ writer: 'claude-code', reviewer: 'codex' })

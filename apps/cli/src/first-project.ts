@@ -721,9 +721,17 @@ async function runLocalBranch(
         setupReader: world.setupReader(toplevel),
         defaultBranch: () => Promise.resolve(base),
         runtimes: () => Promise.resolve(runtimes),
-        history: liveHistory,
+        history: world.history,
+        // No `origin` is an answer (null); a git that failed is not.
         origin: (path) =>
-          world.git(path, ['remote', 'get-url', 'origin']).then((out) => (out.ok ? out.stdout.trim() || null : null)),
+          world.git(path, ['remote']).then((remotes) => {
+            if (!remotes.ok) throw new Error(remotes.stderr.trim() || 'git remote failed')
+            if (!remotes.stdout.split('\n').some((r) => r.trim() === 'origin')) return null
+            return world.git(path, ['remote', 'get-url', 'origin']).then((url) => {
+              if (!url.ok) throw new Error(url.stderr.trim() || 'git remote get-url origin failed')
+              return url.stdout.trim() || null
+            })
+          }),
       },
     ),
   )

@@ -10,6 +10,7 @@
  * Its own file because `detect-setup.ts` is pure and this is not: the readers
  * it is handed do IO. `import type` only from a client component.
  */
+import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import { SETUP_KINDS } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -40,14 +41,17 @@ export interface Proposal {
   checks: Line<{ name: string; run: string }[]>
   /** What detection said about the stack: its notes and the scripts it skipped. */
   stack: Line<{ notes: string[]; skipped: DetectedSetup['skipped'] }>
+  /** The whole detection, so a question can reuse it rather than read the repository again. */
+  detected: Line<DetectedSetup>
   runtimes: Line<ProposalRuntime[]>
   writer: Line<string | null>
   reviewer: Line<string | null>
   tickets: Line<TicketsProposal>
   kinds: Line<string[]>
-  heldBy: Line<string>
+  /** The label a new recipe excludes: null, because `source.exclude` defaults to `[]`. */
+  heldBy: Line<string | null>
   end: Line<string[]>
-  limits: Line<{ rounds: number; wall: string; turns: number }>
+  limits: Line<{ rounds: number; wall: string; turns: number | 'unbounded' }>
   /** Always false: `proposed: []` (#964 decision 5). A person approving the merge is something chosen. */
   personApprovesMerge: boolean
 }
@@ -64,12 +68,18 @@ export interface ProposalReaders {
   origin: (path: string) => Promise<string | null>
 }
 
-/** Held by `lingtai ticket`'s convention: an unheld ticket is one the next pass claims (CLAUDE.md). */
-export const DEFAULT_HELD_BY = 'agent:hold'
-/** What `lingtai add` seeds at `steps.end` for a new file (`add-github.ts`). */
+/** A new recipe excludes no label: `source.exclude` defaults to `[]`, so nothing is held until somebody says so. */
+export const DEFAULT_HELD_BY = null
+/** What `lingtai add` seeds at `steps.end` for a new GitHub project (`add-github.ts`); a local project seeds none. */
 export const DEFAULT_END = ['close the ticket when landed', 'close the ticket when a person ended it']
 /** `runtime.limits`' schema default (`packages/recipe/src/recipe.ts`, the `limits` default). */
 export const DEFAULT_LIMITS = { turns: 300, wall: '2h', rounds: 2 } as const
+
+/** `askAgents` writes `turns: unbounded` for a writer whose runtime does not enforce a turn count (#547). */
+function turnsFor(writer: string | null): number | 'unbounded' {
+  const capabilities = everyRuntime().find((r) => r.capabilities.id === writer)?.capabilities
+  return capabilities !== undefined && !capabilities.enforces.includes('turns') ? 'unbounded' : DEFAULT_LIMITS.turns
+}
 
 /**
  * The writer and reviewer `askAgents` offers as defaults: the first signed-in
@@ -108,14 +118,31 @@ const attempt = <T, A>(read: () => Promise<T>, ok: (value: T) => Line<A>, fallba
 /** A `SetupReader` that remembers the first read that failed, since `detectSetup` swallows them. */
 function watched(reader: SetupReader): { reader: SetupReader; failure: () => string | null } {
   let failed: string | null = null
+  const present = new Set<string>()
   const note = (e: unknown): never => {
     failed ??= reasonOf(e)
     throw e
   }
   return {
     reader: {
-      has: (path) => reader.has(path).catch(note),
-      read: (path) => reader.read(path).catch(note),
+      has: (path) =>
+        reader
+          .has(path)
+          .then((there) => {
+            if (there) present.add(path)
+            return there
+          })
+          .catch(note),
+      // A reader answers `null` for "could not get this content", so a file
+      // that `has` just found and `read` cannot return is a failed read.
+      read: (path) =>
+        reader
+          .read(path)
+          .then((text) => {
+            if (text === null && present.has(path)) failed ??= `${path} exists but could not be read`
+            return text
+          })
+          .catch(note),
     },
     failure: () => failed,
   }
@@ -136,7 +163,10 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
 
     const base = yield* attempt(
       readers.defaultBranch,
-      (b): Line<string | null> => ({ known: true, value: b, because: 'the default branch' }),
+      (b): Line<string | null> =>
+        b === null
+          ? { known: false, reason: 'the default branch could not be determined', default: null }
+          : { known: true, value: b, because: 'the default branch' },
       null,
     )
 
@@ -144,20 +174,30 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
     const foundRuntimes = probed.ok ? probed.value : []
     const signedIn = foundRuntimes.filter((r) => r.signedIn).map((r) => r.id)
     const agents = defaultAgents(signedIn)
+    const withRemedy: ProposalRuntime[] = foundRuntimes.map((r) => ({
+      ...r,
+      remedy: r.signedIn ? null : `${runtimeStateSentence(r.id, r.state, r.detail)} — ${remedyFor(r.state)}`,
+    }))
+    // A probe that did not start (or answered something unrecognised) has not
+    // said whether the runtime is signed in — that is unknown, not signed out.
+    const unsure = foundRuntimes.filter((r) => r.state === 'did-not-start' || r.state === undefined)
+    const unsureReason =
+      unsure.length === 0 ? null : unsure.map((r) => runtimeStateSentence(r.id, r.state, r.detail)).join('; ')
     const runtimes: Line<ProposalRuntime[]> = !probed.ok
       ? { known: false, reason: probed.reason, default: [] }
-      : {
-          known: true,
-          because: signedIn.length === 0 ? 'no runtime is signed in' : `${signedIn.join(', ')} signed in`,
-          value: foundRuntimes.map((r) => ({
-            ...r,
-            remedy: r.signedIn ? null : `${runtimeStateSentence(r.id, r.state, r.detail)} — ${remedyFor(r.state)}`,
-          })),
-        }
+      : unsureReason !== null
+        ? { known: false, reason: unsureReason, default: withRemedy }
+        : {
+            known: true,
+            because: signedIn.length === 0 ? 'no runtime is signed in' : `${signedIn.join(', ')} signed in`,
+            value: withRemedy,
+          }
     const fromRuntimes = (value: string | null): Line<string | null> =>
       !probed.ok
         ? { known: false, reason: probed.reason, default: null }
-        : { known: true, value, because: value === null ? 'no runtime is signed in' : 'a signed-in runtime' }
+        : unsureReason !== null
+          ? { known: false, reason: unsureReason, default: value }
+          : { known: true, value, because: value === null ? 'no runtime is signed in' : 'a signed-in runtime' }
 
     // History overrides `origin`: another source would number its own tickets
     // into the same streams (`DIFFERENT_SOURCE_CLASH`, apps/cli/src/source.ts).
@@ -171,14 +211,21 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
           : null
     const tickets: Line<TicketsProposal> = !history.ok
       ? { known: false, reason: history.reason, default: { source: 'db', repository: null } }
-      : history.value.length > 0
+      : origin !== null && !origin.ok
         ? {
-            known: true,
-            value: { source: ticketSourceOf(null, history.value), repository },
-            because: 'kept: the log already has tickets for this project',
+            known: false,
+            reason: origin.reason,
+            default: {
+              source: history.value.length > 0 ? ticketSourceOf(null, history.value) : 'db',
+              repository: null,
+            },
           }
-        : origin !== null && !origin.ok
-          ? { known: false, reason: origin.reason, default: { source: 'db', repository: null } }
+        : history.value.length > 0
+          ? {
+              known: true,
+              value: { source: ticketSourceOf(null, history.value), repository },
+              because: 'kept: the log already has tickets for this project',
+            }
           : repository !== null
             ? { known: true, value: { source: 'github', repository }, because: 'the repository is on GitHub' }
             : {
@@ -197,14 +244,22 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
         notes: [],
         skipped: [],
       }),
+      detected: fromRepo(found, 'detected from the repository', { install: null, build: [], skipped: [], notes: [] }),
       runtimes,
       writer: fromRuntimes(agents.writer),
       reviewer: fromRuntimes(agents.reviewer),
       tickets,
       kinds: { known: true, value: [...SETUP_KINDS], because: 'the default, in priority order' },
-      heldBy: { known: true, value: DEFAULT_HELD_BY, because: 'an unheld ticket is claimed by the next pass' },
-      end: { known: true, value: DEFAULT_END, because: 'the default' },
-      limits: { known: true, value: { ...DEFAULT_LIMITS }, because: "the recipe's default" },
+      heldBy: { known: true, value: DEFAULT_HELD_BY, because: 'a new recipe excludes no label' },
+      end:
+        target.kind === 'github'
+          ? { known: true, value: DEFAULT_END, because: 'what a new GitHub project is seeded with' }
+          : { known: true, value: [], because: 'a local project is seeded with no end actions' },
+      limits: {
+        known: true,
+        value: { ...DEFAULT_LIMITS, turns: turnsFor(agents.writer) },
+        because: "the recipe's default, with no turn ceiling for a runtime that cannot enforce one",
+      },
       personApprovesMerge: false,
     }
   })

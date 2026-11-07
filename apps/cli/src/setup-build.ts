@@ -41,6 +41,8 @@ interface NamedRun {
 export interface AskInstallAndBuildInput {
   project: string
   reader: SetupReader
+  /** A detection the caller already holds (a `Proposal`'s): used instead of reading the repository again. */
+  detected?: DetectedSetup
   given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
   /** Null where there is nowhere to run it — logged, never run silently. */
   tryBuild: Trial | null
@@ -477,7 +479,7 @@ export async function askInstallAndBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
 ): Promise<AskInstallAndBuildResult> {
-  const detected = await detectSetup(input.reader)
+  const detected = input.detected ?? (await detectSetup(input.reader))
   await printFound(world, detected, input.onPath)
 
   let install = await askInstall(world, input, detected)
