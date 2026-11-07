@@ -42,7 +42,7 @@ import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
 import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
-import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe, loadAllProjects, loadProject, signedInHere } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
 import { readState } from '@lingtai/conductor/snapshot-state'
@@ -63,6 +63,7 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
+import { saveRecipeText } from '@lingtai/recipe'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
@@ -73,6 +74,7 @@ import { actor } from '@/lib/actor'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
+import type { SaveRecipeState } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
@@ -911,5 +913,34 @@ export async function splitCard(input: {
     return { ok: true, detail: 'writing the split' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * Save the recipe a person edited on `/recipe/<project>/edit` (#973, 0125 §6).
+ *
+ * The board's one writer of a recipe: it resolves the typed text with the same
+ * resolver a pass uses and writes only a recipe that resolves, as typed. The
+ * next pass reads the new file; a pass in flight keeps the one it read.
+ */
+export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Promise<SaveRecipeState> {
+  const name = String(form.get('project') ?? '')
+  const text = String(form.get('text') ?? '')
+  // `loaded` is JSON-encoded by the form: multipart rewrites bare line endings of a plain field.
+  let loaded = ''
+  try {
+    loaded = JSON.parse(String(form.get('loaded') ?? '""')) as string
+  } catch {
+    return { ok: false, loaded, text, message: 'the form was malformed — reload the page' }
+  }
+  try {
+    const state = await loadProject(name)
+    if (!state) return { ok: false, loaded, text, message: `no project named "${name}"` }
+    const result = await saveRecipeText(name, { loaded, text }, { base: state.base ?? null, signedIn: signedInHere })
+    if (!result.ok) return { ok: false, loaded, text, message: result.message }
+    revalidatePath(`/recipe/${encodeURIComponent(name)}`)
+    return { ok: true, loaded: result.content, text, message: result.written ? 'saved' : 'nothing changed' }
+  } catch (err) {
+    return { ok: false, loaded, text, message: (err as Error).message }
   }
 }
