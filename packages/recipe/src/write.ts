@@ -249,20 +249,25 @@ export async function saveRecipeText(
   const path = recipePath(project, options.home)
   const current = await files.read(path)
   if (current === null) return { ok: false, reason: 'missing', message: `no recipe at ${path}` }
-  if (current !== input.loaded) {
+  // A form field travels as multipart, which turns every line ending into CRLF; compare on LF.
+  const lf = (t: string) => t.replace(/\r\n?/g, '\n')
+  if (lf(current) !== lf(input.loaded)) {
     return { ok: false, reason: 'stale', message: `${path} changed on disk since this page loaded — reload it` }
   }
+  // The same transport changed the typed text; write it with the line endings the file already had.
+  const eol = current.includes('\r\n') ? '\r\n' : '\n'
+  const text = lf(input.text).replaceAll('\n', eol)
   try {
     await resolveLocalRecipe(project, {
       ...(options.home === undefined ? {} : { home: options.home }),
       base: options.base ?? null,
       signedIn: options.signedIn,
-      read: async (p) => (p === path ? input.text : files.read(p)),
+      read: async (p) => (p === path ? text : files.read(p)),
     })
   } catch (err) {
     return { ok: false, reason: 'invalid', message: err instanceof Error ? err.message : String(err) }
   }
-  if (input.text === current) return { ok: true, path, written: false }
-  await files.replace(path, input.text)
+  if (text === current) return { ok: true, path, written: false }
+  await files.replace(path, text)
   return { ok: true, path, written: true }
 }

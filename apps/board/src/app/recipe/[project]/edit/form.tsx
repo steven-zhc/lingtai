@@ -19,8 +19,8 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
       <input type="hidden" name="loaded" value={state.loaded} />
       <textarea
         name="text"
-        defaultValue={state.text}
-        key={state.loaded}
+        defaultValue={initial}
+        style={{ width: '100%', boxSizing: 'border-box' }}
         spellCheck={false}
         rows={32}
         className="mono"
