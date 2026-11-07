@@ -561,7 +561,7 @@ subscribers:
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('SCANNER_TOKEN')
     expect(row.detail).toContain('not set')
-    expect(row.detail).toContain('every pass is refused')
+    expect(row.detail).toContain('every attempt is refused')
     expect(row.fix).toContain('lingtai env set demo SCANNER_TOKEN')
   })
 

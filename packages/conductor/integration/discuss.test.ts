@@ -92,10 +92,10 @@ describe('a discussion, on the log', () => {
     )
 
     const chat = await store.read(chatId)
-    // A `RunSpent` per process, beside the ask and the answer (#496).
-    expect(chat.map((e) => e.type)).toEqual(['DiscussionAsked', 'RunSpent', 'DiscussionAnswered'])
+    // A `RunPrompted` and a `RunSpent` per process (#933, #496), beside the ask and the answer (#496).
+    expect(chat.map((e) => e.type)).toEqual(['DiscussionAsked', 'RunPrompted', 'RunSpent', 'DiscussionAnswered'])
     // 0033's first consequence: a third actor appears on the log.
-    expect(chat[2]?.actor).toBe(`agent:${chatId}`)
+    expect(chat.find((e) => e.type === 'DiscussionAnswered')?.actor).toBe(`agent:${chatId}`)
     // Lingtai's sentence, on the ask, before the assistant said anything.
     const asked = chat[0]?.data as { reading: string[] }
     expect(asked.reading.join(' ')).toContain('attempt 2 left no branch')

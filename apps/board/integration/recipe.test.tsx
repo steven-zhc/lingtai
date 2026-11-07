@@ -158,11 +158,11 @@ describe("what a project's recipe says today", () => {
     // Both the recipe's now: the agent moved there with `#372`.
     expect(of('picks up')).toBe(join(home, 'app', 'recipe.yml'))
     expect(of('agent')).toBe(join(home, 'app', 'recipe.yml'))
-    // `a pass` is four limits from the recipe and the schema, and says both:
+    // `an attempt` is four limits from the recipe and the schema, and says both:
     // one source printed there would be a sentence true of a number it is
     // not made of.
-    expect(of('a pass')).toContain(join(home, 'app', 'recipe.yml'))
-    expect(of('a pass')).toContain('default')
+    expect(of('an attempt')).toContain(join(home, 'app', 'recipe.yml'))
+    expect(of('an attempt')).toContain('default')
   })
 
   /**
@@ -281,7 +281,7 @@ describe('a recipe that cannot be read', () => {
     if (view.ok) return
     expect(view.fault).toBe('machine')
     expect(view.at).toBe(join(home, 'config.yml'))
-    expect(html).toContain('a pass is not configured in the machine file')
+    expect(html).toContain('an attempt is not configured in the machine file')
     expect(html).not.toContain('could not be read')
     // The note is rendered in every state, and it is the line that says what to
     // edit — so it is the line that must not name the wrong file.
