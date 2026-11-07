@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import { MachineConfigInvalidError, RecipeInvalidError, type RecipeFiles } from '@lingtai/recipe'
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 
 /**
  * Saving a project's recipe from the board (#973).
@@ -53,6 +53,15 @@ export function refusal(err: unknown, recipeAt: string, machineAt: string): Save
   return { ok: false, detail: `not saved — ${recipeAt}: ${message}` }
 }
 
+/**
+ * One save at a time. The board is one process, and a save awaits the resolver
+ * between its stale-file check and its write: without this, two tabs that loaded
+ * the same text both pass the check and the later write silently replaces the
+ * earlier one. Inside the lock the second save sees the first's file and is
+ * refused as stale.
+ */
+const oneSave = Semaphore.makeUnsafe(1)
+
 export function saveRecipeText(input: {
   files: RecipeFiles
   path: string
@@ -65,25 +74,35 @@ export function saveRecipeText(input: {
 }): Effect.Effect<SaveResult> {
   const { files, path, draft: raw } = input
   const draft = normalise(raw)
-  return Effect.gen(function* () {
-    const current = yield* Effect.tryPromise(() => files.read(path))
-    if (hashOf(current) !== input.loaded) {
-      return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
-    }
-    if (current !== null && normalise(current) === draft) return { ok: true, detail: 'nothing changed' }
-    const checked = yield* Effect.tryPromise(() => input.check(draft)).pipe(
-      Effect.map(() => null),
-      Effect.catch((e) => Effect.succeed(refusal(e.cause, path, input.machineAt))),
-    )
-    if (checked !== null) return checked
-    yield* Effect.tryPromise(() => files.replace(path, draft))
-    return { ok: true, detail: SAVED }
-  }).pipe(
-    Effect.catch((e) =>
-      Effect.succeed<SaveResult>({
-        ok: false,
-        detail: `not saved — ${(e.cause as Error | undefined)?.message ?? String(e)}`,
+  return oneSave
+    .withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* Effect.tryPromise(() => files.read(path))
+        if (hashOf(current) !== input.loaded) {
+          return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
+        }
+        const checked = yield* Effect.tryPromise(() => input.check(draft)).pipe(
+          Effect.map(() => null),
+          Effect.catch((e) => Effect.succeed(refusal(e.cause, path, input.machineAt))),
+        )
+        if (checked !== null) return checked
+        if (current !== null && normalise(current) === draft) return { ok: true, detail: 'nothing changed' }
+        // The resolver was awaited: look again, so a writer that is not this lock's
+        // (a `lingtai add`, another process) is refused rather than overwritten.
+        const now = yield* Effect.tryPromise(() => files.read(path))
+        if (hashOf(now) !== input.loaded) {
+          return { ok: false, detail: 'not saved — the file changed on disk since you opened it; reload the page' }
+        }
+        yield* Effect.tryPromise(() => files.replace(path, draft))
+        return { ok: true, detail: SAVED }
       }),
-    ),
-  )
+    )
+    .pipe(
+      Effect.catch((e) =>
+        Effect.succeed<SaveResult>({
+          ok: false,
+          detail: `not saved — ${(e.cause as Error | undefined)?.message ?? String(e)}`,
+        }),
+      ),
+    )
 }

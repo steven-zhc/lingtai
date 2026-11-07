@@ -80,3 +80,24 @@ describe('saving a recipe', () => {
     expect(replace).not.toHaveBeenCalled()
   })
 })
+
+describe('saving a recipe, the sequences that lost work', () => {
+  it('validates an unchanged draft, so a recipe the resolver rejects is not called fine', async () => {
+    const bad = GOOD + 'bogus_key: 1\n'
+    const { result, replace } = run(new Map([[path, bad]]), bad)
+    const r = await result
+    expect(r.ok).toBe(false)
+    expect(r.problems?.join('\n') + r.detail).toMatch(/bogus_key/)
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('refuses the second of two tabs that loaded the same text', async () => {
+    const files = new Map([[path, GOOD]])
+    const loaded = hashOf(GOOD)
+    const a = run(files, GOOD + '# a\n', loaded)
+    const b = run(files, GOOD + '# b\n', loaded)
+    const [ra, rb] = await Promise.all([a.result, b.result])
+    expect([ra.ok, rb.ok].filter(Boolean)).toHaveLength(1)
+    expect(files.get(path)).toBe(GOOD + '# a\n')
+  })
+})
