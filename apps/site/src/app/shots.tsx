@@ -89,17 +89,19 @@ export function Shots() {
         }}
       >
         <img src={src(full.name, true)} alt={full.caption} width={1440} height={900} />
-        <p>{full.caption}</p>
-        <div className="shot-nav">
-          <button type="button" className="shot-step" aria-label="Previous screenshot" onClick={() => step(-1)}>
-            ←
-          </button>
-          <button type="button" className="shot-step" aria-label="Next screenshot" onClick={() => step(1)}>
-            →
-          </button>
-          <button type="button" className="shot-step" aria-label="Close" onClick={() => box.current?.close()}>
-            ✕
-          </button>
+        <div className="shot-foot">
+          <p>{full.caption}</p>
+          <div className="shot-nav">
+            <button type="button" className="shot-step" aria-label="Previous screenshot" onClick={() => step(-1)}>
+              ←
+            </button>
+            <button type="button" className="shot-step" aria-label="Next screenshot" onClick={() => step(1)}>
+              →
+            </button>
+            <button type="button" className="shot-step" aria-label="Close" onClick={() => box.current?.close()}>
+              ✕
+            </button>
+          </div>
         </div>
       </dialog>
     </figure>
