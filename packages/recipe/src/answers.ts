@@ -158,7 +158,7 @@ export function ticketsChange(value: TicketSource): RecipeChange {
  * #396's default for "which labels are work" — asked once, at setup, and
  * asked for here rather than read off a repository's existing labels.
  */
-export const SETUP_KINDS = ['bug', 'feature', 'documentation'] as const
+export const SETUP_KINDS = ['bug', 'feature', 'tech-debt', 'documentation'] as const
 
 /**
  * The changes `--kinds` writes, from the parsed, ordered label list and

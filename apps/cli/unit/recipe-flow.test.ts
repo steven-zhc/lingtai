@@ -7,12 +7,12 @@
  */
 import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { EMPTY_SETUP_READER } from '@lingtai/setup'
+import type { RuntimeFound } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipe, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 
 const HOME = '/home/me/.lingtai'
 
@@ -118,7 +118,7 @@ describe('askRecipe — an absent file (#432)', () => {
     expect(resolved.repo.remote).toBe('https://github.com/acme/widget.git')
     expect(resolved.env.plantAt).toBe(ENV_PLANT_AT)
     expect(resolved.source.tickets).toBe('db')
-    expect(resolved.source.kinds).toEqual(['bug', 'feature', 'documentation'])
+    expect(resolved.source.kinds).toEqual(['bug', 'feature', 'tech-debt', 'documentation'])
     expect(resolved.runtime.agent).toBe('claude-code')
 
     // `steps.proposed` and `runtime.limits` are not yet decided at the point

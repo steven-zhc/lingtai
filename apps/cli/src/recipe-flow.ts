@@ -38,11 +38,11 @@ import {
   setRecipe,
 } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
+import type { Proposal, RuntimeFound } from '@lingtai/setup'
 
 import { askAgents } from './agents.ts'
 import { askLanding, askLimits } from './landing.ts'
 import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
-import type { RuntimeFound } from './runtimes.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
@@ -116,6 +116,12 @@ export interface RecipeAt {
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[]
   defaultBranch: () => Promise<string | null>
+  /**
+   * What `proposeSetup` read: its values are the questions' fallbacks. A value
+   * the file already has still wins — this replaces only what would have been
+   * invented. Absent in a test that wants the plain defaults.
+   */
+  proposal?: Proposal
   /** The trial run (#436) — absent where there is no checkout to cut, and `setup-build.ts` then says so. */
   tryBuild?: AskInstallAndBuildInput['tryBuild']
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
@@ -349,6 +355,7 @@ export async function askRecipe(
     home: at.home,
     files: at.files,
     kept: askKept,
+    ...(at.proposal?.kinds.known === true ? { kindsFallback: at.proposal.kinds.value } : {}),
   })
   if ('refused' in kinds) return kinds
   if (absent) {

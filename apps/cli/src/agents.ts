@@ -25,9 +25,9 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
 import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
+import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 
 import { question, type Answered, type QuestionWorld } from './question.ts'
-import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from './runtimes.ts'
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
 function whyMissing(r: RuntimeFound): string {
@@ -233,7 +233,7 @@ export async function askAgents(
     offer: offeredRuntimes,
     current: currentAgent,
     // The enum's own order, not the list's (#313, doc/design/398.md:43).
-    detected: RuntimeId.options.find((id) => signedInIds.includes(id)) ?? null,
+    detected: defaultAgents(signedInIds).writer,
     validate: refuseUnlessOffered(),
     kept: at.kept,
   })
@@ -263,7 +263,7 @@ export async function askAgents(
   // different runtime (doc/design/398.md §1): with two signed in, the other
   // one; with one, there is nothing different *known* to be available.
   const otherSignedIn = signedInIds.filter((id) => id !== writer)
-  const defaultReviewer = otherSignedIn[0] ?? writer
+  const defaultReviewer = otherSignedIn[0] ?? writer // = defaultAgents(...).reviewer for the default writer
 
   const rawReviewer =
     reviewAction && typeof reviewAction.action['agent'] === 'string' ? (reviewAction.action['agent'] as string) : null

@@ -48,6 +48,7 @@ import { promisify } from 'node:util'
 import { add, addLocal, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
+import { liveHistory } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
@@ -66,6 +67,8 @@ import {
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { listRepositories, type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
+import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
+import { liveTrialBuild } from '@lingtai/setup'
 import { Context, Effect } from 'effect'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
@@ -83,11 +86,8 @@ import { askGithubAuth, liveMachineText, writeGithubAuth } from './github-auth.t
 import { waitForKeypress } from './keypress.ts'
 import { acceptingDefaults, question, spun, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipe, ENV_PLANT_AT } from './recipe-flow.ts'
-import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe } from './setup-card.ts'
-import { liveHistory } from './source.ts'
-import { liveTrialBuild } from './trial-build.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -711,9 +711,27 @@ async function runLocalBranch(
     `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered` +
     (madeKept === null ? '' : `; ${madeKept} is kept too`)
 
+  // What step 2 would show for this directory. `lingtai add --local` still
+  // registers no owner and so still keeps `db` (`askTickets` refuses `github`
+  // for it); the proposal's kinds are the part that reaches the questions.
+  const proposal = await runEffect(
+    proposeSetup(
+      { kind: 'local', path: toplevel },
+      {
+        setupReader: world.setupReader(toplevel),
+        defaultBranch: () => Promise.resolve(base),
+        runtimes: () => Promise.resolve(runtimes),
+        history: liveHistory,
+        origin: (path) =>
+          world.git(path, ['remote', 'get-url', 'origin']).then((out) => (out.ok ? out.stdout.trim() || null : null)),
+      },
+    ),
+  )
+
   const recipeResult = await askRecipe(world, {
     project: name,
     local: true,
+    proposal,
     runtimes,
     reader: world.setupReader(toplevel),
     flags,

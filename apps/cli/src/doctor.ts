@@ -129,12 +129,12 @@ import {
   type Recipe,
 } from '@lingtai/recipe'
 import { git } from '@lingtai/repo'
+import { remedyFor } from '@lingtai/setup'
 import pg from 'pg'
 
 import { readDaySpend } from './day-ceiling.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
-import { remedyFor } from './runtimes.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 import { versionFacts } from './version.ts'
 

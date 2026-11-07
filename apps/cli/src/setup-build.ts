@@ -18,31 +18,20 @@ import {
   recipePath,
   resolveSource,
 } from '@lingtai/recipe'
-import { type DetectedSetup, type SetupReader, detectSetup } from '@lingtai/setup'
+import {
+  type DetectedSetup,
+  type SetupReader,
+  type Trial,
+  type TrialReport,
+  type TrialResult,
+  detectSetup,
+} from '@lingtai/setup'
 
 import { type QuestionWorld, question } from './question.ts'
 
 export type SetupWorld = QuestionWorld
 
-/**
- * One command the trial run tried, and how it went. A command the trial never
- * reached is `not-run` and carries why, not evidence: nothing ran to produce any.
- */
-export type TrialResult =
-  | { command: string; outcome: 'passed' | 'failed'; evidence: string }
-  | { command: string; outcome: 'not-run'; because: string }
-
-/** What a trial hands back: its results, and whether the recipe declares any env. */
-export interface TrialReport {
-  results: TrialResult[]
-  nothingDeclared: boolean
-}
-
-/** The trial: the base it will cut at (asked when it is about to run), and the run itself. */
-export interface Trial {
-  base: () => Promise<string>
-  run: (install: string | null, build: string[]) => Promise<TrialReport>
-}
+export type { Trial, TrialReport, TrialResult }
 
 interface NamedRun {
   name: string

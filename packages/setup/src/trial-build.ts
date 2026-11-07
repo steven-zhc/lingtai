@@ -15,7 +15,25 @@ import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent
 import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
 import { provisionWorktree, removeWorktree, type ProvisionOptions } from '@lingtai/repo'
 
-import type { AskInstallAndBuildInput, TrialReport, TrialResult } from './setup-build.ts'
+/**
+ * One command the trial run tried, and how it went. A command the trial never
+ * reached is `not-run` and carries why, not evidence: nothing ran to produce any.
+ */
+export type TrialResult =
+  | { command: string; outcome: 'passed' | 'failed'; evidence: string }
+  | { command: string; outcome: 'not-run'; because: string }
+
+/** What a trial hands back: its results, and whether the recipe declares any env. */
+export interface TrialReport {
+  results: TrialResult[]
+  nothingDeclared: boolean
+}
+
+/** The trial: the base it will cut at (asked when it is about to run), and the run itself. */
+export interface Trial {
+  base: () => Promise<string>
+  run: (install: string | null, build: string[]) => Promise<TrialReport>
+}
 
 /** Thrown by the runner, after its worktree is gone, when Ctrl+C stopped the trial. */
 export class TrialInterrupted extends Error {
@@ -110,7 +128,7 @@ async function cutOf(at: TrialAt): Promise<{ base: string; submodules: boolean }
   return { base, submodules }
 }
 
-export function trialBuild(at: TrialAt, deps: TrialDeps): NonNullable<AskInstallAndBuildInput['tryBuild']> {
+export function trialBuild(at: TrialAt, deps: TrialDeps): Trial {
   const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
     const options = { home: at.home, files: at.files }
     const envBlock = await readRecipeKey(at.project, ['env'], options).catch(() => null)
@@ -237,7 +255,7 @@ function notRun(runs: string[], because: string): TrialResult[] {
  * trial only, and the listener goes in the same `finally`, so the process's
  * own Ctrl+C handling is back afterwards.
  */
-export function liveTrialBuild(at: Omit<TrialAt, 'interrupt'>): NonNullable<AskInstallAndBuildInput['tryBuild']> {
+export function liveTrialBuild(at: Omit<TrialAt, 'interrupt'>): Trial {
   const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
     const controller = new AbortController()
     const onSigint = () => controller.abort()

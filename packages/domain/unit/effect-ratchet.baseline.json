@@ -1,13 +1,13 @@
 {
-  "apps/cli": { "async": 425, "run": 6 },
+  "apps/cli": { "async": 417, "run": 6 },
   "packages/event-store": { "async": 66, "run": 0 },
   "packages/projector": { "async": 80, "run": 0 },
   "packages/github": { "async": 37, "run": 2 },
   "packages/repo": { "async": 15, "run": 1 },
   "packages/agent": { "async": 23, "run": 0 },
   "packages/actions": { "async": 16, "run": 0 },
-  "packages/conductor": { "async": 200, "run": 17 },
+  "packages/conductor": { "async": 201, "run": 17 },
   "packages/daemon": { "async": 58, "run": 0 },
   "packages/telegram": { "async": 2, "run": 0 },
-  "packages/setup": { "async": 12, "run": 0 }
+  "packages/setup": { "async": 19, "run": 0 }
 }
