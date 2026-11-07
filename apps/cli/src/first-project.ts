@@ -339,6 +339,12 @@ export async function chooseFirstProject(
   flags: Record<string, string>,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
+  /**
+   * The caller will ask the recipe questions itself once a repository is picked
+   * (`lingtai add`), so the GitHub branch is handed the flags without them. The
+   * local branch still gets every flag: it asks the recipe here.
+   */
+  deferRecipeFlags = false,
 ): Promise<FirstProjectOutcome> {
   const conflict = conflictingFlags(flags, world.kept)
   if (conflict !== null) return { refused: conflict }
@@ -411,8 +417,30 @@ export async function chooseFirstProject(
 
   return kind === 'local'
     ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
-    : runGithubBranch(world, flags, flags['github'] ?? null, appCheck)
+    : runGithubBranch(
+        world,
+        deferRecipeFlags ? Object.fromEntries(Object.entries(flags).filter(([n]) => !RECIPE_FLAGS.includes(n))) : flags,
+        flags['github'] ?? null,
+        appCheck,
+      )
 }
+
+/** The flags only `askBeforeGithubAdd` consumes, which the board branch refuses. */
+export const RECIPE_FLAGS = [
+  'tickets',
+  'kinds',
+  'agent',
+  'model',
+  'reviewer',
+  'reviewer-model',
+  'install',
+  'build',
+  'check-build',
+  'land',
+  'rounds',
+  'wall',
+  'budget',
+]
 
 /** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
 function isUrlOrScpLike(remote: string): boolean {

@@ -1,4 +1,4 @@
-import type { RecipeFiles } from '@lingtai/recipe'
+import { type RecipeFiles, recipePath } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -144,6 +144,23 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
       )
     }
     expect(asked.length).toBeGreaterThan(1)
+  })
+
+  it('a bare add that goes local at the prompt keeps the recipe flags it was given (#969)', async () => {
+    const { world, errors } = ttyHarness()
+    world.repositories = {
+      interactive: () => true,
+      list: async () => {
+        throw new Error('local was chosen: the list must not be read')
+      },
+    }
+
+    const code = await addFlow(flagsFromArgv(['--budget', '7']), world)
+
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+    const recipe = await world.project.files.read(recipePath('repo', HOME))
+    expect(recipe).toMatch(/usd:\s*7\b/)
   })
 
   it('a local add prints the card with add <project> and doctor’s count (#773)', async () => {

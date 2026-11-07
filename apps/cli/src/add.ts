@@ -143,23 +143,6 @@ const pickRepository = (world: AddWorld) =>
     return 'refused' in typed ? { refused: typed.refused } : typed.answer
   })
 
-/** The flags only `askBeforeGithubAdd` consumes, which the board branch refuses. */
-const RECIPE_FLAGS = [
-  'tickets',
-  'kinds',
-  'agent',
-  'model',
-  'reviewer',
-  'reviewer-model',
-  'install',
-  'build',
-  'check-build',
-  'land',
-  'rounds',
-  'wall',
-  'budget',
-]
-
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 export async function addFlow(
@@ -197,17 +180,14 @@ export async function addFlow(
   const projectWorld = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
 
   // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
-  // the board branch refuses the recipe flags it does not ask, so they are held
-  // back from it and handed on with the pick, where `askBeforeGithubAdd` asks.
+  // the board branch refuses the recipe flags it does not ask, so it is told to
+  // leave them out (the local branch keeps them) and they are handed on with the pick, where `askBeforeGithubAdd` asks.
   const holdsBack =
     (slug === undefined || slug === '') &&
     flags['project'] !== 'local' &&
     flags['local'] === undefined &&
     world.repositories?.interactive() === true
-  const forFirst = holdsBack
-    ? Object.fromEntries(Object.entries(flags).filter(([name]) => !RECIPE_FLAGS.includes(name)))
-    : flags
-  const result = await chooseFirstProject(projectWorld, forFirst, holdsBack ? [] : buildFlags)
+  const result = await chooseFirstProject(projectWorld, flags, buildFlags, holdsBack)
   if ('refused' in result) {
     world.error(result.refused)
     return 1
