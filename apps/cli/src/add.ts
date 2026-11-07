@@ -196,11 +196,14 @@ export async function addFlow(
   // given, so a refusal from here on keeps them rather than undoing them.
   const projectWorld = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
 
-  // A bare `lingtai add --project github --agent …` reaches the picker below:
+  // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
   // the board branch refuses the recipe flags it does not ask, so they are held
   // back from it and handed on with the pick, where `askBeforeGithubAdd` asks.
   const holdsBack =
-    (slug === undefined || slug === '') && flags['project'] === 'github' && world.repositories?.interactive() === true
+    (slug === undefined || slug === '') &&
+    flags['project'] !== 'local' &&
+    flags['local'] === undefined &&
+    world.repositories?.interactive() === true
   const forFirst = holdsBack
     ? Object.fromEntries(Object.entries(flags).filter(([name]) => !RECIPE_FLAGS.includes(name)))
     : flags

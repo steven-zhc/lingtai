@@ -269,6 +269,23 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(code).toBe(0)
   })
 
+  it('recipe flags also reach the picker when GitHub is chosen at the prompt, not named (#969)', async () => {
+    const { world, errors } = githubHarness()
+    world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: false,
+        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+      }),
+    }
+    const code = await addFlow(flagsFromArgv(['--github-auth', 'gh', '--agent', 'claude-code']), world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+  })
+
   it('an installation the App could not list is said, not shown as empty (#969)', async () => {
     const { world, logged } = githubHarness()
     world.project.ask = async (prompt) => (/owner\/repo/.test(prompt) ? 'acme/widgets' : '')
