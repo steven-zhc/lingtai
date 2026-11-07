@@ -215,6 +215,58 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).not.toContain('tier guarded')
   })
 
+  it('a bare add on a gh machine offers the login’s repositories and adds the one picked (#969)', async () => {
+    const { world, logged, errors, asked } = githubHarness()
+    const offered: string[] = []
+    world.project.ask = async (prompt, shape) => {
+      asked.push(prompt)
+      if (/which repository/.test(prompt)) {
+        offered.push(...(shape?.choices ?? []))
+        return 'acme/widgets'
+      }
+      return ''
+    }
+    world.repositories = {
+      interactive: () => true,
+      list: async () => ({
+        kind: 'gh',
+        login: 'sam',
+        more: true,
+        repositories: [
+          { owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null },
+          { owner: 'acme', repo: 'old', private: false, slug: 'acme/old', onboarded: 'registered' },
+        ],
+      }),
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
+
+    const code = await addFlow(parsed, world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+    expect(errors).toEqual([])
+    expect(logged).toContain('more not shown — type owner/repo')
+    // Only what is not already registered is offered, then the way to type one.
+    expect(offered).toEqual(['acme/widgets', 'type owner/repo'])
+    expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a bare add with no terminal still refuses with exit 2 and reads nothing (#969)', async () => {
+    const { world, errors } = githubHarness()
+    let read = false
+    world.repositories = {
+      interactive: () => false,
+      list: async () => {
+        read = true
+        throw new Error('must not be asked')
+      },
+    }
+    const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
+
+    expect(await addFlow(parsed, world)).toBe(2)
+    expect(read).toBe(false)
+    expect(errors.join('\n')).toContain('no repository was picked')
+  })
+
   it('prints a warning add reported before the card', async () => {
     const { world, logged, argv } = githubHarness({ warnings: ['warning: main is protected (a ruleset). Ask.'] })
     expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)

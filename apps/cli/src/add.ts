@@ -1,7 +1,9 @@
 import type { GithubReach } from '@lingtai/conductor/onboard'
-import { storeChoice, type StoreChoice } from '@lingtai/env'
+import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, resolveSource } from '@lingtai/recipe'
+import type { RepositoryList } from '@lingtai/setup'
+import { Effect } from 'effect'
 
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
@@ -22,10 +24,17 @@ import { recipePath, resolveSource } from '@lingtai/recipe'
  * recipe disagrees (#75).
  */
 import { type AskedBeforeAdd, askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
-import { chooseFirstProject, liveFirstProjectWorld, type FirstProjectWorld } from './first-project.ts'
+import {
+  chooseFirstProject,
+  liveFirstProjectWorld,
+  liveRepositoryList,
+  runEffect,
+  type FirstProjectWorld,
+} from './first-project.ts'
 import { addSteps } from './next-steps.ts'
 import { renderNextBlock, renderNextLine } from './output.ts'
-import { liveAsk, liveSpin } from './prompt.ts'
+import { interactivity, liveAsk, liveSpin } from './prompt.ts'
+import { question } from './question.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
 import { type CardRecipe, cardRecipe } from './setup-card.ts'
 import { liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
@@ -43,7 +52,91 @@ export interface AddWorld {
   store: () => StoreChoice
   /** For the card's `~` substitution. */
   userHome: string
+  /**
+   * What a bare `lingtai add` offers instead of refusing (#969). Absent means
+   * nothing is offered and the exit-2 sentence stands.
+   */
+  repositories?: {
+    /** A script never sees a prompt: with no terminal this is false and nothing is read. */
+    interactive: () => boolean
+    /** Rejects with the sentence to print when the read failed. */
+    list: () => Promise<RepositoryList>
+  }
 }
+
+/** The last choice on the list: type the slug instead. */
+const TYPE_IT = 'type owner/repo'
+
+/**
+ * Reads what this machine can list and asks which. Yields the slug picked or
+ * typed, null when the person is not to be asked (the App is installed
+ * nowhere, and its link was printed), or a refusal. A failed read never blocks
+ * typing.
+ */
+const pickRepository = (world: AddWorld) =>
+  Effect.gen(function* () {
+    let offered: string[] = []
+    const read = yield* Effect.result(Effect.tryPromise({ try: () => world.repositories!.list(), catch: asError }))
+    if (read._tag === 'Failure') {
+      // The list's failure is a sentence; typing `owner/repo` still works.
+      world.log(`could not list your repositories — ${read.failure.message}`)
+    } else if (read.success.kind === 'gh') {
+      offered = read.success.repositories.filter((r) => r.onboarded === null).map((r) => r.slug)
+      if (read.success.more) world.log('more not shown — type owner/repo')
+    } else {
+      const { picker } = read.success
+      if (picker.installations.length === 0) {
+        if (picker.installUrl !== null) world.log(`the App is not installed anywhere yet: ${picker.installUrl}`)
+        return null
+      }
+      offered = picker.installations.flatMap((i) =>
+        i.repositories.filter((r) => r.onboarded === null).map((r) => r.slug),
+      )
+    }
+    const validate = (answer: string): Promise<string | null> => {
+      try {
+        parseSlug(answer)
+        return Promise.resolve(null)
+      } catch (err) {
+        return Promise.resolve((err as Error).message)
+      }
+    }
+    const kept = 'Nothing was registered.'
+    if (offered.length > 0) {
+      const chosen = yield* Effect.tryPromise({
+        try: () =>
+          question(world.project, {
+            name: 'the repository',
+            flag: '<owner/repo>',
+            given: null,
+            prompt: 'which repository',
+            fallback: offered[0]!,
+            offer: [...offered, TYPE_IT],
+            validate: (answer) => (answer === TYPE_IT ? Promise.resolve(null) : validate(answer)),
+            kept,
+          }),
+        catch: asError,
+      })
+      if ('refused' in chosen) return { refused: chosen.refused }
+      if (chosen.answer !== TYPE_IT) return chosen.answer
+    }
+    const typed = yield* Effect.tryPromise({
+      try: () =>
+        question(world.project, {
+          name: 'the repository',
+          flag: '<owner/repo>',
+          given: null,
+          prompt: 'owner/repo',
+          fallback: '',
+          validate,
+          kept,
+        }),
+      catch: asError,
+    })
+    return 'refused' in typed ? { refused: typed.refused } : typed.answer
+  })
+
+const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 export async function addFlow(
   args: { positional?: string | undefined; flags: Record<string, string>; repeated: Record<string, string[]> },
@@ -83,6 +176,24 @@ export async function addFlow(
   if ('refused' in result) {
     world.error(result.refused)
     return 1
+  }
+  if (
+    result.project === 'github' &&
+    result.slug === undefined &&
+    result.app === 'already' &&
+    world.repositories?.interactive() === true
+  ) {
+    // The pick goes back through this same function as if it had been typed,
+    // so the access check, the recipe questions and the card are not written
+    // twice. The auth question was settled on this pass; the kind is told.
+    const picked = await runEffect(pickRepository(world))
+    if (typeof picked === 'object' && picked !== null) {
+      world.error(picked.refused)
+      return 1
+    }
+    if (picked !== null && picked !== '') {
+      return addFlow({ ...args, positional: undefined, flags: { ...flags, project: 'github', github: picked } }, world)
+    }
   }
   if (result.project === 'github' && result.slug === undefined) {
     // Nothing was registered — the same claim `lingtai add <owner>/<repo>`
@@ -184,5 +295,12 @@ export function liveAddWorld(): AddWorld {
     doctor: liveSetupDoctor,
     store: () => storeChoice(process.env),
     userHome: process.env['HOME'] ?? '',
+    repositories: {
+      interactive: () => {
+        const how = interactivity(false)
+        return how.stdinIsTTY && how.stdoutIsTTY
+      },
+      list: () => liveRepositoryList(githubAuthKind() ?? 'app'),
+    },
   }
 }

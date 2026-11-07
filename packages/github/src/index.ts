@@ -43,6 +43,7 @@ export {
   PermissionDenied,
 } from './client.ts'
 export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'
+export { createGhReader, type GhReader } from './gh-reader.ts'
 export {
   ghExecOptions,
   ghScopeGap,

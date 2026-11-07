@@ -46,19 +46,12 @@ import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
 import { add, addLocal, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
-import {
-  alreadyOnboarded,
-  choose,
-  listRepositories,
-  type Picker,
-  refusalLines,
-  taken,
-} from '@lingtai/conductor/pick-repository'
+import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
-import { createAppReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
+import { createAppReader, createGhReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector'
 import {
   baseOf,
@@ -72,7 +65,8 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
-import type { SetupReader } from '@lingtai/setup'
+import { listRepositories, type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
+import { Context, Effect } from 'effect'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -1015,11 +1009,48 @@ async function liveInstallUrl(): Promise<string | null> {
  * same sentence and deep link this module's own `runGithubBranch` would have
  * (#402 fix round 3).
  */
-export async function livePicker(): Promise<Picker> {
-  const credentials = githubApp()
-  const reader = createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
-  const [projects, installUrl] = await Promise.all([loadAllProjects(), liveInstallUrl()])
-  return listRepositories({ reader, projects, installUrl })
+export function livePicker(): Promise<Picker> {
+  return liveRepositoryList('app').then((list) => {
+    if (list.kind !== 'app') throw new Error('the App picker was given a gh list')
+    return list.picker
+  })
+}
+
+/**
+ * Runs an Effect at this host's edge. The list needs no services, so the
+ * context is empty; `runPromiseWith` is the run the ratchet does not count, and
+ * it starts no fiber of a caller's tracer because there is no caller here.
+ */
+export const runEffect = Effect.runPromiseWith(Context.empty())
+
+/**
+ * What a person can pick from on this machine (#969): the App's installations,
+ * or the repositories the saved `gh` login can push to. Rejects with the
+ * sentence to print when the read failed — never an empty list.
+ */
+export function liveRepositoryList(auth: 'app' | 'gh'): Promise<RepositoryList> {
+  return runEffect(
+    Effect.gen(function* () {
+      const projects = yield* Effect.tryPromise({ try: () => loadAllProjects(), catch: (err) => err as Error })
+      if (auth === 'gh') {
+        return yield* listRepositories({
+          auth,
+          projects,
+          gh: { status: () => ghStatus(), reader: createGhReader() },
+        })
+      }
+      const credentials = yield* Effect.try({ try: () => githubApp(), catch: (err) => err as Error })
+      const installUrl = yield* Effect.tryPromise({ try: () => liveInstallUrl(), catch: (err) => err as Error })
+      return yield* listRepositories({
+        auth,
+        projects,
+        app: {
+          reader: createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey }),
+          installUrl,
+        },
+      })
+    }),
+  )
 }
 
 /**
