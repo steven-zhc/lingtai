@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { ProjectState } from '@lingtai/domain'
-import { SQLITE_MACHINE, describeStore, storeChoice } from '@lingtai/env'
+import { storeChoice } from '@lingtai/env'
 import { recipePath, type RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
@@ -29,6 +29,17 @@ import { flagsFromArgv } from '../test/flags.ts'
 const URL_ = 'postgresql://me:secret@db.example:5432/lingtai'
 // Once the App exists, init writes `github.auth` beside whatever the store wrote (first-project.ts).
 const GITHUB_APP = 'github:\n  auth: app\n'
+
+/**
+ * What git is asked about `--local /repo --base main`: the toplevel, the
+ * origin, and that `refs/heads/main` resolves (first-project.ts checks the
+ * given base as a local branch, not as `main^{commit}`).
+ */
+const LOCAL_REPO_GIT = {
+  '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+  '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
+  '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+}
 
 /**
  * Every `askRecipe` (#431) question on the local branch, answered by flag
@@ -189,7 +200,9 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       // `askRecipe`'s own questions (#431) are answered by flag instead —
       // `RECIPE_FLOW_FLAGS` — rather than scripted here: this suite's `ask`
       // only recognises the project, App, database and kinds questions.
-      exists: pathExists,
+      // `/repo` is the repository `LOCAL_REPO_GIT` plans git for; it is not on
+      // this machine, and `--local` refuses a directory that is not.
+      exists: async (path) => path === '/repo' || pathExists(path),
       setupReader: () => ({ has: async () => false, read: async () => null }),
       database: async (url) => {
         seen.connected.push(url)
@@ -272,6 +285,19 @@ function freshHome(): string {
   return join(mkdtempSync(join(tmpdir(), 'lingtai-init-')), '.lingtai')
 }
 
+/**
+ * One row of the card's `this machine` group (`setup-card.ts`): the text after
+ * its label, colour stripped. Rows are matched by label at the start of the
+ * line, never by a fragment that could appear anywhere in the output.
+ */
+function cardRow(lines: readonly string[], label: string): string | undefined {
+  // eslint-disable-next-line no-control-regex
+  const plain = lines.flatMap((l) => l.replace(/\u001b\[[0-9;]*m/g, '').split('\n'))
+  // The card is drawn last; a progress line before it can open with the same word.
+  const row = plain.map((l) => l.trimStart()).findLast((l) => l.startsWith(`${label} `))
+  return row?.slice(label.length).trim()
+}
+
 function config(home: string): string | null {
   const path = configPath({ LINGTAI_HOME: home })
   return existsSync(path) ? readFileSync(path, 'utf8') : null
@@ -296,12 +322,7 @@ describe('lingtai init (#186)', () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {
       answers: [URL_],
-      gitPlan: {
-        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
-        '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
-        '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
-      },
+      gitPlan: LOCAL_REPO_GIT,
     })
     expect(await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
@@ -311,12 +332,7 @@ describe('lingtai init (#186)', () => {
 
   it('a local project, once registered, is listed on a re-run rather than asked about again (#394)', async () => {
     const home = freshHome()
-    const git = {
-      '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
-      '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
-      '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
-      '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
-    }
+    const git = LOCAL_REPO_GIT
     const first = world(home, { answers: [URL_], gitPlan: git })
     expect(
       await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), first.world),
@@ -529,7 +545,8 @@ describe('lingtai init (#186)', () => {
     expect(seen.apps).toBe(1)
     expect(second.seen.apps).toBe(1)
     expect(seen.lines.join('\n')).not.toContain('none yet')
-    expect(second.seen.lines.join('\n')).toContain('app  lingtai-me, owned by me — it answered')
+    // The App was made by neither run, so the card's `github` row is the whole report.
+    expect(cardRow(second.seen.lines, 'github')).toBe('the App lingtai-me')
 
     // A configured App that does not answer is not reported as answering.
     const failing = world(home, { app: { configured: true, ok: false, why: '401 Bad credentials' } })
@@ -654,8 +671,9 @@ describe('lingtai init (#186)', () => {
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([URL_])
     expect(config(home)).toBe(GITHUB_APP)
-    // It is the process's answer and not the file's, so the file still says nothing.
-    expect(seen.lines.join('\n')).toContain('exported into this process')
+    // It is the process's answer and not the file's, so the file still says nothing —
+    // and the card reads the log the variable named.
+    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example')
   })
 
   it('re-running a finished init reports the state and changes nothing', async () => {
@@ -678,10 +696,11 @@ describe('lingtai init (#186)', () => {
     expect(again.seen.asked).toEqual([])
     expect(config(home)).toBe(before)
     expect(statSync(configPath({ LINGTAI_HOME: home })).mtimeMs).toBe(mtime)
-    const said = again.seen.lines.join('\n')
-    expect(said).toContain('tables present')
-    expect(said).toContain('claude-code  signed in via claude.ai')
-    expect(said).toContain('lingtai-me, owned by me')
+    // The database was reached again, and the card reports the state it found.
+    expect(again.seen.connected).toEqual([URL_])
+    expect(cardRow(again.seen.lines, 'log')).toBe('Postgres · db.example')
+    expect(cardRow(again.seen.lines, 'agents')).toMatch(/^claude-code ✓/)
+    expect(cardRow(again.seen.lines, 'github')).toBe('the App lingtai-me')
   })
 
   it('refuses a config.yml that does not parse, rather than writing over it', async () => {
@@ -739,7 +758,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     // The assertion this ticket exists for: what is read afterwards is not Postgres.
     const read = storeChoice({ LINGTAI_HOME: home })
     expect(read).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
-    expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
+    expect(cardRow(seen.lines, 'log')).toBe('SQLite · lingtai.db')
     // And nothing offers Postgres as the store this version runs on.
     expect(seen.lines.join('\n')).not.toContain('--database-url')
   })
@@ -749,8 +768,9 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     const { world: w, seen } = world(home, { answers: [URL_] })
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
     // Literally the later command's answer, rendered the one way.
-    const line = seen.lines.find((l) => l.includes('store '))!
-    expect(line).toContain(describeStore(storeChoice({ LINGTAI_HOME: home })))
+    const read = storeChoice({ LINGTAI_HOME: home })
+    expect(read).toMatchObject({ store: 'postgres', url: URL_ })
+    expect(cardRow(seen.lines, 'log')).toBe(`Postgres · ${new URL((read as { url: string }).url).hostname}`)
   })
 
   it('repairs the two refusals a file can be in, saying what was wrong with it first', async () => {
@@ -795,7 +815,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     expect(second.seen.asked).toEqual([])
   })
 
-  it('is the exported variable that wins, and it says which it was', async () => {
+  it('is the exported variable that wins, and the card reads the log it named', async () => {
     const home = freshHome()
     mkdirSync(home, { recursive: true })
     // The file says SQLite; the process was handed a URL, and 0056 §3 is that it wins.
@@ -803,7 +823,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     const { world: w, seen } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
     expect(seen.connected).toEqual([URL_])
-    expect(seen.lines.join('\n')).toContain('LINGTAI_DATABASE_URL, exported into this process')
+    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example')
     // And nothing was written over: the file's choice is still the file's.
     expect(config(home)).toContain('store: sqlite')
   })
@@ -843,12 +863,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
   it('--store sqlite, with --local <dir> --base <branch>, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {
-      gitPlan: {
-        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
-        '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
-        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
-        '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
-      },
+      gitPlan: LOCAL_REPO_GIT,
     })
     expect(
       await initCommand(
@@ -861,7 +876,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(config(home)).toBe('database:\n  store: sqlite\n')
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
-    expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
+    expect(cardRow(seen.lines, 'log')).toBe('SQLite · lingtai.db')
     // The local branch never asks for a board's URL (#434) — nothing here
     // opens a wizard, so nothing starts one.
     expect(seen.boards).toBe(0)
@@ -873,7 +888,9 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), w)).toBe(1)
     const said = seen.lines.at(-1)!
     expect(said).toContain('--project github, or --project local')
-    expect(said).toContain('the store chosen above is kept')
+    expect(said).toContain(
+      `the store is kept, SQLite at ${join(home, 'lingtai.db')}, chosen in ${configPath({ LINGTAI_HOME: home })}`,
+    )
     expect(said).not.toContain('Nothing was written')
     // The store it names is kept: this is the claim the message makes good on.
     expect(config(home)).toBe('database:\n  store: sqlite\n')
