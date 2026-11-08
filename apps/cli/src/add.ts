@@ -2,7 +2,15 @@ import type { GithubReach } from '@lingtai/conductor/onboard'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, resolveSource } from '@lingtai/recipe'
-import type { RepositoryList } from '@lingtai/setup'
+import {
+  alreadyAdded,
+  alreadyAddedSentence,
+  type Answers,
+  applySetup,
+  keptSentence,
+  type RepositoryList,
+  SetupWriteError,
+} from '@lingtai/setup'
 import { Effect } from 'effect'
 
 /**
@@ -169,15 +177,37 @@ export async function addFlow(
 
   const slug = flags['github']
   let asked: AskedBeforeAdd | null = null
+  let repaired: string | null = null
   if (slug !== undefined && slug !== '') {
-    const stopped = await askBeforeGithubAdd(slug, flags, world.githubDeps, buildFlags)
-    if (typeof stopped === 'number') return stopped
-    asked = stopped
+    // Refused before any question: a project already added is edited in its recipe. The one thing that
+    // goes on is an owner never recorded (`filter.ts`'s "re-run lingtai add <owner>/<repo>"), which asks
+    // nothing, writes no recipe and only registers again.
+    const repo = slugRepo(slug)
+    const found = repo === null ? undefined : alreadyAdded(await world.project.projects(), repo)
+    const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
+    if (repo !== null && found !== undefined && !ownerRepair) {
+      world.error(alreadyAddedSentence(repo))
+      return 1
+    }
+    if (ownerRepair) repaired = repo
+    if (!ownerRepair) {
+      const stopped = await askBeforeGithubAdd(slug, flags, world.githubDeps, buildFlags)
+      if (typeof stopped === 'number') return stopped
+      asked = stopped
+    }
   }
 
-  // With a slug, `askBeforeGithubAdd` above has written each answer it was
-  // given, so a refusal from here on keeps them rather than undoing them.
-  const projectWorld = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
+  // With a slug, `askBeforeGithubAdd` above has written nothing: its answers are held in `asked`, and
+  // `applySetup` writes them just before the registration they belong to.
+  const base = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
+  const pending = asked
+  const projectWorld: typeof base =
+    pending === null
+      ? base
+      : {
+          ...base,
+          github: { ...base.github, add: (opts, log) => runEffect(addWithSetup(base, pending.answers, opts, log)) },
+        }
 
   // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
   // the board branch refuses the recipe flags it does not ask, so it is told to
@@ -284,7 +314,59 @@ export async function addFlow(
     )
     closeOn(world, end.fix, { project: repo, tickets: card.tickets, kinds: card.kinds, slug: `${owner}/${repo}` })
   }
+  if (repaired !== null && result.project === 'github' && result.updated !== undefined) {
+    world.log(`${repaired}'s recipe is ${recipePath(repaired)}, and it is edited there`)
+  }
   return 0
+}
+
+function slugRepo(slug: string): string | null {
+  try {
+    return parseSlug(slug).repo
+  } catch {
+    return null
+  }
+}
+
+type Added = Awaited<ReturnType<FirstProjectWorld['github']['add']>>
+
+class Declined extends Error {
+  constructor(readonly result: Added) {
+    super('declined')
+  }
+}
+
+/**
+ * `applySetup` over the GitHub registration (`add()`, `onboard.ts`): the recipe the questions decided is
+ * written, once, and the project registered.
+ */
+function addWithSetup(
+  world: FirstProjectWorld,
+  answers: Answers,
+  opts: Parameters<FirstProjectWorld['github']['add']>[0],
+  log: (line: string) => void,
+): Effect.Effect<Added> {
+  // The default home, as `askBeforeGithubAdd` read the file and as the card below reads it back.
+  const path = recipePath(answers.project)
+  return applySetup(
+    { files: world.files },
+    answers,
+    Effect.tryPromise({
+      try: () => world.github.add(opts, log),
+      catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+    }).pipe(Effect.flatMap((result) => (result.ok ? Effect.succeed(result) : Effect.fail(new Declined(result))))),
+  ).pipe(
+    Effect.map((done): Added => done.registered),
+    Effect.catch((error): Effect.Effect<Added> => {
+      if (error instanceof Declined) {
+        // `add()` said why; the recipe was written before it did.
+        log(keptSentence(path))
+        return Effect.succeed(error.result)
+      }
+      log(error instanceof SetupWriteError ? error.message : `${error.message} — ${keptSentence(path)}`)
+      return Effect.succeed({ ok: false } as Added)
+    }),
+  )
 }
 
 /** The last thing `add` prints (0121 §1): a failed doctor's one line, else the numbered block. */

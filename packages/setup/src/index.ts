@@ -3,6 +3,7 @@
  * probes reach `@lingtai/actions`, `@lingtai/repo` and the agent CLIs, which
  * are node-only.
  */
+export * from './apply-setup.ts'
 export * from './detect-setup.ts'
 export * from './list-repositories.ts'
 export * from './propose-setup.ts'

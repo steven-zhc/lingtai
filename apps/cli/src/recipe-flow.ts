@@ -37,7 +37,7 @@ import {
   type Said,
   setRecipe,
 } from '@lingtai/recipe'
-import type { SetupReader } from '@lingtai/setup'
+import { type Answers, draftFiles, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 
 import { askAgents } from './agents.ts'
@@ -52,7 +52,7 @@ import { askKinds, askTickets } from './source.ts'
  * answer is already in the recipe, and none of it is undone — what has not
  * happened is the registration.
  */
-export const ADD_KEPT = 'The answers given above are kept in the recipe, and nothing was registered'
+export const ADD_KEPT = 'Nothing was written and nothing was registered'
 
 /**
  * Where the filtered env file is planted inside the worktree — the one
@@ -123,7 +123,9 @@ export interface RecipeAt {
    */
   proposal?: Proposal
   /** The trial run (#436) — absent where there is no checkout to cut, and `setup-build.ts` then says so. */
-  tryBuild?: AskInstallAndBuildInput['tryBuild']
+  tryBuild?:
+    | AskInstallAndBuildInput['tryBuild']
+    | ((files: RecipeFiles) => NonNullable<AskInstallAndBuildInput['tryBuild']>)
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
@@ -240,10 +242,13 @@ async function writeOrRefuse(
 export async function askRecipe(
   world: QuestionWorld,
   at: RecipeAt,
-): Promise<{ ok: true; trial: TrialOutcome; hints: string[] } | { refused: string }> {
-  const fileOptions = { home: at.home, files: at.files }
-  const files = at.files ?? diskFiles
+): Promise<{ ok: true; trial: TrialOutcome; hints: string[]; answers: Answers } | { refused: string }> {
   const path = recipePath(at.project, at.home)
+  // Every answer lands in this draft and nowhere else: `applySetup` (#968) is the one
+  // writer of the file, so a refusal anywhere below leaves the disk as it was.
+  const draft = draftFiles(at.files ?? diskFiles, path)
+  const files: RecipeFiles = draft
+  const fileOptions = { home: at.home, files }
 
   // Asked first, ahead of the existing-file seed write below — nothing is
   // written yet on either path, so a refusal here always says
@@ -290,7 +295,7 @@ export async function askRecipe(
       reviewerModel: at.flags['reviewer-model'],
     },
     home: at.home,
-    files: at.files,
+    files,
     kept: askKept,
   })
   if ('refused' in agents) return agents
@@ -315,11 +320,11 @@ export async function askRecipe(
       // defaulted setup runs minutes of somebody's build (#436).
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
-    tryBuild: at.tryBuild ?? null,
+    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(files) : (at.tryBuild ?? null),
     recipeExisted: !absent,
     onPath: toolOnPath,
     home: at.home,
-    files: at.files,
+    files,
     kept: askKept,
   })
   if ('refused' in setup) return setup
@@ -327,7 +332,9 @@ export async function askRecipe(
   // Said only once the write that carries the list has happened, never when it was chosen.
   const sayKept = () => {
     if (trial.trial === 'failed-kept') {
-      askWorld.log(`kept the list as tried — it is written to ${recipePath(at.project, at.home)}`)
+      askWorld.log(
+        `kept the list as tried — it goes into ${recipePath(at.project, at.home)} when the project is added; nothing is written yet`,
+      )
     }
   }
   if (absent) {
@@ -340,7 +347,7 @@ export async function askRecipe(
 
   const tickets = await askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
     home: at.home,
-    files: at.files,
+    files,
     history: at.history,
     kept: askKept,
   })
@@ -354,7 +361,7 @@ export async function askRecipe(
 
   const kinds = await askKinds(askWorld, at.project, at.flags['kinds'] ?? null, {
     home: at.home,
-    files: at.files,
+    files,
     kept: askKept,
     ...(at.proposal?.kinds.known === true ? { kindsFallback: at.proposal.kinds.value } : {}),
   })
@@ -385,7 +392,7 @@ export async function askRecipe(
 
   const landed = await askLanding(askWorld, at.project, at.flags['land'] ?? null, {
     home: at.home,
-    files: at.files,
+    files,
     defaultBranch: at.defaultBranch,
     kept: at.kept,
   })
@@ -429,10 +436,10 @@ export async function askRecipe(
     if ('refused' in confirmed) return confirmed
     if (confirmed.answer === 'no') {
       return {
-        refused: `stopped before registering — nothing was registered. ${at.kept}; running it again offers what was written as the defaults`,
+        refused: 'stopped before registering — nothing was written and nothing was registered',
       }
     }
   }
 
-  return { ok: true, trial, hints }
+  return { ok: true, trial, hints, answers: { project: at.project, changes: draft.changes(), said: SAID } }
 }
