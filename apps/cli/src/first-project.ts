@@ -48,11 +48,12 @@ import { promisify } from 'node:util'
 import { add, addLocal, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
+import { repositoryList } from '@lingtai/conductor/repository-list'
 import { liveHistory } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
-import { boardHost, boardPort, boardReachHost, githubApp, githubAuthKind, stateDir } from '@lingtai/env'
-import { createAppReader, createGhReader, ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
+import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
+import { ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector'
 import {
   baseOf,
@@ -67,7 +68,7 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
-import { listRepositories, type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
+import { type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import {
   alreadyAddedSentence,
@@ -1238,28 +1239,7 @@ export const runEffect = Effect.runPromiseWith(Context.empty())
  * sentence to print when the read failed — never an empty list.
  */
 export function liveRepositoryList(auth: 'app' | 'gh'): Promise<RepositoryList> {
-  return runEffect(
-    Effect.gen(function* () {
-      const projects = yield* Effect.tryPromise({ try: () => loadAllProjects(), catch: (err) => err as Error })
-      if (auth === 'gh') {
-        return yield* listRepositories({
-          auth,
-          projects,
-          gh: { status: () => ghStatus(), reader: createGhReader() },
-        })
-      }
-      const credentials = yield* Effect.try({ try: () => githubApp(), catch: (err) => err as Error })
-      const installUrl = yield* Effect.tryPromise({ try: () => liveInstallUrl(), catch: (err) => err as Error })
-      return yield* listRepositories({
-        auth,
-        projects,
-        app: {
-          reader: createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey }),
-          installUrl,
-        },
-      })
-    }),
-  )
+  return runEffect(repositoryList(auth, { installUrl: liveInstallUrl }))
 }
 
 /**

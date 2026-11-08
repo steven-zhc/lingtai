@@ -1,9 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 /**
- * The screen `/setup/repository` and `/setup/wizard` are both reduced to
- * (#401). Choosing a repository and writing its recipe are the terminal's
- * now, so there is nothing left to reduce-test besides the one query string
- * this screen still answers: `requested`.
+ * The screen `/setup/wizard` is reduced to
+ * (#401); `/setup/repository` has its own screen since #970.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -26,13 +24,6 @@ describe('the terminal screen', () => {
   })
 })
 
-describe('a requested install', () => {
-  it('says an organisation owner has to approve it', () => {
-    const out = renderToStaticMarkup(<TerminalScreen requested />)
-    expect(out).toContain('owner has to approve')
-  })
-})
-
 describe('a gh machine', () => {
   const out = renderToStaticMarkup(<TerminalScreen gh />)
 
@@ -45,10 +36,6 @@ describe('a gh machine', () => {
     for (const s of ['/setup/github-app', 'installations/new', 'the App can see', 'owner has to approve']) {
       expect(out).not.toContain(s)
     }
-  })
-
-  it('does not mention a pending approval even when requested', () => {
-    expect(renderToStaticMarkup(<TerminalScreen gh requested />)).not.toContain('owner has to approve')
   })
 })
 
