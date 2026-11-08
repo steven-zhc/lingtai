@@ -1477,36 +1477,51 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.removed).toEqual([])
   })
 
-  it('a recipe on the checkout but another base still says so, asks, and checks in flight', async () => {
+  it('a registered recipe already on the checkout is refused as added even when the default base differs', async () => {
     const { h, result } = run({
       answers: ['yes'],
-      inFlight: async () => ['repo#7'],
       git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
       files: {
         [path]:
           'version: 2\nrepo:\n  base: main\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
-    expect(await result).toEqual({ refused: expect.stringContaining('repo#7') })
-    expect(h.logged).toContain('lands: /repo main → this checkout, lingtai-base')
+    expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
+    expect(h.removed).toEqual([])
     expect(h.files.replaced).toEqual({})
+  })
+
+  it('a repair refuses --install none over an install command its preset gives', async () => {
+    const { h, result } = run(
+      {
+        answers: ['yes'],
+        files: {
+          [path]: `version: 2\nextends: pnpm-workspace\nrepo:\n  base: main\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
+        },
+      },
+      { install: 'none' },
+    )
+    expect(await result).toEqual({ refused: expect.stringContaining('--install none') })
+    expect(h.files.replaced).toEqual({})
+  })
+
+  it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
+    const { h, result } = run(
+      {
+        answers: ['yes'],
+        files: {
+          [path]: `${SHADOWED('main')}  proposed:\n    - name: hold every attempt\n      human: wait\n`,
+        },
+        git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }),
+      },
+      { base: 'dev', land: 'dev' },
+    )
+    expect(await result).toMatchObject({ ok: true })
+    expect(h.files.replaced[path]).not.toContain('human:')
   })
 
   it('an unregistered old recipe still has its mirror removed', async () => {
     const { h, result } = run({ answers: ['yes'], projects: [] })
-    expect(await result).toMatchObject({ ok: true })
-    expect(h.removed).toEqual(['repo'])
-  })
-
-  it('a base-only change removes the mirror too', async () => {
-    const { h, result } = run({
-      answers: ['yes'],
-      git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
-      files: {
-        [path]:
-          'version: 2\nrepo:\n  base: main\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
-      },
-    })
     expect(await result).toMatchObject({ ok: true })
     expect(h.removed).toEqual(['repo'])
   })

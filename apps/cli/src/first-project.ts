@@ -562,6 +562,8 @@ async function runLocalBranch(
   }
 
   let fromSha = ''
+  const proposedNow = await readRecipeKey(name, ['steps', 'proposed'], { home: world.home, files: world.files })
+  const currentProposed = Array.isArray(proposedNow) ? (proposedNow as unknown[]) : []
   // The base the recipe resolves: a `worktree:` at `admit` says it ahead of `repo.base` (`baseOf`), so that
   // is the one compared, moved and seeded below.
   const recipeOptions = { home: world.home, files: world.files }
@@ -583,13 +585,10 @@ async function runLocalBranch(
   // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
   let source: string | null = null
 
-  // Already added and nothing here moves it (#772: the old remote, or the base): `lingtai add` refuses,
-  // naming the recipe, before it asks anything. The base a flag or its default would give is the one tested.
+  // Already added and the old remote is not what it names (#772): `lingtai add` refuses, naming the
+  // recipe, before it asks anything. Only the move off the checkout's `origin` is a repair.
   if (found !== undefined && ports !== null && !moving) {
-    const candidate = flags['base'] ?? detected
-    if (!(typeof currentBase === 'string' && currentBase !== candidate)) {
-      return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
-    }
+    return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
   }
 
   // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
@@ -635,15 +634,27 @@ async function runLocalBranch(
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 
-  // Already added, and not a repair that goes on (#772: the old remote, or the base, moving to this
-  // checkout): `lingtai add` refuses, naming the recipe, before it probes, writes or registers anything.
-  // `init` shares this flow and a rerun on a machine whose first project is added must not fail, so it says
-  // so and goes on.
-  if (found !== undefined) {
-    const baseMoves = ports !== null && typeof currentBase === 'string' && currentBase !== base
-    if (!moving && !baseMoves) {
-      if (ports !== null) return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
-      world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
+  // Already added and a rerun of `init` (no ports): it says so and goes on, writing and registering
+  // nothing — a machine whose first project is added must not fail. `lingtai add` was refused above.
+  const initRerun = found !== undefined && ports === null && !moving
+  if (initRerun) {
+    world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
+    const recipeAt = recipePath(name, world.home)
+    const existing = await world.files.read(recipeAt)
+    if (existing !== null) {
+      const recipe = resolveSource(existing, recipeAt, recipeAt).recipe
+      return {
+        ok: true,
+        project: 'local',
+        name,
+        remote,
+        base: baseOf(recipe),
+        trial: { trial: 'not-run', because: 'no checks' },
+        card: cardRecipe(recipe, toplevel),
+        updated: true,
+        runtimes: await world.runtimes(),
+        hints: [],
+      }
     }
   }
 
@@ -679,8 +690,17 @@ async function runLocalBranch(
     ].find((n) => flags[n] !== undefined)
     // `--install none` asks for no command, so a repair that adds none honours it; any other answer would be dropped.
     const installFlag = flags['install']
-    // ... but not over a recipe that already names one: this repair would leave it configured.
-    const prepared = installFlag === 'none' ? await readRecipeKey(name, ['steps', 'prepared'], recipeOptions) : null
+    // ... but not over a recipe that already names one, written or inherited from its preset.
+    const recipeNow = installFlag === 'none' ? await world.files.read(recipePath(name, world.home)) : null
+    let prepared: unknown = null
+    if (recipeNow !== null) {
+      try {
+        prepared = resolveSource(recipeNow, recipePath(name, world.home), recipePath(name, world.home)).recipe.steps
+          .prepared
+      } catch {
+        prepared = await readRecipeKey(name, ['steps', 'prepared'], recipeOptions)
+      }
+    }
     const keepsInstall = Array.isArray(prepared) && prepared.length > 0
     const unapplied =
       unread ?? (installFlag !== undefined && (installFlag !== 'none' || keepsInstall) ? 'install' : undefined)
@@ -774,7 +794,12 @@ async function runLocalBranch(
   // must not overwrite that silently. `source.kinds` is no longer seeded here
   // — `askRecipe`'s own `askKinds` always answers it on an absent file (#432).
   const seeds = [
-    ...landOnBranchChanges(base, [], Array.isArray(admitNow) ? admitNow : null),
+    // `--land <branch>` is the unattended landing, so it takes a `human:` hold off `steps.proposed` as it does elsewhere.
+    ...landOnBranchChanges(
+      base,
+      found !== undefined && flags['land'] !== undefined && flags['land'] !== 'hold' ? currentProposed : [],
+      Array.isArray(admitNow) ? admitNow : null,
+    ),
     { path: ['repo', 'remote'], value: remote },
     ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
   ]
