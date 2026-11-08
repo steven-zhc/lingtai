@@ -227,8 +227,12 @@ export function addProject(form: SetupForm, ports: AddPorts): Effect.Effect<Adde
   )
 }
 
-/** Another add of the same project holds the lock. */
-export class AddBusy extends Error {
+/**
+ * Another add of the same project holds the lock. A `SetupWriteError` so every
+ * caller treats it as a refusal *before* any write: nothing is kept, and no
+ * sentence may say a recipe is.
+ */
+export class AddBusy extends SetupWriteError {
   constructor(project: string) {
     super(`${project} is being added by another tab or process right now — wait for it, then reload`)
   }

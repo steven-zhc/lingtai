@@ -6,11 +6,11 @@
  */
 import type { ProjectState } from '@lingtai/domain'
 import { type RecipeFiles, recipePath } from '@lingtai/recipe'
-import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm } from '@lingtai/setup'
+import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm, SetupWriteError } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { addProject, localTicketsOf, previewOf } from '../src/add-from-page.ts'
+import { addProject, exclusiveAdd, localTicketsOf, previewOf } from '../src/add-from-page.ts'
 
 const HOME = '/home/me/.lingtai'
 
@@ -172,6 +172,14 @@ describe('addProject under two tabs and a retry (#971)', () => {
     expect(text).not.toContain('agent:hold')
     expect(text).not.toContain('human:')
     expect(text).not.toMatch(/rounds: 7|restarts: 3|wall: 9h|turns: 500/)
+  })
+})
+
+describe('exclusiveAdd refusal (#971)', () => {
+  it('is a SetupWriteError, so callers never say a recipe was kept', async () => {
+    const busy = { tryLock: async () => ({ ok: false as const, holder: null }) }
+    const err = await Effect.runPromise(Effect.flip(exclusiveAdd('x', Effect.void, busy)))
+    expect(err).toBeInstanceOf(SetupWriteError)
   })
 })
 
