@@ -59,6 +59,17 @@ export function SetupForm({ view }: { view: ReadView }) {
   const [adding, setAdding] = useState(false)
   const [say, setSay] = useState<string | null>(null)
   const asked = useRef(0)
+  const [typedCheck, setTypedCheck] = useState('')
+  const addCheck = () => {
+    const run = typedCheck.trim()
+    if (run === '') return
+    setChecks(
+      checks.some((c) => c.run === run)
+        ? checks.map((c) => (c.run === run ? { ...c, ticked: true } : c))
+        : [...checks, { name: run, run, ticked: true, why: 'typed in' }],
+    )
+    setTypedCheck('')
+  }
 
   const runtime = view.runtimes.find((r) => r.id === writer)
   const unbounded = runtime?.noTurnCeiling === true
@@ -200,6 +211,17 @@ export function SetupForm({ view }: { view: ReadView }) {
                 </label>
               ))}
               {checks.length === 0 ? <span className="note">no scripts found</span> : null}
+              <span className="wiz-row">
+                <input
+                  className="wiz-input mono"
+                  placeholder="a command to run as a check"
+                  value={typedCheck}
+                  onChange={(e) => setTypedCheck(e.target.value)}
+                />
+                <button type="button" className="s2-change" onClick={addCheck}>
+                  add
+                </button>
+              </span>
             </span>
           }
         />
@@ -219,7 +241,11 @@ export function SetupForm({ view }: { view: ReadView }) {
           changing={open === 'reviewer'}
           onChange={toggle('reviewer')}
           shown={<span className="mono">{reviewer}</span>}
-          editor={choose(reviewer, setReviewer, [...signedIn, 'none'])}
+          editor={
+            view.runtimes.length > 0
+              ? choose(reviewer, setReviewer, [...signedIn, 'none'])
+              : text(reviewer, setReviewer)
+          }
         />
         <Line
           label="tickets"

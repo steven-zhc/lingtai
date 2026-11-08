@@ -114,13 +114,24 @@ export function refusalOf(form: SetupForm): string | null {
 const asRun = (c: { name: string; run: string }) => ({ name: c.name, run: c.run })
 
 /** The changes, in `askRecipe`'s order. */
-export function setupChanges(form: SetupForm): RecipeChange[] {
+/**
+ * **`rewrite` is a recipe already on disk** — a registration that failed after
+ * the write, now retried. `setRecipe` sets only the paths it is given, so an
+ * answer that is the default and is normally omitted would leave the failed
+ * attempt's value standing: those are written explicitly then. On an absent
+ * file they are still omitted, which is what `lingtai add` writes.
+ */
+export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
   const github = form.target.kind === 'github'
   const changes: RecipeChange[] = github
     ? [
         { path: ['repo', 'base'], value: form.base },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
-        ...(form.closeOnEnd ? [{ path: ['steps', 'end'], value: END_ACTIONS } as RecipeChange] : []),
+        ...(form.closeOnEnd
+          ? [{ path: ['steps', 'end'], value: END_ACTIONS } as RecipeChange]
+          : rewrite
+            ? [{ path: ['steps', 'end'], value: [] } as RecipeChange]
+            : []),
       ]
     : [
         ...landOnBranchChanges(form.base, [], null),
@@ -150,21 +161,23 @@ export function setupChanges(form: SetupForm): RecipeChange[] {
     changes.push(ticketsChange(form.tickets))
   }
   if (form.heldBy.trim() !== '') changes.push({ path: ['source', 'exclude'], value: [form.heldBy.trim()] })
+  else if (rewrite) changes.push({ path: ['source', 'exclude'], value: [] })
 
   if (form.personApprovesMerge) changes.push(...landingChanges({ land: 'hold' }, [], null))
+  else if (rewrite) changes.push({ path: ['steps', 'proposed'], value: [] })
 
   const limits = form.limits
-  if (limits.rounds !== LIMIT_DEFAULTS.rounds) changes.push(roundsChange(limits.rounds))
-  if (limits.wall !== LIMIT_DEFAULTS.wall) changes.push(wallChange(limits.wall))
+  if (rewrite || limits.rounds !== LIMIT_DEFAULTS.rounds) changes.push(roundsChange(limits.rounds))
+  if (rewrite || limits.wall !== LIMIT_DEFAULTS.wall) changes.push(wallChange(limits.wall))
   if (!form.turnsUnbounded) {
     if (limits.turns === 'unbounded') changes.push(turnsChange(UNBOUNDED))
-    else if (limits.turns !== LIMIT_DEFAULTS.turns) changes.push(turnsChange(limits.turns))
+    else if (rewrite || limits.turns !== LIMIT_DEFAULTS.turns) changes.push(turnsChange(limits.turns))
   }
-  if (limits.restarts !== LIMIT_DEFAULTS.restarts) changes.push(restartsChange(limits.restarts))
+  if (rewrite || limits.restarts !== LIMIT_DEFAULTS.restarts) changes.push(restartsChange(limits.restarts))
   return changes
 }
 
 /** The form as the `Answers` `applySetup` and `previewSetup` take. */
-export function setupAnswers(form: SetupForm): Answers {
-  return { project: form.project, changes: setupChanges(form), said: SAID }
+export function setupAnswers(form: SetupForm, rewrite = false): Answers {
+  return { project: form.project, changes: setupChanges(form, rewrite), said: SAID }
 }

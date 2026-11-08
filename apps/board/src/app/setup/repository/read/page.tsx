@@ -14,7 +14,7 @@ import { Effect } from 'effect'
 import { Bar } from '@/app/bar.tsx'
 
 import { SetupForm } from './setup-form.tsx'
-import { viewOf } from './view.ts'
+import { emptyView, viewOf } from './view.ts'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,15 +75,20 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
       </p>,
     )
   }
-  const proposal = await Effect.runPromise(proposalFor(target.target).pipe(Effect.timeout('25 seconds'))).catch(
-    () => null,
-  )
-  if (proposal === null) {
+  // `suspend` so a reader that throws while it is built (an unreadable App key) is a failed read, not a failed page.
+  const proposal = await Effect.runPromise(
+    Effect.suspend(() => proposalFor(target.target)).pipe(Effect.timeout('25 seconds')),
+  ).catch((err: unknown) => (err instanceof Error ? err.message : 'it took too long'))
+  if (typeof proposal === 'string') {
     return frame(
-      label,
-      <p className="note wiz-fail">
-        Reading the repository took too long. <a href="">Reload</a> to read it again.
-      </p>,
+      `step 2 — ${label}`,
+      <>
+        <p className="note wiz-fail">
+          Reading the repository failed: {proposal}. <a href="">Reload</a> to read it again, or fill the lines in
+          yourself.
+        </p>
+        <SetupForm view={emptyView(target.target, project, target.remote, proposal)} />
+      </>,
     )
   }
   return frame(`step 2 — ${label}`, <SetupForm view={viewOf(proposal, project, target.remote)} />)

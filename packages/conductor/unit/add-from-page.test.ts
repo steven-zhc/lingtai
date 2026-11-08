@@ -112,6 +112,55 @@ describe('addProject (#971)', () => {
   })
 })
 
+describe('addProject under two tabs and a retry (#971)', () => {
+  it('serialises two adds: the second sees the first one registered and is refused', async () => {
+    const f = files()
+    const registered: ProjectState[] = []
+    const ports = (marker: string) => ({
+      home: HOME,
+      files: f,
+      projects: async () => [...registered],
+      register: () =>
+        Effect.promise(async () => {
+          await new Promise((r) => setTimeout(r, 10))
+          registered.push({ project: FORM.project } as ProjectState)
+          void marker
+        }),
+    })
+    const [a, b] = await Promise.all([
+      run(addProject(FORM, ports('a'))),
+      run(addProject({ ...FORM, kinds: ['bug'] }, ports('b'))),
+    ])
+    expect(a.ok).toBe(true)
+    expect(b).toEqual({ ok: false, say: expect.stringContaining('is already added') })
+    expect(f.store.get(recipePath(FORM.project, HOME))).not.toContain('kinds: [bug]')
+  })
+
+  it('a retry with default answers clears what the failed attempt wrote', async () => {
+    const f = files()
+    const path = recipePath(FORM.project, HOME)
+    const ports = (fail: boolean) => ({
+      home: HOME,
+      files: f,
+      projects: async () => [] as ProjectState[],
+      register: () => (fail ? Effect.fail(new Error('no')) : Effect.void),
+    })
+    const loud: SetupForm = {
+      ...FORM,
+      personApprovesMerge: true,
+      heldBy: 'agent:hold',
+      limits: { turns: 500, wall: '9h', rounds: 7, restarts: 3 },
+    }
+    await run(addProject(loud, ports(true)))
+    expect(f.store.get(path)).toContain('agent:hold')
+    await run(addProject(FORM, ports(false)))
+    const text = f.store.get(path)!
+    expect(text).not.toContain('agent:hold')
+    expect(text).not.toContain('human:')
+    expect(text).not.toMatch(/rounds: 7|restarts: 3|wall: 9h|turns: 500/)
+  })
+})
+
 describe('previewOf (#971)', () => {
   it('is the text applySetup would write, and writes nothing', async () => {
     const f = files()

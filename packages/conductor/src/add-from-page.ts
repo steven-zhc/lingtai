@@ -27,7 +27,7 @@ import { promisify } from 'node:util'
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createGitHubClient, GitHubError, installationForRepo, type GitHubClient } from '@lingtai/github'
-import { baseOf, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
+import { baseOf, diskFiles, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
   alreadyAdded,
@@ -48,7 +48,7 @@ import {
   type SetupTarget,
   SetupWriteError,
 } from '@lingtai/setup'
-import { Effect } from 'effect'
+import { Effect, Semaphore } from 'effect'
 
 import { add, addLocal } from './onboard.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
@@ -182,9 +182,19 @@ export function previewOf(
 ): Effect.Effect<{ text: string } | { refused: string }, never> {
   const refused = refusalOf(form)
   if (refused !== null) return Effect.succeed({ refused })
-  return previewSetup(ports, setupAnswers(form)).pipe(
+  return answersFor(form, ports).pipe(
+    Effect.flatMap((answers) => previewSetup(ports, answers)),
     Effect.match({ onSuccess: (text) => ({ text }), onFailure: (err) => ({ refused: err.message }) }),
   )
+}
+
+/** The answers, written in full when a recipe is already on disk (`setupChanges`' `rewrite`). */
+function answersFor(form: SetupForm, ports: { home?: string; files?: RecipeFiles }) {
+  const files = ports.files ?? diskFiles
+  return Effect.tryPromise({
+    try: () => files.read(recipePath(form.project, ports.home)),
+    catch: (err) => new SetupWriteError(`could not read the recipe: ${reasonOf(err)}`),
+  }).pipe(Effect.map((existing) => setupAnswers(form, existing !== null)))
 }
 
 export interface AddPorts {
@@ -208,11 +218,25 @@ export function addProject(form: SetupForm, ports: AddPorts): Effect.Effect<Adde
   const path = recipePath(form.project, ports.home)
   const refused = refusalOf(form)
   if (refused !== null) return Effect.succeed({ ok: false, say: refused })
+  // The check, the write and the registration are one critical section: two
+  // tabs that both read an empty list queue here, and the second one's check
+  // runs after the first one registered, so it is refused rather than
+  // overwriting the first one's recipe.
+  return addingOne.withPermits(1)(checkAndWrite(form, ports, path))
+}
+
+/** One add at a time in this process; the board's server is the one writer of a page add. */
+const addingOne = Semaphore.makeUnsafe(1)
+
+function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.Effect<Added, never> {
   return Effect.tryPromise({ try: ports.projects, catch: reasonOf }).pipe(
     Effect.flatMap((projects) =>
       alreadyAdded(projects, form.project) !== undefined
         ? Effect.succeed<Added>({ ok: false, say: alreadyAddedSentence(form.project, ports.home) })
-        : applySetup({ home: ports.home, files: ports.files }, setupAnswers(form), ports.register(form)).pipe(
+        : answersFor(form, ports).pipe(
+            Effect.flatMap((answers) =>
+              applySetup({ home: ports.home, files: ports.files }, answers, ports.register(form)),
+            ),
             Effect.map((done): Added => ({ ok: true, project: form.project, path: done.path })),
             Effect.catch((err) =>
               Effect.succeed<Added>({
