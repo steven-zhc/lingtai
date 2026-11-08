@@ -19,6 +19,9 @@ export type Added =
         | { ok: false; problem: string }
     }
 
+/** A shell word: bare when it needs no quoting, single-quoted otherwise. */
+const shellWord = (w: string) => (/^[A-Za-z0-9._/@%+=:,-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)
+
 const Stepper = () => (
   <ol className="wiz-steps">
     <li className="done">✓ Repository</li>
@@ -85,7 +88,7 @@ export function AddedCard(props: Added) {
       </ul>
       {read.ok ? (
         <p className="note">
-          Nothing is queued yet. Lingtai takes an issue with a kind label — <Labels names={read.kinds} />
+          Lingtai takes an issue with a kind label — <Labels names={read.kinds} />
           {read.held.length > 0 ? (
             <>
               {' '}
@@ -96,7 +99,7 @@ export function AddedCard(props: Added) {
           {ticket === null ? (
             <>
               {' '}
-              Tickets here are Lingtai's own: <code>lingtai ticket new --project {project}</code> opens one.
+              Tickets here are Lingtai's own: <code>lingtai ticket new --project {shellWord(project)}</code> opens one.
             </>
           ) : null}
         </p>

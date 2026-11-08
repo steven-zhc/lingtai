@@ -35,6 +35,12 @@ describe('step 3', () => {
     }
   })
 
+  it('claims nothing about the queue, and quotes a project name that needs it', () => {
+    expect(html(ok())).not.toContain('Nothing is queued')
+    const out = html({ ...(ok({ owner: null }) as Extract<Added, { state: 'registered' }>), project: "my pro'ject" })
+    expect(out).toContain('--project &#x27;my pro&#x27;\\&#x27;&#x27;ject&#x27;')
+  })
+
   it('keeps registered and the edit link when the recipe cannot be read', () => {
     const out = html({ ...(ok() as Extract<Added, { state: 'registered' }>), read: { ok: false, problem: 'bad yaml' } })
     expect(out).toContain('bad yaml')
