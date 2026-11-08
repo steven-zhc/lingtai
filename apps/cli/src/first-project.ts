@@ -591,6 +591,30 @@ async function runLocalBranch(
     return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
   }
 
+  // Already added and a rerun of `init` (no ports): it says so and goes on, writing and registering
+  // nothing — a machine whose first project is added must not fail. `lingtai add` was refused above.
+  const initRerun = found !== undefined && ports === null && !moving
+  if (initRerun) {
+    world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
+    const recipeAt = recipePath(name, world.home)
+    const existing = await world.files.read(recipeAt)
+    if (existing !== null) {
+      const recipe = resolveSource(existing, recipeAt, recipeAt).recipe
+      return {
+        ok: true,
+        project: 'local',
+        name,
+        remote,
+        base: baseOf(recipe),
+        trial: { trial: 'not-run', because: 'no checks' },
+        card: cardRecipe(recipe, toplevel),
+        updated: true,
+        runtimes: await world.runtimes(),
+        hints: [],
+      }
+    }
+  }
+
   // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
   const baseAnswer = await question(
     flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world,
@@ -634,30 +658,6 @@ async function runLocalBranch(
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 
-  // Already added and a rerun of `init` (no ports): it says so and goes on, writing and registering
-  // nothing — a machine whose first project is added must not fail. `lingtai add` was refused above.
-  const initRerun = found !== undefined && ports === null && !moving
-  if (initRerun) {
-    world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
-    const recipeAt = recipePath(name, world.home)
-    const existing = await world.files.read(recipeAt)
-    if (existing !== null) {
-      const recipe = resolveSource(existing, recipeAt, recipeAt).recipe
-      return {
-        ok: true,
-        project: 'local',
-        name,
-        remote,
-        base: baseOf(recipe),
-        trial: { trial: 'not-run', because: 'no checks' },
-        card: cardRecipe(recipe, toplevel),
-        updated: true,
-        runtimes: await world.runtimes(),
-        hints: [],
-      }
-    }
-  }
-
   // Probed once, before anything is written — an agent signed out of
   // nowhere is refused by name rather than discovered partway through
   // `askRecipe`'s own first question (#431).
@@ -694,11 +694,26 @@ async function runLocalBranch(
     const recipeNow = installFlag === 'none' ? await world.files.read(recipePath(name, world.home)) : null
     let prepared: unknown = null
     if (recipeNow !== null) {
+      // Resolved as the repair will leave it (with the base and remote it supplies), so a recipe that
+      // only fails to resolve for want of those is still read through its preset; one that still does not
+      // resolve is taken to keep its install, never to have none.
       try {
-        prepared = resolveSource(recipeNow, recipePath(name, world.home), recipePath(name, world.home)).recipe.steps
-          .prepared
+        const after = await runEffect(
+          previewSetup(
+            { home: world.home, files: world.files },
+            {
+              project: name,
+              changes: [
+                { path: ['repo', 'base'], value: base },
+                { path: ['repo', 'remote'], value: remote },
+              ],
+            },
+          ),
+        )
+        const at = recipePath(name, world.home)
+        prepared = resolveSource(after, at, at).recipe.steps.prepared
       } catch {
-        prepared = await readRecipeKey(name, ['steps', 'prepared'], recipeOptions)
+        prepared = [null]
       }
     }
     const keepsInstall = Array.isArray(prepared) && prepared.length > 0

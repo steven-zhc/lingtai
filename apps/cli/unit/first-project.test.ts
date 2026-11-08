@@ -1505,6 +1505,36 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced).toEqual({})
   })
 
+  it('a repair refuses --install none over a preset install even when the recipe lacks repo.base', async () => {
+    const { h, result } = run(
+      {
+        answers: ['yes'],
+        files: {
+          [path]: `version: 2\nextends: pnpm-workspace\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
+        },
+      },
+      { install: 'none' },
+    )
+    expect(await result).toEqual({ refused: expect.stringContaining('--install none') })
+    expect(h.files.replaced).toEqual({})
+  })
+
+  it('a rerun of init over an added local project says so without asking the base, writing or registering', async () => {
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: {
+        [path]:
+          'version: 2\nrepo:\n  base: lingtai-base\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo' })
+    expect(result).toMatchObject({ ok: true, project: 'local' })
+    expect(h.asked).toEqual([])
+    expect(h.files.replaced).toEqual({})
+  })
+
   it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
     const { h, result } = run(
       {
