@@ -5,8 +5,8 @@
  * 2026-11-05*). The objects are filter, health, headline — the filter
  * among them, left of the separator. The `<summary>` names the project
  * in view, and the menu under it is a row per repository: its name, and its own
- * `recipe` (#218, #948). There is no *add a repository* in it until the page it
- * led to can add one. The recipe is an entry in that menu and not an object of
+ * `recipe` (#218, #948), then *add a repository* (#972), which goes where the
+ * slot's own link goes. The recipe is an entry in that menu and not an object of
  * its own, so nothing here may be cited to put a fourth on the row.
  *
  * With no project configured there is no menu: the slot is the link to setup
@@ -90,6 +90,9 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
             </Link>
           </div>
         ))}
+        <Link className="tab" href={where} title={why}>
+          add a repository
+        </Link>
       </div>
     </FilterMenu>
   )

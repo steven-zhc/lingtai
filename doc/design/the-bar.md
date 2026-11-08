@@ -19,8 +19,8 @@ doing what the code says?*, and carries only what a person acts on. It is a
 The row's objects:
 
 - **The filter** is one control: the project in view, with a row per
-  repository in its menu, each carrying its own `recipe` (#948). There is no
-  *add a repository* in it. `recipe` is not an object of its own.
+  repository in its menu, each carrying its own `recipe` (#948), and *add a repository* last (#972).
+  `recipe` is not an object of its own.
 - **Health** is silent when well: a green dot and nothing else. When it is
   not, one sentence names the fault and the command that fixes it
   (*daemon 17 commits behind · `lingtai restart`*, written bare as every
