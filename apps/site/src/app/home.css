@@ -213,6 +213,12 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 /* Why not just give the agent the issue? */
 .why { border-top: 1px solid var(--rule); padding: 56px 0 8px; }
 .why-head { text-align: center; max-width: 640px; margin: 0 auto 32px; }
+/* Each child carries a max-width of its own (`p`'s measure in its own ch, the
+   heading's), and a box narrower than the column sits at its left edge however
+   centred its text is — the kicker, the heading and the line under it each
+   centred on a different axis. Every child is centred as a box, not only as text. */
+.why-head > * { margin-left: auto; margin-right: auto; }
+.why-head h2 { text-wrap: balance; }
 .why-head .sub { color: var(--ink-2); font-size: 17px; line-height: 1.6; margin: 0; }
 .why-head .sub b { color: var(--ink); }
 .why-pair { display: grid; grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1fr); align-items: stretch; margin-bottom: 36px; }
