@@ -352,6 +352,46 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(errors.join('\n')).toContain('no repository was picked')
   })
 
+  it('refuses a GitHub project that is already added before asking anything, naming its recipe (#968)', async () => {
+    const { world, errors, asked, argv } = githubHarness()
+    world.project.projects = async () => [
+      {
+        project: 'widgets',
+        owner: 'acme',
+        base: 'main',
+        configHash: 'h',
+        fromSha: null,
+        refused: null,
+        version: 1,
+        lastSeq: null,
+      },
+    ]
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(1)
+    expect(errors).toEqual([expect.stringContaining(`its recipe is ${recipePath('widgets')}, and it is edited there`)])
+    expect(asked).toEqual([])
+  })
+
+  it('an owner never recorded is still repaired by adding it again: no question, no recipe written (#968)', async () => {
+    const { world, errors, asked } = githubHarness()
+    world.project.projects = async () => [
+      {
+        project: 'widgets',
+        owner: null,
+        base: 'main',
+        configHash: 'h',
+        fromSha: null,
+        refused: null,
+        version: 1,
+        lastSeq: null,
+      },
+    ]
+    const code = await addFlow({ ...flagsFromArgv([]), positional: 'acme/widgets' }, world)
+    expect(errors).toEqual([])
+    expect(code).toBe(0)
+    expect(asked).toEqual([])
+    expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
   it('prints a warning add reported before the card', async () => {
     const { world, logged, argv } = githubHarness({ warnings: ['warning: main is protected (a ruleset). Ask.'] })
     expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)

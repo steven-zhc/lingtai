@@ -6,8 +6,9 @@
  * 0060 §1.
  */
 import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER } from '@lingtai/setup'
+import { applySetup, EMPTY_SETUP_READER } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
@@ -15,6 +16,15 @@ import type { QuestionWorld } from '../src/question.ts'
 import { askRecipe, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
 
 const HOME = '/home/me/.lingtai'
+
+/** `askRecipe` writes nothing (#968): the answers it returns are written by `applySetup`, as `lingtai add` does. */
+async function askAndWrite(world: QuestionWorld, at: RecipeAt): Promise<Awaited<ReturnType<typeof askRecipe>>> {
+  const result = await askRecipe(world, at)
+  if ('ok' in result) {
+    await Effect.runPromise(applySetup({ home: at.home ?? HOME, files: at.files }, result.answers, Effect.void))
+  }
+  return result
+}
 
 interface RecordingFiles extends RecipeFiles {
   replaced: { path: string; text: string }[]
@@ -69,7 +79,7 @@ describe('askRecipe — an absent file (#432)', () => {
   it('prints no group heading before any question (#753)', async () => {
     const world = defaultsWorld()
 
-    await askRecipe(world, {
+    await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: true,
@@ -97,7 +107,7 @@ describe('askRecipe — an absent file (#432)', () => {
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: true,
@@ -156,7 +166,7 @@ describe('askRecipe — an absent file (#432)', () => {
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: false,
@@ -203,7 +213,7 @@ steps:
     const files = mapFiles({ [path]: FIXTURE })
     const world = defaultsWorld()
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: false,
@@ -255,7 +265,7 @@ describe('askRecipe — --defaults (#433)', () => {
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: true,
@@ -291,7 +301,7 @@ describe('askRecipe — --defaults (#433)', () => {
   ) {
     const path = recipePath('widget', HOME)
     const before = (await files.read(path)) ?? ''
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       runtimes,
       project: 'widget',
@@ -395,7 +405,7 @@ describe('askRecipe — --defaults (#433)', () => {
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: false,
@@ -426,7 +436,7 @@ describe('askRecipe — --defaults (#433)', () => {
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
-    const result = await askRecipe(world, {
+    const result = await askAndWrite(world, {
       ...BASE_AT,
       project: 'widget',
       local: false,
@@ -446,7 +456,7 @@ describe('askRecipe — --defaults (#433)', () => {
 describe('askRecipe — the trial run (#436)', () => {
   const run = async (flags: Record<string, string>) => {
     const calls: string[][] = []
-    const result = await askRecipe(defaultsWorld(), {
+    const result = await askAndWrite(defaultsWorld(), {
       ...BASE_AT,
       project: 'widget',
       local: true,
@@ -505,7 +515,7 @@ describe('askRecipe — the trial run (#436)', () => {
       let kept = false
       const logged: string[] = []
       const files = mapFiles()
-      const result = await askRecipe(
+      const result = await askAndWrite(
         {
           ask: async (prompt) => {
             if (kept && stopAfterKeep) return null

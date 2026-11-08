@@ -4,9 +4,21 @@
  * written, and the App is never consulted.
  */
 import type { SetupReader } from '@lingtai/setup'
+import { applySetup } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { askBeforeGithubAdd, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { askBeforeGithubAdd as askBeforeGithubAddDraft, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+
+/** `askBeforeGithubAdd` writes nothing (#968); `applySetup` does, just before the registration — done here in its place. */
+async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddDraft>) {
+  const result = await askBeforeGithubAddDraft(...args)
+  const deps = args[2]
+  if (typeof result === 'object' && deps !== undefined) {
+    await Effect.runPromise(applySetup({ files: deps.files }, result.answers, Effect.void))
+  }
+  return result
+}
 
 const SLUG = 'acme/widgets'
 const PREVIOUS_ENV = { ...process.env }

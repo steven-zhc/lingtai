@@ -25,6 +25,11 @@ export interface RecipeFiles {
   /** Null when the file is not there. */
   read: (path: string) => Promise<string | null>
   replace: (path: string, text: string) => Promise<void>
+  /**
+   * Told every change set `setRecipe` applies, in order — a draft that keeps the
+   * answers as `RecipeChange[]` rather than as text (#968's `applySetup`).
+   */
+  recorded?: (changes: readonly RecipeChange[]) => void
 }
 
 async function readIfThere(path: string): Promise<string | null> {
@@ -196,6 +201,7 @@ export async function setRecipe(
 
   resolveSource(text, refFor(text, path), path)
 
+  files.recorded?.(changes)
   if (existing !== null && text === existing) return { path, text, written: false }
   await files.replace(path, text)
   return { path, text, written: true }

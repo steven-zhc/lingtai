@@ -57,6 +57,7 @@ import { readTasks } from '@lingtai/projector'
 import {
   baseOf,
   diskFiles,
+  landOnBranchChanges,
   readRecipeKey,
   recipePath,
   resolveLocalRecipe,
@@ -68,7 +69,14 @@ import {
 import { mirrorPathFor } from '@lingtai/repo'
 import { listRepositories, type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveTrialBuild } from '@lingtai/setup'
+import {
+  alreadyAddedSentence,
+  applySetup,
+  keptSentence,
+  liveTrialBuild,
+  previewSetup,
+  SetupWriteError,
+} from '@lingtai/setup'
 import { Context, Effect } from 'effect'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
@@ -519,7 +527,7 @@ async function runLocalBranch(
     return {
       refused:
         `a project called ${name} is already registered as ${found.owner}/${name}, and a project is keyed by its ` +
-        `name — pick another directory, or remove that project first. ${world.kept}`,
+        `name — pick another directory, or remove that project first. Its recipe is ${recipePath(found.project!, world.home)}, and it is edited there. ${world.kept}`,
     }
   }
   // Read for an unregistered recipe too: one the old `add` wrote and never registered still has a mirror to rebuild.
@@ -554,13 +562,35 @@ async function runLocalBranch(
   }
 
   let fromSha = ''
-  const currentBase = await readRecipeKey(name, ['repo', 'base'], { home: world.home, files: world.files })
+  // The base the recipe resolves: a `worktree:` at `admit` says it ahead of `repo.base` (`baseOf`), so that
+  // is the one compared, moved and seeded below.
+  const recipeOptions = { home: world.home, files: world.files }
+  const admitNow = await readRecipeKey(name, ['steps', 'admit'], recipeOptions)
+  const declaredAtAdmit = Array.isArray(admitNow)
+    ? (admitNow as unknown[]).find(
+        (entry): entry is { worktree: { base?: unknown } } =>
+          typeof entry === 'object' && entry !== null && 'worktree' in entry,
+      )
+    : undefined
+  const currentBase =
+    declaredAtAdmit !== undefined
+      ? declaredAtAdmit.worktree.base
+      : await readRecipeKey(name, ['repo', 'base'], recipeOptions)
   // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--base`
   // names the branch the person means to land on, and `askLanding` would move the base there anyway.
   const given = flags['land']
   const detected = flags['base'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
   // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
   let source: string | null = null
+
+  // Already added and nothing here moves it (#772: the old remote, or the base): `lingtai add` refuses,
+  // naming the recipe, before it asks anything. The base a flag or its default would give is the one tested.
+  if (found !== undefined && ports !== null && !moving) {
+    const candidate = flags['base'] ?? detected
+    if (!(typeof currentBase === 'string' && currentBase !== candidate)) {
+      return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
+    }
+  }
 
   // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
   const baseAnswer = await question(
@@ -605,6 +635,18 @@ async function runLocalBranch(
   if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
   const base = baseAnswer.answer
 
+  // Already added, and not a repair that goes on (#772: the old remote, or the base, moving to this
+  // checkout): `lingtai add` refuses, naming the recipe, before it probes, writes or registers anything.
+  // `init` shares this flow and a rerun on a machine whose first project is added must not fail, so it says
+  // so and goes on.
+  if (found !== undefined) {
+    const baseMoves = ports !== null && typeof currentBase === 'string' && currentBase !== base
+    if (!moving && !baseMoves) {
+      if (ports !== null) return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
+      world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
+    }
+  }
+
   // Probed once, before anything is written — an agent signed out of
   // nowhere is refused by name rather than discovered partway through
   // `askRecipe`'s own first question (#431).
@@ -619,6 +661,39 @@ async function runLocalBranch(
     typeof existingRemote === 'string' &&
     // Any rewrite of the recipe's landing is a move — whether or not the old remote was recognised as the checkout's `origin`.
     (existingRemote !== remote || (typeof currentBase === 'string' && currentBase !== base))
+  // A repair of a registered project asks none of the questionnaire, so a flag that would answer one is
+  // refused by name rather than dropped while the registration succeeds. `--land` is the base's own flag.
+  if (found !== undefined && migrating) {
+    const unread = [
+      'agent',
+      'model',
+      'reviewer',
+      'reviewer-model',
+      'build',
+      'check-build',
+      'rounds',
+      'wall',
+      'budget',
+      'tickets',
+      'kinds',
+    ].find((n) => flags[n] !== undefined)
+    // `--install none` asks for no command, so a repair that adds none honours it; any other answer would be dropped.
+    const installFlag = flags['install']
+    // ... but not over a recipe that already names one: this repair would leave it configured.
+    const prepared = installFlag === 'none' ? await readRecipeKey(name, ['steps', 'prepared'], recipeOptions) : null
+    const keepsInstall = Array.isArray(prepared) && prepared.length > 0
+    const unapplied =
+      unread ?? (installFlag !== undefined && (installFlag !== 'none' || keepsInstall) ? 'install' : undefined)
+    const landFlag = flags['land']
+    if (unapplied !== undefined || (landFlag !== undefined && landFlag !== base)) {
+      const n = unapplied ?? 'land'
+      return {
+        refused:
+          `--${n} ${flags[n]}, but ${name} is already added and this only moves its landing — its recipe is ` +
+          `${recipePath(name, world.home)}, and it is edited there. Leave it out. ${world.kept}`,
+      }
+    }
+  }
   // Every refusal of a move comes before the first write — the branch below is one.
   if (migrating && ports !== null) {
     world.log(
@@ -699,7 +774,7 @@ async function runLocalBranch(
   // must not overwrite that silently. `source.kinds` is no longer seeded here
   // — `askRecipe`'s own `askKinds` always answers it on an absent file (#432).
   const seeds = [
-    { path: ['repo', 'base'], value: base },
+    ...landOnBranchChanges(base, [], Array.isArray(admitNow) ? admitNow : null),
     { path: ['repo', 'remote'], value: remote },
     ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
   ]
@@ -708,8 +783,7 @@ async function runLocalBranch(
   // anything, and a refusal placed after its write must say what that write
   // left behind (#431 fix round, finding 3).
   const seededKept =
-    `the recipe written to ${path} above (repo.base, repo.remote and the rest) is kept, and nothing was registered` +
-    (madeKept === null ? '' : `; ${madeKept} is kept too`)
+    `Nothing was written to ${path} and nothing was registered` + (madeKept === null ? '' : `; ${madeKept} is kept`)
 
   // What step 2 would show for this directory. `lingtai add --local` still
   // registers no owner and so still keeps `db` (`askTickets` refuses `github`
@@ -736,40 +810,59 @@ async function runLocalBranch(
     ),
   )
 
-  const recipeResult = await askRecipe(world, {
-    project: name,
-    local: true,
-    proposal,
-    runtimes,
-    reader: world.setupReader(toplevel),
-    flags,
-    buildFlags,
-    defaultBranch: async () => base,
-    tryBuild: liveTrialBuild({
-      project: name,
-      owner: '',
-      repo: name,
-      base,
-      remote,
-      home: world.home,
-      files: world.files,
-    }),
-    history: world.history,
-    seeds,
-    again: `lingtai add --local ${toplevel}`,
-    keptBeforeWrite:
-      madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
-    kept: seededKept,
-    home: world.home,
-    files: world.files,
-  })
+  // A repair of a registered project (#772) changes what it moves and nothing else: no questionnaire,
+  // so no answer can touch another setting of a recipe that is edited by hand.
+  const repairOnly = found !== undefined && migrating
+  const repairResult: Awaited<ReturnType<typeof askRecipe>> = {
+    ok: true,
+    trial: { trial: 'not-run', because: 'no checks' },
+    hints: [],
+    answers: { project: name, changes: seeds },
+  }
+  const recipeResult = repairOnly
+    ? repairResult
+    : await askRecipe(world, {
+        project: name,
+        local: true,
+        proposal,
+        runtimes,
+        reader: world.setupReader(toplevel),
+        flags,
+        buildFlags,
+        defaultBranch: async () => base,
+        // Over the draft the questions are answering, not the disk: a seed or an answer that moves the base
+        // is what the trial must build (#968).
+        tryBuild: (draft) =>
+          liveTrialBuild({
+            project: name,
+            owner: '',
+            repo: name,
+            base,
+            remote,
+            home: world.home,
+            files: draft,
+          }),
+        history: world.history,
+        seeds,
+        again: `lingtai add --local ${toplevel}`,
+        keptBeforeWrite:
+          madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
+        kept: seededKept,
+        home: world.home,
+        files: world.files,
+      })
   if ('refused' in recipeResult) return { refused: recipeResult.refused }
 
   // `askLanding`, inside `askRecipe`, can move `repo.base` on a local
   // project (#431's Watch out) — re-read the file it left behind rather than
   // trust the `base` this function's own question settled.
-  const finalText = await world.files.read(path)
-  const finalRecipe = resolveSource(finalText!, path, path).recipe
+  let previewed: string
+  try {
+    previewed = await runEffect(previewSetup({ home: world.home, files: world.files }, recipeResult.answers))
+  } catch (error) {
+    return { refused: `${errorText(error)}. ${ADD_KEPT}` }
+  }
+  const finalRecipe = resolveSource(previewed, path, path).recipe
   const final = baseOf(finalRecipe)
 
   let finalFromSha = fromSha
@@ -787,19 +880,41 @@ async function runLocalBranch(
     home: world.home,
     signedIn: world.signedIn,
     base: final,
-    read: world.files.read,
+    // The recipe is still only a draft (`applySetup` is its one writer), so it is resolved over that text.
+    read: (p) => (p === path ? Promise.resolve(previewed) : world.files.read(p)),
   })
 
-  // `register`'s live implementation (`addLocal`) logs the "added"/"updated"
-  // line itself — logging it again here printed it twice.
-  const registration = await world.register({
-    project: name,
-    owner: null,
-    base: final,
-    configHash: resolved.configHash,
-    fromSha: finalFromSha,
-    resolved,
-  })
+  // `register`'s live implementation (`addLocal`, `onboard.ts` — the only place a directory gets a
+  // `ProjectConfigured`) logs the "added"/"updated" line itself. It is the port `applySetup` is handed:
+  // the recipe is written once, just before it.
+  let applied
+  try {
+    applied = await runEffect(
+      applySetup(
+        { home: world.home, files: world.files },
+        recipeResult.answers,
+        Effect.tryPromise({
+          try: () =>
+            world.register({
+              project: name,
+              owner: null,
+              base: final,
+              configHash: resolved.configHash,
+              fromSha: finalFromSha,
+              resolved,
+            }),
+          catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+        }),
+      ),
+    )
+  } catch (err) {
+    // Before the write nothing is kept; after it, the recipe is, and a rerun
+    // proceeds because *registered* is the test, not *the file exists*.
+    return {
+      refused: `${errorText(err)}${err instanceof SetupWriteError ? '' : ` — ${keptSentence(path)}`}`,
+    }
+  }
+  const registration = applied.registered
   return {
     ok: true,
     project: 'local',
@@ -1177,7 +1292,12 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     kept: options.kept ?? 'Nothing was written',
     register: (payload) =>
       addLocal(
-        { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },
+        {
+          project: payload.project,
+          base: payload.base,
+          configHash: payload.configHash,
+          fromSha: payload.fromSha,
+        },
         payload.resolved,
       ),
     history: liveHistory,

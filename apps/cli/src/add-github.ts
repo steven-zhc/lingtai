@@ -13,8 +13,8 @@
  * (#396), the landing branch and the limits, in that order. **An absent
  * recipe is created once, with every one of those first-run answers and the
  * seeds below — `repo.base` and `env.plantAt` — rather than refused (#432).**
- * An existing one is still edited one answer at a time, written as soon as
- * it is given rather than collected for one write at the end. With
+ * **Nothing is written here (#968):** the answers are
+ * collected and returned, and `applySetup` writes them once, just before the registration. With
  * nothing configured at a terminal, every question below still runs: a recipe
  * written for a project whose App does not exist yet is what lets
  * `chooseFirstProject` offer to create it next, in the same run. With nothing
@@ -28,7 +28,7 @@ import { liveHistory } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
+import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveTrialBuild } from '@lingtai/setup'
 
@@ -177,6 +177,8 @@ export interface AskedBeforeAdd {
   hints: string[]
   /** The runtimes it probed, so the card does not probe them again. */
   runtimes: readonly RuntimeFound[]
+  /** What the questions decided; nothing is on disk until `applySetup` writes it, just before the registration. */
+  answers: Answers
 }
 
 /** A number is an exit code: the add stops there. Otherwise the add goes on. */
@@ -399,22 +401,23 @@ export async function askBeforeGithubAdd(
     ...(reach === undefined || ref === null
       ? {}
       : {
-          tryBuild: liveTrialBuild({
-            project: repo,
-            owner,
-            repo,
-            base: ref,
-            token: async () =>
-              (
-                await createGitHubClient({
-                  auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
-                  owner,
-                  repo,
-                  ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
-                })
-              ).token(),
-            files: deps.files,
-          }),
+          tryBuild: (draft: RecipeFiles) =>
+            liveTrialBuild({
+              project: repo,
+              owner,
+              repo,
+              base: ref,
+              token: async () =>
+                (
+                  await createGitHubClient({
+                    auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
+                    owner,
+                    repo,
+                    ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
+                  })
+                ).token(),
+              files: draft,
+            }),
         }),
     history: deps.history,
     seeds,
@@ -448,5 +451,5 @@ export async function askBeforeGithubAdd(
     console.error(recipeResult.refused)
     return 1
   }
-  return { trial: recipeResult.trial, hints: recipeResult.hints, runtimes }
+  return { trial: recipeResult.trial, hints: recipeResult.hints, runtimes, answers: recipeResult.answers }
 }

@@ -96,10 +96,10 @@ describe('the confirm before registering (#542, #773)', () => {
     expect(asked).not.toContain('nothing checks')
   })
 
-  it('a no at that question registers nothing and says what is kept', async () => {
+  it('a no at that question writes and registers nothing, and says so', async () => {
     const world = terminal((prompt) => (CONFIRM.test(prompt) ? 'no' : ''))
     const result = await askRecipe(world, at({ flags: { install: 'none' } }))
-    expect(result).toMatchObject({ refused: expect.stringContaining('the recipe is kept') })
+    expect(result).toMatchObject({ refused: expect.stringContaining('nothing was written') })
     expect(result).toMatchObject({ refused: expect.stringContaining('stopped before registering') })
   })
 
