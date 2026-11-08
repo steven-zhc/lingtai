@@ -26,6 +26,7 @@ import { promisify } from 'node:util'
 
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
+import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import { createGitHubClient, GitHubError, installationForRepo, type GitHubClient } from '@lingtai/github'
 import { baseOf, diskFiles, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
@@ -48,7 +49,7 @@ import {
   type SetupTarget,
   SetupWriteError,
 } from '@lingtai/setup'
-import { Effect, Semaphore } from 'effect'
+import { Effect } from 'effect'
 
 import { add, addLocal } from './onboard.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
@@ -202,6 +203,8 @@ export interface AddPorts {
   files?: RecipeFiles
   /** Every project with a stream: the reads `lingtai add` refuses an add from. */
   projects: () => Promise<readonly ProjectState[]>
+  /** Where the cross-process lock is taken; the machine's lock directory unless a test hands one in. */
+  locker?: Locker
   /** The registration that follows the write. Fails with the sentence to show. */
   register: (form: SetupForm) => Effect.Effect<void, Error>
 }
@@ -218,15 +221,24 @@ export function addProject(form: SetupForm, ports: AddPorts): Effect.Effect<Adde
   const path = recipePath(form.project, ports.home)
   const refused = refusalOf(form)
   if (refused !== null) return Effect.succeed({ ok: false, say: refused })
-  // The check, the write and the registration are one critical section: two
-  // tabs that both read an empty list queue here, and the second one's check
-  // runs after the first one registered, so it is refused rather than
-  // overwriting the first one's recipe.
-  return addingOne.withPermits(1)(checkAndWrite(form, ports, path))
+  // The check, the write and the registration are one critical section, and
+  // the lock is a file under `~/.lingtai/locks` so it holds across processes:
+  // two boards on different ports, or a board and the CLI, share these
+  // recipes and streams. A second add of the same project is refused while
+  // the first runs, and after it by the check (its stream is there).
+  const locker = ports.locker ?? createFileLocker()
+  return Effect.acquireUseRelease(
+    Effect.promise(() => locker.tryLock(`add:${form.project.toLowerCase()}`, 'lingtai-add-from-page')),
+    (got): Effect.Effect<Added, never> =>
+      got.ok
+        ? checkAndWrite(form, ports, path)
+        : Effect.succeed({
+            ok: false,
+            say: `${form.project} is being added by another tab or process right now — wait for it, then reload`,
+          }),
+    (got) => (got.ok ? Effect.promise(() => got.lock.release()) : Effect.void),
+  )
 }
-
-/** One add at a time in this process; the board's server is the one writer of a page add. */
-const addingOne = Semaphore.makeUnsafe(1)
 
 function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.Effect<Added, never> {
   return Effect.tryPromise({ try: ports.projects, catch: reasonOf }).pipe(

@@ -43,6 +43,16 @@ function files(): RecipeFiles & { store: Map<string, string> } {
   }
 }
 
+/** An in-memory stand-in for the file locker: one holder per key, refused while held. */
+const held = new Set<string>()
+const locker = {
+  tryLock: async (key: string) => {
+    if (held.has(key)) return { ok: false as const, holder: null }
+    held.add(key)
+    return { ok: true as const, lock: { release: async () => void held.delete(key) } }
+  },
+}
+
 const run = <A>(e: Effect.Effect<A, never>) => Effect.runPromise(e)
 
 describe('addProject (#971)', () => {
@@ -50,6 +60,7 @@ describe('addProject (#971)', () => {
     const f = files()
     const out = await run(
       addProject(FORM, {
+        locker,
         home: HOME,
         files: f,
         projects: async () => [{ project: 'Chapter-Garden' } as ProjectState],
@@ -93,6 +104,7 @@ describe('addProject (#971)', () => {
     const path = recipePath(FORM.project, HOME)
     let registrations = 0
     const ports = (fail: boolean) => ({
+      locker,
       home: HOME,
       files: f,
       projects: async () => [] as ProjectState[],
@@ -113,10 +125,11 @@ describe('addProject (#971)', () => {
 })
 
 describe('addProject under two tabs and a retry (#971)', () => {
-  it('serialises two adds: the second sees the first one registered and is refused', async () => {
+  it('serialises two adds: the second is refused while the first runs, or after it', async () => {
     const f = files()
     const registered: ProjectState[] = []
     const ports = (marker: string) => ({
+      locker,
       home: HOME,
       files: f,
       projects: async () => [...registered],
@@ -132,7 +145,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
       run(addProject({ ...FORM, kinds: ['bug'] }, ports('b'))),
     ])
     expect(a.ok).toBe(true)
-    expect(b).toEqual({ ok: false, say: expect.stringContaining('is already added') })
+    expect(b.ok).toBe(false)
     expect(f.store.get(recipePath(FORM.project, HOME))).not.toContain('kinds: [bug]')
   })
 
@@ -140,6 +153,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
     const f = files()
     const path = recipePath(FORM.project, HOME)
     const ports = (fail: boolean) => ({
+      locker,
       home: HOME,
       files: f,
       projects: async () => [] as ProjectState[],
@@ -184,5 +198,23 @@ describe('localTicketsOf (#977 deletes it)', () => {
 
   it('reads db for a directory with no GitHub origin', () => {
     expect(localTicketsOf(proposal(null)).source).toBe('db')
+  })
+})
+
+describe('a check whose command carries ":" (#971)', () => {
+  it('is written under a name the recipe accepts', async () => {
+    const out = await run(
+      previewOf(
+        {
+          ...FORM,
+          checks: [
+            { name: 'lint:check', run: 'pnpm lint:check' },
+            { name: 'pnpm lint:check', run: 'pnpm lint:check' },
+          ],
+        },
+        { home: HOME, files: files() },
+      ),
+    )
+    expect(out).toEqual({ text: expect.stringContaining('lint-check') })
   })
 })

@@ -5,7 +5,7 @@
 import { everyRuntime } from '@lingtai/agent'
 import { localTicketsOf } from '@lingtai/conductor/add-from-page'
 import { LIMIT_DEFAULTS } from '@lingtai/recipe'
-import type { Line, Proposal, SetupTarget } from '@lingtai/setup'
+import { LINGTAI_BASE, type Line, type Proposal, type SetupTarget } from '@lingtai/setup'
 
 import type { CheckView, LineView, ReadView } from './read-model.ts'
 
@@ -88,7 +88,7 @@ export function emptyView(target: SetupTarget, project: string, remote: string |
     project,
     target,
     remote,
-    base: unread(''),
+    base: unread(local ? LINGTAI_BASE : ''),
     install: unread(''),
     stack: unread([]),
     checks: unread([]),

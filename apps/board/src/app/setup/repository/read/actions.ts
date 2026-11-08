@@ -12,7 +12,7 @@ import { resolveSource } from '@lingtai/recipe'
 import { recipePath } from '@lingtai/recipe'
 import { parseDuration } from '@lingtai/recipe/duration'
 import { boundsBesides, ceilingOf } from '@lingtai/recipe/settings'
-import { type SetupForm } from '@lingtai/setup'
+import { LINGTAI_BASE, type SetupForm } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import type { AddResult, Preview } from './read-model.ts'
@@ -36,6 +36,7 @@ async function trusted(form: SetupForm): Promise<SetupForm | { refused: string }
     ...form,
     project: name,
     target: { kind: 'local', path: found.path },
+    base: LINGTAI_BASE,
     remote: found.path,
     tickets: 'db',
     closeOnEnd: false,

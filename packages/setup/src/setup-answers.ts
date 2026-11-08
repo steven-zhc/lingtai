@@ -111,7 +111,10 @@ export function refusalOf(form: SetupForm): string | null {
   return null
 }
 
-const asRun = (c: { name: string; run: string }) => ({ name: c.name, run: c.run })
+/** A recipe refuses ":" in an action name (it is the conductor's namespace), and a script's name or a typed command may carry one. */
+export const actionNameOf = (name: string): string => name.replaceAll(':', '-')
+
+const asRun = (c: { name: string; run: string }) => ({ name: actionNameOf(c.name), run: c.run })
 
 /** The changes, in `askRecipe`'s order. */
 /**
