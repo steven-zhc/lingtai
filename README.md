@@ -19,6 +19,9 @@ cost.
 <a href="doc/img/shot-board-full.png"><img src="doc/img/shot-board.png" alt="The board — queued, running, waiting on you, landed" width="880"></a>
 *The board — queued, running, waiting on you, landed*
 
+<a href="https://www.youtube.com/watch?v=s27esf-NQlc"><img src="doc/img/film-poster.jpg" alt="Play the film: one ticket, filed to landed (2:11, narrated, with subtitles)" width="880"></a>
+*The film, 2:11 — one ticket, filed to landed (YouTube, narrated, with subtitles)*
+
 ## Install
 
 You need Git and Claude Code or Codex, signed in, plus Node.js and npm for the example below. The rest is on [requirements](https://lingtai.hczhang.com/docs/requirements/).

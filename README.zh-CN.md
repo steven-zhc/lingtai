@@ -16,6 +16,9 @@ Lingtai（灵台）接收一个由票组成的队列，把它们交给编码 age
 <a href="doc/img/shot-board-full.png"><img src="doc/img/shot-board.png" alt="看板：排队、运行、等你处理、已落地" width="880"></a>
 *看板：排队、运行、等你处理、已落地*
 
+<a href="https://www.youtube.com/watch?v=s27esf-NQlc"><img src="doc/img/film-poster.jpg" alt="播放视频：一张票从提交到落地（2:11，带旁白和字幕）" width="880"></a>
+*视频，2:11：一张票从提交到落地（YouTube，带旁白和字幕）*
+
 ## Install
 
 你需要 Git 和已登录的 Claude Code 或 Codex，下面的示例还需要 Node.js 和 npm；其余要求见 [requirements](https://lingtai.hczhang.com/docs/requirements/)。
