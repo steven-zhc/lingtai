@@ -41,6 +41,6 @@ const rowOf = (r: ListedRepository): Row => ({
   return {
     groups,
     notes: empty ? ['The App is not installed anywhere yet.'] : [],
-    installUrl: empty ? list.picker.installUrl : null,
+    installUrl: list.picker.installUrl,
   }
 }

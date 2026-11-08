@@ -4,6 +4,8 @@
  */
 import { Bar } from '@/app/bar.tsx'
 
+import { shellWord } from '../pick-model.ts'
+
 export const dynamic = 'force-dynamic'
 
 export default async function Read({ searchParams }: { searchParams: Promise<{ repo?: string; path?: string }> }) {
@@ -31,7 +33,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<{ r
               Reading it happens in the terminal for now:{' '}
               <code>
                 lingtai add {flag}
-                {target}
+                {shellWord(target)}
               </code>
             </p>
           )}

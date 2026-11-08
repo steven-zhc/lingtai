@@ -58,3 +58,6 @@ export const nextHref = (choice: Choice): string =>
   choice.kind === 'repo'
     ? `/setup/repository/read?repo=${encodeURIComponent(choice.slug)}`
     : `/setup/repository/read?path=${encodeURIComponent(choice.path)}`
+
+/** One POSIX shell word: a path with a space or a quote must paste as one argument. */
+export const shellWord = (s: string): string => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`)
