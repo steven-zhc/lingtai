@@ -6,6 +6,7 @@
 export * from './apply-setup.ts'
 export * from './detect-setup.ts'
 export * from './list-repositories.ts'
+export * from './local-repository.ts'
 export * from './propose-setup.ts'
 export * from './runtimes.ts'
 export * from './ticket-source.ts'

@@ -22,6 +22,7 @@ const FORBIDDEN = (spec: string): string | null => {
   if (spec.startsWith('node:')) return 'a node: module'
   if (spec === '@lingtai/repo' || spec.startsWith('@lingtai/repo/')) return '@lingtai/repo'
   if (spec === '@lingtai/conductor' || spec.startsWith('@lingtai/conductor/')) return '@lingtai/conductor'
+  if (spec === '@lingtai/setup' || spec.startsWith('@lingtai/setup/')) return '@lingtai/setup'
   return null
 }
 
