@@ -137,7 +137,9 @@ describe('detectSetup', () => {
   it('skips a candidate whose command runs a browser, even though its name does not say so', async () => {
     const result = await detectSetup(reader({ 'package.json': pkg({ test: 'playwright test' }) }))
     expect(result.build).toEqual([])
-    expect(result.skipped).toEqual([{ script: 'test', why: expect.stringContaining('playwright test') }])
+    expect(result.skipped).toEqual([
+      { script: 'test', run: 'npm run test', why: expect.stringContaining('playwright test') },
+    ])
   })
 
   it('this repository’s own scripts: pnpm fmt:check/lint/typecheck/test, with test:integration and test:db skipped', async () => {
