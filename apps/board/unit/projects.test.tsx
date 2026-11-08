@@ -2,11 +2,10 @@
  * The project menu: a row per repository, each with its own recipe (#948).
  *
  * The menu used to be the projects as tabs, one `recipe` for the project in
- * view, and *add a repository* — a link to a page that cannot add one today. It
- * is now `all projects` (with two or more), then a row each: the name, which
- * filters, and at the right its own `recipe`. The add entry is gone from the
- * menu; the board with no project configured keeps its link to setup (#169),
- * which is how a first run reaches the wizard.
+ * view, and *add a repository*. It is `all projects` (with two or more), then
+ * a row each: the name, which filters, and at the right its own `recipe`, then
+ * *add a repository* again (#972). The board with no project configured keeps
+ * its link to setup (#169), which is how a first run reaches the wizard.
  *
  * Claims about markup rather than a reducer, since a reducer alone cannot catch
  * a row that renders without its link. `bar.test.ts` reads `projects.tsx` so a
@@ -75,12 +74,16 @@ describe('where it lands', () => {
     expect(out).not.toContain('/setup/github-app')
   })
 
-  /** The menu no longer offers to add one, whatever the App says. */
-  it('offers no way to setup from a menu that lists repositories', () => {
-    for (const app of [true, false]) {
+  /** The menu offers it, last, and it follows the App like the empty slot's link. */
+  it('offers add a repository after the rows, to where the App says', () => {
+    for (const [app, where] of [
+      [true, '/setup/repository'],
+      [false, '/setup/github-app'],
+    ] as const) {
       for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
-        expect(out).not.toContain('/setup/')
-        expect(out).not.toContain('add a repository')
+        expect(out).toContain(`href="${where}"`)
+        expect(out).toContain('add a repository</a>')
+        expect(out.indexOf(`href="${where}"`)).toBeGreaterThan(out.lastIndexOf('/edit"'))
       }
     }
   })
