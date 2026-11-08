@@ -46,7 +46,8 @@ export interface DetectedSetup {
   install: { run: string; because: string; tool?: string } | null
   /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`), or is a launcher for a separately installed component (`cargo clippy` → `cargo-clippy`). */
   build: { name: string; run: string; because: string; tool?: string }[]
-  skipped: { script: string; why: string }[]
+  /** `run` is the command a person would tick it with, where the detector knows it. */
+  skipped: { script: string; why: string; run?: string }[]
   notes: string[]
 }
 
@@ -192,7 +193,7 @@ const nodeDetector: StackDetector = {
 
     for (const [name, command] of Object.entries(scripts)) {
       const why = skipReasonFor(name, command)
-      if (why !== null) skipped.push({ script: name, why })
+      if (why !== null) skipped.push({ script: name, why, run: runFor(manager, name) })
     }
     const skippedNames = new Set(skipped.map((s) => s.script))
 

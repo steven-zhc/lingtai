@@ -37,7 +37,7 @@ import {
   type Said,
   setRecipe,
 } from '@lingtai/recipe'
-import { type Answers, draftFiles, type SetupReader } from '@lingtai/setup'
+import { type Answers, draftFiles, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 
 import { askAgents } from './agents.ts'
@@ -54,49 +54,7 @@ import { askKinds, askTickets } from './source.ts'
  */
 export const ADD_KEPT = 'Nothing was written and nothing was registered'
 
-/**
- * Where the filtered env file is planted inside the worktree — the one
- * `env.plantAt` seed both `first-project.ts`'s local branch and
- * `add-github.ts`'s GitHub branch write on an absent file, so the two name
- * the same path rather than two literals that drift.
- */
-export const ENV_PLANT_AT = '.env.local'
-
-/**
- * The wizard's own sentence for each block, keyed by its dotted path —
- * printed as that section's heading before its questions, on both the
- * existing-file and the absent-file paths, and written as the comment above
- * the same block when a file is created (`write.ts`'s `setRecipe`, `said`).
- *
- * **Not every key here is guaranteed to exist, and this list does not claim
- * it is.** `source.tickets` is `TicketSource.optional()` with no schema
- * default (`recipe.ts:1108`) — only the explicit fallback below guarantees it
- * on the absent-file path. `repo` and `env` are required fields with no
- * default either; they exist only because both callers of `askRecipe` seed
- * them before asking anything. The rest — `runtime`, both `steps.implement`
- * and `steps.review`, `steps.prepared`, `steps.build` and `source.kinds` —
- * are written unconditionally by their own question on an absent file, for
- * reasons local to each (`agents.ts`, `setup-build.ts`, `askKinds` above).
- * `steps.proposed` and `runtime.limits` may genuinely be missing when
- * `write.ts`'s creation write runs — `askLanding`/`askLimits` have not asked
- * yet — and `write.ts`'s `commentWritten` leaves a block it is not there to
- * comment rather than inventing a value nobody chose (#432 fix round,
- * findings 2 and 3).
- */
-export const SAID: Said = {
-  runtime: "which agent's attempt this is",
-  'steps.implement': 'which agent writes the change',
-  'steps.review': 'which agent, if any, reads it cold before it moves on',
-  'steps.prepared': 'getting the worktree ready before the agent starts',
-  'steps.build': 'what must pass before review',
-  'source.tickets': "where this project's tickets live",
-  'source.kinds': 'which labels are work, most wanted first',
-  repo: 'the branch this project governs, and where it pushes',
-  'steps.end': 'what happens to the ticket once it ends',
-  'steps.proposed': 'what happens once an attempt is ready to land',
-  'runtime.limits': 'what one attempt may spend before it comes back to you',
-  env: "what the agent's environment is filtered to",
-}
+export { ENV_PLANT_AT, SAID }
 
 /** Whether `tool` is an existing file in a directory on this process's PATH. */
 async function toolOnPath(tool: string): Promise<boolean> {

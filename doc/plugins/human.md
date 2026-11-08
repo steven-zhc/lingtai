@@ -53,8 +53,8 @@ anything lands.
 ## Examples
 
 ```yaml
-# `APPROVE_ACTION` in packages/conductor/src/wizard-page.ts — what `lingtai init`
-# writes when a person answers yes to the merge question: hold every merge.
+# What `lingtai init` writes when a person answers yes to the merge question:
+# hold every merge.
 proposed:
   - name: approve
     human: Merge this?

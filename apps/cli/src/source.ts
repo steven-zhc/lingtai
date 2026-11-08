@@ -25,7 +25,7 @@ import {
   ticketsChange,
   type TicketSource,
 } from '@lingtai/recipe'
-import { ticketSourceOf } from '@lingtai/setup'
+import { parseKinds, ticketSourceOf } from '@lingtai/setup'
 
 import { type QuestionWorld, question } from './question.ts'
 
@@ -158,20 +158,6 @@ export async function askTickets(
   return decided === current
     ? { changes: [], current: decided }
     : { changes: [ticketsChange(decided)], current: decided }
-}
-
-function parseKinds(answer: string): string[] | string {
-  const parts = answer
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s !== '')
-  if (parts.length === 0) return 'needs at least one label, comma-separated'
-  const seen = new Set<string>()
-  for (const label of parts) {
-    if (seen.has(label)) return `${label} is named twice — list each label once`
-    seen.add(label)
-  }
-  return parts
 }
 
 /**
