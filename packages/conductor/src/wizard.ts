@@ -57,7 +57,18 @@ import {
 
 import { passedOver, runnableNow } from './discover.ts'
 import { type Runnable, selectRunnable } from './queue.ts'
-import { CHECKING_STEPS, nothingChecks } from './wizard-page.ts'
+
+/**
+ * The steps whose actions check a diff before it merges (`wizard.ts` reads them
+ * to say whether anything does). `merge` is deliberately not here: its actions
+ * run after the verdicts this asks about.
+ */
+export const CHECKING_STEPS = ['build', 'review', 'proposed'] as const
+
+/** The sentence for a chain nothing reads: every ticket goes from an agent straight into the base. */
+export function nothingChecks(base: string): string {
+  return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`
+}
 
 export interface FirstTurnOptions {
   client: GitHubClient

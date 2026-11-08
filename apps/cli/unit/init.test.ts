@@ -148,6 +148,7 @@ function harness(
       return found
     },
     projects: async () => [],
+    locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     cwd: options.cwd ?? '/elsewhere',
     files: {
       read: async (p) => files.get(p) ?? null,

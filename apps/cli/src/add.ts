@@ -1,3 +1,4 @@
+import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import type { GithubReach } from '@lingtai/conductor/onboard'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
@@ -348,14 +349,28 @@ function addWithSetup(
 ): Effect.Effect<Added> {
   // The default home, as `askBeforeGithubAdd` read the file and as the card below reads it back.
   const path = recipePath(answers.project)
-  return applySetup(
-    { files: world.files },
-    answers,
-    Effect.tryPromise({
-      try: () => world.github.add(opts, log),
-      catch: (err) => (err instanceof Error ? err : new Error(String(err))),
-    }).pipe(Effect.flatMap((result) => (result.ok ? Effect.succeed(result) : Effect.fail(new Declined(result))))),
-  ).pipe(
+  // Under the lock the board's Add takes, and with *already added* read again inside it: another
+  // process may have registered this project since the check above.
+  const guarded = Effect.tryPromise({
+    try: () => world.projects(),
+    catch: (err) => new SetupWriteError(`could not read the projects: ${err instanceof Error ? err.message : err}`),
+  }).pipe(
+    Effect.flatMap((projects) =>
+      alreadyAdded(projects, answers.project) === undefined
+        ? applySetup(
+            { files: world.files },
+            answers,
+            Effect.tryPromise({
+              try: () => world.github.add(opts, log),
+              catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+            }).pipe(
+              Effect.flatMap((result) => (result.ok ? Effect.succeed(result) : Effect.fail(new Declined(result)))),
+            ),
+          )
+        : Effect.fail(new SetupWriteError(alreadyAddedSentence(answers.project))),
+    ),
+  )
+  return exclusiveAdd(answers.project, guarded, world.locker).pipe(
     Effect.map((done): Added => done.registered),
     Effect.catch((error): Effect.Effect<Added> => {
       if (error instanceof Declined) {

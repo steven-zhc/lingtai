@@ -46,7 +46,10 @@ export interface DetectedSetup {
   install: { run: string; because: string; tool?: string } | null
   /** `tool` is what to look for on PATH when the command's first word is not it (`test -z …`), or is a launcher for a separately installed component (`cargo clippy` → `cargo-clippy`). */
   build: { name: string; run: string; because: string; tool?: string }[]
-  skipped: { script: string; why: string }[]
+  /** `run` is the command a person would tick it with, where the detector knows it. */
+  skipped: { script: string; why: string; run?: string }[]
+  /** Every other script the repository defines (neither a detected check nor skipped), offered unticked. */
+  others?: { script: string; run: string }[]
   notes: string[]
 }
 
@@ -192,18 +195,24 @@ const nodeDetector: StackDetector = {
 
     for (const [name, command] of Object.entries(scripts)) {
       const why = skipReasonFor(name, command)
-      if (why !== null) skipped.push({ script: name, why })
+      if (why !== null) skipped.push({ script: name, why, run: runFor(manager, name) })
     }
     const skippedNames = new Set(skipped.map((s) => s.script))
 
+    const usedNames: string[] = []
     for (const { key, names } of BUILD_ORDER) {
       const name = names.find((n) => Object.hasOwn(scripts, n))
       if (name === undefined || skippedNames.has(name)) continue
       const command = scripts[name]!
+      usedNames.push(name)
       build.push({ name: key, run: runFor(manager, name), because: `\`${name}\` runs \`${command}\`` })
     }
 
-    return finding('present', build, skipped)
+    const taken = new Set([...skippedNames, ...usedNames])
+    const others = Object.keys(scripts)
+      .filter((name) => !taken.has(name))
+      .map((name) => ({ script: name, run: runFor(manager, name) }))
+    return { ...finding('present', build, skipped), others }
   },
 }
 
@@ -789,6 +798,6 @@ export async function detectSetup(
       notes.push(...other.found.notes)
     }
   }
-  const { install, build, skipped } = first.found
-  return { install, build, skipped, notes }
+  const { install, build, skipped, others } = first.found
+  return { install, build, skipped, ...(others === undefined ? {} : { others }), notes }
 }

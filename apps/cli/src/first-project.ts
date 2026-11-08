@@ -45,6 +45,7 @@ import { readFile, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
+import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import { add, addLocal, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
@@ -53,6 +54,7 @@ import { liveHistory } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
+import type { Locker } from '@lingtai/env/lock'
 import { ghStatus, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector'
 import {
@@ -139,6 +141,8 @@ export interface FirstProjectWorld extends QuestionWorld {
   exists: (path: string) => Promise<boolean>
   /** `loadAllProjects` — registered and pending alike, keyed by name. */
   projects: () => Promise<readonly ProjectState[]>
+  /** The lock an add is made under (`exclusiveAdd`): the machine's file lock unless a test hands one in. */
+  locker?: Locker
   files: RecipeFiles
   /** `stateDir()` unless a test says otherwise. */
   home: string
@@ -930,22 +934,40 @@ async function runLocalBranch(
   // the recipe is written once, just before it.
   let applied
   try {
+    // Under the lock the board's Add takes; a project not yet registered is checked again inside it,
+    // since another process may have added it since the read above.
+    const write = applySetup(
+      { home: world.home, files: world.files },
+      recipeResult.answers,
+      Effect.tryPromise({
+        try: () =>
+          world.register({
+            project: name,
+            owner: null,
+            base: final,
+            configHash: resolved.configHash,
+            fromSha: finalFromSha,
+            resolved,
+          }),
+        catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+      }),
+    )
     applied = await runEffect(
-      applySetup(
-        { home: world.home, files: world.files },
-        recipeResult.answers,
-        Effect.tryPromise({
-          try: () =>
-            world.register({
-              project: name,
-              owner: null,
-              base: final,
-              configHash: resolved.configHash,
-              fromSha: finalFromSha,
-              resolved,
-            }),
-          catch: (err) => (err instanceof Error ? err : new Error(String(err))),
-        }),
+      exclusiveAdd(
+        name,
+        found !== undefined
+          ? write
+          : Effect.tryPromise({
+              try: () => world.projects(),
+              catch: (err) => new SetupWriteError(`could not read the projects: ${errorText(err)}`),
+            }).pipe(
+              Effect.flatMap((now) =>
+                now.some((p) => p.project?.toLowerCase() === name.toLowerCase())
+                  ? Effect.fail(new SetupWriteError(alreadyAddedSentence(name, world.home)))
+                  : write,
+              ),
+            ),
+        world.locker,
       ),
     )
   } catch (err) {

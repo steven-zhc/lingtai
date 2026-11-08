@@ -85,6 +85,7 @@ function ttyHarness(): Harness {
     log: () => {},
     git: fakeGit(GIT_PLAN),
     projects: async () => [],
+    locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     files: mapFiles(),
     home: HOME,
     signedIn: async () => ['claude-code'] as never[],

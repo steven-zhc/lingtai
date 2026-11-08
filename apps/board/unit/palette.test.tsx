@@ -145,6 +145,7 @@ describe('the page list', () => {
     '/setup/github-app': "reached from the empty board's link and the wizard, not the palette",
     '/setup/repository': "reached from the empty board's link and the wizard, not the palette",
     '/setup/repository/read': 'step 2, reached from step 1 with the choice in the URL',
+    '/setup/repository/added': 'step 3, reached from step 2 once the repository is added',
     '/setup/wizard': 'a bookmark kept so old links answer something',
     '/dev/waiting': 'a developer page',
   }

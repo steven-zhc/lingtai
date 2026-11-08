@@ -186,3 +186,13 @@ export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknow
     },
   ]
 }
+
+/** `runtime.limits.turns` — what one agent run may take in turns; `unbounded` is the recipe saying it promises none (#971). */
+export function turnsChange(turns: number | typeof UNBOUNDED): RecipeChange {
+  return { path: ['runtime', 'limits', 'turns'], value: turns }
+}
+
+/** `runtime.limits.restarts` — how many times a ticket is started over from the base (#971). */
+export function restartsChange(restarts: number): RecipeChange {
+  return { path: ['runtime', 'limits', 'restarts'], value: restarts }
+}
