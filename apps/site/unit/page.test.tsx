@@ -73,6 +73,7 @@ describe("the home page's argument", () => {
     const text = await prose()
     const order = [
       'Agents do the work',
+      'One ticket, filed to landed.',
       'The agent got it wrong. Twice.',
       'Why not just give the agent the issue?',
       'Three steps to your first receipt.',
@@ -299,6 +300,19 @@ describe('the replay receipt', () => {
     expect(row).toContain('shot-tab')
     expect(row).not.toContain('id="replay"')
     expect(html.indexOf('class="rcpt')).toBeGreaterThan(html.indexOf('id="replay"'))
+  })
+
+  it('puts the film between the hero row and the replay, and contacts YouTube only by a link', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    expect(html.indexOf('id="film"')).toBeGreaterThan(html.indexOf('class="hero-row"'))
+    expect(html.indexOf('id="film"')).toBeLessThan(html.indexOf('id="replay"'))
+    expect(html).toContain('href="#film"')
+    expect(html).not.toContain('<iframe')
+    expect(html).not.toContain('ytimg')
+    expect(html).not.toMatch(/rel="(preconnect|dns-prefetch)"/)
+    const watch = 'href="https://www.youtube.com/watch?v=s27esf-NQlc"'
+    expect(html).toContain(watch)
+    expect(html.replace(watch, '')).not.toContain('youtube')
   })
 
   it('shows the four screenshots with their captions, each linking to its full page', () => {
