@@ -218,3 +218,21 @@ describe('a check whose command carries ":" (#971)', () => {
     expect(out).toEqual({ text: expect.stringContaining('lint-check') })
   })
 })
+
+describe('two checks whose names collide once ":" is replaced (#971)', () => {
+  it('get distinct action names', async () => {
+    const out = await run(
+      previewOf(
+        {
+          ...FORM,
+          checks: [
+            { name: 'lint:check', run: 'pnpm lint:check' },
+            { name: 'lint-check', run: 'pnpm lint-check' },
+          ],
+        },
+        { home: HOME, files: files() },
+      ),
+    )
+    expect(out).toEqual({ text: expect.stringContaining('lint-check-2') })
+  })
+})

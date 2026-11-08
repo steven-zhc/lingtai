@@ -114,7 +114,17 @@ export function refusalOf(form: SetupForm): string | null {
 /** A recipe refuses ":" in an action name (it is the conductor's namespace), and a script's name or a typed command may carry one. */
 export const actionNameOf = (name: string): string => name.replaceAll(':', '-')
 
-const asRun = (c: { name: string; run: string }) => ({ name: actionNameOf(c.name), run: c.run })
+/** Names in a step must be unique, and ":" → "-" can make two distinct ones equal (`lint:check`, `lint-check`): the later gets `-2`, `-3`… */
+function runsOf(checks: readonly { name: string; run: string }[]): { name: string; run: string }[] {
+  const taken = new Set<string>()
+  return checks.map((c) => {
+    const base = actionNameOf(c.name)
+    let name = base
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`
+    taken.add(name)
+    return { name, run: c.run }
+  })
+}
 
 /** The changes, in `askRecipe`'s order. */
 /**
@@ -154,7 +164,7 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
     path: ['steps', 'prepared'],
     value: form.install.trim() === '' ? [] : [{ name: 'install', run: form.install.trim() }],
   })
-  changes.push({ path: ['steps', 'build'], value: form.checks.map(asRun) })
+  changes.push({ path: ['steps', 'build'], value: runsOf(form.checks) })
 
   // `askTickets`: a local project writes `db`; a GitHub one writes nothing where the answer is the current `github`.
   if (!github) changes.push(ticketsChange('db'))

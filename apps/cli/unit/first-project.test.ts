@@ -129,6 +129,7 @@ function harness(options: {
     git: fakeGit(options.git ?? {}),
     exists: options.exists ?? (async () => true),
     projects: async () => options.projects ?? [],
+    locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     files,
     home: HOME,
     signedIn: async () => signedIn as never[],

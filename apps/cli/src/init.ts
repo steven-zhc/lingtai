@@ -130,6 +130,7 @@ import {
   storeChoice,
 } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
+import type { Locker } from '@lingtai/env/lock'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { ghStatus, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
@@ -242,6 +243,8 @@ export interface InitWorld {
   runGit: (dir: string, args: readonly string[]) => Promise<GitResult>
   /** `loadAllProjects` — registered and pending alike, keyed by name (#394). */
   projects: () => Promise<readonly ProjectState[]>
+  /** The lock an add is made under; the machine's file lock unless a test hands one in. */
+  locker?: Locker
   files: RecipeFiles
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
@@ -583,6 +586,7 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
       log: world.log,
       git: world.runGit,
       projects: world.projects,
+      locker: world.locker,
       files: world.files,
       home,
       signedIn: world.signedIn,

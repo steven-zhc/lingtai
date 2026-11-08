@@ -221,21 +221,34 @@ export function addProject(form: SetupForm, ports: AddPorts): Effect.Effect<Adde
   const path = recipePath(form.project, ports.home)
   const refused = refusalOf(form)
   if (refused !== null) return Effect.succeed({ ok: false, say: refused })
-  // The check, the write and the registration are one critical section, and
-  // the lock is a file under `~/.lingtai/locks` so it holds across processes:
-  // two boards on different ports, or a board and the CLI, share these
-  // recipes and streams. A second add of the same project is refused while
-  // the first runs, and after it by the check (its stream is there).
-  const locker = ports.locker ?? createFileLocker()
+  // The check, the write and the registration are one critical section: see `exclusiveAdd`.
+  return exclusiveAdd(form.project, checkAndWrite(form, ports, path), ports.locker).pipe(
+    Effect.catch((busy) => Effect.succeed<Added>({ ok: false, say: busy.message })),
+  )
+}
+
+/** Another add of the same project holds the lock. */
+export class AddBusy extends Error {
+  constructor(project: string) {
+    super(`${project} is being added by another tab or process right now — wait for it, then reload`)
+  }
+}
+
+/**
+ * The critical section every add of a project runs in — the board's and
+ * `lingtai add`'s both, because a lock only excludes writers that take it. It
+ * is a file under `~/.lingtai/locks`, so it holds across processes; the
+ * caller re-checks *already added* inside it, since the first add may have
+ * finished between the caller's earlier read and the lock.
+ */
+export function exclusiveAdd<A, E>(
+  project: string,
+  body: Effect.Effect<A, E>,
+  locker: Locker = createFileLocker(),
+): Effect.Effect<A, E | AddBusy> {
   return Effect.acquireUseRelease(
-    Effect.promise(() => locker.tryLock(`add:${form.project.toLowerCase()}`, 'lingtai-add-from-page')),
-    (got): Effect.Effect<Added, never> =>
-      got.ok
-        ? checkAndWrite(form, ports, path)
-        : Effect.succeed({
-            ok: false,
-            say: `${form.project} is being added by another tab or process right now — wait for it, then reload`,
-          }),
+    Effect.promise(() => locker.tryLock(`add:${project.toLowerCase()}`, 'lingtai-add')),
+    (got): Effect.Effect<A, E | AddBusy> => (got.ok ? body : Effect.fail(new AddBusy(project))),
     (got) => (got.ok ? Effect.promise(() => got.lock.release()) : Effect.void),
   )
 }
