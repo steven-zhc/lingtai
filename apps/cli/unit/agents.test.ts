@@ -4,11 +4,11 @@
  * answers, and a `Map`-backed `RecipeFiles` — no filesystem, no terminal.
  */
 import { type RecipeFiles, recipePath, resolveLocalRecipe, setRecipe } from '@lingtai/recipe'
+import type { RuntimeFound } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 
 import { ANOTHER, askAgents, RUNTIME_DEFAULT } from '../src/agents.ts'
 import type { QuestionWorld } from '../src/question.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)

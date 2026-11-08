@@ -668,12 +668,27 @@ importers:
 
   packages/setup:
     dependencies:
+      '@lingtai/actions':
+        specifier: workspace:*
+        version: link:../actions
+      '@lingtai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@lingtai/agent-env':
+        specifier: workspace:*
+        version: link:../agent-env
       '@lingtai/domain':
         specifier: workspace:*
         version: link:../domain
       '@lingtai/github':
         specifier: workspace:*
         version: link:../github
+      '@lingtai/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@lingtai/repo':
+        specifier: workspace:*
+        version: link:../repo
       effect:
         specifier: ^4.1.2
         version: 4.1.2

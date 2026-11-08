@@ -25,6 +25,7 @@ import {
   ticketsChange,
   type TicketSource,
 } from '@lingtai/recipe'
+import { ticketSourceOf } from '@lingtai/setup'
 
 import { type QuestionWorld, question } from './question.ts'
 
@@ -45,6 +46,8 @@ export interface SourceDeps {
   files?: RecipeFiles
   /** `question.ts`'s `kept` — what a refusal here says is already written, from a caller's earlier steps. */
   kept?: string
+  /** What `askKinds` offers where the file names no kinds: a `Proposal`'s `kinds`; `SETUP_KINDS` where absent. */
+  kindsFallback?: readonly string[]
 }
 
 export interface TicketsDeps extends SourceDeps {
@@ -111,8 +114,7 @@ export async function askTickets(
   // as `github` merely because the file naming its real source is not here
   // (#432 fix round, finding 1).
   const rawTickets = await readRecipeKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
-  const current: TicketSource =
-    rawTickets === 'db' || (rawTickets === null && history.some((h) => h.startsWith('db ticket #'))) ? 'db' : 'github'
+  const current: TicketSource = ticketSourceOf(rawTickets, history)
 
   if (history.length > 0) {
     if (given !== null && given !== current) {
@@ -203,7 +205,7 @@ export async function askKinds(
     given,
     prompt: 'which labels are work, comma-separated, first = taken first',
     current: currentDisplay,
-    fallback: currentDisplay === null ? SETUP_KINDS.join(', ') : undefined,
+    fallback: currentDisplay === null ? (deps.kindsFallback ?? SETUP_KINDS).join(', ') : undefined,
     kept: deps.kept ?? 'Nothing was written',
     validate: async (answer) => {
       const parsed = parseKinds(answer)
@@ -221,30 +223,4 @@ export async function askKinds(
 
   const rawClaim = await readRecipeKey(project, ['steps', 'claim'], { home: deps.home, files: deps.files })
   return { changes: kindsChanges(parsed, Array.isArray(rawClaim) ? rawClaim : null) }
-}
-
-/**
- * The live `history`: a dynamic `import('@lingtai/event-store')`, for
- * `ticket-store.ts`'s own reason — a caller that only wants to ask a setup
- * question must not open a store merely by importing this module.
- *
- * **Two kinds of history, not one.** A `ticket-<project>-*` stream is what a
- * claimed ticket leaves in the log, whichever source claimed it. A `db`
- * project's own tickets leave no stream until a pass claims one —
- * `dbTickets.createIssue` (`db-tickets.ts`) is a plain `INSERT INTO
- * tickets` — so `lingtai ticket new` can leave a project with rows in
- * `tickets` and nothing in the log at all. `ticketsFor`'s own guard
- * (`ticket-store.ts:247-253`) checks the table before the log for exactly
- * that reason, and this checks both for the same one: either is enough that
- * switching away from the project's current source would strand work.
- */
-export async function liveHistory(project: string): Promise<readonly string[]> {
-  const { log, processTicketSql } = await import('@lingtai/event-store')
-  const { parseTicketStream, ticketStreamsOf } = await import('@lingtai/domain')
-  const { dbTickets } = await import('@lingtai/conductor/db-tickets')
-  const streams = await log.queries.projectStreams(ticketStreamsOf(project))
-  const wiStreams = streams.filter((id) => parseTicketStream(id)?.project === project)
-  const sql = await processTicketSql()
-  const dbTicketRows = await dbTickets(sql, project).listIssuesSince(new Date(0))
-  return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
 }

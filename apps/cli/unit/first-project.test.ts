@@ -11,12 +11,12 @@ import type { ProjectState } from '@lingtai/domain'
 import { type AppReader, GitHubError, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
+import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
-import type { RuntimeFound } from '../src/runtimes.ts'
 import { flagsOf } from '../src/wizard-options.ts'
 
 const before = process.env['NO_COLOR']
