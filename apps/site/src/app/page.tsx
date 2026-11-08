@@ -5,6 +5,7 @@ import { readBooks, type Books } from '@/lib/books'
 import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
+import { Film } from './film'
 import { ReplayReceipt } from './replay-receipt'
 import { Shots } from './shots'
 
@@ -54,11 +55,20 @@ export function HomePage({ books }: { books: Books | null }) {
                   <a className="watch" href="#replay">
                     Watch an example <span aria-hidden="true">↓</span>
                   </a>
+                  <a className="watch" href="#film">
+                    ▶ The film, 2:11 <span aria-hidden="true">↓</span>
+                  </a>
                 </div>
               </div>
             </section>
             <Shots />
           </div>
+
+          <section className="film" id="film" aria-labelledby="film-title">
+            <p className="kicker">Film &middot; 2:11 &middot; narrated</p>
+            <h2 id="film-title">One ticket, filed to landed.</h2>
+            <Film />
+          </section>
 
           <div className="tale">
             <div className="tale-main">
