@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation'
 
 import { Bar } from '@/app/bar.tsx'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
-import { recipeLines } from '@/lib/recipe-lines'
+import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
+import { StepRow } from '../../step-row'
 import { RecipeText } from './recipe-text'
 
 /**
@@ -36,51 +37,141 @@ import { RecipeText } from './recipe-text'
  */
 export const dynamic = 'force-dynamic'
 
-/** Rows `recipeLines` already says under the add page's labels. */
-const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent'])
+/** Rows a step block already says, so *Also set* is what no step owns. */
+const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent', 'assignee', 'retries', 'the steps'])
+
+const MUTED = new Set(['nothing', 'none'])
+
+/** A setting's value: chips for a list, code for a command, muted for an empty answer. */
+function Value({ line }: { line: RecipeLine }) {
+  if (line.chips !== undefined) {
+    return (
+      <span className="sv">
+        {line.chips.map((chip) => (
+          <span className="chip-kind" key={chip}>
+            {chip}
+          </span>
+        ))}
+      </span>
+    )
+  }
+  if (MUTED.has(line.value)) return <span className="step-q">{line.value}</span>
+  if (line.label === 'tickets' || line.label === 'base' || line.label === 'agent') {
+    return <span className="step-mono">{line.value}</span>
+  }
+  return <span>{line.value}</span>
+}
+
+function Action({ action }: { action: StepActionLine }) {
+  if (action.when !== null) {
+    return (
+      <div className="step-when">
+        <span>
+          {action.label}
+          {action.value === null ? null : <span className="step-mono"> {action.value}</span>}
+        </span>
+        <small>when {action.when}</small>
+      </div>
+    )
+  }
+  return (
+    <div className="step-set">
+      <span>{action.label}</span>
+      {action.value === null ? (
+        <span />
+      ) : action.code ? (
+        <span className="sv">
+          <span className="chip-code">{action.value}</span>
+        </span>
+      ) : (
+        <span className="step-mono">{action.value}</span>
+      )}
+    </div>
+  )
+}
 
 /**
- * Step 2 of adding a repository, read-only (#979): one line per thing on the
- * left, the file's own text on the right. The `.s2-line` markup is written
- * here and not imported from `setup-form.tsx`, which reaches a server-action
- * module this page must not follow beyond the editor's own.
+ * The recipe read-only (#983): the ten steps in the order an attempt reaches
+ * them, each with what it is for and what this recipe sets there, then what an
+ * attempt may spend, then what no step owns. The file's own text is on the
+ * right. The markup is written here and not imported from `setup-form.tsx`,
+ * which reaches a server-action module this page must not follow beyond the
+ * editor's own.
  */
 function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
   const read = recipeLines(view.recipe, view.ref)
+  const stepsRow = view.rows.find((row) => row.name === 'the steps')
+  const source = stepsRow === undefined ? 'not said' : (sourceOf(stepsRow, view.provenance) ?? 'not said')
   return (
-    <>
-      <div className="s2-left">
-        {read.lines.map((line) => (
-          <div className="s2-line" key={line.label}>
-            <span className="s2-k">{line.label}</span>
-            <span className="s2-v mono">{line.value}</span>
+    <div className="s2-left">
+      <section className="rcard">
+        <h3 className="rcard-h">
+          <span>What one attempt does, in order</span>
+          <small className="src">← {source}</small>
+        </h3>
+        <ol className="step-list">
+          {read.steps.map((block, i) => (
+            <StepRow
+              key={block.step}
+              n={i + 1}
+              step={block.step}
+              says={block.says}
+              on={block.settings.length > 0 || block.actions.length > 0}
+            >
+              {block.settings.map((line) => (
+                <div className="step-set" key={line.label}>
+                  <span>{line.label}</span>
+                  <Value line={line} />
+                </div>
+              ))}
+              {block.actions.map((action, j) => (
+                <Action action={action} key={`${action.label}-${j}`} />
+              ))}
+            </StepRow>
+          ))}
+        </ol>
+      </section>
+
+      <section className="rcard">
+        <h3 className="rcard-h">
+          <span>What an attempt may spend</span>
+        </h3>
+        <div className="stats">
+          <div className="stat">
+            <b>{read.limits.rounds}</b>
+            <span>rounds</span>
           </div>
-        ))}
-
-        <h3 className="s2-h">A person approves the merge?</h3>
-        <p>{read.approves}</p>
-
-        <h3 className="s2-h">What an attempt may spend</h3>
-        <div className="s2-limits">
-          <span>rounds {read.limits.rounds}</span>
-          <span>restarts {read.limits.restarts}</span>
-          <span>wall {read.limits.wall}</span>
-          <span>turns {read.limits.turns}</span>
+          <div className="stat">
+            <b>{read.limits.restarts}</b>
+            <span>restarts</span>
+          </div>
+          <div className="stat">
+            <b>{read.limits.wall}</b>
+            <span>wall</span>
+          </div>
+          <div className="stat">
+            <b>{read.limits.turns}</b>
+            <span>turns</span>
+          </div>
         </div>
-        <p className="note">{read.ceiling}</p>
+        <p className="say">{read.ceiling}</p>
+      </section>
 
-        <h3 className="s2-h">Also set</h3>
+      <section className="rcard">
+        <h3 className="rcard-h">
+          <span>Also set</span>
+        </h3>
         {view.rows
           .filter((row) => !COVERED.has(row.name))
           .map((row) => (
-            <div className="s2-line" key={row.name}>
-              <span className="s2-k">{row.name}</span>
-              <span className="s2-v">{row.says}</span>
-              <span className="s2-note">← {sourceOf(row, view.provenance) ?? 'not said'}</span>
+            <div className="also" key={row.name}>
+              <span className="ak">{row.name}</span>
+              <span>{row.says}</span>
+              <small className="src">← {sourceOf(row, view.provenance) ?? 'not said'}</small>
             </div>
           ))}
-      </div>
-    </>
+      </section>
+    </div>
   )
 }
 
