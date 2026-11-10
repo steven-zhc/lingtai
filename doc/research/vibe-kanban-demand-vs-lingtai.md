@@ -67,6 +67,41 @@ VK 的需求因此分成两类：
 - **Lingtai 天然覆盖的**：本地运行、issue 驱动、自动循环自我验证、依赖链、worktree 和分支的自动清理。这些在 VK 里是"请加上"，在 Lingtai 里是架构本身。VK 用户反复要的"让 AI 自己测、自己改、直到通过"（[VK#1946](https://github.com/BloopAI/vibe-kanban/issues/1946)），正是 Lingtai 的 build → review → 修改轮次。
 - **Lingtai 有意不做或还没做的**：拖拽看板、和运行中的 agent 实时对话、检查点撤销。前两项和"无人值守 + 每步留证据"的方向有张力，不建议为了接 VK 用户去补。
 
+## 专题：Docker 镜像
+
+### VK 用户要的是什么
+
+**票数不高，但背后的场景是真的。** 把 VK 里和 Docker 有关的 issue 都搜出来，直接要镜像的就三条，加起来约 10👍：
+
+- [VK#2471](https://github.com/BloopAI/vibe-kanban/issues/2471)（8👍）：每次发版自动推一个镜像到 ghcr.io，"方便部署到远程服务器"。
+- [VK#3440](https://github.com/BloopAI/vibe-kanban/issues/3440)：现在要自己构建、推到私有仓库、再拉到 VPS；提问者只好用一个落后约 10 个版本的社区镜像。
+- [VK#1162](https://github.com/BloopAI/vibe-kanban/issues/1162)（已关闭）：加 Docker 支持。
+
+旁边还有一串自己用 Docker 部署时踩坑的 issue：docker compose 跑不起来（[VK#2976](https://github.com/BloopAI/vibe-kanban/issues/2976)、[VK#2895](https://github.com/BloopAI/vibe-kanban/issues/2895)）；容器里 git 推送要手改权限才能用（[VK#3410](https://github.com/BloopAI/vibe-kanban/issues/3410)，配置里有 `privileged: true`，还挂载了 docker.sock）；想要 Helm chart（[VK#3147](https://github.com/BloopAI/vibe-kanban/issues/3147)）。
+
+所以用户要的其实不是"一个镜像"，而是**在一台不关机的远程服务器上长期跑，从浏览器访问**。Docker 只是他们知道的最省事的做法。
+
+### Lingtai 做起来有多难
+
+**打包本身很容易。** Lingtai 已经为 `linux-x64` 和 `linux-arm64` 发布不依赖 Node 的单文件二进制，看板也一起打包了（[0113](../decisions/0113-distribution-is-a-versioned-binary.md)）。所以镜像就是"基础镜像 + 这个二进制 + git"，在 `.github/workflows/release.yml` 里加一步推到 ghcr.io 就行。
+
+**难的是容器里的几件事。** VK#3410 踩的正是这类坑：
+
+1. **agent 的登录状态。** agent 以你的身份运行，用的是本机已登录的 Claude Code 或 Codex。容器里要么挂载 `~/.claude`，要么在容器里登录一次，所以镜像还得装 Claude Code 或 Codex 的 CLI。
+2. **状态目录要持久化。** `~/.lingtai` 里有配置、recipe、SQLite 记录、镜像仓库和 worktree，必须挂成卷。否则容器一重建，记录就没了。
+3. **要在前台跑。** `lingtai service` 管的是宿主机上的系统服务，容器里应该直接在前台跑 `lingtai start`。另外，正在跑的 daemon 不会用上新代码，所以换镜像版本时要先停掉排空（`lingtai shutdown`，[0102](../decisions/0102-one-conductor-holds-the-lock.md)），而不是直接杀容器。
+4. **看板没有登录验证。** 看板默认监听 `0.0.0.0:17820`，而且没有认证（[0111](../decisions/0111-the-board-is-a-local-app.md) §2）：能访问它的人，就能以这台机器的身份批准、重新排队、回答问题。放到 VPS 上必须配反向代理和认证，或者走 VPN / SSH 隧道。这一条要在文档里写在最显眼的位置。
+5. **git 和 GitHub 的凭证**：GitHub App 的私钥，以及推送用的凭证，都要用 secret 传进容器。
+
+**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。
+
+### 判断
+
+单论票数，这个需求排不进前几。但它成本低，又和"VK 停更后想在自己服务器上继续跑的用户"直接对口，还能顺带在隔离上有实际收益，值得做。建议分两步：
+
+1. **先写一篇部署文档**：Docker 或 VPS 部署 Lingtai，把上面五个坑讲清楚，尤其是看板必须放在认证后面。
+2. **再在 release workflow 里加镜像发布**，每个 tag 推 `ghcr.io/…/lingtai:vX.Y.Z` 和 `:latest`。
+
 ## 建议
 
 如果目标是接住 VK 停更后流出的用户，按收益排序：
@@ -74,7 +109,7 @@ VK 的需求因此分成两类：
 1. **加更多 agent，优先做一个通用的 ACP 适配**（[VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)）。一个适配器就能覆盖 Kiro、goose、Kimi、OpenCode 等一大串需求，总票数最高。难点是 Lingtai 要求运行时能禁用工具，做不到的会报 `ToolsCannotBeDenied`（`packages/agent/src/runtimes.ts:123`），新运行时都得过这一关；[0106](../decisions/0106-a-role-keeps-its-powers-across-runtimes.md) 规定一个角色换了运行时也要保持同样的权限。
 2. **让本地数据库里的任务也能设依赖**。现在依赖链只在 GitHub 项目里有效（`db-tickets.ts:28`），而本地项目正是 VK 流出用户最需要的场景。
 3. **GitLab / 普通 git 远程**：先验证并写清楚"GitLab 当普通 remote + 本地任务"这条路能不能走通，再考虑完整支持 GitLab。
-4. **Docker 镜像**：成本低，VK 用户点名要过。
+4. **Docker 镜像**：成本低，VK 用户点名要过，还能顺带隔离 agent。先写部署文档，再发布镜像，见上面的专题。
 5. **从 VK 迁移的指南或导入工具**：[VK#3396](https://github.com/BloopAI/vibe-kanban/issues/3396) 的用户手上有导出的数据，在找地方去。
 
 不建议跟进的：拖拽看板、项目级聊天、检查点撤销。它们服务的是"人在前面操作"的用法，和 Lingtai"人只在被问到时出现"的定位相反。
