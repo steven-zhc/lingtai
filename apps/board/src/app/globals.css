@@ -912,6 +912,7 @@ details[open] > summary::before { content: "▾"; }
      wider. Everything else keeps the measure below. */
   max-width: 82rem;
   width: 100%;
+  margin-inline: auto;
 }
 
 /* **No section is capped. The measure belongs to the paragraph, not to the
