@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic.js'
-import { useActionState, useState } from 'react'
+import { useActionState, useRef, useState } from 'react'
 
 import { saveRecipe } from '@/app/actions.ts'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
@@ -25,6 +25,18 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
   const [draft, setDraft] = useState(initial)
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
+  const fallback = useRef<HTMLTextAreaElement>(null)
+  // What the editor inherits from the textarea it replaces: focus and the selection.
+  const handoff = () => {
+    const t = fallback.current
+    if (!t) return null
+    const back = t.selectionDirection === 'backward'
+    return {
+      focused: document.activeElement === t,
+      anchor: back ? t.selectionEnd : t.selectionStart,
+      head: back ? t.selectionStart : t.selectionEnd,
+    }
+  }
   return (
     <form action={run} className="redit">
       <input type="hidden" name="project" value={project} />
@@ -32,6 +44,7 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
       <input type="hidden" name="text" value={draft} />
       {editorReady ? null : (
         <textarea
+          ref={fallback}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           style={{ width: '100%', boxSizing: 'border-box' }}
@@ -40,7 +53,7 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
           className="mono"
         />
       )}
-      <YamlEditor initial={draft} onChange={setDraft} onReady={() => setEditorReady(true)} />
+      <YamlEditor initial={draft} handoff={handoff} onChange={setDraft} onReady={() => setEditorReady(true)} />
       <div className="row">
         <button type="submit" disabled={pending}>
           Validate and save

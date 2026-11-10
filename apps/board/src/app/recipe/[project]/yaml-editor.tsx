@@ -44,10 +44,13 @@ const theme = EditorView.theme({
  */
 export default function YamlEditor({
   initial,
+  handoff,
   onChange,
   onReady,
 }: {
   initial: string
+  /** Read once, before the fallback textarea goes: whether it had focus, and its selection. */
+  handoff: () => { focused: boolean; anchor: number; head: number } | null
   onChange: (text: string) => void
   onReady: () => void
 }) {
@@ -55,10 +58,13 @@ export default function YamlEditor({
   const latest = useRef({ onChange, onReady })
   latest.current = { onChange, onReady }
   useEffect(() => {
+    const carried = handoff()
+    const clamp = (n: number) => Math.min(Math.max(n, 0), initial.length)
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
         doc: initial,
+        selection: carried ? { anchor: clamp(carried.anchor), head: clamp(carried.head) } : undefined,
         extensions: [
           yaml(),
           lineNumbers(),
@@ -73,6 +79,10 @@ export default function YamlEditor({
         ],
       }),
     })
+    if (carried?.focused) {
+      view.focus()
+      view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) })
+    }
     latest.current.onReady()
     return () => view.destroy()
     // Seeded once: `initial` is the draft of the render the chunk arrived in.
