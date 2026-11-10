@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 
+import { STEPS } from '@lingtai/domain'
 /**
  * Writing a recipe down: a new one with its reasons in it, and an edit to one
  * that keeps the reasons somebody else wrote (#162).
@@ -121,6 +122,25 @@ export function emitRecipe(recipe: Recipe, said: Said = {}): string {
 export function commentWritten(text: string, said: Said): string {
   const doc = parseDocument(text)
   commentBlocks(doc, said, false)
+  return doc.toString(RENDER)
+}
+
+/**
+ * `text` with the keys under `steps:` in the order the loop reaches them
+ * (`STEPS`); a key that is not a step keeps its place after the known ones.
+ *
+ * **Only for text no person has written yet** — it re-renders, which
+ * `editRecipe` exists to avoid. `setRecipe` calls it when it is creating the file.
+ */
+export function orderSteps(text: string): string {
+  const doc = parseDocument(text)
+  const steps = doc.get('steps', true)
+  if (!isMap(steps) || steps.items.length === 0) return text
+  const rank = (pair: Pair): number => {
+    const i = (STEPS as readonly string[]).indexOf(String(isScalar(pair.key) ? pair.key.value : pair.key))
+    return i === -1 ? STEPS.length : i
+  }
+  steps.items.sort((a, b) => rank(a) - rank(b))
   return doc.toString(RENDER)
 }
 

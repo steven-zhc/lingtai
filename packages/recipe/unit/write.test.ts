@@ -268,3 +268,35 @@ describe('readRecipeKey', () => {
     expect(await readRecipeKey('app', ['source', 'kinds'], { home: HOME, files: mapFiles() })).toBeNull()
   })
 })
+
+describe('setRecipe orders a created recipe`s steps (#978)', () => {
+  const run = [{ name: 'x', run: 'true' }]
+  const SAID = { 'steps.prepared': 'first', 'steps.build': 'third' }
+  const keysUnderSteps = (text: string): string[] =>
+    [...text.matchAll(/^ {2}([a-z]+):/gm)].map((m) => m[1]!).filter((k) => k !== 'plantAt' && k !== 'agent')
+
+  it('writes the keys in the order the loop reaches them, each comment above its own key', async () => {
+    const files = mapFiles()
+    const changes = [
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['env', 'plantAt'], value: '.env.local' },
+      { path: ['source', 'kinds'], value: ['bug'] },
+      { path: ['steps', 'build'], value: run },
+      { path: ['steps', 'prepared'], value: run },
+    ]
+    const { text } = await setRecipe('app', changes, { home: HOME, files, said: SAID })
+    const steps = text.slice(text.indexOf('steps:'))
+    expect(steps.indexOf('prepared:')).toBeLessThan(steps.indexOf('build:'))
+    expect(text).toMatch(/# first\n {2}prepared:/)
+    expect(text).toMatch(/# third\n {2}build:/)
+    expect(keysUnderSteps(text)).toContain('prepared')
+  })
+
+  it('leaves the order of a file that already exists', async () => {
+    const existing =
+      'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
+    const files = mapFiles({ [PATH]: existing })
+    const { text } = await setRecipe('app', [{ path: ['steps', 'prepared'], value: run }], { home: HOME, files })
+    expect(text.indexOf('build:')).toBeLessThan(text.indexOf('prepared:'))
+  })
+})
