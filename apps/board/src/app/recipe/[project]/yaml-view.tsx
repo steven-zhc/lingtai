@@ -6,18 +6,8 @@ import { useEffect, useRef } from 'react'
 
 import { yamlExtensions } from './yaml-editor'
 
-const viewTheme = EditorView.theme({
-  '&': { maxHeight: 'calc(100vh - 80px)' },
-})
-
 /** The read-only view's extensions: the editor's shared ones, and nothing that edits. */
-export const viewExtensions = [
-  ...yamlExtensions,
-  EditorState.readOnly.of(true),
-  EditorView.editable.of(false),
-  EditorView.lineWrapping,
-  viewTheme,
-]
+export const viewExtensions = [...yamlExtensions, EditorState.readOnly.of(true), EditorView.editable.of(false)]
 
 /** The change that makes the document `text`, or null when it already is. */
 export function replaceDoc(state: EditorState, text: string): TransactionSpec | null {
