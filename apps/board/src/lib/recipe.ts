@@ -396,6 +396,10 @@ export type ProjectRecipe =
       configHash: string
       /** The base branch this recipe governs. */
       ref: string
+      /** The resolved recipe, for `recipeLines` to read. */
+      recipe: Recipe
+      /** The file's own text, as it was resolved (`ResolvedRecipe.source`). */
+      text: string
       rows: readonly Reading[]
       provenance: Readonly<Record<string, string>>
     }
@@ -471,6 +475,8 @@ export async function projectRecipe(
     at,
     configHash: resolved.configHash,
     ref: resolved.ref,
+    recipe: resolved.recipe,
+    text: resolved.source,
     rows: await readRecipeWithReadiness(resolved.recipe, codexLogin),
     provenance: resolved.provenance ?? {},
   }

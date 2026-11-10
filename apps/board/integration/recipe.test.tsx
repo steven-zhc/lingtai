@@ -123,8 +123,8 @@ describe("what a project's recipe says today", () => {
   it("reads in lingtai status's rows and its words", async () => {
     const html = render(await projectRecipe(state))
 
-    expect(html).toContain('<dt>picks up</dt>')
-    expect(html).toContain('bug &gt; tech-debt (in priority order)')
+    expect(html).toContain('<span class="s2-k">kinds</span>')
+    expect(html).toContain('bug, tech-debt')
     expect(html).toContain('blocked, agent:hold')
     // `describeAssignee`'s sentence, not a second wording of it.
     expect(html).toContain('any issue, whoever it is assigned to')
@@ -251,7 +251,7 @@ describe('a recipe that cannot be read', () => {
     expect(html).toContain(join(home, 'app', 'recipe.yml'))
     expect(html).toContain('is not valid')
     // Not a page of empty rows pretending the recipe said nothing.
-    expect(html).not.toContain('<dt>picks up</dt>')
+    expect(html).not.toContain('s2-line')
     expect(html).toContain('nothing will be taken from this project')
   })
 
