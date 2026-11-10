@@ -120,4 +120,29 @@ describe('recipeLines', () => {
     expect(read.limits.turns).toBe('150')
     expect(read.limits.wall).toBe('1h')
   })
+
+  it('says what the budget does at the step where it acts', async () => {
+    const read = await lines(BASE)
+    expect(block(read, 'implement').after).toEqual([
+      { label: 'told what refused', value: 'up to 2,000 characters of output · 5 review findings' },
+      { label: 'told what came before', value: 'the last 5 attempts' },
+    ])
+    expect(block(read, 'review').after).toEqual([])
+    const reviewed = await lines(
+      BASE.replace('steps:\n', 'steps:\n  review:\n    - { name: cold, agent: claude-code, prompt: look }\n'),
+    )
+    expect(block(reviewed, 'review').after).toEqual([
+      { label: 'reads at most', value: '400,000 characters of the diff' },
+    ])
+  })
+
+  it('uses singular forms for one', async () => {
+    const read = await lines(
+      MINIMAL.replace('runtime: {', 'runtime: { budget: { evidence: 1, findings: 1, attempts: 1, diff: 1 },'),
+    )
+    expect(block(read, 'implement').after.map((l) => l.value)).toEqual([
+      'up to 1 character of output · 1 review finding',
+      'the last attempt',
+    ])
+  })
 })

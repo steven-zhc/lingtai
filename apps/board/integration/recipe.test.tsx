@@ -201,6 +201,9 @@ describe("what a project's recipe says today", () => {
     expect(sourceIn(speaks, 'budget')).toContain('default')
     // Per field in the block below too, so which two is a thing a reader can see.
     expect(render(speaks)).toContain('runtime.budget.attempts')
+    // The row stays in the view, and the page stops drawing it.
+    expect(render(silent)).not.toContain('evidence 2000')
+    expect(render(silent)).toContain('told what refused')
   })
 
   /**
