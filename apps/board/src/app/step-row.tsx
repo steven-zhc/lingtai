@@ -10,12 +10,14 @@ export function StepRow({
   step,
   says,
   on,
+  empty = 'nothing declared',
   children,
 }: {
   n: number
   step: string
   says: string
   on: boolean
+  empty?: string
   children?: ReactNode
 }) {
   return (
@@ -26,7 +28,7 @@ export function StepRow({
           <b>{step}</b>
           <span>{says}</span>
         </div>
-        {on ? children : <div className="step-empty">nothing declared</div>}
+        {on ? children : <div className="step-empty">{empty}</div>}
       </div>
     </li>
   )

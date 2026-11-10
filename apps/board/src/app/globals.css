@@ -3292,10 +3292,11 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 
 /* Step 2 of adding a repository (#971): the lines on the left, the recipe it writes on the right. */
 .s2 { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.s2-line { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--rule); }
+.s2-line { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--rule); }
 .s2-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .s2-note { grid-column: 2 / 4; font-size: 11px; color: var(--muted); }
-.s2-change { font: inherit; font-size: 11px; background: transparent; border: 0; color: var(--accent-ink); cursor: pointer; }
+.s2-line:last-child { border-bottom: 0; }
+.s2-change { grid-column: 3; grid-row: 1; font: inherit; font-size: 11px; background: transparent; border: 0; color: var(--accent-ink); cursor: pointer; }
 .s2-checks { display: grid; gap: 2px; }
 .s2-h { margin: 14px 0 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .s2-limits { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }

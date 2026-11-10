@@ -40,11 +40,8 @@ it('the view shares the editor extensions, defines no highlight of its own, and 
   expect(state.update(spec!).state.doc.toString()).toBe('b: 2')
 })
 
-it('RecipeText imports neither the view nor the editor statically', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('../src/app/recipe/[project]/recipe-text.tsx', import.meta.url)),
-    'utf8',
-  )
+it.each(['recipe-text.tsx', 'file-view.tsx'])('%s imports neither the view nor the editor statically', (file) => {
+  const source = readFileSync(fileURLToPath(new URL(`../src/app/recipe/[project]/${file}`, import.meta.url)), 'utf8')
   expect(source).not.toMatch(/from ['"]@codemirror/)
   expect(source).not.toMatch(/from ['"]\.\/yaml-(view|editor)/)
 })
