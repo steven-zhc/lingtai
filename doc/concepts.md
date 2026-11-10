@@ -16,9 +16,20 @@ stops where the recipe says a person decides.
 
 [Open the diagram at full size](img/concepts.svg).
 
-The ten steps are `claim`, `admit`, `prepared`, `design`, `implement`, `build`,
-`review`, `proposed`, `merge` and `end`. [The attempt](the-attempt.html) says what
-each one does and what you can put there.
+The ten steps and their order never change. What runs at each step is yours to name in the recipe, and a step you say nothing about is still drawn, as empty.
+
+| Step        | What it is for                                         |
+| ----------- | ------------------------------------------------------ |
+| `claim`     | which tickets, and in what order                       |
+| `admit`     | the requirement, and the worktree it is built in       |
+| `prepared`  | getting the worktree ready before the agent starts     |
+| `design`    | a document, or none; either is an answer               |
+| `implement` | an agent, in that worktree                             |
+| `build`     | what must pass before review                           |
+| `review`    | reads it cold and hands in findings; it does not decide |
+| `proposed`  | the only step that decides what is next                |
+| `merge`     | the branch in, verify, push                            |
+| `end`       | runs on every outcome                                  |
 
 ## Two ways to go back
 
@@ -42,6 +53,23 @@ Some details that are easy to get wrong:
   nor refunds an automatic restart._
 - A requeued attempt is told about earlier ones and can reuse their commits,
   but it is new development. It goes through `build` and `review` again.
+
+## When a step stops
+
+A step can stop in three ways, and only the first costs you anything.
+
+- **Refused.** The step judged that this change is not right. The work goes back
+  to the agent and spends one round, carrying what refused it.
+- **Did not finish.** The step stopped without judging: a reviewer crashed, or a
+  turn limit ran out. It buys no round, and the attempt stops there.
+- **Asked.** The step stopped without judging, because the agent needs to know
+  something. It buys no round. `proposed` answers it, or you do.
+
+## What one attempt can cost
+
+One attempt is up to `rounds` + 1 agent runs, each bounded by `turns` and `wall`,
+and `restarts` is how many attempts one ticket may buy. `lingtai add` prints the
+whole sum before anything runs.
 
 ## What you can do at a wait
 
@@ -69,17 +97,17 @@ is waiting for and offers the moves that make sense:
 
 ## The words
 
-| Word                              | What it means, in Chapter Garden                                                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project, repository, base**     | Chapter Garden is the project. Its repository is where the code lives, and the base branch (`main`) is where finished work lands.    |
-| **Ticket and kind label**         | The story you opened in Step 2. Its kind label, such as `feature`, is what puts it in the queue.                                      |
-| **Recipe**                        | A local file saying what an attempt does for this project: which agent writes, what checks run, and who decides.                          |
-| **Attempt and agent run**         | An attempt is one try at a ticket. An agent run is one session of the agent inside it. A fix round is another run in the same attempt. A ticket can have several attempts.  |
-| **Worktree**                      | A disposable checkout of the base branch where the agent works. It is thrown away at the end; the branch it saved is what remains.    |
-| **Checks and review**             | The `npm test` the recipe runs at `build`, and a second agent that reads the change cold at `review`. Either can refuse.              |
-| **Wait**                          | The ticket stopped at a person, usually at `proposed`, with a plain sentence saying why.                                              |
-| **Landing**                       | The merge into the base branch, at `merge`, after nothing is holding it.                                                              |
-| **Event log and board**           | Lingtai records everything that happens as a log. The board is that log, drawn: the place to read what a ticket is doing.             |
+| Word                              | What it means, in Chapter Garden                                                                                                      | Where you meet it |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| **Project, repository, base**     | Chapter Garden is the project. Its repository is where the code lives, and the base branch (`main`) is where finished work lands.    | the board's project menu, and `repo.base` in the recipe |
+| **Ticket and kind label**         | The story you opened in Step 2. Its kind label, such as `feature`, is what puts it in the queue.                                      | a card on the board, and `source.kinds` in the recipe |
+| **Recipe**                        | A local file saying what an attempt does for this project: which agent writes, what checks run, and who decides.                          | `~/.lingtai/<project>/recipe.yml`, and the board's recipe page |
+| **Attempt and agent run**         | An attempt is one try at a ticket. An agent run is one session of the agent inside it. A fix round is another run in the same attempt. A ticket can have several attempts.  | the Attempts section of a ticket's page |
+| **Worktree**                      | A disposable checkout of the base branch where the agent works. It is thrown away at the end; the branch it saved is what remains.    | cut at `admit`, and named on the card |
+| **Checks and review**             | The `npm run check` and `npm run build` the recipe runs at `build`, and a second agent that reads the change cold at `review`. Either can refuse.              | `build` and `review` on the rail |
+| **Wait**                          | The ticket stopped at a person, usually at `proposed`, with a plain sentence saying why.                                              | the board's *Waiting on you* row |
+| **Landing**                       | The merge into the base branch, at `merge`, after nothing is holding it.                                                              | `merge` on the rail, and the board's Landed page |
+| **Event log and board**           | Lingtai records everything that happens as a log. The board is that log, drawn: the place to read what a ticket is doing.             | the board, and `lingtai status` |
 
 ## Going further
 
