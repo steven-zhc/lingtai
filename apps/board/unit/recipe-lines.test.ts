@@ -1,3 +1,4 @@
+import { STEPS } from '@lingtai/domain'
 import { resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
@@ -29,42 +30,53 @@ const lines = async (text: string) => {
   const { recipe } = await resolveRecipe(async () => text, 'main')
   return recipeLines(recipe, 'main')
 }
-const value = (read: Awaited<ReturnType<typeof lines>>, label: string) =>
-  read.lines.find((l) => l.label === label)?.value
+const block = (read: Awaited<ReturnType<typeof lines>>, step: string) => read.steps.find((b) => b.step === step)!
+const setting = (read: Awaited<ReturnType<typeof lines>>, step: string, label: string) =>
+  block(read, step).settings.find((l) => l.label === label)?.value
 
 describe('recipeLines', () => {
-  it('reads each line from the resolved recipe', async () => {
+  it('answers ten blocks in STEPS order, each with its sentence', async () => {
     const read = await lines(BASE)
-    expect(read.lines.map((l) => l.label)).toEqual([
-      'base',
-      'install',
-      'checks',
-      'agent',
-      'reviewer',
-      'tickets',
-      'kinds',
-      'held by',
-      'end',
-    ])
-    expect(value(read, 'base')).toBe('main')
-    expect(value(read, 'install')).toBe('pnpm install')
-    expect(value(read, 'checks')).toBe('pnpm test, pnpm lint')
-    expect(value(read, 'agent')).toBe('claude-code')
-    expect(value(read, 'kinds')).toBe('bug, tech-debt')
-    expect(value(read, 'held by')).toBe('blocked, agent:hold')
+    expect(read.steps.map((b) => b.step)).toEqual([...STEPS])
+    for (const b of read.steps) expect(b.says).not.toBe('')
     expect(read.limits.turns).toBe('unbounded')
     expect(read.ceiling).not.toBe('')
   })
 
-  it('reads the empty ones in words, an absent source.tickets as github, and No for the merge', async () => {
+  it('lists install under prepared and the checks under build', async () => {
+    const read = await lines(BASE)
+    expect(block(read, 'prepared').actions).toEqual([
+      { label: 'install', value: 'pnpm install', code: true, when: null },
+    ])
+    expect(block(read, 'build').actions.map((a) => [a.label, a.value])).toEqual([
+      ['build', 'pnpm test'],
+      ['lint', 'pnpm lint'],
+    ])
+  })
+
+  it('gives claim its five settings and admit its base', async () => {
+    const read = await lines(BASE)
+    expect(block(read, 'claim').settings.map((l) => l.label)).toEqual([
+      'tickets',
+      'kinds',
+      'held by',
+      'assignee',
+      'retries',
+    ])
+    expect(setting(read, 'claim', 'tickets')).toBe('github')
+    expect(setting(read, 'claim', 'kinds')).toBe('bug, tech-debt')
+    expect(block(read, 'claim').settings[1]?.chips).toEqual(['bug', 'tech-debt'])
+    expect(setting(read, 'claim', 'held by')).toBe('blocked, agent:hold')
+    expect(setting(read, 'admit', 'base')).toBe('main')
+  })
+
+  it('leaves the empty steps empty, and the proposed answer No', async () => {
     const read = await lines(MINIMAL)
-    expect(value(read, 'install')).toBe('nothing')
-    expect(value(read, 'checks')).toBe('nothing')
-    expect(value(read, 'reviewer')).toBe('none')
-    expect(value(read, 'tickets')).toBe('github')
-    expect(value(read, 'held by')).toBe('nothing')
-    expect(value(read, 'end')).toBe('nothing')
-    expect(read.approves).toBe('No')
+    for (const step of ['prepared', 'design', 'build', 'review', 'merge', 'end']) {
+      expect(block(read, step)).toMatchObject({ settings: [], actions: [] })
+    }
+    expect(setting(read, 'claim', 'held by')).toBe('nothing')
+    expect(setting(read, 'proposed', 'a person approves')).toBe('No')
     expect(read.limits.turns).toBe('10')
   })
 
@@ -72,18 +84,30 @@ describe('recipeLines', () => {
     const read = await lines(
       MINIMAL.replace('steps: {}', 'steps:\n  proposed:\n    - { name: person, human: Land this?  }'),
     )
-    expect(read.approves).toBe('Yes')
+    expect(setting(read, 'proposed', 'a person approves')).toBe('Yes')
+    expect(block(read, 'proposed').actions).toEqual([{ label: 'person', value: null, code: false, when: null }])
   })
 
-  it('reads kinds and held by through a queue at claim', async () => {
+  it('falls back to runtime.agent at implement, and lists a declared agent instead', async () => {
+    expect(setting(await lines(MINIMAL), 'implement', 'agent')).toBe('claude-code')
+    const read = await lines(
+      MINIMAL.replace('steps: {}', 'steps:\n  implement:\n    - { name: write, agent: codex, prompt: SECRET-PROMPT }'),
+    )
+    expect(block(read, 'implement').settings).toEqual([])
+    expect(block(read, 'implement').actions).toEqual([{ label: 'write', value: 'codex', code: false, when: null }])
+    expect(JSON.stringify(read)).not.toContain('SECRET-PROMPT')
+  })
+
+  it('reads kinds and held by through a queue, and does not list the queue as an action', async () => {
     const read = await lines(
       MINIMAL.replace(
         'steps: {}',
         'steps:\n  claim:\n    - { name: take, queue: { kinds: [feature], exclude: [wip], backoff: 1h, assignee: { take: both } } }',
       ),
     )
-    expect(value(read, 'kinds')).toBe('feature')
-    expect(value(read, 'held by')).toBe('wip')
+    expect(setting(read, 'claim', 'kinds')).toBe('feature')
+    expect(setting(read, 'claim', 'held by')).toBe('wip')
+    expect(block(read, 'claim').actions).toEqual([])
   })
 
   it('reads the recipe-wide ceiling, not the implementation action narrowed bounds', async () => {

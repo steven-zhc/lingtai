@@ -31,7 +31,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { ProjectState } from '@lingtai/domain'
+import { STEPS, type ProjectState } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -107,6 +107,12 @@ const sourceIn = (view: ProjectRecipe, name: string) =>
       )
     : null
 
+/** The ten step names, each once, in the order an attempt reaches them. */
+const stepsInOrder = (html: string): boolean => {
+  const at = STEPS.map((step) => html.indexOf(`<b>${step}</b>`))
+  return at.every((n, i) => n >= 0 && (i === 0 || n > at[i - 1]!))
+}
+
 let home: string
 let saved: string | undefined
 
@@ -129,16 +135,15 @@ describe("what a project's recipe says today", () => {
   it("reads in lingtai status's rows and its words", async () => {
     const html = render(await projectRecipe(state))
 
-    expect(html).toContain('<span class="s2-k">kinds</span>')
-    expect(html).toContain('bug, tech-debt')
+    expect(html).toContain('<span>kinds</span>')
+    expect(html).toContain('<span class="chip-kind">bug</span>')
+    expect(html).toContain('<span class="chip-kind">tech-debt</span>')
     expect(html).toContain('blocked, agent:hold')
     // `describeAssignee`'s sentence, not a second wording of it.
     expect(html).toContain('any issue, whoever it is assigned to')
     // All ten steps, including the nine nothing is configured at (0016 §4,
     // 0061 §5). The unit twin of this assertion is in `attempt-recipe.test.tsx`.
-    expect(html).toContain(
-      'claim 0 · admit 0 · prepared 0 · design 0 · implement 0 · build 0 · review 0 · proposed 1 · merge 0 · end 0',
-    )
+    expect(stepsInOrder(html)).toBe(true)
     // `attemptCeiling`'s sentence, which is what `lingtai status` prints.
     expect(html).toContain('150 turns')
   })
@@ -218,9 +223,7 @@ describe("what a project's recipe says today", () => {
     // The page says it where a reader is looking — beside the row, and in the
     // exhaustive block under it, which carries `env.required` too.
     const html = render(view)
-    expect(html).toContain(
-      'claim 0 · admit 0 · prepared 1 · design 0 · implement 0 · build 1 · review 0 · proposed 0 · merge 0 · end 0',
-    )
+    expect(stepsInOrder(html)).toBe(true)
     expect(html).toContain('← preset pnpm-workspace')
     expect(sourceIn(view, 'excludes')).not.toContain(file)
 
@@ -257,7 +260,7 @@ describe('a recipe that cannot be read', () => {
     expect(html).toContain(join(home, 'app', 'recipe.yml'))
     expect(html).toContain('is not valid')
     // Not a page of empty rows pretending the recipe said nothing.
-    expect(html).not.toContain('s2-line')
+    expect(html).not.toContain('step-row')
     expect(html).toContain('nothing will be taken from this project')
   })
 
