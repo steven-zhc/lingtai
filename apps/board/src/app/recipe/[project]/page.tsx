@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { Bar } from '@/app/bar.tsx'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
+import { recipeLines } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
 
@@ -40,6 +41,59 @@ import { FooterFetched } from '../../footer-fetched'
  */
 export const dynamic = 'force-dynamic'
 
+/** Rows `recipeLines` already says under the add page's labels. */
+const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent'])
+
+/**
+ * Step 2 of adding a repository, read-only (#979): one line per thing on the
+ * left, the file's own text on the right. The `.s2-line` markup is written
+ * here and not imported from `setup-form.tsx`, which reaches a server-action
+ * module this page must not follow.
+ */
+function RecipeColumns({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
+  const read = recipeLines(view.recipe, view.ref)
+  return (
+    <div className="s2">
+      <div className="s2-left">
+        {read.lines.map((line) => (
+          <div className="s2-line" key={line.label}>
+            <span className="s2-k">{line.label}</span>
+            <span className="s2-v mono">{line.value}</span>
+          </div>
+        ))}
+
+        <h3 className="s2-h">A person approves the merge?</h3>
+        <p>{read.approves}</p>
+
+        <h3 className="s2-h">What an attempt may spend</h3>
+        <div className="s2-limits">
+          <span>rounds {read.limits.rounds}</span>
+          <span>restarts {read.limits.restarts}</span>
+          <span>wall {read.limits.wall}</span>
+          <span>turns {read.limits.turns}</span>
+        </div>
+        <p className="note">{read.ceiling}</p>
+
+        <h3 className="s2-h">Also set</h3>
+        {view.rows
+          .filter((row) => !COVERED.has(row.name))
+          .map((row) => (
+            <div className="s2-line" key={row.name}>
+              <span className="s2-k">{row.name}</span>
+              <span className="s2-v">{row.says}</span>
+              <span className="s2-note">← {sourceOf(row, view.provenance) ?? 'not said'}</span>
+            </div>
+          ))}
+      </div>
+
+      <div className="s2-right">
+        <h3 className="s2-h">recipe.yml</h3>
+        <pre className="s2-yaml">{view.text}</pre>
+      </div>
+    </div>
+  )
+}
+
 /**
  * The page, as a reducer over its answer.
  *
@@ -73,19 +127,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
             </h2>
 
             {view.ok ? (
-              /* `lingtai status`'s rows, in `lingtai status`'s words, and one
-               column it does not have: where the value came from. Two files
-               decide one project and `provenance` is the only thing that says
-               which of them won. */
-              <dl className="rread sourced">
-                {view.rows.map((row) => (
-                  <div key={row.name}>
-                    <dt>{row.name}</dt>
-                    <dd>{row.says}</dd>
-                    <dd className="rfrom">← {sourceOf(row, view.provenance) ?? 'not said'}</dd>
-                  </div>
-                ))}
-              </dl>
+              <RecipeColumns view={view} />
             ) : (
               /* Named, never an empty page: a recipe that will not parse is the
                failure that cost this project a whole queue while every surface
@@ -114,19 +156,17 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
           </section>
 
           {view.ok ? (
-            <section>
-              <h2>
-                <span className="hlab">Where every value came from</span>
-                <span className="hfact">
-                  the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
-                  <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
-                  detection, or a default
-                </span>
-              </h2>
-              {/* `lingtai doctor`'s own block, which has printed since #180 and
-                which no surface with a screen has ever shown. Longer than the
-                reading and exhaustive where it is grouped — `repo.base` and
-                `env.required` are here and in no row above. */}
+            /* `lingtai doctor`'s own block, which has printed since #180 and
+               which no surface with a screen had shown. Folded: exhaustive
+               where it is grouped — `repo.base` and `env.required` are here
+               and in no line above — and longer than anyone reads. */
+            <details>
+              <summary>Where every value came from</summary>
+              <p className="hfact">
+                the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
+                <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
+                detection, or a default
+              </p>
               <ul className="prov">
                 {provenanceRows(view.provenance).map((row) => (
                   <li key={row.key}>
@@ -136,7 +176,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                   </li>
                 ))}
               </ul>
-            </section>
+            </details>
           ) : null}
 
           <p className="rnote">
