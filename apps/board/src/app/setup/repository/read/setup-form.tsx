@@ -6,9 +6,13 @@
  * the changes from them, so what is shown beside the form is the writer's own
  * output and never a template. Types only from `@lingtai/setup`.
  */
+import { STEPS, type Step } from '@lingtai/domain'
 import type { SetupForm as Answers } from '@lingtai/setup'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
+import { STEP_SAYS } from '../../../../lib/step-says.ts'
+import { FileView } from '../../../recipe/[project]/file-view.tsx'
+import { StepRow } from '../../../step-row.tsx'
 import { addRepository, previewAdd } from './actions.ts'
 import { KIND_DEFAULTS_NOTE, type CheckView, type Preview, type ReadView } from './read-model.ts'
 
@@ -150,103 +154,9 @@ export function SetupForm({ view }: { view: ReadView }) {
     )
   }
 
-  return (
-    <div className="s2">
-      <div className="s2-left">
-        <Line
-          label="base"
-          note={view.base.note}
-          known={view.base.known}
-          changing={open === 'base'}
-          onChange={toggle('base')}
-          shown={<span className="mono">{base === '' ? '—' : base}</span>}
-          editor={text(base, setBase)}
-          disabled={
-            view.target.kind === 'local' ? 'made from the branch checked out, and lands there last (0104 §15)' : null
-          }
-        />
-        <Line
-          label="stack"
-          note={view.stack.value.join(' · ') || view.stack.note}
-          known={view.stack.known}
-          changing={false}
-          onChange={() => setOpen('install')}
-          shown={<span>{view.stack.value.length === 0 ? 'nothing recognised' : 'detected'}</span>}
-          editor={null}
-        />
-        <Line
-          label="install"
-          note={view.install.note}
-          known={view.install.known}
-          changing={open === 'install'}
-          onChange={toggle('install')}
-          shown={<span className="mono">{install === '' ? 'none' : install}</span>}
-          editor={text(install, setInstall)}
-        />
-        <Line
-          label="checks"
-          note={view.checks.note}
-          known={view.checks.known}
-          changing={open === 'checks'}
-          onChange={toggle('checks')}
-          shown={
-            <span className="mono">
-              {checks
-                .filter((c) => c.ticked)
-                .map((c) => c.run)
-                .join(' · ') || 'none — nothing checks a diff before review'}
-            </span>
-          }
-          editor={
-            <span className="s2-checks">
-              {checks.map((c, i) => (
-                <label key={`${c.name}:${c.run}`} className="wiz-row">
-                  <input
-                    type="checkbox"
-                    checked={c.ticked}
-                    onChange={() => setChecks(checks.map((x, j) => (j === i ? { ...x, ticked: !x.ticked } : x)))}
-                  />
-                  <span className="mono">{c.run}</span>
-                  <span className="wiz-tag">{c.why}</span>
-                </label>
-              ))}
-              {checks.length === 0 ? <span className="note">no scripts found</span> : null}
-              <span className="wiz-row">
-                <input
-                  className="wiz-input mono"
-                  placeholder="a command to run as a check"
-                  value={typedCheck}
-                  onChange={(e) => setTypedCheck(e.target.value)}
-                />
-                <button type="button" className="s2-change" onClick={addCheck}>
-                  add
-                </button>
-              </span>
-            </span>
-          }
-        />
-        <Line
-          label="agent"
-          note={view.writer.note}
-          known={view.writer.known}
-          changing={open === 'agent'}
-          onChange={toggle('agent')}
-          shown={<span className="mono">{writer === '' ? 'none signed in' : writer}</span>}
-          editor={signedIn.length > 0 ? choose(writer, setWriter, signedIn) : text(writer, setWriter)}
-        />
-        <Line
-          label="reviewer"
-          note={view.reviewer.note}
-          known={view.reviewer.known}
-          changing={open === 'reviewer'}
-          onChange={toggle('reviewer')}
-          shown={<span className="mono">{reviewer}</span>}
-          editor={
-            view.runtimes.length > 0
-              ? choose(reviewer, setReviewer, [...signedIn, 'none'])
-              : text(reviewer, setReviewer)
-          }
-        />
+  const under: Record<Step, ReactNode> = {
+    claim: (
+      <>
         <Line
           label="tickets"
           note={view.tickets.note}
@@ -291,7 +201,147 @@ export function SetupForm({ view }: { view: ReadView }) {
           shown={<span className="mono">{heldBy === '' ? 'nothing' : heldBy}</span>}
           editor={text(heldBy, setHeldBy)}
         />
-        {view.target.kind === 'github' ? (
+      </>
+    ),
+    admit: (
+      <>
+        <Line
+          label="base"
+          note={view.base.note}
+          known={view.base.known}
+          changing={open === 'base'}
+          onChange={toggle('base')}
+          shown={<span className="mono">{base === '' ? '—' : base}</span>}
+          editor={text(base, setBase)}
+          disabled={
+            view.target.kind === 'local' ? 'made from the branch checked out, and lands there last (0104 §15)' : null
+          }
+        />
+      </>
+    ),
+    prepared: (
+      <>
+        <Line
+          label="stack"
+          note={view.stack.value.join(' · ') || view.stack.note}
+          known={view.stack.known}
+          changing={false}
+          onChange={() => setOpen('install')}
+          shown={<span>{view.stack.value.length === 0 ? 'nothing recognised' : 'detected'}</span>}
+          editor={null}
+        />
+        <Line
+          label="install"
+          note={view.install.note}
+          known={view.install.known}
+          changing={open === 'install'}
+          onChange={toggle('install')}
+          shown={<span className="mono">{install === '' ? 'none' : install}</span>}
+          editor={text(install, setInstall)}
+        />
+      </>
+    ),
+    design: null,
+    implement: (
+      <>
+        <Line
+          label="agent"
+          note={view.writer.note}
+          known={view.writer.known}
+          changing={open === 'agent'}
+          onChange={toggle('agent')}
+          shown={<span className="mono">{writer === '' ? 'none signed in' : writer}</span>}
+          editor={signedIn.length > 0 ? choose(writer, setWriter, signedIn) : text(writer, setWriter)}
+        />
+      </>
+    ),
+    build: (
+      <>
+        <Line
+          label="checks"
+          note={view.checks.note}
+          known={view.checks.known}
+          changing={open === 'checks'}
+          onChange={toggle('checks')}
+          shown={
+            <span className="mono">
+              {checks
+                .filter((c) => c.ticked)
+                .map((c) => c.run)
+                .join(' · ') || 'none — nothing checks a diff before review'}
+            </span>
+          }
+          editor={
+            <span className="s2-checks">
+              {checks.map((c, i) => (
+                <label key={`${c.name}:${c.run}`} className="wiz-row">
+                  <input
+                    type="checkbox"
+                    checked={c.ticked}
+                    onChange={() => setChecks(checks.map((x, j) => (j === i ? { ...x, ticked: !x.ticked } : x)))}
+                  />
+                  <span className="mono">{c.run}</span>
+                  <span className="wiz-tag">{c.why}</span>
+                </label>
+              ))}
+              {checks.length === 0 ? <span className="note">no scripts found</span> : null}
+              <span className="wiz-row">
+                <input
+                  className="wiz-input mono"
+                  placeholder="a command to run as a check"
+                  value={typedCheck}
+                  onChange={(e) => setTypedCheck(e.target.value)}
+                />
+                <button type="button" className="s2-change" onClick={addCheck}>
+                  add
+                </button>
+              </span>
+            </span>
+          }
+        />
+      </>
+    ),
+    review: (
+      <>
+        <Line
+          label="reviewer"
+          note={view.reviewer.note}
+          known={view.reviewer.known}
+          changing={open === 'reviewer'}
+          onChange={toggle('reviewer')}
+          shown={<span className="mono">{reviewer}</span>}
+          editor={
+            view.runtimes.length > 0
+              ? choose(reviewer, setReviewer, [...signedIn, 'none'])
+              : text(reviewer, setReviewer)
+          }
+        />
+      </>
+    ),
+    proposed: (
+      <>
+        <h3 className="s2-h">A person approves the merge?</h3>
+        <fieldset className="wiz-group">
+          <label className="wiz-row">
+            <input type="radio" checked={!approves} onChange={() => setApproves(false)} />
+            <span>
+              <b>No</b> — an attempt that passes its checks lands on <span className="mono">{base || 'the base'}</span>{' '}
+              by itself
+            </span>
+          </label>
+          <label className="wiz-row">
+            <input type="radio" checked={approves} onChange={() => setApproves(true)} />
+            <span>
+              <b>Yes</b> — every attempt is held for a person
+            </span>
+          </label>
+        </fieldset>
+      </>
+    ),
+    merge: null,
+    end:
+      view.target.kind === 'github' ? (
+        <>
           <Line
             label="end"
             note={view.end.note}
@@ -309,47 +359,57 @@ export function SetupForm({ view }: { view: ReadView }) {
               </label>
             }
           />
-        ) : null}
+        </>
+      ) : null,
+  }
 
-        <h3 className="s2-h">A person approves the merge?</h3>
-        <fieldset className="wiz-group">
-          <label className="wiz-row">
-            <input type="radio" checked={!approves} onChange={() => setApproves(false)} />
-            <span>
-              <b>No</b> — an attempt that passes its checks lands on <span className="mono">{base || 'the base'}</span>{' '}
-              by itself
-            </span>
-          </label>
-          <label className="wiz-row">
-            <input type="radio" checked={approves} onChange={() => setApproves(true)} />
-            <span>
-              <b>Yes</b> — every attempt is held for a person
-            </span>
-          </label>
-        </fieldset>
+  return (
+    <div className="s2">
+      <div className="s2-left">
+        <section className="rcard">
+          <h3 className="rcard-h">
+            <span>What one attempt does, in order</span>
+          </h3>
+          <ol className="step-list">
+            {STEPS.map((step, i) => (
+              <StepRow
+                key={step}
+                n={i + 1}
+                step={step}
+                says={STEP_SAYS[step]}
+                on={under[step] !== null}
+                empty="nothing to set here"
+              >
+                {under[step]}
+              </StepRow>
+            ))}
+          </ol>
+        </section>
 
-        <h3 className="s2-h">What an attempt may spend</h3>
-        <div className="s2-limits">
-          <label>rounds {num(limits.rounds, (rounds) => setLimits({ ...limits, rounds }))}</label>
-          <label>restarts {num(limits.restarts, (restarts) => setLimits({ ...limits, restarts }))}</label>
-          <label>
-            wall{' '}
-            <input
-              className="wiz-input s2-num"
-              value={limits.wall}
-              onChange={(e) => setLimits({ ...limits, wall: e.target.value })}
-            />
-          </label>
-          <label>
-            turns{' '}
-            {unbounded ? (
-              <span className="mono">unbounded</span>
-            ) : (
-              num(limits.turns === 'unbounded' ? 300 : limits.turns, (turns) => setLimits({ ...limits, turns }), 1)
-            )}
-          </label>
-        </div>
-        <p className="note">{preview !== null && 'ceiling' in preview ? preview.ceiling : '…'}</p>
+        <section className="rcard">
+          <h3 className="rcard-h">What an attempt may spend</h3>
+          <div className="s2-limits">
+            <label>rounds {num(limits.rounds, (rounds) => setLimits({ ...limits, rounds }))}</label>
+            <label>restarts {num(limits.restarts, (restarts) => setLimits({ ...limits, restarts }))}</label>
+            <label>
+              wall{' '}
+              <input
+                className="wiz-input s2-num"
+                value={limits.wall}
+                onChange={(e) => setLimits({ ...limits, wall: e.target.value })}
+              />
+            </label>
+            <label>
+              turns{' '}
+              {unbounded ? (
+                <span className="mono">unbounded</span>
+              ) : (
+                num(limits.turns === 'unbounded' ? 300 : limits.turns, (turns) => setLimits({ ...limits, turns }), 1)
+              )}
+            </label>
+          </div>
+          <p className="note">{preview !== null && 'ceiling' in preview ? preview.ceiling : '…'}</p>
+        </section>
 
         {say !== null ? <p className="note wiz-fail">{say}</p> : null}
         <p className="btnrow">
@@ -369,7 +429,13 @@ export function SetupForm({ view }: { view: ReadView }) {
         ) : 'refused' in preview ? (
           <p className="note wiz-fail">{preview.refused}</p>
         ) : (
-          <pre className="s2-yaml">{preview.text}</pre>
+          <div className="rfile">
+            <div className="rfile-bar">
+              <b>recipe.yml</b>
+              <small>preview — nothing is written until Add</small>
+            </div>
+            <FileView text={preview.text} />
+          </div>
         )}
       </div>
     </div>
