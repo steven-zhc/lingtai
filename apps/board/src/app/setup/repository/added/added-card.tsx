@@ -107,7 +107,7 @@ export function AddedCard(props: Added) {
         <p className="note wiz-fail">The recipe could not be read: {read.problem}</p>
       )}
       <div className="wiz-foot">
-        <a href={`/recipe/${p}/edit`}>Edit the recipe</a>
+        <a href={`/recipe/${p}?edit=1`}>Edit the recipe</a>
         {ticket !== null ? (
           <a className="wiz-primary" href={ticket}>
             Open the first ticket →
