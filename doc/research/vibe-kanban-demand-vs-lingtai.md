@@ -93,7 +93,7 @@ VK 的需求因此分成两类：
 4. **看板没有登录验证。** 看板默认监听 `0.0.0.0:17820`，而且没有认证（[0111](../decisions/0111-the-board-is-a-local-app.md) §2）：能访问它的人，就能以这台机器的身份批准、重新排队、回答问题。放到 VPS 上必须配反向代理和认证，或者走 VPN / SSH 隧道。这一条要在文档里写在最显眼的位置。
 5. **git 和 GitHub 的凭证**：GitHub App 的私钥，以及推送用的凭证，都要用 secret 传进容器。
 
-**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。
+**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。本机场景该用什么沙箱，另见 [agent-sandbox-options.md](agent-sandbox-options.md)。
 
 ### 判断
 
