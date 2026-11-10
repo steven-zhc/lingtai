@@ -19,23 +19,25 @@ export const yamlHighlight = HighlightStyle.define([
   { tag: tags.lineComment, color: 'var(--muted)', fontStyle: 'italic' },
 ])
 
-const theme = EditorView.theme({
-  '&': {
-    height: '32lh',
-    maxHeight: '70vh',
-    backgroundColor: 'var(--surface)',
-    color: 'var(--ink)',
-    border: '1px solid var(--rule-2)',
-  },
+/** What the file looks like, in the editor and in the read-only view alike. */
+const baseTheme = EditorView.theme({
+  '&': { backgroundColor: 'var(--surface)', color: 'var(--ink)' },
   '.cm-scroller': { fontFamily: 'var(--mono)', overflow: 'auto' },
-  '.cm-content': { caretColor: 'var(--ink)' },
-  '.cm-cursor': { borderLeftColor: 'var(--ink)' },
   '.cm-gutters': {
     backgroundColor: 'var(--surface-2)',
     color: 'var(--muted)',
     borderRight: '1px solid var(--rule-2)',
   },
-  '&.cm-focused': { outline: '1px solid var(--accent)' },
+})
+
+/** The extensions the editor and the read-only view share (#984): one highlighter, one look. */
+export const yamlExtensions = [yaml(), lineNumbers(), indentUnit.of('  '), syntaxHighlighting(yamlHighlight), baseTheme]
+
+const theme = EditorView.theme({
+  '&': { height: '32lh', maxHeight: '70vh' },
+  '.cm-content': { caretColor: 'var(--ink)' },
+  '.cm-cursor': { borderLeftColor: 'var(--ink)' },
+  '&.cm-focused': { outline: '1px solid var(--accent)', outlineOffset: '-1px' },
 })
 
 /**
@@ -70,12 +72,9 @@ export default function YamlEditor({
         doc: initial,
         selection: carried ? { anchor: clamp(carried.anchor), head: clamp(carried.head) } : undefined,
         extensions: [
-          yaml(),
-          lineNumbers(),
+          ...yamlExtensions,
           history(),
-          indentUnit.of('  '),
           keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-          syntaxHighlighting(yamlHighlight),
           theme,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) latest.current.onChange(u.state.doc.toString())

@@ -23,6 +23,32 @@ it('the highlight style puts a class on a key and on a comment', async () => {
   expect(classOf('limits')).toBeDefined()
 })
 
+it('the view shares the editor extensions, defines no highlight of its own, and replaces its document', async () => {
+  const { EditorState } = await import('@codemirror/state')
+  const { yamlExtensions } = await import('../src/app/recipe/[project]/yaml-editor.tsx')
+  const { viewExtensions, replaceDoc } = await import('../src/app/recipe/[project]/yaml-view.tsx')
+  for (const e of yamlExtensions) expect(viewExtensions).toContain(e)
+  const source = readFileSync(
+    fileURLToPath(new URL('../src/app/recipe/[project]/yaml-view.tsx', import.meta.url)),
+    'utf8',
+  )
+  expect(source).not.toMatch(/HighlightStyle/)
+  const state = EditorState.create({ doc: 'a: 1', extensions: [EditorState.readOnly.of(true)] })
+  expect(replaceDoc(state, 'a: 1')).toBeNull()
+  const spec = replaceDoc(state, 'b: 2')
+  expect(spec).not.toBeNull()
+  expect(state.update(spec!).state.doc.toString()).toBe('b: 2')
+})
+
+it('RecipeText imports neither the view nor the editor statically', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../src/app/recipe/[project]/recipe-text.tsx', import.meta.url)),
+    'utf8',
+  )
+  expect(source).not.toMatch(/from ['"]@codemirror/)
+  expect(source).not.toMatch(/from ['"]\.\/yaml-(view|editor)/)
+})
+
 it('RecipeForm renders the fallback textarea, posts text once from a hidden input, and imports no CodeMirror', async () => {
   const { RecipeForm } = await import('../src/app/recipe/[project]/recipe-form.tsx')
   const html = renderToStaticMarkup(<RecipeForm project="lingtai" initial={'a: 1\nb: 2'} />)

@@ -241,7 +241,9 @@ export function Recipe({ view, edit = false }: { view: ProjectRecipe; edit?: boo
             <div className={view.ok ? 's2' : undefined}>
               {view.ok ? <LeftColumn view={view} /> : null}
               <div className="s2-right">
-                {text === null ? null : <RecipeText project={view.project} text={text} open={edit || !view.ok} />}
+                {text === null ? null : (
+                  <RecipeText project={view.project} text={text} open={edit || !view.ok} path={underHome(view.at)} />
+                )}
               </div>
             </div>
           </section>
