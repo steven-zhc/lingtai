@@ -9,7 +9,7 @@ Vibe Kanban（[BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban)）�
 Lingtai 接不住的有四块：
 
 1. **agent 种类**：只有 Claude Code 和 Codex。VK 用户点名要的 Kiro、goose、ACP、Kimi、OpenCode 等合计 50+ 👍，是最大的缺口。
-2. **GitLab**：VK 票数第一的需求（26👍），Lingtai 的托管代码只走 GitHub App。
+2. **GitLab**：VK 票数第一的需求（26👍）。代码放 GitLab、任务放本地，按设计应该能跑，但没实测过；GitLab issues 不能作为任务来源。
 3. **Docker 镜像**：没有官方镜像。
 4. **交互式使用**：不能边跑边和 agent 对话；看板上的卡片也不能拖拽改状态。
 
@@ -41,14 +41,14 @@ Lingtai 接不住的有四块：
 | **AI 自己循环、自我验证**（"Ralph Wiggum mode"，[VK#1946](https://github.com/BloopAI/vibe-kanban/issues/1946)） | 20 | ✅ 核心能力 | 构建检查 → 独立审查（reviewer 不是写代码的那个 agent）→ 不通过就再给 agent 一轮修改（[0103](../decisions/0103-a-pass-is-ten-fixed-steps.md)、[0108](../decisions/0108-a-refusal-buys-a-round.md)）；daemon 不停地从队列取任务 |
 | **定时心跳 prompt**（[VK#3039](https://github.com/BloopAI/vibe-kanban/issues/3039)：瞬时错误后自动重试、自动整理看板） | 7 | 🟡 | daemon 本身就在循环，有退避后重试，`lingtai now` 可以跳过退避；但不能"每 X 分钟跑一段自定义 prompt" |
 | **自动导入 GitHub issues 作为任务、双向同步**（[VK#1677](https://github.com/BloopAI/vibe-kanban/issues/1677)、[VK#479](https://github.com/BloopAI/vibe-kanban/issues/479)） | 9+7 | ✅ | issues 本身就是队列（recipe 的 `source.kinds`，`packages/conductor/src/discover.ts`）；完成后的关 issue、改标签由 `end` 步骤的 `close:`、`labels:` 做 |
-| **任务依赖 / 任务链 / 子任务**（[VK#1700](https://github.com/BloopAI/vibe-kanban/issues/1700)、[VK#1922](https://github.com/BloopAI/vibe-kanban/issues/1922)、[VK#876](https://github.com/BloopAI/vibe-kanban/issues/876)） | 8+7+6 | ✅ GitHub 项目 · 🟡 本地项目 | 用 GitHub 原生的 *blocked by*，有未关闭的阻塞就跳过（`discover.ts:155`）；拆分计划会创建子 issue 并自动连成链（`packages/conductor/src/split-ticket.ts`）。**本地数据库里的任务没有依赖**：`dependencies` 恒为 `{ blockedBy: 0 }`（`db-tickets.ts:28`） |
+| **任务依赖 / 任务链 / 子任务**（[VK#1700](https://github.com/BloopAI/vibe-kanban/issues/1700)、[VK#1922](https://github.com/BloopAI/vibe-kanban/issues/1922)、[VK#876](https://github.com/BloopAI/vibe-kanban/issues/876)） | 8+7+6 | ✅ GitHub 项目 · 🟡 本地项目 | 用 GitHub 原生的 *blocked by*，有未关闭的阻塞就跳过（`discover.ts:155`）；拆分计划会创建子 issue 并自动连成链（`packages/conductor/src/split-ticket.ts`）。**本地数据库里的任务没有依赖**：`dependencies` 恒为 `{ blockedBy: 0 }`（`db-tickets.ts:28`），拆分子任务也只对 GitHub 项目有效。见下面的专题 |
 | **自动清理 worktree**（[VK#765](https://github.com/BloopAI/vibe-kanban/issues/765)） | 19 | ✅ | 每次运行一个独立 worktree，结束时自动删除（`packages/conductor/src/run-attempt.ts:931`） |
 | **合并后删除分支**（[VK#2680](https://github.com/BloopAI/vibe-kanban/issues/2680)） | 6 | ✅ | recipe 里在 `end:` 写 `refs: true, branch: true`（`packages/recipe/src/recipe.ts:841`），由 `packages/conductor/src/tell.ts:313` 执行 |
 | **把 `.env` 等被 git 忽略的文件带进 worktree**（`.worktreeinclude`，[VK#1947](https://github.com/BloopAI/vibe-kanban/issues/1947)） | 9 | 🟡 | 会往 worktree 写一个 env 文件，变量来自 recipe 声明的名字（`packages/repo/src/worktree.ts:215`）；不能拷贝任意被忽略的文件 |
 | **规格驱动开发**（spec → plan → tasks，[VK#1848](https://github.com/BloopAI/vibe-kanban/issues/1848)） | 8 | 🟡 | 十个步骤里有 `design`；agent 遇到没定的地方可以停下来问人（`asked`）；能拆分成子任务。没有访谈式生成规格的流程 |
 | **支持 Claude Code 的 `AskUserQuestion`**（[VK#1220](https://github.com/BloopAI/vibe-kanban/issues/1220)） | 7 | 🟡 | 只有 `admit`、`design`、`implement` 三个步骤里的 agent 能停下来问人（`asked`，[0103](../decisions/0103-a-pass-is-ten-fixed-steps.md) §4），问完任务停在 `waiting` 等人处理 |
 | **更多 agent**：Kiro、goose、任意 ACP 客户端、Kimi、Mistral、OpenCode、Antigravity…（[VK#1708](https://github.com/BloopAI/vibe-kanban/issues/1708)、[VK#2162](https://github.com/BloopAI/vibe-kanban/issues/2162)、[VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)、[VK#2463](https://github.com/BloopAI/vibe-kanban/issues/2463)、[VK#1812](https://github.com/BloopAI/vibe-kanban/issues/1812)、[VK#3492](https://github.com/BloopAI/vibe-kanban/issues/3492)） | 合计 50+ | ❌ **最大差距** | `RuntimeId = z.enum(['claude-code', 'codex'])`（`packages/domain/src/events.ts:140`） |
-| **自托管 GitLab**（[VK#1697](https://github.com/BloopAI/vibe-kanban/issues/1697)，**第一名**） | 26 | ❌ | 托管代码只走 GitHub App（[0114](../decisions/0114-a-github-app-not-a-token.md)）。合并和删分支走的是普通 git 命令（`packages/conductor/src/git-refs.ts`），所以理论上可以把 GitLab 当普通 git remote 用、任务放本地（推断，未验证）；GitLab MR 和 GitLab issues 都不支持 |
+| **自托管 GitLab**（[VK#1697](https://github.com/BloopAI/vibe-kanban/issues/1697)，**第一名**） | 26 | 🟡 | `repo.remote` 接受任何 git 地址，合并是本地 `git merge` 加 push，不走 PR；任务可以放本地数据库。所以"GitLab 当 remote + 本地任务"按设计应该能跑（推断，未验证）。GitLab issues 不能作为任务来源。见下面的专题 |
 | **保留经典看板、拖拽操作、跨项目全局视图**（[VK#2730](https://github.com/BloopAI/vibe-kanban/issues/2730)、[VK#2509](https://github.com/BloopAI/vibe-kanban/issues/2509)、[VK#2021](https://github.com/BloopAI/vibe-kanban/issues/2021)） | 15+15+6 | 🟡 | 有看板，列是 排队 / 运行中 / 等你处理 / 已落地；但列是从记录算出来的状态，不能拖拽改；能在项目间筛选 |
 | **任务完成发 webhook 通知**（[VK#1110](https://github.com/BloopAI/vibe-kanban/issues/1110)） | 5 | 🟡 | 有桌面通知和 Telegram（recipe 的 `subscribers:`，`recipe.ts:3212`）；通知方是一个外部命令，所以自己写个 curl 应该能接 webhook（推断，未试） |
 | **项目级聊天窗口**（[VK#3038](https://github.com/BloopAI/vibe-kanban/issues/3038)） | 5 | 🟡 | 有针对单个任务的讨论（`lingtai ask` / `discuss:`）和自动分诊（`triage:`）；没有项目级、能直接建任务的聊天 |
@@ -102,18 +102,132 @@ VK 的需求因此分成两类：
 1. **先写一篇部署文档**：Docker 或 VPS 部署 Lingtai，把上面五个坑讲清楚，尤其是看板必须放在认证后面。
 2. **再在 release workflow 里加镜像发布**，每个 tag 推 `ghcr.io/…/lingtai:vX.Y.Z` 和 `:latest`。
 
+## 专题：更多 agent
+
+### VK 用户要的是什么
+
+点名要的 agent 一长串：
+
+- Kiro（[VK#1708](https://github.com/BloopAI/vibe-kanban/issues/1708)，11👍）
+- goose（[VK#2162](https://github.com/BloopAI/vibe-kanban/issues/2162)，11👍）
+- 任意 ACP 客户端（[VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)，9👍）
+- 其他：Kimi、Mistral Vibe、OpenClaw、Antigravity、Muse、Copilot CLI、Warp…
+- 还有一个 RFC 要"通用的自定义执行器"（[VK#2775](https://github.com/BloopAI/vibe-kanban/issues/2775)）
+
+关键是 [VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)。它要的是 Zed 那种做法：在配置里写一条命令就能接上任何讲 ACP（Agent Client Protocol）的 agent。用户真正想要的是"我自己选 agent"，而不是"你再多加一个"。
+
+### Lingtai 现在的状况
+
+只有两个运行时：`RuntimeId` 只有 `claude-code` 和 `codex`（`packages/domain/src/events.ts:140`）。
+
+**加一个运行时的门槛比 VK 高**，因为 Lingtai 对运行时有几条硬要求，都写在 `packages/agent/src/runtime.ts:37` 的 `RuntimeCapabilities` 里：
+
+- **能报回轮数、花费和 token**（`RunOutcome` 里的 `turns`、`costUsd`、`usage`）。没有这些，花费记账和单日花费上限就失效了。
+- **能限制轮数和时长**（`enforces`）。#84 就吃过亏：只有时长生效，结果跑了 172 轮，而上限是 150。
+- **能输出结构化结果**（`acceptsOutputSchema`）。审查和判断要靠它返回固定格式的结论。
+- **能运行一个完全没有工具的 agent**（`tools: 'none'`）。做不到的会被拒绝（`ToolsCannotBeDenied`，`packages/agent/src/runtimes.ts:64`），不会退而求其次。
+- **`guarded` 这一档**要求 agent 自带的 hook 在连不上 Lingtai 时能让运行失败，而不是悄悄继续（`canFailClosed`）。
+
+[0106](../decisions/0106-a-role-keeps-its-powers-across-runtimes.md) 还规定，一个角色换了运行时也要保持同样的权限。
+
+### ACP 可能是一条近路
+
+在 ACP 里，Lingtai 自己就是客户端：
+
+- prompt 是 Lingtai 发的；
+- 每个工具调用都会通知客户端，需要授权的由客户端批准或拒绝；
+- 运行由客户端发起，也由客户端终止。
+
+所以"agent 的 hook 连不上 Lingtai 怎么办"这个问题在 ACP 下基本不存在。
+
+**卡点在于 ACP 是否规定了 token 和花费的上报**，这一点没有核实。如果没规定，就要按模型自己算价，或者把这类运行时标为"花费不可知"，并且不允许它跑在有花费上限的步骤上。
+
+### 判断
+
+先做一个 ACP 运行时，而不是逐个接 Kiro、goose。一个适配器能覆盖 50+ 👍 的需求。第一步是核实 ACP 的花费上报。
+
+## 专题：GitLab
+
+### VK 用户要的是什么
+
+[VK#1697](https://github.com/BloopAI/vibe-kanban/issues/1697)（26👍，VK 票数第一）的原话是：公司代码在自托管 GitLab 上，diff、建 PR 都用不了。另外还有人用 Bitbucket（[VK#3410](https://github.com/BloopAI/vibe-kanban/issues/3410)），有人想从 Azure DevOps 导入（[VK#1932](https://github.com/BloopAI/vibe-kanban/issues/1932)）。
+
+### Lingtai 这边比看上去乐观
+
+代码放在哪、任务放在哪，在设计上本来就是两件独立的事：
+
+- **代码这一侧**：`repo.remote` 接受任何 git 地址，包括 `git@gitlab.公司:组/项目.git`，不做 URL 校验（`packages/recipe/src/recipe.ts:3029-3062`，#394）。合并也不开 PR，而是本地 `git merge --no-edit` 之后 push（`packages/actions/src/merge-action.ts:47`）。所以"不支持 GitLab 的 MR"对 Lingtai 根本不构成障碍，它就不走 PR。
+- **任务这一侧**：`source.tickets: db` 把任务放在本地数据库（`recipe.ts:1080`，#381）。
+- **组合起来**：GitLab 当 remote + 本地任务，按设计应该能直接跑。但没实测过，push 用哪份 git 凭证也要确认。
+
+### 真正缺的是"GitLab issues 作为任务来源"
+
+任务来源的接口 `Tickets` 大约十个方法（`packages/conductor/src/ticket-store.ts:73`），现在有 GitHub 和 db 两个实现，GitLab 会是第三个。顺带一提，Jira、Linear 的需求（[VK#2159](https://github.com/BloopAI/vibe-kanban/issues/2159) 7👍、[VK#2424](https://github.com/BloopAI/vibe-kanban/issues/2424) 5👍）也是走这同一个接口。
+
+要注意：GitLab 的"阻塞"类 issue 关联，印象中是付费版功能，需要核实。
+
+### 判断
+
+第一步只做一件事：实测并写出"GitLab / Bitbucket 当 remote + 本地任务"的部署说明，几乎零代码。是否接 GitLab issues，等有人真正用起来再说。
+
+## 专题：本地任务的依赖链
+
+### VK 用户要的是什么
+
+任务依赖和任务链（[VK#1700](https://github.com/BloopAI/vibe-kanban/issues/1700)、[VK#1922](https://github.com/BloopAI/vibe-kanban/issues/1922)、[VK#876](https://github.com/BloopAI/vibe-kanban/issues/876)），合计 21👍。
+
+### Lingtai 的缺口
+
+- 本地任务的 `dependencies` 写死为 `{ blockedBy: 0 }`（`packages/conductor/src/db-tickets.ts:28`），永远不会被阻塞。
+- **拆分子任务也只对 GitHub 项目有效**：建子任务和连成链都直接调 GitHub 的 `addBlockedBy`（`packages/conductor/src/split-ticket.ts:41`、`:343`）。注释里写着 #599 有意没有把依赖关系放进 `Tickets` 接口。所以本地项目上，"拆分"这一功能整个用不了，不只是依赖。
+
+### 改起来不难
+
+判断"能不能跑"的那一侧已经现成：`discover.ts` 只看 `blockedBy` 这个数字。需要补的是：
+
+1. 加一张 `ticket_dependencies` 表；`listOpenIssues` 时数出还没关闭的阻塞任务有几个。
+2. 加一条命令，比如 `lingtai ticket block <n> --by <m>`。
+3. 让拆分在本地项目上也能写依赖。这一步要重新审视 #599 当初的决定：是把依赖关系加进 `Tickets` 接口，还是给本地任务单独做一个写入方。
+
+### 判断
+
+先做第 1、2 步，这是 VK 流出用户最直接需要的。第 3 步牵涉 #599 的决定，单独开票讨论。
+
+## 专题：从 VK 迁移过来
+
+### VK 用户要的是什么
+
+[VK#3396](https://github.com/BloopAI/vibe-kanban/issues/3396)（19👍）的用户已经把数据从 Bloop Cloud 导出来了，但抱怨导出不完整：缺少 issue 和 workspace 的关联，也缺项目设置（比如颜色），他只好自己写爬虫补数据。这类用户手里有数据，在找新去处。
+
+### Lingtai 这边的落脚点
+
+本地任务表，加上 `lingtai ticket new` 和 `createIssue`。一个导入器要做的是：
+
+- 读 VK 导出的数据；
+- 未完成的任务转成 Lingtai 任务，打上 kind 标签，默认加 `agent:hold`，免得一导入就被 agent 领走；
+- 已完成的跳过，或者只作为历史记录保留；
+- VK 里的依赖和子任务关系，要等上面的本地依赖做完才能带过来。
+
+卡点：没有见过 VK 导出文件的实际格式，需要拿一份真实导出来确认。
+
+### 判断
+
+放在本地依赖之后做。先写一页迁移说明，给出"VK 概念 → Lingtai 概念"的对照，比如 workspace 对应一次运行，task 对应一个任务，这比导入工具更早见效。
+
 ## 建议
 
-如果目标是接住 VK 停更后流出的用户，按收益排序：
+如果目标是接住 VK 停更后流出的用户：
 
-1. **加更多 agent，优先做一个通用的 ACP 适配**（[VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)）。一个适配器就能覆盖 Kiro、goose、Kimi、OpenCode 等一大串需求，总票数最高。难点是 Lingtai 要求运行时能禁用工具，做不到的会报 `ToolsCannotBeDenied`（`packages/agent/src/runtimes.ts:123`），新运行时都得过这一关；[0106](../decisions/0106-a-role-keeps-its-powers-across-runtimes.md) 规定一个角色换了运行时也要保持同样的权限。
-2. **让本地数据库里的任务也能设依赖**。现在依赖链只在 GitHub 项目里有效（`db-tickets.ts:28`），而本地项目正是 VK 流出用户最需要的场景。
-3. **GitLab / 普通 git 远程**：先验证并写清楚"GitLab 当普通 remote + 本地任务"这条路能不能走通，再考虑完整支持 GitLab。
-4. **Docker 镜像**：成本低，VK 用户点名要过，还能顺带隔离 agent。先写部署文档，再发布镜像，见上面的专题。
-5. **从 VK 迁移的指南或导入工具**：[VK#3396](https://github.com/BloopAI/vibe-kanban/issues/3396) 的用户手上有导出的数据，在找地方去。
+| | 成本 | 收益 | 先做什么 |
+|---|---|---|---|
+| ACP 运行时 | 中到高，卡在花费上报 | 最高，50+ 👍 | 先核实 ACP 是否上报 token 和花费 |
+| GitLab | 第一步几乎为零 | 最高的单项（26👍） | 实测 GitLab remote + 本地任务，写部署说明 |
+| 本地任务依赖 | 低 | 中，21👍，是本地项目的基础 | 加依赖表和 `ticket block` 命令 |
+| VK 迁移 | 低到中 | 中，用户在找去处 | 先写概念对照，等依赖做完再做导入 |
+| Docker | 低 | 中，还能隔离 agent | 先写部署文档，再发布镜像 |
 
 不建议跟进的：拖拽看板、项目级聊天、检查点撤销。它们服务的是"人在前面操作"的用法，和 Lingtai"人只在被问到时出现"的定位相反。
 
 ## 相关
 
-- [market-opportunities.md](market-opportunities.md)：2026-09-03 的市场研究。它的结论是"更多模型、更多入口、更漂亮的任务板"会让 Lingtai 变成功能更少的同类品。本文建议的第 1 项（更多 agent）和那条判断有张力：这里的理由是 VK 用户的明确需求，而不是追赶同类品，两者应一起权衡。
+- [market-opportunities.md](market-opportunities.md)：2026-09-03 的市场研究。它的结论是"更多模型、更多入口、更漂亮的任务板"会让 Lingtai 变成功能更少的同类品。本文建议的 ACP 运行时（更多 agent）和那条判断有张力：这里的理由是 VK 用户的明确需求，而不是追赶同类品，两者应一起权衡。
