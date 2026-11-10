@@ -1,12 +1,4 @@
-import {
-  excludeOf,
-  kindOfAction,
-  kindsOf,
-  limitsFor,
-  ticketSourceOf,
-  type Recipe,
-  type StepAction,
-} from '@lingtai/recipe'
+import { excludeOf, kindOfAction, kindsOf, ticketSourceOf, type Recipe, type StepAction } from '@lingtai/recipe'
 
 import { readRecipe } from './recipe.ts'
 
@@ -47,7 +39,7 @@ const orWord = (values: readonly string[], word: string): string => (values.leng
  */
 export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
   const steps = recipe.steps
-  const limits = limitsFor(recipe, 'implement')
+  const limits = recipe.runtime.limits
   return {
     lines: [
       { label: 'base', value: ref },

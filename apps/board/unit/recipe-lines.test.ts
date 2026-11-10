@@ -85,4 +85,15 @@ describe('recipeLines', () => {
     expect(value(read, 'kinds')).toBe('feature')
     expect(value(read, 'held by')).toBe('wip')
   })
+
+  it('reads the recipe-wide ceiling, not the implementation action narrowed bounds', async () => {
+    const read = await lines(
+      MINIMAL.replace('turns: 10, wall: 2m', 'turns: 150, wall: 1h').replace(
+        'steps: {}',
+        'steps:\n  implement:\n    - { name: build, agent: claude-code, prompt: go, limits: { turns: 4, wall: 1m } }',
+      ),
+    )
+    expect(read.limits.turns).toBe('150')
+    expect(read.limits.wall).toBe('1h')
+  })
 })
