@@ -57,8 +57,12 @@ export default function YamlEditor({
   const host = useRef<HTMLDivElement>(null)
   const latest = useRef({ onChange, onReady })
   latest.current = { onChange, onReady }
+  // Read once for the component's life: Strict Mode replays this effect after the first run
+  // has focused and destroyed an editor, and by then the textarea no longer has focus.
+  const taken = useRef<ReturnType<typeof handoff> | undefined>(undefined)
   useEffect(() => {
-    const carried = handoff()
+    if (taken.current === undefined) taken.current = handoff()
+    const carried = taken.current
     const clamp = (n: number) => Math.min(Math.max(n, 0), initial.length)
     const view = new EditorView({
       parent: host.current!,
