@@ -15,7 +15,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { isNode, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
 
-import { commentWritten, type RecipeChange, type Said, editRecipe } from './emit.ts'
+import { commentWritten, orderSteps, type RecipeChange, type Said, editRecipe } from './emit.ts'
 import { recipePath, resolveLocalRecipe, type SignedIn } from './local.ts'
 import { RECIPE_VERSION } from './recipe.ts'
 import { RecipeInvalidError, resolveSource } from './resolve.ts'
@@ -195,6 +195,7 @@ export async function setRecipe(
   const widened = widenStepsIfNeeded(existing, changes, path)
   let text = editedText(existing, widened, path)
 
+  if (existing === null) text = orderSteps(text)
   if (existing === null && options?.said !== undefined) {
     text = commentWritten(text, options.said)
   }
