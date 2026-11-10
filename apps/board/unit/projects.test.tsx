@@ -83,7 +83,8 @@ describe('where it lands', () => {
       for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
         expect(out).toContain(`href="${where}"`)
         expect(out).toContain('add a repository</a>')
-        expect(out.indexOf(`href="${where}"`)).toBeGreaterThan(out.lastIndexOf('?edit=1"'))
+        expect(out).not.toContain('?edit=1')
+        expect(out.indexOf(`href="${where}"`)).toBeGreaterThan(out.lastIndexOf('/recipe/'))
       }
     }
   })
