@@ -3316,6 +3316,7 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .s2-left { display: grid; gap: 14px; }
 .rcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 16px 8px; }
 .rcard-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 0; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.rcard-lede { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .step-list { list-style: none; margin: 0; padding: 4px 0 2px; }
 .step-row { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 14px; padding-bottom: 18px; }
 .step-row:last-child { padding-bottom: 6px; }
