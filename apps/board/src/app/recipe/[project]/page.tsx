@@ -38,7 +38,7 @@ import { RecipeText } from './recipe-text'
 export const dynamic = 'force-dynamic'
 
 /** Rows a step block already says, so *Also set* is what no step owns. */
-const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent', 'assignee', 'retries', 'the steps'])
+const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent', 'assignee', 'retries', 'the steps', 'budget'])
 
 const MUTED = new Set(['nothing', 'none'])
 
@@ -109,6 +109,7 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
           <span>What one attempt does, in order</span>
           <small className="src">← {source}</small>
         </h3>
+        <p className="rcard-lede">The ten steps and their order never change. What each one runs is yours.</p>
         <ol className="step-list">
           {read.steps.map((block, i) => (
             <StepRow
@@ -127,6 +128,12 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
               {block.actions.map((action, j) => (
                 <Action action={action} key={`${action.label}-${j}`} />
               ))}
+              {block.after.map((line) => (
+                <div className="step-set" key={line.label}>
+                  <span>{line.label}</span>
+                  <Value line={line} />
+                </div>
+              ))}
             </StepRow>
           ))}
         </ol>
@@ -139,11 +146,11 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
         <div className="stats">
           <div className="stat">
             <b>{read.limits.rounds}</b>
-            <span>rounds</span>
+            <span>more tries in the same worktree</span>
           </div>
           <div className="stat">
             <b>{read.limits.restarts}</b>
-            <span>restarts</span>
+            <span>new attempts from the base</span>
           </div>
           <div className="stat">
             <b>{read.limits.wall}</b>

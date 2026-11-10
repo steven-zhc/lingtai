@@ -36,6 +36,8 @@ export interface StepBlock {
   says: string
   settings: RecipeLine[]
   actions: StepActionLine[]
+  /** Lines drawn after the actions: what the step is given or may read, from `runtime.budget`. */
+  after: RecipeLine[]
 }
 
 export interface RecipeLines {
@@ -49,6 +51,9 @@ type Run = Extract<StepAction, { run: string }>
 type Agent = Extract<StepAction, { agent: string }>
 
 const orWord = (values: readonly string[], word: string): string => (values.length > 0 ? values.join(', ') : word)
+
+const count = (n: number, one: string, many: string): string =>
+  n === 1 ? `1 ${one}` : `${n.toLocaleString('en-US')} ${many}`
 
 const actionLine = (action: StepAction): StepActionLine => {
   const kind = kindOfAction(action)
@@ -83,6 +88,8 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
     const skip = step === 'claim' ? 'queue' : step === 'admit' ? 'worktree' : null
     const actions = declared.filter((a) => kindOfAction(a) !== skip).map(actionLine)
     let settings: RecipeLine[] = []
+    const after: RecipeLine[] = []
+    const { budget } = recipe.runtime
     if (step === 'claim') {
       const kinds = kindsOf(recipe)
       settings = [
@@ -98,12 +105,27 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
       if (!declared.some((a) => kindOfAction(a) === 'agent')) {
         settings = [{ label: 'agent', value: recipe.runtime.agent }]
       }
+      after.push(
+        {
+          label: 'told what refused',
+          value: `up to ${count(budget.evidence, 'character', 'characters')} of output · ${count(budget.findings, 'review finding', 'review findings')}`,
+        },
+        {
+          label: 'told what came before',
+          value:
+            budget.attempts === 1 ? 'the last attempt' : `the last ${budget.attempts.toLocaleString('en-US')} attempts`,
+        },
+      )
+    } else if (step === 'review') {
+      if (declared.some((a) => kindOfAction(a) === 'agent')) {
+        after.push({ label: 'reads at most', value: `${count(budget.diff, 'character', 'characters')} of the diff` })
+      }
     } else if (step === 'proposed') {
       settings = [
         { label: 'a person approves', value: declared.some((a) => kindOfAction(a) === 'human') ? 'Yes' : 'No' },
       ]
     }
-    return { step, says: STEP_SAYS[step], settings, actions }
+    return { step, says: STEP_SAYS[step], settings, actions, after }
   })
   return {
     steps,
