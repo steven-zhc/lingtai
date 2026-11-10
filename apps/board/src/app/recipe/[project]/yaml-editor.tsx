@@ -21,7 +21,7 @@ export const yamlHighlight = HighlightStyle.define([
 
 /** What the file looks like, in the editor and in the read-only view alike. */
 const baseTheme = EditorView.theme({
-  '&': { backgroundColor: 'var(--surface)', color: 'var(--ink)' },
+  '&': { backgroundColor: 'var(--surface)', color: 'var(--ink)', maxHeight: 'calc(100vh - 80px)' },
   '.cm-scroller': { fontFamily: 'var(--mono)', overflow: 'auto' },
   '.cm-gutters': {
     backgroundColor: 'var(--surface-2)',
@@ -31,10 +31,16 @@ const baseTheme = EditorView.theme({
 })
 
 /** The extensions the editor and the read-only view share (#984): one highlighter, one look. */
-export const yamlExtensions = [yaml(), lineNumbers(), indentUnit.of('  '), syntaxHighlighting(yamlHighlight), baseTheme]
+export const yamlExtensions = [
+  yaml(),
+  lineNumbers(),
+  indentUnit.of('  '),
+  syntaxHighlighting(yamlHighlight),
+  EditorView.lineWrapping,
+  baseTheme,
+]
 
 const theme = EditorView.theme({
-  '&': { height: '32lh', maxHeight: '70vh' },
   '.cm-content': { caretColor: 'var(--ink)' },
   '.cm-cursor': { borderLeftColor: 'var(--ink)' },
   '&.cm-focused': { outline: '1px solid var(--accent)', outlineOffset: '-1px' },

@@ -6,6 +6,8 @@ import { useActionState, useRef, useState } from 'react'
 import { saveRecipe } from '@/app/actions.ts'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 
+import { FileBar } from './file-bar'
+
 // The chunk loads only when the form does, and never on the server: CodeMirror touches `document`.
 // A failed load leaves the textarea, which is why it is caught here rather than boundaried.
 const YamlEditor = dynamic(() => import('./yaml-editor').catch(() => ({ default: () => null })), {
@@ -13,7 +15,17 @@ const YamlEditor = dynamic(() => import('./yaml-editor').catch(() => ({ default:
 })
 
 /** The recipe as text, and Validate and save. Imports nothing server-side but the action. */
-export function RecipeForm({ project, initial }: { project: string; initial: string }) {
+export function RecipeForm({
+  project,
+  initial,
+  path,
+  onClose,
+}: {
+  project: string
+  initial: string
+  path: string
+  onClose: () => void
+}) {
   const [state, run, pending] = useActionState(saveRecipe, {
     ok: false,
     loaded: initial,
@@ -42,6 +54,25 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
       <input type="hidden" name="project" value={project} />
       <input type="hidden" name="loaded" value={JSON.stringify(state.loaded)} />
       <input type="hidden" name="text" value={draft} />
+      <FileBar path={path}>
+        <button type="submit" className="rfile-edit" disabled={pending}>
+          Validate and save
+        </button>
+        <button type="button" className="rfile-edit" onClick={onClose}>
+          Close
+        </button>
+      </FileBar>
+      {state.message === '' ? null : (
+        <div className="rfile-said">
+          {state.ok ? (
+            <span className="ok">
+              {state.message} — applies from the next pass; a pass in flight keeps the recipe it read
+            </span>
+          ) : (
+            <pre className="fail">{state.message}</pre>
+          )}
+        </div>
+      )}
       {editorReady ? null : (
         <textarea
           ref={fallback}
@@ -54,18 +85,6 @@ export function RecipeForm({ project, initial }: { project: string; initial: str
         />
       )}
       <YamlEditor initial={draft} handoff={handoff} onChange={setDraft} onReady={() => setEditorReady(true)} />
-      <div className="row">
-        <button type="submit" disabled={pending}>
-          Validate and save
-        </button>
-        {state.message === '' ? null : state.ok ? (
-          <span className="ok">
-            {state.message} — applies from the next pass; a pass in flight keeps the recipe it read
-          </span>
-        ) : (
-          <pre className="fail">{state.message}</pre>
-        )}
-      </div>
     </form>
   )
 }

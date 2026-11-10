@@ -48,11 +48,24 @@ it.each(['recipe-text.tsx', 'file-view.tsx'])('%s imports neither the view nor t
 
 it('RecipeForm renders the fallback textarea, posts text once from a hidden input, and imports no CodeMirror', async () => {
   const { RecipeForm } = await import('../src/app/recipe/[project]/recipe-form.tsx')
-  const html = renderToStaticMarkup(<RecipeForm project="lingtai" initial={'a: 1\nb: 2'} />)
+  const html = renderToStaticMarkup(
+    <RecipeForm project="lingtai" initial={'a: 1\nb: 2'} path="/x/recipe.yml" onClose={() => {}} />,
+  )
   expect(html).toMatch(/<textarea[^>]*>a: 1\nb: 2<\/textarea>/)
   expect(html.match(/name="text"/g)).toHaveLength(1)
+  expect(html.indexOf('Validate and save')).toBeGreaterThan(-1)
+  expect(html.indexOf('Validate and save')).toBeLessThan(html.indexOf('Close</button>'))
+  expect(html.indexOf('Close</button>')).toBeLessThan(html.indexOf('<textarea'))
+  expect(html).toMatch(/<button type="button" class="rfile-edit">Close<\/button>/)
+  expect(html).not.toContain('rfile-said')
   expect(html).toMatch(/<input type="hidden" name="text"/)
   const source = readFileSync(fileURLToPath(new URL(formPath, import.meta.url)), 'utf8')
   expect(source).not.toMatch(/from ['"]@codemirror/)
   expect(source).not.toMatch(/from ['"]\.\/yaml-editor/)
+})
+
+it('yamlExtensions wraps lines', async () => {
+  const { yamlExtensions } = await import('../src/app/recipe/[project]/yaml-editor.tsx')
+  const { EditorView } = await import('@codemirror/view')
+  expect(yamlExtensions).toContain(EditorView.lineWrapping)
 })

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { FileBar } from './file-bar'
 import { FileView } from './file-view'
 import { RecipeForm } from './recipe-form'
 
@@ -26,14 +27,18 @@ export function RecipeText({
   const [editing, setEditing] = useState(open)
   return (
     <div className="rfile">
-      <div className="rfile-bar">
-        <b>recipe.yml</b>
-        <small>{path}</small>
-        <button type="button" className="rfile-edit" onClick={() => setEditing(!editing)}>
-          {editing ? 'Close' : 'Edit'}
-        </button>
-      </div>
-      {editing ? <RecipeForm project={project} initial={text} /> : <FileView text={text} />}
+      {editing ? (
+        <RecipeForm project={project} initial={text} path={path} onClose={() => setEditing(false)} />
+      ) : (
+        <>
+          <FileBar path={path}>
+            <button type="button" className="rfile-edit" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          </FileBar>
+          <FileView text={text} />
+        </>
+      )}
     </div>
   )
 }
