@@ -20,7 +20,7 @@ describe('step 3', () => {
     expect(out).toContain('registered')
     expect(out).toContain('>bug<')
     expect(out).toContain('agent:hold')
-    expect(out).toContain('href="/recipe/chapter-garden/edit"')
+    expect(out).toContain('href="/recipe/chapter-garden?edit=1"')
     expect(out).toContain('href="https://github.com/me/chapter-garden/issues/new"')
   })
 
@@ -45,7 +45,7 @@ describe('step 3', () => {
     const out = html({ ...(ok() as Extract<Added, { state: 'registered' }>), read: { ok: false, problem: 'bad yaml' } })
     expect(out).toContain('bad yaml')
     expect(out).toContain('registered')
-    expect(out).toContain('/edit"')
+    expect(out).toContain('?edit=1"')
     expect(out).not.toContain('issues/new')
   })
 

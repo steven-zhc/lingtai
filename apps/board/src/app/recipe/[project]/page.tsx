@@ -6,6 +6,7 @@ import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe 
 import { recipeLines } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
+import { RecipeText } from './recipe-text'
 
 /**
  * What one project's recipe says today, and which file each value came from
@@ -23,21 +24,15 @@ import { FooterFetched } from '../../footer-fetched'
  * words: nothing in the repository says Lingtai is in use, and a file under a
  * home directory is not discoverable by cloning. A page is.
  *
- * **This view writes nothing.** 0046 §4 retired `tamper` on the argument that
- * an agent cannot reach a recipe under `~/.lingtai/`; a writer is a process that
- * can, so the writer is kept to one place: the `edit` segment beside this page,
- * which saves through `app/actions.ts`'s `saveRecipe` and writes only a recipe
- * that resolves ([0125](../../../../../doc/decisions/0125-setup-is-one-module-two-inputs.md)
- * §6, #973). Editing is not here.
- *
- * So there is nothing here to press and no way to post. `recipe.test.tsx` reads
- * this segment's whole tree as text — and the modules the page imports — and
- * fails on an exported handler, a server directive or a write, as well as on
- * the rendered markup. The tree and not this file: a `page.tsx` serves no
- * method anyway, and what would actually make this route a writer is a
- * `route.ts` in a segment under it, or a server-action module imported from
- * here. *Nothing writes* is a claim about the route, not about what today's
- * markup happens to contain.
+ * **Viewing and editing are one page (#980).** The right column holds the
+ * file's text and an *Edit* on it that turns the text into the editor in place
+ * (`?edit=1` opens it); a recipe that will not parse opens it too, so it can be
+ * repaired here. The writer is still one place: `app/actions.ts`'s `saveRecipe`
+ * ([0125](../../../../../doc/decisions/0125-setup-is-one-module-two-inputs.md)
+ * §6, #973), reached from `recipe-form.tsx` alone. `recipe.test.tsx` reads this
+ * segment's whole tree as text and fails on an exported handler, a `route.ts`,
+ * a write, or a second server module imported from here — the tree and not
+ * this file, because a `page.tsx` serves no method anyway.
  */
 export const dynamic = 'force-dynamic'
 
@@ -48,12 +43,12 @@ const COVERED = new Set(['picks up', 'excludes', 'an attempt', 'agent'])
  * Step 2 of adding a repository, read-only (#979): one line per thing on the
  * left, the file's own text on the right. The `.s2-line` markup is written
  * here and not imported from `setup-form.tsx`, which reaches a server-action
- * module this page must not follow.
+ * module this page must not follow beyond the editor's own.
  */
-function RecipeColumns({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
+function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
   const read = recipeLines(view.recipe, view.ref)
   return (
-    <div className="s2">
+    <>
       <div className="s2-left">
         {read.lines.map((line) => (
           <div className="s2-line" key={line.label}>
@@ -85,12 +80,7 @@ function RecipeColumns({ view }: { view: Extract<ProjectRecipe, { ok: true }> })
             </div>
           ))}
       </div>
-
-      <div className="s2-right">
-        <h3 className="s2-h">recipe.yml</h3>
-        <pre className="s2-yaml">{view.text}</pre>
-      </div>
-    </div>
+    </>
   )
 }
 
@@ -101,7 +91,8 @@ function RecipeColumns({ view }: { view: Extract<ProjectRecipe, { ok: true }> })
  * recipe that will not parse names the file and the fault, nothing here writes
  * — are assertable without a database or a `~/.lingtai/`.
  */
-export function Recipe({ view }: { view: ProjectRecipe }) {
+export function Recipe({ view, edit = false }: { view: ProjectRecipe; edit?: boolean }) {
+  const text = view.text
   return (
     <>
       <main className="detail">
@@ -126,9 +117,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
               </span>
             </h2>
 
-            {view.ok ? (
-              <RecipeColumns view={view} />
-            ) : (
+            {view.ok ? null : (
               /* Named, never an empty page: a recipe that will not parse is the
                failure that cost this project a whole queue while every surface
                rendered as though there were simply nothing to do (#76).
@@ -153,6 +142,17 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                 )}
               </p>
             )}
+
+            {/* One structure for both states, so a repair that makes the recipe
+                resolve re-renders the editor in place rather than remounting it
+                and dropping the message the save just earned. Without `.s2` the
+                broken case sits below the refusal. */}
+            <div className={view.ok ? 's2' : undefined}>
+              {view.ok ? <LeftColumn view={view} /> : null}
+              <div className="s2-right">
+                {text === null ? null : <RecipeText project={view.project} text={text} open={edit || !view.ok} />}
+              </div>
+            </div>
           </section>
 
           {view.ok ? (
@@ -178,13 +178,6 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
               </ul>
             </details>
           ) : null}
-
-          <p className="rnote">
-            Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an omission: 0046 §4
-            retired <span className="mono">tamper</span> because the recipe sits outside every worktree and nothing an
-            agent can reach may write it. Edit <span className="mono">{underHome(view.at)}</span> and this page says so
-            on the next render — the file is read on every resolve, so a daemon holds nothing stale.
-          </p>
         </div>
       </main>
       <FooterFetched />
@@ -192,13 +185,20 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
   )
 }
 
-export default async function RecipePage({ params }: { params: Promise<{ project: string }> }) {
+export default async function RecipePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ project: string }>
+  searchParams: Promise<{ edit?: string | string[] }>
+}) {
   const { project } = await params
+  const { edit } = await searchParams
   const name = decodeURIComponent(project)
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
   // here has heard of.
   const state = (await loadProjects()).find((p) => p.project === name)
   if (state === undefined) notFound()
-  return <Recipe view={await projectRecipe(state)} />
+  return <Recipe view={await projectRecipe(state)} edit={edit === '1'} />
 }

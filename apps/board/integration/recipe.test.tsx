@@ -14,11 +14,13 @@
  * - **a recipe that will not parse says so, naming the file** — the failure
  *   that cost this project a whole queue while every surface rendered as though
  *   there were simply nothing to do (#76);
- * - **nothing writes.** 0046 §4 retired `tamper` on the grounds that the recipe
- *   is outside every worktree and nothing an agent can reach may write it. A
- *   board that could write it is a process that can, reachable over HTTP from
- *   the machine an agent runs on. That is asserted against the file rather than
- *   against today's markup, because it is a claim about the route.
+ * - **the writer stays one place.** 0046 §4 retired `tamper` on the grounds that
+ *   the recipe is outside every worktree and nothing an agent can reach may
+ *   write it. Since #980 the page carries the editor, so the claim is that the
+ *   segment has no handler and no write of its own, that `app/actions` is
+ *   imported by the form alone, and that no field is in the markup until the
+ *   editor is open. That is asserted against the files rather than against
+ *   today's markup, because it is a claim about the route.
  *
  * The recipe is resolved for real, from a `LINGTAI_HOME` of two files, because
  * provenance is the whole subject and a fake one would assert the fake.
@@ -31,7 +33,11 @@ import { fileURLToPath } from 'node:url'
 
 import type { ProjectState } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// The form imports the board's writer, which pulls in the conductor; the scans
+// below read text, so a stand-in is enough to render.
+vi.mock('../src/app/actions.ts', () => ({ saveRecipe: vi.fn() }))
 
 import { Recipe } from '../src/app/recipe/[project]/page.tsx'
 import { projectRecipe, sourceOf, type ProjectRecipe } from '../src/lib/recipe.ts'
@@ -92,7 +98,7 @@ board:
 
 const PAGE = new URL('../src/app/recipe/[project]/page.tsx', import.meta.url)
 const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
-const render = (view: ProjectRecipe) => renderToStaticMarkup(<Recipe view={view} />)
+const render = (view: ProjectRecipe, edit = false) => renderToStaticMarkup(<Recipe view={view} edit={edit} />)
 const sourceIn = (view: ProjectRecipe, name: string) =>
   view.ok
     ? sourceOf(
@@ -283,11 +289,16 @@ describe('a recipe that cannot be read', () => {
     expect(view.at).toBe(join(home, 'config.yml'))
     expect(html).toContain('an attempt is not configured in the machine file')
     expect(html).not.toContain('could not be read')
-    // The note is rendered in every state, and it is the line that says what to
-    // edit — so it is the line that must not name the wrong file.
-    const note = html.slice(html.indexOf('Read-only.'))
-    expect(note).toContain(join(home, 'config.yml'))
-    expect(note).not.toContain(join(home, 'app', 'recipe.yml'))
+    // The refusal is the line that says what is wrong — so it must not name
+    // the wrong file.
+    const refusal = refusalOf(html)
+    expect(refusal).toContain(join(home, 'config.yml'))
+    // The page's own framing sends the reader to the machine file; the resolver's
+    // message that follows may name the recipe, being the file the block belongs in.
+    expect(refusal).toContain('rather than in the recipe')
+    expect(refusal).not.toContain('could not be read')
+    // The fault is in `config.yml`, which is not edited here.
+    expect(html).not.toContain('<textarea')
   })
 
   /**
@@ -312,8 +323,7 @@ describe('a recipe that cannot be read', () => {
     expect(html).not.toContain(join(home, 'config.yml'))
     // The line that says what to edit is the line that must not send a reader
     // to the file with nothing wrong in it.
-    const note = html.slice(html.indexOf('Read-only.'))
-    expect(note).toContain(join(home, 'app', 'recipe.yml'))
+    expect(refusalOf(html)).toContain(join(home, 'app', 'recipe.yml'))
   })
 
   /**
@@ -333,8 +343,8 @@ describe('a recipe that cannot be read', () => {
 })
 
 /**
- * **Nothing writes**, and the claim is about the route rather than about the
- * markup a particular view happens to produce (0046 §4).
+ * **The writer is one place**, and the claim is about the route rather than
+ * about the markup a particular view happens to produce (0046 §4).
  *
  * **Which means the whole segment, and not one `page.tsx`.** A `page.tsx`
  * never serves a method and a `route.ts` cannot sit in the same segment as
@@ -343,21 +353,29 @@ describe('a recipe that cannot be read', () => {
  * `recipe/[project]/apply/route.ts` — a segment *under* this one — or a
  * `"use server"` module the page imports; so the scan is the segment's whole
  * tree for a handler, a filesystem write and a server directive, and the
- * page's imports followed through for the directive, since a server action is
- * a writer reachable over HTTP wherever the file holding it sits.
+ * page's imports followed through for the directive, stopping at the one
+ * module that is allowed to hold it.
  */
-describe('read-only', () => {
+/** The directive itself, not a comment that names it. */
+const DIRECTIVE = /^\s*['"]use server['"]/m
+
+describe('the writer is one place', () => {
   const page = fileURLToPath(PAGE)
+  const actions = fileURLToPath(new URL('../src/app/actions.ts', import.meta.url))
   const segment = filesUnder(new URL('../src/app/recipe/', import.meta.url))
-  const reached = importedBy(page)
-  // The view and what it imports; `edit/` is the one writer (#973, 0125 §6).
-  const editDir = fileURLToPath(new URL('../src/app/recipe/[project]/edit/', import.meta.url))
-  const view = segment.filter((f) => !f.startsWith(editDir))
+  const reached = importedBy(page, actions)
+  const importsActions = (file: string) =>
+    /from\s+["'][^"']*app\/actions(?:\.ts)?["']|from\s+["']@\/app\/actions/.test(readFileSync(file, 'utf8'))
 
   /** A scan that found nothing would pass every assertion below saying nothing. */
   it('is reading the route, and what the route pulls in', () => {
     expect(segment).toContain(page)
     expect(reached).toContain(fileURLToPath(new URL('../src/lib/recipe.ts', import.meta.url)))
+    expect(reached).toContain(actions)
+  })
+
+  it('has no edit/ segment any more', () => {
+    expect(existsSync(new URL('../src/app/recipe/[project]/edit/', import.meta.url))).toBe(false)
   })
 
   it('exports no method handler anywhere under the segment', () => {
@@ -369,21 +387,17 @@ describe('read-only', () => {
     }
   })
 
-  it('declares no server action, in the segment or in anything the page imports', () => {
-    for (const file of new Set([...view, ...reached])) {
-      expect(readFileSync(file, 'utf8'), file).not.toContain('use server')
+  it('declares no server action under the segment, and none but actions.ts in what the page imports', () => {
+    for (const file of segment) expect(readFileSync(file, 'utf8'), file).not.toMatch(DIRECTIVE)
+    for (const file of reached.filter((f) => f !== actions)) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(DIRECTIVE)
     }
-    // The board's one writer is `app/actions.ts`; the view does not import it.
-    for (const file of view) {
-      expect(readFileSync(file, 'utf8'), file).not.toMatch(/from\s+["'][^"']*actions(?:\.ts)?["']/)
-    }
+    expect(readFileSync(actions, 'utf8')).toMatch(DIRECTIVE)
   })
 
-  it('lets only edit/ reach the writer, and gives it no server directive of its own', () => {
-    const edit = segment.filter((f) => f.startsWith(editDir))
-    expect(edit.length).toBeGreaterThan(0)
-    expect(edit.some((f) => /from\s+["'][^"']*actions(?:\.ts)?["']/.test(readFileSync(f, 'utf8')))).toBe(true)
-    for (const file of edit) expect(readFileSync(file, 'utf8'), file).not.toContain('use server')
+  it('imports app/actions from the form alone', () => {
+    const importers = [...new Set([...segment, ...reached.filter((f) => f !== actions)])].filter(importsActions)
+    expect(importers.map((f) => f.slice(f.lastIndexOf('/') + 1))).toEqual(['recipe-form.tsx'])
   })
 
   it('touches no filesystem under the segment', () => {
@@ -394,20 +408,47 @@ describe('read-only', () => {
     }
   })
 
-  it('renders nothing to press, in every state', async () => {
-    const states: ProjectRecipe[] = [
-      await projectRecipe(state),
-      { ok: false, project: 'app', at: '/x', fault: 'recipe', problem: 'no' },
-      { ok: false, project: 'app', at: '/y', fault: 'machine', problem: 'no' },
-    ]
-    for (const html of states.map(render)) {
-      expect(html).not.toContain('<form')
-      expect(html).not.toContain('<button')
-      expect(html).not.toContain('<input')
-      expect(html).not.toContain('action=')
+  const fields = (html: string) => /<form|<input|<textarea/.test(html)
+
+  it('renders no field until the editor is open, except to repair a recipe that will not parse', async () => {
+    const ok = await projectRecipe(state)
+    expect(ok.ok).toBe(true)
+    const closed = render(ok)
+    expect(fields(closed)).toBe(false)
+    expect(closed).toContain('Edit</button>')
+
+    const open = render(ok, true)
+    expect(open).toContain('<textarea')
+    expect(open).toContain('Validate and save')
+    expect(open).toContain('Close</button>')
+
+    const broken: ProjectRecipe = {
+      ok: false,
+      project: 'app',
+      at: '/x',
+      fault: 'recipe',
+      problem: 'no',
+      text: 'a: b\n',
     }
+    expect(render(broken)).toContain('<textarea')
+    expect(render({ ...broken, text: null })).not.toContain('<textarea')
+    const machine = render({ ok: false, project: 'app', at: '/y', fault: 'machine', problem: 'no', text: null })
+    expect(fields(machine)).toBe(false)
+    expect(machine).not.toContain('<button')
+  })
+
+  it('opens on the file text for a recipe that will not parse, so it can be repaired', async () => {
+    await writeFile(join(home, 'app', 'recipe.yml'), 'version: 2\nsource: { kinds: 42 }\n')
+    const view = await projectRecipe(state)
+    expect(view.ok).toBe(false)
+    if (view.ok) return
+    expect(view.text).toBe('version: 2\nsource: { kinds: 42 }\n')
+    expect(render(view)).toContain('kinds: 42')
   })
 })
+
+const refusalOf = (html: string) =>
+  html.slice(html.indexOf('class="refusal"'), html.indexOf('</p>', html.indexOf('class="refusal"')))
 
 /** Every file in a directory tree — a segment added under this one is the route too. */
 function filesUnder(dir: URL): string[] {
@@ -423,12 +464,14 @@ function filesUnder(dir: URL): string[] {
  * cannot be a Next.js server action. Extension-less and `@/`-aliased
  * specifiers both resolve, because that is how the app writes them.
  */
-function importedBy(entry: string, seen = new Set<string>()): string[] {
+function importedBy(entry: string, stopAt: string, seen = new Set<string>()): string[] {
   if (seen.has(entry)) return [...seen]
   seen.add(entry)
+  // Listed, not followed: the one module allowed to be a server action.
+  if (entry === stopAt) return [...seen]
   for (const [, spec = ''] of readFileSync(entry, 'utf8').matchAll(/from\s+["']([^"']+)["']/g)) {
     const next = localModule(spec, entry)
-    if (next !== null) importedBy(next, seen)
+    if (next !== null) importedBy(next, stopAt, seen)
   }
   return [...seen]
 }

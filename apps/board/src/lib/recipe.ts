@@ -33,6 +33,7 @@ import {
   boundsBesides,
   disclose,
   discloseSteps,
+  diskFiles,
   excludeOf,
   kindOfAction,
   kindsOf,
@@ -411,6 +412,11 @@ export type ProjectRecipe =
       /** Which of the two files `at` is, so the page can name the fault it actually has. */
       fault: 'recipe' | 'machine'
       problem: string
+      /**
+       * The recipe file's own text when the fault is the recipe's and the file
+       * is there, so the page can open the editor on it (#980); null otherwise.
+       */
+      text: string | null
     }
 
 /**
@@ -427,6 +433,15 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 
   return err instanceof MachineConfigInvalidError
     ? { at: machinePath(), fault: 'machine' }
     : { at: recipe, fault: 'recipe' }
+}
+
+/** The file's text, or null when it is not there or cannot be read — `projectRecipe` never throws. */
+async function textIfReadable(path: string): Promise<string | null> {
+  try {
+    return await diskFiles.read(path)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -462,10 +477,12 @@ export async function projectRecipe(
   try {
     resolved = await currentRecipe(state)
   } catch (err) {
+    const fault = faultOf(err, at)
     return {
       ok: false,
       project,
-      ...faultOf(err, at),
+      ...fault,
+      text: fault.fault === 'recipe' ? await textIfReadable(at) : null,
       problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
     }
   }

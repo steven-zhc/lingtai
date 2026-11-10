@@ -3302,3 +3302,4 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .s2-num { width: 72px; }
 .s2-yaml { margin: 0; padding: 8px 10px; border: 1px solid var(--rule); background: var(--surface-2); font-size: 11px; line-height: 1.45; overflow: auto; max-height: 80vh; white-space: pre; }
 @media (max-width: 900px) { .s2 { grid-template-columns: 1fr; } }
+.redit pre.fail { white-space: pre-wrap; overflow-wrap: anywhere; }
