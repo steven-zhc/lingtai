@@ -34,6 +34,8 @@
  * manifest and performs the conversion; `@lingtai/conductor`'s `create-app.ts`
  * is what writes a key to disk and what may never print one.
  */
+import { Effect } from 'effect'
+
 import { GITHUB_API, GitHubFailed, REQUIRED_PERMISSIONS } from './app.ts'
 
 /** Lingtai's own page. GitHub's form requires a homepage and nothing reads it. */
@@ -244,43 +246,57 @@ export interface CreatedApp {
  * testing is on the other side of it, and a test that needed the network would
  * not be run.
  */
-export async function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
+export const convertManifestEffect = Effect.fn('github.convertManifest')(function* (
+  code: string,
+  deps: { fetch?: typeof fetch } = {},
+) {
   const path = `/app-manifests/${encodeURIComponent(code)}/conversions`
   const doFetch = deps.fetch ?? fetch
-  const response = await doFetch(`${GITHUB_API}${path}`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      // GitHub rejects a request with no User-Agent, with a message that does
-      // not say so.
-      'user-agent': 'lingtai',
-    },
+  const noAnswer = (err: unknown) => new GitHubFailed(0, path, (err as Error).message)
+  const response = yield* Effect.tryPromise({
+    try: (signal) =>
+      doFetch(`${GITHUB_API}${path}`, {
+        method: 'POST',
+        signal,
+        headers: {
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2022-11-28',
+          // GitHub rejects a request with no User-Agent, with a message that does
+          // not say so.
+          'user-agent': 'lingtai',
+        },
+      }),
+    catch: noAnswer,
   })
 
   if (!response.ok) {
-    const body = await response.text()
+    const body = yield* Effect.tryPromise({ try: () => response.text(), catch: noAnswer })
     let message = body.slice(0, 400)
     try {
       message = (JSON.parse(body) as { message?: string }).message ?? message
     } catch {
       // Not JSON. The raw prefix is more useful than nothing.
     }
-    throw new GitHubFailed(response.status, path, message)
+    return yield* new GitHubFailed(response.status, path, message)
   }
 
-  const raw = (await response.json()) as {
+  const raw = (yield* Effect.tryPromise({ try: () => response.json(), catch: noAnswer })) as {
     id: number
     slug: string
     name: string
     webhook_secret: string | null
     pem: string
   }
-  return {
+  const created: CreatedApp = {
     id: raw.id,
     slug: raw.slug,
     name: raw.name,
     webhookSecret: raw.webhook_secret ?? '',
     pem: raw.pem,
   }
+  return created
+})
+
+export function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
+  return Effect.runPromise(convertManifestEffect(code, deps))
 }
