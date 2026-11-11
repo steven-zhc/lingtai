@@ -21,7 +21,7 @@ export const yamlHighlight = HighlightStyle.define([
 
 /** What the file looks like, in the editor and in the read-only view alike. */
 const baseTheme = EditorView.theme({
-  '&': { backgroundColor: 'var(--surface)', color: 'var(--ink)', maxHeight: 'calc(100vh - 80px)' },
+  '&': { backgroundColor: 'var(--surface)', color: 'var(--ink)' },
   '.cm-scroller': { fontFamily: 'var(--mono)', overflow: 'auto' },
   '.cm-gutters': {
     backgroundColor: 'var(--surface-2)',
@@ -97,5 +97,5 @@ export default function YamlEditor({
     // Seeded once: `initial` is the draft of the render the chunk arrived in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  return <div ref={host} />
+  return <div ref={host} className="rfile-fill" />
 }
