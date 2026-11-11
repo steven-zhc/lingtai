@@ -157,8 +157,27 @@ describe('what an empty column says', () => {
     expect(emptyNote('waiting', false, 'esctest')).toBe('Nothing in esctest is waiting on you.')
   })
 
-  it('leaves the pause alone under a filter, because a pause is not per-project', () => {
+  it('leaves the conductor-wide pause alone under a filter, because `ctl-` is one stream', () => {
     expect(emptyNote('running', true, 'esctest')).toBe('Paused — nothing will start.')
+    expect(emptyNote('running', true, 'esctest', ['esctest'])).toBe('Paused — nothing will start.')
+  })
+
+  it('says a selected project is paused (#995)', () => {
+    expect(emptyNote('running', false, 'lingtai', ['lingtai'])).toBe('Nothing here yet. lingtai is paused.')
+    expect(emptyNote('queued', false, 'lingtai', ['lingtai'])).toBe('Nothing here for lingtai.')
+  })
+
+  it('names the paused ones under all projects, and says the others are taking work', () => {
+    expect(emptyNote('running', false, undefined, ['a'])).toBe(
+      'Nothing here yet. a is paused; the others are taking work.',
+    )
+    expect(emptyNote('running', false, undefined, ['a', 'b'])).toBe(
+      'Nothing here yet. a and b are paused; the others are taking work.',
+    )
+  })
+
+  it('says every project is paused when they all are', () => {
+    expect(emptyNote('running', false, undefined, ['a', 'b'], true)).toBe('Nothing here yet. Every project is paused.')
   })
 
   it('names the project on every column a filter can empty', () => {

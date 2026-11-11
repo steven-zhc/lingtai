@@ -3,6 +3,7 @@ import { inWords } from '@lingtai/conductor/queue'
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
 import { readControl } from '@lingtai/daemon/control'
+import type { Lock } from '@lingtai/domain'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a reducer over its arguments (#216).
@@ -13,6 +14,7 @@ import { type ComponentProps, Suspense } from 'react'
 
 import { type BoardHalf } from '@/lib/blocker-state'
 import {
+  emptyHeld,
   emptyNote,
   githubQueue,
   issueUrl,
@@ -29,7 +31,8 @@ import { footerLags } from '@/lib/footer'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
-import { readRegistered } from '@/lib/locks.ts'
+import { everyPaused, lockMap, pausedNames } from '@/lib/lock-marks.ts'
+import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText } from '@/lib/spend'
@@ -185,6 +188,7 @@ export function Card({
   showProject,
   issue,
   paused,
+  projectLocks = [],
   arrive = false,
   next = false,
 }: {
@@ -202,6 +206,8 @@ export function Card({
    * and it matters in exactly one column.
    */
   paused: boolean
+  /** What holds this card's project (#995): only marked here, the banner explains. */
+  projectLocks?: readonly Lock[]
 }) {
   if (card.column === 'waiting') {
     const fallback = card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
@@ -254,13 +260,18 @@ export function Card({
       </article>
     )
   }
-  const standing = queuedStanding(card, paused)
+  const standing = queuedStanding(card, paused, Date.now(), projectLocks)
   // Dropped wherever the rail draws `held` instead (`#415`): a card with a
   // rail outside the Running lane says the same approach-abandoned fact under
   // the bar, and two places saying it is the drift #100 already named.
   const arm = card.progress !== null && card.column !== 'running' ? null : card.arm
   return (
-    <article className={`card ${accent(card)}${arrive ? ' arrive' : ''}`}>
+    <article
+      className={`card ${accent(card)}${arrive ? ' arrive' : ''}${
+        // Only the project's own pause dims: the conductor-wide one keeps its sentences as they were.
+        standing?.state === 'paused' && !paused ? ' paused-card' : ''
+      }`}
+    >
       {/* Reference and kind are one fact — which ticket — so they are one line.
           Split apart, the kind read as a status badge, which it is not. */}
       <span className="id">
@@ -661,6 +672,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   )
   // The selection: the URL's choice, else the only project there is (#993).
   const only = selectedProject(param, filters)
+  // What holds each project, read once for the filter, the cards and the empty
+  // Running line (#995); a failed read is the empty map, and C1's banner says why.
+  const projectLocks = lockMap(await readProjectLocks())
+  const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
+  const pausedInScope = pausedNames(projectLocks, only)
+  const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)
   // GitHub's half of the Queued column, asked only now (#884): the page's own
   // `measure` has returned, so these timings are not in the meta tag already
   // sent — started inside it they would land in an array that has been
@@ -724,7 +741,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             filters={filters}
             only={only}
             app={hasGitHubAuth()}
-            registered={registered.map((p) => p.project).filter((p): p is string => p !== null)}
+            registered={registeredNames}
+            locks={projectLocks}
           />
           <span className="sep" />
           {/* Everything from here is the right rail, and it is a rail rather than
@@ -867,6 +885,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                             showProject={showProject}
                             issue={ticket(card)}
                             paused={control.paused}
+                            projectLocks={projectLocks.get(card.project) ?? []}
                             next={next}
                             arrive={arrive}
                           />
@@ -889,6 +908,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                           showProject={showProject}
                           issue={ticket(card)}
                           paused={control.paused}
+                          projectLocks={projectLocks.get(card.project) ?? []}
                           next={next}
                           arrive={arrive}
                         />
@@ -899,8 +919,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                   </Suspense>
                 ) : null}
                 {col.id === 'queued' ? null : col.cards.length === 0 ? (
-                  <p className={`empty${col.id === 'running' && control.paused ? ' held' : ''}`}>
-                    {emptyNote(col.id, control.paused, only)}
+                  <p
+                    className={`empty${emptyHeld(col.id, control.paused, only, pausedInScope, allPaused) ? ' held' : ''}`}
+                  >
+                    {emptyNote(col.id, control.paused, only, pausedInScope, allPaused)}
                   </p>
                 ) : col.id === 'landed' ? (
                   <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
@@ -912,6 +934,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       showProject={onBoard.size > 1}
                       issue={ticket(card)}
                       paused={control.paused}
+                      projectLocks={projectLocks.get(card.project) ?? []}
                     />
                   ))
                 )}

@@ -14,7 +14,9 @@ import { describe, expect, it } from 'vitest'
 import { RecipeBar } from '../src/app/recipe/[project]/recipe-bar.tsx'
 
 describe('RecipeBar', () => {
-  const out = renderToStaticMarkup(<RecipeBar project="b" filters={['a', 'b']} registered={['a', 'b']} app />)
+  const out = renderToStaticMarkup(
+    <RecipeBar project="b" filters={['a', 'b']} registered={['a', 'b']} app locks={new Map()} />,
+  )
 
   it('holds the filter naming its project', () => {
     expect(out).toContain('<summary>b ')
@@ -23,7 +25,8 @@ describe('RecipeBar', () => {
 
   it('presses Recipe, and says no recipe · ', () => {
     expect(out).toMatch(/<a class="navlink on" aria-current="page" href="\/recipe\/b">Recipe</)
-    expect(out).not.toContain('recipe · ')
+    // The menu's hover hint names the action (#995); nothing else on the bar says `recipe · `.
+    expect(out.replace(/<span class="phint">[^<]*<\/span>/g, '')).not.toContain('recipe · ')
   })
 })
 

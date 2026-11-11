@@ -5,7 +5,8 @@ import type { ReactNode } from 'react'
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
-import { readRegistered } from '@/lib/locks.ts'
+import { lockMap } from '@/lib/lock-marks.ts'
+import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
@@ -336,7 +337,12 @@ export default async function RecipePage({
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
   // The board's projection failing must not take the recipe page with it.
   const onBoard = await onBoardProjects().catch(() => [] as string[])
-  const bar = { filters: filterOptions(registered, onBoard), registered, app: hasGitHubAuth() }
+  const bar = {
+    filters: filterOptions(registered, onBoard),
+    registered,
+    app: hasGitHubAuth(),
+    locks: lockMap(await readProjectLocks()),
+  }
   return (
     <Recipe
       view={await projectRecipe(state)}

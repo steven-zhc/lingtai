@@ -274,6 +274,8 @@ body {
 .filter .menu .prj { display: flex; justify-content: space-between; gap: 18px; }
 .filter .menu .phint { font-size: 10.5px; color: var(--muted); visibility: hidden; }
 .filter .menu .prj:hover .phint { visibility: visible; }
+.filter .menu .tab .pause-tag { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 10.5px; color: var(--held); background: var(--held-soft); }
+.card.paused-card { opacity: .72; }
 /* The `+` beside the filter: add a repository. */
 .addp {
   display: inline-flex; align-items: center; justify-content: center;

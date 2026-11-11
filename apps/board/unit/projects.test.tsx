@@ -19,7 +19,21 @@ import { describe, expect, it } from 'vitest'
 import { Projects } from '../src/app/projects.tsx'
 
 const html = (filters: string[], app: boolean, only?: string, registered: string[] = filters) =>
-  renderToStaticMarkup(<Projects filters={filters} only={only} app={app} registered={registered} />)
+  renderToStaticMarkup(<Projects filters={filters} only={only} app={app} registered={registered} locks={new Map()} />)
+
+describe('a paused project (#995)', () => {
+  const locks = new Map([['b', [{ kind: 'paused' as const, by: 'x', since: new Date(0) }]]])
+  const out = renderToStaticMarkup(
+    <Projects filters={['a', 'b']} only={undefined} app registered={['a', 'b']} locks={locks} />,
+  )
+
+  it('carries the tag and the resume hint; an unpaused row the pause hint and no tag', () => {
+    expect(out.match(/pause-tag/g)).toHaveLength(1)
+    expect(out).toContain('recipe · resume')
+    expect(out).toContain('recipe · pause')
+    expect(out.indexOf('pause-tag')).toBeGreaterThan(out.indexOf('recipe · pause'))
+  })
+})
 
 /** The menu alone: what sits inside `<details>`. */
 const menu = (out: string) => out.slice(out.indexOf('<details'), out.indexOf('</details>'))
@@ -41,7 +55,7 @@ describe('a row per repository', () => {
 
     expect(out.match(/href=/g)).toHaveLength(1)
     expect(out).toContain('href="/?project=lingtai"')
-    expect(out).toContain('<span class="phint">recipe</span>')
+    expect(out).toContain('<span class="phint">recipe · pause</span>')
     expect(out).not.toContain('/recipe/')
   })
 
