@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Currency } from '@lingtai/daemon'
+import { emptyControl, type ControlState } from '@lingtai/domain'
 import type { UnconvergedUpdate } from '@lingtai/event-store'
 import type { GhRun } from '@lingtai/github'
 import { describe, expect, it } from 'vitest'
@@ -245,5 +246,73 @@ describe('rates', () => {
     })
     PLAIN(row.title)
     expect(firstLine(row)).not.toContain('m-2')
+  })
+})
+
+describe('spend: today when the ceiling holds (#1005)', () => {
+  const NOW = new Date(2026, 10, 11, 16, 50)
+  const at = new Date(2026, 10, 11, 14, 20)
+  const day = {
+    reportedCents: 2000,
+    reportedRuns: 1,
+    estimatedCents: 500,
+    estimatedRuns: 1,
+    fetchedRuns: 0,
+    unknown: 0,
+    unknownWhy: [] as { reason: string; runs: number }[],
+  }
+  const withCeiling = (dayCeiling: Partial<ControlState['dayCeiling']>): ControlState => ({
+    ...emptyControl,
+    dayCeiling: { ...emptyControl.dayCeiling, ...dayCeiling },
+  })
+  const reached = { day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25, at, seq: 1 }
+  const run = (d: typeof day, ceilingUsd: number | undefined, state: ControlState | Error) =>
+    spendToday(
+      async () => ({ day: d, ceilingUsd }),
+      async () => {
+        if (state instanceof Error) throw state
+        return state
+      },
+      () => NOW,
+    )
+
+  it('is info with the remedy on the first line, and never a fix', async () => {
+    const r = await run(day, 25, withCeiling({ reached }))
+    expect(r.status).toBe('info')
+    expect(r.title).toBe("today's ceiling is reached")
+    expect(r.detail.split('\n')[0]).toBe(
+      'reached at 14:20 — $25.00 ceiling; nothing new starts until midnight · lingtai ceiling raise <usd> to go on today',
+    )
+    expect(r.fix).toBeUndefined()
+  })
+
+  it('says a passed one lifts when the conductor next looks', async () => {
+    const r = await run(day, 25, withCeiling({ reached: { ...reached, day: '2026-11-10' } }))
+    expect(r.status).toBe('info')
+    expect(r.detail.split('\n')[0]).toBe('the ceiling reached on 2026-11-10 lifts when the conductor next looks')
+  })
+
+  it('is ok on a raised day, and the sentence uses the raised figure', async () => {
+    const r = await run(day, 25, withCeiling({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: NOW } }))
+    expect(r.status).toBe('ok')
+    expect(r.detail).toContain('of a $40.00 ceiling')
+    expect(r.detail).toContain('today only: raised from $25.00 to $40.00 by human:steven at 16:50')
+  })
+
+  it('stays warn for unknown-cost runs, with the reached line', async () => {
+    const r = await run(
+      { ...day, unknown: 2, unknownWhy: [{ reason: 'no usage reported', runs: 2 }] },
+      25,
+      withCeiling({ reached }),
+    )
+    expect(r.status).toBe('warn')
+    expect(r.title).toBe("2 of today's runs reported no cost")
+    expect(r.detail).toContain('reached at 14:20')
+  })
+
+  it('says a control read that fails, without failing the row', async () => {
+    const r = await run(day, 25, new Error('store down'))
+    expect(r.status).toBe('ok')
+    expect(r.detail).toContain('could not read whether the ceiling holds — store down')
   })
 })

@@ -5,6 +5,7 @@
  */
 import { daySpend, daySpendText, startOfLocalDay, type DaySpend } from '@lingtai/conductor'
 import { CeilingUnchecked, type CeilingPort } from '@lingtai/daemon'
+import { todaysCeiling, type ControlState } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
 import { eventStore, type EventStore } from '@lingtai/event-store'
 import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
@@ -179,11 +180,15 @@ export async function readDaySpend(now: Date = new Date()): Promise<{ day: DaySp
 
 /** The one sentence `status` prints, with the unknown runs' reasons beside it; a failure to read is said, not hidden, and carries no list. */
 export async function daySpendLine(
+  /** For a raise: null where the control stream could not be read, which keeps the configured figure. */
+  control: ControlState | null = null,
   lags: () => Promise<readonly ProjectionLag[]> = () => projectionLag(),
 ): Promise<{ text: string; unknownWhy: DaySpend['unknownWhy'] | null }> {
   try {
-    const { day, ceilingUsd } = await readDaySpend()
-    const stall = ceilingUsd === undefined ? null : await spendStallIn(await lags(), new Date(), eventStore)
+    const now = new Date()
+    const { day, ceilingUsd: configuredUsd } = await readDaySpend(now)
+    const ceilingUsd = control === null ? configuredUsd : todaysCeiling(control, now, configuredUsd)
+    const stall = ceilingUsd === undefined ? null : await spendStallIn(await lags(), now, eventStore)
     if (stall !== null) return { text: `the daily ceiling could not be checked: ${stall}`, unknownWhy: null }
     return { text: daySpendText(day, ceilingUsd), unknownWhy: day.unknownWhy }
   } catch (err) {

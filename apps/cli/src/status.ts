@@ -22,21 +22,30 @@ import {
   type RecipeFor,
 } from '@lingtai/conductor'
 import { readState } from '@lingtai/conductor/snapshot-state'
+import { readControl } from '@lingtai/daemon'
 import {
   agentBranchOf,
   attemptReducer,
+  ceilingFacts,
+  localDay,
+  locksOn,
   savedHeadOf,
   waitWords,
+  type CeilingFacts,
+  type ControlState,
+  type Lock,
   type ProjectState,
   type SavedHead,
 } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
+import { machineDayCeiling } from '@lingtai/env'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log } from '@lingtai/event-store'
 import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
+import { ceilingFactsJson, ceilingUnreadLine, lockJson, lockLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 import { waitCommand } from './wait-command.ts'
@@ -187,7 +196,14 @@ export interface StatusReading {
   clientFor?: ClientFor
   recipeFor?: RecipeFor
   /** Today's spend against the ceiling, in the one sentence. */
-  spendLine?: () => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
+  spendLine?: (
+    control: ControlState | null,
+  ) => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
+  /** The control stream, whole. Replaceable so a test need not own a log. */
+  control?: () => Promise<ControlState>
+  /** The configured daily ceiling; throws where `limits.day_usd` does not parse. */
+  configuredCeiling?: () => number | undefined
+  now?: () => Date
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Promise<StatusAttempt['step']>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
@@ -315,6 +331,8 @@ export interface ProjectStatus {
   runnable: StatusRow[]
   /** Every row the log has for this project. */
   known: StatusRow[]
+  /** What holds new work here (0126 §5), the ceiling included; unread as a whole where the control stream was not. */
+  locks: readonly Lock[] | { unread: string }
 }
 
 export interface StatusReport {
@@ -325,6 +343,10 @@ export interface StatusReport {
   spend?: string
   /** Why each unknown run is unknown, beside the sentence; absent where the spend could not be read, since `[]` would claim nothing is unknown. */
   spendUnknown?: { reason: string; runs: number }[]
+  /** The day's ceiling; absent when none is configured and none stands. */
+  ceiling?: CeilingFacts | { unread: string }
+  /** When the report was read, for the words that say `14:20` rather than a date. */
+  now?: Date
 }
 
 /** `verifying` reduces into `running`: from an operator's seat they are the same fact. */
@@ -351,6 +373,12 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
         : 'no projects registered — run lingtai add <owner>/<repo>',
     }
   }
+
+  const readAt = (reading.now ?? (() => new Date()))()
+  const control: ControlState | { unread: string } = await (reading.control ?? (() => readControl()))().catch(
+    (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+  )
+  const controlState = 'unread' in control ? null : control
 
   const out: ProjectStatus[] = []
   for (const project of projects) {
@@ -501,6 +529,10 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
     }
 
     out.push({
+      locks:
+        controlState === null
+          ? { unread: (control as { unread: string }).unread }
+          : locksOn({ project, control: controlState }),
       project: name,
       base: project.base ?? null,
       filter: view,
@@ -538,10 +570,22 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       ),
     })
   }
-  const spend = await (reading.spendLine ?? daySpendLine)()
+  const spend = await (reading.spendLine ?? daySpendLine)(controlState)
+  let configured: number | undefined
+  try {
+    configured = (reading.configuredCeiling ?? machineDayCeiling)()
+  } catch {
+    // Unparsable: a `reached` in the log still prints, and the sentence says the figure could not be read.
+    configured = undefined
+  }
+  const facts = controlState === null ? undefined : ceilingFacts(controlState, readAt, configured)
+  const ceiling: CeilingFacts | { unread: string } | undefined =
+    controlState === null ? { unread: (control as { unread: string }).unread } : facts
   return {
     projects: out,
     message: null,
+    now: readAt,
+    ...(ceiling === undefined ? {} : { ceiling }),
     spend: spend.text,
     ...(spend.unknownWhy === null ? {} : { spendUnknown: spend.unknownWhy }),
   }
@@ -571,9 +615,27 @@ export function renderStatus(
 ): string[] {
   if (report.message !== null) return [report.message]
   const blocks: string[] = []
-  if (report.spend !== undefined) blocks.push(section('Spend', [report.spend]))
+  const now = report.now ?? new Date()
+  if (report.spend !== undefined || report.ceiling !== undefined) {
+    const spendLines = report.spend === undefined ? [] : [report.spend]
+    const c = report.ceiling
+    if (c !== undefined && 'unread' in c) spendLines.push(ceilingUnreadLine(c.unread))
+    else if (c !== undefined) {
+      if (c.reached !== null) {
+        const said = reachedLine(c.reached, now, 'no new work starts')
+        spendLines.push(c.reached.passed ? paint.muted(said) : paint.fail(said))
+      }
+      if (c.raised !== null) spendLines.push(paint.muted(raisedLine(c.raised, now)))
+    }
+    blocks.push(section('Spend', spendLines))
+  }
   for (const p of report.projects) {
     const lines: string[] = [heading(p.project), '']
+    if ('unread' in p.locks) lines.push(`could not read what holds ${p.project} — ${p.locks.unread}`, '')
+    else {
+      const held = p.locks.flatMap((l) => lockLine(p.project, l, now) ?? [])
+      if (held.length > 0) lines.push(...held, '')
+    }
     lines.push(
       section(
         'Project',
@@ -608,7 +670,20 @@ export function renderStatus(
         ),
       )
     }
-    lines.push('', section(`Queue  ${p.runnable.length} runnable${elsewhereSays ? ` — ${elsewhereSays}` : ''}`, queue))
+    // A count alone reads as *this many will start*; say what stops them.
+    const stops =
+      'unread' in p.locks
+        ? ' — what holds it could not be read'
+        : (() => {
+            const kinds = [
+              ...new Set(p.locks.filter((l) => l.kind !== 'ceiling' || l.day === localDay(now)).map((l) => l.kind)),
+            ]
+            return kinds.length === 0 ? '' : ` — nothing starts: ${kinds.join(', ')}`
+          })()
+    lines.push(
+      '',
+      section(`Queue  ${p.runnable.length} runnable${elsewhereSays ? ` — ${elsewhereSays}` : ''}${stops}`, queue),
+    )
 
     // Every wait, every time: the reason is a question only a person can answer.
     const waiting = p.known.filter((t) => t.wait !== null)
@@ -648,6 +723,9 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
   return {
     ...(report.spend === undefined ? {} : { spend: report.spend }),
     ...(report.spendUnknown === undefined ? {} : { spendUnknown: report.spendUnknown }),
+    ...(report.ceiling === undefined
+      ? {}
+      : { ceiling: 'unread' in report.ceiling ? report.ceiling : ceilingFactsJson(report.ceiling) }),
     projects: report.projects.map((p) => {
       const byState: Record<string, unknown[]> = {}
       for (const t of p.known)
@@ -668,6 +746,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
         })
       return {
         project: p.project,
+        locks: 'unread' in p.locks ? p.locks : p.locks.map(lockJson),
         base: p.base,
         filter: p.filter.ok
           ? {

@@ -1,4 +1,4 @@
-import { waitWords } from '@lingtai/domain'
+import { ceilingFacts, emptyControl, locksOn, waitWords, type ControlState } from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
@@ -87,6 +87,7 @@ const fixture: StatusReport = {
   projects: [
     {
       project: 'lingtai',
+      locks: [],
       base: 'main',
       filter: {
         ok: true,
@@ -138,6 +139,7 @@ const fixture: StatusReport = {
     },
     {
       project: 'broken',
+      locks: [],
       base: null,
       filter: {
         ok: false,
@@ -158,6 +160,7 @@ const fixture: StatusReport = {
     },
     {
       project: 'down',
+      locks: [],
       base: 'main',
       filter: fixture0Ok(),
       source: 'the ticket table',
@@ -184,6 +187,7 @@ describe('statusJson', () => {
       projects: [
         {
           project: 'lingtai',
+          locks: [],
           base: 'main',
           filter: {
             ok: true,
@@ -259,6 +263,7 @@ describe('statusJson', () => {
           source: null,
           eligible: null,
           offerError: null,
+          locks: [],
           passedOver: [],
           dependenciesUnread: null,
           runnable: [],
@@ -267,6 +272,7 @@ describe('statusJson', () => {
         },
         {
           project: 'down',
+          locks: [],
           base: 'main',
           filter: {
             ok: true,
@@ -500,6 +506,7 @@ describe('statusJson lists every running pass with its step (#640)', () => {
           source: 'github',
           eligible: 0,
           offerError: null,
+          locks: [],
           passedOver: [],
           passedOverLine: null,
           dependenciesUnread: false,
@@ -540,6 +547,7 @@ describe('statusJson lists every running pass with its step (#640)', () => {
           source: 'github',
           eligible: 0,
           offerError: null,
+          locks: [],
           passedOver: [],
           passedOverLine: null,
           dependenciesUnread: false,
@@ -691,5 +699,79 @@ describe('readingOf', () => {
     ] as const)
       expect(await readingOf(saved, project, clientFor)).toBe(false)
     expect(refSha).not.toHaveBeenCalled()
+  })
+})
+
+describe('what holds new work (#1005)', () => {
+  const NOW = new Date(2026, 10, 11, 16, 50)
+  const at = new Date(2026, 10, 11, 14, 20)
+  const control = (dayCeiling: Partial<ControlState['dayCeiling']>): ControlState => ({
+    ...emptyControl,
+    dayCeiling: { ...emptyControl.dayCeiling, ...dayCeiling },
+  })
+  const reachedToday = { day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25, at, seq: 1 }
+  const report = (state: ControlState | { unread: string }, configured = 25, projects = ['lingtai']): StatusReport => {
+    const base = fixture.projects[0]!
+    const ok = 'unread' in state ? null : state
+    return {
+      ...fixture,
+      now: NOW,
+      ceiling: ok === null ? { unread: (state as { unread: string }).unread } : ceilingFacts(ok, NOW, configured),
+      projects: projects.map((name) => ({
+        ...base,
+        project: name,
+        locks: ok === null ? { unread: (state as { unread: string }).unread } : locksOn({ control: ok }),
+      })),
+    }
+  }
+  const text = (r: StatusReport) => renderStatus(r).map(stripColour).join('\n')
+
+  it('says the reached ceiling once, with the way on, and what it stops', () => {
+    const out = text(report(control({ reached: reachedToday }), 25, ['a', 'b']))
+    expect(out).toContain(
+      'reached at 14:20 — $25.00 ceiling; no new work starts until midnight · lingtai ceiling raise <usd> to go on today',
+    )
+    expect(out.match(/reached at 14:20/g)).toHaveLength(1)
+    expect(out).toContain('nothing starts: ceiling')
+  })
+
+  it('says a passed ceiling lifts at the next look, and does not count it as stopping', () => {
+    const out = text(report(control({ reached: { ...reachedToday, day: '2026-11-10' } })))
+    expect(out).toContain('reached on 2026-11-10 — it lifts when the conductor next looks')
+    expect(out).not.toContain('nothing starts')
+  })
+
+  it('says a raise, and the sentence line is not this one', () => {
+    const out = text(
+      report(
+        control({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: new Date(2026, 10, 11, 16, 40) } }),
+      ),
+    )
+    expect(out).toContain('today only: raised from $25.00 to $40.00 by human:steven at 16:40')
+  })
+
+  it('says what could not be read, per project too', () => {
+    const out = text(report({ unread: 'store down' }))
+    expect(out).toContain('could not read whether the ceiling holds — store down')
+    expect(out).toContain('could not read what holds lingtai — store down')
+    expect(out).toContain('what holds it could not be read')
+  })
+
+  it('draws a paused project', () => {
+    const r = report(control({}))
+    r.projects[0]!.locks = [{ kind: 'paused', by: 'human:steven', since: at }]
+    const out = text(r)
+    expect(out).toContain('paused by human:steven since 14:20 — lingtai resume lingtai')
+    expect(out).toContain('nothing starts: paused')
+  })
+
+  it('--json carries the ceiling with ISO dates and every lock', () => {
+    const r = report(control({ reached: reachedToday }))
+    r.projects[0]!.locks = [...(r.projects[0]!.locks as never[]), { kind: 'paused', by: 'human:steven', since: at }]
+    const j = statusJson(r) as any
+    expect(j.ceiling.reached.since).toBe(at.toISOString())
+    expect(j.projects[0].locks.map((l: any) => l.kind)).toEqual(['ceiling', 'paused'])
+    expect(statusJson(report({ unread: 'x' })).ceiling).toEqual({ unread: 'x' })
+    expect(j.projects[0].locks[0].since).toBe(at.toISOString())
   })
 })

@@ -34,6 +34,54 @@ export function todaysCeiling(state: ControlState, now: Date, configuredUsd: num
   return raised !== null && raised.day === localDay(now) ? Math.max(configuredUsd, raised.toUsd) : configuredUsd
 }
 
+/** What the day's ceiling is, as every reader says it (0126 §5): one shape for `status`, `doctor` and the board. */
+export interface CeilingFacts {
+  configuredUsd: number | undefined
+  /** `todaysCeiling`: the figure the guard compares against today. */
+  todayUsd: number | undefined
+  /** Today's raise only, from the configured figure — the fold keeps no earlier one. */
+  raised: { fromUsd: number; toUsd: number; by: string; at: Date } | null
+  /** The standing lock. `passed` is a reader's word: the log still holds it, the guard lifts it at its next look (0126 §8). */
+  reached: {
+    day: string
+    since: Date
+    ceilingUsd: number
+    reportedUsd: number
+    estimatedUsd: number
+    passed: boolean
+  } | null
+}
+
+/** `undefined` when no figure is configured and nothing stands. */
+export function ceilingFacts(
+  state: ControlState,
+  now: Date,
+  configuredUsd: number | undefined,
+): CeilingFacts | undefined {
+  const { reached, raised } = state.dayCeiling
+  if (configuredUsd === undefined && reached === null) return undefined
+  const today = localDay(now)
+  return {
+    configuredUsd,
+    todayUsd: todaysCeiling(state, now, configuredUsd),
+    raised:
+      configuredUsd !== undefined && raised !== null && raised.day === today
+        ? { fromUsd: configuredUsd, toUsd: raised.toUsd, by: raised.by, at: raised.at }
+        : null,
+    reached:
+      reached === null
+        ? null
+        : {
+            day: reached.day,
+            since: reached.at,
+            ceilingUsd: reached.ceilingUsd,
+            reportedUsd: reached.reportedUsd,
+            estimatedUsd: reached.estimatedUsd,
+            passed: reached.day !== today,
+          },
+  }
+}
+
 /** What to append, in order, so the log says what the state, the clock, the figure and the spend say. */
 export function ceilingCheck(input: {
   state: ControlState
