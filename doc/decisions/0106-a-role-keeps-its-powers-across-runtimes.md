@@ -59,9 +59,11 @@ on that path is paid for thousands of times per run.
    to the whole attempt. `guarded` means the runtime stops the run when the
    `UserPromptSubmit` hook refuses (`canFailClosed`). `sandboxed` adds a
    filesystem boundary that the runtime enforces itself. `meetsTier` checks
-   both conditions. Before the claim, the conductor asks every runtime the attempt
-   will dispatch whether it meets the tier. If one cannot, the conductor appends
-   `DispatchRefused` naming the runtime and what it lacks. The real boundaries
+   both conditions. When the recipe resolves, every runtime it names is asked
+   whether it meets the tier. If one cannot, the recipe is refused for that
+   project, naming the runtime and what it lacks, as any recipe in error is
+   ([0126](0126-a-stop-is-a-lock-and-an-unlock.md), *A tier no runtime can
+   provide*). The real boundaries
    are the filtered environment, the disposable worktree and, where one exists,
    the runtime's sandbox. **A hook is not a security boundary**: a model can
    script around any pattern match.

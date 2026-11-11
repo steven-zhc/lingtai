@@ -48,8 +48,8 @@ say what code it is running and who started it.
 3. **Every reader reduces the same control state.** A drain lasts from its
    request to the next `ConductorStarted`, so a `shutdown` stops the daemon it
    was aimed at and never the next one, and a start needs nothing lifted first;
-   the daemon, the board, `doctor` and `status` read it alike, with no watermark
-   of the daemon's own. A lock holds across a restart until it is unlocked
+   the daemon, the board, `doctor` and `status` read it alike. The only line a
+   daemon draws of its own is the head its start record is appended at (§11). A lock holds across a restart until it is unlocked
    ([0126](0126-a-stop-is-a-lock-and-an-unlock.md)).
 
 4. **One conductor, enforced by a file lock.** The lock is SQLite's `BEGIN
@@ -150,7 +150,10 @@ say what code it is running and who started it.
     spelled as `TicketClaimed.worker` spells it). `by` is `human:$USER` for
     `lingtai restart` or for a start typed at a terminal, and `daemon` when stdin
     is not a terminal, as with a supervisor. The decision to record the start and
-    the decision to take work come from one read of the control stream. On the
+    the decision to take work come from one read of the control stream, and the
+    record is appended at that read's head: a drain asked for before it is ended
+    by it, and one asked for after it is obeyed, with nothing recorded. A start
+    that cannot record itself takes no work. On the
     terminal path the daemon compares the commit it is running with the commit
     the restart checked (`startRefusals`) and stops before taking anything if they
     differ.

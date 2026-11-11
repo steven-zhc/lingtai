@@ -1,6 +1,6 @@
 # 0126 — A stop is a lock and an unlock on the stream of what it stops
 
-**Status** accepted · 2026-11-10 · not yet built; the system locks wait on
+**Status** accepted · 2026-11-11 · not yet built; the system locks wait on
 [0127](0127-the-daemon-has-one-scheduler.md)
 
 Three things stop new work: a person pausing a project, the day's spend reaching
@@ -91,7 +91,8 @@ see *A tier no runtime can provide*.
 6. **A lock stops new work only.** An attempt already running is not interrupted
    by any of the three, and what runs inside it goes on: its fix rounds, its
    judge, its merge. Every agent run that would start outside an attempt in
-   flight is new work and is stopped, a discussion a person asked for included;
+   flight is new work and is stopped: a discussion a person asked for, and the
+   triage of a wait, included;
    to have it, the person resumes the project or raises today's ceiling first.
    A run that meets an account limit has already failed; that is the runtime's
    doing, not the lock's.
@@ -174,8 +175,9 @@ to act on it, is refused by name, and the refusal says that starting a conductor
 
 ## Removed
 
-`ConductorPaused`, `ConductorResumed`, `ConductorShutdownWithdrawn` and
-`PauseCause`; `holdsAcrossStarts`, `ceilingWaivedUntil` and `liftOwnPause`;
+`ConductorPaused`, `ConductorResumed` and `PauseCause`; the writers of
+`ConductorShutdownWithdrawn`, whose type is retired but still reduced, so a
+withdrawal already in the log keeps its meaning; `holdsAcrossStarts`, `ceilingWaivedUntil` and `liftOwnPause`;
 `scopeControl` and the pause half of `evaluateControl`; the conductor-wide pause
 over a missing tier in `conduct.ts`; the board's `Paused` chip and every
 installation-wide pause branch in the CLI and the board. Events of the removed
@@ -185,7 +187,9 @@ types already in the log still parse and are reduced to nothing.
 and the account limit land after it. Until both have, the conductor-wide pause is
 what they still write, and it keeps everything it has: the board's `Paused` chip
 shows it, and a bare `lingtai resume` lifts it as well as resuming every project.
-Nothing above is removed until both system locks have moved.
+It stops what it stops today and no more: a discussion or a triage is stopped
+by the locks §5 returns, not by it. Nothing above is removed until both system
+locks have moved.
 
 **Upgrading:** a `ConductorPaused` standing when a daemon restarts onto the
 removal stops nothing any more. Run `lingtai resume` before that restart;

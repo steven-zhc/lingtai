@@ -98,9 +98,10 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
     old version still conducts; a refusal there changes nothing. Then, where a
     log is configured, `lingtai doctor` gates (`--despite-doctor`), and where
     something holds the conductor lock, `lingtai shutdown`'s drain is asked and
-    the lock waited on; a drain the same person left standing is lifted and asked
-    again. The shim moves once the lock is free, and the drain is withdrawn.
-    It starts nothing: `lingtai start` runs the new version. Upgrading a checkout
+    the lock waited on; a drain the same person left standing is picked up. The
+    shim moves once the lock is free. It starts nothing: `lingtai start` runs the
+    new version, and that start ends the drain
+    ([0126](0126-a-stop-is-a-lock-and-an-unlock.md), *Shutdown and drain*). Upgrading a checkout
     is refused; that is `git pull` and `lingtai restart`.
 15. **`rollback [<version>]` moves the shim to an installed older version**
     (the newest older one by default) after running it once. It fetches and
