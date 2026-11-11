@@ -259,20 +259,27 @@ export async function requestShutdownUnlessStanding(
  * `lingtai restart`. A start that loses the lock appends nothing, because
  * nothing started.
  *
- * It does not withdraw a standing shutdown request, deliberately. See
- * `withdrawShutdown`.
+ * **A start ends a drain, and refuses to start over one asked of it** (0126).
+ * `since` is the control stream's version when this daemon began, read before it
+ * took the lock (#174). A standing request at or below `since` was asked of an
+ * earlier process: the record ends it, and the daemon takes work. One above
+ * `since` landed while this daemon was starting, and is its to obey: nothing is
+ * recorded, and the request is answered. Either way the decision and the append
+ * are one write at the head the decision was read at, so a request landing
+ * between the two fails the append and is read again, never ended unseen.
  */
 export async function recordStart(
   by: string,
   reason: string | null,
   code: CodeVersion,
+  since: number,
   store: EventStore = eventStore,
-): Promise<void> {
-  // Retried on a lost version race, as the two writers below are: nothing about
-  // a start depends on what else landed, so a `RunRequested` between the read
-  // and the append is a reason to read again, not a start with no record.
+): Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }> {
   for (let attempt = 0; ; attempt++) {
     const at = await store.head(CONTROL_STREAM)
+    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+      .shutdown
+    if (standing !== null && standing.version > since) return { recorded: false, standing }
     try {
       await append(
         'ConductorStarted',
@@ -280,7 +287,7 @@ export async function recordStart(
         store,
         at,
       )
-      return
+      return { recorded: true }
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
     }

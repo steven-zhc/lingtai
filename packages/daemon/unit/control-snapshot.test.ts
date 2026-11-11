@@ -122,15 +122,19 @@ describe('readControl offers', () => {
   })
 })
 
-// Today's two-reduce algorithm for `since > 0`, kept as the reference (#874).
+// Today's two-reduce algorithm for `since > 0`, kept as the reference (#874). The pause is scoped by the
+// watermark; a shutdown is not — it is the whole stream's, ended by a `ConductorStarted` (0126).
 function reference(stored: Parameters<typeof reduceControl>[0], since: number, now: Date): ControlState {
   const events = stored
-  const scoped = reduceControl(
-    events.filter((e) => e.version > since),
-    now,
-  )
-  if (scoped.paused) return scoped
   const whole = reduceControl(events, now)
+  const scoped = {
+    ...reduceControl(
+      events.filter((e) => e.version > since),
+      now,
+    ),
+    shutdown: whole.shutdown,
+  }
+  if (scoped.paused) return scoped
   if (!whole.paused || !whole.holdsAcrossStarts) return scoped
   return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
 }

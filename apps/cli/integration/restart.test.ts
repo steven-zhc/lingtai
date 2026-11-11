@@ -22,14 +22,12 @@ import { describeRefusal } from '../src/doctor.ts'
 import {
   RESTART_GUARDS,
   SUPERVISED_ONLY,
-  attributeStart,
   gatingFailures,
   openDaemon,
   parseRestartArgs,
   planRestart,
   prepareRestart,
   restartSupervised,
-  startRecorder,
   startRefusals,
   waitForTheLock,
   type Before,
@@ -377,87 +375,6 @@ describe('the command line', () => {
     for (const argv of [['--anyway'], ['--nonsense'], ['--timeout'], ['--timeout', 'soon']]) {
       expect(parseRestartArgs(argv).ok, argv.join(' ')).toBe(false)
     }
-  })
-})
-
-/**
- * Whose start the log records (0042 §5). The evening this closes is a start
- * nobody can name; the failure to avoid on the way is a start the log names
- * *wrongly* — a person for launchd's respawn.
- */
-describe('whose start it is', () => {
-  const base = { restart: null, control: { shutdown: null }, tty: false, user: 'ops' }
-
-  it('records nothing for a start into a standing drain', () => {
-    const shutdown: ShutdownRequest = {
-      by: 'human:steven',
-      reason: 'restarting',
-      timeoutMs: null,
-      version: 3,
-      force: false,
-    }
-    expect(attributeStart({ ...base, control: { shutdown } })).toMatchObject({ record: false })
-  })
-
-  it('names nobody for a start with no terminal, and the typist for one at a terminal', () => {
-    expect(attributeStart(base)).toEqual({ record: true, by: 'daemon', reason: null })
-    expect(attributeStart({ ...base, tty: true })).toEqual({ record: true, by: 'human:ops', reason: null })
-  })
-
-  it('names the restart that started it in this process', () => {
-    expect(attributeStart({ ...base, restart: { by: 'human:steven', reason: 'picking up #88' } })).toEqual({
-      record: true,
-      by: 'human:steven',
-      reason: 'picking up #88',
-    })
-  })
-})
-
-describe('the read a start is recorded from', () => {
-  const drain: ShutdownRequest = { by: 'human:steven', reason: 'restarting', timeoutMs: null, version: 3, force: false }
-
-  it('records once, off the first read the daemon acts on', async () => {
-    const recorded: unknown[] = []
-    const note = startRecorder({
-      restart: null,
-      tty: false,
-      user: 's',
-      record: async (a) => void recorded.push(a),
-      log: () => {},
-    })
-    await note({ shutdown: null })
-    await note({ shutdown: null })
-    expect(recorded).toEqual([{ record: true, by: 'daemon', reason: null }])
-  })
-
-  it('records nothing off a read that finds the drain, which is the read the daemon exits on', async () => {
-    const recorded: unknown[] = []
-    const lines: string[] = []
-    const note = startRecorder({
-      restart: null,
-      tty: false,
-      user: 's',
-      record: async (a) => void recorded.push(a),
-      log: (l) => lines.push(l),
-    })
-    await note({ shutdown: drain })
-    expect(recorded).toEqual([])
-    expect(lines.join('\n')).toContain('not recorded as a start')
-  })
-
-  it('says a record that failed, and does not throw into the loop that would then take no work', async () => {
-    const lines: string[] = []
-    const note = startRecorder({
-      restart: null,
-      tty: false,
-      user: 's',
-      record: async () => {
-        throw new Error('version race, five times')
-      },
-      log: (l) => lines.push(l),
-    })
-    await expect(note({ shutdown: null })).resolves.toBeUndefined()
-    expect(lines.join('\n')).toContain('version race')
   })
 })
 

@@ -525,7 +525,10 @@ describe('pausedAt and scopeControl (#874)', () => {
 
 describe('ConductorStarted ends a standing shutdown (0126)', () => {
   const ask = { type: 'ConductorShutdownRequested', data: { by: 'steven', reason: 'x', timeoutMs: null } }
-  const started = { type: 'ConductorStarted', data: { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'w', handoff: null } }
+  const started = {
+    type: 'ConductorStarted',
+    data: { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'w', handoff: null },
+  }
 
   it('a start after a request ends it', () => {
     expect(reduceControl(log([ask, started]), NOW).shutdown).toBeNull()

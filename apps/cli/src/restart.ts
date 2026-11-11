@@ -1499,17 +1499,16 @@ export function formatFailures(
 
 // ------------------------------------------------------------ whose start --
 
-/** Whose start a daemon's `ConductorStarted` records, or that it records none. */
-export type Attribution = { record: false; why: string } | { record: true; by: string; reason: string | null }
+/** Whose start a daemon's `ConductorStarted` records. */
+export type Attribution = { by: string; reason: string | null }
 
 /**
  * Who a start is recorded as, from what the daemon can know about itself.
  *
- * Pure, for the reason `planRestart` is. The daemon reads its commit once, and
- * hands this the control read it acts on (`startRecorder`), and this decides:
+ * Pure, for the reason `planRestart` is. It decides only *whose* start this is;
+ * whether a start happens at all is `recordStart`'s to decide, in the same write
+ * that records it (0126).
  *
- * - **a start into a standing drain is not recorded.** It reads the request and
- *   exits without taking anything.
  * - `lingtai restart` in this process knows who ran it.
  * - otherwise a start typed at a terminal is the typist's, and anything else is
  *   `daemon`, since stdin that is not a terminal is launchd, systemd, a script
@@ -1523,52 +1522,48 @@ export type Attribution = { record: false; why: string } | { record: true; by: s
  */
 export function attributeStart(input: {
   restart: { by: string; reason: string } | null
-  control: Pick<ControlState, 'shutdown'> | null
   tty: boolean
   user: string
 }): Attribution {
-  const { restart, control, tty } = input
-  const standing = control?.shutdown ?? null
-  if (standing !== null) {
-    return { record: false, why: `a shutdown asked by ${standing.by} stands, so this start takes nothing and exits` }
-  }
-  if (restart) return { record: true, by: restart.by, reason: restart.reason }
-  return { record: true, by: tty ? `human:${input.user}` : 'daemon', reason: null }
+  if (input.restart) return { by: input.restart.by, reason: input.restart.reason }
+  return { by: input.tty ? `human:${input.user}` : 'daemon', reason: null }
 }
 
+/** What the daemon does after trying to record its start. */
+export type StartDecision =
+  | { take: true }
+  | { take: false; standing: ShutdownRequest }
+  | { take: false; failed: string }
+
 /**
- * Record a start once, off **the control read on which the daemon decides to
- * take work** — never off an earlier one.
+ * Record a start once, **as the first thing the daemon does with the control
+ * stream**, before it obeys anything.
  *
- * The daemon used to attribute its start from a read taken at startup and
- * notice a shutdown only later, when the work loop's first pass read the stream
- * again after the filters and the reconcile — so a start could record nothing
- * and take work. One read now decides both, so a start that reads a standing
- * drain exits on that read, and a start that takes work has recorded itself
- * before its first pass. That is also what `lingtai service start` waits on.
+ * `record` reads, decides and appends in one write (`recordStart`): a request
+ * from before this daemon began is ended by the record, one asked of it is not
+ * recorded over and is answered as `standing`, and a record that cannot be made
+ * is `failed` — a start that cannot record itself takes no work. Never throws.
  *
- * Called with every read the daemon acts on and does anything only on the
- * first. Never throws: a start that could not be recorded is said, and the
- * daemon still conducts.
+ * Memoised on the promise: every caller awaits the one record, and a second
+ * never starts.
  */
 export function startRecorder(input: {
   restart: { by: string; reason: string } | null
   tty: boolean
   user: string
-  record: (a: Extract<Attribution, { record: true }>) => Promise<void>
+  record: (a: Attribution) => Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }>
   log: (line: string) => void
-}): (control: Pick<ControlState, 'shutdown'>) => Promise<void> {
-  let decided = false
-  return async (control) => {
-    if (decided) return
-    decided = true
-    const attribution = attributeStart({ restart: input.restart, control, tty: input.tty, user: input.user })
-    if (!attribution.record) {
-      input.log(paint.muted(`not recorded as a start: ${attribution.why}`))
-      return
-    }
-    await input.record(attribution).catch((err: unknown) => {
-      input.log(paint.fail(`the start could not be recorded: ${(err as Error).message}`))
-    })
+}): () => Promise<StartDecision> {
+  let decision: Promise<StartDecision> | null = null
+  return () => {
+    decision ??= input
+      .record(attributeStart(input))
+      .then((r): StartDecision => (r.recorded ? { take: true } : { take: false, standing: r.standing }))
+      .catch((err: unknown): StartDecision => {
+        const failed = (err as Error).message
+        input.log(paint.fail(`the start could not be recorded: ${failed}`))
+        return { take: false, failed }
+      })
+    return decision
   }
 }
