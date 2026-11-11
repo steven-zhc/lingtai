@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { GitHubError } from '../src/app.ts'
+import { GitHubFailed } from '../src/app.ts'
 import {
   buildManifest,
   convertManifest,
@@ -236,6 +236,6 @@ describe('the conversion', () => {
   it("throws with GitHub's status when the code is spent", async () => {
     await expect(
       convertManifest('old-code', { fetch: fakeFetch({ message: 'Not Found' }, 422) }),
-    ).rejects.toBeInstanceOf(GitHubError)
+    ).rejects.toBeInstanceOf(GitHubFailed)
   })
 })

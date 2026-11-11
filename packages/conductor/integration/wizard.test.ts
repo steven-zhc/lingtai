@@ -15,7 +15,7 @@ import { join } from 'node:path'
  */
 import { projectStream, reduceProject } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
-import { GitHubError, type GitHubClient, type Issue, type Label } from '@lingtai/github'
+import { GitHubFailed, type GitHubClient, type Issue, type Label } from '@lingtai/github'
 import { type Recipe, machinePath, recipePath, resolveLocalRecipe, resolveRecipe } from '@lingtai/recipe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -120,7 +120,7 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
     },
     request: async (method: string) => {
       if (method !== 'GET') throw new Error(`the wizard wrote to GitHub: ${method}`)
-      throw new GitHubError(404, '/', 'Not Found')
+      throw new GitHubFailed(404, '/', 'Not Found')
     },
     token: async () => {
       throw new Error('not used')
@@ -717,7 +717,7 @@ describe('Hold all', () => {
       ...github,
       request: (async (method: string, path: string, body?: unknown) => {
         if (path.endsWith('/issues/412/labels')) {
-          throw new GitHubError(403, path, 'Resource not accessible by integration')
+          throw new GitHubFailed(403, path, 'Resource not accessible by integration')
         }
         return github.request(method, path, body)
       }) as GitHubClient['request'],

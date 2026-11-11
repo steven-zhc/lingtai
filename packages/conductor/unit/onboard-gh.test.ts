@@ -3,7 +3,7 @@
  * login's scopes and `permissions.push` stand where the App's installation
  * does, and each refusal names its own cause.
  */
-import { GitHubError, type GhStatus } from '@lingtai/github'
+import { GitHubFailed, type GhStatus } from '@lingtai/github'
 import { describe, expect, it, vi } from 'vitest'
 
 import { add, checkGhAccess, type GhAccessDeps } from '../src/onboard.ts'
@@ -62,7 +62,7 @@ describe('checkGhAccess (#708)', () => {
 
   it('names a 404 as not visible', async () => {
     const t = run(SIGNED_IN, async () => {
-      throw new GitHubError(404, '/repos/acme/widgets', 'Not Found')
+      throw new GitHubFailed(404, '/repos/acme/widgets', 'Not Found')
     })
     expect(await t.result()).toBeNull()
     expect(t.lines.join('\n')).toContain('not visible to sam')
@@ -70,7 +70,7 @@ describe('checkGhAccess (#708)', () => {
 
   it("names an organisation's OAuth-app restriction and names the App as the fix", async () => {
     const t = run(SIGNED_IN, async () => {
-      throw new GitHubError(
+      throw new GitHubFailed(
         403,
         '/repos/acme/widgets',
         'Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions',
@@ -84,7 +84,7 @@ describe('checkGhAccess (#708)', () => {
 
   it('names SAML enforcement and says to authorise the token', async () => {
     const t = run(SIGNED_IN, async () => {
-      throw new GitHubError(403, '/repos/acme/widgets', 'Resource protected by organization SAML enforcement.')
+      throw new GitHubFailed(403, '/repos/acme/widgets', 'Resource protected by organization SAML enforcement.')
     })
     expect(await t.result()).toBeNull()
     expect(t.lines.join('\n')).toMatch(/SAML.*authorise gh's token for the acme organisation/)
@@ -92,7 +92,7 @@ describe('checkGhAccess (#708)', () => {
 
   it("quotes any other 403's own message", async () => {
     const t = run(SIGNED_IN, async () => {
-      throw new GitHubError(403, '/repos/acme/widgets', 'API rate limit exceeded')
+      throw new GitHubFailed(403, '/repos/acme/widgets', 'API rate limit exceeded')
     })
     expect(await t.result()).toBeNull()
     expect(t.lines.join('\n')).toContain('API rate limit exceeded')

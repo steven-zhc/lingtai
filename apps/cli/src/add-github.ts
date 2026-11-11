@@ -26,7 +26,7 @@ import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conduc
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { liveHistory } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
-import { createGitHubClient, GitHubError, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
+import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
 import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -111,7 +111,7 @@ async function liveGithubReader(
           // one — `fileAt` draws the same line at `client.ts:420`, and
           // swallowing both the same way read a transient failure as a
           // confirmed absence (#431 fix round, finding 2).
-          if (err instanceof GitHubError && err.status === 404) return false
+          if (err instanceof GitHubFailed && err.status === 404) return false
           throw err
         }
       },

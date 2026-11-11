@@ -13,6 +13,10 @@
  */
 import { execFile, spawn } from 'node:child_process'
 
+import { Effect } from 'effect'
+
+import { GitHubFailed } from './app.ts'
+
 /** The variables `gh` prefers to its saved login. */
 const TOKEN_VARIABLES = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'] as const
 
@@ -76,16 +80,35 @@ function withoutTokens(text: string): string {
   return text.replace(/\b(gh[opsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)/g, '[token]').trim()
 }
 
+const TOKEN_PATH = 'gh auth token'
+
 /** `gh auth token`: one call's token, or a named error built from the exit code and stderr only. */
-export async function ghToken(run: GhRun = liveGh, signal?: AbortSignal): Promise<string> {
-  const result = await run(['auth', 'token', '--hostname', HOST], { signal })
-  if ('missing' in result) throw new Error('gh is not installed — install the GitHub CLI and run `gh auth login`')
+export const ghTokenEffect = Effect.fn('github.ghToken')(function* (run: GhRun = liveGh) {
+  const result = yield* Effect.tryPromise({
+    try: (signal) => run(['auth', 'token', '--hostname', HOST], { signal }),
+    catch: (err) => new GitHubFailed(0, TOKEN_PATH, (err as Error).message),
+  })
+  if ('missing' in result) {
+    return yield* new GitHubFailed(
+      0,
+      TOKEN_PATH,
+      'gh is not installed — install the GitHub CLI and run `gh auth login`',
+    )
+  }
   if (result.code !== 0) {
-    throw new Error(`gh auth token exited ${result.code}: ${withoutTokens(result.stderr) || 'no output'}`)
+    return yield* new GitHubFailed(
+      0,
+      TOKEN_PATH,
+      `gh auth token exited ${result.code}: ${withoutTokens(result.stderr) || 'no output'}`,
+    )
   }
   const token = result.stdout.trim()
-  if (token === '') throw new Error('gh answered no token — run `gh auth login`')
+  if (token === '') return yield* new GitHubFailed(0, TOKEN_PATH, 'gh answered no token — run `gh auth login`')
   return token
+})
+
+export function ghToken(run: GhRun = liveGh, signal?: AbortSignal): Promise<string> {
+  return Effect.runPromise(ghTokenEffect(run), { signal })
 }
 
 export type GhStatus =
@@ -100,8 +123,18 @@ interface HostEntry {
 }
 
 /** `gh auth status --json hosts`, as a value rather than a throw: a caller renders the reason. */
-export async function ghStatus(run: GhRun = liveGh, signal?: AbortSignal): Promise<GhStatus> {
-  const result = await run(['auth', 'status', '--hostname', HOST, '--json', 'hosts'], { signal })
+export const ghStatusEffect = Effect.fn('github.ghStatus')(function* (run: GhRun = liveGh) {
+  const result = yield* Effect.promise((signal) =>
+    run(['auth', 'status', '--hostname', HOST, '--json', 'hosts'], { signal }),
+  )
+  return statusFrom(result)
+})
+
+export function ghStatus(run: GhRun = liveGh, signal?: AbortSignal): Promise<GhStatus> {
+  return Effect.runPromise(ghStatusEffect(run), { signal })
+}
+
+function statusFrom(result: GhRunResult): GhStatus {
   if ('missing' in result) return { ok: false, reason: 'missing', detail: 'gh is not installed' }
   // A signed-out host may exit non-zero and still print JSON, so the code is not read first.
   let parsed: unknown

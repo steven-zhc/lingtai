@@ -34,7 +34,9 @@
  * manifest and performs the conversion; `@lingtai/conductor`'s `create-app.ts`
  * is what writes a key to disk and what may never print one.
  */
-import { GITHUB_API, GitHubError, REQUIRED_PERMISSIONS } from './app.ts'
+import { Effect } from 'effect'
+
+import { GITHUB_API, GitHubFailed, REQUIRED_PERMISSIONS } from './app.ts'
 
 /** Lingtai's own page. GitHub's form requires a homepage and nothing reads it. */
 export const LINGTAI_URL = 'https://github.com/steven-zhc/lingtai'
@@ -244,43 +246,62 @@ export interface CreatedApp {
  * testing is on the other side of it, and a test that needed the network would
  * not be run.
  */
-export async function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
+export const convertManifestEffect = Effect.fn('github.convertManifest')(function* (
+  code: string,
+  deps: { fetch?: typeof fetch } = {},
+) {
   const path = `/app-manifests/${encodeURIComponent(code)}/conversions`
   const doFetch = deps.fetch ?? fetch
-  const response = await doFetch(`${GITHUB_API}${path}`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      // GitHub rejects a request with no User-Agent, with a message that does
-      // not say so.
-      'user-agent': 'lingtai',
-    },
-  })
+  // One controller for the whole exchange: the body reads below are not covered by
+  // the fetch's own signal, so interruption must abort the request itself.
+  const controller = new AbortController()
+  return yield* Effect.gen(function* () {
+    const noAnswer = (err: unknown) => new GitHubFailed(0, path, (err as Error).message)
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        doFetch(`${GITHUB_API}${path}`, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            accept: 'application/vnd.github+json',
+            'x-github-api-version': '2022-11-28',
+            // GitHub rejects a request with no User-Agent, with a message that does
+            // not say so.
+            'user-agent': 'lingtai',
+          },
+        }),
+      catch: noAnswer,
+    })
 
-  if (!response.ok) {
-    const body = await response.text()
-    let message = body.slice(0, 400)
-    try {
-      message = (JSON.parse(body) as { message?: string }).message ?? message
-    } catch {
-      // Not JSON. The raw prefix is more useful than nothing.
+    if (!response.ok) {
+      const body = yield* Effect.tryPromise({ try: () => response.text(), catch: noAnswer })
+      let message = body.slice(0, 400)
+      try {
+        message = (JSON.parse(body) as { message?: string }).message ?? message
+      } catch {
+        // Not JSON. The raw prefix is more useful than nothing.
+      }
+      return yield* new GitHubFailed(response.status, path, message)
     }
-    throw new GitHubError(response.status, path, message)
-  }
 
-  const raw = (await response.json()) as {
-    id: number
-    slug: string
-    name: string
-    webhook_secret: string | null
-    pem: string
-  }
-  return {
-    id: raw.id,
-    slug: raw.slug,
-    name: raw.name,
-    webhookSecret: raw.webhook_secret ?? '',
-    pem: raw.pem,
-  }
+    const raw = (yield* Effect.tryPromise({ try: () => response.json(), catch: noAnswer })) as {
+      id: number
+      slug: string
+      name: string
+      webhook_secret: string | null
+      pem: string
+    }
+    const created: CreatedApp = {
+      id: raw.id,
+      slug: raw.slug,
+      name: raw.name,
+      webhookSecret: raw.webhook_secret ?? '',
+      pem: raw.pem,
+    }
+    return created
+  }).pipe(Effect.ensuring(Effect.sync(() => controller.abort())))
+})
+
+export function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
+  return Effect.runPromise(convertManifestEffect(code, deps))
 }

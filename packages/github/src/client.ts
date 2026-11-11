@@ -10,10 +10,12 @@
  * The one exception is discovery, which reads issues *once* to learn that a work
  * item exists. After that the log is the authority.
  */
+import { Data } from 'effect'
+
 import {
   type AppAuth,
   GITHUB_API,
-  GitHubError,
+  GitHubFailed,
   type Installation,
   createTokenSource,
   installationForRepo,
@@ -30,28 +32,28 @@ import { type GhRun, ghToken, liveGh } from './gh.ts'
  * narrows it and does not close it. A `db` tracker's write is one conditional
  * `UPDATE`, with no window at all.
  */
-export class BodyChanged extends Error {
-  override readonly name = 'BodyChanged'
-  readonly issue: number
-
+export class BodyChanged extends Data.TaggedError('BodyChanged')<{ readonly issue: number }> {
   constructor(issue: number) {
-    super(`#${issue}'s body changed since it was read`)
-    this.issue = issue
+    super({ issue })
+  }
+
+  override get message(): string {
+    return `#${this.issue}'s body changed since it was read`
   }
 }
 
 /**
  * A sub-issue or dependency call was refused for want of a permission.
  *
- * A `GitHubError` still, so an `instanceof GitHubError` check keeps catching it.
+ * A `GitHubFailed` still, so an `instanceof GitHubFailed` check keeps catching it.
  * Never an empty list: a caller reads *no links* as *nothing attached* and
  * writes one again.
  */
-export class PermissionDenied extends GitHubError {
+export class PermissionDenied extends GitHubFailed {
   readonly permission: string
   readonly level: 'read' | 'write'
 
-  constructor(denied: GitHubError, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
+  constructor(denied: GitHubFailed, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
     super(
       denied.status,
       denied.path,
@@ -419,7 +421,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       } catch {
         // Not JSON; the prefix is still the most useful thing available.
       }
-      throw new GitHubError(response.status, path, message)
+      throw new GitHubFailed(response.status, path, message)
     }
     if (response.status === 204) return undefined as T
     return (await response.json()) as T
@@ -538,7 +540,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     try {
       return await run()
     } catch (err) {
-      if (err instanceof GitHubError && err.status === 403 && !/rate limit/i.test(err.message)) {
+      if (err instanceof GitHubFailed && err.status === 403 && !err.rateLimited) {
         throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
       }
       throw err
@@ -635,7 +637,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       } catch (err) {
         // A missing file is an answer, not a failure — a repository with no
         // recipe is a repository that has not been onboarded yet.
-        if (err instanceof GitHubError && err.status === 404) return null
+        if (err instanceof GitHubFailed && err.status === 404) return null
         throw err
       }
     },

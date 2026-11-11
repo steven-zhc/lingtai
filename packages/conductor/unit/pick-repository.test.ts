@@ -1,5 +1,5 @@
 import type { ProjectState } from '@lingtai/domain'
-import { GitHubError } from '@lingtai/github'
+import { GitHubFailed } from '@lingtai/github'
 import { installLink, listRepositories as list, type Picker } from '@lingtai/setup'
 /**
  * Step 0: picking a repository from what the App can see (#168).
@@ -45,13 +45,13 @@ function fakeReader(installations: FakeInstallation[], suspended: number[] = [])
       const one = /^\/app\/installations\/(\d+)$/.exec(url.pathname)
       if (one && as === 'app') {
         const found = installations.find((i) => i.id === Number(one[1]))
-        if (found === undefined) throw new GitHubError(404, path, 'Not Found')
+        if (found === undefined) throw new GitHubFailed(404, path, 'Not Found')
         return raw(found) as T
       }
       if (url.pathname === '/installation/repositories' && typeof as === 'number') {
         // A suspended installation's token is refused before any listing.
         if (suspended.includes(as))
-          throw new GitHubError(403, `/app/installations/${as}/access_tokens`, 'This installation has been suspended')
+          throw new GitHubFailed(403, `/app/installations/${as}/access_tokens`, 'This installation has been suspended')
         const i = installations.find((x) => x.id === as)!
         return {
           repositories: (page === 1 ? i.repositories : []).map((name) => ({
@@ -61,7 +61,7 @@ function fakeReader(installations: FakeInstallation[], suspended: number[] = [])
           })),
         } as T
       }
-      throw new GitHubError(404, path, 'Not Found')
+      throw new GitHubFailed(404, path, 'Not Found')
     },
   }
 }
@@ -311,7 +311,7 @@ describe('the setup URL', () => {
   it('still lands on the picker when GitHub will not answer', async () => {
     const broken = {
       async request<T>(): Promise<T> {
-        throw new GitHubError(502, '/app/installations/7', 'Bad Gateway')
+        throw new GitHubFailed(502, '/app/installations/7', 'Bad Gateway')
       },
     }
     expect(await setupReturn(broken, new URLSearchParams('installation_id=7'))).toBe('/setup/repository')

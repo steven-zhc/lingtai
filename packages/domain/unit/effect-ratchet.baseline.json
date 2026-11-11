@@ -2,7 +2,7 @@
   "apps/cli": { "async": 411, "run": 6 },
   "packages/event-store": { "async": 15, "run": 0 },
   "packages/projector": { "async": 80, "run": 0 },
-  "packages/github": { "async": 37, "run": 2 },
+  "packages/github": { "async": 34, "run": 2 },
   "packages/repo": { "async": 15, "run": 0 },
   "packages/agent": { "async": 23, "run": 0 },
   "packages/actions": { "async": 16, "run": 0 },

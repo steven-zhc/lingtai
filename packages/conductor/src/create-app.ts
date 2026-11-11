@@ -62,7 +62,7 @@ import {
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import {
   type AppManifest,
-  GitHubError,
+  GitHubFailed,
   REQUIRED_PERMISSIONS,
   buildManifest,
   convertManifest,
@@ -564,7 +564,7 @@ async function convertAndWrite(
   try {
     created = await convertManifest(options.code, options.fetch ? { fetch: options.fetch } : {})
   } catch (err) {
-    if (err instanceof GitHubError && (err.status === 404 || err.status === 422)) {
+    if (err instanceof GitHubFailed && (err.status === 404 || err.status === 422)) {
       return refuse(
         'GitHub would not exchange that code: it is good for one hour and for one exchange, and ' +
           'this one is spent or lapsed. Nothing was written — start again.',

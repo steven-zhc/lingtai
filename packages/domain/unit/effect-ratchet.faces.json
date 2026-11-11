@@ -120,6 +120,24 @@
     "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
   },
   {
+    "file": "packages/github/src/gh.ts",
+    "fn": "ghStatus",
+    "until": "#790",
+    "why": "cli doctor/first-project/init, conductor onboard/repository-list"
+  },
+  {
+    "file": "packages/github/src/gh.ts",
+    "fn": "ghToken",
+    "until": "#790",
+    "why": "client.ts, until #1025 makes the client yield ghTokenEffect"
+  },
+  {
+    "file": "packages/github/src/manifest.ts",
+    "fn": "convertManifest",
+    "until": "#790",
+    "why": "conductor create-app"
+  },
+  {
     "file": "packages/repo/src/integrate.ts",
     "fn": "integrate",
     "until": "#790",
