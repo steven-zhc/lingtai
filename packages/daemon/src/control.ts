@@ -107,13 +107,13 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * Reduces the control stream. Cheap: it is a handful of events, not a history.
  *
  * **`since` is what scopes a signal to one daemon** (`#159`). A conductor reads
- * the stream from where it was when the conductor started, so a pause or a
- * shutdown appended before it began is not its to obey. Without that, a
- * `lingtai shutdown` outlived the process it was aimed at and stopped the next
- * one too — and `lingtai resume`, a command about *taking work*, became the way
- * to make a process stay up. The two axes are now separate: the process is
- * started and stopped by `start`/`shutdown`, and `pause`/`resume` say what the
- * process that is running should do.
+ * the stream from where it was when the conductor started, so a pause appended
+ * before it began is not its to obey. **A shutdown is not scoped by `since`**
+ * (0126): it is the whole stream's and a `ConductorStarted` ends it, so a drain
+ * does not outlive the process it was aimed at — the next start ends it, and
+ * `recordStart` is what decides, by `since`, whether a request is that start's
+ * to obey. A reader that wants a request from before a start gone must read
+ * after the start is recorded, never rely on `since` to hide it.
  *
  * Every other caller — the board, `doctor`, `status` — passes nothing and reduces
  * the whole stream, because they are answering *what is standing now* rather
@@ -127,7 +127,7 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * exactly that pause (and only that one; `standDownConductor`'s does not carry
  * it). The answer is the whole-stream state, read through the snapshot, scoped
  * by version (`scopeControl`): a pause is kept when it came after `since` or
- * holds across starts, a shutdown when its own version is after `since`.
+ * holds across starts. A shutdown is returned as the whole stream has it.
  * `requested`, `continuing`, `discussions`, `holdsAcrossStarts`,
  * `ceilingWaivedUntil` and `pausedAt` are the whole stream's values; no caller
  * with `since > 0` reads them (#874).
@@ -266,20 +266,27 @@ export async function requestShutdownUnlessStanding(
  * `lingtai restart`. A start that loses the lock appends nothing, because
  * nothing started.
  *
- * It does not withdraw a standing shutdown request, deliberately. See
- * `withdrawShutdown`.
+ * **A start ends a drain, and refuses to start over one asked of it** (0126).
+ * `since` is the control stream's version when this daemon began, read before it
+ * took the lock (#174). A standing request at or below `since` was asked of an
+ * earlier process: the record ends it, and the daemon takes work. One above
+ * `since` landed while this daemon was starting, and is its to obey: nothing is
+ * recorded, and the request is answered. Either way the decision and the append
+ * are one write at the head the decision was read at, so a request landing
+ * between the two fails the append and is read again, never ended unseen.
  */
 export async function recordStart(
   by: string,
   reason: string | null,
   code: CodeVersion,
+  since: number,
   store: EventStore = eventStore,
-): Promise<void> {
-  // Retried on a lost version race, as the two writers below are: nothing about
-  // a start depends on what else landed, so a `RunRequested` between the read
-  // and the append is a reason to read again, not a start with no record.
+): Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }> {
   for (let attempt = 0; ; attempt++) {
     const at = await store.head(CONTROL_STREAM)
+    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+      .shutdown
+    if (standing !== null && standing.version > since) return { recorded: false, standing }
     try {
       await append(
         'ConductorStarted',
@@ -287,7 +294,7 @@ export async function recordStart(
         store,
         at,
       )
-      return
+      return { recorded: true }
     } catch (err) {
       if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
     }
