@@ -77,7 +77,6 @@ import {
   requestShutdownUnlessStanding,
   requestsBetween,
   startAfter,
-  withdrawShutdown,
   type Asking,
   type CodeVersion,
   type ControlState,
@@ -86,7 +85,6 @@ import {
   type LockPlace,
   type RecordedStart,
   type ShutdownRequest,
-  type Withdrawal,
 } from '@lingtai/daemon'
 import { paint } from '@lingtai/env/colour'
 import { parseDuration } from '@lingtai/recipe'
@@ -717,7 +715,6 @@ export interface RestartFacts {
   control: () => Promise<Pick<ControlState, 'shutdown'>>
   inFlight: () => Promise<string[]>
   ask: (by: string, reason: string, timeoutMs: number | null, force: boolean) => Promise<Asking>
-  withdraw: (by: string, version: number, reason: string) => Promise<Withdrawal>
   /** `controlWatermark`: where `ctl-conductor` is now. */
   watermark: () => Promise<number>
   /** `startAfter`. */
@@ -737,7 +734,6 @@ export function liveFacts(): RestartFacts {
     control: () => readControl(),
     inFlight: () => inFlight(),
     ask: (by, reason, timeoutMs, force) => requestShutdownUnlessStanding(by, reason, timeoutMs, undefined, force),
-    withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     watermark: () => controlWatermark(),
     startAfter: (version) => startAfter(version),
     // The ratchet counts `Effect.run*` and not `runPromiseWith`, which carries
@@ -908,44 +904,6 @@ async function checkAfterTheWait(
 
 /** What ends a drain somebody else asked for, where no start of this command's is in the way. */
 const FOREIGN_REMEDY = 'The next start ends it — starting a conductor (lingtai daemon) does — and then this will start'
-
-/**
- * The supervised path's take-over of a drain this person already asked for: withdraw it, so that the
- * drain asked next is newer than whatever holds the lock.
- *
- * Not waited on as it stands. Since #159 a daemon reads nothing appended before
- * it started, so a request older than the daemon now holding the lock is one
- * it will never obey — and a restart waiting on it waits for ever. False, with
- * the refusal said, when what stands by now is somebody else's.
- */
-async function liftAdopted(
-  by: string,
-  adopted: ShutdownRequest,
-  facts: RestartFacts,
-  log: (line: string) => void,
-): Promise<boolean> {
-  const lifted = await facts.withdraw(
-    by,
-    adopted.version,
-    'restarting: taken over by a new restart, which asks its own',
-  )
-  if (!lifted.withdrew && lifted.standing !== null) {
-    sayRefusal(
-      'not restarting:',
-      [
-        {
-          line:
-            `a shutdown asked by ${lifted.standing.by} — ${lifted.standing.reason} — landed while this was checking. ` +
-            `Nothing was asked to stop by this command and nothing was stopped. ${FOREIGN_REMEDY}`,
-          waiver: null,
-        },
-      ],
-      log,
-    )
-    return false
-  }
-  return true
-}
 
 /**
  * `lingtai restart` where nothing supervises the daemon: everything up to the
@@ -1176,18 +1134,16 @@ export async function restartSupervised(
   const checked = await checkBeforeTheDrain(args, by, facts, log)
   if (!checked.ok) return checked.code
 
-  // `service shutdown` never adopts a standing request, anybody's, so a drain
-  // this person asked for is taken over here by `liftAdopted`,
-  // and then the drain it asks is newer than whatever holds the lock.
+  // This person's own standing request is adopted by `service shutdown` itself,
+  // and the start that follows ends it (0126): nothing is lifted here.
   if (checked.plan.adopted) {
     log(
       paint.held(
-        `a shutdown you asked for is already standing (${checked.plan.adopted.reason}) — taken over, and asked again by the drain below.`,
+        `a shutdown you asked for is already standing (${checked.plan.adopted.reason}) — taken over, and waited on by the drain below.`,
       ),
     )
-    if (!(await liftAdopted(by, checked.plan.adopted, facts, log))) return 1
   }
-  // The request taken over is asked again as it was asked — its timeout and its
+  // The request taken over is described as it was asked — its timeout and its
   // `--force` — never as this invocation's flags, which is `prepareRestart`'s rule.
   const drain = checked.plan.adopted
     ? { timeoutMs: checked.plan.adopted.timeoutMs, force: checked.plan.adopted.force }
@@ -1499,7 +1455,7 @@ export async function queueForTheLock(
           return (await holder()) ?? 'nobody, while the lock is handed to this command'
         },
         ctrlC:
-          "ctrl-c stops waiting, withdraws this command's request, and tells the supervisor nothing — a daemon that already read it still exits after its attempt, and the supervisor then starts one that takes work.",
+          'ctrl-c stops waiting and tells the supervisor nothing — the request stands, a daemon that already read it still exits after its attempt, and the next restart by the same person picks it up; the next start ends it.',
         ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
         ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
         ...(progress === undefined ? {} : { progress }),

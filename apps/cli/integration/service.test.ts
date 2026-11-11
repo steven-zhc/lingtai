@@ -14,13 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { LockPlace, RecordedStart } from '@lingtai/daemon'
-import {
-  controlWatermark,
-  readControl,
-  requestShutdown,
-  requestShutdownUnlessStanding,
-  withdrawShutdown,
-} from '@lingtai/daemon/control'
+import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding } from '@lingtai/daemon/control'
 import { repoRoot } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -129,14 +123,6 @@ function quietDrain() {
       said.push('queue'),
       { wait: async () => (said.push('held'), 'held'), holds: async () => true, leave: async () => {} }
     ),
-    withdraw: async (by, v) => (
-      said.push(`withdraw ${v}`),
-      {
-        withdrew: true,
-        version: v + 1,
-        request: { by, reason: '', timeoutMs: null, force: false, version: v } as never,
-      }
-    ),
   }
   return { drain, said }
 }
@@ -165,7 +151,6 @@ function command(
     env?: NodeJS.ProcessEnv
     liveness?: () => Promise<string>
     shutdown?: () => Promise<{ by: string; reason: string } | null>
-    pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>
     /** `"default"` leaves `root` unset, so the command resolves it as it would for real. */
     root?: string | 'default'
     uid?: number
@@ -199,7 +184,6 @@ function command(
     serviceCommand([verb, ...why], {
       liveness: extra.liveness ?? (async () => 'last seen 3000s ago (pid 41) — not running'),
       shutdown: extra.shutdown ?? (async () => null),
-      pause: extra.pause ?? (async () => null),
       drain: extra.drain ?? quietDrain().drain,
       started: extra.started ?? recordedAtOnce,
       board: {
@@ -384,7 +368,7 @@ describe('restart on macOS', () => {
       'launchctl bootstrap',
     ])
     expect(s.calls.join('\n')).not.toContain('kickstart')
-    expect(d.said).toEqual(['queue', 'ask human:lingtai service restart: picking up #88', 'held', 'withdraw 1'])
+    expect(d.said).toEqual(['queue', 'ask human:lingtai service restart: picking up #88', 'held'])
   })
 
   it('on Linux, is shutdown then start — never systemctl restart, which is the signal', async () => {
@@ -620,7 +604,6 @@ describe('shutdown', () => {
           holder: async () => (await tick(), lock.holder),
           pollMs: 0,
         }),
-      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, store),
     }
     return { store, daemons, order, lock, s, drain, stop: () => (loaded = false) }
   }
@@ -636,9 +619,9 @@ describe('shutdown', () => {
     expect(w.daemons.length).toBeGreaterThan(1)
     expect(w.daemons.filter((d) => d.pass === 'in flight' || d.pass === 'killed')).toEqual([])
     expect(w.order).toEqual(["daemon 1's pass finished", 'daemon 1 exited', 'bootout'])
-    // Released after the unload, and the request withdrawn, so `service start` is not refused over it.
+    // Released after the unload; the request stands until the next start ends it (0126).
     expect(w.lock.holder).toBeNull()
-    expect((await readControl(w.store)).shutdown).toBeNull()
+    expect((await readControl(w.store)).shutdown?.by).toBe('human:lingtai')
     const text = out.join('\n')
     expect(text).toContain('draining — 1 in flight: lingtai#174')
     expect(text).toContain('It is waiting, not hung')
@@ -679,7 +662,7 @@ describe('shutdown', () => {
     expect(w.order).toEqual(['daemon 1 exited', 'bootout'])
   })
 
-  it('tells the supervisor nothing when the wait is interrupted, withdraws its request, and says a new daemon takes work', async () => {
+  it('tells the supervisor nothing when the wait is interrupted, leaves its request standing, and says so', async () => {
     const w = world(5)
     const { go, out } = command('darwin', w.s.exec, {
       drain: {
@@ -690,10 +673,10 @@ describe('shutdown', () => {
     await launchdFile()
     expect(await go('shutdown')).toBe(130)
     expect(w.s.calls.some((c) => c.startsWith('launchctl bootout'))).toBe(false)
-    expect((await readControl(w.store)).shutdown).toBeNull()
+    expect((await readControl(w.store)).shutdown?.by).toBe('human:lingtai')
     const text = out.join('\n')
-    expect(text).toContain('the supervisor then starts one that takes work')
-    expect(text).toContain('pnpm lingtai service shutdown asks again')
+    expect(text).toContain('The request stands until the next start ends it')
+    expect(text).toContain('pnpm lingtai service shutdown picks it up again')
     expect(text).not.toContain('exits too')
   })
 
@@ -741,7 +724,7 @@ describe('shutdown', () => {
     ])
     expect(w.daemons.filter((d) => d.pass === 'in flight' || d.pass === 'killed')).toEqual([])
     expect(w.lock.holder).toBeNull()
-    expect((await readControl(w.store)).shutdown).toBeNull()
+    expect((await readControl(w.store)).shutdown?.by).toBe('human:lingtai')
     expect(out.join('\n')).toContain('could not ask who holds the lock — the place in the queue for the lock was lost')
   })
 
@@ -762,7 +745,7 @@ describe('shutdown', () => {
     const { go } = command('linux', s.exec, { drain: d.drain })
     await systemdFile()
     expect(await go('uninstall')).toBe(0)
-    expect(d.said).toEqual(['queue', 'ask human:lingtai service uninstall: no reason given', 'held', 'withdraw 1'])
+    expect(d.said).toEqual(['queue', 'ask human:lingtai service uninstall: no reason given', 'held'])
     expect(s.calls.filter((c) => !c.startsWith('systemctl --user show'))).toEqual([
       `systemctl --user stop ${SYSTEMD_UNIT}`,
       `systemctl --user disable --now ${SYSTEMD_UNIT}`,
@@ -824,7 +807,7 @@ describe('shutdown', () => {
     expect(said).not.toContain('exits again')
   })
 
-  it('withdraws its own request and lets the lock go when the supervisor does not unload, so nothing is refused over it after', async () => {
+  it('leaves its own request standing and lets the lock go when the supervisor does not unload, and the next shutdown adopts it', async () => {
     const w = world(2)
     const s = supervisor([
       ['launchctl print', { status: 0, out: '\tstate = running\n' }],
@@ -835,11 +818,11 @@ describe('shutdown', () => {
     expect(await go('shutdown', 'x')).toBe(1)
     expect(w.lock.holder).not.toBe('command')
     expect(w.lock.queue).toEqual([])
-    expect((await readControl(w.store)).shutdown).toBeNull()
+    expect((await readControl(w.store)).shutdown?.by).toBe('human:lingtai')
     const said = err.join('\n')
     expect(said).toContain('the supervisor did not stop the service')
-    expect(said).toContain('The request is withdrawn')
-    // And the next `service shutdown` asks its own rather than refusing over this one.
+    expect(said).toContain('The request stands until the next start ends it')
+    // And the next `service shutdown` adopts it rather than refusing over it.
     const again = command('darwin', s.exec, { drain: w.drain })
     expect(await again.go('shutdown', 'again')).toBe(1)
     expect(again.err.join('\n')).toContain('the supervisor did not stop the service')
@@ -974,7 +957,7 @@ describe('while a shutdown request stands', () => {
     expect(existsSync(join(home, 'Library/LaunchAgents', `${LAUNCHD_LABEL}.plist`))).toBe(true)
     const said = err.join('\n')
     expect(said).toContain('a shutdown request stands — asked by steven (pick up #NN)')
-    expect(said).toContain('pnpm lingtai resume,\nthen pnpm lingtai service start')
+    expect(said).toContain('starting a conductor (lingtai daemon) ends it')
   })
 
   it('install on Linux enables the unit and starts nothing', async () => {
@@ -991,70 +974,6 @@ describe('while a shutdown request stands', () => {
     const { go } = command('darwin', s.exec, { shutdown: async () => ((asked = true), { by: 'steven', reason: 'x' }) })
     expect(await go('install')).toBe(0)
     expect(asked).toBe(false)
-  })
-
-  it('names a pause in force, which resume would lift, and gives the order that keeps it', async () => {
-    // `pause "the importer is flaky today"`, later `shutdown`, then the recipe's
-    // `resume` would clear both — and the next start would take the held queue.
-    const s = supervisor([['launchctl print', { status: 0, out: '\tstate = running\n' }]])
-    const { go, err } = command('darwin', s.exec, {
-      shutdown: STANDS,
-      pause: async () => ({ by: 'steven', reason: 'the importer is flaky today' }),
-    })
-    await launchdFile()
-    expect(await go('restart')).toBe(1)
-    expect(s.calls).toEqual([])
-    const said = err.join('\n')
-    expect(said).toContain(
-      'A pause is in force too — steven (the importer is flaky today) — and pnpm lingtai resume lifts it',
-    )
-    expect(said).toContain(
-      'pnpm lingtai service shutdown, pnpm lingtai resume, pnpm lingtai pause "the importer is flaky today", pnpm lingtai service start.',
-    )
-    expect(said).not.toContain("the supervisor's next start takes work")
-  })
-
-  it('never advises pausing again over a pause that lifts itself, which would then never lift', async () => {
-    // A run never started on an account limit and the conductor paused until
-    // 23:00; then `shutdown "pick up #NN"` and `service restart`. `lingtai
-    // pause` carries no time, so the advice cannot be to set it again.
-    const s = supervisor([['launchctl print', { status: 0, out: '\tstate = running\n' }]])
-    const until = new Date('2026-09-13T23:00:00.000Z')
-    const { go, err } = command('darwin', s.exec, {
-      shutdown: STANDS,
-      pause: async () => ({ by: 'conductor', reason: 'account limit', until }),
-    })
-    await launchdFile()
-    expect(await go('restart')).toBe(1)
-    expect(s.calls).toEqual([])
-    const said = err.join('\n')
-    expect(said).toContain(
-      `A pause is in force too — conductor (account limit) — until ${until.toISOString()}, when it lifts by itself`,
-    )
-    expect(said).toContain(`After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited`)
-    expect(said).not.toContain('pnpm lingtai pause')
-    expect(said).not.toContain('pnpm lingtai service shutdown')
-    expect(said).not.toContain("the supervisor's next start takes work")
-    expect(said).toContain('then this command again')
-  })
-
-  it('does not promise the supervisor a start after a pause that lifts itself, when service shutdown has unloaded the job', async () => {
-    // `service shutdown`, the conductor's own pause still in force, then
-    // `lingtai shutdown "x"`: `resume` alone starts nothing under an unloaded job.
-    const s = supervisor([['launchctl print', { status: LAUNCHCTL_NO_SUCH_SERVICE, out: '' }]])
-    const until = new Date('2026-09-13T23:00:00.000Z')
-    const { go, err } = command('darwin', s.exec, {
-      shutdown: async () => ({ by: 'human:ops', reason: 'x' }),
-      pause: async () => ({ by: 'conductor', reason: 'account limit', until }),
-    })
-    await launchdFile()
-    expect(await go('start')).toBe(1)
-    expect(s.calls.some((c) => c.startsWith('launchctl bootstrap'))).toBe(false)
-    const said = err.join('\n')
-    expect(said).not.toContain("the supervisor's next start takes work")
-    expect(said).toContain(
-      `After ${until.toISOString()}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.`,
-    )
   })
 })
 
@@ -1119,7 +1038,7 @@ describe('the place in the queue for the lock', () => {
     expect(await q.holds()).toBe(true)
   })
 
-  it("says what ctrl-c does in service shutdown's wait — withdraws the request — never that it leaves it standing", async () => {
+  it("says what ctrl-c does in service shutdown's wait — the request stands, and the next start ends it", async () => {
     let asks = 0
     const place = async (): Promise<LockPlace> => ({
       held: () => asks > 2,
@@ -1131,8 +1050,8 @@ describe('the place in the queue for the lock', () => {
     const q = await queueForTheLock({ place, holder: async () => (asks++, 'daemon 1'), pollMs: 0, sayEveryMs: 0 })
     expect(await q.wait((l) => lines.push(l))).toBe('held')
     const said = lines.join('\n')
-    expect(said).toContain("withdraws this command's request")
-    expect(said).not.toContain('leaves whatever was asked for standing')
+    expect(said).toContain('the request stands')
+    expect(said).toContain('the next start ends it')
   })
 })
 
@@ -1495,7 +1414,6 @@ describe('one command to stop, one to start', () => {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
       holding: async () => 'nothing in flight',
       queue: async () => ({ wait: async () => 'held', holds: async () => true, leave: async () => {} }),
-      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, store),
     }
     const { go, err } = command('darwin', s.exec, {
       drain,
@@ -1519,10 +1437,9 @@ describe('one command to stop, one to start', () => {
     expect(loaded).toBe(true)
     expect(err).toEqual([])
     expect((await readControl(store)).shutdown).toBeNull()
-    // Nothing was resumed: the two commands were the whole of it.
+    // Nothing was resumed or withdrawn: the start ended the request (0126).
     expect((await store.read('ctl-conductor')).map((e) => e.type)).toEqual([
       'ConductorShutdownRequested',
-      'ConductorShutdownWithdrawn',
       'ConductorStarted',
     ])
   })
@@ -1710,7 +1627,7 @@ describe('two jobs', () => {
     expect(boardCalls.filter((c) => !c.startsWith('launchctl print'))).toEqual([
       `launchctl bootout gui/${UID}/${BOARD_LAUNCHD_LABEL}`,
     ])
-    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: for the night', 'held', 'withdraw 1'])
+    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: for the night', 'held'])
   })
 
   /**
@@ -1740,7 +1657,7 @@ describe('two jobs', () => {
     await launchdFile()
     // Not a refusal: the conductor is what the verb was about, and it drained.
     expect(await go('shutdown', 'moving the database')).toBe(0)
-    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: moving the database', 'held', 'withdraw 1'])
+    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: moving the database', 'held'])
     const said = out.join('\n')
     expect(said).toContain(why)
     expect(said).toContain('pnpm build writes the board')
@@ -1776,7 +1693,7 @@ describe('two jobs', () => {
     expect(await go('shutdown', 'for the night')).toBe(SHUTDOWN_BOARD_ONLY)
     expect(SHUTDOWN_BOARD_ONLY).not.toBe(1)
     // The conductor did drain and did unload, which is what the exit is not about.
-    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: for the night', 'held', 'withdraw 1'])
+    expect(d.said).toEqual(['queue', 'ask human:lingtai service shutdown: for the night', 'held'])
     expect(loaded).toBe(false)
     // And the board's refusal is the board's, named as the board's job.
     expect(err.join('\n')).toContain(`the supervisor did not stop ${BOARD_LAUNCHD_LABEL}`)

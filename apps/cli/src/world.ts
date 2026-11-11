@@ -298,12 +298,11 @@ async function drainWithTheLog(reason: string, despiteDoctor: boolean): Promise<
     holder: () => daemon.conductorLockHolder(),
     control: () => daemon.readControl(),
     request: (who, why) => daemon.requestShutdownUnlessStanding(who, why),
-    withdraw: (who, version, why) => daemon.withdrawShutdown(who, version, why),
     inFlight: async () => daemon.describeInFlight(await daemon.inFlight().catch(() => [])),
     wait: () =>
       waitForTheLock('draining', null, (line) => console.log(line), {
         ctrlC:
-          'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again asks for it afresh, and lingtai resume lifts it.',
+          'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again picks it up, and the next start ends it.',
       }),
     log: (line) => console.log(line),
   })
