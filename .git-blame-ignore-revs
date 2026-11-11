@@ -23,3 +23,6 @@ e89a34c589c2eca6ee3cf51403b8e767517c71a6
 
 # #851: presentRun is presentAttempt, PassOutcome is TurnOutcome, buildPassAssets is buildAttemptAssets (scripted)
 562cb1616fafe0c3451573924266b1da3b317c53
+
+# #1024: GitHubError is GitHubFailed (scripted)
+70099f6acdebd90bc12c30b8b4d1979820d4275d
