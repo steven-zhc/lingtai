@@ -30,12 +30,14 @@
  */
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 
-import type { Envelope } from '@lingtai/domain'
+import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
+import { Effect } from 'effect'
 
-import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from './event-store.ts'
+import { ConcurrencyError, decodeRow, type EventStore, type EventsPort, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, UnconvergedUpdate } from './queries.ts'
 import { createSqlSnapshotStore } from './snapshots.ts'
+import { promiseStore } from './store-face.ts'
 import type { TicketSql } from './ticket-sql.ts'
 import type { Waker } from './wake.ts'
 
@@ -194,7 +196,7 @@ function bigints(statement: StatementSync): StatementSync {
   return statement
 }
 
-export function createSqliteEventStore(db: DatabaseSync): EventStore {
+export function makeSqliteEvents(db: DatabaseSync): EventsPort {
   const insert = bigints(
     db.prepare(
       `INSERT INTO events (stream_id, version, type, schema_ver, data, actor, causation)
@@ -212,76 +214,93 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
   const readLog = bigints(db.prepare('SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?'))
 
   return {
-    async append(streamId, expectedVersion, events) {
+    append: Effect.fn('EventStore.append')(function* (
+      streamId: string,
+      expectedVersion: number,
+      events: readonly ToAppend[],
+    ) {
+      // A throw here is a defect: nothing has been written.
       const rows = prepareAppend(streamId, expectedVersion, events)
-      if (rows.length === 0) return []
+      const none: Envelope[] = []
+      if (rows.length === 0) return none
 
+      // **One synchronous thunk, with no `yield*` between BEGIN and COMMIT.**
       // `node:sqlite` is synchronous, so nothing else in this process runs
-      // between BEGIN and COMMIT. IMMEDIATE takes the write lock up front, so a
-      // second process waits at the start of the batch rather than failing in
-      // the middle of it.
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        const written = rows.map((r) =>
-          toEnvelope(
-            insert.get(
-              r.streamId,
-              r.version,
-              r.type,
-              r.schemaVer,
-              JSON.stringify(r.data),
-              r.actor,
-              r.causation,
-            ) as unknown as SqliteRow,
-          ),
-        )
-        db.exec('COMMIT')
-        return written
-      } catch (err) {
-        // The error that got here is the one to report. SQLite may already
-        // have ended the transaction itself, and then `ROLLBACK` throws *no
-        // transaction is active* — which, let through, would turn a lost race
-        // into a crash for a caller that retries on `ConcurrencyError`.
+      // between them — a fiber on the same connection would otherwise run in
+      // the gap and its `BEGIN` would fail inside the open transaction.
+      // IMMEDIATE takes the write lock up front, so a second process waits at
+      // the start of the batch rather than failing in the middle of it.
+      //
+      // `suspend` and not `try`: a throw is a defect, and only the lost race is
+      // returned as a failure.
+      return yield* Effect.suspend((): Effect.Effect<Envelope[], ConcurrencyError> => {
+        db.exec('BEGIN IMMEDIATE')
         try {
-          db.exec('ROLLBACK')
-        } catch {
-          // Nothing left to roll back.
-        }
-        if (isVersionConflict(err)) {
-          throw new ConcurrencyError(
-            streamId,
-            expectedVersion,
-            rows.map((r) => r.version),
-            { cause: err },
+          const written = rows.map((r) =>
+            toEnvelope(
+              insert.get(
+                r.streamId,
+                r.version,
+                r.type,
+                r.schemaVer,
+                JSON.stringify(r.data),
+                r.actor,
+                r.causation,
+              ) as unknown as SqliteRow,
+            ),
           )
+          db.exec('COMMIT')
+          return Effect.succeed(written)
+        } catch (err) {
+          // The error that got here is the one to report. SQLite may already
+          // have ended the transaction itself, and then `ROLLBACK` throws *no
+          // transaction is active* — which, let through, would turn a lost race
+          // into a crash for a caller that retries on `ConcurrencyError`.
+          try {
+            db.exec('ROLLBACK')
+          } catch {
+            // Nothing left to roll back.
+          }
+          if (isVersionConflict(err)) {
+            return Effect.fail(
+              new ConcurrencyError(
+                streamId,
+                expectedVersion,
+                rows.map((r) => r.version),
+                { cause: err },
+              ),
+            )
+          }
+          throw err
         }
-        throw err
-      }
-    },
+      })
+    }),
 
-    async read(streamId, fromVersion = 1) {
-      return readStream.all(streamId, fromVersion).map((r) => toEnvelope(r as unknown as SqliteRow))
-    },
+    read: Effect.fn('EventStore.read')((streamId: string, fromVersion = 1) =>
+      Effect.sync(() => readStream.all(streamId, fromVersion).map((r) => toEnvelope(r as unknown as SqliteRow))),
+    ),
 
-    head: (streamId) => {
-      try {
-        return Promise.resolve(Number((streamHead.get(streamId) as unknown as { head: bigint | number }).head))
-      } catch (err) {
-        return Promise.reject(err)
-      }
-    },
+    head: Effect.fn('EventStore.head')((streamId: string) =>
+      Effect.sync(() => Number((streamHead.get(streamId) as unknown as { head: bigint | number }).head)),
+    ),
 
-    async readTypes(streamId, types, fromVersion = 1) {
-      if (types.length === 0) return []
-      return readStreamTypes
-        .all(streamId, fromVersion, JSON.stringify(types))
-        .map((r) => toEnvelope(r as unknown as SqliteRow))
-    },
+    readTypes: Effect.fn('EventStore.readTypes')((streamId: string, types: readonly EventType[], fromVersion = 1) =>
+      Effect.sync(() => {
+        if (types.length === 0) return []
+        return readStreamTypes
+          .all(streamId, fromVersion, JSON.stringify(types))
+          .map((r) => toEnvelope(r as unknown as SqliteRow))
+      }),
+    ),
 
-    async readAll(fromSeq, limit) {
-      return readLog.all(fromSeq, limit).map((r) => toEnvelope(r as unknown as SqliteRow))
-    },
+    readAll: Effect.fn('EventStore.readAll')((fromSeq: bigint, limit: number) =>
+      Effect.sync(() => readLog.all(fromSeq, limit).map((r) => toEnvelope(r as unknown as SqliteRow))),
+    ),
   }
+}
+
+export function createSqliteEventStore(db: DatabaseSync): EventStore {
+  return promiseStore(makeSqliteEvents(db))
 }
 
 export interface PollingWakerOptions {
@@ -631,7 +650,7 @@ export function createSqliteLog(options: SqliteLogOptions): Log {
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
   })
   return {
-    store: createSqliteEventStore(options.db),
+    store: options.store ?? promiseStore(makeSqliteEvents(options.db)),
     queries: createSqliteLogQueries(options.db),
     snapshots: createSqlSnapshotStore(createSqliteTicketSql(options.db)),
     waker: () => waker,
@@ -645,4 +664,6 @@ export interface SqliteLogOptions {
   path: string
   /** Defaults to `POLL_MS`. */
   intervalMs?: number
+  /** The store the log hands out, when its caller built one over `db` already. */
+  store?: EventStore
 }

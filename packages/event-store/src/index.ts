@@ -12,10 +12,11 @@
  */
 export { directPostgresUrl, postgresUrl } from './env.ts'
 export { createDb, type Db } from './db.ts'
-import { deferredEventStore, deferredLog, processEventStore, processLog } from './choose.ts'
+import { deferredEvents, deferredLog, processEvents, processLog } from './choose.ts'
 import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
-export { closeProcessLog, processEventStore, processLog, processTicketSql } from './choose.ts'
+import { promiseStore } from './store-face.ts'
+export { closeProcessLog, eventsLayer, processEventStore, processLog, processTicketSql } from './choose.ts'
 export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
 export type { TicketSql } from './ticket-sql.ts'
 export {
@@ -41,6 +42,8 @@ export {
 export {
   ConcurrencyError,
   createEventStore,
+  Events,
+  type EventsPort,
   LogPredatesHoldError,
   logPredatesHold,
   SchemaVersionUnsupportedError,
@@ -65,7 +68,7 @@ export {
  * how a process that could not see a checkout's `.env.local` — when one was
  * still read — came to open a second, empty log and report every append into it as success.
  */
-export const eventStore: EventStore = deferredEventStore(processEventStore)
+export const eventStore: EventStore = promiseStore(deferredEvents(processEvents))
 
 /**
  * The log this process reads and asks: the store above, the questions beside it
@@ -78,6 +81,7 @@ export const eventStore: EventStore = deferredEventStore(processEventStore)
  * than with the poll #178 built for it.
  */
 export const log: Log = deferredLog(processLog)
+export { fromPromiseStore, promiseStore } from './store-face.ts'
 export { subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
 export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
 export { parseTimestamptz } from './timestamptz.ts'

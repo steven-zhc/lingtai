@@ -23,13 +23,21 @@ import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 
 import type { Envelope } from '@lingtai/domain'
+import { Cause, Effect, Exit } from 'effect'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
 import { ConcurrencyError } from '../src/event-store.ts'
-import { createPollingWaker, createSqliteEventStore, createSqliteLogQueries, openSqliteLog } from '../src/sqlite.ts'
+import {
+  createPollingWaker,
+  createSqliteEventStore,
+  createSqliteLogQueries,
+  makeSqliteEvents,
+  openSqliteLog,
+} from '../src/sqlite.ts'
 import { subscribe } from '../src/subscribe.ts'
 import type { Waker } from '../src/wake.ts'
 import { describeEventStoreContract } from '../test/contract.ts'
+import { describeEventsContract } from '../test/events-contract.ts'
 import { describeLogQueriesContract } from '../test/queries-contract.ts'
 import { describeWakerContract } from '../test/wake-contract.ts'
 
@@ -77,6 +85,18 @@ let n = 0
 const stream = () => `ticket-sqlite-${n++}`
 
 describeEventStoreContract('sqlite', () => createSqliteEventStore(open(freshLog())), stream)
+describeEventsContract('sqlite', () => makeSqliteEvents(open(freshLog())), stream)
+
+describe('sqlite: Events defects', () => {
+  it('a read on a closed database is a Die', async () => {
+    const db = openSqliteLog(freshLog())
+    const events = makeSqliteEvents(db)
+    db.close()
+    const exit = await Effect.runPromiseExit(events.read(stream()))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.hasDies(exit.cause)).toBe(true)
+  })
+})
 
 /** A store and a waker on one file, appending through a connection the waker does not hold. */
 function harness(options: { intervalMs?: number } = {}) {

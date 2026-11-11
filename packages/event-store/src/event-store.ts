@@ -25,6 +25,7 @@ import {
   parsePayload,
   parseStoredPayload,
 } from '@lingtai/domain'
+import { Context, Effect } from 'effect'
 
 // **Type-only, and that is the point** (`#157`). This module held
 // `createEventStore(db)` as well, so importing *anything* from it — the
@@ -38,6 +39,7 @@ import {
 import type { Db } from './db.ts'
 import type { CodecTypes } from './prisma/contract.d.ts'
 import type { LogQueries } from './queries.ts'
+import { promiseStore } from './store-face.ts'
 import { parseTimestamptz } from './timestamptz.ts'
 
 // ----------------------------------------------------------------- errors ----
@@ -59,6 +61,8 @@ import { parseTimestamptz } from './timestamptz.ts'
  */
 export class ConcurrencyError extends Error {
   override readonly name = 'ConcurrencyError'
+  /** So `Effect.catchTag('ConcurrencyError', …)` works on the failure `append` gives. */
+  readonly _tag = 'ConcurrencyError' as const
   readonly streamId: string
   readonly expectedVersion: number
   readonly attemptedVersions: readonly number[]
@@ -373,82 +377,142 @@ export interface EventStore {
   readAll(fromSeq: bigint, limit: number): Promise<Envelope[]>
 }
 
-export function createEventStore(client: Db): EventStore {
+/**
+ * The store as Effects (0101 §6, #1020): the one implementation, which the
+ * promise `EventStore` above is a face over (`store-face.ts`).
+ *
+ * **`append` fails with `ConcurrencyError` and with nothing else.** Every other
+ * failure, the store's own included, is a defect — "a run cannot decide
+ * anything on behalf of a store that will not append". The reads fail with
+ * nothing.
+ */
+export interface EventsPort {
+  append(
+    streamId: string,
+    expectedVersion: number,
+    events: readonly ToAppend[],
+  ): Effect.Effect<Envelope[], ConcurrencyError>
+  read(streamId: string, fromVersion?: number): Effect.Effect<Envelope[]>
+  head(streamId: string): Effect.Effect<number>
+  readTypes(streamId: string, types: readonly EventType[], fromVersion?: number): Effect.Effect<Envelope[]>
+  readAll(fromSeq: bigint, limit: number): Effect.Effect<Envelope[]>
+}
+
+export class Events extends Context.Service<Events, EventsPort>()('@lingtai/event-store/Events') {}
+
+/** `EventStore` as Effects, over Postgres. Wrapped by `createEventStore`. */
+export function makePostgresEvents(client: Db): EventsPort {
   return {
-    async append(streamId, expectedVersion, events) {
+    append: Effect.fn('EventStore.append')(function* (
+      streamId: string,
+      expectedVersion: number,
+      events: readonly ToAppend[],
+    ) {
       // Validate everything before opening a transaction. A rejected payload
       // should cost nothing and, more importantly, a batch must not be able to
-      // fail halfway through validation with rows already written.
+      // fail halfway through validation with rows already written. A throw
+      // here is a defect, which is what the contract asserts.
       const rows = prepareAppend(streamId, expectedVersion, events)
-      if (rows.length === 0) return []
+      const none: Envelope[] = []
+      if (rows.length === 0) return none
 
-      try {
-        return await client.transaction(async (tx) => {
-          const written: Envelope[] = []
-          // Sequentially, not in parallel: the versions inside a batch are
-          // ordered, and one transaction has one connection anyway.
-          for (const row of rows) {
-            written.push(toEnvelope((await tx.orm.public.Event.create(row)) as EventRow))
-          }
-          return written
-        })
-      } catch (err) {
-        if (isVersionConflict(err)) {
-          throw new ConcurrencyError(
-            streamId,
-            expectedVersion,
-            rows.map((r) => r.version),
-            { cause: err },
-          )
-        }
-        throw err
-      }
-    },
+      // `Effect.promise` makes a rejection a defect, so only the lost race is
+      // turned into a failure — inside the promise, before it can be one.
+      // Uninterruptible: an interrupted caller waits for the commit or the
+      // rollback rather than leaving with the transaction undecided.
+      const outcome = yield* Effect.uninterruptible(
+        Effect.promise(() =>
+          client
+            .transaction(async (tx) => {
+              const written: Envelope[] = []
+              // Sequentially, not in parallel: the versions inside a batch are
+              // ordered, and one transaction has one connection anyway.
+              for (const row of rows) {
+                written.push(toEnvelope((await tx.orm.public.Event.create(row)) as EventRow))
+              }
+              return written
+            })
+            .then(
+              (written): Effect.Effect<Envelope[], ConcurrencyError> => Effect.succeed(written),
+              (err): Effect.Effect<Envelope[], ConcurrencyError> => {
+                if (isVersionConflict(err)) {
+                  return Effect.fail(
+                    new ConcurrencyError(
+                      streamId,
+                      expectedVersion,
+                      rows.map((r) => r.version),
+                      { cause: err },
+                    ),
+                  )
+                }
+                throw err
+              },
+            ),
+        ),
+      )
+      return yield* outcome
+    }),
 
-    async read(streamId, fromVersion = 1) {
-      const rows = await client.orm.public.Event.where({ streamId })
-        .where((e) => e.version.gte(fromVersion))
-        .orderBy((e) => e.version.asc())
-        .all()
-      return rows.map((r) => toEnvelope(r as EventRow))
-    },
+    read: Effect.fn('EventStore.read')((streamId: string, fromVersion = 1) =>
+      Effect.promise(() =>
+        Promise.resolve(
+          client.orm.public.Event.where({ streamId })
+            .where((e) => e.version.gte(fromVersion))
+            .orderBy((e) => e.version.asc())
+            .all(),
+        ).then((rows) => rows.map((r) => toEnvelope(r as EventRow))),
+      ),
+    ),
 
-    head: (streamId) =>
-      Promise.resolve(
-        client.orm.public.Event.where({ streamId })
-          .select('version')
-          .orderBy((e) => e.version.desc())
-          .limit(1)
-          .all(),
-      ).then((rows) => Number(rows[0]?.version ?? 0)),
+    head: Effect.fn('EventStore.head')((streamId: string) =>
+      Effect.promise(() =>
+        Promise.resolve(
+          client.orm.public.Event.where({ streamId })
+            .select('version')
+            .orderBy((e) => e.version.desc())
+            .limit(1)
+            .all(),
+        ).then((rows) => Number(rows[0]?.version ?? 0)),
+      ),
+    ),
 
-    async readTypes(streamId, types, fromVersion = 1) {
-      if (types.length === 0) return []
-      const rows = await client.orm.public.Event.where({ streamId })
-        .where((e) => e.version.gte(fromVersion))
-        .where((e) => e.type.in([...types]))
-        .orderBy((e) => e.version.asc())
-        .all()
-      return rows.map((r) => toEnvelope(r as EventRow))
-    },
+    readTypes: Effect.fn('EventStore.readTypes')((streamId: string, types: readonly EventType[], fromVersion = 1) => {
+      if (types.length === 0) return Effect.succeed<Envelope[]>([])
+      return Effect.promise(() =>
+        Promise.resolve(
+          client.orm.public.Event.where({ streamId })
+            .where((e) => e.version.gte(fromVersion))
+            .where((e) => e.type.in([...types]))
+            .orderBy((e) => e.version.asc())
+            .all(),
+        ).then((rows) => rows.map((r) => toEnvelope(r as EventRow))),
+      )
+    }),
 
-    async readAll(fromSeq, limit) {
-      // `seq` is a Postgres sequence, so a value is claimed when the INSERT runs
-      // and becomes visible when the transaction commits. Under concurrent
-      // writers those two orders can differ: a reader can see seq 6 committed
-      // while seq 5 is still in flight, and a checkpoint advanced to 6 would
-      // skip 5 forever.
-      //
-      // It does not bite today — the conductor is the single writer, and #1 is
-      // the whole of the store. It is #4's problem to solve, and it must not be
-      // solved by pretending seq is gapless. The usual fix is to hold the
-      // subscriber back to the oldest still-open transaction
-      // (`pg_snapshot_xmin(pg_current_snapshot())`) rather than to `max(seq)`.
-      const rows = await client.orm.public.Event.where((e) => e.seq.gt(fromSeq))
-        .orderBy((e) => e.seq.asc())
-        .limit(limit)
-        .all()
-      return rows.map((r) => toEnvelope(r as EventRow))
-    },
+    // `seq` is a Postgres sequence, so a value is claimed when the INSERT runs
+    // and becomes visible when the transaction commits. Under concurrent
+    // writers those two orders can differ: a reader can see seq 6 committed
+    // while seq 5 is still in flight, and a checkpoint advanced to 6 would
+    // skip 5 forever.
+    //
+    // It does not bite today — the conductor is the single writer, and #1 is
+    // the whole of the store. It is #4's problem to solve, and it must not be
+    // solved by pretending seq is gapless. The usual fix is to hold the
+    // subscriber back to the oldest still-open transaction
+    // (`pg_snapshot_xmin(pg_current_snapshot())`) rather than to `max(seq)`.
+    readAll: Effect.fn('EventStore.readAll')((fromSeq: bigint, limit: number) =>
+      Effect.promise(() =>
+        Promise.resolve(
+          client.orm.public.Event.where((e) => e.seq.gt(fromSeq))
+            .orderBy((e) => e.seq.asc())
+            .limit(limit)
+            .all(),
+        ).then((rows) => rows.map((r) => toEnvelope(r as EventRow))),
+      ),
+    ),
   }
+}
+
+export function createEventStore(client: Db): EventStore {
+  return promiseStore(makePostgresEvents(client))
 }
