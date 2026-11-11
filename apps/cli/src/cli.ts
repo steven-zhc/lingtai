@@ -1117,16 +1117,16 @@ const accountLift = Command.make(
   'lift',
   { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
   (args) =>
-    daemonHandler(args, async () => {
-      const { liftAccount } = await import('./account-lift.ts')
-      const { runEffect } = await import('./project-pause.ts')
-      try {
-        return await runEffect(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`))
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err))
-        return 1
-      }
-    }),
+    daemonHandler(args, () =>
+      import('./account-lift.ts')
+        .then(({ liftAccount, runLiftAccount }) =>
+          runLiftAccount(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)),
+        )
+        .catch((err: unknown) => {
+          console.error(err instanceof Error ? err.message : String(err))
+          return 1
+        }),
+    ),
 )
 
 const accountCommand = Command.make('account', {}, () =>

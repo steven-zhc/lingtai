@@ -424,6 +424,7 @@ lingtai close lingtai --issue <n> "superseded"
 | stop the daemon after the ticket in flight | [lingtai shutdown](#lingtai-shutdown) |
 | stop one project, or every project, taking new tickets | [lingtai pause](#lingtai-pause) |
 | take tickets again, for one project or every project | [lingtai resume](#lingtai-resume) |
+| lift a runtime's usage limit | [lingtai account](#lingtai-account) |
 
 ### lingtai start
 
@@ -569,6 +570,23 @@ lingtai resume [project] [--no-color]
 ```sh
 lingtai resume lingtai
 lingtai resume
+```
+
+### lingtai account
+
+Lift a runtime's usage limit.
+
+Changes state.
+
+```text
+lingtai account lift <runtime> [--no-color]
+  Says a runtime's account is no longer at its usage limit. Projects that
+  use it take work again at the next look. Appends nothing when no limit
+  stands. Runtimes: claude-code, codex
+```
+
+```sh
+lingtai account lift claude-code
 ```
 
 ## Install and upkeep

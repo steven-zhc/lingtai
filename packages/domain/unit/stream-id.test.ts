@@ -5,7 +5,7 @@ import { ATTEMPT_STREAM_PREFIX } from '../src/streams.ts'
 
 describe('STREAM_ID_PATTERN', () => {
   it('is built to the same source as the literal it replaced', () => {
-    expect(STREAM_ID_PATTERN.source).toBe('^(ticket|pass|int|prj|ctl|chat|ext|bkl|rcp)-[\\w.-]+$')
+    expect(STREAM_ID_PATTERN.source).toBe('^(ticket|pass|int|prj|ctl|chat|ext|bkl|rcp|acct)-[\\w.-]+$')
   })
 
   it('keeps the attempt stream prefix value', () => {

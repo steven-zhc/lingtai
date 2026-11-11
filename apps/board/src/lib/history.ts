@@ -437,6 +437,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
   ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,
   ProjectResumed: (d) => `${personName(need(d, 'by'))} resumed ${need(d, 'project')}`,
+  AccountLimitReached: (d) => `${need(d, 'runtime')} reached its usage limit until ${need(d, 'until')}`,
+  AccountLimitLifted: (d) =>
+    typeof d['by'] === 'string'
+      ? `${personName(d['by'])} lifted ${need(d, 'runtime')}'s usage limit`
+      : `${need(d, 'runtime')}'s usage limit ended`,
   GitHubAppCreated: (d) => `GitHub App ${need(d, 'slug')} created`,
   PluginFailed: (d) => `Plugin ${need(d, 'name')} failed on ${need(d, 'eventType')}: ${clip(d['reason'])}`,
 

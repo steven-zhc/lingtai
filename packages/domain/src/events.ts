@@ -2229,8 +2229,9 @@ export const AccountLimitReached = z.object({
  * @summary A runtime's usage limit was lifted: its time passed, or a person said it is over.
  */
 export const AccountLimitLifted = z.union([
-  z.object({ runtime: RuntimeId }),
+  // `by` first: a union takes the first member that parses, and the bare shape would strip it.
   z.object({ runtime: RuntimeId, by: z.string() }),
+  z.object({ runtime: RuntimeId }),
 ])
 
 /**
