@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { AgentHost, Repo } from '../src/ports.ts'
 import { runQueue } from '../src/schedule.ts'
+import { createSlots } from '../src/slots.ts'
 
 const untouched = <T>(what: string): T =>
   new Proxy(
@@ -38,9 +39,14 @@ vi.mock('@lingtai/recipe/settings', () => ({
   backoffOf: () => '1h',
 }))
 
-const queue = (locked: (project: string) => Promise<string | null>, paused?: () => Promise<string | null>) => {
+const queue = (
+  locked: (project: string) => Promise<string | null>,
+  paused?: () => Promise<string | null>,
+  extra: { slots?: never } | Record<string, unknown> = {},
+) => {
   const lines: string[] = []
   const client = {
+    getIssue: async () => ({ body: '' }),
     listOpenIssues: async () => [
       {
         number: 7,
@@ -64,6 +70,7 @@ const queue = (locked: (project: string) => Promise<string | null>, paused?: () 
       recipe: untouched<Recipe>('recipe'),
       ...(paused ? { paused } : {}),
       locked,
+      ...extra,
       log: (l) => lines.push(l),
     }).pipe(
       Effect.provide(Layer.merge(Layer.succeed(Repo, untouched('repo')), Layer.succeed(AgentHost, untouched('agent')))),
@@ -102,5 +109,16 @@ describe('runQueue under one project’s lock', () => {
     const { outcome } = await queue(locked, async () => 'paused by human:ops')
     expect(outcome.stopped).toBe('paused')
     expect(locked).not.toHaveBeenCalled()
+  })
+
+  it('a lock that lands during the issue read starts nothing', async () => {
+    let asked = 0
+    const started: unknown[] = []
+    const { outcome } = await queue(async () => (++asked <= 2 ? null : 'p is paused by human:a since now'), undefined, {
+      slots: { set: createSlots(), limit: 2, started: (p: unknown) => started.push(p) },
+    })
+    expect(asked).toBe(3)
+    expect(outcome.stopped).toBe('paused')
+    expect(started).toEqual([])
   })
 })

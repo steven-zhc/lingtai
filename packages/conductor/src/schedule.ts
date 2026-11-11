@@ -283,6 +283,10 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
             log(`${entry.taskId}: ${why}`)
             continue
           }
+          // Asked again after the issue read, right before the start: a pause
+          // recorded while it was fetched must not be started over.
+          const stoppedThird = yield* stopIfPaused()
+          if (stoppedThird) return stoppedThird
           attempted.add(entry.taskId)
           log(`taking ${entry.taskId} — ${entry.title}`)
           told(() => options.took?.(entry))

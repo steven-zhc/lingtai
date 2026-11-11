@@ -389,6 +389,14 @@ export function conductWork(
         options.log(`${name}: #${issue} ${why}`)
         return false
       }
+      // Asked again after the read: the issue fetch can take long enough for a
+      // pause to land, and the answer above is a fact about before it.
+      const pausedAfter = options.paused ? await options.paused() : null
+      const lockAfter = pausedAfter === null && options.locked ? await options.locked(name) : null
+      if (pausedAfter !== null || lockAfter !== null) {
+        say(`${name}: #${issue} not started — ${pausedAfter ?? lockAfter}`)
+        return false
+      }
       const leave = slots!.set.enter({ project: name, issue: String(issue), files })
       options.outcome.ran += 1
       const pass = Effect.runPromise(
