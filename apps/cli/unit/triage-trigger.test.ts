@@ -5,7 +5,13 @@ import type { WaitReason } from '@lingtai/domain/wait'
 import { Triage } from '@lingtai/recipe'
 import { describe, expect, it, vi } from 'vitest'
 
-import { enqueueTriage, onWaitStarted, type TriageTriggerPorts } from '../src/triage.ts'
+import {
+  catchUpChangedTriage,
+  enqueueTriage,
+  onWaitStarted,
+  type CatchUpTriagePorts,
+  type TriageTriggerPorts,
+} from '../src/triage.ts'
 
 const triage = Triage.parse({})
 const run = anAttemptRef('pass-a')
@@ -27,8 +33,14 @@ function fixture(reason: WaitReason, declared = true) {
   const started = event('WaitStarted', { waitId, reason })
   let events: Envelope[] = [started]
   const dispatched = vi.fn(async () => {})
-  const deps: TriageTriggerPorts = {
-    store: { read: async () => events },
+  const deps: TriageTriggerPorts & CatchUpTriagePorts = {
+    store: {
+      read: async () => events,
+      readTypes: async () => [],
+      append: async () => [],
+    },
+    readTasks: async () => [],
+    baseSha: async () => null,
     triageFor: async () => (declared ? triage : null),
     daemonStartedAt: async () => new Date('2026-08-31T11:00:00Z'),
     run: dispatched,
@@ -175,5 +187,97 @@ describe('WaitStarted triage trigger', () => {
     expect(enqueueTriage(key, next, log)).toBe(true)
     await drained()
     expect(next).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('a locked project', () => {
+  it('holds the run, logs why, and still runs a wait on another project', async () => {
+    const f = fixture(judgement)
+    const log = vi.fn()
+    f.deps.log = log
+    const asked: string[] = []
+    f.deps.locked = async (project) => {
+      asked.push(project)
+      return project === 'lingtai' ? 'paused by steven' : null
+    }
+    await onWaitStarted(f.started, f.deps)
+    await drained()
+    expect(f.dispatched).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('not started — paused by steven'))
+
+    const otherStream = ticketStream('other', 7)
+    const other = makeStream(otherStream)('WaitStarted', { waitId: 'wait-7' as WaitId, reason: judgement })
+    f.deps.store = { ...f.deps.store, read: async () => [other] }
+    await onWaitStarted(other, f.deps)
+    await drained()
+    expect(asked).toEqual(['lingtai', 'other'])
+    expect(f.dispatched).toHaveBeenCalledOnce()
+  })
+
+  it('a resume that joins a worker whose lock read is still in flight is not consumed by it', async () => {
+    const f = fixture(judgement)
+    let release: (why: string | null) => void = () => {}
+    let calls = 0
+    f.deps.locked = () => {
+      calls += 1
+      return calls === 1 ? new Promise<string | null>((r) => (release = r)) : Promise.resolve(null)
+    }
+    f.deps.readTasks = async () => [{ issue: '413', state: 'waiting' as const }]
+    await onWaitStarted(f.started, f.deps)
+    for (let i = 0; i < 50 && calls === 0; i++) await drained()
+    expect(calls).toBe(1)
+    const resumed = makeStream(ticketStream('lingtai', 1))(
+      'ProjectResumed' as never,
+      {
+        project: 'lingtai',
+        by: 'human:steven',
+      } as never,
+    )
+    await onWaitStarted(resumed as Envelope, f.deps)
+    await drained()
+    release('paused')
+    for (let i = 0; i < 50 && f.dispatched.mock.calls.length === 0; i++) await drained()
+    expect(f.dispatched).toHaveBeenCalledOnce()
+  })
+
+  it('holds the run when the lock read itself rejects', async () => {
+    const f = fixture(judgement)
+    f.deps.locked = async () => {
+      throw new Error('read failed')
+    }
+    await onWaitStarted(f.started, f.deps)
+    await drained()
+    expect(f.dispatched).not.toHaveBeenCalled()
+  })
+
+  it('a ProjectResumed scans the project and runs its Queued wait, past a pinned hash', async () => {
+    const f = fixture(judgement)
+    const store = {
+      read: async () => [f.started],
+      readTypes: async () => [],
+      append: vi.fn(),
+    }
+    let lock: string | null = 'paused'
+    const deps = {
+      ...f.deps,
+      store,
+      locked: async () => lock,
+      readTasks: async () => [{ issue: 413, state: 'waiting' as const }],
+      baseSha: async () => null,
+    } as never as Parameters<typeof catchUpChangedTriage>[3] & Parameters<typeof onWaitStarted>[1]
+    const hashes = new Map<string, string>()
+    await catchUpChangedTriage('lingtai', triage, hashes, deps)
+    expect(f.dispatched).not.toHaveBeenCalled()
+    lock = null
+    const resumed = makeStream(ticketStream('lingtai', 1))(
+      'ProjectResumed' as never,
+      {
+        project: 'lingtai',
+        by: 'human:steven',
+      } as never,
+    )
+    await onWaitStarted(resumed as Envelope, deps)
+    for (let i = 0; i < 50 && f.dispatched.mock.calls.length === 0; i++) await drained()
+    expect(f.dispatched).toHaveBeenCalledOnce()
   })
 })

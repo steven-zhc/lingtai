@@ -101,6 +101,13 @@ import type { DaemonStore } from './store.ts'
 export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed'] as const
 
 /**
+ * The events triage is handed (#997): a new wait, and a resume that lifts what
+ * held one back. One list, read by the loop's delivery and by the handler's own
+ * guard, so the next unlock event is added once.
+ */
+export const TRIAGE_EVENTS = ['WaitStarted', 'ProjectResumed'] as const
+
+/**
  * The events that mean the conductor is free to look again.
  *
  * A list rather than "anything": a run appends steadily — touched files, guard
@@ -260,7 +267,7 @@ export interface WorkLoopOptions {
    * and holds it identically to a declared subscriber's.
    */
   discuss?: (event: Envelope) => Promise<void>
-  /** A new wait, handed to the daemon's triage queue off the pass path. */
+  /** A new wait or a resume (`TRIAGE_EVENTS`), handed to the daemon's triage queue off the pass path. */
   triage?: (event: Envelope) => Promise<void>
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
@@ -596,7 +603,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {
             deliver('discuss', event, options.discuss)
           }
-          if (event.type === 'WaitStarted' && options.triage) {
+          if ((TRIAGE_EVENTS as readonly string[]).includes(event.type) && options.triage) {
             deliver('triage', event, options.triage)
           }
           if (!triggers.has(event.type)) return

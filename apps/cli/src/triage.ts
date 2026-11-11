@@ -26,6 +26,7 @@ import {
   type ReadableRef,
   type TriageEvidence,
 } from '@lingtai/conductor/triage'
+import { TRIAGE_EVENTS } from '@lingtai/daemon'
 import {
   parsePayload,
   parseTicketStream,
@@ -64,19 +65,20 @@ import { prepare } from './discuss.ts'
 import { prepareTriageCheckout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
-const queued = new Map<string, Promise<unknown>>()
+const queued = new Map<string, { done: Promise<unknown>; settled: Promise<void> }>()
+/** What a worker answers when a lock held it back: a scan that joined it must ask again. */
+const HELD = Symbol('held')
 let tail: Promise<void> = Promise.resolve()
 
 function queueTriage(
   key: { ticketId: string; waitId: WaitId },
   run: () => Promise<unknown>,
   log: (line: string) => void,
-): { added: boolean; done: Promise<unknown> } {
+): { added: boolean; done: Promise<unknown>; settled: Promise<void> } {
   const id = JSON.stringify([key.ticketId, key.waitId])
   const existing = queued.get(id)
-  if (existing) return { added: false, done: existing }
+  if (existing) return { added: false, ...existing }
   const done = tail.then(run)
-  queued.set(id, done)
   tail = done
     .then(
       () => {},
@@ -87,7 +89,8 @@ function queueTriage(
     .finally(() => {
       queued.delete(id)
     })
-  return { added: true, done }
+  queued.set(id, { done, settled: tail })
+  return { added: true, done, settled: tail }
 }
 
 export function enqueueTriage(
@@ -105,6 +108,8 @@ export interface TriageTriggerPorts {
   daemonStartedAt: () => Promise<Date>
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
+  /** A sentence while the project is locked (0126 §5); absent means no lock. */
+  locked?: (project: string) => Promise<string | null>
 }
 
 export interface CatchUpTriagePorts extends SnapshotReadOptions {
@@ -115,7 +120,11 @@ export interface CatchUpTriagePorts extends SnapshotReadOptions {
   daemonStartedAt: () => Promise<Date>
   run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
   log?: (line: string) => void
+  /** A sentence while the project is locked (0126 §5); absent means no lock. */
+  locked?: (project: string) => Promise<string | null>
 }
+
+const notLocked = () => Promise.resolve(null)
 
 /** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
 export async function catchUpTriage(project: string, triage: Triage | null, deps: CatchUpTriagePorts): Promise<void> {
@@ -141,24 +150,42 @@ async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriage
     daemonStartedAt: startedAt,
   })
   if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
-  await queueTriage(
-    { ticketId, waitId },
-    async () => {
-      // A person or the live subscriber may have answered this while it waited in the queue.
-      const latest = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
-      const current = latest.lifecycle
-      if (current.status !== 'blocked' || current.waitId !== waitId) return
-      const facts = triageFactsFromState(latest, waitId)
-      const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
-      if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
-        const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
-        if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
-      } else if (next._tag === 'Interrupted') {
-        await finishInterrupted(ticketId, waitId, deps, startedAt)
-      }
-    },
-    deps.log ?? console.error,
-  ).done
+  const start = () =>
+    queueTriage(
+      { ticketId, waitId },
+      async () => {
+        // A person or the live subscriber may have answered this while it waited in the queue.
+        const latest = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
+        const current = latest.lifecycle
+        if (current.status !== 'blocked' || current.waitId !== waitId) return
+        const facts = triageFactsFromState(latest, waitId)
+        const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
+        if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
+          // Held back means nothing is appended: the wait stays `Queued` (or
+          // `Interrupted`) until a resume scan or a restart finds it again.
+          const why = await (deps.locked ?? notLocked)(parseTicketStream(ticketId)?.project ?? '').catch(
+            (err: Error) => err.message,
+          )
+          if (why !== null) {
+            deps.log?.(`triage ${waitId} on ${ticketId}: not started — ${why}`)
+            return HELD
+          }
+          const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
+          if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
+        } else if (next._tag === 'Interrupted') {
+          await finishInterrupted(ticketId, waitId, deps, startedAt)
+        }
+      },
+      deps.log ?? console.error,
+    )
+  const first = start()
+  const result = await first.done
+  // This scan joined a worker whose lock read may predate a resume: once that
+  // worker has settled, ask again rather than let the resume be consumed.
+  if (!first.added && result === HELD) {
+    await first.settled
+    await start().done
+  }
 }
 
 /** Finish the second interrupted attempt only while it is still the latest unfinished attempt. */
@@ -241,8 +268,18 @@ function currentWait(events: readonly Envelope[], waitId: WaitId): boolean {
 }
 
 /** Hand over only a current, queued wait. The returned promise never waits for its worker. */
-export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): Promise<void> {
-  if (event.type !== 'WaitStarted') return
+export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts & CatchUpTriagePorts): Promise<void> {
+  if (!(TRIAGE_EVENTS as readonly string[]).includes(event.type)) return
+  if (event.type === 'ProjectResumed') {
+    // Never awaited: a worker runs an agent, and a handler that has not
+    // settled in SUBSCRIBER_TIMEOUT_MS is reported as a failure.
+    const { project } = event.data as PayloadOf<'ProjectResumed'>
+    void deps
+      .triageFor(project)
+      .then((triage) => catchUpTriage(project, triage, deps))
+      .catch((err: Error) => deps.log?.(`triage catch-up ${project}: ${err.message}`))
+    return
+  }
   const parsed = parseTicketStream(event.streamId)
   if (parsed === null) return
   const triage = await deps.triageFor(parsed.project).catch(() => null)
@@ -265,6 +302,11 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts): 
       const latest = await deps.store.read(event.streamId)
       if (!currentWait(latest, waitId)) return
       if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
+      const why = await (deps.locked ?? notLocked)(parsed.project).catch((err: Error) => err.message)
+      if (why !== null) {
+        deps.log?.(`triage ${waitId} on ${event.streamId}: not started — ${why}`)
+        return HELD
+      }
       const outcome = await deps.run({ ticketId: event.streamId, waitId, reason, triage })
       if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
     },
@@ -319,8 +361,10 @@ export function daemonTriagePorts(
   daemonStartedAt: () => Promise<Date>,
   log: (line: string) => void,
   writer?: SnapshotReadOptions['writer'],
+  locked?: (project: string) => Promise<string | null>,
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {
+    locked,
     store: eventStore,
     snapshots: processLog.snapshots,
     writer,

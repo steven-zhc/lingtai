@@ -160,7 +160,7 @@ describe('triage catch-up', () => {
       run: f.run,
       log: () => {},
     }
-    await onWaitStarted(wait.wait, live)
+    await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
     await drained()
     expect(f.run).not.toHaveBeenCalled()
   })
@@ -219,6 +219,39 @@ describe('triage catch-up', () => {
     await catchUpTriage('lingtai', triage, f.deps)
     await drained()
     expect(f.append).toHaveBeenCalledOnce()
+  })
+
+  it('holds a Queued wait and a first interrupted retry while locked, and still finishes a second interrupted attempt', async () => {
+    const f = fixture()
+    f.deps.locked = async () => 'paused by steven'
+    f.add(1)
+    const retry = f.add(2)
+    const second = f.add(3)
+    const started = (w: typeof retry, attempt: number) =>
+      w.event(
+        'TriageStarted',
+        { waitId: w.waitId, attempt, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+        { at: old },
+      )
+    retry.push(started(retry, 1))
+    second.push(started(second, 1))
+    second.push(started(second, 2))
+    await expect(catchUpTriage('lingtai', triage, f.deps)).resolves.toBeUndefined()
+    await drained()
+    expect(f.run).not.toHaveBeenCalled()
+    expect(retry.events().map((e) => e.type)).toEqual(['WaitStarted', 'TriageStarted'])
+    expect(second.events().at(-1)?.data).toMatchObject({ result: { _tag: 'TriageFailed', why: 'interrupted' } })
+  })
+
+  it('holds the run when the lock read rejects', async () => {
+    const f = fixture()
+    f.deps.locked = async () => {
+      throw new Error('read failed')
+    }
+    f.add(1)
+    await catchUpTriage('lingtai', triage, f.deps)
+    await drained()
+    expect(f.run).not.toHaveBeenCalled()
   })
 
   it('appends at the version it read: an event landing between the read and the append is refused, and the next try lands', async () => {
@@ -317,7 +350,7 @@ describe('triage catch-up', () => {
       daemonStartedAt: async () => startedAt,
       run: f.deps.run,
     }
-    await onWaitStarted(wait.wait, live)
+    await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
     expect(f.deps.run).toHaveBeenCalledOnce()
     finish()
     await scan
@@ -339,7 +372,7 @@ describe('triage catch-up', () => {
       run: f.deps.run,
     }
 
-    await onWaitStarted(wait.wait, live)
+    await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
     await drained()
     expect(f.deps.run).toHaveBeenCalledOnce()
     const scan = catchUpChangedTriage('lingtai', triage, hashes, f.deps)
