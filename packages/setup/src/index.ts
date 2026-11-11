@@ -5,6 +5,7 @@
  */
 export * from './apply-setup.ts'
 export * from './detect-setup.ts'
+export * from './failure.ts'
 export * from './list-repositories.ts'
 export * from './local-repository.ts'
 export * from './propose-setup.ts'

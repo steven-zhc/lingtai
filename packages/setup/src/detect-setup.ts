@@ -3,15 +3,18 @@
  * seam a newcomer's setup reads before asking `--install`/`--build` at
  * `setup-build.ts`'s questions.
  *
- * **Pure.** Everything here is a function of what `SetupReader` answers;
- * nothing is asked and nothing is run. A command this detects is a
+ * **An Effect over the `SetupReader` port; nothing is run.** Everything here
+ * is a function of what `SetupReader` answers; nothing else is asked. A command this detects is a
  * suggestion, never a silent guess — `DetectedSetup.notes` and `.skipped`
  * carry every reason a thing was not suggested, for `setup-build.ts` to
  * print before it asks.
  */
 
+import { Effect } from 'effect'
 import { parse as parseToml } from 'smol-toml'
 import { parse as parseYaml } from 'yaml'
+
+import { messageOf, SetupFailed } from './failure.ts'
 
 /** The file seam: a local directory or a GitHub default branch. */
 export interface SetupReader {
@@ -35,10 +38,8 @@ export interface SetupReader {
  * answer.
  */
 export const EMPTY_SETUP_READER: SetupReader = {
-  has: async () => {
-    throw new Error('nothing can be read here')
-  },
-  read: async () => null,
+  has: () => Promise.reject(new Error('nothing can be read here')),
+  read: () => Promise.resolve(null),
 }
 
 export interface DetectedSetup {
@@ -59,7 +60,7 @@ export type StackFinding = { presence: 'present' | 'absent' | 'unknown' } & Dete
 export interface StackDetector {
   /** The word a note names this stack by. */
   stack: string
-  detect(reader: SetupReader): Promise<StackFinding>
+  detect(reader: SetupReader): Effect.Effect<StackFinding, SetupFailed>
 }
 
 type Manager = 'pnpm' | 'yarn' | 'npm'
@@ -105,115 +106,133 @@ function skipReasonFor(name: string, command: string): string | null {
   return null
 }
 
-async function detectInstall(reader: SetupReader): Promise<{
+const failed = (e: unknown): SetupFailed => new SetupFailed({ operation: 'detect', message: messageOf(e), cause: e })
+
+/** A read through the port; a rejection is `SetupFailed`. */
+const readPath = (reader: SetupReader, path: string): Effect.Effect<string | null, SetupFailed> =>
+  Effect.tryPromise({ try: () => reader.read(path), catch: failed })
+
+/** A read a detector survives: a rejection is "could not get this content". */
+const readOrNull = (reader: SetupReader, path: string): Effect.Effect<string | null> =>
+  readPath(reader, path).pipe(Effect.catch(() => Effect.succeed(null)))
+
+/** Tri-state: `has` rejecting is "could not tell", never absent. */
+const hasOrUnknown = (reader: SetupReader, path: string): Effect.Effect<boolean | 'unknown'> =>
+  Effect.tryPromise({ try: () => reader.has(path), catch: failed }).pipe(
+    Effect.catch(() => Effect.succeed('unknown' as const)),
+  )
+
+const detectInstall = (
+  reader: SetupReader,
+): Effect.Effect<{
   install: DetectedSetup['install']
   manager: Manager | null
   notes: string[]
   uncertain: boolean
-}> {
-  const notes: string[] = []
-  const present: typeof LOCKFILES = []
-  // A lockfile whose `has` rejected is neither present nor confirmed absent
-  // — the note below says so instead of claiming the root has none (#431
-  // fix round, finding 2).
-  let uncertain = false
-  for (const lockfile of LOCKFILES) {
-    try {
-      if (await reader.has(lockfile.path)) present.push(lockfile)
-    } catch {
-      uncertain = true
+}> =>
+  Effect.gen(function* () {
+    const notes: string[] = []
+    const present: typeof LOCKFILES = []
+    // A lockfile whose `has` rejected is neither present nor confirmed absent
+    // — the note below says so instead of claiming the root has none (#431
+    // fix round, finding 2).
+    let uncertain = false
+    for (const lockfile of LOCKFILES) {
+      const found = yield* hasOrUnknown(reader, lockfile.path)
+      if (found === 'unknown') uncertain = true
+      else if (found) present.push(lockfile)
     }
-  }
-  if (present.length === 0) {
-    notes.push(uncertain ? 'could not tell whether a lockfile is at the root' : 'no lockfile at the root')
-    return { install: null, manager: null, notes, uncertain }
-  }
-  const [chosen, ...rest] = present
-  for (const other of rest) {
-    notes.push(`${other.path} is also at the root; ${chosen!.path} was used`)
-  }
-  return {
-    install: { run: chosen!.install, because: `${chosen!.path} is at the root` },
-    manager: chosen!.manager,
-    notes,
-    uncertain,
-  }
-}
+    if (present.length === 0) {
+      notes.push(uncertain ? 'could not tell whether a lockfile is at the root' : 'no lockfile at the root')
+      return { install: null, manager: null, notes, uncertain }
+    }
+    const [chosen, ...rest] = present
+    for (const other of rest) {
+      notes.push(`${other.path} is also at the root; ${chosen!.path} was used`)
+    }
+    return {
+      install: { run: chosen!.install, because: `${chosen!.path} is at the root` },
+      manager: chosen!.manager,
+      notes,
+      uncertain,
+    }
+  })
 
 const nodeDetector: StackDetector = {
   stack: 'Node',
-  async detect(reader) {
-    const { install, manager, notes, uncertain } = await detectInstall(reader)
-    // A lockfile alone is Node (the note below says the package.json is
-    // missing), so presence is "anything confirmed", not "has package.json".
-    const lockfileFound = install !== null
-    const finding = (
-      presence: StackFinding['presence'],
-      build: DetectedSetup['build'],
-      skipped: DetectedSetup['skipped'],
-    ) => ({
-      presence,
-      install,
-      build,
-      skipped,
-      notes,
-    })
-    const unsure = (): StackFinding['presence'] => (uncertain ? 'unknown' : 'absent')
+  detect: (reader) =>
+    Effect.gen(function* () {
+      const { install, manager, notes, uncertain } = yield* detectInstall(reader)
+      // A lockfile alone is Node (the note below says the package.json is
+      // missing), so presence is "anything confirmed", not "has package.json".
+      const lockfileFound = install !== null
+      const finding = (
+        presence: StackFinding['presence'],
+        build: DetectedSetup['build'],
+        skipped: DetectedSetup['skipped'],
+      ) => ({
+        presence,
+        install,
+        build,
+        skipped,
+        notes,
+      })
+      const unsure = (): StackFinding['presence'] => (uncertain ? 'unknown' : 'absent')
 
-    const build: DetectedSetup['build'] = []
-    const skipped: DetectedSetup['skipped'] = []
+      const build: DetectedSetup['build'] = []
+      const skipped: DetectedSetup['skipped'] = []
 
-    let hasPackageJson: boolean
-    try {
-      hasPackageJson = await reader.has('package.json')
-    } catch {
-      notes.push('could not tell whether package.json is at the root')
-      return finding(lockfileFound ? 'present' : 'unknown', build, skipped)
-    }
+      const hasPackageJson = yield* hasOrUnknown(reader, 'package.json')
+      if (hasPackageJson === 'unknown') {
+        notes.push('could not tell whether package.json is at the root')
+        return finding(lockfileFound ? 'present' : 'unknown', build, skipped)
+      }
 
-    if (!hasPackageJson) {
-      notes.push('no package.json at the root')
-      return finding(lockfileFound ? 'present' : unsure(), build, skipped)
-    }
+      if (!hasPackageJson) {
+        notes.push('no package.json at the root')
+        return finding(lockfileFound ? 'present' : unsure(), build, skipped)
+      }
 
-    const text = await reader.read('package.json')
-    if (text === null) {
-      notes.push('package.json could not be read')
-      return finding('present', build, skipped)
-    }
+      const text = yield* readPath(reader, 'package.json')
+      if (text === null) {
+        notes.push('package.json could not be read')
+        return finding('present', build, skipped)
+      }
 
-    let scripts: Record<string, string>
-    try {
-      const parsed = JSON.parse(text) as { scripts?: Record<string, unknown> }
-      scripts = Object.fromEntries(
-        Object.entries(parsed.scripts ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      )
-    } catch {
-      notes.push('package.json does not parse')
-      return finding('present', build, skipped)
-    }
+      let scripts: Record<string, string>
+      try {
+        const parsed = JSON.parse(text) as { scripts?: Record<string, unknown> }
+        scripts = Object.fromEntries(
+          Object.entries(parsed.scripts ?? {}).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string',
+          ),
+        )
+      } catch {
+        notes.push('package.json does not parse')
+        return finding('present', build, skipped)
+      }
 
-    for (const [name, command] of Object.entries(scripts)) {
-      const why = skipReasonFor(name, command)
-      if (why !== null) skipped.push({ script: name, why, run: runFor(manager, name) })
-    }
-    const skippedNames = new Set(skipped.map((s) => s.script))
+      for (const [name, command] of Object.entries(scripts)) {
+        const why = skipReasonFor(name, command)
+        if (why !== null) skipped.push({ script: name, why, run: runFor(manager, name) })
+      }
+      const skippedNames = new Set(skipped.map((s) => s.script))
 
-    const usedNames: string[] = []
-    for (const { key, names } of BUILD_ORDER) {
-      const name = names.find((n) => Object.hasOwn(scripts, n))
-      if (name === undefined || skippedNames.has(name)) continue
-      const command = scripts[name]!
-      usedNames.push(name)
-      build.push({ name: key, run: runFor(manager, name), because: `\`${name}\` runs \`${command}\`` })
-    }
+      const usedNames: string[] = []
+      for (const { key, names } of BUILD_ORDER) {
+        const name = names.find((n) => Object.hasOwn(scripts, n))
+        if (name === undefined || skippedNames.has(name)) continue
+        const command = scripts[name]!
+        usedNames.push(name)
+        build.push({ name: key, run: runFor(manager, name), because: `\`${name}\` runs \`${command}\`` })
+      }
 
-    const taken = new Set([...skippedNames, ...usedNames])
-    const others = Object.keys(scripts)
-      .filter((name) => !taken.has(name))
-      .map((name) => ({ script: name, run: runFor(manager, name) }))
-    return { ...finding('present', build, skipped), others }
-  },
+      const taken = new Set([...skippedNames, ...usedNames])
+      const others = Object.keys(scripts)
+        .filter((name) => !taken.has(name))
+        .map((name) => ({ script: name, run: runFor(manager, name) }))
+      return { ...finding('present', build, skipped), others }
+    }),
 }
 
 type PythonManager = 'uv' | 'poetry'
@@ -222,15 +241,6 @@ const PYTHON_LOCKFILES: { path: string; manager: PythonManager; install: string 
   { path: 'uv.lock', manager: 'uv', install: 'uv sync --frozen' },
   { path: 'poetry.lock', manager: 'poetry', install: 'poetry install --no-interaction' },
 ]
-
-/** Tri-state: `has` rejecting is "could not tell", never absent. */
-async function hasOrUnknown(reader: SetupReader, path: string): Promise<boolean | 'unknown'> {
-  try {
-    return await reader.has(path)
-  } catch {
-    return 'unknown'
-  }
-}
 
 type PyTool = {
   key: string
@@ -302,45 +312,41 @@ function iniParses(text: string): boolean {
  * A standalone configuration file counts only if it reads and parses; either
  * failure is a note ("could not tell"), once per file, and nothing from it.
  */
-async function configParses(
+const configParses = (
   reader: SetupReader,
   file: string,
   notes: string[],
   said: Set<string>,
-): Promise<string | null> {
-  let text: string | null
-  try {
-    text = await reader.read(file)
-  } catch {
-    text = null
-  }
-  if (text === null) {
-    if (!said.has(file)) notes.push(`${file} could not be read`)
-    said.add(file)
-    return null
-  }
-  let ok: boolean
-  if (file.endsWith('.toml')) {
-    try {
-      parseToml(text)
-      ok = true
-    } catch {
-      ok = false
+): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    const text = yield* readOrNull(reader, file)
+    if (text === null) {
+      if (!said.has(file)) notes.push(`${file} could not be read`)
+      said.add(file)
+      return null
     }
-  } else if (file.endsWith('.yml') || file.endsWith('.yaml')) {
-    try {
-      parseYaml(text)
-      ok = true
-    } catch {
-      ok = false
+    let ok: boolean
+    if (file.endsWith('.toml')) {
+      try {
+        parseToml(text)
+        ok = true
+      } catch {
+        ok = false
+      }
+    } else if (file.endsWith('.yml') || file.endsWith('.yaml')) {
+      try {
+        parseYaml(text)
+        ok = true
+      } catch {
+        ok = false
+      }
+    } else {
+      ok = iniParses(text)
     }
-  } else {
-    ok = iniParses(text)
-  }
-  if (!ok && !said.has(file)) notes.push(`${file} does not parse`)
-  if (!ok) said.add(file)
-  return ok ? text : null
-}
+    if (!ok && !said.has(file)) notes.push(`${file} does not parse`)
+    if (!ok) said.add(file)
+    return ok ? text : null
+  })
 
 function filesIsSet(value: unknown): boolean {
   if (typeof value === 'string') return value.trim() !== ''
@@ -352,194 +358,197 @@ function filesIsSet(value: unknown): boolean {
  * a path on its command line replaces `files`; so a bare `mypy` is suggested
  * only where the config mypy reads sets `files`, otherwise `mypy .`.
  */
-async function detectMypy(
+const detectMypy = (
   reader: SetupReader,
   tool: unknown,
   notes: string[],
   said: Set<string>,
-): Promise<{ run: string; because: string } | null> {
-  const found = await hasOrUnknown(reader, 'mypy.ini')
-  if (found === 'unknown') {
-    if (!said.has('mypy.ini')) notes.push('could not tell whether mypy.ini is at the root')
-    said.add('mypy.ini')
-    return null
-  }
-  if (found) {
-    const text = await configParses(reader, 'mypy.ini', notes, said)
-    if (text === null) return null
-    const section = parseIni(text)?.get('mypy')
-    if (section !== undefined) {
-      const named = (section.get('files') ?? '').split(/[,\n]/).some((f) => f.trim() !== '')
-      return named
-        ? { run: 'mypy', because: 'mypy.ini names files' }
-        : { run: 'mypy .', because: 'mypy.ini is at the root' }
+): Effect.Effect<{ run: string; because: string } | null> =>
+  Effect.gen(function* () {
+    const found = yield* hasOrUnknown(reader, 'mypy.ini')
+    if (found === 'unknown') {
+      if (!said.has('mypy.ini')) notes.push('could not tell whether mypy.ini is at the root')
+      said.add('mypy.ini')
+      return null
     }
-    notes.push('mypy.ini has no [mypy] section; mypy does not read it')
-  }
-  if (!tableAt(tool, ['mypy'])) return null
-  const table = (tool as { mypy: Record<string, unknown> }).mypy
-  return filesIsSet(table.files)
-    ? { run: 'mypy', because: '[tool.mypy] files is set in pyproject.toml, so mypy checks those' }
-    : { run: 'mypy .', because: '[tool.mypy] is in pyproject.toml' }
-}
+    if (found) {
+      const text = yield* configParses(reader, 'mypy.ini', notes, said)
+      if (text === null) return null
+      const section = parseIni(text)?.get('mypy')
+      if (section !== undefined) {
+        const named = (section.get('files') ?? '').split(/[,\n]/).some((f) => f.trim() !== '')
+        return named
+          ? { run: 'mypy', because: 'mypy.ini names files' }
+          : { run: 'mypy .', because: 'mypy.ini is at the root' }
+      }
+      notes.push('mypy.ini has no [mypy] section; mypy does not read it')
+    }
+    if (!tableAt(tool, ['mypy'])) return null
+    const table = (tool as { mypy: Record<string, unknown> }).mypy
+    return filesIsSet(table.files)
+      ? { run: 'mypy', because: '[tool.mypy] files is set in pyproject.toml, so mypy checks those' }
+      : { run: 'mypy .', because: '[tool.mypy] is in pyproject.toml' }
+  })
 
 const pythonDetector: StackDetector = {
   stack: 'Python',
-  async detect(reader) {
-    const notes: string[] = []
-    const none = (presence: StackFinding['presence']): StackFinding => ({
-      presence,
-      install: null,
-      build: [],
-      skipped: [],
-      notes,
-    })
+  detect: (reader) =>
+    Effect.gen(function* () {
+      const notes: string[] = []
+      const none = (presence: StackFinding['presence']): StackFinding => ({
+        presence,
+        install: null,
+        build: [],
+        skipped: [],
+        notes,
+      })
 
-    const lockfiles: typeof PYTHON_LOCKFILES = []
-    const unknownLockfiles: string[] = []
-    let uncertain = false
-    for (const lockfile of PYTHON_LOCKFILES) {
-      const found = await hasOrUnknown(reader, lockfile.path)
-      if (found === 'unknown') {
-        uncertain = true
-        unknownLockfiles.push(lockfile.path)
-      } else if (found) lockfiles.push(lockfile)
-    }
-    const pyproject = await hasOrUnknown(reader, 'pyproject.toml')
-    const requirements = await hasOrUnknown(reader, 'requirements.txt')
-    if (pyproject === 'unknown' || requirements === 'unknown') uncertain = true
-
-    const chosen = lockfiles[0]
-    if (chosen === undefined && pyproject !== true && requirements !== true) {
-      if (uncertain) {
-        notes.push('could not tell whether a Python project is at the root')
-        return none('unknown')
-      }
-      return none('absent')
-    }
-
-    let install: DetectedSetup['install'] = null
-    if (chosen !== undefined) {
-      install = { run: chosen.install, because: `${chosen.path} is at the root` }
-      for (const other of lockfiles.slice(1)) notes.push(`${other.path} is also at the root; ${chosen.path} was used`)
-    } else if (unknownLockfiles.length > 0) {
-      for (const path of unknownLockfiles) notes.push(`could not tell whether ${path} is at the root`)
-      if (requirements === true) notes.push('requirements.txt is at the root: type the install command')
-    } else if (requirements === true) {
-      notes.push(
-        'requirements.txt is at the root with no uv.lock or poetry.lock: create a virtual environment and type the install command',
-      )
-    } else {
-      notes.push('no uv.lock or poetry.lock at the root')
-    }
-
-    // pyproject.toml: a table that is absent is "not configured"; a file that
-    // cannot be read or parsed is "could not tell", and nothing comes from it.
-    let toml: unknown = null
-    if (pyproject === 'unknown') {
-      notes.push('could not tell whether pyproject.toml is at the root')
-    } else if (pyproject) {
-      const text = await reader.read('pyproject.toml')
-      if (text === null) {
-        notes.push('pyproject.toml could not be read')
-      } else {
-        try {
-          toml = parseToml(text)
-        } catch {
-          notes.push('pyproject.toml does not parse')
-        }
-      }
-    }
-    const tool = typeof toml === 'object' && toml !== null ? (toml as { tool?: unknown }).tool : undefined
-
-    if (chosen === undefined) {
-      notes.push('build commands are suggested only through uv or poetry, which need uv.lock or poetry.lock')
-      return { ...none('present'), install }
-    }
-
-    const build: DetectedSetup['build'] = []
-    const unreadable = new Set<string>()
-    for (const { key, run, table, files } of PYTHON_TOOLS) {
-      if (key === 'typecheck') {
-        const mypy = await detectMypy(reader, tool, notes, unreadable)
-        if (mypy !== null) build.push({ name: key, run: `${chosen.manager} run ${mypy.run}`, because: mypy.because })
-        continue
-      }
-      let because: string | null = null
-      if (table !== null && tableAt(tool, table)) because = `[tool.${table.join('.')}] is in pyproject.toml`
-      for (const file of files) {
-        if (because !== null) break
-        const found = await hasOrUnknown(reader, file)
+      const lockfiles: typeof PYTHON_LOCKFILES = []
+      const unknownLockfiles: string[] = []
+      let uncertain = false
+      for (const lockfile of PYTHON_LOCKFILES) {
+        const found = yield* hasOrUnknown(reader, lockfile.path)
         if (found === 'unknown') {
-          if (!unreadable.has(file)) notes.push(`could not tell whether ${file} is at the root`)
-          unreadable.add(file)
-        } else if (found) {
-          if (file === 'tests') because = 'tests/ is at the root'
-          else if ((await configParses(reader, file, notes, unreadable)) !== null) because = `${file} is at the root`
+          uncertain = true
+          unknownLockfiles.push(lockfile.path)
+        } else if (found) lockfiles.push(lockfile)
+      }
+      const pyproject = yield* hasOrUnknown(reader, 'pyproject.toml')
+      const requirements = yield* hasOrUnknown(reader, 'requirements.txt')
+      if (pyproject === 'unknown' || requirements === 'unknown') uncertain = true
+
+      const chosen = lockfiles[0]
+      if (chosen === undefined && pyproject !== true && requirements !== true) {
+        if (uncertain) {
+          notes.push('could not tell whether a Python project is at the root')
+          return none('unknown')
+        }
+        return none('absent')
+      }
+
+      let install: DetectedSetup['install'] = null
+      if (chosen !== undefined) {
+        install = { run: chosen.install, because: `${chosen.path} is at the root` }
+        for (const other of lockfiles.slice(1)) notes.push(`${other.path} is also at the root; ${chosen.path} was used`)
+      } else if (unknownLockfiles.length > 0) {
+        for (const path of unknownLockfiles) notes.push(`could not tell whether ${path} is at the root`)
+        if (requirements === true) notes.push('requirements.txt is at the root: type the install command')
+      } else if (requirements === true) {
+        notes.push(
+          'requirements.txt is at the root with no uv.lock or poetry.lock: create a virtual environment and type the install command',
+        )
+      } else {
+        notes.push('no uv.lock or poetry.lock at the root')
+      }
+
+      // pyproject.toml: a table that is absent is "not configured"; a file that
+      // cannot be read or parsed is "could not tell", and nothing comes from it.
+      let toml: unknown = null
+      if (pyproject === 'unknown') {
+        notes.push('could not tell whether pyproject.toml is at the root')
+      } else if (pyproject) {
+        const text = yield* readPath(reader, 'pyproject.toml')
+        if (text === null) {
+          notes.push('pyproject.toml could not be read')
+        } else {
+          try {
+            toml = parseToml(text)
+          } catch {
+            notes.push('pyproject.toml does not parse')
+          }
         }
       }
-      if (because !== null) build.push({ name: key, run: `${chosen.manager} run ${run}`, because })
-    }
-    return { presence: 'present', install, build, skipped: [], notes }
-  },
+      const tool = typeof toml === 'object' && toml !== null ? (toml as { tool?: unknown }).tool : undefined
+
+      if (chosen === undefined) {
+        notes.push('build commands are suggested only through uv or poetry, which need uv.lock or poetry.lock')
+        return { ...none('present'), install }
+      }
+
+      const build: DetectedSetup['build'] = []
+      const unreadable = new Set<string>()
+      for (const { key, run, table, files } of PYTHON_TOOLS) {
+        if (key === 'typecheck') {
+          const mypy = yield* detectMypy(reader, tool, notes, unreadable)
+          if (mypy !== null) build.push({ name: key, run: `${chosen.manager} run ${mypy.run}`, because: mypy.because })
+          continue
+        }
+        let because: string | null = null
+        if (table !== null && tableAt(tool, table)) because = `[tool.${table.join('.')}] is in pyproject.toml`
+        for (const file of files) {
+          if (because !== null) break
+          const found = yield* hasOrUnknown(reader, file)
+          if (found === 'unknown') {
+            if (!unreadable.has(file)) notes.push(`could not tell whether ${file} is at the root`)
+            unreadable.add(file)
+          } else if (found) {
+            if (file === 'tests') because = 'tests/ is at the root'
+            else if ((yield* configParses(reader, file, notes, unreadable)) !== null) because = `${file} is at the root`
+          }
+        }
+        if (because !== null) build.push({ name: key, run: `${chosen.manager} run ${run}`, because })
+      }
+      return { presence: 'present', install, build, skipped: [], notes }
+    }),
 }
 
 const GOLANGCI_CONFIGS = ['.golangci.yml', '.golangci.yaml', '.golangci.toml'] as const
 
 const goDetector: StackDetector = {
   stack: 'Go',
-  async detect(reader) {
-    const notes: string[] = []
-    const mod = await hasOrUnknown(reader, 'go.mod')
-    if (mod === 'unknown') {
-      notes.push('could not tell whether a Go module is at the root')
-      return { presence: 'unknown', install: null, build: [], skipped: [], notes }
-    }
-    if (!mod) return { presence: 'absent', install: null, build: [], skipped: [], notes }
-
-    const vendor = await hasOrUnknown(reader, 'vendor')
-    if (vendor === 'unknown') notes.push('could not tell whether vendor/ is at the root')
-    else if (vendor) {
-      notes.push(
-        'vendor/ is at the root; go mod download still fetches the module cache, and gofmt -l . checks vendor/ too',
-      )
-    }
-
-    // The first config present decides, as golangci-lint itself looks them up;
-    // one that is present but does not parse is not skipped past.
-    let chosen: string | null = null
-    let lint: string | null = null
-    const said = new Set<string>()
-    for (const file of GOLANGCI_CONFIGS) {
-      const found = await hasOrUnknown(reader, file)
-      if (found === 'unknown') {
-        notes.push(`could not tell whether ${file} is at the root`)
-        // An earlier file that may exist decides, so a later one cannot stand in for it.
-        if (chosen === null) break
-      } else if (found) {
-        if (chosen !== null) {
-          notes.push(`${file} is also at the root; ${chosen} was used`)
-          continue
-        }
-        chosen = file
-        if ((await configParses(reader, file, notes, said)) !== null) lint = file
+  detect: (reader) =>
+    Effect.gen(function* () {
+      const notes: string[] = []
+      const mod = yield* hasOrUnknown(reader, 'go.mod')
+      if (mod === 'unknown') {
+        notes.push('could not tell whether a Go module is at the root')
+        return { presence: 'unknown', install: null, build: [], skipped: [], notes }
       }
-    }
+      if (!mod) return { presence: 'absent', install: null, build: [], skipped: [], notes }
 
-    const build: DetectedSetup['build'] = [
-      { name: 'format', run: 'out=$(gofmt -l .) && test -z "$out"', because: 'go.mod is at the root', tool: 'gofmt' },
-      { name: 'vet', run: 'go vet ./...', because: 'go.mod is at the root' },
-    ]
-    if (lint !== null) build.push({ name: 'lint', run: 'golangci-lint run', because: `${lint} is at the root` })
-    build.push({ name: 'test', run: 'go test ./...', because: 'go.mod is at the root' })
-    return {
-      presence: 'present',
-      install: { run: 'go mod download', because: 'go.mod is at the root' },
-      build,
-      skipped: [],
-      notes,
-    }
-  },
+      const vendor = yield* hasOrUnknown(reader, 'vendor')
+      if (vendor === 'unknown') notes.push('could not tell whether vendor/ is at the root')
+      else if (vendor) {
+        notes.push(
+          'vendor/ is at the root; go mod download still fetches the module cache, and gofmt -l . checks vendor/ too',
+        )
+      }
+
+      // The first config present decides, as golangci-lint itself looks them up;
+      // one that is present but does not parse is not skipped past.
+      let chosen: string | null = null
+      let lint: string | null = null
+      const said = new Set<string>()
+      for (const file of GOLANGCI_CONFIGS) {
+        const found = yield* hasOrUnknown(reader, file)
+        if (found === 'unknown') {
+          notes.push(`could not tell whether ${file} is at the root`)
+          // An earlier file that may exist decides, so a later one cannot stand in for it.
+          if (chosen === null) break
+        } else if (found) {
+          if (chosen !== null) {
+            notes.push(`${file} is also at the root; ${chosen} was used`)
+            continue
+          }
+          chosen = file
+          if ((yield* configParses(reader, file, notes, said)) !== null) lint = file
+        }
+      }
+
+      const build: DetectedSetup['build'] = [
+        { name: 'format', run: 'out=$(gofmt -l .) && test -z "$out"', because: 'go.mod is at the root', tool: 'gofmt' },
+        { name: 'vet', run: 'go vet ./...', because: 'go.mod is at the root' },
+      ]
+      if (lint !== null) build.push({ name: 'lint', run: 'golangci-lint run', because: `${lint} is at the root` })
+      build.push({ name: 'test', run: 'go test ./...', because: 'go.mod is at the root' })
+      return {
+        presence: 'present',
+        install: { run: 'go mod download', because: 'go.mod is at the root' },
+        build,
+        skipped: [],
+        notes,
+      }
+    }),
 }
 
 const GRADLE_FILES = ['build.gradle', 'build.gradle.kts'] as const
@@ -615,88 +624,84 @@ function xmlTagsBalanced(text: string): boolean {
  */
 const javaDetector: StackDetector = {
   stack: 'Java',
-  async detect(reader) {
-    const notes: string[] = []
-    const none = (presence: 'absent' | 'unknown'): StackFinding => ({
-      presence,
-      install: null,
-      build: [],
-      skipped: [],
-      notes,
-    })
-    let gradle: string | null = null
-    let gradleUnknown: string | null = null
-    for (const file of GRADLE_FILES) {
-      const found = await hasOrUnknown(reader, file)
-      if (found === 'unknown') gradleUnknown ??= file
-      else if (found && gradle === null) gradle = file
-    }
-    const pom = await hasOrUnknown(reader, 'pom.xml')
-
-    let tool: 'Maven' | 'Gradle'
-    let because: string
-    if (gradle !== null) {
-      tool = 'Gradle'
-      because = `${gradle} is at the root`
-      if (pom === true) notes.push(`pom.xml is also at the root; ${gradle} was used`)
-    } else if (gradleUnknown !== null) {
-      // A Gradle file that may exist would decide, so pom.xml cannot stand in for it.
-      notes.push(`could not tell whether ${gradleUnknown} is at the root`)
-      return pom === true ? { ...none('absent'), presence: 'present' } : none('unknown')
-    } else if (pom === 'unknown') {
-      notes.push('could not tell whether pom.xml is at the root')
-      return none('unknown')
-    } else if (pom) {
-      tool = 'Maven'
-      because = 'pom.xml is at the root'
-    } else return none('absent')
-
-    if (tool === 'Maven') {
-      let text: string | null
-      try {
-        text = await reader.read('pom.xml')
-      } catch {
-        text = null
+  detect: (reader) =>
+    Effect.gen(function* () {
+      const notes: string[] = []
+      const none = (presence: 'absent' | 'unknown'): StackFinding => ({
+        presence,
+        install: null,
+        build: [],
+        skipped: [],
+        notes,
+      })
+      let gradle: string | null = null
+      let gradleUnknown: string | null = null
+      for (const file of GRADLE_FILES) {
+        const found = yield* hasOrUnknown(reader, file)
+        if (found === 'unknown') gradleUnknown ??= file
+        else if (found && gradle === null) gradle = file
       }
-      if (text === null) {
-        notes.push('pom.xml could not be read')
+      const pom = yield* hasOrUnknown(reader, 'pom.xml')
+
+      let tool: 'Maven' | 'Gradle'
+      let because: string
+      if (gradle !== null) {
+        tool = 'Gradle'
+        because = `${gradle} is at the root`
+        if (pom === true) notes.push(`pom.xml is also at the root; ${gradle} was used`)
+      } else if (gradleUnknown !== null) {
+        // A Gradle file that may exist would decide, so pom.xml cannot stand in for it.
+        notes.push(`could not tell whether ${gradleUnknown} is at the root`)
+        return pom === true ? { ...none('absent'), presence: 'present' } : none('unknown')
+      } else if (pom === 'unknown') {
+        notes.push('could not tell whether pom.xml is at the root')
+        return none('unknown')
+      } else if (pom) {
+        tool = 'Maven'
+        because = 'pom.xml is at the root'
+      } else return none('absent')
+
+      if (tool === 'Maven') {
+        const text = yield* readOrNull(reader, 'pom.xml')
+        if (text === null) {
+          notes.push('pom.xml could not be read')
+          return { ...none('absent'), presence: 'present' }
+        }
+        if (!xmlTagsBalanced(text)) {
+          notes.push('pom.xml has unbalanced tags')
+          return { ...none('absent'), presence: 'present' }
+        }
+      }
+
+      const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
+      const wrapper = yield* hasOrUnknown(reader, wrapperName)
+      if (wrapper === 'unknown') {
+        notes.push(`could not tell whether ${wrapperName} is at the root`)
         return { ...none('absent'), presence: 'present' }
       }
-      if (!xmlTagsBalanced(text)) {
-        notes.push('pom.xml has unbalanced tags')
-        return { ...none('absent'), presence: 'present' }
+      const cmd = wrapper ? `./${wrapperName}` : tool === 'Maven' ? 'mvn' : 'gradle'
+      const java = wrapper ? { tool: 'java' } : {}
+      // `test`, never `verify` or `check`: those often run integration tests.
+      const build = [
+        {
+          name: 'test',
+          run: tool === 'Maven' ? `${cmd} -B test` : `${cmd} test`,
+          because,
+          ...java,
+        },
+      ]
+      if (tool === 'Gradle') notes.push(`Gradle has no separate install; ${cmd} test resolves dependencies itself`)
+      notes.push(
+        `a cold ${tool} build downloads its dependencies first and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out`,
+      )
+      return {
+        presence: 'present',
+        install: tool === 'Maven' ? { run: `${cmd} -B -q dependency:go-offline`, because, ...java } : null,
+        build,
+        skipped: [],
+        notes,
       }
-    }
-
-    const wrapperName = tool === 'Maven' ? 'mvnw' : 'gradlew'
-    const wrapper = await hasOrUnknown(reader, wrapperName)
-    if (wrapper === 'unknown') {
-      notes.push(`could not tell whether ${wrapperName} is at the root`)
-      return { ...none('absent'), presence: 'present' }
-    }
-    const cmd = wrapper ? `./${wrapperName}` : tool === 'Maven' ? 'mvn' : 'gradle'
-    const java = wrapper ? { tool: 'java' } : {}
-    // `test`, never `verify` or `check`: those often run integration tests.
-    const build = [
-      {
-        name: 'test',
-        run: tool === 'Maven' ? `${cmd} -B test` : `${cmd} test`,
-        because,
-        ...java,
-      },
-    ]
-    if (tool === 'Gradle') notes.push(`Gradle has no separate install; ${cmd} test resolves dependencies itself`)
-    notes.push(
-      `a cold ${tool} build downloads its dependencies first and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out`,
-    )
-    return {
-      presence: 'present',
-      install: tool === 'Maven' ? { run: `${cmd} -B -q dependency:go-offline`, because, ...java } : null,
-      build,
-      skipped: [],
-      notes,
-    }
-  },
+    }),
 }
 
 /**
@@ -708,60 +713,56 @@ const javaDetector: StackDetector = {
  */
 const rustDetector: StackDetector = {
   stack: 'Rust',
-  async detect(reader) {
-    const notes: string[] = []
-    const none = (presence: 'absent' | 'unknown' | 'present'): StackFinding => ({
-      presence,
-      install: null,
-      build: [],
-      skipped: [],
-      notes,
-    })
-    const manifest = await hasOrUnknown(reader, 'Cargo.toml')
-    if (manifest === 'unknown') {
-      notes.push('could not tell whether a Cargo project is at the root')
-      return none('unknown')
-    }
-    if (!manifest) return none('absent')
+  detect: (reader) =>
+    Effect.gen(function* () {
+      const notes: string[] = []
+      const none = (presence: 'absent' | 'unknown' | 'present'): StackFinding => ({
+        presence,
+        install: null,
+        build: [],
+        skipped: [],
+        notes,
+      })
+      const manifest = yield* hasOrUnknown(reader, 'Cargo.toml')
+      if (manifest === 'unknown') {
+        notes.push('could not tell whether a Cargo project is at the root')
+        return none('unknown')
+      }
+      if (!manifest) return none('absent')
 
-    let text: string | null
-    try {
-      text = await reader.read('Cargo.toml')
-    } catch {
-      text = null
-    }
-    if (text === null) {
-      notes.push('Cargo.toml could not be read')
-      return none('present')
-    }
-    try {
-      parseToml(text)
-    } catch {
-      notes.push('Cargo.toml does not parse')
-      return none('present')
-    }
+      const text = yield* readOrNull(reader, 'Cargo.toml')
+      if (text === null) {
+        notes.push('Cargo.toml could not be read')
+        return none('present')
+      }
+      try {
+        parseToml(text)
+      } catch {
+        notes.push('Cargo.toml does not parse')
+        return none('present')
+      }
 
-    const lock = await hasOrUnknown(reader, 'Cargo.lock')
-    if (lock === 'unknown') {
-      notes.push('could not tell whether Cargo.lock is at the root; --locked was left off')
-    }
-    const locked = lock === true ? ' --locked' : ''
-    const because = 'Cargo.toml is at the root'
-    notes.push(
-      "a cold Cargo build compiles every dependency in each new worktree and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out",
-    )
-    return {
-      presence: 'present',
-      install: { run: `cargo fetch${locked}`, because },
-      build: [
-        { name: 'format', run: 'cargo fmt --check', because, tool: 'rustfmt' },
-        { name: 'lint', run: 'cargo clippy --all-targets -- -D warnings', because, tool: 'cargo-clippy' },
-        { name: 'test', run: `cargo test${locked}`, because },
-      ],
-      skipped: [],
-      notes,
-    }
-  },
+      const lock = yield* hasOrUnknown(reader, 'Cargo.lock')
+      if (lock === 'unknown') {
+        notes.push('could not tell whether Cargo.lock is at the root; --locked was left off')
+      }
+      const locked = lock === true ? ' --locked' : ''
+      const because = 'Cargo.toml is at the root'
+      notes.push(
+        "a cold Cargo build compiles every dependency in each new worktree and can exceed a run's default timeout of 15m — set timeout: on the command in the recipe if the trial runs out",
+      )
+      return {
+        presence: 'present',
+        install: { run: `cargo fetch${locked}`, because },
+        build: [
+          { name: 'format', run: 'cargo fmt --check', because, tool: 'rustfmt' },
+          { name: 'lint', run: 'cargo clippy --all-targets -- -D warnings', because, tool: 'cargo-clippy' },
+          { name: 'test', run: `cargo test${locked}`, because },
+        ],
+        skipped: [],
+        notes,
+      }
+    }),
 }
 
 export const DETECTORS: readonly StackDetector[] = [
@@ -778,16 +779,16 @@ export const DETECTORS: readonly StackDetector[] = [
  * nothing is merged into a command nobody was shown. A stack that could not
  * tell keeps its notes — its "could not tell" is never turned into silence.
  */
-export async function detectSetup(
+export const detectSetupEffect = Effect.fn('setup.detect')(function* (
   reader: SetupReader,
   detectors: readonly StackDetector[] = DETECTORS,
-): Promise<DetectedSetup> {
+) {
   const findings: { stack: string; found: StackFinding }[] = []
-  for (const detector of detectors) findings.push({ stack: detector.stack, found: await detector.detect(reader) })
+  for (const detector of detectors) findings.push({ stack: detector.stack, found: yield* detector.detect(reader) })
 
   const first = findings.find((f) => f.found.presence === 'present')
   if (first === undefined) {
-    return { install: null, build: [], skipped: [], notes: findings.flatMap((f) => f.found.notes) }
+    return { install: null, build: [], skipped: [], notes: findings.flatMap((f) => f.found.notes) } as DetectedSetup
   }
   const notes = [...first.found.notes]
   for (const other of findings) {
@@ -799,5 +800,13 @@ export async function detectSetup(
     }
   }
   const { install, build, skipped, others } = first.found
-  return { install, build, skipped, ...(others === undefined ? {} : { others }), notes }
+  return { install, build, skipped, ...(others === undefined ? {} : { others }), notes } as DetectedSetup
+})
+
+/** The promise face, for the callers outside this package that have not moved yet (#790). */
+export function detectSetup(
+  reader: SetupReader,
+  detectors: readonly StackDetector[] = DETECTORS,
+): Promise<DetectedSetup> {
+  return Effect.runPromise(detectSetupEffect(reader, detectors))
 }

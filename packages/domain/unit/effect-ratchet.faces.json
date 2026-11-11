@@ -10,5 +10,29 @@
     "fn": "integrate",
     "until": "#790",
     "why": "packages/repo's own tests call the promise; no production caller is left (conductor/src/live.ts wires integrateEffect)"
+  },
+  {
+    "file": "packages/setup/src/detect-setup.ts",
+    "fn": "detectSetup",
+    "until": "#790",
+    "why": "apps/cli/src/setup-build.ts and apps/cli/unit/add-from-page-equals-add.test.ts call it as a promise; goes with the apps/cli setup group"
+  },
+  {
+    "file": "packages/setup/src/runtimes.ts",
+    "fn": "askRuntimes",
+    "until": "#790",
+    "why": "apps/cli (add-github, first-project, init) and packages/conductor/src/add-from-page.ts call it as a promise; goes with the later of the apps/cli setup group and the conductor rest"
+  },
+  {
+    "file": "packages/setup/src/trial-build.ts",
+    "fn": "runLiveTrial",
+    "until": "#790",
+    "why": "liveTrialBuild hands it to apps/cli (add-github, first-project; read at setup-build.ts); goes with the apps/cli setup group"
+  },
+  {
+    "file": "packages/setup/src/trial-build.ts",
+    "fn": "trialBase",
+    "until": "#790",
+    "why": "liveTrialBuild hands it to apps/cli (add-github, first-project; read at setup-build.ts); goes with the apps/cli setup group"
   }
 ]
