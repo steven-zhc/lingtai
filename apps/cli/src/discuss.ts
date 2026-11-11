@@ -533,7 +533,23 @@ export async function answerOutstanding(ports: AnswerPorts = {}): Promise<Outsta
  * twice. Two agents for one question is the one way this feature could surprise
  * somebody with a bill, so the answers are serialised rather than raced.
  */
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<Outstanding> = Promise.resolve({ answered: 0, heldBack: 0 })
+
+/**
+ * `answerOutstanding`, behind the one queue. Every caller — a request, a resume
+ * and daemon startup — goes through here, so two scans never answer the same
+ * request at once (#996): a second scan would find the first one's request
+ * still unanswered and start it again.
+ */
+export function answerOutstandingQueued(ports: AnswerPorts = {}): Promise<Outstanding> {
+  queue = queue
+    .then(() => answerOutstanding(ports))
+    .catch((err: unknown) => {
+      ports.log?.(`discussions: ${(err as Error).message}`)
+      return { answered: 0, heldBack: 0 }
+    })
+  return queue
+}
 
 /**
  * The daemon's handler for one `DiscussionRequested` as it arrives.
@@ -548,11 +564,5 @@ export async function onDiscussionRequested(
   locked?: AnswerPorts['locked'],
 ): Promise<void> {
   if (!(DISCUSSION_EVENTS as readonly string[]).includes(event.type)) return
-  queue = queue
-    .then(() => answerOutstanding({ log, locked }))
-    .catch((err: unknown) => {
-      log(`discussions: ${(err as Error).message}`)
-      return { answered: 0, heldBack: 0 }
-    })
-  await queue
+  await answerOutstandingQueued({ log, locked })
 }

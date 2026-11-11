@@ -43,7 +43,7 @@ import type { Triage } from '@lingtai/recipe'
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
 import { pausedSentence } from './day-ceiling.ts'
-import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
+import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
@@ -704,10 +704,12 @@ export async function daemonCommand(
       // A question asked while nothing was listening is waiting in the stream,
       // exactly as a pause is (0013). After `start`, so the subscription is
       // already up and a question that arrives during this one is not missed.
-      const waiting = await answerOutstanding({ log: (line) => console.log(line), locked }).catch((err: unknown) => {
-        console.error(`discussions: ${(err as Error).message}`)
-        return { answered: 0, heldBack: 0 }
-      })
+      const waiting = await answerOutstandingQueued({ log: (line) => console.log(line), locked }).catch(
+        (err: unknown) => {
+          console.error(`discussions: ${(err as Error).message}`)
+          return { answered: 0, heldBack: 0 }
+        },
+      )
       if (waiting.answered > 0) console.log(`answered ${waiting.answered} discussion(s) that were waiting`)
       if (waiting.heldBack > 0) {
         console.log(`${waiting.heldBack} held back by a lock — answered when the project is resumed`)

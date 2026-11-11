@@ -5,7 +5,7 @@
 import type { DiscussionRequest, Envelope } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
-import { answerOutstanding, onDiscussionRequested } from '../src/discuss.ts'
+import { answerOutstanding, answerOutstandingQueued, onDiscussionRequested } from '../src/discuss.ts'
 
 const ask = (chatId: string, ticketId: string, n: number): DiscussionRequest => ({
   chatId,
@@ -79,7 +79,20 @@ describe('answerOutstanding and locks', () => {
     expect(await answerOutstanding(r.ports)).toEqual({ answered: 1, heldBack: 0 })
   })
 
-  it('acts on a ProjectResumed envelope and ignores other events', async () => {
+  it('answers a request once when two scans start together (startup and a resume)', async () => {
+    const asks = [ask('a', 'ticket-lingtai-1', 1)]
+    const r = rig(asks, async () => null)
+    const slow = r.ports.answer
+    r.ports.answer = async (q: DiscussionRequest) => {
+      await new Promise((res) => setTimeout(res, 20))
+      await slow(q)
+    }
+    const [x, y] = await Promise.all([answerOutstandingQueued(r.ports), answerOutstandingQueued(r.ports)])
+    expect([x.answered, y.answered]).toEqual([1, 0])
+    expect(r.called).toEqual(['a:q1'])
+  })
+
+  it('ignores events that are not requests or resumes', async () => {
     const lines: string[] = []
     await onDiscussionRequested({ type: 'TicketLanded' } as Envelope, (l) => lines.push(l))
     expect(lines).toEqual([])
