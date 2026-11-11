@@ -118,7 +118,7 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
         Effect.gen(function* () {
           const head = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: asError })
           const control = yield* Effect.tryPromise({ try: () => readControl(options.store), catch: asError })
-          if (!control.paused && control.shutdown === null) return null
+          if (!control.paused) return null
           return yield* Effect.tryPromise({
             try: () => resumeConductor(by, options.store, head),
             catch: (e) => e,
@@ -137,7 +137,6 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
         const control = lifted
         did += 1
         if (control.paused) log(`lifted the conductor-wide pause (cause ${control.cause ?? 'unknown'})`)
-        if (control.shutdown !== null) log(`lifted a shutdown request by ${control.shutdown.by}`)
         // A person's resume of the ceiling's pause waives it until that pause's midnight.
         if (control.paused && control.cause === 'day-ceiling') {
           const until = control.until ? ` until ${control.until.toISOString()}` : ' until midnight'

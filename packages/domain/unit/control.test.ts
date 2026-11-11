@@ -247,7 +247,7 @@ describe('the discussions somebody asked for', () => {
       NOW,
     )
 
-    // A resume lifts a pause and a drain. It does not withdraw a question.
+    // A resume lifts a pause. It does not withdraw a question.
     expect(state.discussions).toHaveLength(1)
   })
 })
@@ -278,6 +278,20 @@ describe('withdrawing one shutdown request', () => {
     expect(state.paused).toBe(true)
     expect(state.by).toBe('human:ops')
     expect(state.reason).toBe('the importer is flaky')
+  })
+
+  it('is not lifted by a resume, which still lifts the pause beside it (0126)', () => {
+    const state = reduceControl(
+      log([
+        { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'x', until: null } },
+        asked('human:steven', 'restarting'),
+        { type: 'ConductorResumed', data: { by: 'human:steven' } },
+      ]),
+      NOW,
+    )
+
+    expect(state.paused).toBe(false)
+    expect(state.shutdown).toMatchObject({ by: 'human:steven', version: 2 })
   })
 
   it('does not lift a newer request somebody else made', () => {

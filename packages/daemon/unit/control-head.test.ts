@@ -8,7 +8,7 @@ import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { readControl, recordStart, requestShutdownUnlessStanding, withdrawShutdown } from '../src/control.ts'
+import { readControl, recordStart, requestShutdownUnlessStanding } from '../src/control.ts'
 
 /** A store whose first `readTypes` of the control stream appends `event` behind the reader's back. */
 function racing(real: EventStore, event: { type: string; actor: string; data: unknown }) {
@@ -42,26 +42,6 @@ describe('control appends decide at the head they read first', () => {
       'ConductorPaused',
       'ConductorShutdownRequested',
     ])
-  })
-
-  it('withdrawShutdown fails the first append, reads again, and succeeds', async () => {
-    const real = createMemoryEventStore()
-    const version = await real.append(CONTROL_STREAM, 0, [
-      {
-        type: 'ConductorShutdownRequested',
-        actor: 'daemon',
-        data: { by: 'human:me', reason: 'why', timeoutMs: null, force: false },
-      } as never,
-    ])
-    const { store, raced } = racing(real, {
-      type: 'ConductorPaused',
-      actor: 'human:p',
-      data: { by: 'a person', reason: 'x', until: null, holdsAcrossStarts: false, cause: 'person' },
-    })
-    const answer = await withdrawShutdown('human:me', typeof version === 'number' ? version : 1, 'done', store)
-    expect(raced()).toBe(true)
-    expect(answer.withdrew).toBe(true)
-    expect((await real.read(CONTROL_STREAM)).map((e) => e.type)).toContain('ConductorShutdownWithdrawn')
   })
 })
 

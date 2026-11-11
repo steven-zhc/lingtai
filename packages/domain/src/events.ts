@@ -1640,9 +1640,8 @@ export const ConductorShutdownRequested = z.object({
  * is what keeps the commit it names pushed.
  *
  * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
- * being told to stop are independent facts — a daemon started while a request
- * stands reads it and stops again, deliberately. `ConductorShutdownWithdrawn`
- * is the withdrawal, and it names the request it lifts.
+ * being told to stop are independent facts. Only the start ends a drain (0126),
+ * and `recordStart` refuses a request that landed during the start.
  *
  * @summary A conductor started, and recorded who started it, why, and from which commit.
  */
@@ -1677,7 +1676,7 @@ export const ConductorStarted = z.object({
   /**
    * Never written since #167, and kept so the starts already on the log parse.
    *
-   * It named the `ConductorShutdownWithdrawn` a supervisor's start answered,
+   * It named the withdrawal a supervisor's start answered,
    * when a `lingtai restart` handed its start to launchd or systemd (0042 §8).
    * Since #159 a daemon reduces only what was appended after it started, so the
    * daemon the supervisor started never read the handoff it was to answer, and
@@ -1691,20 +1690,16 @@ export const ConductorStarted = z.object({
 /**
  * One shutdown request lifted — the one named, and nothing else.
  *
- * `ConductorResumed` lifts a request too, and it lifts a pause with it, which
- * is right for `lingtai resume` and wrong for `lingtai restart`: a restart has
- * to withdraw the drain *it* asked for, so the daemon it starts does not read
- * the request and stop again, and a pause somebody else made is none of its
- * business. The first attempt at this resumed and then re-appended the pause —
- * two appends, so an append landing between them destroyed a person's pause —
- * and resumed whatever request stood, so a drain a second person asked for
- * during the wait was lifted too.
+ * Nothing writes this any more: a drain is never withdrawn, it ends at the next
+ * `ConductorStarted` (0126), and `ConductorResumed` does not touch it. A
+ * withdrawal already in the log still lifts the request it names, so the reducer
+ * keeps reading it.
  *
  * `version` is that request's position on `ctl-conductor`. The reducer lifts the
  * standing request only when it is at that version, so a withdrawal that lost a
  * race to a newer request is a no-op in the log rather than an overruling of it.
  *
- * @summary A request to shut the conductor down was withdrawn.
+ * @summary No longer written: a request to shut the conductor down was withdrawn.
  */
 export const ConductorShutdownWithdrawn = z.object({
   by: z.string(),
@@ -2540,7 +2535,7 @@ export const EVENT_AT = {
   ConductorResumed: ['outside'],
   ConductorShutdownRequested: ['outside'],
   ConductorStarted: ['outside'],
-  ConductorShutdownWithdrawn: ['outside'],
+  ConductorShutdownWithdrawn: [],
   OutboxDelivered: [],
   OutboxFailed: [],
   IssueUpdated: ['claim', 'end', 'outside'],
@@ -2608,6 +2603,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'OutboxFailed',
   'TicketLinked',
   'PassRouted',
+  'ConductorShutdownWithdrawn',
 ])
 
 export function isRetiredEventType(t: string): boolean {
