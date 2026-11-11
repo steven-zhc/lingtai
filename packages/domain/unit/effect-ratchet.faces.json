@@ -6,10 +6,22 @@
     "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (reconcile, control) and apps/board read a reducer's state as a promise"
   },
   {
+    "file": "packages/event-store/src/schema.ts",
+    "fn": "createSchema",
+    "until": "#790",
+    "why": "apps/cli/src/init.ts calls it as a promise"
+  },
+  {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "appendFace",
     "until": "#790",
     "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "censusFace",
+    "until": "#790",
+    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -19,9 +31,27 @@
   },
   {
     "file": "packages/event-store/src/store-face.ts",
+    "fn": "execFace",
+    "until": "#790",
+    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history, apps/cli ticket), and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "execIdempotently",
+    "until": "#790",
+    "why": "packages/conductor/src/db-tickets.ts ensureTicketTables calls it as a promise"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
     "fn": "headFace",
     "until": "#790",
     "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "latestFace",
+    "until": "#790",
+    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -34,6 +64,18 @@
     "fn": "projectStreamsFace",
     "until": "#790",
     "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "putFace",
+    "until": "#790",
+    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "queryFace",
+    "until": "#790",
+    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history, apps/cli ticket), and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",

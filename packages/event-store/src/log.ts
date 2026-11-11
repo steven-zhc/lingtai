@@ -31,8 +31,9 @@
  * place to land instead of three.
  */
 import type { EventStore } from './event-store.ts'
-import { createPostgresLogQueries, createPostgresTicketSql, type LogQueries } from './queries.ts'
-import { createSqlSnapshotStore, type SnapshotStore } from './snapshots.ts'
+import { createPostgresLogQueries, type LogQueries, makePostgresLogSql } from './queries.ts'
+import { makeSqlSnapshots, type SnapshotStore } from './snapshots.ts'
+import { promiseSnapshots } from './store-face.ts'
 import { createPostgresWaker, type Waker } from './wake.ts'
 
 // Re-exported so that a caller holding a log names one submodule and not three.
@@ -66,6 +67,8 @@ export interface PostgresLogOptions {
   store: EventStore
   /** The questions, when the caller built them already; defaults to a fresh set over `url`. */
   queries?: LogQueries
+  /** The snapshot store, when the caller built one already; defaults to a fresh one over `url`. */
+  snapshots?: SnapshotStore
   /** Pooled connection for the questions. Defaults to `postgresUrl()`. */
   url?: string
   /**
@@ -82,7 +85,9 @@ export function createPostgresLog(options: PostgresLogOptions): Log {
   return {
     store: options.store,
     queries,
-    snapshots: createSqlSnapshotStore(createPostgresTicketSql(options.url === undefined ? {} : { url: options.url })),
+    snapshots:
+      options.snapshots ??
+      promiseSnapshots(makeSqlSnapshots(makePostgresLogSql(options.url === undefined ? {} : { url: options.url }))),
     waker(name) {
       return createPostgresWaker({
         ...(name === undefined ? {} : { name }),

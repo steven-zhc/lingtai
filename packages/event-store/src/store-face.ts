@@ -24,6 +24,14 @@ import {
   logPredatesHoldEffect,
 } from './event-store.ts'
 import type { LogQueries, QueriesPort } from './queries.ts'
+import {
+  execIdempotentlyEffect,
+  type Snapshot,
+  type SnapshotKey,
+  type SnapshotsPort,
+  type SnapshotStore,
+} from './snapshots.ts'
+import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 
 export function appendFace(events: EventsPort, streamId: string, expectedVersion: number, batch: readonly ToAppend[]) {
   return Effect.runPromise(events.append(streamId, expectedVersion, batch))
@@ -141,4 +149,71 @@ export function fromPromiseQueries(queries: LogQueries): QueriesPort {
  */
 export function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
   return Effect.runPromise(logPredatesHoldEffect({ typeCounts: () => Effect.promise(() => queries.typeCounts()) }))
+}
+
+// ------------------------------------------------------- ticket SQL (#1028) ----
+
+export function queryFace<T>(sql: LogSqlPort, text: string, params?: readonly unknown[]) {
+  return Effect.runPromise(sql.query<T>(text, params))
+}
+
+export function execFace(sql: LogSqlPort, text: string) {
+  return Effect.runPromise(sql.exec(text))
+}
+
+/** The promise `TicketSql` every caller and test fake holds, over `sql`. */
+export function promiseLogSql(sql: LogSqlPort): TicketSql {
+  return {
+    dialect: sql.dialect,
+    query: <T>(text: string, params?: readonly unknown[]) => queryFace<T>(sql, text, params),
+    exec: (text) => execFace(sql, text),
+  }
+}
+
+/**
+ * A promise `TicketSql` as the port: a rejection is a defect, the very error
+ * the promise rejected with, and `dialect` is copied. For fakes and for
+ * callers that hold only the promise object, never for a store's own.
+ */
+export function fromPromiseLogSql(sql: TicketSql): LogSqlPort {
+  return {
+    dialect: sql.dialect,
+    query: <T>(text: string, params?: readonly unknown[]) => Effect.promise(() => sql.query<T>(text, params)),
+    exec: (text) => Effect.promise(() => sql.exec(text)),
+  }
+}
+
+export function latestFace(snapshots: SnapshotsPort, key: SnapshotKey) {
+  return Effect.runPromise(snapshots.latest(key))
+}
+
+export function putFace(snapshots: SnapshotsPort, snapshot: Snapshot) {
+  return Effect.runPromise(snapshots.put(snapshot))
+}
+
+export function censusFace(snapshots: SnapshotsPort) {
+  return Effect.runPromise(snapshots.census())
+}
+
+/** The promise `SnapshotStore` every caller and test fake holds, over `snapshots`. */
+export function promiseSnapshots(snapshots: SnapshotsPort): SnapshotStore {
+  return {
+    latest: (key) => latestFace(snapshots, key),
+    put: (snapshot) => putFace(snapshots, snapshot),
+    census: () => censusFace(snapshots),
+  }
+}
+
+/** A promise `SnapshotStore` as the port: a rejection is a defect, the very error. For fakes. */
+export function fromPromiseSnapshots(store: SnapshotStore): SnapshotsPort {
+  return {
+    latest: (key) => Effect.promise(() => store.latest(key)),
+    put: (snapshot) => Effect.promise(() => store.put(snapshot)),
+    census: () => Effect.promise(() => store.census()),
+  }
+}
+
+/** The idempotent DDL, as a promise: rejects with the very error a non-race `exec` failed with. */
+export function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
+  return Effect.runPromise(execIdempotentlyEffect(fromPromiseLogSql(sql), ddl))
 }

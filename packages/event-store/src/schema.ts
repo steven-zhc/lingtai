@@ -27,6 +27,8 @@
  * the columns the migrations make, and a table that differs is refused by name
  * with nothing changed.
  */
+import { Effect } from 'effect'
+
 import initial from '../migrations/app/20260831T1721_initial/ops.json' with { type: 'json' }
 import dropOutbox from '../migrations/app/20260904T2359_drop_outbox/ops.json' with { type: 'json' }
 
@@ -131,12 +133,16 @@ export const SHAPE: Readonly<Record<string, Readonly<Record<string, string>>>> =
 }
 
 /** What differs between the tables there and `SHAPE` — empty when they are Lingtai's. */
-async function foreign(client: Queryable): Promise<string[]> {
-  const { rows } = await client.query(
-    `SELECT table_name, column_name, data_type FROM information_schema.columns
+const foreign = (client: Queryable): Effect.Effect<string[]> =>
+  Effect.promise(() =>
+    client.query(
+      `SELECT table_name, column_name, data_type FROM information_schema.columns
      WHERE table_schema = 'public' AND table_name = ANY($1)`,
-    [Object.keys(SHAPE)],
-  )
+      [Object.keys(SHAPE)],
+    ),
+  ).pipe(Effect.map(({ rows }) => differences(rows)))
+
+function differences(rows: readonly Record<string, unknown>[]): string[] {
   const differs: string[] = []
   for (const [table, columns] of Object.entries(SHAPE)) {
     const there = new Map(
@@ -165,49 +171,68 @@ function notLingtais(differs: readonly string[]): Error {
   )
 }
 
-async function holds(client: Queryable, check: Statement): Promise<boolean> {
-  const { rows } = await client.query(check.sql, check.params ?? [])
-  return rows[0]?.['result'] === true
-}
+const holds = (client: Queryable, check: Statement): Effect.Effect<boolean> =>
+  Effect.promise(() => client.query(check.sql, check.params ?? [])).pipe(
+    Effect.map(({ rows }) => rows[0]?.['result'] === true),
+  )
 
-export async function createSchema(client: Queryable): Promise<SchemaOutcome> {
-  const { rows } = await client.query(`SELECT to_regclass('"public"."events"') IS NOT NULL AS "result"`)
-  if (rows[0]?.['result'] === true) {
-    const differs = await foreign(client)
-    if (differs.length > 0) throw notLingtais(differs)
-    const trigger = await client.query(
-      `SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'lingtai_events_notify' AND NOT tgisinternal) AS "result"`,
-    )
-    if (trigger.rows[0]?.['result'] === true) return { created: false, repaired: [] }
-    await client.query(NOTIFY_SQL)
-    return { created: false, repaired: ['the NOTIFY trigger and the append-only rules'] }
-  }
+const run = (client: Queryable, sql: string, params?: readonly unknown[]) =>
+  Effect.promise(() => client.query(sql, params === undefined ? undefined : [...params]))
 
-  const applied: string[] = []
-  await client.query('BEGIN')
-  try {
-    for (const migration of MIGRATIONS) {
-      for (const op of migration.ops) {
-        let due = true
-        for (const check of op.precheck) due = due && (await holds(client, check))
-        if (!due) continue
-        for (const step of op.execute) await client.query(step.sql, step.params ?? [])
-        for (const check of op.postcheck) {
-          if (!(await holds(client, check))) {
-            throw new Error(`${migration.name}: ${op.label} did not hold afterwards — ${check.description}`)
+/**
+ * Makes the schema on the caller's client. Uninterruptible from `BEGIN` to
+ * `COMMIT`/`ROLLBACK`: it runs once at `init`, and a half-run is a rollback
+ * with the session at best. Every failure is a defect carrying the same error
+ * the promise face rejects with.
+ */
+export const createSchemaEffect = (client: Queryable): Effect.Effect<SchemaOutcome> =>
+  Effect.uninterruptible(
+    Effect.gen(function* () {
+      const { rows } = yield* run(client, `SELECT to_regclass('"public"."events"') IS NOT NULL AS "result"`)
+      if (rows[0]?.['result'] === true) {
+        const differs = yield* foreign(client)
+        if (differs.length > 0) return yield* Effect.die(notLingtais(differs))
+        const trigger = yield* run(
+          client,
+          `SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'lingtai_events_notify' AND NOT tgisinternal) AS "result"`,
+        )
+        if (trigger.rows[0]?.['result'] === true) return { created: false, repaired: [] }
+        yield* run(client, NOTIFY_SQL)
+        return { created: false, repaired: ['the NOTIFY trigger and the append-only rules'] }
+      }
+
+      const applied: string[] = []
+      yield* run(client, 'BEGIN')
+      yield* Effect.gen(function* () {
+        for (const migration of MIGRATIONS) {
+          for (const op of migration.ops) {
+            let due = true
+            for (const check of op.precheck) due = due && (yield* holds(client, check))
+            if (!due) continue
+            for (const step of op.execute) yield* run(client, step.sql, step.params)
+            for (const check of op.postcheck) {
+              if (!(yield* holds(client, check))) {
+                return yield* Effect.die(
+                  new Error(`${migration.name}: ${op.label} did not hold afterwards — ${check.description}`),
+                )
+              }
+            }
+            applied.push(op.label)
           }
         }
-        applied.push(op.label)
-      }
-    }
-    // A precheck passes over a table that is already there, so a `checkpoints` of somebody else's is caught here.
-    const differs = await foreign(client)
-    if (differs.length > 0) throw notLingtais(differs)
-    await client.query(NOTIFY_SQL)
-    await client.query('COMMIT')
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {})
-    throw err
-  }
-  return { created: true, applied }
+        // A precheck passes over a table that is already there, so a `checkpoints` of somebody else's is caught here.
+        const differs = yield* foreign(client)
+        if (differs.length > 0) return yield* Effect.die(notLingtais(differs))
+        yield* run(client, NOTIFY_SQL)
+        yield* run(client, 'COMMIT')
+      }).pipe(
+        // A failed ROLLBACK never replaces the error that caused it.
+        Effect.onError(() => Effect.promise(() => client.query('ROLLBACK').catch(() => {}))),
+      )
+      return { created: true, applied }
+    }),
+  )
+
+export function createSchema(client: Queryable): Promise<SchemaOutcome> {
+  return Effect.runPromise(createSchemaEffect(client))
 }

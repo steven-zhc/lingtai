@@ -19,20 +19,25 @@ import { promiseStore } from './store-face.ts'
 export {
   closeProcessLog,
   eventsLayer,
+  logSqlLayer,
   processEventStore,
   queriesLayer,
+  snapshotsLayer,
   processLog,
   processTicketSql,
 } from './choose.ts'
 export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
-export type { TicketSql } from './ticket-sql.ts'
+export { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
 export {
   createSqlSnapshotStore,
-  execIdempotently,
+  execIdempotentlyEffect,
+  makeSqlSnapshots,
   type Snapshot,
   type SnapshotCensusRow,
   type SnapshotKey,
   type SnapshotStore,
+  Snapshots,
+  type SnapshotsPort,
 } from './snapshots.ts'
 export { readThroughSnapshot, type SnapshotReadOptions } from './snapshot-read.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
@@ -90,7 +95,18 @@ export const eventStore: EventStore = promiseStore(deferredEvents(processEvents)
  * than with the poll #178 built for it.
  */
 export const log: Log = deferredLog(processLog)
-export { fromPromiseQueries, fromPromiseStore, logPredatesHold, promiseQueries, promiseStore } from './store-face.ts'
+export {
+  execIdempotently,
+  fromPromiseLogSql,
+  fromPromiseQueries,
+  fromPromiseSnapshots,
+  fromPromiseStore,
+  logPredatesHold,
+  promiseLogSql,
+  promiseQueries,
+  promiseSnapshots,
+  promiseStore,
+} from './store-face.ts'
 export { subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
 export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
 export { parseTimestamptz } from './timestamptz.ts'
