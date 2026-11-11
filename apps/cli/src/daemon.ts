@@ -495,11 +495,13 @@ export async function daemonCommand(
     started.daemon.stop()
   }
 
-  // **Where the control stream was when this daemon started** (`#159`). Every
-  // signal it obeys is read from here, so a pause or a shutdown appended before
-  // it began belongs to the daemon before it and not to this one — which is
-  // what makes `lingtai start` need nothing lifted first, for every signal but
-  // one. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
+  // **Where the control stream was when this daemon started** (`#159`). A pause
+  // it obeys is read from here, so one appended before it began belongs to the
+  // daemon before it and not to this one. **A shutdown is not scoped by it any
+  // more** (0126): a request is ended by the next `ConductorStarted`, and the
+  // watermark survives only as the line `recordStart` decides by — at or below
+  // it, the request was asked of an earlier process and the record ends it;
+  // above it, it is this daemon's to obey. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
   // the conductor itself appends over a tier the setup cannot provide carries
   // `holdsAcrossStarts`, and `readControl` (`packages/daemon/src/control.ts`)
   // obeys it whatever `since` says, because a restart loads the same setup
@@ -675,25 +677,38 @@ export async function daemonCommand(
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
-    await loop.start()
-    startRates()
-    // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
-    setInterval(() => startRates(), 3_600_000).unref()
-    // The subscription is live; a wait made during this scan is delivered by its live handler.
-    await catchUpRegisteredTriage(
-      await loadProjects(),
-      async (state) => (await currentRecipe(state)).recipe.triage ?? null,
-      scanTriage,
-      (line) => console.error(line),
-    )
-    // A question asked while nothing was listening is waiting in the stream,
-    // exactly as a pause is (0013). After `start`, so the subscription is
-    // already up and a question that arrives during this one is not missed.
-    const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
-      console.error(`discussions: ${(err as Error).message}`)
-      return 0
-    })
-    if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
+    // **The start is decided before anything that can spend money is switched
+    // on** (0126). `loop.start()` opens the subscription that delivers
+    // discussions and waits, so a start that is still recording would already be
+    // taking work. Nothing is in flight until this resolves, so stopping on a
+    // failed or declined record costs nothing and orphans nothing.
+    const start = await noteStart()
+    if ('failed' in start) {
+      stopNow(`the start could not be recorded: ${start.failed}`, 1)
+    } else if (!start.take) {
+      asked = start.standing
+      await drain(`asked by ${asked.by} — ${asked.reason}`, asked.timeoutMs)
+    } else {
+      await loop.start()
+      startRates()
+      // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
+      setInterval(() => startRates(), 3_600_000).unref()
+      // The subscription is live; a wait made during this scan is delivered by its live handler.
+      await catchUpRegisteredTriage(
+        await loadProjects(),
+        async (state) => (await currentRecipe(state)).recipe.triage ?? null,
+        scanTriage,
+        (line) => console.error(line),
+      )
+      // A question asked while nothing was listening is waiting in the stream,
+      // exactly as a pause is (0013). After `start`, so the subscription is
+      // already up and a question that arrives during this one is not missed.
+      const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
+        console.error(`discussions: ${(err as Error).message}`)
+        return 0
+      })
+      if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
+    }
   } else {
     // Discussions go with the conductor, and that is what this flag says: they
     // spend money and 0033 §3 puts everything that spends money in the process
@@ -720,7 +735,9 @@ export async function daemonCommand(
     } else if (!start.take) {
       await drain(`asked by ${start.standing.by} — ${start.standing.reason}`, start.standing.timeoutMs)
     }
-    listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
+    // Not once a drain or a stop has begun: it has already cleared the timers, and
+    // an interval installed after it would hold the process open for ever.
+    if (!draining && !stopping) listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is

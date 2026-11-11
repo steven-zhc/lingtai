@@ -540,8 +540,15 @@ describe('ConductorStarted ends a standing shutdown (0126)', () => {
 
   it('a start leaves a pause and the requests as they were', () => {
     const run = { type: 'RunRequested', data: { project: 'p', issue: '1', by: 'steven' } }
-    const before = reduceControl(log([quotaPause, run]), NOW)
-    const after = reduceControl(log([quotaPause, run, started]), NOW)
-    expect(after).toEqual(before)
+    const wait = { type: 'ContinueRequested', data: { project: 'p', issue: '2', by: 'steven' } }
+    const talk = { type: 'DiscussionRequested', data: { chatId: 'c', ticketId: 't', attempt: 1 } }
+    const before = reduceControl(log([quotaPause, run, wait, talk, ask]), NOW)
+    const after = reduceControl(log([quotaPause, run, wait, talk, ask, started]), NOW)
+    expect(before.continuing.length).toBeGreaterThan(0)
+    expect(before.discussions.length).toBeGreaterThan(0)
+    expect(before.shutdown).not.toBeNull()
+    expect(before.paused).toBe(true)
+    expect(before.requested.length).toBeGreaterThan(0)
+    expect(after).toEqual({ ...before, shutdown: null })
   })
 })

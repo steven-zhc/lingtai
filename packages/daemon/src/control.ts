@@ -100,13 +100,13 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * Reduces the control stream. Cheap: it is a handful of events, not a history.
  *
  * **`since` is what scopes a signal to one daemon** (`#159`). A conductor reads
- * the stream from where it was when the conductor started, so a pause or a
- * shutdown appended before it began is not its to obey. Without that, a
- * `lingtai shutdown` outlived the process it was aimed at and stopped the next
- * one too — and `lingtai resume`, a command about *taking work*, became the way
- * to make a process stay up. The two axes are now separate: the process is
- * started and stopped by `start`/`shutdown`, and `pause`/`resume` say what the
- * process that is running should do.
+ * the stream from where it was when the conductor started, so a pause appended
+ * before it began is not its to obey. **A shutdown is not scoped by `since`**
+ * (0126): it is the whole stream's and a `ConductorStarted` ends it, so a drain
+ * does not outlive the process it was aimed at — the next start ends it, and
+ * `recordStart` is what decides, by `since`, whether a request is that start's
+ * to obey. A reader that wants a request from before a start gone must read
+ * after the start is recorded, never rely on `since` to hide it.
  *
  * Every other caller — the board, `doctor`, `status` — passes nothing and reduces
  * the whole stream, because they are answering *what is standing now* rather
@@ -120,7 +120,7 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * exactly that pause (and only that one; `standDownConductor`'s does not carry
  * it). The answer is the whole-stream state, read through the snapshot, scoped
  * by version (`scopeControl`): a pause is kept when it came after `since` or
- * holds across starts, a shutdown when its own version is after `since`.
+ * holds across starts. A shutdown is returned as the whole stream has it.
  * `requested`, `continuing`, `discussions`, `holdsAcrossStarts`,
  * `ceilingWaivedUntil` and `pausedAt` are the whole stream's values; no caller
  * with `since > 0` reads them (#874).
