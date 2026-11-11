@@ -2206,6 +2206,35 @@ export const ProjectRecovered = z.object({
 export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string() })
 
 /**
+ * A runtime's account met its usage limit. `until` is when the runtime said it
+ * resets, or the configured backoff when it said nothing readable; `untilFrom`
+ * says which, in the order `standDown` tries them. Only an attempt meeting the
+ * wall appends it, and only when no limit stands (0126 §3).
+ *
+ * @summary A runtime's account reached its usage limit; no project whose recipe uses it starts new work until it is lifted.
+ */
+export const AccountLimitReached = z.object({
+  runtime: RuntimeId,
+  /** ISO instant. */
+  until: z.string().datetime({ offset: true }),
+  untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
+  /** The runtime's own words, whitespace-collapsed, at most 200 characters. */
+  said: z.string().max(200),
+})
+
+/**
+ * A runtime's usage limit ended: the guard saw `until` pass (no `by`), or a
+ * person said it is over (`by`).
+ *
+ * @summary A runtime's usage limit was lifted: its time passed, or a person said it is over.
+ */
+export const AccountLimitLifted = z.union([
+  // `by` first: a union takes the first member that parses, and the bare shape would strip it.
+  z.object({ runtime: RuntimeId, by: z.string() }),
+  z.object({ runtime: RuntimeId }),
+])
+
+/**
  * A person resumed one project the log had as paused.
  *
  * @summary A person resumed one project.
@@ -2456,6 +2485,8 @@ export const EVENTS = {
   ProjectRecovered,
   ProjectPaused,
   ProjectResumed,
+  AccountLimitReached,
+  AccountLimitLifted,
   Reconciled,
   GitHubAppCreated,
   TriageStarted,
@@ -2554,6 +2585,8 @@ export const EVENT_AT = {
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],
   ProjectResumed: ['outside'],
+  AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
+  AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],
   GitHubAppCreated: ['outside'],
   TriageStarted: ['outside'],

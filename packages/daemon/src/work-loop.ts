@@ -126,6 +126,8 @@ export const COMPLETION_EVENTS = [
   'ConductorResumed',
   // A project's own resume, for the same reason (0126): what it held back is served now.
   'ProjectResumed',
+  // A person's lift of a runtime's usage limit, for the same reason (0126 §4).
+  'AccountLimitLifted',
   'RunRequested',
   'ContinueRequested',
   // And a shutdown, most of all. An idle daemon appends nothing, so without

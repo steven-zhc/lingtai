@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import {
+  ACCOUNT_STREAM_PREFIX,
   CHAT_STREAM_PREFIX,
   ATTEMPT_STREAM_PREFIX,
   PROJECT_STREAM_PREFIX,
@@ -48,7 +49,7 @@ function noDash(prefix: string): string {
  * unchanged.
  */
 export const STREAM_ID_PATTERN = new RegExp(
-  `^(${noDash(TICKET_STREAM_PREFIX)}|${noDash(ATTEMPT_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl|${noDash(RECIPE_STREAM_PREFIX)})-[\\w.-]+$`,
+  `^(${noDash(TICKET_STREAM_PREFIX)}|${noDash(ATTEMPT_STREAM_PREFIX)}|int|${noDash(PROJECT_STREAM_PREFIX)}|ctl|${noDash(CHAT_STREAM_PREFIX)}|ext|bkl|${noDash(RECIPE_STREAM_PREFIX)}|${noDash(ACCOUNT_STREAM_PREFIX)})-[\\w.-]+$`,
 )
 
 export const StreamId = z.string().regex(
@@ -75,7 +76,7 @@ export const StreamId = z.string().regex(
   // event it failed on: the daemon follows the log while a run is appending
   // to that stream, so writing back to it would turn a notifier's bad day
   // into a `ConcurrencyError` in the middle of a run.
-  'streamId must be ticket-… (work item), pass-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension), bkl-… (backlog) or rcp-… (recorded recipe)',
+  'streamId must be ticket-… (work item), pass-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension), bkl-… (backlog), rcp-… (recorded recipe) or acct-… (runtime account)',
 )
 
 export interface Envelope<T = unknown> {

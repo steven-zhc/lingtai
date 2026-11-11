@@ -154,7 +154,7 @@ replacing an issue's set, and the label is `agent:hold` or there is no button:
 no offer rather than that word stamped across twelve bug reports.
 
 <!-- streams:begin -->
-## stream — 9 prefixes, unbounded instances
+## stream — 10 prefixes, unbounded instances
 
 Generated from `doc/events.json` by `pnpm events:generate` — edit `STREAMS` and `PREFIXES` in
 `packages/domain/scripts/events.ts`, not this.
@@ -174,6 +174,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
 | `bkl-` | finding, `bkl-{project}-{key}` | [Finding state](glossary.md#the-log-and-its-states) | [FindingAccepted](events.json#FindingAccepted), [FindingProposed](events.json#FindingProposed), [FindingDeclined](events.json#FindingDeclined) |
 | `rcp-` | recipe, `rcp-{configHash}` | none | [RecipeRecorded](events.json#RecipeRecorded) |
+| `acct-` | runtime account on this machine, `acct-{runtime}` | [AccountState](glossary.md#the-log-and-its-states) | [AccountLimitReached](events.json#AccountLimitReached), [AccountLimitLifted](events.json#AccountLimitLifted) |
 
 - [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`).
 
