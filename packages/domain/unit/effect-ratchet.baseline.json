@@ -7,7 +7,7 @@
   "packages/agent": { "async": 23, "run": 0 },
   "packages/actions": { "async": 16, "run": 0 },
   "packages/conductor": { "async": 201, "run": 17 },
-  "packages/daemon": { "async": 58, "run": 0 },
+  "packages/daemon": { "async": 57, "run": 0 },
   "packages/telegram": { "async": 2, "run": 0 },
   "packages/setup": { "async": 19, "run": 0 }
 }

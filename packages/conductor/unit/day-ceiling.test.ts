@@ -201,7 +201,7 @@ describe('dayCeilingPause', () => {
     expect(reduceControl(await store.read(CONTROL_STREAM), now).paused).toBe(true)
   })
 
-  it('a raised figure does not withdraw a standing shutdown request', async () => {
+  it('a raised figure does not resume while a drain stands', async () => {
     const store = createMemoryEventStore()
     await check([today(60)], store)
     const events = await store.read(CONTROL_STREAM)

@@ -57,8 +57,9 @@ export interface ShutdownRequest {
    * Where the request sits on `ctl-conductor`, which is what names it.
    *
    * A request carries no id of its own and does not need one: the stream is
-   * the installation's, and a position on it is unique. `ConductorShutdownWithdrawn`
-   * names a request by this, so withdrawing one can never lift a newer one.
+   * the installation's, and a position on it is unique. A
+   * `ConductorShutdownWithdrawn` already in the log names a request by this, so
+   * it can never lift a newer one.
    */
   version: number
   /** Stop without draining the pass in flight (`#159`). */
@@ -226,8 +227,9 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
       // The request named, or nothing. A withdrawal that lost a race to a
       // newer request must leave that request standing — it is somebody
       // else's, and lifting it is the one thing a restart may not do (0042).
-      // A pause is untouched either way, which is the whole difference
-      // between this and `ConductorResumed`.
+      // A pause is untouched either way. Nothing writes this any more: a drain
+      // ends at the next start (0126). It is read so a log that has one still
+      // reduces the same.
       if (state.shutdown === null || state.shutdown.version !== d['version']) return state
       // A `handoff` on a withdrawal written before #167 is read as nothing.
       // It named the commit a supervised restart checked, for the daemon the
@@ -252,11 +254,6 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
         holdsAcrossStarts: false,
         cause: null,
         ceilingWaivedUntil: waived,
-        // Resume withdraws any shutdown, and it must: `ConductorShutdownWithdrawn`
-        // lifts only the one request it names, and a person typing `lingtai
-        // resume` means all of it. The request is in the stream for ever, so a
-        // daemon started after it would find it waiting and stop again, and again.
-        shutdown: null,
       }
     }
     case 'RunRequested':
@@ -365,7 +362,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 3,
+  version: 4,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

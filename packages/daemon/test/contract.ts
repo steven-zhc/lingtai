@@ -51,9 +51,9 @@ import {
   startBeacon,
   pauseConductor,
   readControl,
+  recordStart,
   requestShutdownUnlessStanding,
   resumeConductor,
-  withdrawShutdown,
 } from '../src/control.ts'
 import { STALE_AFTER_MS, lastBeat, type Beat, type DaemonStore } from '../src/store.ts'
 
@@ -119,9 +119,8 @@ const claimed = (runId: string) => ({
  * nothing at all. `asked` is `false`, the assertion fails, and no rerun and no
  * teardown repairs it: a log that does not delete has no `delete` to offer.
  *
- * So the repair is `ConductorResumed`: the event `lingtai resume` appends, and
- * the only one that lifts a pause *and* a standing request together — "a person
- * typing `lingtai resume` means all of it" (`domain/control.ts`). It is run
+ * So the repair is two events, one per thing that can stand: `ConductorStarted`
+ * ends a drain (0126), and `ConductorResumed` lifts a pause. It is run
  * before every assertion as well as after one, which is what makes an
  * interrupted run cost the next one nothing.
  *
@@ -130,8 +129,11 @@ const claimed = (runId: string) => ({
  */
 async function quiesceControl(events: EventStore): Promise<void> {
   const state = await readControl(events)
-  if (!state.paused && state.shutdown === null) return
-  await resumeConductor('human:contract', events)
+  if (state.shutdown !== null) {
+    // `since` of Infinity: every standing request is an earlier process's.
+    await recordStart('human:contract', null, { sha: null, dirty: false }, Number.POSITIVE_INFINITY, events)
+  }
+  if (state.paused) await resumeConductor('human:contract', events)
 }
 
 export function describeDaemonStoreContract(name: string, open: () => Promise<DaemonFixture>): void {
@@ -333,20 +335,25 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       })
     })
 
-    it('asks for one drain at a time and withdraws the one it asked for', async () => {
+    it('asks for one drain at a time, and a start ends it', async () => {
       await withStore(async ({ store }) => {
         const asked = await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
         expect(asked.asked).toBe(true)
-        const version = asked.asked ? asked.version : 0
 
         // A second ask finds the first standing and appends nothing over it:
-        // the reducer keeps the newest request, so hiding one would leave the
-        // withdrawal below lifting a request nobody withdrew.
+        // the reducer keeps the newest request, so hiding one would be a
+        // request nobody decided to overrule.
         const again = await requestShutdownUnlessStanding('human:bob', 'me too', null, store.events)
         expect(again.asked).toBe(false)
 
-        const lifted = await withdrawShutdown('human:ada', version, 'it finished', store.events)
-        expect(lifted.withdrew).toBe(true)
+        const started = await recordStart(
+          'human:ada',
+          'it finished',
+          { sha: null, dirty: false },
+          Number.POSITIVE_INFINITY,
+          store.events,
+        )
+        expect(started.recorded).toBe(true)
         expect((await readControl(store.events)).shutdown).toBeNull()
       })
     })
@@ -354,13 +361,12 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
     it('lifts what a run that died half way through left standing', async () => {
       // The one above appends to `ctl-conductor`, which on Postgres is the real
       // stream, shared and without deletes. Interrupt it between the ask and
-      // the withdrawal and a request stands for ever: every later run finds it,
+      // the start and a request stands for ever: every later run finds it,
       // `requestShutdownUnlessStanding` appends nothing, `asked` is false, and
       // no rerun and no teardown can repair a log that does not delete.
       //
       // So what is asserted here is the repair `withStore` runs before every
-      // assertion — the one event that lifts a pause and a standing request
-      // together.
+      // assertion — a start for the drain and a resume for the pause.
       await withStore(async ({ store }) => {
         await pauseConductor('human:ada', 'and then the process was killed', store.events)
         await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)

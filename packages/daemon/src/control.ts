@@ -60,13 +60,10 @@ import {
  * shutdown killed the agent in the same instant — nothing could wait for a run
  * that was already dead. A signal cannot carry this. An append can.
  *
- * `ConductorResumed` lifts a shutdown request as it lifts a pause.
- * `ConductorShutdownWithdrawn` lifts one request by its version and nothing
- * else, which is what `lingtai restart` and `lingtai service shutdown` need
- * (0042). Neither is what lets the next daemon start any more: since #159 a
- * request is read only by a daemon that was running when it was appended, and
- * the withdrawal keeps what the board and `lingtai status` call *standing* true
- * ([0048](../../../doc/decisions-archive/0048-a-signal-is-aimed-at-one-daemon.md)).
+ * `ConductorResumed` lifts a pause and nothing else. A drain ends one way, at the next
+ * `ConductorStarted` (0126). `ConductorShutdownWithdrawn` is still read, so a
+ * withdrawal already in the log lifts the request it names, but nothing writes
+ * it any more.
  *
  * ## The one pause nobody has to lift
  *
@@ -357,56 +354,6 @@ export function requestsBetween(
     try: () => store.readTypes(CONTROL_STREAM, ['ConductorShutdownRequested'], from + 1),
     catch: (err) => (err instanceof Error ? err : new Error(String(err))),
   }).pipe(Effect.map((found) => found.filter((e) => e.version <= to).map(decodeShutdownRequest)))
-}
-
-/** What `withdrawShutdown` found, and so what it did. */
-export type Withdrawal =
-  /** The request named was standing, and is lifted. */
-  | { withdrew: true; request: ShutdownRequest; version: number }
-  /** Nothing is standing — somebody's `lingtai resume` already lifted it. */
-  | { withdrew: false; standing: null }
-  /** A different request is standing, and it is left exactly where it is. */
-  | { withdrew: false; standing: ShutdownRequest }
-
-/**
- * Lift one drain — the one at `version` — and touch nothing else.
- *
- * **Still called, and why** (#167): `lingtai restart` and `lingtai service
- * shutdown` withdraw the request they made once it has done its work. Not so
- * the next daemon can start — since #159 that daemon never reads a request
- * older than itself — but because the request otherwise stands in the reducer for
- * ever: the board's chip, `lingtai status` and every refusal that asks *has
- * somebody asked this system to stop* would go on saying yes about a stop that
- * finished. `ConductorResumed` would lift it too, and a pause with it, which is
- * somebody else's decision and nothing to do with this restart.
- *
- * **One append, at the version of the read that decided it.** The first version
- * of this resumed and then re-paused, as two appends: anything that landed
- * between them made the second one lose its race, and a person's pause was
- * gone. Here the decision and the write are bound by the store's own
- * concurrency control — if the stream moved, the append refuses, and the
- * stream is read and the question asked again. What moved it may be a second
- * person's drain, and then the answer is `standing`, not a withdrawal.
- */
-export async function withdrawShutdown(
-  by: string,
-  version: number,
-  reason: string,
-  store: EventStore = eventStore,
-): Promise<Withdrawal> {
-  for (let attempt = 0; ; attempt++) {
-    const head = await store.head(CONTROL_STREAM)
-    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
-      .shutdown
-    if (standing === null) return { withdrew: false, standing: null }
-    if (standing.version !== version) return { withdrew: false, standing }
-    try {
-      const at = await append('ConductorShutdownWithdrawn', { by, version, reason, handoff: null }, store, head)
-      return { withdrew: true, request: standing, version: at }
-    } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
-    }
-  }
 }
 
 /**

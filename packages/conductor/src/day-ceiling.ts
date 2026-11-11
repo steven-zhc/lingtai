@@ -148,14 +148,15 @@ async function readState(store: EventStore, now: Date, snapshots?: SnapshotStore
  * A pause that is the ceiling's own and still holds while today is under the
  * figure — the figure was raised or removed — is lifted here, because the
  * callers ask this before the control stream's pause and so lift it before it is
- * read. Not done while a shutdown request stands: the resume would withdraw it. Appended `by: 'lingtai'`, which the reducer does not
- * count as a person's waiver. Any other pause is left alone.
+ * read. Not done while a shutdown request stands: this daemon exits at the end
+ * of the pass and the next start's ceiling check lifts the pause then. Appended
+ * `by: 'lingtai'`, which the reducer does not count as a person's waiver. Any other pause is left alone.
  */
 async function liftOwnPause(store: EventStore, now: Date, snapshots?: SnapshotStore): Promise<void> {
   const head = await store.head(CONTROL_STREAM)
   const control = await readState(store, now, snapshots)
-  // `ConductorResumed` also withdraws a standing shutdown request (reduceControl),
-  // and an unrelated shutdown is not ours to withdraw: leave the pause for it.
+  // A drain is in flight, so this daemon exits at the end of the pass and the next
+  // start's ceiling check lifts the pause; lifting it now buys nothing.
   if (!control.paused || control.shutdown !== null || control.cause !== 'day-ceiling') return
   await store.append(CONTROL_STREAM, head, [
     { type: 'ConductorResumed', actor: 'conductor', data: parsePayload('ConductorResumed', { by: 'lingtai' }) },

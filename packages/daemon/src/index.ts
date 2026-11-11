@@ -66,11 +66,9 @@ export {
   type Beacon,
   type BeaconOptions,
   type Beating,
-  withdrawShutdown,
   type BeatOptions,
   type ControlState,
   type DaemonStatus,
-  type Withdrawal,
   type ShutdownRequest,
 } from './control.ts'
 export {

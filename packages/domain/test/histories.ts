@@ -1409,11 +1409,13 @@ const late_everyControlEvent = stamp(
     const c = controlStream
     return [
       c('ConductorPaused', { ...pause('2026-08-03T00:00:00.000Z', true), cause: 'day-ceiling' }),
-      c('ConductorResumed', { by: 'steven' }),
       c('ConductorPaused', pause(HOLDING_UNTIL)),
       c('ConductorShutdownRequested', { by: 'steven', reason: 'restart', timeoutMs: 60_000, force: false }),
       c('ConductorShutdownWithdrawn', { by: 'steven', version: 4, reason: 'changed my mind', handoff: null }),
       c('ConductorShutdownRequested', { by: 'steven', reason: 'for real', timeoutMs: null, force: true }),
+      // Moved here for version 4 (#999): a resume after a request leaves it standing. Moved rather
+      // than added, because an added event shifts the `seq` every later fixture is stamped with.
+      c('ConductorResumed', { by: 'steven' }),
       c('RunRequested', { project: PROJECT, issue: '9002', by: 'steven' }),
       c('ContinueRequested', { project: PROJECT, issue: '9002', runId: attemptStream('fixture'), by: 'steven' }),
       c('DiscussionRequested', {

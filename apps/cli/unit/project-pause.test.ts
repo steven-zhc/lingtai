@@ -1,6 +1,6 @@
 import { makeGuard } from '@lingtai/daemon'
 /** `lingtai pause` / `resume` / `now` over a memory store (#992). */
-import { pauseConductor, requestShutdown } from '@lingtai/daemon/control'
+import { pauseConductor, readControl, requestShutdown } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, projectStream, reduceProject } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
@@ -104,7 +104,7 @@ describe('lingtai resume [project]', () => {
     const w = await world()
     const real = w.store.head.bind(w.store)
     let raced = false
-    // A standing shutdown request is read; the ceiling's pause lands before the append.
+    // A drain stands, and the ceiling's pause lands before the first read: the append at the stale head is retried.
     await requestShutdown('human:a', 'x', null, w.store)
     const store = Object.assign(Object.create(w.store), {
       head: async (s: string) => {
@@ -129,6 +129,19 @@ describe('lingtai resume [project]', () => {
     })
     await Effect.runPromise(resumeProjects(undefined, 'human:a', { ...w.options, store }))
     expect(w.lines.join('\n')).toContain("also lifted today's spend ceiling")
+    // A resume is about the pause: the drain is still standing, and unmentioned.
+    expect(w.lines.join('\n')).not.toContain('shutdown request')
+    expect((await readControl(w.store)).shutdown).not.toBeNull()
+  })
+
+  it('appends nothing and says so when only a shutdown request stands', async () => {
+    const w = await world()
+    await requestShutdown('human:a', 'x', null, w.store)
+    const before = await w.store.read(CONTROL_STREAM)
+    await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
+    expect((await w.store.read(CONTROL_STREAM)).length).toBe(before.length)
+    expect(w.lines.join('\n')).toContain('nothing to resume')
+    expect(w.lines.join('\n')).not.toContain('shutdown request')
   })
 
   it('says the ceiling is waived when it lifts the day ceiling pause', async () => {
