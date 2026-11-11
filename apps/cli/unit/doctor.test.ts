@@ -15,6 +15,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectFilter } from '@lingtai/conductor'
+import { emptyControl } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
@@ -547,13 +548,19 @@ describe('spendToday names the unknown runs', () => {
   }
 
   it('is ok with the names and no ceiling', async () => {
-    const r = await spendToday(async () => ({ day, ceilingUsd: undefined }))
+    const r = await spendToday(
+      async () => ({ day, ceilingUsd: undefined }),
+      async () => emptyControl,
+    )
     expect(r.status).toBe('ok')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })
 
   it('warns with the names and a ceiling', async () => {
-    const r = await spendToday(async () => ({ day, ceilingUsd: 50 }))
+    const r = await spendToday(
+      async () => ({ day, ceilingUsd: 50 }),
+      async () => emptyControl,
+    )
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })

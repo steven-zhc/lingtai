@@ -1934,46 +1934,38 @@ export async function spendToday(
       : reached.passed
         ? `the ceiling reached on ${reached.day} lifts when the conductor next looks`
         : reachedLine(reached, at, 'nothing new starts')
+  const raisedText = facts?.raised == null ? null : raisedLine(facts.raised, at)
   const unreadText = unread === null ? null : ceilingUnreadLine(unread)
+  // The short view draws one line of a row that is not `ok`, so everything the ceiling has to say shares it.
+  const headline = [reachedText, raisedText, unreadText].filter((l): l is string => l !== null).join(' · ')
   try {
     const { day, ceilingUsd: configuredUsd } = await read()
-    const full = state === null ? undefined : ceilingFacts(state, at, configuredUsd)
     const ceilingUsd = state === null ? configuredUsd : todaysCeiling(state, at, configuredUsd)
     const sentence = daySpendText(day, ceilingUsd)
-    const raisedText = full?.raised == null ? null : raisedLine(full.raised, at)
-    const tail = [raisedText, unreadText].filter((l): l is string => l !== null)
     if (ceilingUsd !== undefined && day.unknown > 0) {
       return {
         name,
         status: 'warn',
         title: `${day.unknown} of today's runs reported no cost`,
-        detail: [
-          ...(reachedText === null ? [] : [reachedText]),
-          `the daily ceiling cannot see them`,
-          sentence,
-          ...tail,
-        ].join('\n'),
+        detail: [...(headline === '' ? [] : [headline]), `the daily ceiling cannot see them`, sentence].join('\n'),
       }
     }
-    if (reached !== null) {
+    if (headline !== '') {
       return {
         name,
         status: 'info',
-        ...(reached.passed ? {} : { title: "today's ceiling is reached" }),
-        detail: [reachedText!, sentence, ...tail].join('\n'),
+        ...(reached !== null && !reached.passed ? { title: "today's ceiling is reached" } : {}),
+        detail: [headline, sentence].join('\n'),
       }
     }
-    return { name, status: 'ok', detail: [sentence, ...tail].join('\n') }
+    return { name, status: 'ok', detail: sentence }
   } catch (err) {
+    const [first = '', ...rest] = (err as Error).message.split('\n')
     return {
       name,
       status: 'fail',
       title: "today's spend could not be read",
-      detail: [
-        (err as Error).message,
-        ...(reachedText === null ? [] : [reachedText]),
-        ...(unreadText === null ? [] : [unreadText]),
-      ].join('\n'),
+      detail: [[first, ...(headline === '' ? [] : [headline])].join(' · '), ...rest].join('\n'),
     }
   }
 }

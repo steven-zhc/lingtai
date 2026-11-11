@@ -175,7 +175,7 @@ describe('ceilingFacts', () => {
 
   it('shows a raise today, from the configured figure', () => {
     const f = ceilingFacts(stateWith({ raised: { day: TODAY, toUsd: 40, by: 'human:a', at: NOW } }), NOW, 25)!
-    expect(f.raised).toEqual({ fromUsd: 25, toUsd: 40, by: 'human:a', at: NOW })
+    expect(f.raised).toEqual({ toUsd: 40, by: 'human:a', at: NOW })
     expect(f.todayUsd).toBe(40)
   })
 })

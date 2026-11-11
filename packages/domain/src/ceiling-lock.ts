@@ -39,8 +39,8 @@ export interface CeilingFacts {
   configuredUsd: number | undefined
   /** `todaysCeiling`: the figure the guard compares against today. */
   todayUsd: number | undefined
-  /** Today's raise only, from the configured figure — the fold keeps no earlier one. */
-  raised: { fromUsd: number; toUsd: number; by: string; at: Date } | null
+  /** Today's raise only. The fold keeps no figure it was raised from, so none is claimed. */
+  raised: { toUsd: number; by: string; at: Date } | null
   /** The standing lock. `passed` is a reader's word: the log still holds it, the guard lifts it at its next look (0126 §8). */
   reached: {
     day: string
@@ -59,15 +59,13 @@ export function ceilingFacts(
   configuredUsd: number | undefined,
 ): CeilingFacts | undefined {
   const { reached, raised } = state.dayCeiling
-  if (configuredUsd === undefined && reached === null) return undefined
   const today = localDay(now)
+  const raisedToday = raised !== null && raised.day === today ? raised : null
+  if (configuredUsd === undefined && reached === null && raisedToday === null) return undefined
   return {
     configuredUsd,
     todayUsd: todaysCeiling(state, now, configuredUsd),
-    raised:
-      configuredUsd !== undefined && raised !== null && raised.day === today
-        ? { fromUsd: configuredUsd, toUsd: raised.toUsd, by: raised.by, at: raised.at }
-        : null,
+    raised: raisedToday === null ? null : { toUsd: raisedToday.toUsd, by: raisedToday.by, at: raisedToday.at },
     reached:
       reached === null
         ? null

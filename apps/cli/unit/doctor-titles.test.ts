@@ -14,12 +14,15 @@ import {
   describeRefusal,
   ghLogin,
   refusalsRow,
+  renderDoctor,
+  tally,
   ratesCheck,
   githubCredentials,
   spendToday,
   unconvergedRow,
   type CheckResult,
 } from '../src/doctor.js'
+import { stripColour } from '../src/output.ts'
 
 /** What the title of any row in this ticket must not carry: an issue or ADR number, a hash, a path. */
 const PLAIN = (title: string | undefined) => {
@@ -128,7 +131,10 @@ describe('spend: today', () => {
   }
 
   it('titles the warn and the fail, and gives neither a fix', async () => {
-    const warn = await spendToday(async () => ({ day, ceilingUsd: 50 }))
+    const warn = await spendToday(
+      async () => ({ day, ceilingUsd: 50 }),
+      async () => emptyControl,
+    )
     expect(warn.title).toBe("2 of today's runs reported no cost")
     expect(firstLine(warn)).toBe('the daily ceiling cannot see them')
     const fail = await spendToday(async () => {
@@ -292,11 +298,35 @@ describe('spend: today when the ceiling holds (#1005)', () => {
     expect(r.detail.split('\n')[0]).toBe('the ceiling reached on 2026-11-10 lifts when the conductor next looks')
   })
 
-  it('is ok on a raised day, and the sentence uses the raised figure', async () => {
+  it('is a note on a raised day, with the raise on the first line and the raised figure in the sentence', async () => {
     const r = await run(day, 25, withCeiling({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: NOW } }))
-    expect(r.status).toBe('ok')
+    expect(r.status).toBe('info')
+    expect(r.detail.split('\n')[0]).toBe('today only: raised to $40.00 by human:steven at 16:50')
     expect(r.detail).toContain('of a $40.00 ceiling')
-    expect(r.detail).toContain('today only: raised from $25.00 to $40.00 by human:steven at 16:50')
+  })
+
+  it('shows the raise, the unread line and the held ceiling in the default render', async () => {
+    const draw = (row: Awaited<ReturnType<typeof run>>) =>
+      renderDoctor({ results: [row], ...tally([row]) })
+        .map(stripColour)
+        .join('\n')
+    const raised = await run(
+      day,
+      25,
+      withCeiling({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: NOW } }),
+    )
+    expect(draw(raised)).toContain('raised to $40.00 by human:steven')
+    const unread = await run(day, 25, new Error('store down'))
+    expect(draw(unread)).toContain('could not read whether the ceiling holds — store down')
+    const failed = await spendToday(
+      async () => {
+        throw new Error('spend down')
+      },
+      async () => withCeiling({ reached }),
+      () => NOW,
+    )
+    expect(failed.status).toBe('fail')
+    expect(draw(failed)).toContain('reached at 14:20')
   })
 
   it('stays warn for unknown-cost runs, with the reached line', async () => {
@@ -312,7 +342,7 @@ describe('spend: today when the ceiling holds (#1005)', () => {
 
   it('says a control read that fails, without failing the row', async () => {
     const r = await run(day, 25, new Error('store down'))
-    expect(r.status).toBe('ok')
+    expect(r.status).toBe('info')
     expect(r.detail).toContain('could not read whether the ceiling holds — store down')
   })
 })

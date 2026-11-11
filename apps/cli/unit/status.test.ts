@@ -747,7 +747,7 @@ describe('what holds new work (#1005)', () => {
         control({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: new Date(2026, 10, 11, 16, 40) } }),
       ),
     )
-    expect(out).toContain('today only: raised from $25.00 to $40.00 by human:steven at 16:40')
+    expect(out).toContain('today only: raised to $40.00 by human:steven at 16:40')
   })
 
   it('says what could not be read, per project too', () => {
