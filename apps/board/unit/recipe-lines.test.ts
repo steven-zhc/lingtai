@@ -126,8 +126,11 @@ describe('recipeLines', () => {
     expect(block(read, 'implement').after).toEqual([
       { label: 'told what refused', value: 'up to 2,000 characters of output · 5 review findings' },
       { label: 'told what came before', value: 'the last 5 attempts' },
+      { label: 'a fix round reads at most', value: '400,000 characters of the diff' },
     ])
     expect(block(read, 'review').after).toEqual([])
+    const noRounds = await lines(BASE.replace('wall: 2m', 'wall: 2m, rounds: 0'))
+    expect(block(noRounds, 'implement').after.map((l) => l.label)).not.toContain('a fix round reads at most')
     const reviewed = await lines(
       BASE.replace('steps:\n', 'steps:\n  review:\n    - { name: cold, agent: claude-code, prompt: look }\n'),
     )
@@ -143,6 +146,7 @@ describe('recipeLines', () => {
     expect(block(read, 'implement').after.map((l) => l.value)).toEqual([
       'up to 1 character of output · 1 review finding',
       'the last attempt',
+      '1 character of the diff',
     ])
   })
 })

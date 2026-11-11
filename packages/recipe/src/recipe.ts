@@ -3419,7 +3419,11 @@ export const Recipe = z
           /** Findings of a review gate carried into the next attempt. */
           findings: z.number().int().positive().default(5),
           /**
-           * Bytes of the diff a review agent sees before it is truncated.
+           * Characters of the diff a review agent, and a fix round's agent,
+           * sees before it is truncated. Counted as the diff string's
+           * `length` (`clippedAt` in `packages/actions/src/agent-action.ts`,
+           * `fixBriefParts` in `packages/conductor/src/fix.ts`), so UTF-16 code
+           * units: one per character for ASCII, never bytes.
            *
            * [Experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
            * diff was 1391 lines across 6 files and fitted comfortably. Far past
