@@ -1,10 +1,11 @@
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { GitHubFailed, NotInstalledError } from '../src/app.ts'
 import { BodyChanged, PermissionDenied } from '../src/client.ts'
 import { ghTokenEffect } from '../src/gh.ts'
 import type { GhRun } from '../src/gh.ts'
+import { convertManifestEffect } from '../src/manifest.ts'
 
 describe('the tagged errors', () => {
   it('GitHubFailed keeps its message rule', () => {
@@ -53,5 +54,20 @@ describe('ghTokenEffect', () => {
     expect(err.status).toBe(0)
     expect(err.detail).toBe(detail)
     expect(err.message).toBe(`0 on gh auth token: ${detail}`)
+  })
+})
+
+describe('convertManifestEffect interruption', () => {
+  it('aborts the request while the body is still being read', async () => {
+    let signal: AbortSignal | undefined
+    const stalled = (async (_url: unknown, init?: RequestInit) => {
+      signal = init?.signal ?? undefined
+      return { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response
+    }) as typeof fetch
+    const fiber = Effect.runFork(convertManifestEffect('c', { fetch: stalled }))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(signal?.aborted).toBe(false)
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(signal?.aborted).toBe(true)
   })
 })
