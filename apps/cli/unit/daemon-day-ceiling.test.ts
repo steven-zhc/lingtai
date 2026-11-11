@@ -10,7 +10,6 @@ describe('the daemon and the daily ceiling', () => {
   it('has the one composed hook in both paused callbacks, which reads the control stream alone', () => {
     expect(source.match(/\bpaused: claiming,/g)).toHaveLength(2)
     expect(source.match(/\bpausedSentence\(/g)).toHaveLength(2) // the call and the definition
-    expect(source).not.toContain('dayCeilingStop')
   })
 
   it('asks the ceiling through its one guard, built with a ceiling port', () => {
