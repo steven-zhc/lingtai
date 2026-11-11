@@ -392,7 +392,7 @@ export function startRefusals(input: {
   /** Who restarts: a request of theirs is the one this start ends, and is not refused. */
   by: string
   /** The shutdown standing now, off the whole stream. */
-  standing: ShutdownRequest | null
+  standing: ShutdownRequest | null | { unread: string }
   /**
    * Requests the start has already ended, where it has run (`requestsBetween`):
    * the supervised path, which reads back after the daemon's record. `{ unread }`
@@ -417,7 +417,14 @@ export function startRefusals(input: {
   }
   // This person's own request is the one the start ends (0126), so it is
   // exempt by `by` and by nothing else: anybody else's is their decision.
-  if (standing !== null && standing.by !== input.by && standing.version <= input.unreadThrough) {
+  if (standing !== null && 'unread' in standing) {
+    out.push({
+      line:
+        `whether a shutdown is standing could not be read — ${standing.unread}. ` +
+        `One somebody else asked for would be ended by this start; lingtai status says what stands`,
+      waiver: null,
+    })
+  } else if (standing !== null && standing.by !== input.by && standing.version <= input.unreadThrough) {
     out.push({
       line:
         `a shutdown asked by ${standing.by} — ${standing.reason} — landed between the checks and the start, and a ` +
@@ -525,7 +532,10 @@ export async function openDaemon(
       examined: restart.examined,
       by: restart.by,
       running: code,
-      standing: (await how.control().catch(() => null))?.shutdown ?? null,
+      standing: await how.control().then(
+        (c) => c?.shutdown ?? null,
+        (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+      ),
       unreadThrough: started.since,
     })
     if (refused.length > 0) {
@@ -864,6 +874,12 @@ async function checkAfterTheWait(
   facts: RestartFacts,
 ): Promise<{ plan: Plan; now: Identity }> {
   const now = await facts.identity()
+  // Nothing withdraws this person's request any more, so this read is the only
+  // one that sees a foreign drain landing during the wait: unread is not none.
+  const control = await facts.control().then(
+    (c) => ({ shutdown: c?.shutdown ?? null }),
+    (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+  )
   const plan = planRestart(
     {
       ...checked.before,
@@ -871,7 +887,7 @@ async function checkAfterTheWait(
       doctorFailed: 0,
       conducting: null,
       daemonUp: false,
-      shutdown: (await facts.control().catch(() => null))?.shutdown ?? null,
+      shutdown: 'unread' in control ? null : control.shutdown,
       loaded: { sha: checked.identity.sha, dirty: checked.identity.dirty },
       startedSince:
         mark === null
@@ -880,6 +896,13 @@ async function checkAfterTheWait(
     },
     { dirty: args.dirty, despiteDoctor: args.despiteDoctor },
   )
+  if ('unread' in control) {
+    const line =
+      `whether a shutdown landed while this waited could not be read — ${control.unread}. ` +
+      `The start ends a drain, so one somebody else asked for may be gone; lingtai status says what stands`
+    const because: Refusal[] = [{ line, waiver: null }]
+    return { plan: { go: 'refuse', because: plan.go === 'refuse' ? [...because, ...plan.because] : because }, now }
+  }
   return { plan, now }
 }
 
@@ -997,8 +1020,8 @@ export async function prepareRestart(
     }
     // The decision and the append are one write: the plan read no standing
     // request, but one may have landed since, and the reducer keeps only the
-    // newest — so appending over it would make this restart's later
-    // withdrawal lift somebody else's drain with no event withdrawing it.
+    // newest — so appending over it would hide somebody else's drain behind
+    // this one, and this restart's start would end it unnamed.
     const asked = await facts.ask(by, `restarting: ${args.reason}`, drainTimeoutMs, force)
     if (!asked.asked && asked.standing.by !== by) {
       sayRefusal(
@@ -1154,7 +1177,7 @@ export async function restartSupervised(
   if (!checked.ok) return checked.code
 
   // `service shutdown` never adopts a standing request, anybody's, so a drain
-  // this person asked for is taken over here — the terminal path's `liftAdopted`,
+  // this person asked for is taken over here by `liftAdopted`,
   // and then the drain it asks is newer than whatever holds the lock.
   if (checked.plan.adopted) {
     log(
@@ -1273,7 +1296,10 @@ export async function restartSupervised(
     examined: { sha: now.sha, dirty: now.dirty },
     running: record,
     by,
-    standing: (await facts.control().catch(() => null))?.shutdown ?? null,
+    standing: await facts.control().then(
+      (c) => c?.shutdown ?? null,
+      (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+    ),
     ended,
     unreadThrough: record.version,
   })

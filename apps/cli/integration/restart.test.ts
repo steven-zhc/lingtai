@@ -508,6 +508,8 @@ interface Scene {
     startsUnread?: boolean
   }
   /** A drain standing when the start is asked for, or one that lands while the supervisor starts it. */
+  /** Reading the control stream fails once the drain is over, as a dropped connection does. */
+  controlUnreadAfter?: boolean
   atStart?: { standing?: ShutdownRequest; landsDuring?: ShutdownRequest; endedUnread?: boolean }
   /** What the daemon that starts runs, when not what was checked — or null, when it takes no work and records nothing. */
   runs?: Pick<Identity, 'sha' | 'dirty'> | null
@@ -560,11 +562,17 @@ function worldOf(scene: Scene) {
       return null
     },
     daemonUp: scene.daemonUp ?? (async () => true),
-    control: async () => ({ shutdown: shutdownNow() }),
+    control: async () => {
+      if (scene.controlUnreadAfter && w.phase !== 'before') throw new Error('the connection dropped')
+      return { shutdown: shutdownNow() }
+    },
     inFlight: async () => [],
     ask: async (_by, _reason, timeoutMs, force) => {
       w.asks.push({ timeoutMs, force })
       if (scene.askFinds) return { asked: false, standing: scene.askFinds }
+      // A person's own standing request is found as it stands, never replaced.
+      if (scene.shutdown && scene.shutdown.by === BY && w.withdrew.length === 0)
+        return { asked: false, standing: scene.shutdown }
       w.askedToStop = true
       return { asked: true, version: 11 }
     },
@@ -587,9 +595,11 @@ function worldOf(scene: Scene) {
       ]
       return starts.find((s) => s !== null && s.version > version) ?? null
     },
-    requestsBetween: async () => {
+    // Honours both bounds, as the real read does: after `from`, at or below `to`.
+    requestsBetween: async (from, to) => {
       if (scene.atStart?.endedUnread) throw new Error('the connection dropped')
-      return scene.atStart?.landsDuring ? [scene.atStart.landsDuring] : []
+      const r = scene.atStart?.landsDuring
+      return r && r.version > from && r.version <= to ? [r] : []
     },
     pollMs: 1,
   }
@@ -934,7 +944,7 @@ describe('the table of refusals', () => {
    * cost the conductor its refusal either.
    */
   it('runs the #167 checks on the started daemon though the board never answered', async () => {
-    const s = await supervised({ atStart: { landsDuring: ops(15) } }, ARGS, { wontAnswer: true })
+    const s = await supervised({ atStart: { landsDuring: ops(35) } }, ARGS, { wontAnswer: true })
     expect(s.code, s.said).toBe(1)
     expect(s.said).toContain('a daemon started, and it is not the start that was checked')
     expect(s.said).toContain('landed between the checks and the start')
@@ -972,7 +982,7 @@ describe("#167's five findings, on the supervised path", () => {
 
   /** major 2 — guarded: a drain landing during the start is read against the record, and said. */
   it('a drain that lands while the supervisor starts the daemon is not stepped over in silence', async () => {
-    const out = await supervised({ atStart: { landsDuring: ops(15) } })
+    const out = await supervised({ atStart: { landsDuring: ops(35) } })
     expect(out.code).toBe(1)
     expect(out.said).toContain('a daemon started, and it is not the start that was checked')
     expect(out.said).toContain('the start ended a shutdown asked by human:ops')
@@ -991,6 +1001,17 @@ describe("#167's five findings, on the supervised path", () => {
     const out = await terminal({ shutdown: mine })
     expect(out.code, out.said).toBe(0)
     expect(out.withdrew).toEqual([])
+  })
+
+  it('a control stream that cannot be read after the wait is a refusal, not nothing standing', async () => {
+    const out = await terminal({ controlUnreadAfter: true })
+    expect(out.code).toBe(1)
+    expect(out.said).toContain('whether a shutdown landed while this waited could not be read')
+  })
+
+  it('a control stream that cannot be read at the start is a refusal on the supervised path', async () => {
+    const out = await supervised({ controlUnreadAfter: true })
+    expect(out.code).toBe(1)
   })
 
   /** major 3 — guarded, and the handoff state that caused it is gone: nothing recorded is exit 1. */
