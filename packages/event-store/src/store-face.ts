@@ -16,7 +16,14 @@
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
 import { Effect } from 'effect'
 
-import { ConcurrencyError, type EventStore, type EventsPort } from './event-store.ts'
+import {
+  ConcurrencyError,
+  type EventStore,
+  type EventsPort,
+  type LogPredatesHoldError,
+  logPredatesHoldEffect,
+} from './event-store.ts'
+import type { LogQueries, QueriesPort } from './queries.ts'
 
 export function appendFace(events: EventsPort, streamId: string, expectedVersion: number, batch: readonly ToAppend[]) {
   return Effect.runPromise(events.append(streamId, expectedVersion, batch))
@@ -72,4 +79,66 @@ export function fromPromiseStore(store: EventStore): EventsPort {
     readTypes: (streamId, types, fromVersion) => Effect.promise(() => store.readTypes(streamId, types, fromVersion)),
     readAll: (fromSeq, limit) => Effect.promise(() => store.readAll(fromSeq, limit)),
   }
+}
+
+// ------------------------------------------------------------- questions ----
+
+export function projectStreamsFace(queries: QueriesPort, prefix: string) {
+  return Effect.runPromise(queries.projectStreams(prefix))
+}
+
+export function endedWithoutEndActionsFace(queries: QueriesPort) {
+  return Effect.runPromise(queries.endedWithoutEndActions())
+}
+
+export function typeCountsFace(queries: QueriesPort) {
+  return Effect.runPromise(queries.typeCounts())
+}
+
+export function rowsOfTypeFace(queries: QueriesPort, type: EventType) {
+  return Effect.runPromise(queries.rowsOfType(type))
+}
+
+export function unconvergedUpdatesFace(queries: QueriesPort) {
+  return Effect.runPromise(queries.unconvergedUpdates())
+}
+
+export function subscriberFailuresFace(queries: QueriesPort, since: Date) {
+  return Effect.runPromise(queries.subscriberFailures(since))
+}
+
+/** The promise `LogQueries` every caller and test fake holds, over `queries`. */
+export function promiseQueries(queries: QueriesPort): LogQueries {
+  return {
+    projectStreams: (prefix) => projectStreamsFace(queries, prefix),
+    endedWithoutEndActions: () => endedWithoutEndActionsFace(queries),
+    typeCounts: () => typeCountsFace(queries),
+    rowsOfType: (type) => rowsOfTypeFace(queries, type),
+    unconvergedUpdates: () => unconvergedUpdatesFace(queries),
+    subscriberFailures: (since) => subscriberFailuresFace(queries, since),
+  }
+}
+
+/**
+ * A promise `LogQueries` as the port: a rejection is a defect, the very error
+ * the promise rejected with. For the memory store and fakes, never for a
+ * store's own questions.
+ */
+export function fromPromiseQueries(queries: LogQueries): QueriesPort {
+  return {
+    projectStreams: (prefix) => Effect.promise(() => queries.projectStreams(prefix)),
+    endedWithoutEndActions: () => Effect.promise(() => queries.endedWithoutEndActions()),
+    typeCounts: () => Effect.promise(() => queries.typeCounts()),
+    rowsOfType: (type) => Effect.promise(() => queries.rowsOfType(type)),
+    unconvergedUpdates: () => Effect.promise(() => queries.unconvergedUpdates()),
+    subscriberFailures: (since) => Effect.promise(() => queries.subscriberFailures(since)),
+  }
+}
+
+/**
+ * The pre-flight, as a promise: *returns* the `LogPredatesHoldError` it finds
+ * and rejects only when `typeCounts` itself failed.
+ */
+export function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
+  return Effect.runPromise(logPredatesHoldEffect({ typeCounts: () => Effect.promise(() => queries.typeCounts()) }))
 }

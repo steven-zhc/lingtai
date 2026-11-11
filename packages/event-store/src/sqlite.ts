@@ -35,9 +35,9 @@ import { Effect } from 'effect'
 
 import { ConcurrencyError, decodeRow, type EventStore, type EventsPort, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
-import type { LogQueries, UnconvergedUpdate } from './queries.ts'
+import type { LogQueries, QueriesPort, UnconvergedUpdate } from './queries.ts'
 import { createSqlSnapshotStore } from './snapshots.ts'
-import { promiseStore } from './store-face.ts'
+import { promiseQueries, promiseStore } from './store-face.ts'
 import type { TicketSql } from './ticket-sql.ts'
 import type { Waker } from './wake.ts'
 
@@ -422,6 +422,11 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
  * `node:sqlite` this file already requires.
  */
 export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
+  return promiseQueries(makeSqliteQueries(db))
+}
+
+/** The questions as Effects, over SQLite. Wrapped by `createSqliteLogQueries`. */
+export function makeSqliteQueries(db: DatabaseSync): QueriesPort {
   const streams = db.prepare(
     'SELECT DISTINCT stream_id AS streamId FROM events WHERE stream_id LIKE ? ORDER BY stream_id',
   )
@@ -510,40 +515,50 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
   )
 
   return {
-    async projectStreams(prefix) {
-      return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId)
-    },
+    projectStreams: Effect.fn('LogQueries.projectStreams')((prefix: string) =>
+      Effect.sync(() => {
+        return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId)
+      }),
+    ),
 
-    async endedWithoutEndActions() {
-      return endedWithout.all().map((r) => {
-        const row = r as { streamId: string; outcome: string }
-        return {
-          streamId: row.streamId,
-          outcome: row.outcome === 'closed' ? ('closed' as const) : ('landed' as const),
-        }
-      })
-    },
+    endedWithoutEndActions: Effect.fn('LogQueries.endedWithoutEndActions')(() =>
+      Effect.sync(() => {
+        return endedWithout.all().map((r) => {
+          const row = r as { streamId: string; outcome: string }
+          return {
+            streamId: row.streamId,
+            outcome: row.outcome === 'closed' ? ('closed' as const) : ('landed' as const),
+          }
+        })
+      }),
+    ),
 
-    async typeCounts() {
-      return types.all().map((r) => {
-        const row = r as { type: string; n: number }
-        return { type: row.type, rows: Number(row.n) }
-      })
-    },
+    typeCounts: Effect.fn('LogQueries.typeCounts')(() =>
+      Effect.sync(() => {
+        return types.all().map((r) => {
+          const row = r as { type: string; n: number }
+          return { type: row.type, rows: Number(row.n) }
+        })
+      }),
+    ),
 
-    async rowsOfType(type) {
-      return byType.all(type).map((r) => {
-        // `bigints()` reads every integer column as a `bigint`, `schema_ver`
-        // included — narrowed back to a `number` here, the same way `types()`
-        // narrows `n` above.
-        const row = r as { seq: bigint; schema_ver: bigint; data: string }
-        return { seq: row.seq, schemaVer: Number(row.schema_ver), data: JSON.parse(row.data) as unknown }
-      })
-    },
+    rowsOfType: Effect.fn('LogQueries.rowsOfType')((type: EventType) =>
+      Effect.sync(() => {
+        return byType.all(type).map((r) => {
+          // `bigints()` reads every integer column as a `bigint`, `schema_ver`
+          // included — narrowed back to a `number` here, the same way `types()`
+          // narrows `n` above.
+          const row = r as { seq: bigint; schema_ver: bigint; data: string }
+          return { seq: row.seq, schemaVer: Number(row.schema_ver), data: JSON.parse(row.data) as unknown }
+        })
+      }),
+    ),
 
-    async unconvergedUpdates() {
-      return unconverged.all().map((r) => r as unknown as UnconvergedUpdate)
-    },
+    unconvergedUpdates: Effect.fn('LogQueries.unconvergedUpdates')(() =>
+      Effect.sync(() => {
+        return unconverged.all().map((r) => r as unknown as UnconvergedUpdate)
+      }),
+    ),
 
     /**
      * **The cutoff is compared as text, and that is safe for exactly one
@@ -554,18 +569,20 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
      * a space where the stored value has a `T` and no `Z` at all, and every
      * comparison against it would be wrong in the same silent direction.
      */
-    async subscriberFailures(since) {
-      const cutoff = since.toISOString()
-      return subscriberRows.all(cutoff, cutoff).map((r) => {
-        const row = r as { name: string; total: number; recent: number; last: string | null }
-        return {
-          name: row.name,
-          total: Number(row.total),
-          recent: Number(row.recent),
-          lastReason: row.last,
-        }
-      })
-    },
+    subscriberFailures: Effect.fn('LogQueries.subscriberFailures')((since: Date) =>
+      Effect.sync(() => {
+        const cutoff = since.toISOString()
+        return subscriberRows.all(cutoff, cutoff).map((r) => {
+          const row = r as { name: string; total: number; recent: number; last: string | null }
+          return {
+            name: row.name,
+            total: Number(row.total),
+            recent: Number(row.recent),
+            lastReason: row.last,
+          }
+        })
+      }),
+    ),
   }
 }
 
@@ -651,7 +668,7 @@ export function createSqliteLog(options: SqliteLogOptions): Log {
   })
   return {
     store: options.store ?? promiseStore(makeSqliteEvents(options.db)),
-    queries: createSqliteLogQueries(options.db),
+    queries: options.queries ?? createSqliteLogQueries(options.db),
     snapshots: createSqlSnapshotStore(createSqliteTicketSql(options.db)),
     waker: () => waker,
   }
@@ -666,4 +683,6 @@ export interface SqliteLogOptions {
   intervalMs?: number
   /** The store the log hands out, when its caller built one over `db` already. */
   store?: EventStore
+  /** The questions the log hands out, when its caller built them over `db` already. */
+  queries?: LogQueries
 }

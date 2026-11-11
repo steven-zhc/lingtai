@@ -51,9 +51,11 @@
  * vanishing from a report that then printed `0 failed`.
  */
 import type { EventType } from '@lingtai/domain'
+import { Context, Effect } from 'effect'
 import pg from 'pg'
 
 import { postgresUrl } from './env.ts'
+import { promiseQueries } from './store-face.ts'
 import type { TicketSql } from './ticket-sql.ts'
 
 /** Which ending an item reached. The recipe's `when:` at `end` names one of these. */
@@ -183,6 +185,22 @@ export interface LogQueries {
   subscriberFailures(since: Date): Promise<SubscriberFailures[]>
 }
 
+/**
+ * `LogQueries` as Effects (0101 §6, #1021): the one implementation per store,
+ * which the promise `LogQueries` is a face over (`store-face.ts`). Every
+ * failure is a defect, carrying the driver's own error.
+ */
+export interface QueriesPort {
+  projectStreams(prefix: string): Effect.Effect<string[]>
+  endedWithoutEndActions(): Effect.Effect<EndedWithoutEnd[]>
+  typeCounts(): Effect.Effect<TypeCount[]>
+  rowsOfType(type: EventType): Effect.Effect<TypeRow[]>
+  unconvergedUpdates(): Effect.Effect<UnconvergedUpdate[]>
+  subscriberFailures(since: Date): Effect.Effect<SubscriberFailures[]>
+}
+
+export class Queries extends Context.Service<Queries, QueriesPort>()('@lingtai/event-store/Queries') {}
+
 export interface PostgresLogQueriesOptions {
   /** Defaults to `postgresUrl()`, which is what every caller read before this existed. */
   url?: string
@@ -197,33 +215,46 @@ export interface PostgresLogQueriesOptions {
  * remember to end.
  */
 export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}): LogQueries {
+  return promiseQueries(makePostgresQueries(options))
+}
+
+/** The questions as Effects, over Postgres. Wrapped by `createPostgresLogQueries`. */
+export function makePostgresQueries(options: PostgresLogQueriesOptions = {}): QueriesPort {
   // Read per question rather than at construction, so building one of these
   // never throws: `postgresUrl()` refuses when nothing is configured, and a
   // caller that is about to hand this to something else should not be the one
   // to find out.
   const url = () => options.url ?? postgresUrl()
 
-  async function ask<T extends Record<string, unknown>>(text: string, values: readonly unknown[] = []): Promise<T[]> {
-    const client = new pg.Client({ connectionString: url() })
-    await client.connect()
-    try {
-      return (await client.query<T>(text, [...values])).rows
-    } finally {
-      await client.end()
-    }
-  }
+  // `Effect.promise` throughout, never `tryPromise`: a driver's error must be
+  // the defect itself, not Effect's `UnknownError` around it. A connect that
+  // fails acquires nothing, so there is nothing to end — as before.
+  const ask = <T extends Record<string, unknown>>(text: string, values: readonly unknown[] = []): Effect.Effect<T[]> =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* Effect.acquireRelease(
+          Effect.gen(function* () {
+            const c = new pg.Client({ connectionString: url() })
+            yield* Effect.promise(() => c.connect())
+            return c
+          }),
+          (c) => Effect.promise(() => c.end()),
+        )
+        return (yield* Effect.promise(() => client.query<T>(text, [...values]))).rows
+      }),
+    )
 
   return {
-    async projectStreams(prefix) {
-      const rows = await ask<{ stream_id: string }>(
+    projectStreams: Effect.fn('LogQueries.projectStreams')(function* (prefix: string) {
+      const rows = yield* ask<{ stream_id: string }>(
         'select distinct stream_id from events where stream_id like $1 order by stream_id',
         [`${prefix}%`],
       )
       return rows.map((r) => r.stream_id)
-    },
+    }),
 
-    async endedWithoutEndActions() {
-      const rows = await ask<{ stream_id: string; outcome: string }>(
+    endedWithoutEndActions: Effect.fn('LogQueries.endedWithoutEndActions')(function* () {
+      const rows = yield* ask<{ stream_id: string; outcome: string }>(
         `with over as (
            select distinct on (stream_id) stream_id,
                   case when type = 'TicketClosed' then 'closed' else 'landed' end as outcome
@@ -257,9 +288,9 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
         streamId: r.stream_id,
         outcome: r.outcome === 'closed' ? ('closed' as const) : ('landed' as const),
       }))
-    },
+    }),
 
-    async typeCounts() {
+    typeCounts: Effect.fn('LogQueries.typeCounts')(function* () {
       // **`collate "C"`, so *type order* is one order and not two.** A bare
       // `order by type` sorts under the database's collation, and on the
       // `en_US.UTF-8` a Supabase database is created with that is not byte
@@ -268,25 +299,25 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
       // (`F` 0x46 < `d` 0x64). Two stores held to one contract cannot each
       // have their own answer to *in type order*, and `"C"` is the one both
       // can give: it is built into every Postgres and it is what BINARY means.
-      const rows = await ask<{ type: string; n: number }>(
+      const rows = yield* ask<{ type: string; n: number }>(
         `select type, count(*)::int as n from events group by type order by type collate "C"`,
       )
       return rows.map((r) => ({ type: r.type, rows: r.n }))
-    },
+    }),
 
-    async rowsOfType(type) {
+    rowsOfType: Effect.fn('LogQueries.rowsOfType')(function* (type: EventType) {
       // `seq` comes back as text: node-postgres leaves `bigint` (OID 20)
       // unparsed rather than losing precision past 2^53, so this is the one
       // place in the file that converts it back by hand.
-      const rows = await ask<{ seq: string; schema_ver: number; data: unknown }>(
+      const rows = yield* ask<{ seq: string; schema_ver: number; data: unknown }>(
         'select seq, schema_ver, data from events where type = $1 order by seq',
         [type],
       )
       return rows.map((r) => ({ seq: BigInt(r.seq), schemaVer: r.schema_ver, data: r.data }))
-    },
+    }),
 
-    async unconvergedUpdates() {
-      const rows = await ask<{ project: string; issue: string; change: string }>(
+    unconvergedUpdates: Effect.fn('LogQueries.unconvergedUpdates')(function* () {
+      const rows = yield* ask<{ project: string; issue: string; change: string }>(
         `with said as (
            select type,
                   data->>'project' as project,
@@ -307,10 +338,10 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
          order by failed.project, failed.issue, failed.change`,
       )
       return rows.map((r) => ({ project: r.project, issue: r.issue, change: r.change }))
-    },
+    }),
 
-    async subscriberFailures(since) {
-      const rows = await ask<{ name: string; total: number; recent: number; last: string | null }>(
+    subscriberFailures: Effect.fn('LogQueries.subscriberFailures')(function* (since: Date) {
+      const rows = yield* ask<{ name: string; total: number; recent: number; last: string | null }>(
         `select data->>'name'                          as name,
                 count(*)::int                          as total,
                 count(*) filter (where at > $1)::int   as recent,
@@ -331,7 +362,7 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
         recent: r.recent,
         lastReason: r.last,
       }))
-    },
+    }),
   }
 }
 
