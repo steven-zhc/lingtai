@@ -10,6 +10,8 @@
  * The one exception is discovery, which reads issues *once* to learn that a work
  * item exists. After that the log is the authority.
  */
+import { Data } from 'effect'
+
 import {
   type AppAuth,
   GITHUB_API,
@@ -30,13 +32,13 @@ import { type GhRun, ghToken, liveGh } from './gh.ts'
  * narrows it and does not close it. A `db` tracker's write is one conditional
  * `UPDATE`, with no window at all.
  */
-export class BodyChanged extends Error {
-  override readonly name = 'BodyChanged'
-  readonly issue: number
-
+export class BodyChanged extends Data.TaggedError('BodyChanged')<{ readonly issue: number }> {
   constructor(issue: number) {
-    super(`#${issue}'s body changed since it was read`)
-    this.issue = issue
+    super({ issue })
+  }
+
+  override get message(): string {
+    return `#${this.issue}'s body changed since it was read`
   }
 }
 
@@ -538,7 +540,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     try {
       return await run()
     } catch (err) {
-      if (err instanceof GitHubError && err.status === 403 && !/rate limit/i.test(err.message)) {
+      if (err instanceof GitHubError && err.status === 403 && !err.rateLimited) {
         throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
       }
       throw err

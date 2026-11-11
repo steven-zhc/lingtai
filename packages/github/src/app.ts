@@ -25,7 +25,7 @@ import { createSign } from 'node:crypto'
  * No dependency for the JWT: `node:crypto` signs RS256, which is the whole of
  * what GitHub asks for.
  */
-import { Cause, Effect, Exit, Semaphore } from 'effect'
+import { Cause, Data, Effect, Exit, Semaphore } from 'effect'
 
 export const GITHUB_API = 'https://api.github.com'
 
@@ -73,32 +73,40 @@ function toInstallation(raw: RawInstallation, owner = ''): Installation {
   }
 }
 
-export class GitHubError extends Error {
-  override readonly name = 'GitHubError'
+export class GitHubError extends Data.TaggedError('GitHubFailed')<{
   readonly status: number
   readonly path: string
+  readonly detail: string
+}> {
+  constructor(status: number, path: string, detail: string) {
+    super({ status, path, detail })
+  }
 
-  constructor(status: number, path: string, message: string) {
-    super(`${status} on ${path}: ${message}`)
-    this.status = status
-    this.path = path
+  override get message(): string {
+    return `${this.status} on ${this.path}: ${this.detail}`
+  }
+
+  /** A 429, or a 403 whose detail says GitHub is throttling rather than refusing. */
+  get rateLimited(): boolean {
+    return this.status === 429 || (this.status === 403 && /rate limit/i.test(this.detail))
   }
 }
 
 /** The App is not installed on that repository — the failure 0006 exists to surface. */
-export class NotInstalledError extends Error {
-  override readonly name = 'NotInstalledError'
+export class NotInstalledError extends Data.TaggedError('NotInstalled')<{
   readonly owner: string
   readonly repo: string
-
+}> {
   constructor(owner: string, repo: string) {
-    super(
-      `the GitHub App is not installed on ${owner}/${repo}. ` +
-        'Install it on that repository (Settings → GitHub Apps → Configure), ' +
-        'then run lingtai add again.',
+    super({ owner, repo })
+  }
+
+  override get message(): string {
+    return (
+      `the GitHub App is not installed on ${this.owner}/${this.repo}. ` +
+      'Install it on that repository (Settings → GitHub Apps → Configure), ' +
+      'then run lingtai add again.'
     )
-    this.owner = owner
-    this.repo = repo
   }
 }
 
