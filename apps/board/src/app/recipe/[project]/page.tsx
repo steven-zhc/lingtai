@@ -318,7 +318,19 @@ export default async function RecipePage({
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
   // here has heard of.
-  const projects = await readRegistered()
+  // A failed read is said under the bar (#994) and not thrown: the banner reads
+  // the same cached rejection and draws "could not read which projects are paused".
+  let projects: Awaited<ReturnType<typeof readRegistered>>
+  try {
+    projects = await readRegistered()
+  } catch {
+    return (
+      <main className="detail">
+        <Bar project={name} here="recipe" />
+        <LockBanner project={name} />
+      </main>
+    )
+  }
   const state = projects.find((p) => p.project === name)
   if (state === undefined) notFound()
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)

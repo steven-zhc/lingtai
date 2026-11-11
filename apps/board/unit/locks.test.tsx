@@ -116,3 +116,11 @@ describe('setProjectPaused', () => {
     expect(await store.read(projectStream('ghost'))).toEqual([])
   })
 })
+
+describe('the banner row layout', () => {
+  it('puts an expanding spacer before the resume button', () => {
+    const html = renderToStaticMarkup(<LockRows locks={{ ok: true, held: [row('lingtai')] }} now={now} />)
+    expect(html.indexOf('class="grow"')).toBeGreaterThan(html.indexOf('an attempt in flight'))
+    expect(html.indexOf('class="grow"')).toBeLessThan(html.indexOf('<button'))
+  })
+})

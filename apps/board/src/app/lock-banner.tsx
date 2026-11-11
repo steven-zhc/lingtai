@@ -59,6 +59,7 @@ export function LockRows({ locks, now }: { locks: ProjectLocks; now: Date }) {
               · <span className="person">by {lock.by}</span> since {sinceLabel(lock.since, now)}
             </span>
             <small className="sub">an attempt in flight finishes</small>
+            <span className="grow" />
             <ResumeButton project={row.project} />
           </div>
         )),

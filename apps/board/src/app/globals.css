@@ -3364,6 +3364,7 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .pbanner .what a { color: var(--held); font-weight: 500; text-decoration: none; }
 .pbanner .sub { color: var(--held); opacity: .85; font-size: 11.5px; }
 .pbanner button { font: inherit; font-size: 11px; line-height: 16px; padding: 0 7px; border: 1px solid var(--held); border-radius: 3px; background: var(--surface); color: var(--held); cursor: pointer; }
+.pbanner .grow { flex: 1; }
 .pbrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
 button.navlink { font-family: inherit; cursor: pointer; }
 .navlink.held { border-color: var(--held); background: var(--held-soft); color: var(--held); }
