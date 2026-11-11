@@ -1,5 +1,5 @@
 /**
- * The project menu: a row per repository, each with its own recipe (#948).
+ * The project menu: a row per repository, one link each (#993).
  *
  * The menu used to be the projects as tabs, one `recipe` for the project in
  * view, and *add a repository*. It is `all projects` (with two or more), then
@@ -18,8 +18,11 @@ import { describe, expect, it } from 'vitest'
 
 import { Projects } from '../src/app/projects.tsx'
 
-const html = (filters: string[], app: boolean, only?: string) =>
-  renderToStaticMarkup(<Projects filters={filters} only={only} app={app} />)
+const html = (filters: string[], app: boolean, only?: string, registered: string[] = filters) =>
+  renderToStaticMarkup(<Projects filters={filters} only={only} app={app} registered={registered} />)
+
+/** The menu alone: what sits inside `<details>`. */
+const menu = (out: string) => out.slice(out.indexOf('<details'), out.indexOf('</details>'))
 
 describe('the empty board', () => {
   /** #169's slot, unchanged: the sentence is the link, and there is no second one. */
@@ -32,30 +35,31 @@ describe('the empty board', () => {
   })
 })
 
-describe('a recipe per repository', () => {
-  it('offers it on the one row of a single-project board', () => {
-    const out = html(['lingtai'], true)
+describe('a row per repository', () => {
+  it('is one link to the project, with a recipe hint on a registered one', () => {
+    const out = menu(html(['lingtai'], true))
 
-    expect(out).toContain('href="/recipe/lingtai"')
-    expect(out).toContain('class="prow on"')
+    expect(out.match(/href=/g)).toHaveLength(1)
+    expect(out).toContain('href="/?project=lingtai"')
+    expect(out).toContain('<span class="phint">recipe</span>')
+    expect(out).not.toContain('/recipe/')
   })
 
-  it('offers each repository its own, on the filter and on all', () => {
-    for (const only of ['nextloom-ai-admin', undefined]) {
-      const out = html(['lingtai', 'nextloom-ai-admin'], true, only)
+  it('draws no hint on a project that is not registered', () => {
+    const out = menu(html(['a', 'gone'], true, undefined, ['a']))
 
-      expect(out).toContain('href="/recipe/lingtai"')
-      expect(out).toContain('href="/recipe/nextloom-ai-admin"')
-    }
+    expect(out.match(/class="phint"/g)).toHaveLength(1)
+    expect(out.match(/href=/g)).toHaveLength(3)
   })
 
   it('escapes a name a URL must', () => {
-    const out = html(['a b'], true)
-
-    expect(out).toContain('href="/recipe/a%20b"')
+    expect(html(['a b'], true)).toContain('href="/?project=a%20b"')
   })
 
-  /** And a board with no project has no recipe either — the slot keeps its one object. */
+  it('has no add a repository row inside the menu', () => {
+    expect(menu(html(['a', 'b'], true))).not.toContain('add a repository')
+  })
+
   it('adds nothing to the empty board', () => {
     expect(html([], true)).not.toContain('/recipe/')
   })
@@ -74,19 +78,24 @@ describe('where it lands', () => {
     expect(out).not.toContain('/setup/github-app')
   })
 
-  /** The menu offers it, last, and it follows the App like the empty slot's link. */
-  it('offers add a repository after the rows, to where the App says', () => {
+  /** The `+` follows the menu, outside it, and follows the App like the empty slot's link. */
+  it('puts the + after the menu, to where the App says', () => {
     for (const [app, where] of [
       [true, '/setup/repository'],
       [false, '/setup/github-app'],
     ] as const) {
       for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
-        expect(out).toContain(`href="${where}"`)
-        expect(out).toContain('add a repository</a>')
-        expect(out).not.toContain('?edit=1')
-        expect(out.indexOf(`href="${where}"`)).toBeGreaterThan(out.lastIndexOf('/recipe/'))
+        const plus = out.slice(out.indexOf('</details>'))
+        expect(plus).toContain(`href="${where}"`)
+        expect(plus).toContain('aria-label=')
+        expect(plus).toContain('>+</a>')
+        expect(menu(out)).not.toContain(where)
       }
     }
+  })
+
+  it('has no + on the empty board', () => {
+    expect(html([], true)).not.toContain('>+<')
   })
 })
 
@@ -100,7 +109,8 @@ describe('which object on the row this is', () => {
   })
 
   const page = read('../src/app/page.tsx')
-  const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+  expect(bar.length).toBeGreaterThan(0)
 
   /**
    * the-bar.md's rule counts three objects on the row, and the filter is one of
@@ -133,7 +143,8 @@ describe('which object on the row this is', () => {
    */
   it('names the objects the bar actually renders, in the code', () => {
     const said = (src: string) => src.replace(/[\s*]+/g, ' ')
-    const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
+    const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+    expect(bar.length).toBeGreaterThan(0)
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
       ['filter', bar.includes('<Projects')],
@@ -155,8 +166,7 @@ describe('which object on the row this is', () => {
   it('is a tab and not a reading', () => {
     const out = html(['lingtai'], true)
 
-    expect(out).toContain('class="tab pname"')
-    expect(out).toContain('class="tab rcp"')
+    expect(out).toContain('class="tab prj"')
     expect(out).not.toContain('reading')
   })
 })
@@ -172,12 +182,10 @@ describe('the filter is one menu', () => {
     expect(out.match(/href=/g)).toHaveLength(1)
   })
 
-  it('names the one project and lists its row, with its recipe', () => {
-    const out = html(['lingtai'], true)
+  it('names the one project and lists its row, with no all-projects row', () => {
+    const out = html(['lingtai'], true, 'lingtai')
 
     expect(out).toMatch(/<summary>lingtai <span aria-hidden="true">▾<\/span><\/summary>/)
-    expect(ascending(order(out, ['/?project=lingtai', '/recipe/lingtai']))).toBe(true)
-    expect(out).not.toContain('aria-current')
     expect(out).not.toContain('all projects</a>')
   })
 
@@ -185,18 +193,16 @@ describe('the filter is one menu', () => {
     const out = html(['a', 'b'], true)
 
     expect(out).toContain('<summary>all projects ')
-    expect(ascending(order(out, ['/', '/?project=a', '/recipe/a', '/?project=b', '/recipe/b']))).toBe(true)
+    expect(ascending(order(out, ['/', '/?project=a', '/?project=b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
     expect(out).toMatch(/aria-current="page"[^>]*>all projects</)
-    expect(out).not.toContain('prow on')
   })
 
   it('names the project in view, highlights its row and marks its name current', () => {
     const out = html(['a', 'b'], true, 'b')
 
     expect(out).toContain('<summary>b ')
-    expect(ascending(order(out, ['/', '/?project=a', '/recipe/a', '/?project=b', '/recipe/b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
-    expect(out).toMatch(/class="prow on"><a class="tab pname" aria-current="page" href="\/\?project=b">b</)
+    expect(out).toMatch(/<a class="tab prj on" aria-current="page" href="\/\?project=b">b</)
   })
 })

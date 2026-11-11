@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest'
 
 import { Bar } from '../src/app/bar.tsx'
 
-const bar = (project: string | undefined, here?: 'report') =>
+const bar = (project: string | undefined, here?: 'report' | 'recipe', registered?: boolean) =>
   renderToStaticMarkup(
-    <Bar project={project} here={here}>
+    <Bar project={project} here={here} registered={registered}>
       <span className="sep" />
       <span>middle</span>
     </Bar>,
@@ -39,5 +39,28 @@ describe('Bar', () => {
   it('marks Report as the current page only on /report', () => {
     expect(bar(undefined, 'report')).toContain('aria-current="page"')
     expect(bar(undefined)).not.toContain('aria-current')
+  })
+
+  it('holds Recipe, a separator, then Report for a registered project', () => {
+    const html = bar('a b', undefined, true)
+    const nav = html.slice(html.indexOf('class="topnav"'))
+    expect(nav).toContain('href="/recipe/a%20b"')
+    expect(nav.indexOf('/recipe/')).toBeLessThan(nav.indexOf('class="vsep"'))
+    expect(nav.indexOf('class="vsep"')).toBeLessThan(nav.indexOf('/report'))
+  })
+
+  it('holds Report alone with no project, or one that is not registered', () => {
+    for (const html of [bar(undefined, undefined, true), bar('a'), bar('a', undefined, false)]) {
+      const nav = html.slice(html.indexOf('class="topnav"'))
+      expect(nav).toContain('/report')
+      expect(nav).not.toContain('/recipe/')
+      expect(nav).not.toContain('vsep')
+    }
+  })
+
+  it('marks Recipe, and not Report, on the recipe page', () => {
+    const html = bar('a', 'recipe', true)
+    expect(html).toMatch(/<a class="navlink on" aria-current="page" href="\/recipe\/a">Recipe</)
+    expect(html).toMatch(/<a class="navlink" href="\/report\?project=a">Report</)
   })
 })

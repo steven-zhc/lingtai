@@ -217,7 +217,8 @@ describe("the bar's amber", () => {
   const barClasses = (() => {
     const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), 'utf8')
     const page = read('page.tsx')
-    const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
+    const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+    expect(bar.length).toBeGreaterThan(0)
     const sources = [
       bar,
       read('bar.tsx'),
@@ -282,8 +283,11 @@ describe("the bar's amber", () => {
       'filter',
       'menu',
       'tab',
-      'prow',
-      'rcp',
+      'prj',
+      'phint',
+      'addp',
+      'pacts',
+      'vsep',
     ]) {
       expect(barClasses.has(c)).toBe(true)
     }
@@ -431,7 +435,8 @@ describe('health keeps its command apart from its sentence (#904)', () => {
 
 describe('the home bar in page.tsx (#904)', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
-  const bar = page.slice(page.indexOf('<Bar project={only}>'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+  expect(bar.length).toBeGreaterThan(0)
 
   it('has no queued segment and no quiet headline', () => {
     expect(bar.length).toBeGreaterThan(0)
