@@ -43,6 +43,19 @@ const StoredControl = z.strictObject({
       by: z.string(),
     }),
   ),
+  dayCeiling: z.strictObject({
+    reached: z
+      .strictObject({
+        day: z.string(),
+        reportedUsd: z.number(),
+        estimatedUsd: z.number(),
+        ceilingUsd: z.number(),
+        at: IsoDate,
+        seq: z.number(),
+      })
+      .nullable(),
+    raised: z.strictObject({ day: z.string(), toUsd: z.number(), by: z.string(), at: IsoDate }).nullable(),
+  }),
 })
 
 /** Thrown for a stored state that is not a `ControlState` of today's shape. */

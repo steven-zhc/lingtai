@@ -32,6 +32,9 @@ export type CommandDefinition = {
 /** The projections `lingtai projection` knows; `help.test.ts` holds this to `PROJECTIONS` in `projection.ts`. */
 export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend', 'ticket_report'] as const
 
+/** The runtimes `lingtai account` knows; `account-lift.test.ts` holds this to `RuntimeId`. */
+export const RUNTIME_NAMES = ['claude-code', 'codex'] as const
+
 const define = <const N extends string>(
   definition: CommandDefinition & { readonly name: N },
 ): CommandDefinition & { readonly name: N } => definition
@@ -455,6 +458,20 @@ export const COMMANDS = [
     examples: ['lingtai resume lingtai', 'lingtai resume'],
   }),
   define({
+    name: 'ceiling',
+    group: 'daemon',
+    task: "raise today's spending ceiling once it has been reached",
+    effect: 'changes',
+    usage: [
+      'lingtai ceiling raise <usd>',
+      "  Raises today's ceiling to <usd> dollars, a figure above both what has been",
+      '  spent and the ceiling that was reached. Lasts until midnight; the',
+      '  configuration (limits.day_usd) is not changed. Refused while the ceiling',
+      "  has not been reached, or while today's spend cannot be read.",
+    ],
+    examples: ['lingtai ceiling raise 40'],
+  }),
+  define({
     name: 'init',
     group: 'install and upkeep',
     task: 'a bare machine to the board, on the wizard',
@@ -572,6 +589,19 @@ export const COMMANDS = [
       '  produced), then .failed.',
     ],
     examples: ['lingtai doctor', 'lingtai doctor --verbose', 'lingtai doctor --json'],
+  }),
+  define({
+    name: 'account',
+    group: 'daemon',
+    task: "lift a runtime's usage limit",
+    effect: 'changes',
+    usage: [
+      'lingtai account lift <runtime> [--no-color]',
+      "  Says a runtime's account is no longer at its usage limit. Projects that",
+      '  use it take work again at the next look. Appends nothing when no limit',
+      `  stands. Runtimes: ${RUNTIME_NAMES.join(', ')}`,
+    ],
+    examples: ['lingtai account lift claude-code'],
   }),
   define({
     name: 'projection',

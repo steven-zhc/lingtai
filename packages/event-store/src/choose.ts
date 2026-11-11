@@ -44,10 +44,10 @@ import { closableOnce } from './closable.ts'
 import { createDb } from './db.ts'
 import { Events, type EventStore, type EventsPort, makePostgresEvents } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
-import { createPostgresTicketSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
-import type { SnapshotStore } from './snapshots.ts'
-import { promiseQueries, promiseStore } from './store-face.ts'
-import type { TicketSql } from './ticket-sql.ts'
+import { makePostgresLogSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
+import { makeSqlSnapshots, Snapshots, type SnapshotsPort } from './snapshots.ts'
+import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore } from './store-face.ts'
+import { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
 import type { WakeListener, Waker, WakeSession } from './wake.ts'
 
 /** What one process opens: the log, and the ticket store beside it (#379). */
@@ -57,6 +57,10 @@ interface Opened {
   events: EventsPort
   /** The questions, as Effects: one implementation over one handle. */
   queries: QueriesPort
+  /** The ticket SQL, as Effects: one implementation over one handle. */
+  logSql: LogSqlPort
+  /** The snapshot store, as Effects, over `logSql`. */
+  snapshots: SnapshotsPort
   tickets: TicketSql
   /** Ends the one connection this process holds, so the process can exit (#725). */
   close(): Promise<void>
@@ -121,31 +125,47 @@ async function open(): Promise<Opened> {
     const db = createDb(choice.url)
     const events = makePostgresEvents(db)
     const queries = makePostgresQueries({ url: choice.url })
+    const logSql = makePostgresLogSql({ url: choice.url })
+    const snapshots = makeSqlSnapshots(logSql)
     const log = createPostgresLog({
       store: promiseStore(events),
       queries: promiseQueries(queries),
+      snapshots: promiseSnapshots(snapshots),
       url: choice.url,
       wakeUrl: choice.directUrl,
     })
     // The written URL, not `postgresUrl()` — the same reason `log` above reads
     // `choice.url` rather than asking again: a second read could answer a
     // stale export rather than the choice this process already made.
-    return { log, events, queries, tickets: createPostgresTicketSql({ url: choice.url }), close: () => db.close() }
+    return {
+      log,
+      events,
+      queries,
+      logSql,
+      snapshots,
+      tickets: promiseLogSql(logSql),
+      close: () => db.close(),
+    }
   }
   const sqlite = await import('./sqlite.ts')
   const db = sqlite.openSqliteLog(choice.path)
   const events = sqlite.makeSqliteEvents(db)
   const queries = sqlite.makeSqliteQueries(db)
+  const logSql = sqlite.makeSqliteLogSql(db)
+  const snapshots = makeSqlSnapshots(logSql)
   return {
     log: sqlite.createSqliteLog({
       db,
       path: choice.path,
       store: promiseStore(events),
       queries: promiseQueries(queries),
+      snapshots: promiseSnapshots(snapshots),
     }),
     events,
     queries,
-    tickets: sqlite.createSqliteTicketSql(db),
+    logSql,
+    snapshots,
+    tickets: promiseLogSql(logSql),
     close: async () => db.close(),
   }
 }
@@ -205,13 +225,29 @@ export const processQueries: Effect.Effect<QueriesPort> = Effect.map(Effect.prom
 /** What a moved caller takes: `yield* Queries`. Nothing opens until first use. */
 export const queriesLayer = Layer.succeed(Queries, deferredQueries(processQueries))
 
-function deferredSnapshots(resolve: () => Promise<SnapshotStore>): SnapshotStore {
+function deferredSnapshotsPort(open: Effect.Effect<SnapshotsPort>): SnapshotsPort {
   return {
-    latest: async (key) => (await resolve()).latest(key),
-    put: async (snapshot) => (await resolve()).put(snapshot),
-    census: async () => (await resolve()).census(),
+    latest: (key) => Effect.flatMap(open, (s) => s.latest(key)),
+    put: (snapshot) => Effect.flatMap(open, (s) => s.put(snapshot)),
+    census: () => Effect.flatMap(open, (s) => s.census()),
   }
 }
+
+/** The process's ticket SQL as Effects; a rejected open is a defect, as for `processEvents`. */
+export const processLogSql: Effect.Effect<LogSqlPort> = Effect.map(Effect.promise(openOnce), (o) => o.logSql)
+
+/**
+ * What a moved caller takes: `yield* LogSql`. Unlike the other layers this one
+ * opens when it is built, because `dialect` is a field and the choice is what
+ * says which; the open is still the one `openOnce`.
+ */
+export const logSqlLayer = Layer.effect(LogSql, processLogSql)
+
+/** The process's snapshots as Effects; a rejected open is a defect. */
+export const processSnapshots: Effect.Effect<SnapshotsPort> = Effect.map(Effect.promise(openOnce), (o) => o.snapshots)
+
+/** What a moved caller takes: `yield* Snapshots`. Nothing opens until first use. */
+export const snapshotsLayer = Layer.succeed(Snapshots, deferredSnapshotsPort(processSnapshots))
 
 /**
  * A waker whose session opens once the log is open.
@@ -249,15 +285,15 @@ function deferredWaker(resolve: () => Promise<Waker>): Waker {
 /**
  * The whole log, deferred: the store, the questions and the waker (#221).
  *
- * `store` and `queries` are the process's, read through `processEvents` and
- * `processQueries`, and not `resolve`'s;
+ * `store`, `queries` and `snapshots` are the process's, read through
+ * `processEvents`, `processQueries` and `processSnapshots`, and not `resolve`'s;
  * the one caller passes `processLog`, which is the same `openOnce()`.
  */
 export function deferredLog(resolve: () => Promise<Log>): Log {
   return {
     store: promiseStore(deferredEvents(processEvents)),
     queries: promiseQueries(deferredQueries(processQueries)),
-    snapshots: deferredSnapshots(async () => (await resolve()).snapshots),
+    snapshots: promiseSnapshots(deferredSnapshotsPort(processSnapshots)),
     waker: (name) => deferredWaker(async () => (await resolve()).waker(name)),
   }
 }

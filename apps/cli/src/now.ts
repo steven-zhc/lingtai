@@ -17,7 +17,8 @@ export async function nowVerdict(
   issue: number,
   by: string,
   request: typeof requestRun = requestRun,
-  guard: Guard = makeGuard({ store: eventStore }),
+  // Not the conductor-lock holder: it reads the ceiling lock and writes nothing (0126 §4).
+  guard: Guard = makeGuard({ store: eventStore, ceiling: 'not-the-holder' }),
 ): Promise<Answered> {
   // A paused project is refused by name before anything is appended (#992).
   const refused = await runEffect(refuseIfLocked(project, guard))

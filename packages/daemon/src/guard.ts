@@ -1,13 +1,24 @@
-import { type Lock, lockSentence, locksOn, projectStream, reduceProject } from '@lingtai/domain'
-import type { EventStore, SnapshotStore } from '@lingtai/event-store'
-import { Context, Effect } from 'effect'
+import {
+  CONTROL_STREAM,
+  ceilingCheck,
+  type ControlState,
+  type Lock,
+  lockSentence,
+  locksOn,
+  projectStream,
+  reduceProject,
+} from '@lingtai/domain'
+import { ConcurrencyError, type EventStore, type SnapshotStore } from '@lingtai/event-store'
+import { Context, Data, Effect } from 'effect'
+
+import { readControl } from './control.ts'
 
 /**
  * The one entry every gate asks before it starts work (0126 §4).
  *
  * A gate never reads `prj-` and never calls `locksOn`: it is handed `locked`
  * (`lockedBy`, below), built from a guard. That is what lets the day ceiling and
- * the account limit arrive later as **checks run inside `locksFor`** — each
+ * the account limit arrive as **checks run inside `locksFor`** — each
  * appends its own lock and unlock on a transition before it answers — without
  * one gate being touched. A check is one function added to `CHECKS`, not a branch
  * in a gate.
@@ -16,14 +27,38 @@ import { Context, Effect } from 'effect'
  * look: the answer is a fact about the moment it is asked (#861).
  */
 export interface Guard {
-  /** Rejects as the read does: unknown is not *unlocked*. */
+  /** Rejects as the read does: unknown is not *unlocked*. A `CeilingUnchecked` is the ceiling's own. */
   locksFor(project: string): Effect.Effect<readonly Lock[], Error>
+}
+
+/** Today's spend, or the daily ceiling, could not be trusted: a stop that is not stored. */
+export class CeilingUnchecked extends Data.TaggedError('CeilingUnchecked')<{ readonly why: string }> {}
+
+/**
+ * What the guard needs of the ceiling and cannot read itself: the spend trust
+ * checks live in `apps/cli`, which this package cannot import.
+ */
+export interface CeilingPort {
+  /** The configured figure, read per call. Throws where it does not parse. */
+  configuredUsd: () => number | undefined
+  /** Today's spend, or why it cannot be trusted. Read only where a figure is configured. */
+  todaysSpend: (now: Date) => Effect.Effect<{ reportedCents: number; estimatedCents: number }, CeilingUnchecked>
 }
 
 export interface GuardOptions {
   store: EventStore
   /** Accepted for the checks that will fold a snapshotted stream; the Project aggregate is not one. */
   snapshots?: SnapshotStore
+  /**
+   * The ceiling, and required so a gate built without it fails typecheck rather
+   * than skipping it. `'not-the-holder'` is for a caller that does not hold the
+   * conductor lock (`lingtai now`): the system locks are written by the lock
+   * holder only (0126 §4), so it reads the stored ceiling lock, appends nothing
+   * and reads no spend. A `reached` from yesterday refuses it until the next
+   * look, at most five minutes away, lifts it.
+   */
+  ceiling: CeilingPort | 'not-the-holder'
+  now?: () => Date
 }
 
 type Check = (options: GuardOptions, project: string) => Effect.Effect<readonly Lock[], Error>
@@ -36,7 +71,43 @@ const projectPause: Check = ({ store }, project) =>
     Effect.map((events) => locksOn({ project: reduceProject(events) })),
   )
 
-const CHECKS: readonly Check[] = [projectPause]
+/**
+ * The day's ceiling (0126 §3, §4): bring `ctl-conductor` up to the present,
+ * appending `DayCeilingReached` or `DayCeilingLifted` on the transition only,
+ * and answer the lock. Appends at the head it read; on a concurrency error it
+ * reads again once and decides again, as `raiseDayCeiling` does.
+ */
+const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
+  Effect.gen(function* () {
+    const readState = (): Effect.Effect<ControlState, Error> =>
+      Effect.tryPromise({ try: () => readControl(store, 0, { snapshots }), catch: asError })
+    if (ceiling === 'not-the-holder') return locksOn({ control: yield* readState() })
+
+    const at = (now ?? (() => new Date()))()
+    // Before anything is appended, so a figure or a spend that cannot be trusted
+    // lifts nothing either (#650): unknown is not *under the ceiling*.
+    const configuredUsd = yield* Effect.try({
+      try: ceiling.configuredUsd,
+      catch: (err) => new CeilingUnchecked({ why: asError(err).message }),
+    })
+    const spend = configuredUsd === undefined ? { reportedCents: 0, estimatedCents: 0 } : yield* ceiling.todaysSpend(at)
+
+    const attempt = Effect.gen(function* () {
+      const head = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: asError })
+      const state = yield* readState()
+      const events = ceilingCheck({ state, now: at, configuredUsd, ...spend })
+      if (events.length === 0) return state
+      yield* Effect.tryPromise({ try: () => store.append(CONTROL_STREAM, head, [...events]), catch: asError })
+      return yield* readState()
+    })
+    const state = yield* attempt.pipe(
+      Effect.catch((err: Error) => (err instanceof ConcurrencyError ? attempt : Effect.fail(err))),
+    )
+    return locksOn({ control: state })
+  })
+
+// The order is 0126 §8's: the ceiling, then a person's pause.
+const CHECKS: readonly Check[] = [dayCeiling, projectPause]
 
 export function makeGuard(options: GuardOptions): Guard {
   return {
@@ -48,12 +119,18 @@ export function makeGuard(options: GuardOptions): Guard {
 /** The run the ratchet does not count (see `first-project.ts`'s `runEffect`). */
 const run = Effect.runPromiseWith(Context.empty())
 
+/** The sentence a `locksFor` failure is answered with: the ceiling's own, or the pause read's. */
+export const lockFailure = (project: string, err: Error): string =>
+  err instanceof CeilingUnchecked
+    ? `could not check the daily ceiling: ${err.why} — taking no work`
+    : `could not read whether ${project} is paused — ${err.message}`
+
 /**
  * A gate's `locked` callback: the sentence that stops a start, or null.
  *
  * It never rejects. A read that fails answers a sentence — *could not read
- * whether <project> is paused* — so the project is not started and the next look
- * asks again (unknown is not *unpaused*).
+ * whether <project> is paused*, or *could not check the daily ceiling* — so the
+ * project is not started and the next look asks again (unknown is not *unlocked*).
  */
 export const lockedBy =
   (guard: Guard): ((project: string) => Promise<string | null>) =>
@@ -61,8 +138,6 @@ export const lockedBy =
     run(
       guard.locksFor(project).pipe(
         Effect.map((locks) => lockSentence(project, locks)),
-        Effect.catch((err) =>
-          Effect.succeed<string | null>(`could not read whether ${project} is paused — ${err.message}`),
-        ),
+        Effect.catch((err) => Effect.succeed<string | null>(lockFailure(project, err))),
       ),
     )

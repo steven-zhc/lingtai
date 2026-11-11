@@ -1113,6 +1113,57 @@ const resume = Command.make('resume', { project: optionalProject, noColor }, (ar
   }),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 
+const ceilingRaiseCommand = Command.make(
+  'raise',
+  { usd: Argument.String('usd').pipe(Argument.optional), noColor },
+  (args) =>
+    daemonHandler(args, () =>
+      Promise.all([import('./ceiling-raise.ts'), import('./project-pause.ts')]).then(([raise, pause]) => {
+        const toUsd = raise.parseUsd(given(args.usd))
+        if (toUsd === undefined) {
+          console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
+          return 2
+        }
+        return pause.runEffect(
+          raise.ceilingRaise({
+            toUsd,
+            by: `human:${process.env['USER'] ?? 'operator'}`,
+            log: (line) => console.log(line),
+          }),
+        )
+      }),
+    ),
+)
+
+const ceilingCommand = Command.make('ceiling', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('ceiling'))
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
+const accountLift = Command.make(
+  'lift',
+  { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
+  (args) =>
+    daemonHandler(args, () =>
+      import('./account-lift.ts')
+        .then(({ liftAccount, runLiftAccount }) =>
+          runLiftAccount(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)),
+        )
+        .catch((err: unknown) => {
+          console.error(err instanceof Error ? err.message : String(err))
+          return 1
+        }),
+    ),
+)
+
+const accountCommand = Command.make('account', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('account'))
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('account').task), Command.withSubcommands([accountLift]))
+
 const shutdown = Command.make(
   'shutdown',
   {
@@ -1277,8 +1328,10 @@ export const root = Command.make('lingtai').pipe(
     service,
     restart,
     shutdown,
+    accountCommand,
     pause,
     resume,
+    ceilingCommand,
   ]),
 )
 

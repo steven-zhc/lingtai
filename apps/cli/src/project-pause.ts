@@ -11,6 +11,7 @@ import { loadProjects } from '@lingtai/conductor'
 import {
   type ControlState,
   type Guard,
+  lockFailure,
   pauseProject,
   resumeProject,
   resumeConductor,
@@ -155,10 +156,12 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
 export const refuseIfLocked = (project: string, guard: Guard) =>
   guard.locksFor(project).pipe(
     Effect.match({
-      onFailure: (e): string => `could not read whether ${project} is paused — ${e.message}`,
+      onFailure: (e): string => lockFailure(project, e),
       onSuccess: (locks): string | null => {
         const sentence = lockSentence(project, locks)
-        return sentence === null ? null : `${sentence} — lingtai resume ${project} first`
+        if (sentence === null) return null
+        // The ceiling's own sentence names what lifts it; `resume` does not.
+        return locks.some((l) => l.kind === 'ceiling') ? sentence : `${sentence} — lingtai resume ${project} first`
       },
     }),
   )

@@ -15,7 +15,7 @@
 import { createRuntime, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe, loadProject, loadProjects } from '@lingtai/conductor/projects'
 import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
 import { recordPrompt } from '@lingtai/conductor/record-prompt'
 import { readState } from '@lingtai/conductor/snapshot-state'
@@ -103,6 +103,8 @@ export function enqueueTriage(
 
 export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
+  /** Every registered project, for a lift that names none (`DayCeilingLifted`); absent means none. */
+  projects?: () => Promise<readonly string[]>
   triageFor(project: string): Promise<Triage | null>
   /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
   daemonStartedAt: () => Promise<Date>
@@ -125,6 +127,9 @@ export interface CatchUpTriagePorts extends SnapshotReadOptions {
 }
 
 const notLocked = () => Promise.resolve(null)
+
+/** The events that lift a hold on every project at once; they name none. */
+const LIFTS_OF_A_DAY = ['DayCeilingLifted'] as const
 
 /** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
 export async function catchUpTriage(project: string, triage: Triage | null, deps: CatchUpTriagePorts): Promise<void> {
@@ -280,6 +285,20 @@ export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts & 
       .catch((err: Error) => deps.log?.(`triage catch-up ${project}: ${err.message}`))
     return
   }
+  if ((LIFTS_OF_A_DAY as readonly string[]).includes(event.type)) {
+    // A lifted day names no project, so every registered one is caught up. Never awaited, as above.
+    void (deps.projects?.() ?? Promise.resolve([] as readonly string[]))
+      .then((names) =>
+        names.map((project) =>
+          deps
+            .triageFor(project)
+            .then((triage) => catchUpTriage(project, triage, deps))
+            .catch((err: Error) => deps.log?.(`triage catch-up ${project}: ${err.message}`)),
+        ),
+      )
+      .catch((err: Error) => deps.log?.(`triage catch-up: ${err.message}`))
+    return
+  }
   const parsed = parseTicketStream(event.streamId)
   if (parsed === null) return
   const triage = await deps.triageFor(parsed.project).catch(() => null)
@@ -365,6 +384,8 @@ export function daemonTriagePorts(
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {
     locked,
+    projects: async () =>
+      (await loadProjects()).flatMap((p: { project: string | null }) => (p.project === null ? [] : [p.project])),
     store: eventStore,
     snapshots: processLog.snapshots,
     writer,

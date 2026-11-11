@@ -36,9 +36,9 @@ import { Effect } from 'effect'
 import { ConcurrencyError, decodeRow, type EventStore, type EventsPort, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, QueriesPort, UnconvergedUpdate } from './queries.ts'
-import { createSqlSnapshotStore } from './snapshots.ts'
-import { promiseQueries, promiseStore } from './store-face.ts'
-import type { TicketSql } from './ticket-sql.ts'
+import { makeSqlSnapshots, type SnapshotStore } from './snapshots.ts'
+import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore } from './store-face.ts'
+import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 import type { Waker } from './wake.ts'
 
 /**
@@ -640,16 +640,25 @@ function sqliteParams(text: string): string {
  * for `createSqliteEventStore` and `createSqliteLogQueries` — this opens no
  * second connection to the file.
  */
-export function createSqliteTicketSql(db: DatabaseSync): TicketSql {
+export function makeSqliteLogSql(db: DatabaseSync): LogSqlPort {
   return {
     dialect: 'sqlite',
-    async query<T>(text: string, params: readonly unknown[] = []): Promise<T[]> {
-      return db.prepare(sqliteParams(text)).all(...(params as SQLInputValue[])) as T[]
-    },
-    async exec(text: string): Promise<void> {
-      db.exec(text)
-    },
+    query: <T>(text: string, params: readonly unknown[] = []): Effect.Effect<T[]> =>
+      Effect.withSpan(
+        Effect.sync(() => db.prepare(sqliteParams(text)).all(...(params as SQLInputValue[])) as T[]),
+        'LogSql.query',
+      ),
+    exec: (text) =>
+      Effect.withSpan(
+        Effect.sync(() => db.exec(text)),
+        'LogSql.exec',
+      ),
   }
+}
+
+/** `TicketSql` over the log's own handle: the promise face of `makeSqliteLogSql`. */
+export function createSqliteTicketSql(db: DatabaseSync): TicketSql {
+  return promiseLogSql(makeSqliteLogSql(db))
 }
 
 /**
@@ -669,7 +678,7 @@ export function createSqliteLog(options: SqliteLogOptions): Log {
   return {
     store: options.store ?? promiseStore(makeSqliteEvents(options.db)),
     queries: options.queries ?? createSqliteLogQueries(options.db),
-    snapshots: createSqlSnapshotStore(createSqliteTicketSql(options.db)),
+    snapshots: options.snapshots ?? promiseSnapshots(makeSqlSnapshots(makeSqliteLogSql(options.db))),
     waker: () => waker,
   }
 }
@@ -685,4 +694,6 @@ export interface SqliteLogOptions {
   store?: EventStore
   /** The questions the log hands out, when its caller built them over `db` already. */
   queries?: LogQueries
+  /** The snapshot store the log hands out, when its caller built one over `db` already. */
+  snapshots?: SnapshotStore
 }

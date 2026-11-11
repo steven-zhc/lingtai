@@ -170,7 +170,7 @@ describe('lingtai now on a paused project', () => {
       7,
       'human:a',
       (async () => void (requested += 1)) as never,
-      makeGuard({ store: w.store }),
+      makeGuard({ store: w.store, ceiling: 'not-the-holder' }),
     )
     expect(answered.code).toBe(1)
     expect(answered.verdict.detail).toMatch(/^lingtai is paused by human:a since .* — lingtai resume lingtai first$/)

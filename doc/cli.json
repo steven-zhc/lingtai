@@ -662,6 +662,45 @@
       "json": null
     },
     {
+      "name": "ceiling",
+      "group": "daemon",
+      "task": "raise today's spending ceiling once it has been reached",
+      "effect": "changes",
+      "usage": [
+        "lingtai ceiling raise <usd>",
+        "  Raises today's ceiling to <usd> dollars, a figure above both what has been",
+        "  spent and the ceiling that was reached. Lasts until midnight; the",
+        "  configuration (limits.day_usd) is not changed. Refused while the ceiling",
+        "  has not been reached, or while today's spend cannot be read."
+      ],
+      "examples": [
+        "lingtai ceiling raise 40"
+      ],
+      "flags": [
+        "--no-color"
+      ],
+      "json": null
+    },
+    {
+      "name": "account",
+      "group": "daemon",
+      "task": "lift a runtime's usage limit",
+      "effect": "changes",
+      "usage": [
+        "lingtai account lift <runtime> [--no-color]",
+        "  Says a runtime's account is no longer at its usage limit. Projects that",
+        "  use it take work again at the next look. Appends nothing when no limit",
+        "  stands. Runtimes: claude-code, codex"
+      ],
+      "examples": [
+        "lingtai account lift claude-code"
+      ],
+      "flags": [
+        "--no-color"
+      ],
+      "json": null
+    },
+    {
       "name": "init",
       "group": "install and upkeep",
       "task": "a bare machine to the board, on the wizard",

@@ -827,7 +827,7 @@ function bodyBeforeAnotherWait(): readonly Envelope[] {
 const githubLedgerH = githubLedger()
 const bodyBeforeAnotherWaitH = bodyBeforeAnotherWait()
 
-/** A day-ceiling pause, as `dayCeilingPause` writes one. */
+/** A day-ceiling pause, as the ceiling wrote one before #1004. */
 const ceilingPause = (until: string) => ({
   by: 'lingtai',
   reason: 'daily ceiling reached — $5.00 of $5.00',
@@ -1502,8 +1502,17 @@ const late_controlStarted = stamp([
   }),
 ])
 
+/**
+ * Version 5 (#1003): the ceiling pair, stamped last so the `seq` of every fixture before it is the one it
+ * already hashed to.
+ */
+const late_ceilingLock = stamp([
+  controlStream('DayCeilingReached', { day: '2026-08-03', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }),
+  controlStream('DayCeilingLifted', { day: '2026-08-03', why: 'person', by: 'steven', toUsd: 40 }),
+])
+
 export const reducerFixtures = {
-  control: { everyControlEvent: [...late_everyControlEvent, ...late_controlStarted] },
+  control: { everyControlEvent: [...late_everyControlEvent, ...late_controlStarted, ...late_ceilingLock] },
   ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
   attempt: { everyAttemptEvent: late_everyAttemptType },
 } as const

@@ -19,7 +19,10 @@
  *
  * This file imports types only, no driver, as `ticket-sql.ts` does.
  */
-import type { TicketSql } from './ticket-sql.ts'
+import { Context, Effect, Ref } from 'effect'
+
+import { fromPromiseLogSql, promiseSnapshots } from './store-face.ts'
+import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 
 export interface SnapshotKey {
   streamId: string
@@ -109,15 +112,17 @@ export function isPostgresCreateRace(err: unknown): boolean {
   )
 }
 
-export async function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await sql.exec(ddl)
-      return
-    } catch (err) {
-      if (sql.dialect !== 'postgres' || !isPostgresCreateRace(err) || attempt >= 4) throw err
-    }
-  }
+/**
+ * Runs `ddl`, retrying Postgres's non-atomic create race. A failed `exec` is a
+ * defect, so the retry looks at the defect: at most four more tries for a race
+ * code on `postgres`, and any other defect dies unchanged.
+ */
+export function execIdempotentlyEffect(sql: LogSqlPort, ddl: string): Effect.Effect<void> {
+  const attempt = (n: number): Effect.Effect<void> =>
+    Effect.catchDefect(sql.exec(ddl), (defect) =>
+      sql.dialect === 'postgres' && isPostgresCreateRace(defect) && n < 4 ? attempt(n + 1) : Effect.die(defect),
+    )
+  return attempt(0)
 }
 
 const POSTGRES_DDL = `
@@ -213,20 +218,28 @@ function parseRow(key: SnapshotKey, row: Row): Snapshot {
   }
 }
 
-/** A `SnapshotStore` over either store's `TicketSql`; only the DDL, the anchor's time comparison and the jsonb casts differ. */
-export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
-  const pg = sql.dialect === 'postgres'
-  let ready: Promise<void> | null = null
+/** `SnapshotStore` as Effects (#1028): every failure is a defect, and `census` never creates the table. */
+export interface SnapshotsPort {
+  latest(key: SnapshotKey): Effect.Effect<Snapshot | null>
+  put(snapshot: Snapshot): Effect.Effect<'written' | 'kept'>
+  census(): Effect.Effect<SnapshotCensusRow[]>
+}
 
-  // A promise, cleared on rejection — never a flag set beside the `exec`,
-  // which stays set after a failure and skips the DDL for good.
-  const ensure = (): Promise<void> => {
-    ready ??= execIdempotently(sql, pg ? POSTGRES_DDL : SQLITE_DDL).catch((err: unknown) => {
-      ready = null
-      throw err
-    })
-    return ready
-  }
+export class Snapshots extends Context.Service<Snapshots, SnapshotsPort>()('@lingtai/event-store/Snapshots') {}
+
+/** `Snapshots` over either store's `LogSql`; only the DDL, the anchor's time comparison and the jsonb casts differ. */
+export function makeSqlSnapshots(sql: LogSqlPort): SnapshotsPort {
+  const pg = sql.dialect === 'postgres'
+  // False until the DDL has succeeded, and left false when it fails, so the
+  // next call runs it again — `Effect.cached` would keep the failure for good.
+  // Two first calls may both run it: the DDL is IF NOT EXISTS and the Postgres
+  // race is what `execIdempotentlyEffect` retries.
+  const ready = Ref.makeUnsafe(false)
+  const ensure = Effect.gen(function* () {
+    if (yield* Ref.get(ready)) return
+    yield* execIdempotentlyEffect(sql, pg ? POSTGRES_DDL : SQLITE_DDL)
+    yield* Ref.set(ready, true)
+  })
 
   const dialect = sql.dialect
   const stored = (t: string) =>
@@ -244,17 +257,17 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
   })
 
   return {
-    async census() {
+    census: Effect.fn('Snapshots.census')(function* () {
       // The catalogue first, and no `ensure()`: a doctor that reads must not create.
       const there = pg
-        ? await sql.query<{ result: unknown }>(
+        ? yield* sql.query<{ result: unknown }>(
             `SELECT to_regclass('"public"."stream_snapshots"') IS NOT NULL AS "result"`,
           )
-        : await sql.query<{ result: unknown }>(
+        : yield* sql.query<{ result: unknown }>(
             `SELECT 1 AS "result" FROM sqlite_master WHERE type = 'table' AND name = 'stream_snapshots'`,
           )
       if (there.length === 0 || there[0]?.result === false) return []
-      const rows = await sql.query<{
+      const rows = yield* sql.query<{
         reducer: unknown
         reducer_version: unknown
         n: unknown
@@ -286,11 +299,11 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
           bytes: Number(bytes),
         }
       })
-    },
+    }),
 
-    async latest(key) {
-      await ensure()
-      const rows = await sql.query<Row>(
+    latest: Effect.fn('Snapshots.latest')(function* (key: SnapshotKey) {
+      yield* ensure
+      const rows = yield* sql.query<Row>(
         `SELECT s.stream_id, s.reducer, s.reducer_version, s.stream_version, s.last_seq, s.last_at, ${pg ? 's.state::text' : 's.state'} AS state
          FROM stream_snapshots s
          WHERE s.stream_id = $1 AND s.reducer = $2 AND s.reducer_version = $3
@@ -299,11 +312,11 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
       )
       const row = rows[0]
       return row === undefined ? null : parseRow(key, row)
-    },
+    }),
 
-    async put(snapshot) {
+    put: Effect.fn('Snapshots.put')(function* (snapshot: Snapshot) {
       validateSnapshot(snapshot)
-      await ensure()
+      yield* ensure
       const params = [
         snapshot.streamId,
         snapshot.reducer,
@@ -335,7 +348,7 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
          RETURNING stream_id`,
           [...params, snapshot.state],
         )
-      if ((await upsert()).length > 0) return 'written'
+      if ((yield* upsert()).length > 0) return 'written'
       // Nothing returned: the row there is as new (kept), the incoming anchor was
       // not in the log (refused), or the row there is void and must go first.
       // 'kept' is claimed from ONE statement that checks the stored row and both
@@ -347,7 +360,7 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
            AND s.stream_version >= ${pg ? '$4::integer' : '$4'}
            AND ${stored('s')}
            AND ${incoming}`
-      if ((await sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
+      if ((yield* sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
       // A void row is removed by one statement that judges it and deletes it from
       // the same snapshot of the database, and only while the incoming anchor
       // holds, so nothing is decided from an earlier read: a row that was made
@@ -361,16 +374,14 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
       // the newer row's anchor can look absent and a valid row would be deleted.
       // With the observed identity in the predicate, a replaced row no longer
       // matches and is left alone.
-      const seen = (
-        await sql.query<{ stream_version: unknown; last_seq: unknown; last_at: unknown }>(
-          `SELECT stream_version, CAST(last_seq AS text) AS last_seq, last_at FROM stream_snapshots
+      const seen = (yield* sql.query<{ stream_version: unknown; last_seq: unknown; last_at: unknown }>(
+        `SELECT stream_version, CAST(last_seq AS text) AS last_seq, last_at FROM stream_snapshots
            WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3`,
-          [snapshot.streamId, snapshot.reducer, snapshot.reducerVersion],
-        )
-      )[0]
+        [snapshot.streamId, snapshot.reducer, snapshot.reducerVersion],
+      ))[0]
       if (seen !== undefined) {
         const seenSeq = String(seen.last_seq)
-        await sql.query(
+        yield* sql.query(
           `DELETE FROM stream_snapshots
            WHERE stream_id = $1 AND reducer = $2 AND reducer_version = $3
              AND stream_version = ${pg ? '$7::integer' : '$7'}
@@ -382,9 +393,14 @@ export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
           [...params, Number(seen.stream_version), pg ? seenSeq : BigInt(seenSeq), String(seen.last_at)],
         )
       }
-      if ((await upsert()).length > 0) return 'written'
-      if ((await sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
+      if ((yield* upsert()).length > 0) return 'written'
+      if ((yield* sql.query<{ ok: unknown }>(keptSql, params)).length > 0) return 'kept'
       throw anchorNotInLogError(snapshot)
-    },
+    }),
   }
+}
+
+/** A `SnapshotStore` over either store's `TicketSql`: the promise face of `makeSqlSnapshots`. */
+export function createSqlSnapshotStore(sql: TicketSql): SnapshotStore {
+  return promiseSnapshots(makeSqlSnapshots(fromPromiseLogSql(sql)))
 }

@@ -1670,7 +1670,7 @@ describe('the ticket and the advice a fix round is briefed with (#643)', () => {
           id: 'q',
           text: 'Where does daemonCommand live now?',
           answers: [
-            { id: 'port', text: 'Move the two dayCeilingStop calls into daemon.ts' },
+            { id: 'port', text: 'Move the two ceiling calls into daemon.ts' },
             { id: 'requeue', text: 'Start over' },
           ],
           recommended: 'port',
