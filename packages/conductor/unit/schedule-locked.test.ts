@@ -24,6 +24,9 @@ const untouched = <T>(what: string): T =>
     },
   ) as T
 
+vi.mock('../src/queue.ts', () => ({
+  selectRunnable: async () => [{ taskId: 'ticket-p-7', issue: '7', title: 't', kind: 'bug' }],
+}))
 vi.mock('../src/conduct.ts', () => ({
   runOnce: () => {
     throw new Error('a locked pass reached runOnce')
