@@ -91,6 +91,7 @@ import {
   type SupervisorAnswer,
 } from './service-status.ts'
 import { noSteps, type Steps } from './steps.ts'
+import { keepAsked } from './upgrade-drain.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
@@ -1360,7 +1361,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       )
       return 1
     }
-    let watching = true
+    let watcher: { stop: () => Promise<void> } | undefined
     try {
       const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error)
       if (asked instanceof Error) {
@@ -1403,18 +1404,11 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       // A start by a copy that held the lock while initialising ends the request
       // adopted above; the lock then stays with it and the wait never ends. So
       // whenever no request stands during the wait, it is asked again.
-      const watch = (async () => {
-        while (watching) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 2000).unref())
-          if (!watching) break
-          const standing = await options.shutdown().then(
-            (r) => r,
-            () => undefined,
-          )
-          if (standing === null) await askAgain().catch(() => undefined)
-        }
-      })()
-      void watch
+      watcher = keepAsked(
+        () => options.shutdown(),
+        () => askAgain(),
+        2000,
+      )
       let waited = await queue.wait(waitLog, askAgain, progress)
       steps.end()
       // Asked again right before the supervisor is told: the lock is only worth
@@ -1454,7 +1448,8 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       return 0
     } finally {
-      watching = false
+      // Joined before the command is over: no append can follow it.
+      await watcher?.stop()
       await queue.leave()
     }
   }

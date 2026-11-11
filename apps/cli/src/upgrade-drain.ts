@@ -36,6 +36,58 @@ export interface UpgradeDrain {
   watchMs?: number
 }
 
+/**
+ * Asks again whenever no request stands, every `everyMs`, until stopped. `stop`
+ * resolves once any read or append in flight has finished, and nothing starts
+ * after it: the liveness is checked after the read and before the append, so a
+ * read that returns after the command is over appends nothing.
+ */
+export function keepAsked(
+  standing: () => Promise<unknown>,
+  ask: () => Promise<unknown>,
+  everyMs: number,
+): { stop: () => Promise<void> } {
+  let live = true
+  let loop: Promise<void> = Promise.resolve()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let wake = (): void => {}
+  const next = (): void => {
+    loop = new Promise<void>((resolve) => {
+      wake = resolve
+      timer = setTimeout(resolve, everyMs)
+      timer.unref()
+    })
+      .then(() =>
+        live
+          ? standing().then(
+              (s) => s,
+              () => undefined,
+            )
+          : undefined,
+      )
+      .then((s) =>
+        live && s === null
+          ? ask().then(
+              () => undefined,
+              () => undefined,
+            )
+          : undefined,
+      )
+      .then(() => {
+        if (live) next()
+      })
+  }
+  next()
+  return {
+    stop: () => {
+      live = false
+      clearTimeout(timer)
+      wake()
+      return loop
+    },
+  }
+}
+
 const NOTHING_AFTER: Drained = { ok: true, after: async () => {} }
 
 export async function drainForUpgrade(how: UpgradeDrain): Promise<Drained> {
@@ -90,24 +142,17 @@ export async function drainForUpgrade(how: UpgradeDrain): Promise<Drained> {
 
   // A start that lands during the wait ends the request too, and a drain nobody
   // is obeying is waited on for ever: so it is asked again whenever none stands.
-  let waiting = true
-  const watch = (async () => {
-    while (waiting) {
-      await new Promise<void>((resolve) => setTimeout(resolve, how.watchMs ?? 2000).unref())
-      if (!waiting) break
-      const now = await how.control().then(
-        (c) => c.shutdown,
-        () => undefined,
-      )
-      if (now === null) await how.request(by, reason).catch(() => undefined)
-    }
-  })()
-  void watch
+  const watcher = keepAsked(
+    () => how.control().then((c) => c.shutdown),
+    () => how.request(by, reason),
+    how.watchMs ?? 2000,
+  )
   try {
     const waited = await how.wait()
     if (waited !== 'free') return { ok: false, code: waited === 'interrupted' ? 130 : 1 }
   } finally {
-    waiting = false
+    // Joined, not abandoned: nothing is appended once this has returned.
+    await watcher.stop()
   }
   return NOTHING_AFTER
 }
