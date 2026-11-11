@@ -417,7 +417,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 5,
+  version: 6,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

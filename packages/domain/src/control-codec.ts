@@ -54,7 +54,9 @@ const StoredControl = z.strictObject({
         seq: z.number(),
       })
       .nullable(),
-    raised: z.strictObject({ day: z.string(), toUsd: z.number(), by: z.string(), at: IsoDate }).nullable(),
+    raised: z
+      .strictObject({ day: z.string(), toUsd: z.number(), fromUsd: z.number().optional(), by: z.string(), at: IsoDate })
+      .nullable(),
   }),
 })
 
