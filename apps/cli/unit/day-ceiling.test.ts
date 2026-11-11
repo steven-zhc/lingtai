@@ -1,9 +1,11 @@
+import { makeGuard } from '@lingtai/daemon'
 import { CONTROL_STREAM } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { ProjectionLag } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { dayCeilingStop, spendStall } from '../src/day-ceiling.ts'
+import { ceilingPort, type DayCeilingPorts, spendStall } from '../src/day-ceiling.ts'
 
 const now = new Date('2026-10-26T12:00:00Z')
 const spend = (lag: bigint, ageMs: number | null): ProjectionLag => ({
@@ -14,6 +16,23 @@ const spend = (lag: bigint, ageMs: number | null): ProjectionLag => ({
   updatedAt: ageMs === null ? null : new Date(now.getTime() - ageMs),
 })
 
+/** The sentence the guard's `locked` gives where today's spend cannot be trusted, or null. */
+const spendUnchecked = (
+  store: ReturnType<typeof createMemoryEventStore>,
+  p: DayCeilingPorts,
+  at: Date = now,
+): Promise<string | null> =>
+  Effect.runPromise(
+    ceilingPort(store, p)
+      .todaysSpend(at)
+      .pipe(
+        Effect.match({
+          onFailure: (e) => `could not check the daily ceiling: ${e.why} — taking no work`,
+          onSuccess: () => null,
+        }),
+      ),
+  )
+
 const ports = (lags: () => Promise<readonly ProjectionLag[]>, ceiling: () => number | undefined = () => 10) => ({
   ceiling,
   lags,
@@ -23,7 +42,7 @@ const ports = (lags: () => Promise<readonly ProjectionLag[]>, ceiling: () => num
 
 describe('the daily ceiling and a stalled spend projection (#650)', () => {
   it('takes no work when spend is behind and has been quiet for minutes', async () => {
-    const stop = await dayCeilingStop(
+    const stop = await spendUnchecked(
       createMemoryEventStore(),
       ports(async () => [spend(3n, 5 * 60_000)]),
     )
@@ -34,7 +53,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
 
   it('checks normally when the lag is one row and two seconds old', async () => {
     expect(
-      await dayCeilingStop(
+      await spendUnchecked(
         createMemoryEventStore(),
         ports(async () => [spend(1n, 2000)]),
       ),
@@ -58,13 +77,13 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
         data: { for: { _tag: 'Discussion' }, runtime: 'claude-code', turns: 1, durationMs: 1, costUsd: 1, usage: [] },
       },
     ])
-    const stop = await dayCeilingStop(store, { ...ports(async () => []), now: () => new Date() })
+    const stop = await spendUnchecked(store, { ...ports(async () => []), now: () => new Date() }, new Date())
     expect(stop).toMatch(/^could not check the daily ceiling: the spend projection has never checkpointed/)
   })
 
   it('does not stop a fresh install with no row and no spend', async () => {
     expect(
-      await dayCeilingStop(
+      await spendUnchecked(
         createMemoryEventStore(),
         ports(async () => []),
       ),
@@ -72,20 +91,24 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
   })
 
   it('never reads the lag where no ceiling is set', async () => {
-    const stop = await dayCeilingStop(
-      createMemoryEventStore(),
-      ports(
-        async () => {
-          throw new Error('read')
-        },
-        () => undefined,
+    const store = createMemoryEventStore()
+    const guard = makeGuard({
+      store,
+      ceiling: ceilingPort(
+        store,
+        ports(
+          async () => {
+            throw new Error('read')
+          },
+          () => undefined,
+        ),
       ),
-    )
-    expect(stop).toBeNull()
+    })
+    expect(await Effect.runPromise(guard.locksFor('lingtai'))).toEqual([])
   })
 
   it('takes no work when the lag cannot be read', async () => {
-    const stop = await dayCeilingStop(
+    const stop = await spendUnchecked(
       createMemoryEventStore(),
       ports(async () => {
         throw new Error('store unreachable')
@@ -97,7 +120,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
 
 describe('the daily ceiling while spend is rebuilt (#680)', () => {
   it('takes no work even when the half-built table reads under the ceiling', async () => {
-    const stop = await dayCeilingStop(createMemoryEventStore(), {
+    const stop = await spendUnchecked(createMemoryEventStore(), {
       ...ports(async () => [spend(5n, 1000)]),
       rebuilding: () => 'the spend projection is being rebuilt after a model was priced',
     })
@@ -108,7 +131,7 @@ describe('the daily ceiling while spend is rebuilt (#680)', () => {
 
   it('discards a read when a rebuild began while it was awaited', async () => {
     let began = 0
-    const stop = await dayCeilingStop(createMemoryEventStore(), {
+    const stop = await spendUnchecked(createMemoryEventStore(), {
       ...ports(async () => [spend(0n, 1000)]),
       rows: async () => {
         began += 1

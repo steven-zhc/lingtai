@@ -49,20 +49,23 @@ export function LockRows({ locks, now }: { locks: ProjectLocks; now: Date }) {
   return (
     <div className="pbanner">
       {locks.held.map((row: HeldProject) =>
-        row.locks.map((lock) => (
-          <div className="pbrow" key={`${row.project}:${lock.kind}`}>
-            <b className="lab">Paused</b>
-            <span className="what">
-              <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
-                {row.project}
-              </Link>{' '}
-              · <span className="person">by {lock.by}</span> since {sinceLabel(lock.since, now)}
-            </span>
-            <small className="sub">an attempt in flight finishes</small>
-            <span className="grow" />
-            <ResumeButton project={row.project} />
-          </div>
-        )),
+        row.locks.map((lock) =>
+          // The ceiling is drawn by #1006/#1007; the board reads no `control` here yet.
+          lock.kind !== 'paused' ? null : (
+            <div className="pbrow" key={`${row.project}:${lock.kind}`}>
+              <b className="lab">Paused</b>
+              <span className="what">
+                <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
+                  {row.project}
+                </Link>{' '}
+                · <span className="person">by {lock.by}</span> since {sinceLabel(lock.since, now)}
+              </span>
+              <small className="sub">an attempt in flight finishes</small>
+              <span className="grow" />
+              <ResumeButton project={row.project} />
+            </div>
+          ),
+        ),
       )}
     </div>
   )

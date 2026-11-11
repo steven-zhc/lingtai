@@ -42,7 +42,7 @@ import type { Triage } from '@lingtai/recipe'
 
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
-import { pausedSentence } from './day-ceiling.ts'
+import { ceilingPort } from './day-ceiling.ts'
 import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
@@ -510,7 +510,7 @@ export async function daemonCommand(
   const since = started.since
   const triageHashes = new Map<string, string>()
   // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-  const locked = lockedBy(makeGuard({ store: eventStore }))
+  const locked = lockedBy(makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) }))
   const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
     try {
       await catchUpChangedTriage(
@@ -959,4 +959,20 @@ async function restartSteps(
   }
   steps.begin('starting')
   return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true, writer)
+}
+
+/**
+ * What the daemon's `paused` callback answers: the control stream's pause, a
+ * sentence either way. The day's ceiling is not asked here any more — it is a
+ * lock, asked through the guard per project (#1004) — and #1012 and #1013 delete
+ * this with the pause it reads.
+ */
+function pausedSentence(ports: {
+  control: () => Promise<{ paused: boolean; by?: string | null; reason?: string | null }>
+}): Promise<string | null> {
+  return ports.control().then(
+    (c) => (c.paused ? `paused by ${c.by} — ${c.reason}` : null),
+    // Not "not paused": a pause that could not be read is not consent.
+    (err: Error) => `could not read whether the conductor is paused: ${err.message}`,
+  )
 }

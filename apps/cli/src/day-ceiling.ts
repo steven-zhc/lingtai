@@ -1,13 +1,12 @@
 /**
- * The daily dollar ceiling, as the two conductors ask it (0122 §5, #637): the
- * same `paused` callback `runQueue` asks before each claim. The callers ask it
- * **before** the control stream's own pause, so a raised figure lifts its own
- * pause before that is read. A `spend` projection that has stopped is answered
- * here as *could not check* (#650). Never asked inside a pass.
+ * The daily dollar ceiling's trust checks (0122 §5, #637): what the guard's
+ * ceiling check reads before it decides anything. A `spend` projection that has
+ * stopped is answered here as *could not check* (#650). Never asked inside a pass.
  */
-import { dayCeilingPause, daySpend, daySpendText, startOfLocalDay, type DaySpend } from '@lingtai/conductor'
+import { daySpend, daySpendText, startOfLocalDay, type DaySpend } from '@lingtai/conductor'
+import { CeilingUnchecked, type CeilingPort } from '@lingtai/daemon'
 import { machineDayCeiling } from '@lingtai/env'
-import { eventStore, type EventStore, log } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
 import { Effect } from 'effect'
 
@@ -72,44 +71,49 @@ export interface DayCeilingPorts {
 }
 
 /**
- * The sentence to stop on, or null. Where the figure or the spend cannot be
- * read the answer is a sentence too: a ceiling that could not be checked is not
- * consent, the rule the pause read above it already follows. So is a `spend`
- * projection that has stopped: its table still reads, with stale totals, and a
- * stale total under the figure would lift a pause that is in force.
+ * The guard's ceiling port (#1004): the configured figure, and today's spend as
+ * an Effect that fails — `CeilingUnchecked`, and nothing appended — wherever it
+ * cannot be trusted. A `spend` projection that has stopped still reads, with
+ * stale totals, and a stale total under the figure would lift a lock that is in
+ * force (#650); a rebuild is the same (#680), including one that began while the
+ * read was in flight. Unknown is not *under the ceiling*.
  */
-export async function dayCeilingStop(
-  store: EventStore | undefined,
-  ports: DayCeilingPorts = {},
-): Promise<string | null> {
-  try {
-    const ceilingUsd = (ports.ceiling ?? machineDayCeiling)()
-    const rows = ports.rows ?? ((since: Date) => readSpend({ since }))
-    const rebuilds = ports.rebuilds ?? spendRebuilds
-    const began = rebuilds()
-    if (ceilingUsd !== undefined) {
-      const lags = await (ports.lags ?? (() => projectionLag()))()
-      // A replay moves the checkpoint on every batch, so the stall check reads
-      // a half-built table as healthy; the hold is the rebuild saying so.
-      const stall =
-        (ports.rebuilding ?? spendRebuildHold)(lags) ??
-        (await spendStallIn(lags, (ports.now ?? (() => new Date()))(), store ?? eventStore))
-      if (stall !== null) return `could not check the daily ceiling: ${stall} — taking no work`
-    }
-    const pause = await dayCeilingPause({
-      ceilingUsd,
-      rows,
-      store: store ?? eventStore,
-      snapshots: store === undefined ? log.snapshots : undefined,
-    })
-    // The hold was checked before an asynchronous read; a rebuild that began
-    // meanwhile may have dropped the table under it, so that answer is not used.
-    if (ceilingUsd !== undefined && rebuilds() !== began) {
-      return 'could not check the daily ceiling: the spend projection began a rebuild while it was read — taking no work'
-    }
-    return pause
-  } catch (err) {
-    return `could not check the daily ceiling: ${(err as Error).message} — taking no work`
+export function ceilingPort(store: EventStore | undefined, ports: DayCeilingPorts = {}): CeilingPort {
+  return {
+    configuredUsd: ports.ceiling ?? machineDayCeiling,
+    todaysSpend: (now) =>
+      Effect.gen(function* () {
+        const unchecked = (err: unknown) =>
+          new CeilingUnchecked({ why: err instanceof Error ? err.message : String(err) })
+        const rebuilds = ports.rebuilds ?? spendRebuilds
+        const began = rebuilds()
+        const lags = yield* Effect.tryPromise({
+          try: () => (ports.lags ?? (() => projectionLag()))(),
+          catch: unchecked,
+        })
+        // A replay moves the checkpoint on every batch, so the stall check reads
+        // a half-built table as healthy; the hold is the rebuild saying so.
+        const stall =
+          (ports.rebuilding ?? spendRebuildHold)(lags) ??
+          (yield* Effect.tryPromise({
+            try: () => spendStallIn(lags, (ports.now ?? (() => now))(), store ?? eventStore),
+            catch: unchecked,
+          }))
+        if (stall !== null) return yield* Effect.fail(new CeilingUnchecked({ why: stall }))
+        const rows = yield* Effect.tryPromise({
+          try: () => (ports.rows ?? ((since: Date) => readSpend({ since })))(startOfLocalDay(now)),
+          catch: unchecked,
+        })
+        // The hold was checked before an asynchronous read; a rebuild that began
+        // meanwhile may have dropped the table under it, so that answer is not used.
+        if (rebuilds() !== began) {
+          return yield* Effect.fail(
+            new CeilingUnchecked({ why: 'the spend projection began a rebuild while it was read' }),
+          )
+        }
+        const day = yield* Effect.try({ try: () => daySpend(rows, now, readRateSnapshot()), catch: unchecked })
+        return { reportedCents: day.reportedCents, estimatedCents: day.estimatedCents }
+      }),
   }
 }
 
@@ -126,7 +130,7 @@ export interface TrustedDaySpendPorts {
 
 /**
  * Today's reported and estimated cents, or a refusal sentence: the spend read
- * `dayCeilingStop` makes, with the same trust checks, for a caller that acts on
+ * `ceilingPort` makes, with the same trust checks, for a caller that acts on
  * the figure rather than stopping on it. Fails where the spend cannot be read.
  */
 export const readDaySpendTrusted = (
@@ -163,21 +167,6 @@ export const readDaySpendTrusted = (
     const configuredUsd = configured.usd
     return { reportedCents: day.reportedCents, estimatedCents: day.estimatedCents, configuredUsd }
   })
-
-/** What a `paused` callback answers: the ceiling first, then the control stream, a sentence either way. */
-export async function pausedSentence(ports: {
-  ceiling?: () => Promise<string | null>
-  control: () => Promise<{ paused: boolean; by?: string | null; reason?: string | null }>
-}): Promise<string | null> {
-  try {
-    const stop = await (ports.ceiling ?? (() => dayCeilingStop(undefined)))()
-    const c = await ports.control()
-    return c.paused ? `paused by ${c.by} — ${c.reason}` : stop
-  } catch (err) {
-    // Not "not paused": a pause that could not be read is not consent.
-    return `could not read whether the conductor is paused: ${(err as Error).message}`
-  }
-}
 
 /**
  * Today across **every** project, whatever `--project` says: the ceiling covers

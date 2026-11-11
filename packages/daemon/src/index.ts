@@ -107,4 +107,12 @@ export {
   type ConvergeOptions,
   type Divergence,
 } from './converge.ts'
-export { lockedBy, makeGuard, type Guard, type GuardOptions } from './guard.ts'
+export {
+  CeilingUnchecked,
+  lockedBy,
+  lockFailure,
+  makeGuard,
+  type CeilingPort,
+  type Guard,
+  type GuardOptions,
+} from './guard.ts'

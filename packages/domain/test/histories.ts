@@ -827,7 +827,7 @@ function bodyBeforeAnotherWait(): readonly Envelope[] {
 const githubLedgerH = githubLedger()
 const bodyBeforeAnotherWaitH = bodyBeforeAnotherWait()
 
-/** A day-ceiling pause, as `dayCeilingPause` writes one. */
+/** A day-ceiling pause, as the ceiling wrote one before #1004. */
 const ceilingPause = (until: string) => ({
   by: 'lingtai',
   reason: 'daily ceiling reached — $5.00 of $5.00',

@@ -133,14 +133,20 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
       "return { type: 'ProjectRecovered', actor: 'conductor', data: { project, ref: seen.ref, codeSha: seen.codeSha } }",
   },
   {
+    event: 'ConductorResumed',
+    why: "type is a string argument of the module's own `append`",
+    file: 'packages/daemon/src/control.ts',
+    anchor: "await append('ConductorResumed', { by }, store, at)",
+  },
+  {
     event: 'DayCeilingReached',
-    why: 'returned from a function; the caller appends it (the guard, in the next ticket)',
+    why: 'returned from a function; the caller appends it (the guard, `packages/daemon/src/guard.ts`)',
     file: 'packages/domain/src/ceiling-lock.ts',
     anchor: "type: 'DayCeilingReached',",
   },
   {
     event: 'DayCeilingLifted',
-    why: 'returned from a function; the caller appends it',
+    why: 'returned from a function; the caller appends it (the guard, or `raiseDayCeiling` for a person)',
     file: 'packages/domain/src/ceiling-lock.ts',
     anchor: "type: 'DayCeilingLifted', actor: 'conductor',",
   },
