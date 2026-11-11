@@ -42,7 +42,6 @@ export {
 } from './mirror.ts'
 export {
   baseMovedOn,
-  integrate,
   integrateEffect,
   type BaseMoved,
   type IntegrateOptions,

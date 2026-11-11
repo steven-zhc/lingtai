@@ -156,12 +156,6 @@
     "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
   },
   {
-    "file": "packages/repo/src/integrate.ts",
-    "fn": "integrate",
-    "until": "#790",
-    "why": "packages/repo's own tests call the promise; no production caller is left (conductor/src/live.ts wires integrateEffect)"
-  },
-  {
     "file": "packages/repo/src/mirror.ts",
     "fn": "conflictedPathsAt",
     "until": "#790",

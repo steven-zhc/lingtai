@@ -264,23 +264,6 @@ const LOST_PUSHES = 3
  */
 const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000
 
-/**
- * The promise face, for callers that are not Effect.
- *
- * `conductor/src/approve.ts` and the board reach the integrator from ordinary
- * `async` code, with no `try` around the call: `approve.ts` has spent the
- * approval by the time it gets here, so an exception out of this would leave
- * the item gating with nothing on the log to say why.
- *
- * The error channel below is `never` — every path appends and returns an
- * `IntegrateResult` — and `unexpected` is what makes that true of the defect
- * channel too, which is where a store that stopped answering arrives. So
- * running it here cannot throw.
- */
-export function integrate(options: IntegrateOptions): Promise<IntegrateResult> {
-  return Effect.runPromise(integrateEffect(options))
-}
-
 export function integrateEffect(options: IntegrateOptions): Effect.Effect<IntegrateResult> {
   const store = options.store ?? eventStore
   const home = options.home ?? stateDir()
@@ -299,24 +282,26 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   // **This retry is not about the lock**, and it stayed when the lock went
   // (#194): the writers it answers for are the integrations themselves, which
   // the lock never excluded from the stream — only from the merge.
-  async function append(
+  const append = (
     type: 'IntegrationAttempted' | 'IntegrationRefused' | 'IntegrationSucceeded',
     data: unknown,
-  ): Promise<void> {
-    const payload = { type, actor: 'conductor' as const, data: parsePayload(type, data) }
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const at = reduceIntegration(await store.read(stream)).version
-      try {
-        await store.append(stream, at, [payload])
-        return
-      } catch (err) {
-        if (!(err instanceof ConcurrencyError)) throw err
+  ): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const payload = { type, actor: 'conductor' as const, data: parsePayload(type, data) }
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const at = reduceIntegration(yield* Effect.promise(() => store.read(stream))).version
+        const lost = yield* Effect.promise(() => store.append(stream, at, [payload])).pipe(
+          Effect.as(false),
+          Effect.catchDefect((defect) =>
+            defect instanceof ConcurrencyError ? Effect.succeed(true) : Effect.die(defect),
+          ),
+        )
+        if (!lost) return
         // Someone else moved the lane on. Read where it is now and try again.
-        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)))
+        yield* Effect.sleep(20 * (attempt + 1))
       }
-    }
-    throw new Error(`could not record ${type} on ${stream} after 8 attempts`)
-  }
+      return yield* Effect.die(new Error(`could not record ${type} on ${stream} after 8 attempts`))
+    })
 
   const refuse = (
     reason: RefusalReason,
@@ -324,8 +309,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     conflict?: { paths: string[]; baseSha: string; headSha: string },
     baseMoved?: BaseMoved,
   ): Effect.Effect<IntegrateResult> =>
-    Effect.promise(async () => {
-      await append('IntegrationRefused', {
+    Effect.gen(function* () {
+      yield* append('IntegrationRefused', {
         ticketId: options.ticketId,
         branch: options.branch,
         reason,
@@ -342,8 +327,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     })
 
   const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>
-    Effect.promise(async () => {
-      await append('IntegrationSucceeded', {
+    Effect.gen(function* () {
+      yield* append('IntegrationSucceeded', {
         ticketId: options.ticketId,
         branch: options.branch,
         base: options.base,
@@ -355,12 +340,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   /**
    * The defect channel, and the last thing between a caller and an exception.
    *
-   * `integrate()` above promises that it cannot throw, and everything that
-   * appends can: `store.read` and `store.append` reject on a dropped
-   * connection, `Effect.promise` turns that rejection into a defect, and a
-   * defect no handler sees leaves `Effect.runPromise` as a rejected promise.
-   * Neither caller has a `try` around it — `approve.ts` has already spent the
-   * approval by then — so an escaping defect is the #84 dead end: no
+   * `integrateEffect`'s error channel is `never`, and this keeps its defect
+   * channel empty too, so whoever runs it at the edge (`conductor/src/live.ts`)
+   * gets an `IntegrateResult` and never a rejection. Everything that appends
+   * can defect: `store.read` and `store.append` reject on a dropped connection
+   * and `Effect.promise` turns that rejection into a defect. The caller has no
+   * `try` around it, so an escaping defect is the #84 dead end: no
    * `IntegrationRefused`, no `WaitStarted`, no diagnosis, and a second
    * attempt refused.
    *
@@ -408,7 +393,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         if (!line.startsWith('worktree ')) continue
         const path = line.slice('worktree '.length).trim()
         if (!basename(path).startsWith('integrator-')) continue
-        const cutAt = yield* Effect.promise(async () => (await stat(path).catch(() => null))?.mtimeMs ?? null)
+        const cutAt = yield* Effect.tryPromise(() => stat(path)).pipe(
+          Effect.map((s) => s.mtimeMs),
+          Effect.orElseSucceed(() => null),
+        )
         if (cutAt === null || Date.now() - cutAt < WORKTREE_IS_ABANDONED_AFTER) continue
         yield* mirrorWrite(mirror, at(['worktree', 'remove', '--force', path], mirror)).pipe(Effect.ignore)
         yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore)
@@ -733,13 +721,11 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    * is a ticket stopped by a race it won nothing by losing.
    */
   return Effect.gen(function* () {
-    yield* Effect.promise(() =>
-      append('IntegrationAttempted', {
-        ticketId: options.ticketId,
-        branch: options.branch,
-        headSha: options.headSha,
-      }),
-    )
+    yield* append('IntegrationAttempted', {
+      ticketId: options.ticketId,
+      branch: options.branch,
+      headSha: options.headSha,
+    })
 
     let lastRejection = ''
     for (let push = 0; push <= LOST_PUSHES; push++) {
@@ -757,5 +743,5 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     // The append at the top and the refusal just above are appends like any
     // other, and `attempt`'s own handlers are inside it and never see them.
     // This is what covers both — and whatever gets past `attempt`'s.
-  }).pipe(Effect.catchDefect(unexpected))
+  }).pipe(Effect.catchDefect(unexpected), Effect.withSpan('repo.integrate'))
 }

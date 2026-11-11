@@ -21,7 +21,9 @@ import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { ensureMirrorEffect, integrate } from '../src/index.ts'
+import { ensureMirrorEffect, integrateEffect } from '../src/index.ts'
+
+const integrate = (options: Parameters<typeof integrateEffect>[0]) => Effect.runPromise(integrateEffect(options))
 
 const exec = promisify(execFile)
 const authored = {
