@@ -55,8 +55,8 @@ import { Context, Effect } from 'effect'
 import pg from 'pg'
 
 import { postgresUrl } from './env.ts'
-import { promiseQueries } from './store-face.ts'
-import type { TicketSql } from './ticket-sql.ts'
+import { promiseLogSql, promiseQueries } from './store-face.ts'
+import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 
 /** Which ending an item reached. The recipe's `when:` at `end` names one of these. */
 export type EndedOutcome = 'landed' | 'closed'
@@ -372,31 +372,38 @@ export interface PostgresTicketSqlOptions {
 }
 
 /**
- * `TicketSql` over Postgres. A connection per question, opened and closed
- * around it — the same shape `createPostgresLogQueries` keeps, above, and for
+ * `LogSql` over Postgres. A connection per question, opened and closed
+ * around it — the same shape `makePostgresQueries` keeps, above, and for
  * the same reason: a pool held here would be a connection the ticket store has
- * to remember to end.
+ * to remember to end. The release runs on success, failure and interruption.
  */
-export function createPostgresTicketSql(options: PostgresTicketSqlOptions = {}): TicketSql {
+export function makePostgresLogSql(options: PostgresTicketSqlOptions = {}): LogSqlPort {
   const url = () => options.url ?? postgresUrl()
 
-  async function withClient<T>(run: (client: pg.Client) => Promise<T>): Promise<T> {
-    const client = new pg.Client({ connectionString: url() })
-    await client.connect()
-    try {
-      return await run(client)
-    } finally {
-      await client.end()
-    }
-  }
+  const withClient = <T>(run: (client: pg.Client) => Promise<T>): Effect.Effect<T> =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => {
+        const client = new pg.Client({ connectionString: url() })
+        return client.connect().then(() => client)
+      }),
+      (client) => Effect.promise(() => run(client)),
+      (client) => Effect.promise(() => client.end()),
+    )
 
   return {
     dialect: 'postgres',
-    async query<T>(text: string, params: readonly unknown[] = []): Promise<T[]> {
-      return withClient(async (client) => (await client.query(text, [...params])).rows as T[])
-    },
-    async exec(text: string): Promise<void> {
-      await withClient((client) => client.query(text))
-    },
+    query: <T>(text: string, params: readonly unknown[] = []): Effect.Effect<T[]> =>
+      Effect.withSpan(
+        withClient((client) => client.query(text, [...params]).then((r) => r.rows as T[])),
+        'LogSql.query',
+      ),
+    exec: Effect.fn('LogSql.exec')(function* (text: string) {
+      yield* withClient((client) => client.query(text))
+    }),
   }
+}
+
+/** `TicketSql` over Postgres: the promise face of `makePostgresLogSql`. */
+export function createPostgresTicketSql(options: PostgresTicketSqlOptions = {}): TicketSql {
+  return promiseLogSql(makePostgresLogSql(options))
 }

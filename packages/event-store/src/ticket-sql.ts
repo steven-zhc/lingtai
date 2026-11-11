@@ -9,6 +9,7 @@
  * chosen the same way the log itself is — through `choose.ts` — and this file
  * holds only the type, so a caller can import it without pulling in a driver.
  */
+import { Context, type Effect } from 'effect'
 
 /**
  * One connection to the chosen store, asked in its own dialect.
@@ -36,3 +37,17 @@ export interface TicketSql {
   /** One statement. A caller with several — `ensureTicketTables` among them — calls this once per statement, so neither driver's multi-statement behaviour is relied on. */
   exec(text: string): Promise<void>
 }
+
+/**
+ * `TicketSql` as Effects (#1028): the one implementation both stores write once.
+ * Every failure is a defect (0101 §6) carrying the driver's own error, so a
+ * face over it rejects with that error as itself. `dialect` is a field and not
+ * a method because `execIdempotentlyEffect` and `makeSqlSnapshots` branch on it.
+ */
+export interface LogSqlPort {
+  readonly dialect: 'sqlite' | 'postgres'
+  query<T>(text: string, params?: readonly unknown[]): Effect.Effect<T[]>
+  exec(text: string): Effect.Effect<void>
+}
+
+export class LogSql extends Context.Service<LogSql, LogSqlPort>()('@lingtai/event-store/LogSql') {}
