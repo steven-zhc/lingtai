@@ -43,6 +43,7 @@ const PROJECT: ProjectState = {
   configHash: 'hash',
   fromSha: 'deadbeef',
   refused: null,
+  paused: null,
   version: 1,
   lastSeq: 1n,
 }

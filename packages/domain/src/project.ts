@@ -42,6 +42,13 @@ export interface ProjectState {
    */
   refused: RecordedRefusal | null
 
+  /**
+   * Set while a person's `ProjectPaused` stands with no `ProjectResumed` after
+   * it (0126). The seq and time are the first pause's event's, so *since when*
+   * needs no clock.
+   */
+  paused: { by: string; seq: bigint; at: Date } | null
+
   version: number
   lastSeq: bigint | null
 }
@@ -56,6 +63,7 @@ export const emptyProject: ProjectState = {
   configHash: null,
   fromSha: null,
   refused: null,
+  paused: null,
   version: 0,
   lastSeq: null,
 }
@@ -99,6 +107,16 @@ export function reduceProjectEvent(state: ProjectState, event: Envelope): Projec
 
     case 'ProjectRecovered':
       return { ...state, ...at, refused: null }
+
+    case 'ProjectPaused': {
+      // A second pause changes nothing: the first `since` stands.
+      if (state.paused !== null) return { ...state, ...at }
+      const d = event.data as PayloadOf<'ProjectPaused'>
+      return { ...state, ...at, paused: { by: d.by, seq: event.seq, at: event.at } }
+    }
+
+    case 'ProjectResumed':
+      return { ...state, ...at, paused: null }
 
     default:
       // See the note in ticket.ts: ignored, not rejected.

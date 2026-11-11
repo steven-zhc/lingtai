@@ -2201,6 +2201,23 @@ export const ProjectRecovered = z.object({
 })
 
 /**
+ * A person paused one project: it starts no new work until it is resumed.
+ *
+ * Carries no reason and no expiry — a person's pause holds until they lift it.
+ * An attempt already in flight is untouched (0126 §6).
+ *
+ * @summary A person paused one project: it starts no new work until resumed.
+ */
+export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string() })
+
+/**
+ * A person resumed one project the log had as paused.
+ *
+ * @summary A person resumed one project.
+ */
+export const ProjectResumed = z.object({ project: z.string().min(1), by: z.string() })
+
+/**
  * What a restarted daemon found that the log did not predict, and what it did.
  *
  * **Recorded, not quietly repaired.** A system that silently tidies up after
@@ -2442,6 +2459,8 @@ export const EVENTS = {
   ProjectConfigured,
   ProjectRefused,
   ProjectRecovered,
+  ProjectPaused,
+  ProjectResumed,
   Reconciled,
   GitHubAppCreated,
   TriageStarted,
@@ -2538,6 +2557,8 @@ export const EVENT_AT = {
   ProjectConfigured: ['outside'],
   ProjectRefused: ['outside'],
   ProjectRecovered: ['outside'],
+  ProjectPaused: ['outside'],
+  ProjectResumed: ['outside'],
   Reconciled: ['outside'],
   GitHubAppCreated: ['outside'],
   TriageStarted: ['outside'],

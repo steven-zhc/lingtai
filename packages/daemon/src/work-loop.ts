@@ -110,6 +110,8 @@ export const COMPLETION_EVENTS = [
   // restarting the daemon, and asking for a specific ticket has to be answered
   // now rather than at the next completion.
   'ConductorResumed',
+  // A project's own resume, for the same reason (0126): what it held back is served now.
+  'ProjectResumed',
   'RunRequested',
   'ContinueRequested',
   // And a shutdown, most of all. An idle daemon appends nothing, so without

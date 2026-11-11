@@ -259,6 +259,8 @@ const SAMPLES = {
   ProjectConfigured: [{ project: 'lingtai', owner: null, base: null, configHash: 'c'.repeat(40), fromSha: SHA }],
   ProjectRefused: [{ project: 'lingtai', detail: 'no recipe', ref: null, codeSha: null }],
   ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
+  ProjectPaused: [{ project: 'lingtai', by: 'human:steven' }],
+  ProjectResumed: [{ project: 'lingtai', by: 'human:steven' }],
   Reconciled: [{ findings: [{ stream: 'ticket-lingtai-59', expected: 'a', actual: 'b', action: 'released' }] }],
   GitHubAppCreated: [{ appId: '123', slug: 'lingtai-app' }],
   TriageStarted: [

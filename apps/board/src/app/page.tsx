@@ -117,6 +117,7 @@ const TRIAGE_WORDS = {
   Running: 'triage is running',
   Interrupted: 'the daemon stopped during triage; it will be tried again on the next start',
   Unknown: 'triage status unknown — the project list could not be read',
+  RecipeUnreadable: "triage status unknown — this project's recipe could not be read",
 } as const
 
 function accent(card: BoardCard): string {
@@ -224,7 +225,13 @@ export function Card({
             <span className="waiting-cause-summary">{card.cause.summary}</span>
           </p>
         ) : card.triage ? (
-          <p className="question waiting-fallback">{TRIAGE_WORDS[card.triage]}</p>
+          <p className="question waiting-fallback">
+            {card.triage === 'RecipeUnreadable' ? (
+              <Link href={`/recipe/${encodeURIComponent(card.project)}`}>{TRIAGE_WORDS[card.triage]}</Link>
+            ) : (
+              TRIAGE_WORDS[card.triage]
+            )}
+          </p>
         ) : fallback ? (
           <p className="question waiting-fallback">{codeSpans(fallback)}</p>
         ) : null}

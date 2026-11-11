@@ -73,6 +73,7 @@ const project = (name: string, owner: string | null, configHash: string | null):
   configHash,
   fromSha: null,
   refused: null,
+  paused: null,
   version: 1,
   lastSeq: 1n,
 })

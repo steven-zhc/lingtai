@@ -171,7 +171,9 @@ known before anything is claimed (`missingForTier`). So it is refused where any
 recipe in error is refused, when the recipe resolves, per project
 ([0122](0122-several-passes-share-one-conductor.md) §7, *A refused recipe*), and
 the project takes work again on the first look after the recipe is fixed. It has
-no lock, no check in the guard and no events of its own. #676 builds this.
+no lock, no check in the guard and no events of its own. #676 builds this, with
+the security work of 0.14.0; until then a missing tier still pauses the
+conductor (`ConductorPaused {cause: 'setup'}`), and `lingtai resume` lifts it.
 
 ## Shutdown and drain
 
@@ -209,8 +211,14 @@ It stops what it stops today and no more: a discussion or a triage is stopped
 by the locks §5 returns, not by it. Nothing above is removed until both system
 locks have moved.
 
-**Upgrading:** a `ConductorPaused` standing when a daemon restarts onto the
-removal stops nothing any more. Run `lingtai resume` before that restart;
+**Deferred to 0.14.0.** The pause over a missing tier is not removed with the
+rest: until #676 lands, `ConductorPaused` with `cause: 'setup'`, `ConductorResumed`,
+the `Paused` chip (which then speaks only of it) and a bare `lingtai resume`
+lifting it stay. #1013 removes everything else listed above; the remainder goes
+with #676.
+
+**Upgrading:** a `ConductorPaused` other than the setup's standing when a daemon
+restarts onto the removal stops nothing any more. Run `lingtai resume` before that restart;
 `doc/operating.md` says so.
 
 ## Not decided here

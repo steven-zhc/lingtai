@@ -90,6 +90,12 @@ export interface ConductOptions {
    * appended while it runs (#159), which is why it is handed in.
    */
   paused?: () => Promise<string | null>
+  /**
+   * Whether *this project* is locked now, as a sentence, or null (0126) —
+   * built from the daemon's guard and asked at every gate that starts work,
+   * after `paused`. A sentence skips this project and no other.
+   */
+  locked?: (project: string) => Promise<string | null>
   log?: (line: string) => void
   /**
    * The sink for a person (#766): the `taking` line, one line per ending, and the
@@ -168,6 +174,7 @@ export interface ConductWorkOptions {
   max?: number
   merge?: boolean
   paused?: () => Promise<string | null>
+  locked?: (project: string) => Promise<string | null>
   /** Absent, every pass is awaited, as it always was. */
   slots?: TurnSlots
   log: (line: string) => void
@@ -371,10 +378,23 @@ export function conductWork(
         say(`${name}: #${issue} not started — ${paused}`)
         return false
       }
+      const lock = options.locked ? await options.locked(name) : null
+      if (lock !== null) {
+        say(`${name}: #${issue} not started — ${lock}`)
+        return false
+      }
       const files = await readFixFiles(common.client, issue)
       const why = waitsFor(files, slots!.set.of(name))
       if (why !== null) {
         options.log(`${name}: #${issue} ${why}`)
+        return false
+      }
+      // Asked again after the read: the issue fetch can take long enough for a
+      // pause to land, and the answer above is a fact about before it.
+      const pausedAfter = options.paused ? await options.paused() : null
+      const lockAfter = pausedAfter === null && options.locked ? await options.locked(name) : null
+      if (pausedAfter !== null || lockAfter !== null) {
+        say(`${name}: #${issue} not started — ${pausedAfter ?? lockAfter}`)
         return false
       }
       const leave = slots!.set.enter({ project: name, issue: String(issue), files })
@@ -402,6 +422,13 @@ export function conductWork(
       return true
     }
 
+    // Asked right before an awaited start, after the reads that precede it: the
+    // answer is a fact about the moment it is asked, not about before them.
+    const stoppedNow = (): Promise<string | null> =>
+      (options.paused ? options.paused() : Promise.resolve(null)).then((paused) =>
+        paused !== null || !options.locked ? paused : options.locked(name),
+      )
+
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
       if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
@@ -418,6 +445,11 @@ export function conductWork(
         // wait for a file, must leave the free slots to the rest of the project.
         await launch(Number(c.issue), { runId: c.runId })
         continue
+      }
+      const stopped = await stoppedNow()
+      if (stopped !== null) {
+        say(`${name}: #${c.issue} not started — ${stopped}`)
+        return 'looked'
       }
       const result: RunOnceResult = await Effect.runPromise(
         world
@@ -493,14 +525,18 @@ export function conductWork(
       tellTaking(asked.issue, task.title)
       if (detached) await launch(Number(asked.issue))
       else {
-        const result: RunOnceResult = await Effect.runPromise(
-          world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
-        )
-        options.outcome.ran += 1
-        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-        else if (result.ok === 'held') options.log(`held at ${result.step}`)
-        else options.log(`stopped at ${result.stage}: ${result.detail}`)
-        tellEnding(result)
+        const stopped = await stoppedNow()
+        if (stopped !== null) say(`${name}: #${asked.issue} not started — ${stopped}`)
+        else {
+          const result: RunOnceResult = await Effect.runPromise(
+            world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
+          )
+          options.outcome.ran += 1
+          if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+          else if (result.ok === 'held') options.log(`held at ${result.step}`)
+          else options.log(`stopped at ${result.stage}: ${result.detail}`)
+          tellEnding(result)
+        }
       }
     }
     // Detached, a request and a continuation take a slot and the queue fills the rest.
@@ -522,6 +558,7 @@ export function conductWork(
             // anyway so a `max` above one cannot walk into a wall the ticket
             // before it just met.
             ...(options.paused ? { paused: options.paused } : {}),
+            ...(options.locked ? { locked: options.locked } : {}),
           })
           .pipe(Effect.provide(tracedPorts)),
       )
@@ -601,6 +638,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
     log,
     ...(options.tell ? { tell: options.tell } : {}),
     ...(options.paused ? { paused: options.paused } : {}),
+    ...(options.locked ? { locked: options.locked } : {}),
     work: conductWork({
       hookBinary,
       prompt,
@@ -609,6 +647,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
       max: options.max,
       ...(options.merge === undefined ? {} : { merge: options.merge }),
       ...(options.paused ? { paused: options.paused } : {}),
+      ...(options.locked ? { locked: options.locked } : {}),
       ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
       log,
       ...(options.tell ? { tell: options.tell } : {}),
@@ -720,6 +759,8 @@ export interface ProjectsOptions {
    * wall it met is the account's, not the repository's.
    */
   paused?: () => Promise<string | null>
+  /** Asked after `paused`; a sentence skips this project and carries on to the next. */
+  locked?: (project: string) => Promise<string | null>
   store?: EventStore
   /** Where a refusal is said to a person; absent, `log`. */
   tell?: (line: string) => void
@@ -747,6 +788,14 @@ export async function conductProjects(options: ProjectsOptions): Promise<TurnOut
       if (why !== null) {
         say(`${name}: not looked at — ${why}`)
         break
+      }
+    }
+    if (options.locked) {
+      // One project's lock skips that project; the others are still looked at.
+      const why = await options.locked(name)
+      if (why !== null) {
+        say(`${name}: not looked at — ${why}`)
+        continue
       }
     }
     outcome.projects += 1
