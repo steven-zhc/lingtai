@@ -45,7 +45,7 @@ import {
   type Tickets,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
-import { readControl } from '@lingtai/daemon'
+import { lockedBy, makeGuard, readControl } from '@lingtai/daemon'
 import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
@@ -162,6 +162,28 @@ const heedThePause = (store: EventStore | undefined, ceiling?: DayCeilingPorts) 
         : Effect.void,
     ),
   )
+
+/** A person paused this project, and this command is its conductor. */
+class ProjectLocked extends Data.TaggedError('ProjectLocked')<{ readonly sentence: string }> {}
+
+/** This project's lock, from the guard: the one callback the daemon's gates are handed too. */
+const lockedFor = (store: EventStore | undefined) => lockedBy(makeGuard({ store: store ?? eventStore }))
+
+/**
+ * The lock on this project, before the conductor lock is taken. A person's pause
+ * exits 0 like the conductor's; a read that failed is a refusal, because
+ * unknown is not *unpaused*.
+ */
+const heedTheLock = (
+  locked: (project: string) => Promise<string | null>,
+  project: string,
+): Effect.Effect<void, Refused | ProjectLocked> =>
+  Effect.gen(function* () {
+    const sentence = yield* Effect.promise(() => locked(project))
+    if (sentence === null) return
+    if (sentence.startsWith('could not ')) return yield* Effect.fail(refuse(sentence))
+    return yield* Effect.fail(new ProjectLocked({ sentence }))
+  })
 
 /** Who paused it and why, in the one form both refusals print. */
 const saidPaused = (p: { by: string | null; reason: string | null; until: Date | null }) =>
@@ -312,6 +334,7 @@ export async function run(
   world: RunWorld = liveRunWorld(options, log),
 ): Promise<number> {
   await startTracing()
+  const locked = lockedFor(options.store)
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -540,6 +563,9 @@ export async function run(
           const rows = (yield* owedRows).filter((c) => c.project === options.project)
           for (const row of rows) {
             if (limit !== undefined && ran.length >= limit) break
+            // Liveness first: it is an asynchronous read, and the pause answers below
+            // must be a fact about the moment right before the start, not before it.
+            if (!(yield* isOwed(row))) continue
             // A pause that cannot be read is a refusal here, not a stop: the approval
             // is still owed and a clean exit would say nothing was wrong.
             const sentence = yield* Effect.tryPromise({
@@ -553,7 +579,12 @@ export async function run(
               log(sentence)
               return { ran, stopped: sentence }
             }
-            if (!(yield* isOwed(row))) continue
+            const lock = yield* Effect.promise(() => locked(options.project))
+            if (lock !== null && lock.startsWith('could not ')) return yield* Effect.fail(refuse(lock))
+            if (lock !== null) {
+              log(lock)
+              return { ran, stopped: lock }
+            }
             log(`continuing #${row.issue} — asked for by ${row.by}`)
             const result = yield* world.runOnce({
               ...common,
@@ -594,6 +625,7 @@ export async function run(
                 recipe: resolved.recipe,
                 ...(left === undefined ? {} : { max: left }),
                 paused: stillPaused(options.store, options.dayCeiling),
+                locked,
               })
         // An approval made while the queue ran is the next conductor's unless the
         // queue ended on its own: a bound or a pause stops this command too.
@@ -642,6 +674,15 @@ export async function run(
           break
         }
       }
+      // Asked after the approval reads, right before the start: a pause recorded
+      // while they were pending must not be started over.
+      const lock = yield* Effect.promise(() => locked(options.project))
+      if (lock !== null && lock.startsWith('could not ')) return yield* Effect.fail(refuse(lock))
+      if (lock !== null) {
+        log(lock)
+        log('nothing was taken: this project is locked')
+        return 0
+      }
       const result = yield* world.runOnce({
         ...common,
         issue: options.issue,
@@ -675,6 +716,7 @@ export async function run(
   // and where a `Refused` becomes the line and the exit code it always was.
   const code = await Effect.runPromise(
     heedThePause(options.store, options.dayCeiling).pipe(
+      Effect.andThen(heedTheLock(locked, options.project)),
       Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
@@ -683,6 +725,13 @@ export async function run(
         Effect.sync(() => {
           log(saidPaused(p))
           log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+          return 0
+        }),
+      ),
+      Effect.catchTag('ProjectLocked', (l) =>
+        Effect.sync(() => {
+          log(l.sentence)
+          log('nothing was taken: this project is locked')
           return 0
         }),
       ),

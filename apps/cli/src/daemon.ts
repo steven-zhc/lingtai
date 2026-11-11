@@ -27,6 +27,8 @@ import {
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
+  lockedBy,
+  makeGuard,
   notTakingWork,
   type CodeVersion,
   type ControlState,
@@ -35,6 +37,7 @@ import {
 import { BOARD_PORT, boardOrigin } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import { eventStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
@@ -636,6 +639,9 @@ export async function daemonCommand(
           // conductor down must stop the next claim in this pass, not the next
           // pass (#210).
           paused: claiming,
+          // One project's pause (0126): asked of the guard, which is the only
+          // reader of `prj-` — a gate never reads it itself.
+          locked: lockedBy(makeGuard({ store: eventStore })),
           log: trace,
           tell: (line) => console.log(line),
           many: registered.length > 1,

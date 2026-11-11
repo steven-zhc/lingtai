@@ -352,6 +352,7 @@ describe('lingtai init (#186)', () => {
       configHash: 'hash',
       fromSha: 'abc123f',
       refused: null,
+      paused: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -376,6 +377,7 @@ describe('lingtai init (#186)', () => {
       configHash: 'hash',
       fromSha: 'sha',
       refused: null,
+      paused: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -397,6 +399,7 @@ describe('lingtai init (#186)', () => {
       configHash: 'hash',
       fromSha: 'sha',
       refused: null,
+      paused: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -420,6 +423,7 @@ describe('lingtai init (#186)', () => {
       configHash: 'hash',
       fromSha: 'sha',
       refused: null,
+      paused: null,
       version: 1,
       lastSeq: 1n,
     }

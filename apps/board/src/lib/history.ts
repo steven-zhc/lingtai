@@ -435,6 +435,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `${personName(need(d, 'by'))} started onboarding ${need(d, 'slug')} on ${need(d, 'base')}`,
   ProjectRefused: (d) => `${need(d, 'project')} was refused: ${clip(d['detail'])}`,
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
+  ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,
+  ProjectResumed: (d) => `${personName(need(d, 'by'))} resumed ${need(d, 'project')}`,
   GitHubAppCreated: (d) => `GitHub App ${need(d, 'slug')} created`,
   PluginFailed: (d) => `Plugin ${need(d, 'name')} failed on ${need(d, 'eventType')}: ${clip(d['reason'])}`,
 

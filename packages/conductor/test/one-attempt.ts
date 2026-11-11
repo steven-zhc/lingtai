@@ -454,6 +454,7 @@ export const project: ProjectState = {
   configHash: 'seeded',
   fromSha: '0'.repeat(40),
   refused: null,
+  paused: null,
   version: 2,
   lastSeq: null,
 }

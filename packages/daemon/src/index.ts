@@ -47,6 +47,9 @@ export {
   inFlight,
   lastBeat,
   pauseConductor,
+  pauseProject,
+  resumeProject,
+  type ProjectPauseAnswer,
   controlWatermark,
   readControl,
   readStatus,
@@ -102,3 +105,4 @@ export {
   type ConvergeOptions,
   type Divergence,
 } from './converge.ts'
+export { lockedBy, makeGuard, type Guard, type GuardOptions } from './guard.ts'

@@ -139,6 +139,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
       "return { type: 'ProjectRecovered', actor: 'conductor', data: { project, ref: seen.ref, codeSha: seen.codeSha } }",
   },
   {
+    event: 'ProjectPaused',
+    why: 'returned from a function; the caller appends it',
+    file: 'packages/domain/src/locks.ts',
+    anchor: "type: 'ProjectPaused',",
+  },
+  {
+    event: 'ProjectResumed',
+    why: 'returned from a function; the caller appends it',
+    file: 'packages/domain/src/locks.ts',
+    anchor: "type: 'ProjectResumed',",
+  },
+  {
     event: 'ProjectRefused',
     why: 'returned from a function; the caller appends it',
     file: 'packages/domain/src/project.ts',
@@ -289,6 +301,8 @@ export const STREAMS = {
   ProjectConfigured: ['prj-'],
   ProjectRefused: ['prj-'],
   ProjectRecovered: ['prj-'],
+  ProjectPaused: ['prj-'],
+  ProjectResumed: ['prj-'],
   Reconciled: ['ctl-'],
   GitHubAppCreated: ['ctl-'],
   TriageStarted: ['ticket-'],
