@@ -112,10 +112,14 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
   const remote = options.remote ?? `https://github.com/${options.owner}/${options.repo}.git`
   const run = { token: options.token, env: options.gitEnv }
   const io = <A>(f: () => Promise<A>) =>
-    Effect.tryPromise({
-      try: f,
-      catch: (err) => new RepoFailed({ operation: 'git clone', detail: (err as Error).message }),
-    })
+    // Uninterruptible: an interrupt waits for the removal to settle, so the
+    // mirror permit is not released while `rm` is still deleting under it.
+    Effect.uninterruptible(
+      Effect.tryPromise({
+        try: f,
+        catch: (err) => new RepoFailed({ operation: 'git clone', detail: (err as Error).message }),
+      }),
+    )
 
   // The presence check is inside the hold: it and the fetch-or-clone are one
   // decision about the mirror, or two provisions could both read it absent.
@@ -151,10 +155,12 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
     const home = options.home ?? stateDir()
     const run = { token: options.token, env: options.gitEnv }
     const io = <A>(f: () => Promise<A>) =>
-      Effect.tryPromise({
-        try: f,
-        catch: (err) => new RepoFailed({ operation: 'provision', detail: (err as Error).message }),
-      })
+      Effect.uninterruptible(
+        Effect.tryPromise({
+          try: f,
+          catch: (err) => new RepoFailed({ operation: 'provision', detail: (err as Error).message }),
+        }),
+      )
     const mirror = yield* ensureMirrorEffect({
       project: options.project,
       owner: options.owner,
@@ -269,7 +275,7 @@ export const removeWorktreeEffect = Effect.fn('repo.remove')(function* (options:
   const home = options.home ?? stateDir()
   const path = worktreePath(home, options.project, options.runId)
   const mirror = mirrorPath(home, options.project)
-  yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(
+  yield* Effect.uninterruptible(Effect.tryPromise(() => rm(path, { recursive: true, force: true }))).pipe(
     // Tell git the directory is gone, so a later `worktree add` at the same path
     // is not refused by a stale registration.
     Effect.andThen(mirrorWrite(mirror, gitEffect(['worktree', 'prune'], { cwd: mirror }))),

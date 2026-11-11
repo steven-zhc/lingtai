@@ -123,32 +123,40 @@ export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.E
     const invocation = gitInvocation(args, token, options.env ?? process.env)
     return yield* Effect.callback<string, RepoFailed>((resume, signal) => {
       const signals = [signal, options.signal].filter((s): s is AbortSignal => s !== undefined)
-      const child = execFile(
-        'git',
-        invocation.args,
-        {
-          cwd: options.cwd,
-          env: invocation.env,
-          maxBuffer: 32 * 1024 * 1024,
-          signal: AbortSignal.any(signals),
-        },
-        (err, stdout, stderr) => {
-          if (err === null) {
-            resume(Effect.succeed(options.trimOutput === false ? stdout : stdout.trim()))
-            return
-          }
-          const code = (err as { code?: unknown }).code
-          resume(
-            Effect.fail(
-              fail(err.message ?? String(err), {
-                exitCode: typeof code === 'number' ? code : null,
-                stdout,
-                stderr,
-              }),
-            ),
-          )
-        },
-      )
+      let child: ReturnType<typeof execFile>
+      try {
+        child = execFile(
+          'git',
+          invocation.args,
+          {
+            cwd: options.cwd,
+            env: invocation.env,
+            maxBuffer: 32 * 1024 * 1024,
+            signal: AbortSignal.any(signals),
+          },
+          (err, stdout, stderr) => {
+            if (err === null) {
+              resume(Effect.succeed(options.trimOutput === false ? stdout : stdout.trim()))
+              return
+            }
+            const code = (err as { code?: unknown }).code
+            resume(
+              Effect.fail(
+                fail(err.message ?? String(err), {
+                  exitCode: typeof code === 'number' ? code : null,
+                  stdout,
+                  stderr,
+                }),
+              ),
+            )
+          },
+        )
+      } catch (err) {
+        // `execFile` throws synchronously for E2BIG and the like; that is a
+        // typed failure like any other, not a defect.
+        resume(Effect.fail(fail(err instanceof Error ? err.message : String(err))))
+        return Effect.void
+      }
       // The canceller: runs on interrupt, after the signal has sent SIGTERM, and
       // holds the fiber until the child is gone.
       return Effect.callback<void>((done) => {

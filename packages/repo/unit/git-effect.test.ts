@@ -62,3 +62,16 @@ describe('gitEffect', () => {
     expect((await effect).exitCode).toBeNull()
   })
 })
+
+describe('gitEffect, a synchronous execFile throw', () => {
+  it('is a RepoFailed, not a defect', async () => {
+    const cp = await import('node:child_process')
+    vi.mocked(cp.execFile).mockImplementationOnce((() => {
+      throw new Error('spawn E2BIG')
+    }) as never)
+    const err = await Effect.runPromise(Effect.flip(gitEffect(['status'])))
+    expect(err).toBeInstanceOf(RepoFailed)
+    expect(err.detail).toBe('spawn E2BIG')
+    expect(err.exitCode).toBeNull()
+  })
+})
