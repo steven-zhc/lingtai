@@ -30,8 +30,10 @@
  *      daemon compares what it actually read against what was examined here, so
  *      the commit on `ConductorStarted` is one a refusal looked at and the one
  *      that is running.
- *   4. **the withdrawal** of this command's own request, by its version, and of
- *      nothing else — not a pause, not a drain somebody else asked for.
+ *   4. **no withdrawal.** A drain lasts until the next start (0126), so this
+ *      command's own request is ended by the start it makes and nothing is
+ *      lifted here. (The supervised path still lifts a request it adopts, until
+ *      `service shutdown` adopts one itself.)
  *   5. **the start**, which is `lingtai daemon` in this process — or, where
  *      `lingtai service` keeps the daemon, `service start`, confirmed by the
  *      `ConductorStarted` it records and compared with the commit that was
@@ -73,6 +75,7 @@ import {
   readControl,
   readStatus,
   requestShutdownUnlessStanding,
+  requestsBetween,
   startAfter,
   withdrawShutdown,
   type Asking,
@@ -87,6 +90,7 @@ import {
 } from '@lingtai/daemon'
 import { paint } from '@lingtai/env/colour'
 import { parseDuration } from '@lingtai/recipe'
+import { Context, Effect } from 'effect'
 
 import { doctorReport } from './doctor.ts'
 import { SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } from './service.ts'
@@ -234,7 +238,7 @@ export interface Before {
    * After the wait this is a daemon somebody else started while the lock was
    * free, and a start here would be a second one. It also changes what a drain
    * somebody else asked for means: it may be aimed at that daemon, and `lingtai
-   * resume` would cancel it (#167).
+   * start ends it (#167).
    *
    * `{ unread }` when the stream could not be asked. That is not null: a start
    * that could not be read is refused as one that might have happened, and the
@@ -342,7 +346,9 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
         // drain of the daemon that is running (#167). Nor when whether one
         // started could not be read, which is not the same as none.
         (started === null
-          ? `lingtai resume lifts it, and then this will start`
+          ? before.conducting === null
+            ? `starting a conductor (lingtai daemon) ends it, and then this will start`
+            : `that daemon finishes its attempt and exits; the next start ends it, and then this will start`
           : 'unread' in started
             ? `It may be aimed at a daemon that started since — whether one did could not be read — so lifting it is theirs to decide, not this command's`
             : `It may be aimed at the daemon that started since, so lifting it is theirs to decide, not this command's`),
@@ -383,8 +389,16 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
 export function startRefusals(input: {
   examined: Pick<CodeVersion, 'sha' | 'dirty'>
   running: Pick<CodeVersion, 'sha' | 'dirty'>
+  /** Who restarts: a request of theirs is the one this start ends, and is not refused. */
+  by: string
   /** The shutdown standing now, off the whole stream. */
   standing: ShutdownRequest | null
+  /**
+   * Requests the start has already ended, where it has run (`requestsBetween`):
+   * the supervised path, which reads back after the daemon's record. `{ unread }`
+   * when they could not be read, which is a refusal and not none.
+   */
+  ended?: readonly ShutdownRequest[] | { unread: string }
   /**
    * The newest version the daemon may never read: its watermark where that is
    * known, and its `ConductorStarted`'s own version where it is not.
@@ -392,7 +406,7 @@ export function startRefusals(input: {
   unreadThrough: number
 }): Refusal[] {
   const out: Refusal[] = []
-  const { examined, running, standing } = input
+  const { examined, running, standing, ended } = input
   if (examined.sha !== running.sha || examined.dirty !== running.dirty) {
     out.push({
       line:
@@ -401,13 +415,31 @@ export function startRefusals(input: {
       waiver: null,
     })
   }
-  if (standing !== null && standing.version <= input.unreadThrough) {
+  // This person's own request is the one the start ends (0126), so it is
+  // exempt by `by` and by nothing else: anybody else's is their decision.
+  if (standing !== null && standing.by !== input.by && standing.version <= input.unreadThrough) {
     out.push({
       line:
         `a shutdown asked by ${standing.by} — ${standing.reason} — landed between the checks and the start, and a ` +
         `daemon reads nothing appended before it started (#159), so this one would take work over that stop`,
       waiver: null,
     })
+  }
+  if (ended !== undefined && 'unread' in ended) {
+    out.push({
+      line:
+        `whether a shutdown landed between the checks and the start could not be read — ${ended.unread}. ` +
+        `The start ends a drain, so one that landed may be gone; lingtai status says what stands`,
+      waiver: null,
+    })
+  } else if (ended !== undefined) {
+    for (const r of ended) {
+      if (r.by === input.by) continue
+      out.push({
+        line: `the start ended a shutdown asked by ${r.by} — ${r.reason} — that landed between the checks and the start`,
+        waiver: null,
+      })
+    }
   }
   return out
 }
@@ -428,7 +460,7 @@ export function lostTheLock(holder: string | null, log: (line: string) => void):
     paint.held(
       `the lock was taken first${holder ? ` (${holder})` : ''}, and this started nothing. Whether a daemon is conducting ` +
         `afterwards is not something this process can know — a lingtai run exits when its attempt ends, and a ` +
-        `daemon that read the drain before it was withdrawn exits too. lingtai doctor says whether one is up; ` +
+        `daemon that read the drain before this start exits too. lingtai doctor says whether one is up; ` +
         `if none is, lingtai restart again waits for the lock and starts one.`,
     ),
   )
@@ -446,7 +478,7 @@ export function lostTheLock(holder: string | null, log: (line: string) => void):
  */
 export async function openDaemon(
   /** Who asked for this start and the code their checks examined — when it is a restart. */
-  restart: { examined: Pick<CodeVersion, 'sha' | 'dirty'> } | null,
+  restart: { examined: Pick<CodeVersion, 'sha' | 'dirty'>; by: string } | null,
   how: {
     start: () => Promise<DaemonStart>
     /** What this process loaded, read once the lock is held. */
@@ -491,6 +523,7 @@ export async function openDaemon(
   if (restart) {
     const refused = startRefusals({
       examined: restart.examined,
+      by: restart.by,
       running: code,
       standing: (await how.control().catch(() => null))?.shutdown ?? null,
       unreadThrough: started.since,
@@ -632,7 +665,7 @@ export const RESTART_GUARDS: readonly Guard[] = [
     refusal: "a shutdown somebody else asked for landed between the checks and the daemon's watermark",
     terminal: 'startRefusals in openDaemon, which stops the daemon before it takes anything',
     supervised:
-      'service start refuses while it stands, and startRefusals on the record says one that landed during the start',
+      'service start refuses a foreign one while it stands, and startRefusals names one the start ended (requestsBetween)',
   },
   {
     id: 'nothing-started',
@@ -679,6 +712,8 @@ export interface RestartFacts {
   watermark: () => Promise<number>
   /** `startAfter`. */
   startAfter: (version: number) => Promise<RecordedStart | null>
+  /** `requestsBetween`: shutdown requests after `from` and at or below `to`. Rejects when unread. */
+  requestsBetween: (from: number, to: number) => Promise<ShutdownRequest[]>
   /** How often the lock is asked about while waiting. */
   pollMs?: number
 }
@@ -695,6 +730,9 @@ export function liveFacts(): RestartFacts {
     withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     watermark: () => controlWatermark(),
     startAfter: (version) => startAfter(version),
+    // The ratchet counts `Effect.run*` and not `runPromiseWith`, which carries
+    // the (empty) services this read needs.
+    requestsBetween: (from, to) => Effect.runPromiseWith(Context.empty())(requestsBetween(from, to)),
   }
 }
 
@@ -845,8 +883,11 @@ async function checkAfterTheWait(
   return { plan, now }
 }
 
+/** What ends a drain somebody else asked for, where no start of this command's is in the way. */
+const FOREIGN_REMEDY = 'The next start ends it — starting a conductor (lingtai daemon) does — and then this will start'
+
 /**
- * Take over a drain this person already asked for: withdraw it, so that the
+ * The supervised path's take-over of a drain this person already asked for: withdraw it, so that the
  * drain asked next is newer than whatever holds the lock.
  *
  * Not waited on as it stands. Since #159 a daemon reads nothing appended before
@@ -872,7 +913,7 @@ async function liftAdopted(
         {
           line:
             `a shutdown asked by ${lifted.standing.by} — ${lifted.standing.reason} — landed while this was checking. ` +
-            `Nothing was asked to stop by this command and nothing was stopped. lingtai resume lifts it, and then this will start`,
+            `Nothing was asked to stop by this command and nothing was stopped. ${FOREIGN_REMEDY}`,
           waiver: null,
         },
       ],
@@ -914,15 +955,16 @@ export async function prepareRestart(
   const force = plan.adopted ? plan.adopted.force : args.force
 
   if (plan.adopted) {
-    log(
-      paint.held(
-        plan.go === 'start'
-          ? `a shutdown you asked for is still standing (${plan.adopted.reason}) and nothing is conducting — it is withdrawn before the start.`
-          : `a shutdown you asked for is already standing (${plan.adopted.reason}) — taken over, and asked again so the daemon holding the lock reads it.`,
-      ),
-    )
-    if (plan.go === 'start') request = plan.adopted.version
-    else if (!(await liftAdopted(by, plan.adopted, facts, log))) return { ok: false, code: 1 }
+    // Nothing is withdrawn: the start this command makes is what ends it (0126).
+    // With a daemon holding the lock the ask below says the rest.
+    if (plan.go === 'start') {
+      log(
+        paint.held(
+          `a shutdown you asked for is still standing (${plan.adopted.reason}) and nothing is conducting — the start ends it.`,
+        ),
+      )
+    }
+    request = plan.adopted.version
   }
 
   // Before the drain is asked, so the drain's own request is not "since".
@@ -965,7 +1007,7 @@ export async function prepareRestart(
           {
             line:
               `a shutdown asked by ${asked.standing.by} — ${asked.standing.reason} — landed while this was checking. ` +
-              `Nothing was asked to stop by this command and nothing was stopped. lingtai resume lifts it, and then this will start`,
+              `Nothing was asked to stop by this command and nothing was stopped. ${FOREIGN_REMEDY}`,
             waiver: null,
           },
         ],
@@ -980,7 +1022,7 @@ export async function prepareRestart(
       drainTimeoutMs = asked.standing.timeoutMs
       log(
         paint.held(
-          `a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on that one rather than asking twice.`,
+          `a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on that one as it stands rather than asking twice; the start ends it.`,
         ),
       )
     }
@@ -989,7 +1031,7 @@ export async function prepareRestart(
         paint.signal(
           `--timeout is not applied: the standing request is the one the daemon acts on, and it asks for ` +
             `${drainTimeoutMs === null ? 'no timeout' : `${Math.round(drainTimeoutMs / 1000)}s`}. ` +
-            `lingtai resume lifts it, and a restart after that asks with yours.`,
+            `the standing request is the one acted on; a restart after the next start asks with yours.`,
         ),
       )
     }
@@ -1004,7 +1046,7 @@ export async function prepareRestart(
     )
   }
 
-  if (plan.go !== 'start' || request !== null) {
+  if (plan.go !== 'start') {
     // A drain gives up when the daemon does, which is on the request's own
     // timeout. A `lingtai run` reads no request, and a request this command did
     // not make has the timeout it was asked with — so that one, either way.
@@ -1033,7 +1075,7 @@ export async function prepareRestart(
         request !== null
           ? paint.held(
               `${stopped}. The shutdown asked by ${by} is still standing — the daemon finishes its attempt and exits, ` +
-                `and nothing was started. lingtai restart picks that request up again and starts; lingtai resume lifts it.`,
+                `and nothing was started. The next start ends it, and lingtai restart picks that request up again and starts.`,
             )
           : paint.held(`${stopped}. Nothing was asked to stop and nothing was started.`),
       )
@@ -1053,39 +1095,15 @@ export async function prepareRestart(
     if (request !== null) {
       log(
         paint.muted(
-          'your shutdown request is still standing, and nothing was started here. lingtai restart picks it up again.',
+          'your shutdown request is still standing, and nothing was started here. The next start ends it, and lingtai restart picks it up again.',
         ),
       )
     }
     return { ok: false, code: 1 }
   }
 
-  // Before the start and after the drain, in that order. One append, naming the
-  // request by its version — never a resume, which would lift a pause, and never
-  // a withdrawal of whatever happens to be standing, which could be somebody
-  // else's. Not so the daemon started next can take work: since #159 it never
-  // reads this request. So the board and `lingtai status` stop saying a
-  // shutdown stands about a stop that is over (0048).
-  if (request !== null) {
-    const lifted = await facts.withdraw(by, request, `restarted: ${args.reason}`)
-    if (!lifted.withdrew && lifted.standing !== null) {
-      sayRefusal(
-        'not starting:',
-        [
-          {
-            line:
-              `while this was waiting, ${lifted.standing.by} asked for a shutdown — ${lifted.standing.reason}. ` +
-              `It is left standing. lingtai resume lifts it, and then lingtai restart will start`,
-            waiver: null,
-          },
-        ],
-        log,
-      )
-      return { ok: false, code: 1 }
-    }
-    if (lifted.withdrew) log(paint.muted(`withdrew the drain — ${lifted.request.reason}`))
-  }
-
+  // No withdrawal: this person's request stands until the start that follows
+  // records `ConductorStarted`, which ends it (0126).
   return { ok: true, by, reason: args.reason, examined: { sha: now.sha, dirty: now.dirty } }
 }
 
@@ -1246,10 +1264,17 @@ export async function restartSupervised(
     )
     return 1
   }
+  // The start has ended every request at or below its watermark, so the state
+  // read now cannot show one that landed during it: the events between can.
+  const ended = await facts
+    .requestsBetween(startMark as number, record.version)
+    .catch((err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }))
   const refused = startRefusals({
     examined: { sha: now.sha, dirty: now.dirty },
     running: record,
+    by,
     standing: (await facts.control().catch(() => null))?.shutdown ?? null,
+    ended,
     unreadThrough: record.version,
   })
   if (refused.length > 0) {
