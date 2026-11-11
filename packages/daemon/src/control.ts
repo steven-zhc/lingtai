@@ -186,8 +186,8 @@ export async function pauseConductor(
   await append('ConductorPaused', { by, reason, until: until?.toISOString() ?? null, cause: 'person' }, store)
 }
 
-export async function resumeConductor(by: string, store: EventStore = eventStore): Promise<void> {
-  await append('ConductorResumed', { by }, store)
+export async function resumeConductor(by: string, store: EventStore = eventStore, at?: number): Promise<void> {
+  await append('ConductorResumed', { by }, store, at)
 }
 
 /**
@@ -655,7 +655,10 @@ function hostname(): string {
 }
 
 /** What `pauseProject` / `resumeProject` did. */
-export type ProjectPauseAnswer = { kind: 'appended' } | { kind: 'already'; since: Date } | { kind: 'not-paused' }
+export type ProjectPauseAnswer =
+  | { kind: 'appended' }
+  | { kind: 'already'; since: Date; by: string }
+  | { kind: 'not-paused' }
 
 const readProject = (store: EventStore, project: string) =>
   Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: (e) => e }).pipe(Effect.map(reduceProject))
@@ -695,7 +698,7 @@ export const pauseProject = (project: string, by: string, store: EventStore = ev
     store,
     project,
     (state) => pauseTransition(state, by),
-    (state) => ({ kind: 'already', since: state.paused!.at }),
+    (state) => ({ kind: 'already', since: state.paused!.at, by: state.paused!.by }),
   )
 
 /** A person resumes one project. Idempotent: an unpaused project answers `not-paused` and appends nothing. */

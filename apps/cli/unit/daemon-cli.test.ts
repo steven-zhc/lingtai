@@ -18,7 +18,7 @@ vi.mock('../src/daemon.ts', () => ({
   },
   controlCommand: async (verb: string, input: unknown) => {
     seen.calls.push({ command: verb, options: input })
-    return verb === 'pause' && !(input as { reason: string }).reason.trim() ? 2 : 0
+    return 0
   },
   daemonCommand: async (flags: unknown) => {
     seen.calls.push({ command: 'daemon', options: flags })
@@ -175,14 +175,18 @@ describe('lingtai service', () => {
 })
 
 describe('lingtai pause, shutdown, resume, start', () => {
-  it('joins an unquoted reason, and --reason wins', async () => {
-    await capture(['pause', 'reviewing', 'the', 'recipe'])
-    await capture(['pause', 'ignored', '--reason', 'the real one'])
-    expect(seen.calls.map((c) => c.options)).toEqual([{ reason: 'reviewing the recipe' }, { reason: 'the real one' }])
-  })
-
-  it('refuses a pause with no reason with exit 2', async () => {
-    expect((await capture(['pause'])).code).toBe(2)
+  it('pause and resume take an optional project, and pause has no --reason', async () => {
+    await capture(['pause', 'lingtai'])
+    await capture(['pause'])
+    await capture(['resume', 'lingtai'])
+    await capture(['resume'])
+    expect(seen.calls.map((c) => [c.command, c.options])).toEqual([
+      ['pause', { project: 'lingtai' }],
+      ['pause', { project: undefined }],
+      ['resume', { project: 'lingtai' }],
+      ['resume', { project: undefined }],
+    ])
+    expect((await capture(['pause', '--reason', 'x'])).code).not.toBe(0)
   })
 
   it('passes shutdown its timeout as text and --force as a flag', async () => {
@@ -192,11 +196,6 @@ describe('lingtai pause, shutdown, resume, start', () => {
       { reason: 'deploying', timeout: '10m', force: false },
       { reason: '', force: true },
     ])
-  })
-
-  it('resume takes nothing', async () => {
-    expect((await capture(['resume'])).code).toBe(0)
-    expect(seen.calls[0]!.command).toBe('resume')
   })
 
   it('start and daemon pass their flags on', async () => {

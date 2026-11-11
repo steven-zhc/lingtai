@@ -422,8 +422,8 @@ lingtai close lingtai --issue <n> "superseded"
 | keep the daemon and the board running | [lingtai service](#lingtai-service) |
 | drain, wait for the attempt, and start one daemon | [lingtai restart](#lingtai-restart) |
 | stop the daemon after the ticket in flight | [lingtai shutdown](#lingtai-shutdown) |
-| stop the daemon taking new tickets | [lingtai pause](#lingtai-pause) |
-| take tickets again | [lingtai resume](#lingtai-resume) |
+| stop one project, or every project, taking new tickets | [lingtai pause](#lingtai-pause) |
+| take tickets again, for one project or every project | [lingtai resume](#lingtai-resume) |
 
 ### lingtai start
 
@@ -533,33 +533,41 @@ lingtai shutdown --timeout 10m
 
 ### lingtai pause
 
-Stop the daemon taking new tickets.
+Stop one project, or every project, taking new tickets.
 
 Changes state.
 
 ```text
-lingtai pause <why> [--no-color]
-  A run in flight finishes. About the daemon that is running, and
-  gone when it is — but not for lingtai run, which takes no ticket
+lingtai pause [project] [--no-color]
+  Locks the project, or every registered project when none is named.
+  A person's pause carries no reason and holds until lingtai resume.
+  An attempt already in flight finishes; nothing new starts. The pause
+  is in the log and outlasts a daemon restart: it stands until
+  lingtai resume lifts it. Not so for lingtai run, which takes no ticket
   while a pause stands, daemon or none: one already working
   finishes the ticket in hand and takes no other.
 ```
 
 ```sh
-lingtai pause "reviewing the recipe"
+lingtai pause lingtai
+lingtai pause
 ```
 
 ### lingtai resume
 
-Take tickets again.
+Take tickets again, for one project or every project.
 
 Changes state.
 
 ```text
-lingtai resume [--no-color]
+lingtai resume [project] [--no-color]
+  Unlocks the project. With none named it unlocks every paused
+  registered project and also lifts a conductor-wide pause or a
+  shutdown request that stands.
 ```
 
 ```sh
+lingtai resume lingtai
 lingtai resume
 ```
 

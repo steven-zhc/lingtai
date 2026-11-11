@@ -1285,6 +1285,26 @@ export async function daemonLiveness(
   }
 }
 
+/**
+ * The projects a person has paused (#992). A paused project is a fact and not a
+ * failure, so it is `info` and takes no part in the exit code; with none paused
+ * there is no row at all.
+ */
+export function pausedProjects(load: typeof loadProjects = loadProjects): Promise<CheckResult[]> {
+  const name = 'daemon: paused projects'
+  return load().then(
+    (projects) => pausedRows(name, projects),
+    () => [{ name, status: 'warn', detail: 'the project list could not be read' }],
+  )
+}
+
+function pausedRows(name: string, projects: Awaited<ReturnType<typeof loadProjects>>): CheckResult[] {
+  const paused = projects.filter((p) => p.project !== null && p.paused !== null)
+  if (paused.length === 0) return []
+  const detail = paused.map((p) => `${p.project} (by ${p.paused!.by} since ${p.paused!.at.toISOString()})`).join('; ')
+  return [{ name, status: 'info', detail: `${detail} — lingtai resume <project> lifts it` }]
+}
+
 /** The `spend` projection's lag right now; undefined where it cannot be read. */
 async function spendLagNow(lags: () => ReturnType<typeof projectionLag>): Promise<bigint | undefined> {
   try {
@@ -3222,6 +3242,7 @@ export async function runDoctor(
     await step('stopped projections', () => stoppedProjections(reach.status).then((r) => void results.push(r)))
     await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
     await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
+    await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
     await step('spend', async () => results.push(await spendToday(reach.spend)))
     await step('rates', async () =>
       results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag())))),
@@ -3269,6 +3290,7 @@ export async function runDoctor(
     // Beside liveness, never reduced into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
     await step('daemon currency', async () => results.push(await daemonCurrency()))
+    await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
     await step('spend', async () => results.push(await spendToday()))
     await step('rates', async () => results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag()))))
     // What the conductor refused, from the log — not what this checkout would
