@@ -50,6 +50,7 @@ const project = (name: string, owner: string | null): ProjectState => ({
   configHash: owner !== null ? 'hash' : null,
   fromSha: null,
   refused: null,
+  paused: null,
   version: 1,
   lastSeq: 1n,
 })

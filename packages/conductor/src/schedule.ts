@@ -90,6 +90,12 @@ export interface ScheduleOptions {
    */
   paused?: () => Promise<string | null>
   /**
+   * Whether *this project* is locked now, as a sentence, or null (0126). Asked
+   * at the same two points as `paused`, after it; a sentence ends this
+   * project's queue and no other. Never rejects.
+   */
+  locked?: (project: string) => Promise<string | null>
+  /**
    * Fills this project's free slots and returns without waiting for the passes
    * (0122 §1). Absent, every item is awaited in turn, exactly as before.
    */
@@ -194,9 +200,11 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
     // Asked twice a turn (#861): the answer is a fact about the moment it is
     // asked, and the queue read in between can take long enough to change it.
     const stopIfPaused = function* () {
-      if (!options.paused) return undefined
+      if (!options.paused && !options.locked) return undefined
       const asked = options.paused
-      const why = yield* Effect.promise(() => asked())
+      const askedLock = options.locked
+      let why = asked ? yield* Effect.promise(() => asked()) : null
+      if (why === null && askedLock) why = yield* Effect.promise(() => askedLock(name))
       if (why === null) return undefined
       log(why)
       told(() => options.failed?.(why))

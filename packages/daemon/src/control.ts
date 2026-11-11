@@ -5,6 +5,12 @@ import {
   CONTROL_STREAM,
   type ControlState,
   controlReducer,
+  pauseTransition,
+  projectStream,
+  type ProjectState,
+  reduceProject,
+  resumeTransition,
+  type ToAppend,
   evaluateControl,
   scopeControl,
   type ShutdownRequest,
@@ -78,6 +84,7 @@ import {
 import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasks, type TaskCard } from '@lingtai/projector'
+import { Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -618,3 +625,56 @@ function hostname(): string {
     return 'local'
   }
 }
+
+/** What `pauseProject` / `resumeProject` did. */
+export type ProjectPauseAnswer = { kind: 'appended' } | { kind: 'already'; since: Date } | { kind: 'not-paused' }
+
+const readProject = (store: EventStore, project: string) =>
+  Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: (e) => e }).pipe(Effect.map(reduceProject))
+
+/**
+ * Appends a project's transition at the head it was read at. A lost race
+ * re-reads once and asks again; a second one fails (0126 §3).
+ */
+const transitionProject = (
+  store: EventStore,
+  project: string,
+  transition: (state: ProjectState) => ToAppend | null,
+  answer: (state: ProjectState) => ProjectPauseAnswer,
+) => {
+  const attempt = Effect.gen(function* () {
+    const state = yield* readProject(store, project)
+    const next = transition(state)
+    if (next === null) return answer(state)
+    yield* Effect.tryPromise({
+      try: () => store.append(projectStream(project), state.version, [next]),
+      catch: (e) => e,
+    })
+    return { kind: 'appended' } as ProjectPauseAnswer
+  })
+  return attempt.pipe(
+    Effect.catchIf(
+      (e): e is ConcurrencyError => e instanceof ConcurrencyError,
+      () => attempt,
+    ),
+    Effect.mapError((e) => (e instanceof Error ? e : new Error(String(e)))),
+  )
+}
+
+/** A person pauses one project. Idempotent: a paused project answers `already`, with the first `since`. */
+export const pauseProject = (project: string, by: string, store: EventStore = eventStore) =>
+  transitionProject(
+    store,
+    project,
+    (state) => pauseTransition(state, by),
+    (state) => ({ kind: 'already', since: state.paused!.at }),
+  )
+
+/** A person resumes one project. Idempotent: an unpaused project answers `not-paused` and appends nothing. */
+export const resumeProject = (project: string, by: string, store: EventStore = eventStore) =>
+  transitionProject(
+    store,
+    project,
+    (state) => resumeTransition(state, by),
+    () => ({ kind: 'not-paused' }),
+  )

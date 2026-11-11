@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { pauseTransition, resumeTransition } from '../src/locks.ts'
 import {
   type TurnObservation,
   isPending,
@@ -192,5 +193,54 @@ describe('a repository on its way in', () => {
     const state = reduceProject([])
     expect(isRegistered(state)).toBe(false)
     expect(isPending(state)).toBe(false)
+  })
+})
+
+describe('a person pauses one project (0126)', () => {
+  const at = (iso: string) => new Date(iso)
+  const configured = () => {
+    const event = makeStream('prj-lingtai')
+    const events = [
+      event('ProjectConfigured', { project: 'lingtai', owner: 'o', base: 'main', configHash: 'h', fromSha: 's' }),
+    ]
+    return { event, events }
+  }
+
+  it('a pause sets paused, a second keeps the first since, a resume clears it', () => {
+    const { event, events } = configured()
+    events.push(event('ProjectPaused', { project: 'lingtai', by: 'human:a' }, { at: at('2026-11-10T14:20:00Z') }))
+    const first = reduceProject(events).paused
+    expect(first).toMatchObject({ by: 'human:a', at: at('2026-11-10T14:20:00Z') })
+
+    events.push(event('ProjectPaused', { project: 'lingtai', by: 'human:b' }, { at: at('2026-11-10T15:00:00Z') }))
+    expect(reduceProject(events).paused).toEqual(first)
+
+    events.push(event('ProjectResumed', { project: 'lingtai', by: 'human:a' }))
+    expect(reduceProject(events).paused).toBeNull()
+  })
+
+  it('pause, resume, pause: since is the second pause’s', () => {
+    const { event, events } = configured()
+    events.push(event('ProjectPaused', { project: 'lingtai', by: 'a' }, { at: at('2026-11-10T14:00:00Z') }))
+    events.push(event('ProjectResumed', { project: 'lingtai', by: 'a' }))
+    events.push(event('ProjectPaused', { project: 'lingtai', by: 'a' }, { at: at('2026-11-10T16:00:00Z') }))
+    expect(reduceProject(events).paused?.at).toEqual(at('2026-11-10T16:00:00Z'))
+  })
+
+  it('a resume of an unpaused project changes nothing', () => {
+    const { event, events } = configured()
+    const before = reduceProject(events)
+    events.push(event('ProjectResumed', { project: 'lingtai', by: 'a' }))
+    expect(reduceProject(events)).toEqual({ ...before, version: before.version + 1, lastSeq: expect.anything() })
+  })
+
+  it('the transitions answer null when there is nothing to do', () => {
+    const { event, events } = configured()
+    expect(resumeTransition(reduceProject(events), 'a')).toBeNull()
+    const next = pauseTransition(reduceProject(events), 'a')
+    expect(next).toMatchObject({ type: 'ProjectPaused', data: { project: 'lingtai', by: 'a' } })
+    events.push(event('ProjectPaused', { project: 'lingtai', by: 'a' }))
+    expect(pauseTransition(reduceProject(events), 'a')).toBeNull()
+    expect(resumeTransition(reduceProject(events), 'a')).toMatchObject({ type: 'ProjectResumed' })
   })
 })

@@ -90,6 +90,12 @@ export interface ConductOptions {
    * appended while it runs (#159), which is why it is handed in.
    */
   paused?: () => Promise<string | null>
+  /**
+   * Whether *this project* is locked now, as a sentence, or null (0126) —
+   * built from the daemon's guard and asked at every gate that starts work,
+   * after `paused`. A sentence skips this project and no other.
+   */
+  locked?: (project: string) => Promise<string | null>
   log?: (line: string) => void
   /**
    * The sink for a person (#766): the `taking` line, one line per ending, and the
@@ -168,6 +174,7 @@ export interface ConductWorkOptions {
   max?: number
   merge?: boolean
   paused?: () => Promise<string | null>
+  locked?: (project: string) => Promise<string | null>
   /** Absent, every pass is awaited, as it always was. */
   slots?: TurnSlots
   log: (line: string) => void
@@ -371,6 +378,11 @@ export function conductWork(
         say(`${name}: #${issue} not started — ${paused}`)
         return false
       }
+      const lock = options.locked ? await options.locked(name) : null
+      if (lock !== null) {
+        say(`${name}: #${issue} not started — ${lock}`)
+        return false
+      }
       const files = await readFixFiles(common.client, issue)
       const why = waitsFor(files, slots!.set.of(name))
       if (why !== null) {
@@ -522,6 +534,7 @@ export function conductWork(
             // anyway so a `max` above one cannot walk into a wall the ticket
             // before it just met.
             ...(options.paused ? { paused: options.paused } : {}),
+            ...(options.locked ? { locked: options.locked } : {}),
           })
           .pipe(Effect.provide(tracedPorts)),
       )
@@ -601,6 +614,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
     log,
     ...(options.tell ? { tell: options.tell } : {}),
     ...(options.paused ? { paused: options.paused } : {}),
+    ...(options.locked ? { locked: options.locked } : {}),
     work: conductWork({
       hookBinary,
       prompt,
@@ -609,6 +623,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
       max: options.max,
       ...(options.merge === undefined ? {} : { merge: options.merge }),
       ...(options.paused ? { paused: options.paused } : {}),
+      ...(options.locked ? { locked: options.locked } : {}),
       ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
       log,
       ...(options.tell ? { tell: options.tell } : {}),
@@ -720,6 +735,8 @@ export interface ProjectsOptions {
    * wall it met is the account's, not the repository's.
    */
   paused?: () => Promise<string | null>
+  /** Asked after `paused`; a sentence skips this project and carries on to the next. */
+  locked?: (project: string) => Promise<string | null>
   store?: EventStore
   /** Where a refusal is said to a person; absent, `log`. */
   tell?: (line: string) => void
@@ -747,6 +764,14 @@ export async function conductProjects(options: ProjectsOptions): Promise<TurnOut
       if (why !== null) {
         say(`${name}: not looked at — ${why}`)
         break
+      }
+    }
+    if (options.locked) {
+      // One project's lock skips that project; the others are still looked at.
+      const why = await options.locked(name)
+      if (why !== null) {
+        say(`${name}: not looked at — ${why}`)
+        continue
       }
     }
     outcome.projects += 1
