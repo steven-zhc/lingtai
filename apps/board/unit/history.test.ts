@@ -266,6 +266,10 @@ const SAMPLES = {
   ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
   ProjectPaused: [{ project: 'lingtai', by: 'human:steven' }],
   ProjectResumed: [{ project: 'lingtai', by: 'human:steven' }],
+  AccountLimitReached: [
+    { runtime: 'claude-code', until: '2026-11-11T05:00:00.000Z', untilFrom: 'message', said: 'resets at 5am' },
+  ],
+  AccountLimitLifted: [{ runtime: 'claude-code', by: 'human:steven' }],
   Reconciled: [{ findings: [{ stream: 'ticket-lingtai-59', expected: 'a', actual: 'b', action: 'released' }] }],
   GitHubAppCreated: [{ appId: '123', slug: 'lingtai-app' }],
   TriageStarted: [

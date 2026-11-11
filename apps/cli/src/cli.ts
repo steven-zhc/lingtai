@@ -1141,6 +1141,28 @@ const ceilingCommand = Command.make('ceiling', {}, () =>
     handlerCode = 2
   }),
 ).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
+const accountLift = Command.make(
+  'lift',
+  { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
+  (args) =>
+    daemonHandler(args, () =>
+      import('./account-lift.ts')
+        .then(({ liftAccount, runLiftAccount }) =>
+          runLiftAccount(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)),
+        )
+        .catch((err: unknown) => {
+          console.error(err instanceof Error ? err.message : String(err))
+          return 1
+        }),
+    ),
+)
+
+const accountCommand = Command.make('account', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('account'))
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('account').task), Command.withSubcommands([accountLift]))
 
 const shutdown = Command.make(
   'shutdown',
@@ -1306,6 +1328,7 @@ export const root = Command.make('lingtai').pipe(
     service,
     restart,
     shutdown,
+    accountCommand,
     pause,
     resume,
     ceilingCommand,

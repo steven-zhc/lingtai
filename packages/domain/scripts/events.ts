@@ -33,7 +33,7 @@ export const APPEND_CALLEES: ReadonlySet<string> = new Set([
   'appendFrom',
 ])
 
-export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-'
+export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-' | 'acct-'
 
 /**
  * Appends the finder cannot see, one row per site. A row finds its line by
@@ -155,6 +155,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     why: 'returned from a function; the caller appends it',
     file: 'packages/domain/src/locks.ts',
     anchor: "type: 'ProjectResumed',",
+  },
+  {
+    event: 'AccountLimitReached',
+    why: 'returned from a function; the caller appends it (`reachAccountLimit`)',
+    file: 'packages/domain/src/account.ts',
+    anchor: "type: 'AccountLimitReached',",
+  },
+  {
+    event: 'AccountLimitLifted',
+    why: 'returned from a function; the caller appends it (`liftAccountLimit`)',
+    file: 'packages/domain/src/account.ts',
+    anchor: "type: 'AccountLimitLifted',",
   },
   {
     event: 'ProjectRefused',
@@ -311,6 +323,8 @@ export const STREAMS = {
   ProjectRecovered: ['prj-'],
   ProjectPaused: ['prj-'],
   ProjectResumed: ['prj-'],
+  AccountLimitReached: ['acct-'],
+  AccountLimitLifted: ['acct-'],
   Reconciled: ['ctl-'],
   GitHubAppCreated: ['ctl-'],
   TriageStarted: ['ticket-'],
@@ -337,6 +351,7 @@ export const PREFIXES = {
   'ext-': { onePer: 'extension, `ext-subscribers` (the only one so far)', state: null },
   'bkl-': { onePer: 'finding, `bkl-{project}-{key}`', state: 'Finding state' },
   'rcp-': { onePer: 'recipe, `rcp-{configHash}`', state: null },
+  'acct-': { onePer: 'runtime account on this machine, `acct-{runtime}`', state: 'AccountState' },
 } as const satisfies { readonly [P in StreamPrefix]: { readonly onePer: string; readonly state: string | null } }
 
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
