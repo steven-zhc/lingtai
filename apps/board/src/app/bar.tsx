@@ -17,6 +17,7 @@ export function Bar({
   project,
   here,
   registered = false,
+  pause,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
@@ -25,6 +26,8 @@ export function Bar({
   here?: 'report' | 'recipe'
   /** Whether `project` is registered: only then has it a recipe page to go to. */
   registered?: boolean
+  /** *Pause* / *Paused · resume*, built by the page that read the locks; drawn only beside a registered project's Recipe. */
+  pause?: ReactNode
   children?: ReactNode
 }) {
   return (
@@ -40,7 +43,7 @@ export function Bar({
       <nav className="topnav">
         {project !== undefined && registered ? (
           <>
-            {/* A selected project's actions; Pause joins Recipe here. */}
+            {/* A selected project's actions: Recipe, then Pause (#994). */}
             <span className="pacts">
               <Link
                 className={here === 'recipe' ? 'navlink on' : 'navlink'}
@@ -49,6 +52,7 @@ export function Bar({
               >
                 Recipe
               </Link>
+              {pause}
             </span>
             <span className="vsep" aria-hidden="true" />
           </>

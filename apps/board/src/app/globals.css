@@ -3356,3 +3356,14 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .src { font: 10.5px var(--mono); color: var(--muted); }
 @media (max-width: 900px) { .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }
 .redit pre.fail { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The row under the bar for a paused project (#994). Held colours only:
+   amber is the headline's alone. */
+.pbanner { display: flex; flex-direction: column; gap: 4px; padding: 7px 16px; background: var(--held-soft); border-bottom: 1px solid var(--held); color: var(--held); font-size: 12.5px; }
+.pbanner b { font-weight: 600; }
+.pbanner .what a { color: var(--held); font-weight: 500; text-decoration: none; }
+.pbanner .sub { color: var(--held); opacity: .85; font-size: 11.5px; }
+.pbanner button { font: inherit; font-size: 11px; line-height: 16px; padding: 0 7px; border: 1px solid var(--held); border-radius: 3px; background: var(--surface); color: var(--held); cursor: pointer; }
+.pbrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
+button.navlink { font-family: inherit; cursor: pointer; }
+.navlink.held { border-color: var(--held); background: var(--held-soft); color: var(--held); }

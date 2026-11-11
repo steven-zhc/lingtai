@@ -17,6 +17,7 @@ import type { BacklogEntry } from '@lingtai/projector'
 import Link from 'next/link'
 
 import { Bar } from '@/app/bar.tsx'
+import { LockBanner } from '@/app/lock-banner.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
 
 import { FooterFetched } from '../footer-fetched'
@@ -85,6 +86,7 @@ export default async function BacklogPage() {
             {chip.label}
           </span>
         </Bar>
+        <LockBanner project={undefined} />
         <div className="detail-body">
           <section>
             <h2>Open</h2>

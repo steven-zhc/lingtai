@@ -1,4 +1,3 @@
-import { loadProjects } from '@lingtai/conductor/projects'
 import { inWords } from '@lingtai/conductor/queue'
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
@@ -30,6 +29,7 @@ import { footerLags } from '@/lib/footer'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
+import { readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText } from '@/lib/spend'
@@ -46,6 +46,7 @@ import { Draining } from './draining.tsx'
 import { Footer, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
+import { LockBanner, pauseSlot } from './lock-banner.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
@@ -647,7 +648,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     async () => {
       const [board, projects, control] = await Promise.all([
         loadBoard(param),
-        timed('projects.read', () => loadProjects()).catch(() => []),
+        timed('projects.read', () => readRegistered()).catch(() => []),
         timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
       const [day, lags] = await Promise.all([
@@ -712,7 +713,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     >
       <>
         <TimingMeta timings={timings} />
-        <Bar project={only} registered={only !== undefined && owners.has(only)}>
+        <Bar project={only} registered={only !== undefined && owners.has(only)} pause={await pauseSlot(only)}>
           <span className="sep" />
           {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
@@ -803,6 +804,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               and not a fourth one. A fourth object is still argued for here. */}
           </span>
         </Bar>
+        <LockBanner project={only} />
 
         {/* Repositories that are recorded and not yet conducted (#163). Above
           the lanes because it is not work — `loadProjects()` does not return
