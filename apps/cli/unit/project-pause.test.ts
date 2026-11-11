@@ -1,6 +1,6 @@
 import { makeGuard } from '@lingtai/daemon'
 /** `lingtai pause` / `resume` / `now` over a memory store (#992). */
-import { pauseConductor } from '@lingtai/daemon/control'
+import { pauseConductor, requestShutdown } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, projectStream, reduceProject } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
@@ -39,6 +39,16 @@ describe('lingtai pause [project]', () => {
     w.lines.length = 0
     await Effect.runPromise(pauseProjects('lingtai', 'human:b', w.options))
     expect(await w.types('lingtai')).toEqual(['ProjectConfigured', 'ProjectPaused'])
+    expect(w.lines[0]).toMatch(/^lingtai: already paused by human:a since /)
+
+    // A stale project list does not name the actor: the standing pause does.
+    const stale = async () =>
+      [reduceProject(await w.store.read(projectStream('lingtai')))].map((p) => ({
+        ...p,
+        paused: { by: 'human:old', at: new Date(0) },
+      }))
+    w.lines.length = 0
+    await Effect.runPromise(pauseProjects('lingtai', 'human:c', { ...w.options, projects: stale as never }))
     expect(w.lines[0]).toMatch(/^lingtai: already paused by human:a since /)
     expect(w.lines.at(-1)).toContain('an attempt already in flight finishes; nothing new starts')
   })
@@ -88,6 +98,37 @@ describe('lingtai resume [project]', () => {
     await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
     expect(w.lines).toEqual(['nothing to resume'])
     expect(await w.store.read(CONTROL_STREAM)).toEqual([])
+  })
+
+  it('reports the pause it lifted, not the one it first read, when the ceiling pauses in between', async () => {
+    const w = await world()
+    const real = w.store.head.bind(w.store)
+    let raced = false
+    // A standing shutdown request is read; the ceiling's pause lands before the append.
+    await requestShutdown('human:a', 'x', null, w.store)
+    const store = Object.assign(Object.create(w.store), {
+      head: async (s: string) => {
+        const h = await real(s)
+        if (s === CONTROL_STREAM && !raced) {
+          raced = true
+          await w.store.append(CONTROL_STREAM, h, [
+            {
+              type: 'ConductorPaused',
+              actor: 'conductor',
+              data: {
+                by: 'lingtai',
+                reason: 'day ceiling',
+                until: new Date(Date.now() + 3_600_000).toISOString(),
+                cause: 'day-ceiling',
+              },
+            },
+          ])
+        }
+        return h
+      },
+    })
+    await Effect.runPromise(resumeProjects(undefined, 'human:a', { ...w.options, store }))
+    expect(w.lines.join('\n')).toContain("also lifted today's spend ceiling")
   })
 
   it('says the ceiling is waived when it lifts the day ceiling pause', async () => {

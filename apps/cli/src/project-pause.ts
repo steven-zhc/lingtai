@@ -8,9 +8,16 @@
  * on one project, and it holds until somebody lifts it.
  */
 import { loadProjects } from '@lingtai/conductor'
-import { type Guard, pauseProject, resumeProject, resumeConductor, readControl } from '@lingtai/daemon'
-import { type ProjectState, lockSentence } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store'
+import {
+  type ControlState,
+  type Guard,
+  pauseProject,
+  resumeProject,
+  resumeConductor,
+  readControl,
+} from '@lingtai/daemon'
+import { CONTROL_STREAM, type ProjectState, lockSentence } from '@lingtai/domain'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import { Context, Effect } from 'effect'
 
 export interface ProjectPauseOptions {
@@ -72,8 +79,7 @@ export const pauseProjects = (name: string | undefined, by: string, options: Pro
       )
       if (answer.kind === 'appended') log(`${project}: paused`)
       else if (answer.kind === 'already') {
-        const who = p.paused ? `by ${p.paused.by} ` : ''
-        log(`${project}: already paused ${who}since ${answer.since.toISOString()}`)
+        log(`${project}: already paused by ${answer.by} since ${answer.since.toISOString()}`)
       }
     }
     log(IN_FLIGHT_FINISHES)
@@ -104,13 +110,31 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
     }
 
     if (name === undefined) {
-      const control = yield* Effect.tryPromise({ try: () => readControl(options.store), catch: asError }).pipe(
-        Effect.mapError((e) => new Error(`could not read the conductor-wide pause — ${e.message}`)),
+      // Read and append at the head the read was taken at: a pause that lands in
+      // between (the ceiling's, say) fails the append and is read again, so what
+      // is printed is what this resume lifted and not what it saw a moment before.
+      const store = options.store ?? eventStore
+      const lift = (attempt: number): Effect.Effect<ControlState | null, unknown> =>
+        Effect.gen(function* () {
+          const head = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: asError })
+          const control = yield* Effect.tryPromise({ try: () => readControl(options.store), catch: asError })
+          if (!control.paused && control.shutdown === null) return null
+          return yield* Effect.tryPromise({
+            try: () => resumeConductor(by, options.store, head),
+            catch: (e) => e,
+          }).pipe(
+            Effect.as(control),
+            Effect.catchIf(
+              (e) => e instanceof ConcurrencyError && attempt < 4,
+              () => lift(attempt + 1),
+            ),
+          )
+        })
+      const lifted = yield* lift(0).pipe(
+        Effect.mapError((e) => new Error(`could not lift the conductor-wide pause — ${asError(e).message}`)),
       )
-      if (control.paused || control.shutdown !== null) {
-        yield* Effect.tryPromise({ try: () => resumeConductor(by, options.store), catch: asError }).pipe(
-          Effect.mapError((e) => new Error(`could not lift the conductor-wide pause — ${e.message}`)),
-        )
+      if (lifted !== null) {
+        const control = lifted
         did += 1
         if (control.paused) log(`lifted the conductor-wide pause (cause ${control.cause ?? 'unknown'})`)
         if (control.shutdown !== null) log(`lifted a shutdown request by ${control.shutdown.by}`)
