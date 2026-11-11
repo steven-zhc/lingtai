@@ -418,7 +418,8 @@ export function diagnoseRefusal(input: {
   base: string
 }): BlockDiagnosis {
   const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null
-  const where = { branch: input.branch, base: input.base, detail: input.detail }
+  // A caller that does not know the base passes `''`; the sentences print it as given, so say what is true.
+  const where = { branch: input.branch, base: input.base === '' ? 'the base' : input.base, detail: input.detail }
   const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,

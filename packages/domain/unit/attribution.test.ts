@@ -188,6 +188,22 @@ describe('a refusal, read for a person', () => {
       base: 'develop',
     })
 
+  it('never leaves a blank where an unknown base goes, and leaves a known one alone (#1030)', () => {
+    for (const reason of REASONS) {
+      const blank = diagnoseRefusal({ reason, detail: 'x', branch: 'agent/1', base: '' }).what
+      expect(blank, reason).not.toContain('  ')
+      expect(blank.startsWith(' '), reason).toBe(false)
+      const known = diagnoseRefusal({ reason, detail: 'x', branch: 'agent/1', base: 'main' }).what
+      expect(known, reason).not.toContain('the base')
+    }
+    expect(diagnoseRefusal({ reason: 'push-rejected', detail: 'x', branch: 'agent/1', base: '' }).what).toMatch(
+      /^the base moved while agent\/1/,
+    )
+    expect(diagnoseRefusal({ reason: 'base-protected', detail: 'x', branch: 'agent/1', base: '' }).what).toContain(
+      'straight to the base',
+    )
+  })
+
   it('says something in words for every reason, and never drops the output', () => {
     for (const reason of REASONS) {
       const d = read(reason)
