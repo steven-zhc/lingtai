@@ -100,6 +100,7 @@ export function bearing(
   socket: 'connecting' | 'open' | 'trouble',
   board: Health | null,
   code: CodeNews | null,
+  runnable: number | null,
 ): Bearing {
   // The whole sentence carries both facts wherever there are two, so reducing
   // the chips did not make either unreachable. Every branch below goes through
@@ -167,6 +168,33 @@ export function bearing(
 
   const beat = beating(board)
 
+  // Nothing conducts and there is something to conduct. Before the lag branch:
+  // `lingtai daemon` reduces the projections too, so its remedy covers that
+  // one's. Only a lock that was read free, or could not be read, gets here —
+  // never one that was not asked (the beacon is up) and never a held one.
+  if (board.daemon !== 'up' && board.conductor && runnable !== null && runnable > 0) {
+    const label = `no daemon · ${runnable} runnable`
+    const behind = board.lag > 0 ? `; ${board.lag} event(s) unfolded` : ''
+    if ('unread' in board.conductor) {
+      return {
+        tone: 'warn',
+        label,
+        why: `${runnable} runnable and the conductor lock could not be read`,
+        command: 'lingtai doctor',
+        title: also(`${beat}; the conductor lock could not be read: ${board.conductor.unread}${behind}`),
+      }
+    }
+    if (board.conductor.held === null) {
+      return {
+        tone: 'warn',
+        label,
+        why: `${runnable} runnable and nothing is conducting`,
+        command: 'lingtai daemon',
+        title: also(`${beat}; nobody holds the conductor lock${behind}`),
+      }
+    }
+  }
+
   // Behind with nothing coming for it. Since 0022 a `lingtai run` holds a
   // projector of its own, so lag alone is ordinary during a run — the beacon is
   // the whole difference between *catching up* and *nobody is coming*.
@@ -203,11 +231,19 @@ export function bearing(
   // Both true. A dot, and not a word: this is the state the bar is in nearly
   // all the time, and a box that is present and quiet in the ordinary case is
   // one nobody reads when it is not.
+  const conducted =
+    board.daemon === 'up' || board.conductor === null || 'unread' in board.conductor
+      ? ''
+      : board.conductor.held !== null
+        ? `; conducted by ${board.conductor.held}`
+        : runnable === 0
+          ? '; no daemon, and nothing is runnable'
+          : ''
   return {
     tone: 'pass',
     label: 'current',
     why: null,
     command: null,
-    title: also(`task_view is at the head — ${beat}`),
+    title: also(`task_view is at the head — ${beat}${conducted}`),
   }
 }

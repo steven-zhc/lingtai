@@ -77,6 +77,8 @@ import {
   useContext,
   useEffect,
   useRef,
+  Suspense,
+  use,
   useState,
   useTransition,
   type ReactNode,
@@ -261,7 +263,7 @@ export function useFollowing(): boolean {
 
 /** `bearing` with no code, or null unless it warns. Pure, for `Following`. */
 export function warning(socket: 'connecting' | 'open' | 'trouble', health: Health | null): Bearing | null {
-  const said = bearing(socket, health, null)
+  const said = bearing(socket, health, null, null)
   return said.tone === 'warn' ? said : null
 }
 
@@ -304,11 +306,41 @@ export function Said({ said }: { said: Bearing }) {
   )
 }
 
-export function Live({ code, near }: { code: CodeNews | null; near: string | null }) {
+/** The dot with the runnable count, once GitHub has answered. Suspends until it has. */
+function Counted({
+  socket,
+  health,
+  code,
+  runnable,
+}: {
+  socket: 'connecting' | 'open' | 'trouble'
+  health: Health | null
+  code: CodeNews | null
+  runnable: Promise<number | null>
+}) {
+  return <Said said={bearing(socket, health, code, use(runnable))} />
+}
+
+/**
+ * `runnable` is the Queued column's own count, as a promise: the subscription
+ * stays mounted above the boundary and only the drawing waits for GitHub, so
+ * the `EventSource` is not closed and reopened when the count arrives.
+ */
+export function Live({
+  code,
+  near,
+  runnable,
+}: {
+  code: CodeNews | null
+  near: string | null
+  runnable: Promise<number | null>
+}) {
   const { socket, health } = useFollow()
   return (
     <>
-      <Said said={bearing(socket, health, code)} />
+      <Suspense fallback={<Said said={bearing(socket, health, code, null)} />}>
+        <Counted socket={socket} health={health} code={code} runnable={runnable} />
+      </Suspense>
       {/* Today's spend, only near the ceiling, after whatever the bearing said
           and never instead of it. The fail colour, never amber. */}
       {near ? <span className="near">{near}</span> : null}

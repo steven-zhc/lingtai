@@ -179,6 +179,7 @@ const EMPTY_GITHUB: GithubQueue = {
   parents: new Map(),
   asked: 0,
   answered: 0,
+  runnable: null,
 }
 
 const RING = 2 * Math.PI * 9

@@ -1090,6 +1090,13 @@ export interface GithubQueue {
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
+  /**
+   * What `selectRunnable` returned, summed over the projects that answered —
+   * the figure `lingtai status` calls `Queue N runnable`, counted before the
+   * log's cards are taken out. Null when a project did not answer and the sum
+   * is 0: unknown is never 0. A positive sum is a lower bound.
+   */
+  runnable: number | null
 }
 
 /**
@@ -1120,6 +1127,7 @@ export async function githubQueue(
   const epics: EpicTicket[] = []
   const parents = new Map<string, number>()
   let answered = 0
+  let runnable = 0
 
   // All of them at once, for the reason `queueFilters` gives (#112).
   const asked = await Promise.all(
@@ -1139,6 +1147,7 @@ export async function githubQueue(
       continue
     }
     answered += 1
+    runnable += answer.runnable.length
     const offered = answer.offered
     const links = filter.links ?? null
     const own = links === null ? null : `${links.owner}/${links.repo}`.toLowerCase()
@@ -1249,7 +1258,18 @@ export async function githubQueue(
     }
     lastOffered.set(filter.project, cards.length - before)
   }
-  return { cards, problems, notes, blocked, held, epics, parents, asked: askable.length, answered }
+  return {
+    cards,
+    problems,
+    notes,
+    blocked,
+    held,
+    epics,
+    parents,
+    asked: askable.length,
+    answered,
+    runnable: answered < askable.length && runnable === 0 ? null : runnable,
+  }
 }
 
 /**

@@ -36,6 +36,7 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
   parents: new Map(),
   asked: 1,
   answered: 1,
+  runnable: 0,
   ...over,
 })
 
