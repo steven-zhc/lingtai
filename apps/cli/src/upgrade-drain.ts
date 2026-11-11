@@ -16,6 +16,7 @@
  */
 import type { Asking, ControlState } from '@lingtai/daemon'
 import { paint } from '@lingtai/env/colour'
+import { Context, Effect, Fiber } from 'effect'
 
 import type { Drained } from './install.ts'
 
@@ -37,55 +38,41 @@ export interface UpgradeDrain {
 }
 
 /**
- * Asks again whenever no request stands, every `everyMs`, until stopped. `stop`
- * resolves once any read or append in flight has finished, and nothing starts
- * after it: the liveness is checked after the read and before the append, so a
- * read that returns after the command is over appends nothing.
+ * The loop that asks again whenever no request stands, every `everyMs`: one
+ * Effect, so its IO is Effect's (0101 §6). Each round's read and append are
+ * uninterruptible, so interrupting the loop waits for the round in flight and
+ * nothing starts after it.
+ */
+const keepAskedLoop = (
+  standing: () => Promise<unknown>,
+  ask: () => Promise<unknown>,
+  everyMs: number,
+): Effect.Effect<never> =>
+  Effect.forever(
+    Effect.sleep(everyMs).pipe(
+      Effect.andThen(
+        Effect.uninterruptible(
+          Effect.tryPromise(standing).pipe(
+            Effect.flatMap((s) => (s === null ? Effect.tryPromise(ask) : Effect.void)),
+            Effect.ignore,
+          ),
+        ),
+      ),
+    ),
+  )
+
+/**
+ * Asks again whenever no request stands, until stopped. `stop` resolves once
+ * any read or append in flight has finished, and nothing starts after it.
  */
 export function keepAsked(
   standing: () => Promise<unknown>,
   ask: () => Promise<unknown>,
   everyMs: number,
 ): { stop: () => Promise<void> } {
-  let live = true
-  let loop: Promise<void> = Promise.resolve()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let wake = (): void => {}
-  const next = (): void => {
-    loop = new Promise<void>((resolve) => {
-      wake = resolve
-      timer = setTimeout(resolve, everyMs)
-      timer.unref()
-    })
-      .then(() =>
-        live
-          ? standing().then(
-              (s) => s,
-              () => undefined,
-            )
-          : undefined,
-      )
-      .then((s) =>
-        live && s === null
-          ? ask().then(
-              () => undefined,
-              () => undefined,
-            )
-          : undefined,
-      )
-      .then(() => {
-        if (live) next()
-      })
-  }
-  next()
-  return {
-    stop: () => {
-      live = false
-      clearTimeout(timer)
-      wake()
-      return loop
-    },
-  }
+  const run = Effect.runForkWith(Context.empty())
+  const fiber = run(keepAskedLoop(standing, ask, everyMs))
+  return { stop: () => Effect.runPromiseWith(Context.empty())(Fiber.interrupt(fiber)) }
 }
 
 const NOTHING_AFTER: Drained = { ok: true, after: async () => {} }
