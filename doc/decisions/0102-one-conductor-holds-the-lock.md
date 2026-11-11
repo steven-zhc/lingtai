@@ -34,32 +34,23 @@ say what code it is running and who started it.
    job of a supervisor (`lingtai service`: launchd `KeepAlive`, or a systemd unit
    with `Restart=always`), or of a terminal.
 
-2. **Control goes through the log; liveness does not.** `pause`, `resume`,
-   `shutdown`, `now <project> --issue <n>` and a restart's withdrawal are events
-   on the `ctl-conductor` stream (`ConductorPaused`, `ConductorResumed`,
-   `ConductorShutdownRequested`, `ConductorShutdownWithdrawn`, `RunRequested`).
-   `reduceControl` in `packages/domain/src/control.ts` reduces them. Liveness is the
+2. **Control goes through the log; liveness does not.** `shutdown` and
+   `now <project> --issue <n>` are events on the `ctl-conductor` stream
+   (`ConductorShutdownRequested`, `RunRequested`); `pause` and `resume` are a
+   project's lock and unlock ([0126](0126-a-stop-is-a-lock-and-an-unlock.md)).
+   `reduceControl` in `packages/domain/src/control.ts` reduces the control stream. Liveness is the
    **beacon**: one overwritten row in `daemon_status`, written every
    `HEARTBEAT_MS` (5 s) and treated as stale after three missed beats. It carries
    `pid`, `host`, `startedAt`, `lastSeenAt`, `state` (`up`, `draining`,
    `stopping`), the runs in flight (every one, since [0122](0122-several-passes-share-one-conductor.md); one `currentRunId` until then), and the commit and dirtiness the process started
    from. It is the system's only mutable operational state, and it is not history.
 
-3. **A control signal applies to the daemon running when it was appended.** Before
-   it takes the lock, a daemon reads `controlWatermark`, the length of
-   `ctl-conductor`, and from then on reduces only events above that point
-   (`readControl(store, since)`). It reads the watermark first and takes the lock
-   second, so a request appended after the lock is held is always above the
-   watermark. As a result, a `shutdown` or a `pause` stops the daemon it was aimed
-   at and never the next one, and `lingtai start` needs nothing lifted first.
-   `lingtai run` is the exception: it takes no ticket while a pause stands. The
-   board, `doctor` and `status` reduce the whole stream, because they report what is
-   standing now. **One pause narrows this** (`#405`): a `ConductorPaused` the
-   conductor appends over a tier the setup cannot provide carries
-   `holdsAcrossStarts`, and `readControl` obeys it whatever a daemon's own
-   watermark says, because a restart loads the same setup that could not
-   provide the tier. Every other pause — a person's, and the one a run that
-   never started appends — keeps the watermark rule above exactly as it was.
+3. **Every reader reduces the same control state.** A drain lasts from its
+   request to the next `ConductorStarted`, so a `shutdown` stops the daemon it
+   was aimed at and never the next one, and a start needs nothing lifted first;
+   the daemon, the board, `doctor` and `status` read it alike, with no watermark
+   of the daemon's own. A lock holds across a restart until it is unlocked
+   ([0126](0126-a-stop-is-a-lock-and-an-unlock.md)).
 
 4. **One conductor, enforced by a file lock.** The lock is SQLite's `BEGIN
    IMMEDIATE` on `~/.lingtai/locks/<key>.lock` (`$LINGTAI_HOME/locks` where that
@@ -125,19 +116,21 @@ say what code it is running and who started it.
    - `lingtai doctor` must pass unless `--despite-doctor` is given. A failure
      whose own remedy is the restart (`restartAnswers`) is printed but does not
      count.
-   - A drain somebody else asked for is refused, and no flag overrides that. A
-     drain this person asked for is withdrawn and asked for again.
+   - A drain somebody else asked for is refused, and no flag overrides that; the
+     refusal says that starting a conductor ends it. A drain this person asked
+     for is picked up.
    - A lock or a beacon that could not be read is a refusal before the drain and
      an unanswered poll during the wait. It is never read as "nobody is
      conducting".
 
    After the wait, the commit, the worktree, any foreign drain and any start
    somebody else made in the meantime are checked again. The restart withdraws
-   only its own request, with `ConductorShutdownWithdrawn` naming that request's
-   version, and never lifts a pause. If something else wins the lock, the restart
-   starts nothing and exits 1. A Ctrl+C during the wait leaves the drain
-   standing, and the next restart by the same person picks it up. `lingtai
-   resume` lifts it otherwise.
+   nothing and lifts no lock: a drain lasts until the next `ConductorStarted`,
+   so the start it makes ends its own request
+   ([0126](0126-a-stop-is-a-lock-and-an-unlock.md), *Shutdown and drain*). If
+   something else wins the lock, the restart starts nothing and exits 1. A
+   Ctrl+C during the wait leaves the drain standing, and the next restart by the
+   same person picks it up.
 
 10. **Under a supervisor, the restart is the same checks wrapped around
     `service`'s drain and start.** `lingtai service shutdown` queues for the lock

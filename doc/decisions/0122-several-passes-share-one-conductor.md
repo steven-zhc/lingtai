@@ -95,7 +95,7 @@ and the dollar ceiling lands before any N > 1.
    (`WALL_LIMIT`), because the attempts run side by side and none starts after the
    drain is asked for.
 
-5. **The daily dollar ceiling pauses taking new work and never stops an attempt in
+5. **The daily dollar ceiling stops taking new work and never stops an attempt in
    flight.** It is one figure in `~/.lingtai/config.yml`
    ([0117](0117-configuration-is-config-yml-and-the-environment.md), so it can
    also be exported as a `LINGTAI_` variable) and it stays installation-wide,
@@ -109,18 +109,11 @@ and the dollar ceiling lands before any N > 1.
      the moment of reading, never in a reducer
      ([0110](0110-tokens-on-the-event-money-at-display.md) §5–6), and a row that
      cannot be priced is named as unknown and never counted as zero.
-   - It is checked where the pause is already asked before each claim
-     (`schedule.ts`, `work-loop.ts`). Reaching it appends `ConductorPaused` with
-     `until` at the next local midnight, and the reason names the figure and
-     today's spend, by the standing-down path of `conduct.ts`
-     ([0108](0108-a-refusal-buys-a-round.md) §11). It needs no
-     `holdsAcrossStarts`: a restarted daemon recomputes and pauses again at its
-     first check. **The pause says it is the ceiling's in a typed field**, an
-     optional `cause` on `ConductorPaused`, and the control reduce reads that
-     field — never a prefix of the reason, which is words for a person — to know
-     which pause the ceiling owns and which waiver lifts it
-     ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md) §4: an event only
-     gains optional fields).
+   - Reaching it is a lock, `DayCeilingReached`, appended by the ceiling's
+     watcher and lifted at the next local midnight, by a higher or removed
+     figure in the configuration, or by a person raising today's figure
+     ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2, §7). The claim reads
+     the lock; it does not compute the spend.
    - A ceiling whose spend cannot be trusted to be current is not checked, and
      no work is taken.
    - **The overshoot is bounded only as far as the recipe bounds an attempt.** The
@@ -172,15 +165,15 @@ and the dollar ceiling lands before any N > 1.
    fetches into one repository can fail to lock a ref.
 
 7. **Every stop that exists today is marked *per project* or *stays
-   installation-wide*.** This records the classification; #675 builds the per-project pause and #676 the missing-tier pause on it.
+   installation-wide*.** Each stop that is a lock is [0126](0126-a-stop-is-a-lock-and-an-unlock.md)'s; #675 builds them and #676 the missing tier.
 
    | Stop | Where today | Becomes | Lifted by |
    | --- | --- | --- | --- |
-   | A person's pause | `CONTROL_STREAM`, `packages/domain/src/control.ts` | Per project: `ConductorPaused` gains an optional `project`, absent meaning installation-wide | `lingtai resume [project]` |
-   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | Per project, and it holds across a restart, because a restart loads the same setup | Fixing the setup, then `lingtai resume <project>` |
-   | The pause after a run that never started | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Stays installation-wide: the account is shared | Itself, at `until` |
-   | The daily ceiling | §5 | Stays installation-wide | Midnight, or a higher figure |
-   | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | `lingtai resume` |
+   | A person's pause | `CONTROL_STREAM`, `packages/domain/src/control.ts` | Per project only: `ProjectPaused` on `prj-{project}` (0126 §2) | `lingtai resume [project]`, or the board |
+   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | A refused recipe, per project (0126, *A tier no runtime can provide*) | Fixing the recipe |
+   | The pause after a run that never started, or met the account's limit | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Per runtime: `AccountLimitReached` on `acct-{runtime}`, holding every project whose recipe uses it (0126 §2) | Its watcher, at `until` |
+   | The daily ceiling | §5 | Stays installation-wide: `DayCeilingReached` (0126 §2) | Midnight, a higher figure in the configuration, or a person raising today's |
+   | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | The next start (0126, *Shutdown and drain*) |
    | The lock | [0102](0102-one-conductor-holds-the-lock.md) §4 | Stays installation-wide | — |
    | The loop runs one attempt at a time | `work-loop.ts` | Per project, as slots (§1) | — |
    | A refused recipe | `stage: "recipe"` in `conduct.ts` | Already per project | — |

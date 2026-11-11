@@ -139,23 +139,24 @@ fixes the bounds and the endings that router works inside.
     with no agent message). The runtime's prose is kept whole as `detail` and is
     never read to classify, and the name is not a guessed cause such as a quota.
 
-11. **An agent that never started stops the conductor, not the item.** Wherever
-    it happens — the implementer, a design agent, a reviewer, a fixer, an agent
-    judge — the step ends `never-ran` (`StepNeverRan`) and the attempt stops: no
-    round, no judge, no question for a person. The conductor appends
-    `ConductorPaused` on `ctl-conductor` with an `until`; `standDown`
-    (`packages/conductor/src/never-started.ts`) reads a reset time out of the
-    message (an ISO instant, a dated clock, or a wall clock, at most a week out)
-    and falls back to `source.backoff`. A pause already holding (a person's has no
-    `until`) is left alone. The pause lifts by itself and names which agent met
-    the wall. The item is released (`failed`) and keeps its place; any commits
-    are published first. **A run that started and met the account's limit pauses
-    the conductor the same way** — a crash whose detail is the runtime's own
-    account-limit sentence (`metTheAccountWall`: Claude Code's *You've hit your …
-    limit*, Codex's *You have hit your usage limit*) appends the same
-    `ConductorPaused`, with the same `until` and fallback — but the item is **not**
-    released: it keeps its crash wait (§12), and the match adds the pause and
-    changes nothing else.
+11. **An agent that never started locks its runtime's account, not the item.**
+    Wherever it happens — the implementer, a design agent, a reviewer, a fixer,
+    an agent judge — the step ends `never-ran` (`StepNeverRan`) and the attempt
+    stops: no round, no judge, no question for a person. The attempt appends
+    `AccountLimitReached` on `acct-{runtime}`, for the runtime that agent ran on,
+    with an `until` ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2);
+    `standDown` (`packages/conductor/src/never-started.ts`) reads a reset time out
+    of the message (an ISO instant, a dated clock, or a wall clock, at most a week
+    out) and falls back to `source.backoff`. A lock already holding is left alone.
+    The lock holds every project whose recipe uses that runtime, is lifted by its
+    watcher at `until`, and names which agent met the wall. The item is released
+    (`failed`) and keeps its place; any commits are published first. **A run that
+    started and met the account's limit locks the account the same way** — a crash
+    whose detail is the runtime's own account-limit sentence (`metTheAccountWall`:
+    Claude Code's *You've hit your … limit*, Codex's *You have hit your usage
+    limit*) appends the same `AccountLimitReached`, with the same `until` and
+    fallback — but the item is **not** released: it keeps its crash wait (§12),
+    and the match adds the lock and changes nothing else.
 
 12. **An agent that started and did not finish judged nothing, and stops only
     the attempt.** A crash, a spent turn budget, a missing receipt, or a fixer that
