@@ -299,9 +299,13 @@ describe('spend: today when the ceiling holds (#1005)', () => {
   })
 
   it('is a note on a raised day, with the raise on the first line and the raised figure in the sentence', async () => {
-    const r = await run(day, 25, withCeiling({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: NOW } }))
+    const r = await run(
+      day,
+      25,
+      withCeiling({ raised: { day: '2026-11-11', fromUsd: 25, toUsd: 40, by: 'human:steven', at: NOW } }),
+    )
     expect(r.status).toBe('info')
-    expect(r.detail.split('\n')[0]).toBe('today only: raised to $40.00 by human:steven at 16:50')
+    expect(r.detail.split('\n')[0]).toBe('today only: raised from $25.00 to $40.00 by human:steven at 16:50')
     expect(r.detail).toContain('of a $40.00 ceiling')
   })
 
@@ -313,9 +317,9 @@ describe('spend: today when the ceiling holds (#1005)', () => {
     const raised = await run(
       day,
       25,
-      withCeiling({ raised: { day: '2026-11-11', toUsd: 40, by: 'human:steven', at: NOW } }),
+      withCeiling({ raised: { day: '2026-11-11', fromUsd: 25, toUsd: 40, by: 'human:steven', at: NOW } }),
     )
-    expect(draw(raised)).toContain('raised to $40.00 by human:steven')
+    expect(draw(raised)).toContain('raised from $25.00 to $40.00 by human:steven')
     const unread = await run(day, 25, new Error('store down'))
     expect(draw(unread)).toContain('could not read whether the ceiling holds — store down')
     const failed = await spendToday(

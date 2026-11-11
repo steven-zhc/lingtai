@@ -25,7 +25,7 @@ export function reachedLine(reached: Reached, now: Date, says: 'no new work star
 }
 
 export function raisedLine(raised: NonNullable<CeilingFacts['raised']>, now: Date): string {
-  return `today only: raised to $${money(raised.toUsd)} by ${raised.by} at ${sinceLabel(raised.at, now)}`
+  return `today only: raised ${raised.fromUsd === undefined ? '' : `from $${money(raised.fromUsd)} `}to $${money(raised.toUsd)} by ${raised.by} at ${sinceLabel(raised.at, now)}`
 }
 
 export const ceilingUnreadLine = (message: string): string => `could not read whether the ceiling holds — ${message}`

@@ -39,8 +39,8 @@ export interface CeilingFacts {
   configuredUsd: number | undefined
   /** `todaysCeiling`: the figure the guard compares against today. */
   todayUsd: number | undefined
-  /** Today's raise only. The fold keeps no figure it was raised from, so none is claimed. */
-  raised: { toUsd: number; by: string; at: Date } | null
+  /** Today's raise only. `fromUsd` is the figure that was reached; absent on a raise written before the event carried it. */
+  raised: { fromUsd?: number; toUsd: number; by: string; at: Date } | null
   /** The standing lock. `passed` is a reader's word: the log still holds it, the guard lifts it at its next look (0126 §8). */
   reached: {
     day: string
@@ -65,7 +65,15 @@ export function ceilingFacts(
   return {
     configuredUsd,
     todayUsd: todaysCeiling(state, now, configuredUsd),
-    raised: raisedToday === null ? null : { toUsd: raisedToday.toUsd, by: raisedToday.by, at: raisedToday.at },
+    raised:
+      raisedToday === null
+        ? null
+        : {
+            ...(raisedToday.fromUsd === undefined ? {} : { fromUsd: raisedToday.fromUsd }),
+            toUsd: raisedToday.toUsd,
+            by: raisedToday.by,
+            at: raisedToday.at,
+          },
     reached:
       reached === null
         ? null
@@ -139,6 +147,10 @@ export function raiseTransition(input: {
   if (cents(toUsd) <= cents(reached.ceilingUsd)) return { ok: false, refused: 'not-above-ceiling' }
   return {
     ok: true,
-    event: { type: 'DayCeilingLifted', actor: by, data: { day: reached.day, why: 'person', by, toUsd } },
+    event: {
+      type: 'DayCeilingLifted',
+      actor: by,
+      data: { day: reached.day, why: 'person', by, toUsd, fromUsd: reached.ceilingUsd },
+    },
   }
 }

@@ -144,7 +144,7 @@ describe('raiseTransition', () => {
       event: {
         type: 'DayCeilingLifted',
         actor: 'human:steven',
-        data: { day: TODAY, why: 'person', by: 'human:steven', toUsd: 40 },
+        data: { day: TODAY, why: 'person', by: 'human:steven', toUsd: 40, fromUsd: 25 },
       },
     })
   })
@@ -174,8 +174,12 @@ describe('ceilingFacts', () => {
   })
 
   it('shows a raise today, from the configured figure', () => {
-    const f = ceilingFacts(stateWith({ raised: { day: TODAY, toUsd: 40, by: 'human:a', at: NOW } }), NOW, 25)!
-    expect(f.raised).toEqual({ toUsd: 40, by: 'human:a', at: NOW })
+    const f = ceilingFacts(
+      stateWith({ raised: { day: TODAY, fromUsd: 25, toUsd: 40, by: 'human:a', at: NOW } }),
+      NOW,
+      25,
+    )!
+    expect(f.raised).toEqual({ fromUsd: 25, toUsd: 40, by: 'human:a', at: NOW })
     expect(f.todayUsd).toBe(40)
   })
 })
