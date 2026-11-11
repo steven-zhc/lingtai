@@ -1113,6 +1113,29 @@ const resume = Command.make('resume', { project: optionalProject, noColor }, (ar
   }),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 
+const accountLift = Command.make(
+  'lift',
+  { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
+  (args) =>
+    daemonHandler(args, async () => {
+      const { liftAccount } = await import('./account-lift.ts')
+      const { runEffect } = await import('./project-pause.ts')
+      try {
+        return await runEffect(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`))
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err))
+        return 1
+      }
+    }),
+)
+
+const accountCommand = Command.make('account', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('account'))
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('account').task), Command.withSubcommands([accountLift]))
+
 const shutdown = Command.make(
   'shutdown',
   {
@@ -1277,6 +1300,7 @@ export const root = Command.make('lingtai').pipe(
     service,
     restart,
     shutdown,
+    accountCommand,
     pause,
     resume,
   ]),

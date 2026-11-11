@@ -9,6 +9,7 @@
  * Neither of these decides anything, which is why they can live here: `domain`
  * imports nothing, so everything can import `domain`.
  */
+import type { RuntimeId } from './events.ts'
 
 export const TICKET_STREAM_PREFIX = 'ticket-'
 
@@ -107,6 +108,13 @@ export const PROJECT_STREAM_PREFIX = 'prj-'
 /** `prj-{project}` — everything Lingtai was told about a repository. */
 export function projectStream(project: string): string {
   return `${PROJECT_STREAM_PREFIX}${project}`
+}
+
+export const ACCOUNT_STREAM_PREFIX = 'acct-'
+
+/** `acct-{runtime}` — whether a runtime's account is at its usage limit (0126 §2). */
+export function accountStream(runtime: RuntimeId): string {
+  return `${ACCOUNT_STREAM_PREFIX}${runtime}`
 }
 
 /**
