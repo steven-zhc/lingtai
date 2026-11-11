@@ -42,7 +42,7 @@ describe('a pass with one project locked', () => {
       locked: async (name) => (name === 'first' ? 'first is paused by human:a since then' : null),
       work: async (project) => {
         entered.push(project.project!)
-        return 'nothing'
+        return 'looked-away'
       },
     })
     expect(entered).toEqual(['second', 'third'])
@@ -62,7 +62,7 @@ describe('a pass with one project locked', () => {
       locked: async (name) => (name === 'second' ? 'could not read whether second is paused — x' : null),
       work: async (project) => {
         entered.push(project.project!)
-        return 'nothing'
+        return 'looked-away'
       },
     })
     expect(entered).toEqual(['first', 'third'])
@@ -82,7 +82,7 @@ describe('a pass with one project locked', () => {
       locked: async () => null,
       work: async (project) => {
         entered.push(project.project!)
-        return 'nothing'
+        return 'looked-away'
       },
     })
     expect(entered).toEqual([])
