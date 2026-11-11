@@ -1360,6 +1360,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       )
       return 1
     }
+    let watching = true
     try {
       const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error)
       if (asked instanceof Error) {
@@ -1399,6 +1400,21 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         steps.end()
         log(line)
       }
+      // A start by a copy that held the lock while initialising ends the request
+      // adopted above; the lock then stays with it and the wait never ends. So
+      // whenever no request stands during the wait, it is asked again.
+      const watch = (async () => {
+        while (watching) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 2000).unref())
+          if (!watching) break
+          const standing = await options.shutdown().then(
+            (r) => r,
+            () => undefined,
+          )
+          if (standing === null) await askAgain().catch(() => undefined)
+        }
+      })()
+      void watch
       let waited = await queue.wait(waitLog, askAgain, progress)
       steps.end()
       // Asked again right before the supervisor is told: the lock is only worth
@@ -1438,6 +1454,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       return 0
     } finally {
+      watching = false
       await queue.leave()
     }
   }
