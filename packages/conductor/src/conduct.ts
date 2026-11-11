@@ -210,7 +210,7 @@ import {
   type StepAction,
 } from '@lingtai/recipe'
 import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
-import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
+import { mirrorPathFor, withMirrorWrite, worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
 import { Effect, Result } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
@@ -1826,6 +1826,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** …as a promise, for the ports. A failure here is a defect, not a verdict. */
       const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
       const gitAsked = (args: string[]) => Effect.runPromise(Effect.result(gitHere(args)))
+      /**
+       * …for a command that writes the mirror's refs or worktree metadata,
+       * which a worktree shares with it: one at a time per mirror, for that
+       * command only (0122 §6, #1026). The fetches in this file are
+       * `fetch origin refs/heads/<base>` with no destination, so they write
+       * the worktree's own `FETCH_HEAD` and objects and are not held.
+       */
+      const gitAskedMirror = (args: string[]) => withMirrorWrite(mirrorPathFor(project, home), () => gitAsked(args))
 
       /**
        * `git diff <DIFF_FLAGS> from...HEAD`, the one spelling the reviewer, the
@@ -1931,7 +1939,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * the publish has to finish whether or not the ref lands.
        */
       const keepHead = async (head: string): Promise<void> => {
-        const wrote = await gitAsked(['update-ref', keptRef, head])
+        const wrote = await gitAskedMirror(['update-ref', keptRef, head])
         if (Result.isFailure(wrote)) {
           runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.failure.detail}`)
           return
@@ -1940,7 +1948,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
       /** Deletes `keptRef`, where the commits it pointed at reached origin another way. */
       const dropKept = async (): Promise<void> => {
-        const dropped = await gitAsked(['update-ref', '-d', keptRef])
+        const dropped = await gitAskedMirror(['update-ref', '-d', keptRef])
         if (Result.isFailure(dropped)) {
           runLog.note('push', `${keptRef} was not dropped — ${dropped.failure.detail}`)
         }
@@ -3164,7 +3172,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           timeoutMs: parseDuration(action.timeout),
           tree: {
             cut: async (path, sha) => {
-              const cut = await gitAsked(['worktree', 'add', '--force', '--detach', path, sha])
+              const cut = await gitAskedMirror(['worktree', 'add', '--force', '--detach', path, sha])
               if (Result.isFailure(cut)) throw new Error(cut.failure.detail)
               if (submodulesOf(recipe)) {
                 // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
@@ -3178,7 +3186,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               }
             },
             remove: async (path) => {
-              const gone = await gitAsked(['worktree', 'remove', '--force', path])
+              const gone = await gitAskedMirror(['worktree', 'remove', '--force', path])
               if (Result.isFailure(gone)) throw new Error(gone.failure.detail)
             },
             plant: async (path) => {
@@ -4729,7 +4737,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return
           }
           for (const ref of refsHere.success.split('\n').filter(Boolean)) {
-            const dropped = await gitAsked(['update-ref', '-d', ref])
+            const dropped = await gitAskedMirror(['update-ref', '-d', ref])
             if (Result.isFailure(dropped))
               runLog.note('push', `${ref} was not dropped on landing — ${dropped.failure.detail}`)
           }

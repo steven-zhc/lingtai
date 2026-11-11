@@ -73,6 +73,7 @@ import { Effect, Result } from 'effect'
 
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { landingSubject } from './landing-subject.ts'
+import { mirrorWrite } from './mirror-lock.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -409,12 +410,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         if (!basename(path).startsWith('integrator-')) continue
         const cutAt = yield* Effect.promise(async () => (await stat(path).catch(() => null))?.mtimeMs ?? null)
         if (cutAt === null || Date.now() - cutAt < WORKTREE_IS_ABANDONED_AFTER) continue
-        yield* at(['worktree', 'remove', '--force', path], mirror).pipe(Effect.ignore)
+        yield* mirrorWrite(mirror, at(['worktree', 'remove', '--force', path], mirror)).pipe(Effect.ignore)
         yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore)
       }
       // And the registrations with no directory left — git's own job, and the
       // other half of what a killed process leaves behind.
-      yield* at(['worktree', 'prune'], mirror).pipe(Effect.ignore)
+      yield* mirrorWrite(mirror, at(['worktree', 'prune'], mirror)).pipe(Effect.ignore)
 
       const laneRefs = yield* at(['for-each-ref', '--format=%(refname)', 'refs/lingtai/lane/'], mirror).pipe(
         Effect.orElseSucceed(() => ''),
@@ -425,8 +426,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         if (!match || seen.has(match[1]!)) continue
         seen.add(match[1]!)
         if (Date.now() - Number(match[2]) < WORKTREE_IS_ABANDONED_AFTER) continue
-        yield* at(['update-ref', '-d', `${match[1]}/base`], mirror).pipe(Effect.ignore)
-        yield* at(['update-ref', '-d', `${match[1]}/branch`], mirror).pipe(Effect.ignore)
+        yield* mirrorWrite(mirror, at(['update-ref', '-d', `${match[1]}/base`], mirror)).pipe(Effect.ignore)
+        yield* mirrorWrite(mirror, at(['update-ref', '-d', `${match[1]}/branch`], mirror)).pipe(Effect.ignore)
       }
     })
 
@@ -468,8 +469,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       yield* Effect.acquireRelease(Effect.succeed(laneId), () =>
         Effect.all(
           [
-            at(['update-ref', '-d', laneBase], mirror).pipe(Effect.ignore),
-            at(['update-ref', '-d', laneBranch], mirror).pipe(Effect.ignore),
+            mirrorWrite(mirror, at(['update-ref', '-d', laneBase], mirror)).pipe(Effect.ignore),
+            mirrorWrite(mirror, at(['update-ref', '-d', laneBranch], mirror)).pipe(Effect.ignore),
           ],
           { discard: true },
         ),
@@ -491,9 +492,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           )
         }
       }
-      yield* at(
-        ['fetch', 'origin', `+refs/heads/${options.base}:${laneBase}`, `+refs/heads/${options.branch}:${laneBranch}`],
+      yield* mirrorWrite(
         mirror,
+        at(
+          ['fetch', 'origin', `+refs/heads/${options.base}:${laneBase}`, `+refs/heads/${options.branch}:${laneBranch}`],
+          mirror,
+        ),
       )
 
       // What an earlier integration was killed in the middle of, before this one
@@ -512,8 +516,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // integration against the same base would collide with the first on it.
       // Nothing here needs the branch — the merge moves HEAD and the push has
       // always been `HEAD:refs/heads/<base>`.
-      yield* Effect.acquireRelease(at(['worktree', 'add', '--force', '--detach', cwd, laneBase], mirror), () =>
-        at(['worktree', 'remove', '--force', cwd], mirror).pipe(Effect.ignore),
+      yield* Effect.acquireRelease(
+        mirrorWrite(mirror, at(['worktree', 'add', '--force', '--detach', cwd, laneBase], mirror)),
+        () => mirrorWrite(mirror, at(['worktree', 'remove', '--force', cwd], mirror)).pipe(Effect.ignore),
       )
 
       const dirty = yield* at(['status', '--porcelain'], cwd)
@@ -680,7 +685,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // if it still holds what this lane fetched, and does nothing otherwise.
       // Either way a landed merge must never become a refusal here, so every
       // outcome is ignored.
-      yield* at(['update-ref', `refs/heads/${options.base}`, mergeCommit, localBase], mirror).pipe(Effect.ignore)
+      yield* mirrorWrite(mirror, at(['update-ref', `refs/heads/${options.base}`, mergeCommit, localBase], mirror)).pipe(
+        Effect.ignore,
+      )
 
       return yield* succeed(mergeCommit)
     }).pipe(
