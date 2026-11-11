@@ -43,7 +43,7 @@ import type { Triage } from '@lingtai/recipe'
 import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
 import { pausedSentence } from './day-ceiling.ts'
-import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
+import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
@@ -564,6 +564,8 @@ export async function daemonCommand(
     // The passes in flight, held across looks (0122 §1): a look that starts
     // several returns, and the next look must still know they are running.
     const slots = createSlots()
+    // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
+    const locked = lockedBy(makeGuard({ store: eventStore }))
     loop = createWorkLoop({
       log: trace,
       tell: (line) => console.log(line),
@@ -571,7 +573,7 @@ export async function daemonCommand(
       // The third kind of agent, hosted here because the daemon is where money
       // is spent (0033 §3). Off the pass path: a question must not queue behind
       // a run, and it takes no claim and provisions nothing that would need to.
-      discuss: (event) => onDiscussionRequested(event, (line) => console.log(line)),
+      discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), locked),
       triage: (event) =>
         onWaitStarted(
           event,
@@ -634,7 +636,7 @@ export async function daemonCommand(
           paused: claiming,
           // One project's pause (0126): asked of the guard, which is the only
           // reader of `prj-` — a gate never reads it itself.
-          locked: lockedBy(makeGuard({ store: eventStore })),
+          locked,
           log: trace,
           tell: (line) => console.log(line),
           many: registered.length > 1,
@@ -702,11 +704,16 @@ export async function daemonCommand(
       // A question asked while nothing was listening is waiting in the stream,
       // exactly as a pause is (0013). After `start`, so the subscription is
       // already up and a question that arrives during this one is not missed.
-      const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
-        console.error(`discussions: ${(err as Error).message}`)
-        return 0
-      })
-      if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
+      const waiting = await answerOutstandingQueued({ log: (line) => console.log(line), locked }).catch(
+        (err: unknown) => {
+          console.error(`discussions: ${(err as Error).message}`)
+          return { answered: 0, heldBack: 0 }
+        },
+      )
+      if (waiting.answered > 0) console.log(`answered ${waiting.answered} discussion(s) that were waiting`)
+      if (waiting.heldBack > 0) {
+        console.log(`${waiting.heldBack} held back by a lock — answered when the project is resumed`)
+      }
     }
   } else {
     // Discussions go with the conductor, and that is what this flag says: they

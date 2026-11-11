@@ -53,6 +53,7 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
+  projectStream,
   ticketReducer,
   waitsFromState,
   type WaitId,
@@ -75,7 +76,7 @@ import { actor } from '@/lib/actor'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
-import { setProjectPaused } from '@/lib/locks'
+import { askRefusal, setProjectPaused } from '@/lib/locks'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
@@ -581,6 +582,14 @@ export async function askDiscussion(input: {
     if (!input.question.trim()) return { ok: false, detail: 'a question needs a question' }
     const chatId = input.chatId ?? `chat-${randomUUID()}`
     const by = actor()
+    const project = parseTicketStream(input.taskId)?.project ?? ''
+    if (project !== '') {
+      const read = await eventStore
+        .read(projectStream(project))
+        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+      const refusal = askRefusal(project, read)
+      if (refusal !== null) return { ok: false, detail: refusal }
+    }
     const at = await eventStore.head(CONTROL_STREAM)
     await eventStore.append(CONTROL_STREAM, at, [
       {
