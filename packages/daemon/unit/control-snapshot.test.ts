@@ -2,7 +2,14 @@
  * A whole-stream control read starts from the latest usable snapshot (0124 §6, #871)
  * and gives the answer reducing from version 1 gives.
  */
-import { CONTROL_STREAM, type ControlState, controlReducer, reduceAll, reduceControl } from '@lingtai/domain'
+import {
+  CONTROL_STREAM,
+  type ControlState,
+  controlReducer,
+  isRetiredEventType,
+  reduceAll,
+  reduceControl,
+} from '@lingtai/domain'
 import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import type { Snapshot } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
@@ -41,11 +48,15 @@ async function build(history: readonly { type: string; actor: string; data?: unk
   return { store, stored, snapshots, at }
 }
 
-const all = [...Object.values(histories.control), ...Object.values(lateHistories.control)] as readonly (readonly {
-  type: string
-  actor: string
-  data?: unknown
-}[])[]
+// A store refuses to append a retired type, so the histories that hold one are replayed without it. The
+// reducer's reading of a retired event is `control.test.ts`'s to prove, on envelopes it builds itself.
+const all = (
+  [...Object.values(histories.control), ...Object.values(lateHistories.control)] as readonly (readonly {
+    type: string
+    actor: string
+    data?: unknown
+  }[])[]
+).map((h) => h.filter((e) => !isRetiredEventType(e.type)))
 
 describe('readControl through a snapshot equals reducing from version 1', () => {
   for (const [n, history] of all.entries()) {
