@@ -351,9 +351,6 @@ export async function run(
      * projector — which creates tables and replays to the head — cannot.
      */
     yield* ConductorLock
-    // The first the guard is asked: it appends the ceiling's transitions, and
-    // only the lock's holder may (0126 §4).
-    yield* heedTheLock(locked, options.project)
     startRates()
 
     const project = yield* Effect.tryPromise({
@@ -432,6 +429,10 @@ export async function run(
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
       yield* Projector
+      // The first the guard is asked: it appends the ceiling's transitions, and
+      // only the lock's holder may (0126 §4). After the projector is up, so a
+      // `spend` that trails the log is caught up rather than refused forever.
+      yield* heedTheLock(locked, options.project)
 
       /**
        * The recipe, **resolved before `common` and in both branches** (`#313`).
