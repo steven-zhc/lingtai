@@ -30,7 +30,13 @@ describe('raiseDayCeiling', () => {
     expect(answer).toEqual({ raised: true, version: 2 })
     const events = await store.read(CONTROL_STREAM)
     expect(events.map((e) => e.type)).toEqual(['DayCeilingReached', 'DayCeilingLifted'])
-    expect(events[1]!.data).toEqual({ day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 })
+    expect(events[1]!.data).toEqual({
+      day: REACHED.day,
+      why: 'person',
+      by: 'human:steven',
+      toUsd: 40,
+      fromUsd: REACHED.ceilingUsd,
+    })
   })
 
   it('refuses a figure not above the ceiling that was reached', async () => {

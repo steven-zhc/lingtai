@@ -69,7 +69,15 @@ import {
   readControl,
   readStatus,
 } from '@lingtai/daemon'
-import { type RecordedRefusal, REDUCERS, type RuntimeId, isEventType } from '@lingtai/domain'
+import {
+  type ControlState,
+  type RecordedRefusal,
+  REDUCERS,
+  type RuntimeId,
+  ceilingFacts,
+  isEventType,
+  todaysCeiling,
+} from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChoice,
@@ -132,6 +140,7 @@ import { git } from '@lingtai/repo'
 import { remedyFor } from '@lingtai/setup'
 import pg from 'pg'
 
+import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { readDaySpend } from './day-ceiling.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
@@ -1903,22 +1912,61 @@ export async function endStepRan(queries: LogQueries, titles: TitleBook): Promis
  */
 export async function spendToday(
   read: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }> = readDaySpend,
+  /** The control stream, throwing where it cannot be read. No default: a unit test must not read the machine's store. */
+  control: () => Promise<ControlState> = () => Promise.reject(new Error('the control stream was not offered')),
+  now: () => Date = () => new Date(),
 ): Promise<CheckResult> {
   const name = 'spend: today'
+  const at = now()
+  // Its own try: a control failure is a line on the row, never the row's `fail`.
+  let state: ControlState | null = null
+  let unread: string | null = null
   try {
-    const { day, ceilingUsd } = await read()
-    const detail = daySpendText(day, ceilingUsd)
+    state = await control()
+  } catch (err) {
+    unread = err instanceof Error ? err.message : String(err)
+  }
+  const facts = state === null ? undefined : ceilingFacts(state, at, undefined)
+  const reached = facts?.reached ?? null
+  const reachedText =
+    reached === null
+      ? null
+      : reached.passed
+        ? `the ceiling reached on ${reached.day} lifts when the conductor next looks`
+        : reachedLine(reached, at, 'nothing new starts')
+  const raisedText = facts?.raised == null ? null : raisedLine(facts.raised, at)
+  const unreadText = unread === null ? null : ceilingUnreadLine(unread)
+  // The short view draws one line of a row that is not `ok`, so everything the ceiling has to say shares it.
+  const headline = [reachedText, raisedText, unreadText].filter((l): l is string => l !== null).join(' · ')
+  try {
+    const { day, ceilingUsd: configuredUsd } = await read()
+    const ceilingUsd = state === null ? configuredUsd : todaysCeiling(state, at, configuredUsd)
+    const sentence = daySpendText(day, ceilingUsd)
     if (ceilingUsd !== undefined && day.unknown > 0) {
       return {
         name,
         status: 'warn',
         title: `${day.unknown} of today's runs reported no cost`,
-        detail: `the daily ceiling cannot see them\n${detail}`,
+        detail: [...(headline === '' ? [] : [headline]), `the daily ceiling cannot see them`, sentence].join('\n'),
       }
     }
-    return { name, status: 'ok', detail }
+    if (headline !== '') {
+      return {
+        name,
+        status: 'info',
+        ...(reached !== null && !reached.passed ? { title: "today's ceiling is reached" } : {}),
+        detail: [headline, sentence].join('\n'),
+      }
+    }
+    return { name, status: 'ok', detail: sentence }
   } catch (err) {
-    return { name, status: 'fail', title: "today's spend could not be read", detail: (err as Error).message }
+    const [first = '', ...rest] = (err as Error).message.split('\n')
+    return {
+      name,
+      status: 'fail',
+      title: "today's spend could not be read",
+      detail: [[first, ...(headline === '' ? [] : [headline])].join(' · '), ...rest].join('\n'),
+    }
   }
 }
 
@@ -3243,7 +3291,16 @@ export async function runDoctor(
     await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
     await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
     await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
-    await step('spend', async () => results.push(await spendToday(reach.spend)))
+    await step('spend', async () =>
+      results.push(
+        await spendToday(
+          reach.spend,
+          reach.pause
+            ? () => reach.pause!().then((c) => c ?? Promise.reject(new Error('the control stream could not be read')))
+            : () => readControl(),
+        ),
+      ),
+    )
     await step('rates', async () =>
       results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag())))),
     )
@@ -3291,7 +3348,7 @@ export async function runDoctor(
     // for thirty-nine minutes only one of them was measured.
     await step('daemon currency', async () => results.push(await daemonCurrency()))
     await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
-    await step('spend', async () => results.push(await spendToday()))
+    await step('spend', async () => results.push(await spendToday(undefined, () => readControl())))
     await step('rates', async () => results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag()))))
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question

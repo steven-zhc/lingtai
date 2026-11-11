@@ -1586,7 +1586,14 @@ export const DayCeilingReached = z.object({
 /** @summary The daily ceiling was lifted: a new day, the configuration, or a person raising today's figure. */
 export const DayCeilingLifted = z.union([
   z.object({ day: z.string(), why: z.enum(['new-day', 'config-raised', 'config-removed']) }),
-  z.object({ day: z.string(), why: z.literal('person'), by: z.string(), toUsd: z.number().positive() }),
+  z.object({
+    day: z.string(),
+    why: z.literal('person'),
+    by: z.string(),
+    toUsd: z.number().positive(),
+    /** The figure that was reached when it was raised; absent on a raise written before it existed. */
+    fromUsd: z.number().positive().optional(),
+  }),
 ])
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ceilingCheck, localDay, raiseTransition, todaysCeiling } from '../src/ceiling-lock.ts'
+import { ceilingCheck, ceilingFacts, localDay, raiseTransition, todaysCeiling } from '../src/ceiling-lock.ts'
 import { emptyControl, type ControlState } from '../src/control.ts'
 
 const NOW = new Date(2026, 10, 11, 14, 0, 0)
@@ -144,8 +144,42 @@ describe('raiseTransition', () => {
       event: {
         type: 'DayCeilingLifted',
         actor: 'human:steven',
-        data: { day: TODAY, why: 'person', by: 'human:steven', toUsd: 40 },
+        data: { day: TODAY, why: 'person', by: 'human:steven', toUsd: 40, fromUsd: 25 },
       },
     })
+  })
+})
+
+describe('ceilingFacts', () => {
+  it('is undefined with nothing configured and nothing standing', () => {
+    expect(ceilingFacts(emptyControl, NOW, undefined)).toBeUndefined()
+  })
+
+  it('says a ceiling reached today', () => {
+    const f = ceilingFacts(stateWith({ reached: reached(TODAY, 25) }), NOW, 25)!
+    expect(f.reached).toMatchObject({ day: TODAY, ceilingUsd: 25, passed: false })
+    expect(f.todayUsd).toBe(25)
+  })
+
+  it('says yesterday’s as passed, and still prints it with no figure configured', () => {
+    const f = ceilingFacts(stateWith({ reached: reached(YESTERDAY, 25) }), NOW, undefined)!
+    expect(f.reached?.passed).toBe(true)
+    expect(f.configuredUsd).toBeUndefined()
+  })
+
+  it('does not show a raise from yesterday', () => {
+    const f = ceilingFacts(stateWith({ raised: { day: YESTERDAY, toUsd: 40, by: 'human:a', at: NOW } }), NOW, 25)!
+    expect(f.raised).toBeNull()
+    expect(f.todayUsd).toBe(25)
+  })
+
+  it('shows a raise today, from the configured figure', () => {
+    const f = ceilingFacts(
+      stateWith({ raised: { day: TODAY, fromUsd: 25, toUsd: 40, by: 'human:a', at: NOW } }),
+      NOW,
+      25,
+    )!
+    expect(f.raised).toEqual({ fromUsd: 25, toUsd: 40, by: 'human:a', at: NOW })
+    expect(f.todayUsd).toBe(40)
   })
 })

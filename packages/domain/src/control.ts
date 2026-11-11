@@ -157,7 +157,7 @@ export interface ControlState {
       at: Date
       seq: number
     } | null
-    raised: { day: string; toUsd: number; by: string; at: Date } | null
+    raised: { day: string; toUsd: number; fromUsd?: number; by: string; at: Date } | null
   }
 }
 
@@ -301,7 +301,13 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
         typeof d['day'] === 'string' &&
         typeof d['toUsd'] === 'number' &&
         typeof d['by'] === 'string'
-          ? { day: d['day'], toUsd: d['toUsd'], by: d['by'], at: e.at }
+          ? {
+              day: d['day'],
+              toUsd: d['toUsd'],
+              ...(typeof d['fromUsd'] === 'number' ? { fromUsd: d['fromUsd'] } : {}),
+              by: d['by'],
+              at: e.at,
+            }
           : state.dayCeiling.raised
       return { ...state, dayCeiling: { reached: null, raised } }
     }
@@ -411,7 +417,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 5,
+  version: 6,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

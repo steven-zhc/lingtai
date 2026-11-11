@@ -15,6 +15,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectFilter } from '@lingtai/conductor'
+import { emptyControl } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
@@ -473,13 +474,13 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('is ok when every row is usable', async () => {
-    const r = await snapshotCensus(async () => [row('control', 5, 3, 3)])
+    const r = await snapshotCensus(async () => [row('control', 6, 3, 3)])
     expect(r.status).toBe('ok')
     expect(r.detail).toBe('3 snapshots, 3 usable (2 KB)')
   })
 
   it('reports an older version as void, naming reducer and version', async () => {
-    const r = await snapshotCensus(async () => [row('control', 1, 1, 1, 14_000), row('control', 5, 4, 4)])
+    const r = await snapshotCensus(async () => [row('control', 1, 1, 1, 14_000), row('control', 6, 4, 4)])
     expect(r.status).toBe('info')
     expect(r.detail).toBe('5 snapshots, 4 usable (2 KB) · void: control v1 ×1 (14 KB, older version)')
   })
@@ -547,13 +548,19 @@ describe('spendToday names the unknown runs', () => {
   }
 
   it('is ok with the names and no ceiling', async () => {
-    const r = await spendToday(async () => ({ day, ceilingUsd: undefined }))
+    const r = await spendToday(
+      async () => ({ day, ceilingUsd: undefined }),
+      async () => emptyControl,
+    )
     expect(r.status).toBe('ok')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })
 
   it('warns with the names and a ceiling', async () => {
-    const r = await spendToday(async () => ({ day, ceilingUsd: 50 }))
+    const r = await spendToday(
+      async () => ({ day, ceilingUsd: 50 }),
+      async () => emptyControl,
+    )
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })

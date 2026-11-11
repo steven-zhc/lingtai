@@ -60,3 +60,16 @@ describe('decodeControl refuses another shape, by name', () => {
     })
   }
 })
+
+describe('decodeControl keeps the figure a raise started from (#1005)', () => {
+  it('round-trips raised.fromUsd', () => {
+    const state = {
+      ...emptyControl,
+      dayCeiling: {
+        reached: null,
+        raised: { day: '2026-11-11', toUsd: 40, fromUsd: 25, by: 'human:steven', at: new Date(2026, 10, 11, 16, 40) },
+      },
+    }
+    expect(decodeControl(encodeControl(state))).toEqual(state)
+  })
+})

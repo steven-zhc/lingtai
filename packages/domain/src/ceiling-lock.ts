@@ -34,6 +34,60 @@ export function todaysCeiling(state: ControlState, now: Date, configuredUsd: num
   return raised !== null && raised.day === localDay(now) ? Math.max(configuredUsd, raised.toUsd) : configuredUsd
 }
 
+/** What the day's ceiling is, as every reader says it (0126 §5): one shape for `status`, `doctor` and the board. */
+export interface CeilingFacts {
+  configuredUsd: number | undefined
+  /** `todaysCeiling`: the figure the guard compares against today. */
+  todayUsd: number | undefined
+  /** Today's raise only. `fromUsd` is the figure that was reached; absent on a raise written before the event carried it. */
+  raised: { fromUsd?: number; toUsd: number; by: string; at: Date } | null
+  /** The standing lock. `passed` is a reader's word: the log still holds it, the guard lifts it at its next look (0126 §8). */
+  reached: {
+    day: string
+    since: Date
+    ceilingUsd: number
+    reportedUsd: number
+    estimatedUsd: number
+    passed: boolean
+  } | null
+}
+
+/** `undefined` when no figure is configured and nothing stands. */
+export function ceilingFacts(
+  state: ControlState,
+  now: Date,
+  configuredUsd: number | undefined,
+): CeilingFacts | undefined {
+  const { reached, raised } = state.dayCeiling
+  const today = localDay(now)
+  const raisedToday = raised !== null && raised.day === today ? raised : null
+  if (configuredUsd === undefined && reached === null && raisedToday === null) return undefined
+  return {
+    configuredUsd,
+    todayUsd: todaysCeiling(state, now, configuredUsd),
+    raised:
+      raisedToday === null
+        ? null
+        : {
+            ...(raisedToday.fromUsd === undefined ? {} : { fromUsd: raisedToday.fromUsd }),
+            toUsd: raisedToday.toUsd,
+            by: raisedToday.by,
+            at: raisedToday.at,
+          },
+    reached:
+      reached === null
+        ? null
+        : {
+            day: reached.day,
+            since: reached.at,
+            ceilingUsd: reached.ceilingUsd,
+            reportedUsd: reached.reportedUsd,
+            estimatedUsd: reached.estimatedUsd,
+            passed: reached.day !== today,
+          },
+  }
+}
+
 /** What to append, in order, so the log says what the state, the clock, the figure and the spend say. */
 export function ceilingCheck(input: {
   state: ControlState
@@ -93,6 +147,10 @@ export function raiseTransition(input: {
   if (cents(toUsd) <= cents(reached.ceilingUsd)) return { ok: false, refused: 'not-above-ceiling' }
   return {
     ok: true,
-    event: { type: 'DayCeilingLifted', actor: by, data: { day: reached.day, why: 'person', by, toUsd } },
+    event: {
+      type: 'DayCeilingLifted',
+      actor: by,
+      data: { day: reached.day, why: 'person', by, toUsd, fromUsd: reached.ceilingUsd },
+    },
   }
 }
