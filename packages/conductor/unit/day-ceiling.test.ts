@@ -1,17 +1,8 @@
-import { CONTROL_STREAM, reduceControl } from '@lingtai/domain'
 import { estimateRow, REPRICED_REASON, type RateRow } from '@lingtai/domain/rate-card'
 import { machineDayCeiling, machineFileFrom } from '@lingtai/env'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import {
-  ceilingReached,
-  daySpend,
-  daySpendText,
-  nextLocalMidnight,
-  startOfLocalDay,
-  type DayRow,
-} from '../src/day-ceiling.ts'
+import { ceilingReached, daySpend, daySpendText, type DayRow } from '../src/day-ceiling.ts'
 
 const now = new Date(2026, 9, 26, 14, 0, 0)
 /** A row as the reducer stored it: `estimatedUsd` null is unknown. */

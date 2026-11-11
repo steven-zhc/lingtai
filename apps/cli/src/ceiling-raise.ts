@@ -4,7 +4,7 @@
  *
  * An Effect over ports, so the suite drives it with a memory store and stubbed
  * spend. Today's spend is read first and by the same trust checks
- * `dayCeilingStop` makes: a spend that cannot be read, or a `spend` projection
+ * the guard's ceiling port makes: a spend that cannot be read, or a `spend` projection
  * that is stalled or rebuilding, is a refusal by name and never a raise.
  */
 import { raiseDayCeiling } from '@lingtai/daemon'

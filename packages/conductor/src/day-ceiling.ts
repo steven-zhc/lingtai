@@ -16,8 +16,6 @@
 import type { Usage } from '@lingtai/domain'
 import { unpricedReason, type RateRow } from '@lingtai/domain/rate-card'
 
-import { readRateSnapshot } from './rate-snapshot.ts'
-
 export interface DayRow {
   at: Date
   costUsd: number | null
