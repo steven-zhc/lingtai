@@ -563,6 +563,9 @@ export async function run(
           const rows = (yield* owedRows).filter((c) => c.project === options.project)
           for (const row of rows) {
             if (limit !== undefined && ran.length >= limit) break
+            // Liveness first: it is an asynchronous read, and the pause answers below
+            // must be a fact about the moment right before the start, not before it.
+            if (!(yield* isOwed(row))) continue
             // A pause that cannot be read is a refusal here, not a stop: the approval
             // is still owed and a clean exit would say nothing was wrong.
             const sentence = yield* Effect.tryPromise({
@@ -582,7 +585,6 @@ export async function run(
               log(lock)
               return { ran, stopped: lock }
             }
-            if (!(yield* isOwed(row))) continue
             log(`continuing #${row.issue} — asked for by ${row.by}`)
             const result = yield* world.runOnce({
               ...common,
@@ -671,6 +673,15 @@ export async function run(
           continuing = { runId: row.runId }
           break
         }
+      }
+      // Asked after the approval reads, right before the start: a pause recorded
+      // while they were pending must not be started over.
+      const lock = yield* Effect.promise(() => locked(options.project))
+      if (lock !== null && lock.startsWith('could not ')) return yield* Effect.fail(refuse(lock))
+      if (lock !== null) {
+        log(lock)
+        log('nothing was taken: this project is locked')
+        return 0
       }
       const result = yield* world.runOnce({
         ...common,

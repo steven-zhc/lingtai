@@ -422,6 +422,14 @@ export function conductWork(
       return true
     }
 
+    // Asked right before an awaited start, after the reads that precede it: the
+    // answer is a fact about the moment it is asked, not about before them.
+    const stoppedNow = async (): Promise<string | null> => {
+      const paused = options.paused ? await options.paused() : null
+      if (paused !== null) return paused
+      return options.locked ? await options.locked(name) : null
+    }
+
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
       if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
@@ -438,6 +446,11 @@ export function conductWork(
         // wait for a file, must leave the free slots to the rest of the project.
         await launch(Number(c.issue), { runId: c.runId })
         continue
+      }
+      const stopped = await stoppedNow()
+      if (stopped !== null) {
+        say(`${name}: #${c.issue} not started — ${stopped}`)
+        return 'looked'
       }
       const result: RunOnceResult = await Effect.runPromise(
         world
@@ -513,14 +526,18 @@ export function conductWork(
       tellTaking(asked.issue, task.title)
       if (detached) await launch(Number(asked.issue))
       else {
-        const result: RunOnceResult = await Effect.runPromise(
-          world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
-        )
-        options.outcome.ran += 1
-        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-        else if (result.ok === 'held') options.log(`held at ${result.step}`)
-        else options.log(`stopped at ${result.stage}: ${result.detail}`)
-        tellEnding(result)
+        const stopped = await stoppedNow()
+        if (stopped !== null) say(`${name}: #${asked.issue} not started — ${stopped}`)
+        else {
+          const result: RunOnceResult = await Effect.runPromise(
+            world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
+          )
+          options.outcome.ran += 1
+          if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+          else if (result.ok === 'held') options.log(`held at ${result.step}`)
+          else options.log(`stopped at ${result.stage}: ${result.detail}`)
+          tellEnding(result)
+        }
       }
     }
     // Detached, a request and a continuation take a slot and the queue fills the rest.
