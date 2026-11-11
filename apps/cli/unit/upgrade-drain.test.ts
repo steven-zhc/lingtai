@@ -1,9 +1,9 @@
 /**
- * `lingtai upgrade`'s drain against a memory log: what it asks for, that what
- * it asked for does not outlive the upgrade, and that a request left standing by
- * an earlier upgrade is neither waited on for ever nor left unsaid.
+ * `lingtai upgrade`'s drain against a memory log: what it asks for, that
+ * nothing here withdraws it (0126: the next start ends it), and that a request
+ * left standing by an earlier upgrade is waited on and left unsaid of nothing.
  */
-import { readControl, requestShutdownUnlessStanding, withdrawShutdown } from '@lingtai/daemon/control'
+import { readControl, requestShutdownUnlessStanding } from '@lingtai/daemon/control'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
@@ -20,7 +20,6 @@ function how(store: Store, over: Partial<UpgradeDrain> = {}): UpgradeDrain {
     holder: async () => null,
     control: () => readControl(store),
     request: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
-    withdraw: (by, version, reason) => withdrawShutdown(by, version, reason, store),
     inFlight: async () => 'nothing in flight',
     wait: async () => 'free',
     log: () => {},
@@ -29,21 +28,25 @@ function how(store: Store, over: Partial<UpgradeDrain> = {}): UpgradeDrain {
 }
 
 describe("lingtai upgrade's drain", () => {
-  it('withdraws its own drain on the next upgrade, after a ctrl-c, once the daemon has let go of the lock', async () => {
-    const store = createMemoryEventStore()
+  const withdrawals = async (store: Store) =>
+    (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorShutdownWithdrawn')
 
-    // A daemon mid-pass; the operator presses ctrl-c during the wait.
+  it('leaves its own drain standing after a ctrl-c, and withdraws nothing once the daemon has let go', async () => {
+    const store = createMemoryEventStore()
     const first = await drainForUpgrade(
       how(store, { holder: async () => 'steven@host pid 777', wait: async () => 'interrupted' }),
     )
     expect(first).toEqual({ ok: false, code: 130 })
-    expect((await readControl(store)).shutdown?.by).toBe('human:steven')
+    const standing = (await readControl(store)).shutdown!
+    expect(standing.by).toBe('human:steven')
 
-    // The daemon finishes its pass and exits; `lingtai upgrade` again.
-    const second = await drainForUpgrade(how(store))
+    const lines: string[] = []
+    const second = await drainForUpgrade(how(store, { log: (l) => lines.push(l) }))
     expect(second.ok).toBe(true)
     if (second.ok) await second.after()
-    expect((await readControl(store)).shutdown).toBeNull()
+    expect((await readControl(store)).shutdown?.version).toBe(standing.version)
+    expect(lines.join('\n')).toContain('the next lingtai start ends it')
+    expect(await withdrawals(store)).toEqual([])
   })
 
   it('leaves a drain somebody else asked for where it is when nothing conducts', async () => {
@@ -56,7 +59,7 @@ describe("lingtai upgrade's drain", () => {
     expect((await readControl(store)).shutdown?.by).toBe('human:alice')
   })
 
-  it('asks for a drain while something conducts, and withdraws it once the lock is free and the shim has moved', async () => {
+  it('asks for a drain while something conducts, and withdraws nothing when the lock is free', async () => {
     const store = createMemoryEventStore()
     const drained = await drainForUpgrade(
       how(store, {
@@ -69,33 +72,28 @@ describe("lingtai upgrade's drain", () => {
     )
     expect(drained.ok).toBe(true)
     if (drained.ok) await drained.after()
-    expect((await readControl(store)).shutdown).toBeNull()
+    expect((await readControl(store)).shutdown?.by).toBe('human:steven')
+    expect(await withdrawals(store)).toEqual([])
   })
 
-  it('lifts its own earlier drain and asks again while something conducts, so a daemon started since reads it', async () => {
+  it('waits on its own earlier drain while something conducts, and appends nothing', async () => {
     const store = createMemoryEventStore()
-
-    // Ctrl-c during the first upgrade's wait: its request stands.
     await drainForUpgrade(how(store, { holder: async () => 'steven@host pid 777', wait: async () => 'interrupted' }))
+    const before = (await store.read('ctl-conductor')).length
     const first = (await readControl(store)).shutdown!
 
-    // That daemon exits and another starts, whose watermark is past `first` —
-    // it reads only what is appended after it started. `lingtai upgrade` again.
-    let readByTheNewDaemon: number | null = null
+    let waited = false
     const drained = await drainForUpgrade(
       how(store, {
         holder: async () => 'steven@host pid 888',
-        wait: async () => {
-          const standing = (await readControl(store)).shutdown
-          readByTheNewDaemon = standing !== null && standing.version > first.version ? standing.version : null
-          return 'free'
-        },
+        wait: async () => ((waited = true), 'free'),
       }),
     )
-    expect(readByTheNewDaemon).not.toBeNull()
+    expect(waited).toBe(true)
     expect(drained.ok).toBe(true)
     if (drained.ok) await drained.after()
-    expect((await readControl(store)).shutdown).toBeNull()
+    expect((await store.read('ctl-conductor')).length).toBe(before)
+    expect((await readControl(store)).shutdown?.version).toBe(first.version)
   })
 
   it("refuses on somebody else's drain while something conducts, and asks nothing", async () => {
@@ -106,7 +104,7 @@ describe("lingtai upgrade's drain", () => {
       how(store, { holder: async () => 'steven@host pid 777', log: (l) => lines.push(l) }),
     )
     expect(drained).toEqual({ ok: false, code: 1 })
-    expect(lines.join('\n')).toContain('theirs to lift')
+    expect(lines.join('\n')).toContain('starting a conductor (lingtai daemon) ends it')
     expect((await readControl(store)).shutdown?.by).toBe('human:alice')
   })
 
@@ -133,7 +131,7 @@ describe("lingtai upgrade's drain", () => {
     const said = lines.join('\n')
     expect(said).not.toContain('nothing was asked to stop')
     expect(said).toContain('the drain you asked for earlier (upgrading 1.0.0 to 1.0.1) is still standing')
-    expect(said).toContain('lingtai resume lifts it')
+    expect(said).toContain('the next start ends it')
   })
 
   it('upgrades despite a red doctor when told to', async () => {

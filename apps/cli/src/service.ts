@@ -79,7 +79,7 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { Asking, RecordedStart, Withdrawal } from '@lingtai/daemon'
+import type { Asking, RecordedStart } from '@lingtai/daemon'
 import { repoRoot, stateDir } from '@lingtai/env'
 
 import { jsonErrorDocument } from './output.ts'
@@ -91,6 +91,7 @@ import {
   type SupervisorAnswer,
 } from './service-status.ts'
 import { noSteps, type Steps } from './steps.ts'
+import { keepAsked } from './upgrade-drain.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
@@ -576,8 +577,6 @@ export interface ServiceDrain {
    * it to this command and not to a copy the supervisor starts after it exits.
    */
   queue: () => Promise<LockQueue>
-  /** `withdrawShutdown`: the request at `version`, and nothing else. */
-  withdraw: (by: string, version: number, reason: string) => Promise<Withdrawal>
 }
 
 /** What `ServiceDrain.queue` returns. */
@@ -602,6 +601,45 @@ export interface LockQueue {
   leave: () => Promise<void>
 }
 
+/** What a person is told over somebody else's standing drain: the start is what would end it. */
+const FOREIGN_STANDING =
+  'It is theirs to decide: starting a conductor (lingtai daemon) ends it, so ask them, or start one once they have.'
+
+/**
+ * Whether a start may go ahead over the shutdown request standing (0126). A start
+ * ends the request standing, so it is refused over somebody else's — exempt by
+ * `by` and nothing else, as `startRefusals` is — and a request that could not be
+ * read is a refusal, never *nothing stands*.
+ */
+export function standingRefusal(input: {
+  by: string
+  standing: { by: string; reason: string } | { unread: string } | null
+  /** Whether the service has already been unloaded, so "nothing was stopped" would be false. */
+  unloaded: boolean
+}): { refuse: true; lines: string[] } | { refuse: false; note: string | null } {
+  const { standing } = input
+  if (standing === null) return { refuse: false, note: null }
+  if ('unread' in standing)
+    return {
+      refuse: true,
+      lines: [
+        `could not read whether a shutdown request stands — ${standing.unread}. Nothing was started.`,
+        'A start ends a drain somebody asked for and could not tell it had: pnpm lingtai status says whether the log can be read.',
+      ],
+    }
+  if (standing.by === input.by)
+    return { refuse: false, note: `your drain stands (${standing.reason}); this start ends it` }
+  return {
+    refuse: true,
+    lines: [
+      `a shutdown request stands — asked by ${standing.by} (${standing.reason}) — and starting a conductor would end it.`,
+      input.unloaded
+        ? `The drain above unloaded the service, and nothing was started: nothing supervised runs until pnpm lingtai service start. ${FOREIGN_STANDING}`
+        : `Nothing was started or stopped. ${FOREIGN_STANDING}`,
+    ],
+  }
+}
+
 export interface ServiceOptions {
   /** `status --json` (#622): the one document goes to `log`, and `NO_SUPERVISOR` becomes the error document. */
   json?: boolean
@@ -609,17 +647,11 @@ export interface ServiceOptions {
   liveness: () => Promise<string>
   /**
    * The shutdown request in force, off the control stream, or null. Injected
-   * for the same reason. A daemon started while one stands does not read it —
-   * it reads nothing asked before it started (#159) — so it would take work
-   * over a stop somebody asked for, and a start is refused until `lingtai resume`.
+   * for the same reason. A start ends the request standing (0126), so one that
+   * is somebody else's is a decision a start would make for them: it is refused,
+   * and this person's own is not.
    */
   shutdown: () => Promise<{ by: string; reason: string } | null>
-  /**
-   * The pause in force, or null. `lingtai resume` lifts it along with the
-   * shutdown, so advice that ends in `resume` has to say how to keep it.
-   * `until` is when it lifts by itself (0031 §3), and null for a person's.
-   */
-  pause?: () => Promise<{ by: string | null; reason: string | null; until?: Date | null } | null>
   /** What `shutdown` and `restart` wait on before the supervisor is told anything. */
   drain: ServiceDrain
   /**
@@ -1145,97 +1177,23 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
   }
 
   /**
-   * Whether a start would override a stop somebody asked for. A daemon started
-   * now reads nothing asked before it started (#159), so it would not exit on a
-   * standing request — it would take work over it, and that is not this
-   * command's to decide.
-   * A request that could not be read is said and not treated as none — nor as
-   * one, since a restart is often what somebody reaches for when the database
-   * is the trouble.
+   * Whether a start would end a stop somebody else asked for. A start ends the
+   * request standing (0126), so over somebody else's it decides for them; this
+   * person's own is the one it is meant to end, and is not refused.
+   * A request that could not be read is a refusal, never *nothing stands*: the
+   * start could end somebody's drain without being able to see that it did.
    */
   const shutdownStands = async (
     /** Whether this command has already unloaded the service, so "nothing was stopped" would be false. */
     unloaded = false,
   ): Promise<boolean> => {
-    let asked: { by: string; reason: string } | null
-    try {
-      asked = await options.shutdown()
-    } catch (err) {
-      log(`note  could not read whether a shutdown request stands — ${(err as Error).message}`)
-      log(
-        '      if one does, the daemon this starts takes work over it — it reads nothing asked before it started. pnpm lingtai resume lifts it (a pause too)',
-      )
+    const standing = await options.shutdown().catch((err: unknown) => ({ unread: (err as Error).message }))
+    const verdict = standingRefusal({ by, standing, unloaded })
+    if (!verdict.refuse) {
+      if (verdict.note !== null) log(verdict.note)
       return false
     }
-    if (!asked) return false
-    error(
-      `a shutdown request stands — asked by ${asked.by} (${asked.reason}) — and a daemon started now would not read it:`,
-    )
-    error(
-      unloaded
-        ? 'it reads nothing asked before it started (#159), and would take work over that stop. The drain above unloaded the service, and nothing was started: nothing supervised runs until pnpm lingtai service start.'
-        : 'it reads nothing asked before it started (#159), and would take work over that stop. Nothing was started or stopped.',
-    )
-    // `resume` is the only thing that lifts a shutdown, and it lifts a pause in
-    // the same event — so a pause somebody set on purpose is named here, with
-    // the order that keeps it: nothing supervised is up between the resume and
-    // the pause again, so nothing takes work in that window.
-    let paused: { by: string | null; reason: string | null; until?: Date | null } | null | undefined
-    try {
-      paused = await options.pause?.()
-    } catch {
-      paused = undefined
-    }
-    if (paused?.until) {
-      // A pause that lifts itself cannot be set again by hand — `lingtai pause`
-      // carries no time, so it would hold past this one's end until somebody
-      // noticed. Waiting it out keeps it: after its time `resume` lifts only
-      // the shutdown.
-      const at = paused.until.toISOString()
-      error(
-        `A pause is in force too — ${paused.by ?? 'somebody'} (${paused.reason ?? 'no reason given'}) — until ${at}, when it lifts by itself,`,
-      )
-      error(
-        'and pnpm lingtai resume lifts it now, along with the shutdown. To keep it, do not pause again — that pause would never lift.',
-      )
-      error(
-        verb === 'install' || unloaded
-          ? `After ${at}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then pnpm lingtai service start.`
-          : `After ${at}, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.`,
-      )
-      // Not "the supervisor's next start takes work": an unloaded job starts
-      // nothing after a resume, and a loaded one is not held down by the request.
-      if (verb !== 'install' && !unloaded)
-        error(
-          'Under a supervisor that request does not hold the service down: a copy started after it takes work regardless.',
-        )
-      return true
-    }
-    if (paused) {
-      error(
-        `A pause is in force too — ${paused.by ?? 'somebody'} (${paused.reason ?? 'no reason given'}) — and pnpm lingtai resume lifts it`,
-      )
-      error(
-        'along with the shutdown. To keep it, once the daemon the shutdown was aimed at has exited (pnpm lingtai service status):',
-      )
-      error(
-        `pnpm lingtai service shutdown, pnpm lingtai resume, pnpm lingtai pause ${JSON.stringify(paused.reason ?? 'why')}, pnpm lingtai service start.`,
-      )
-      return true
-    }
-    if (paused === undefined)
-      error('Whether a pause is in force could not be read — if one is, pnpm lingtai resume lifts it as well.')
-    if (verb === 'install' || unloaded) {
-      error('Once the daemon it was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume,')
-      error('then pnpm lingtai service start, which takes work on the code at HEAD.')
-      return true
-    }
-    error(
-      'Under a supervisor that request does not hold the service down: a copy started after it takes work regardless.',
-    )
-    error(
-      'Once the daemon it was aimed at has exited (pnpm lingtai service status), pnpm lingtai resume, then this command again.',
-    )
+    for (const line of verdict.lines) error(line)
     return true
   }
 
@@ -1348,15 +1306,15 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
    *    session already waiting, before the copy can try for it.
    * 2. the request, on the log: the daemon finishes the pass in flight, the
    *    gates and the merge lane with it, and exits. Only this command's own —
-   *    one already standing is refused, since whether the daemon running now
-   *    reads it depends on when that daemon started, and it is not ours to lift.
+   *    one already standing is adopted when it is this person's,
+   *    and refused when it is somebody else's.
    * 3. the wait, until this command holds the lock. Bounded by the pass — by
    *    the recipe's runtime.limits — and not by anything here.
    * 4. the unload, still holding the lock. A copy the supervisor started
    *    meanwhile lost the lock and claimed nothing, so there is nothing left
    *    for the supervisor's SIGKILL to take.
-   * 5. the lock released, and the request withdrawn by its version, so the
-   *    next `service start` is not refused over it.
+   * 5. the lock released; the request stands until the next start ends it, and
+   *    `service start` by this person is not refused over it.
    */
   const drain = async (): Promise<number> => {
     steps.begin('draining')
@@ -1403,6 +1361,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       )
       return 1
     }
+    let watcher: { stop: () => Promise<void> } | undefined
     try {
       const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error)
       if (asked instanceof Error) {
@@ -1410,41 +1369,30 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         error("the supervisor's signal would kill an attempt in flight, so it is not sent without the drain.")
         return 1
       }
-      if (!asked.asked) {
-        // Never adopted, even under this person's name: `lingtai shutdown` and
-        // `lingtai restart` ask as `human:$USER` too, and a restart waiting on
-        // its own request would find it lifted under it.
+      // This person's own standing request is adopted and waited on (0126): the
+      // start that follows ends it. Somebody else's is refused.
+      if (!asked.asked && asked.standing.by !== by) {
         error(
           `a shutdown asked by ${asked.standing.by} (${asked.standing.reason}) is already standing. Nothing was stopped:`,
         )
-        error(
-          "a daemon reads only a request asked after it started (#159), so this one may never exit on it, and it is not this command's to lift.",
-        )
-        error('pnpm lingtai resume lifts it (a pause too); pnpm lingtai service shutdown then asks its own.')
+        error(`it is theirs, not this command's. ${FOREIGN_STANDING}`)
         return 1
       }
-      let mine = asked.version
+      if (!asked.asked) log(`a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on it`)
       log(`draining — ${await options.drain.holding().catch(() => 'what is in flight could not be read')}.`)
       log(
         `the attempt in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`,
       )
 
       // A lock gone with its connection can be taken, in the gap, by a copy the
-      // supervisor started after `mine` — which never reads it, and would take
-      // work while this waited for ever. So the request is withdrawn and asked
-      // again once the place is taken again: whatever holds the lock then read
-      // its watermark before that append, and obeys it.
+      // supervisor started. If it recorded its start, that ended the request, and the
+      // request is asked again, above its watermark. If it has not recorded yet,
+      // the request stands and is above its `since`, so it obeys that. Either way
+      // this person's own request is the one waited on; somebody else's is not.
       const askAgain = async (): Promise<void> => {
-        const lifted = await options.drain.withdraw(
-          by,
-          mine,
-          `service ${verb}: asked again, the lock was lost with its connection`,
-        )
-        if (!lifted.withdrew) return
         const again = await options.drain.ask(by, `service ${verb}: ${reason}`)
-        if (!again.asked)
+        if (!again.asked && again.standing.by !== by)
           throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`)
-        mine = again.version
       }
       // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
       const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
@@ -1453,6 +1401,14 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
         steps.end()
         log(line)
       }
+      // A start by a copy that held the lock while initialising ends the request
+      // adopted above; the lock then stays with it and the wait never ends. So
+      // whenever no request stands during the wait, it is asked again.
+      watcher = keepAsked(
+        () => options.shutdown(),
+        () => askAgain(),
+        2000,
+      )
       let waited = await queue.wait(waitLog, askAgain, progress)
       steps.end()
       // Asked again right before the supervisor is told: the lock is only worth
@@ -1469,18 +1425,10 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       if (waited !== 'held') {
         await queue.leave()
-        const lifted = await options.drain
-          .withdraw(by, mine, `service ${verb}: stopped waiting`)
-          .catch((err: unknown) => err as Error)
         log(
           `${waited === 'interrupted' ? 'stopped waiting' : 'gave up waiting'}, and the supervisor was told nothing. ` +
-            (lifted instanceof Error
-              ? `The request could not be withdrawn — ${lifted.message} — and service start refuses while it stands: pnpm lingtai resume lifts it. `
-              : lifted.withdrew
-                ? 'The request is withdrawn. '
-                : '') +
-            'A daemon that had already read it still finishes its attempt and exits, and the supervisor then starts one that takes work — ' +
-            'it reads nothing asked before it started. pnpm lingtai service shutdown asks again.',
+            'The request stands until the next start ends it, and service start by this person is not refused over it. ' +
+            'A daemon that had already read it still finishes its attempt and exits. pnpm lingtai service shutdown picks it up again.',
         )
         return waited === 'interrupted' ? 130 : 1
       }
@@ -1492,36 +1440,16 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       const stopped = platform === 'launchd' ? await unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
       await queue.leave()
       if (!stopped) {
-        // The job is still the supervisor's, so the copy it starts once the lock
-        // is let go takes work, and reads nothing asked before it started. The
-        // request is this command's own, and left standing it would only refuse
-        // the next `service shutdown` and `start` over nothing.
-        const lifted = await options.drain
-          .withdraw(by, mine, `service ${verb}: the supervisor did not stop`)
-          .catch((err: unknown) => err as Error)
         error(
           'the supervisor did not stop the service, above — it may still be running it, and a daemon it starts takes work. ' +
-            (lifted instanceof Error
-              ? `The request could not be withdrawn — ${lifted.message} — and service start and shutdown refuse while it stands: pnpm lingtai resume lifts it.`
-              : lifted.withdrew
-                ? 'The request is withdrawn; pnpm lingtai service shutdown asks again.'
-                : 'pnpm lingtai service shutdown asks again.'),
+            'The request stands until the next start ends it; pnpm lingtai service shutdown picks it up again.',
         )
         return 1
       }
-
-      const lifted = await options.drain
-        .withdraw(by, mine, `service ${verb}: unloaded`)
-        .catch((err: unknown) => err as Error)
-      if (lifted instanceof Error) {
-        error(
-          `unloaded, and the drain could not be withdrawn — ${lifted.message}. service start refuses while it stands: pnpm lingtai resume lifts it`,
-        )
-        return 1
-      }
-      if (lifted.withdrew) log(`withdrew the drain — nothing supervised is running to read it`)
       return 0
     } finally {
+      // Joined before the command is over: no append can follow it.
+      await watcher?.stop()
       await queue.leave()
     }
   }

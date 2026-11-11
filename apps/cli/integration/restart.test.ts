@@ -521,7 +521,6 @@ interface Outcome {
   /** A drain this command asked for was appended. */
   askedToStop: boolean
   /** Something was withdrawn, and which version. */
-  withdrew: number[]
   /** The timeout and force every drain this command asked for carried. */
   asks: { timeoutMs: number | null; force: boolean }[]
 }
@@ -531,7 +530,6 @@ function worldOf(scene: Scene) {
     phase: 'before' as 'before' | 'drained' | 'started',
     lines: [] as string[],
     askedToStop: false,
-    withdrew: [] as number[],
     asks: [] as { timeoutMs: number | null; force: boolean }[],
   }
   let holderAsks = 0
@@ -571,18 +569,9 @@ function worldOf(scene: Scene) {
       w.asks.push({ timeoutMs, force })
       if (scene.askFinds) return { asked: false, standing: scene.askFinds }
       // A person's own standing request is found as it stands, never replaced.
-      if (scene.shutdown && scene.shutdown.by === BY && w.withdrew.length === 0)
-        return { asked: false, standing: scene.shutdown }
+      if (scene.shutdown && scene.shutdown.by === BY) return { asked: false, standing: scene.shutdown }
       w.askedToStop = true
       return { asked: true, version: 11 }
-    },
-    withdraw: async (by, version) => {
-      w.withdrew.push(version)
-      return {
-        withdrew: true,
-        version: version + 1,
-        request: { by, reason: '', timeoutMs: null, version, force: false },
-      }
     },
     // 10 before the drain, 30 once it is over; the start the command makes is 41.
     watermark: async () => (w.phase === 'before' ? 10 : 30),
@@ -608,7 +597,6 @@ function worldOf(scene: Scene) {
     code,
     said: w.lines.join('\n'),
     askedToStop: w.askedToStop,
-    withdrew: w.withdrew,
     asks: w.asks,
   })
   return { w, facts, log, outcome, shutdownNow }
@@ -710,7 +698,6 @@ async function supervised(
     serviceCommand(argv, {
       liveness: async () => 'up',
       shutdown: async () => shutdownNow(),
-      pause: async () => null,
       drain: {
         ask: (by, reason) => facts.ask(by, reason, asked.timeoutMs, asked.force),
         holding: async () => 'nothing in flight',
@@ -719,7 +706,6 @@ async function supervised(
           holds: async () => true,
           leave: async () => {},
         }),
-        withdraw: facts.withdraw,
       },
       started: { watermark: facts.watermark, after: facts.startAfter },
       // The board's job answers at once unless the scene says otherwise:
@@ -882,10 +868,6 @@ describe('the table of refusals', () => {
     const s = await supervised({})
     expect(s.code, s.said).toBe(0)
     expect(s.said).toContain('restarted 2926f2d as mac:4242 — the commit that was checked')
-    // The terminal path withdraws nothing: its start ends the drain (0126). The
-    // supervised path's `service shutdown` still lifts its own, until #1002.
-    expect(t.withdrew).toEqual([])
-    expect(s.withdrew).toEqual([11])
   })
 
   /**
@@ -975,7 +957,6 @@ describe("#167's five findings, on the supervised path", () => {
     const mine = { ...ops(7), by: BY, reason: "restarting: ctrl-c'd yesterday" }
     const out = await supervised({ shutdown: mine, after: { identity: { ...pushed, pushed: false } } })
     expect(out.code).toBe(1)
-    expect(out.withdrew[0]).toBe(7)
     expect(out.said).toContain('is not reachable from origin/main')
     expect(out.said).not.toContain('restarted ')
   })
@@ -996,11 +977,10 @@ describe("#167's five findings, on the supervised path", () => {
   })
 
   /** An own request adopted on the terminal path is waited on as it stands and ended by the start. */
-  it('the terminal path adopts its own standing request and withdraws nothing', async () => {
+  it('the terminal path adopts its own standing request', async () => {
     const mine: ShutdownRequest = { ...ops(7), by: BY, reason: "restarting: ctrl-c'd" }
     const out = await terminal({ shutdown: mine })
     expect(out.code, out.said).toBe(0)
-    expect(out.withdrew).toEqual([])
   })
 
   it('a control stream that cannot be read after the wait is a refusal, not nothing standing', async () => {

@@ -21,7 +21,6 @@ import {
   requestShutdown,
   requestShutdownUnlessStanding,
   resumeConductor,
-  withdrawShutdown,
   controlWatermark,
   startAfter,
   HEARTBEAT_MS,
@@ -82,10 +81,6 @@ export function serviceOptions(): ServiceOptions {
     // a second one could fail where this succeeded.
     liveness: async () => (await daemonLiveness(() => readStatus())).detail,
     shutdown: async () => (await readControl()).shutdown,
-    pause: async () => {
-      const c = await readControl()
-      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null
-    },
     // `lingtai shutdown`'s own append and a wait on the lock (#174): the
     // supervisor is told only once this command holds the conductor lock.
     drain: {
@@ -94,7 +89,6 @@ export function serviceOptions(): ServiceOptions {
       // `service shutdown` says it could not be read.
       holding: async () => describeInFlight(await inFlight()),
       queue: () => queueForTheLock(),
-      withdraw: (by, version, reason) => withdrawShutdown(by, version, reason),
     },
     // A supervisor's exit code says the job was asked for, not that a daemon
     // won the lock and took work — so a start is confirmed by the record the
