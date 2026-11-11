@@ -109,8 +109,8 @@ and the dollar ceiling lands before any N > 1.
      the moment of reading, never in a reducer
      ([0110](0110-tokens-on-the-event-money-at-display.md) §5–6), and a row that
      cannot be priced is named as unknown and never counted as zero.
-   - Reaching it is a lock, `DayCeilingReached`, appended by the ceiling's
-     watcher and lifted at the next local midnight, by a higher or removed
+   - Reaching it is a lock, `DayCeilingReached`, appended by the guard
+     checked before work is taken (0126 §4) and lifted at the next local midnight, by a higher or removed
      figure in the configuration, or by a person raising today's figure
      ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2, §7). The claim reads
      the lock; it does not compute the spend.
@@ -171,7 +171,7 @@ and the dollar ceiling lands before any N > 1.
    | --- | --- | --- | --- |
    | A person's pause | `CONTROL_STREAM`, `packages/domain/src/control.ts` | Per project only: `ProjectPaused` on `prj-{project}` (0126 §2) | `lingtai resume [project]`, or the board |
    | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | A refused recipe, per project (0126, *A tier no runtime can provide*) | Fixing the recipe |
-   | The pause after a run that never started, or met the account's limit | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Per runtime: `AccountLimitReached` on `acct-{runtime}`, holding every project whose recipe uses it (0126 §2) | Its watcher, at `until` |
+   | The pause after a run that never started, or met the account's limit | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Per runtime: `AccountLimitReached` on `acct-{runtime}`, holding every project whose recipe uses it (0126 §2) | The guard, once `until` has passed, or a person (0126 §7) |
    | The daily ceiling | §5 | Stays installation-wide: `DayCeilingReached` (0126 §2) | Midnight, a higher figure in the configuration, or a person raising today's |
    | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | The next start (0126, *Shutdown and drain*) |
    | The lock | [0102](0102-one-conductor-holds-the-lock.md) §4 | Stays installation-wide | — |

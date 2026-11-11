@@ -148,8 +148,8 @@ fixes the bounds and the endings that router works inside.
     `standDown` (`packages/conductor/src/never-started.ts`) reads a reset time out
     of the message (an ISO instant, a dated clock, or a wall clock, at most a week
     out) and falls back to `source.backoff`. A lock already holding is left alone.
-    The lock holds every project whose recipe uses that runtime, is lifted by its
-    watcher at `until`, and names which agent met the wall. The item is released
+    The lock holds every project whose recipe uses that runtime, is lifted by the
+    guard once `until` has passed or by a person (0126 §7), and names which agent met the wall. The item is released
     (`failed`) and keeps its place; any commits are published first. **A run that
     started and met the account's limit locks the account the same way** — a crash
     whose detail is the runtime's own account-limit sentence (`metTheAccountWall`:

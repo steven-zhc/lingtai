@@ -1,13 +1,12 @@
 # 0126 — A stop is a lock and an unlock on the stream of what it stops
 
-**Status** accepted · 2026-11-11 · not yet built; the system locks wait on
-[0127](0127-the-daemon-has-one-scheduler.md)
+**Status** accepted · 2026-11-11 · not yet built
 
 Three things stop new work: a person pausing a project, the day's spend reaching
 the ceiling, and a runtime's account reaching its usage limit. Each is a pair of
 events, one that locks and one that unlocks, on the stream of the thing it stops;
-the state is what replaying them gives. The work loop only reads them, a watcher
-on the daemon's scheduler writes the two the system owns, and one function in
+the state is what replaying them gives. The work loop only reads them, one guard
+checked before work is taken writes the two the system owns, and one function in
 `packages/domain` answers *may this project start new work?* for every gate and
 every reader.
 
@@ -34,8 +33,8 @@ see *A tier no runtime can provide*.
    | Stop | Stream | Locks | Unlocks | Who appends the unlock |
    | --- | --- | --- | --- | --- |
    | A person's pause | `prj-{project}` | `ProjectPaused {project, by}` | `ProjectResumed {project, by}` | A person: `lingtai resume [project]`, the board's banner, or the bar with that project selected |
-   | The day's ceiling | `ctl-conductor` | `DayCeilingReached {day, reportedUsd, estimatedUsd, ceilingUsd}` | `DayCeilingLifted {day, why: new-day \| config-raised \| config-removed}`, or `{day, why: person, by, toUsd}` | The ceiling watcher; or a person raising today's ceiling (§7) |
-   | A runtime's usage limit | `acct-{runtime}` | `AccountLimitReached {runtime, until, untilFrom, said}` | `AccountLimitLifted {runtime}` | The account watcher, once `until` has passed |
+   | The day's ceiling | `ctl-conductor` | `DayCeilingReached {day, reportedUsd, estimatedUsd, ceilingUsd}` | `DayCeilingLifted {day, why: new-day \| config-raised \| config-removed}`, or `{day, why: person, by, toUsd}` | The guard; or a person raising today's ceiling (§7) |
+   | A runtime's usage limit | `acct-{runtime}` | `AccountLimitReached {runtime, until, untilFrom, said}` | `AccountLimitLifted {runtime}`, or `{runtime, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
 
    A project's own state is the Project aggregate's. The ceiling is the
    installation's budget. An account is shared by every project on the machine
@@ -47,33 +46,48 @@ see *A tier no runtime can provide*.
    nothing. This is the rule `ProjectRefused`/`ProjectRecovered` follow
    (`turnTransition`).
 
-4. **The work loop only reads; each system lock has a watcher that writes.** The
-   work loop reads the states and asks §5's function; it never appends a lock or
-   an unlock and has no branch deciding whether to. A lock's own events are
-   trigger events for the work loop, so an unlock is acted on at once.
+4. **The work loop only reads; one guard writes the system locks, before work
+   is taken.** The work loop reads the states and asks §5's function; it never
+   appends a lock or an unlock and has no branch deciding whether to. A lock's
+   own events are trigger events for the work loop, so an unlock is acted on at
+   once.
 
-   The two system locks are written by watchers on the daemon's scheduler
-   ([0127](0127-the-daemon-has-one-scheduler.md)), in the conductor-lock holder
-   only, so each event has one writer:
+   The two system locks are written by one module, the guard, in the
+   conductor-lock holder only. It has one entry point, and every gate calls it
+   at the moment it would start work: each claim, each start, a discussion, a
+   triage. Its answer is a fact about the moment it is asked, and a queue read
+   can take long enough to change it (#861). The call brings the system locks
+   up to the present and returns §5's answer for that project; it is a few
+   local reads, next to the GitHub request every look already makes. Each check
+   in it is a function of the state, the time and the configuration that
+   returns the events to append:
 
-   | Watcher | Wakes on | Appends |
+   | Check | Locks | Unlocks |
    | --- | --- | --- |
-   | Day ceiling | each `RunSpent`; local 00:00, recurring; a change to the configuration | `DayCeilingReached`; `DayCeilingLifted {why: new-day \| config-raised \| config-removed}` |
-   | Account limit | the attempt that met the limit, which appends the lock where it learned of it; a one-shot at `until` | `AccountLimitReached`; `AccountLimitLifted` |
+   | Day ceiling | `DayCeilingReached` when today's spend reaches the ceiling | `DayCeilingLifted {why: new-day \| config-raised \| config-removed}` |
+   | Account limit | none: the attempt that met the limit appends `AccountLimitReached` where it learned of it | `AccountLimitLifted` once `until` has passed |
 
-   A person's events are appended by the CLI and the board, as any command's are.
+   The entry point is built with the person's pause (#991), when its only
+   check reads `prj-` and appends nothing, so every gate calls it from the
+   first; the ceiling and the account limit are each a check added to it. A new
+   check is a function added to the guard; neither the work loop nor any gate
+   changes.
+   The guard is the only writer of these events besides that attempt and a
+   person (§7), and a test holds that. It replaces `dayCeilingPause`, which
+   asked the same question before each claim.
 
-   **A watcher sees an event before the work loop does.** In the lock holder, each
-   event is handed to the watchers first, and the work loop looks only once they
-   have appended what it implies. So a `RunSpent` that takes the day past its
-   ceiling is followed by `DayCeilingReached` before the loop can claim again, and
-   no attempt starts in between.
+   **Nothing runs on a timer of its own.** A look happens at start, after every
+   attempt, on a control event and on the five-minute sweep
+   ([0102](0102-one-conductor-holds-the-lock.md) §13). So a passed midnight, a
+   passed `until` or an edited configuration is acted on at the next look, at
+   most five minutes late and only when there is work to take it from. A lock
+   is never late: the `RunSpent` that takes the day past its ceiling is read by
+   the next look before it claims. A person raising today's ceiling appends at
+   once (§7).
 
-   On start each watcher reads its state, registers again what it implies (0127
-   §3), and checks at once what may have changed while no conductor was up: a new
-   day, a passed `until`, an edited configuration. With no conductor up nothing is
-   appended and nothing runs, and the log says *locked until the conductor came
-   back*, which is what happened.
+   The first look after a start is the start's check. With no conductor up
+   nothing is appended and nothing runs, and the log says *locked until the
+   conductor came back*, which is what happened.
 
    The day, and what today's spend is, stay [0122](0122-several-passes-share-one-conductor.md)
    §5's: the machine's local calendar day, and a row that cannot be priced named
@@ -97,17 +111,21 @@ see *A tier no runtime can provide*.
    A run that meets an account limit has already failed; that is the runtime's
    doing, not the lock's.
 
-7. **A person can lift a person's pause, and today's ceiling — to a higher
-   figure, never to none.** Raising the ceiling names a figure for today:
+7. **A person can lift a person's pause, an account limit, and today's
+   ceiling — to a higher figure, never to none.** Raising the ceiling names a figure for today:
    `DayCeilingLifted {day, why: person, by, toUsd}`. For that `day` only, the
-   watcher then compares against the larger of `toUsd` and the configuration's
+   guard then compares against the larger of `toUsd` and the configuration's
    figure, and when the day's spend reaches it, locks again with a
    `DayCeilingReached` naming that figure. A new day forgets it. A `toUsd` not
    above the day's spend is refused by name and appends nothing. The ceiling is
    also lifted by raising or removing it in the configuration.
 
-   An account limit is lifted by time only. `lingtai pause` and `lingtai resume`
-   with no project mean every registered project.
+   An account limit is lifted when its `until` passes, or by a person who knows
+   it is over before then — a runtime signed back in, an `until` read wrong:
+   `AccountLimitLifted {runtime, by}`. A restart does not lift it. If the limit
+   still holds, the next run meets it, never starts, and locks it again; that
+   costs one run that never started, and nothing else. `lingtai pause` and
+   `lingtai resume` with no project mean every registered project.
 
 8. **The project filter scopes everything, and the banner is the one place that
    says why nothing starts.** The bar's project filter lists *all projects* and
@@ -132,7 +150,7 @@ see *A tier no runtime can provide*.
    - a person's pause: the project, who and since when, and *resume*;
    - the ceiling: that today's spend reached it, and *continue today to $[x]*;
    - an account limit: the runtime, `until`, which projects wait and which still
-     take work. No action.
+     take work, and *lift*, for a person who knows it is over.
 
    A lock whose `until` has passed but whose unlock is not yet appended (no
    conductor is up) keeps its row, greyed: *passed, lifts when the conductor next
@@ -153,7 +171,7 @@ known before anything is claimed (`missingForTier`). So it is refused where any
 recipe in error is refused, when the recipe resolves, per project
 ([0122](0122-several-passes-share-one-conductor.md) §7, *A refused recipe*), and
 the project takes work again on the first look after the recipe is fixed. It has
-no lock, no watcher and no events of its own. #676 builds this.
+no lock, no check in the guard and no events of its own. #676 builds this.
 
 ## Shutdown and drain
 
@@ -183,8 +201,8 @@ over a missing tier in `conduct.ts`; the board's `Paused` chip and every
 installation-wide pause branch in the CLI and the board. Events of the removed
 types already in the log still parse and are reduced to nothing.
 
-**Order of landing.** The person's pause lands before the scheduler; the ceiling
-and the account limit land after it. Until both have, the conductor-wide pause is
+**Order of landing.** The person's pause lands first; the ceiling and the
+account limit after it. Until both have, the conductor-wide pause is
 what they still write, and it keeps everything it has: the board's `Paused` chip
 shows it, and a bare `lingtai resume` lifts it as well as resuming every project.
 It stops what it stops today and no more: a discussion or a triage is stopped
@@ -198,9 +216,7 @@ removal stops nothing any more. Run `lingtai resume` before that restart;
 ## Not decided here
 
 - More than one account per runtime on one machine. `acct-{runtime}` assumes one.
-- How the ceiling watcher hears that the configuration changed (a file watch, or
-  a recurring job reading it): 0127's.
-- What the ceiling watcher does when today's spend cannot be trusted to be
+- What the guard's ceiling check does when today's spend cannot be trusted to be
   current, which 0122 §5 answers with *no work is taken*.
 - Keyboard shortcuts for pausing and resuming. They belong to a board-wide scheme
   (choose a project, then act on it), designed in its own epic.
