@@ -150,10 +150,64 @@
     "why": "conductor create-app"
   },
   {
+    "file": "packages/repo/src/git.ts",
+    "fn": "git",
+    "until": "#790",
+    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
+  },
+  {
     "file": "packages/repo/src/integrate.ts",
     "fn": "integrate",
     "until": "#790",
     "why": "packages/repo's own tests call the promise; no production caller is left (conductor/src/live.ts wires integrateEffect)"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "conflictedPathsAt",
+    "until": "#790",
+    "why": "apps/cli triage.ts, whose deps.mirror type is promise-shaped"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "diffStatAt",
+    "until": "#790",
+    "why": "apps/cli triage.ts, whose deps.mirror type is promise-shaped"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "listAt",
+    "until": "#790",
+    "why": "apps/cli (discuss, triage)"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "mirrorBranchSha",
+    "until": "#790",
+    "why": "apps/board task.ts, mocked by name in apps/board/unit/timing-load-task.test.ts"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "readAt",
+    "until": "#790",
+    "why": "apps/cli (discuss, triage)"
+  },
+  {
+    "file": "packages/repo/src/mirror.ts",
+    "fn": "refSha",
+    "until": "#790",
+    "why": "apps/cli (discuss, triage) and apps/board task.ts"
+  },
+  {
+    "file": "packages/repo/src/worktree.ts",
+    "fn": "provisionWorktree",
+    "until": "#790",
+    "why": "packages/setup trial-build.ts and apps/cli/scripts/rung-1.ts"
+  },
+  {
+    "file": "packages/repo/src/worktree.ts",
+    "fn": "removeWorktree",
+    "until": "#790",
+    "why": "packages/setup trial-build.ts and apps/cli/scripts/rung-1.ts"
   },
   {
     "file": "packages/setup/src/detect-setup.ts",

@@ -14,7 +14,7 @@
 export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from './git.ts'
 export { mirrorWrite, withMirrorWrite } from './mirror-lock.ts'
 export {
-  ensureMirror,
+  ensureMirrorEffect,
   provisionWorktree,
   provisionWorktreeEffect,
   removeWorktree,
@@ -25,12 +25,18 @@ export {
 } from './worktree.ts'
 export {
   conflictedPathsAt,
+  conflictedPathsAtEffect,
   diffStatAt,
+  diffStatAtEffect,
   listAt,
+  listAtEffect,
   mirrorBranchSha,
+  mirrorBranchShaEffect,
   mirrorPathFor,
   readAt,
+  readAtEffect,
   refSha,
+  refShaEffect,
   type ConflictedPath,
   type MirrorOptions,
 } from './mirror.ts'

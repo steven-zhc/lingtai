@@ -18,9 +18,10 @@ import { promisify } from 'node:util'
  */
 import { integrationStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { ensureMirror, integrate } from '../src/index.ts'
+import { ensureMirrorEffect, integrate } from '../src/index.ts'
 
 const exec = promisify(execFile)
 const authored = {
@@ -92,7 +93,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await freshOrigin()
-  await ensureMirror({ project: PROJECT, owner: 'x', repo: PROJECT, remote: originPath, home })
+  await Effect.runPromise(ensureMirrorEffect({ project: PROJECT, owner: 'x', repo: PROJECT, remote: originPath, home }))
 })
 
 afterAll(async () => {

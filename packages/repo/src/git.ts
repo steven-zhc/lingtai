@@ -7,11 +7,8 @@
  * with no log, no comment and no label — five re-runs and about $29 on #58/#59.
  */
 import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 
 import { Data, Effect } from 'effect'
-
-const exec = promisify(execFile)
 
 /**
  * A token, or something that will produce a current one.
@@ -69,21 +66,6 @@ export function gitInvocation(
   return { args: argv, env }
 }
 
-export async function git(args: string[], options: GitRunOptions = {}): Promise<string> {
-  // Resolved here, per invocation, rather than once by the caller — that is the
-  // whole point of accepting a function.
-  const token = typeof options.token === 'function' ? await options.token() : options.token
-  const invocation = gitInvocation(args, token, options.env ?? process.env)
-
-  const { stdout } = await exec('git', invocation.args, {
-    cwd: options.cwd,
-    env: invocation.env,
-    maxBuffer: 32 * 1024 * 1024,
-    signal: options.signal,
-  })
-  return options.trimOutput === false ? stdout : stdout.trim()
-}
-
 /**
  * Anything this package could not do to a repository, in a channel a caller
  * can see.
@@ -100,17 +82,90 @@ export class RepoFailed extends Data.TaggedError('RepoFailed')<{
   /** `git fetch`, `provision`, `integrate` — what was being attempted. */
   readonly operation: string
   readonly detail: string
-}> {}
+  /** The argv as passed, without the `-c core.hooksPath` prefix. */
+  readonly command?: readonly string[]
+  /** `git`'s exit code; null when there was none (spawn failed, killed, `maxBuffer`, aborted). */
+  readonly exitCode?: number | null
+  readonly stdout?: string
+  readonly stderr?: string
+}> {
+  /** So a face's rejection reads as `execFile`'s own error did. */
+  override get message(): string {
+    return this.detail
+  }
+}
 
 /**
- * The same command, as an `Effect`.
+ * The same command, as an `Effect`, and the one place `git` is spawned.
  *
- * `git` itself stays a promise: `apps/board/src/app/actions.ts` is a Next.js
- * server action and has no runtime to run an `Effect` in. The boundary 0023
- * drew is the port, not the process.
+ * **This is `Effect.callback` and not `Effect.tryPromise`, on purpose.**
+ * `tryPromise` aborts the signal on interrupt and returns without waiting, and
+ * Node's `execFile` reports the abort at once without waiting for the child to
+ * exit. A SIGTERMed `git fetch` still holds its ref lock for a moment, and the
+ * mirror permit (`mirror-lock.ts`: "one would let a second writer start beside
+ * a holder whose git is still running"; 0122 §6) is released when this Effect
+ * ends. So the canceller returned below waits for the child's `close`: an
+ * interrupt finishes only once git has exited and removed its own locks.
  */
-export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.Effect<string, RepoFailed> =>
-  Effect.tryPromise({
-    try: () => git(args, options),
-    catch: (err) => new RepoFailed({ operation: `git ${args[0] ?? ''}`, detail: (err as Error).message }),
-  })
+export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.Effect<string, RepoFailed> => {
+  const operation = `git ${args[0] ?? ''}`
+  const fail = (detail: string, rest: Partial<ConstructorParameters<typeof RepoFailed>[0]> = {}) =>
+    new RepoFailed({ operation, detail, command: args, exitCode: null, ...rest })
+  return Effect.gen(function* () {
+    // Resolved here, per invocation, rather than once by the caller — that is the
+    // whole point of accepting a function.
+    const token = yield* typeof options.token === 'function'
+      ? Effect.tryPromise({
+          try: options.token,
+          catch: (err) => fail(err instanceof Error ? err.message : String(err)),
+        })
+      : Effect.succeed(options.token)
+    const invocation = gitInvocation(args, token, options.env ?? process.env)
+    return yield* Effect.callback<string, RepoFailed>((resume, signal) => {
+      const signals = [signal, options.signal].filter((s): s is AbortSignal => s !== undefined)
+      const child = execFile(
+        'git',
+        invocation.args,
+        {
+          cwd: options.cwd,
+          env: invocation.env,
+          maxBuffer: 32 * 1024 * 1024,
+          signal: AbortSignal.any(signals),
+        },
+        (err, stdout, stderr) => {
+          if (err === null) {
+            resume(Effect.succeed(options.trimOutput === false ? stdout : stdout.trim()))
+            return
+          }
+          const code = (err as { code?: unknown }).code
+          resume(
+            Effect.fail(
+              fail(err.message ?? String(err), {
+                exitCode: typeof code === 'number' ? code : null,
+                stdout,
+                stderr,
+              }),
+            ),
+          )
+        },
+      )
+      // The canceller: runs on interrupt, after the signal has sent SIGTERM, and
+      // holds the fiber until the child is gone.
+      return Effect.callback<void>((done) => {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          done(Effect.void)
+          return
+        }
+        child.once('close', () => done(Effect.void))
+      })
+    })
+  }).pipe(Effect.withSpan('repo.git', { attributes: { 'git.subcommand': args[0] ?? '' } }))
+}
+
+/**
+ * The promise face. `apps/board/src/app/actions.ts` is a Next.js server action
+ * and keeps it by 0101 §7: a face is only a `runPromise` over the Effect.
+ */
+export function git(args: string[], options: GitRunOptions = {}): Promise<string> {
+  return Effect.runPromise(gitEffect(args, options))
+}
