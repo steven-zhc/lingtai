@@ -139,6 +139,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'DayCeilingReached',",
   },
   {
+    event: 'DayCeilingLifted',
+    why: 'returned from a function; the caller appends it',
+    file: 'packages/domain/src/ceiling-lock.ts',
+    anchor: "type: 'DayCeilingLifted', actor: 'conductor',",
+  },
+  {
     event: 'ProjectPaused',
     why: 'returned from a function; the caller appends it',
     file: 'packages/domain/src/locks.ts',

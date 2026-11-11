@@ -33,7 +33,7 @@ const REFUSALS: Record<RaiseRefusal, string> = {
 /** Exit code: 0 raised, 1 refused or unreadable. */
 export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
   Effect.gen(function* () {
-    const spend = yield* Effect.tryPromise({ try: () => readDaySpendTrusted(o), catch: (e) => e as Error }).pipe(
+    const spend = yield* readDaySpendTrusted(o).pipe(
       Effect.catch((err: Error) => Effect.succeed({ refused: `could not read today's spend: ${err.message}` })),
     )
     if ('refused' in spend) {

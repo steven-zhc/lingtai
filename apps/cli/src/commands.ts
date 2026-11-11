@@ -442,6 +442,19 @@ export const COMMANDS = [
     examples: ['lingtai pause lingtai', 'lingtai pause'],
   }),
   define({
+    name: 'resume',
+    group: 'daemon',
+    task: 'take tickets again, for one project or every project',
+    effect: 'changes',
+    usage: [
+      'lingtai resume [project] [--no-color]',
+      '  Unlocks the project. With none named it unlocks every paused',
+      '  registered project and also lifts a conductor-wide pause or a',
+      '  shutdown request that stands.',
+    ],
+    examples: ['lingtai resume lingtai', 'lingtai resume'],
+  }),
+  define({
     name: 'ceiling',
     group: 'daemon',
     task: "raise today's spending ceiling once it has been reached",
@@ -454,19 +467,6 @@ export const COMMANDS = [
       "  has not been reached, or while today's spend cannot be read.",
     ],
     examples: ['lingtai ceiling raise 40'],
-  }),
-  define({
-    name: 'resume',
-    group: 'daemon',
-    task: 'take tickets again, for one project or every project',
-    effect: 'changes',
-    usage: [
-      'lingtai resume [project] [--no-color]',
-      '  Unlocks the project. With none named it unlocks every paused',
-      '  registered project and also lifts a conductor-wide pause or a',
-      '  shutdown request that stands.',
-    ],
-    examples: ['lingtai resume lingtai', 'lingtai resume'],
   }),
   define({
     name: 'init',

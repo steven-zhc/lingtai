@@ -9,6 +9,7 @@ import { dayCeilingPause, daySpend, daySpendText, startOfLocalDay, type DaySpend
 import { machineDayCeiling } from '@lingtai/env'
 import { eventStore, type EventStore, log } from '@lingtai/event-store'
 import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
+import { Effect } from 'effect'
 
 import { spendRebuildHold, spendRebuilds } from './rates.ts'
 
@@ -126,31 +127,37 @@ export interface TrustedDaySpendPorts {
 /**
  * Today's reported and estimated cents, or a refusal sentence: the spend read
  * `dayCeilingStop` makes, with the same trust checks, for a caller that acts on
- * the figure rather than stopping on it. Throws where the spend cannot be read.
+ * the figure rather than stopping on it. Fails where the spend cannot be read.
  */
-export async function readDaySpendTrusted(
+export const readDaySpendTrusted = (
   ports: TrustedDaySpendPorts = {},
-): Promise<{ reportedCents: number; estimatedCents: number; configuredUsd: number | undefined } | { refused: string }> {
-  const now = (ports.now ?? (() => new Date()))()
-  const rebuilds = ports.rebuilds ?? spendRebuilds
-  const began = rebuilds()
-  const lags = await (ports.lags ?? (() => projectionLag()))()
-  const stall =
-    (ports.rebuilding ?? spendRebuildHold)(lags) ?? (await spendStallIn(lags, now, ports.store ?? eventStore))
-  if (stall !== null) return { refused: `could not check today's spend: ${stall}` }
-  const rows = await (ports.rows ?? ((since: Date) => readSpend({ since })))(startOfLocalDay(now))
-  if (rebuilds() !== began) {
-    return { refused: "could not check today's spend: the spend projection began a rebuild while it was read" }
-  }
-  const day = daySpend(rows, now, readRateSnapshot())
-  let configuredUsd: number | undefined
-  try {
-    configuredUsd = (ports.ceiling ?? machineDayCeiling)()
-  } catch {
-    configuredUsd = undefined
-  }
-  return { reportedCents: day.reportedCents, estimatedCents: day.estimatedCents, configuredUsd }
-}
+): Effect.Effect<
+  { reportedCents: number; estimatedCents: number; configuredUsd: number | undefined } | { refused: string },
+  Error
+> =>
+  Effect.gen(function* () {
+    const fail = (e: unknown) => (e instanceof Error ? e : new Error(String(e)))
+    const now = (ports.now ?? (() => new Date()))()
+    const rebuilds = ports.rebuilds ?? spendRebuilds
+    const began = rebuilds()
+    const lags = yield* Effect.tryPromise({ try: () => (ports.lags ?? (() => projectionLag()))(), catch: fail })
+    const stall =
+      (ports.rebuilding ?? spendRebuildHold)(lags) ??
+      (yield* Effect.tryPromise({ try: () => spendStallIn(lags, now, ports.store ?? eventStore), catch: fail }))
+    if (stall !== null) return { refused: `could not check today's spend: ${stall}` }
+    const rows = yield* Effect.tryPromise({
+      try: () => (ports.rows ?? ((since: Date) => readSpend({ since })))(startOfLocalDay(now)),
+      catch: fail,
+    })
+    if (rebuilds() !== began) {
+      return { refused: "could not check today's spend: the spend projection began a rebuild while it was read" }
+    }
+    const day = daySpend(rows, now, readRateSnapshot())
+    const configuredUsd = yield* Effect.try({ try: () => (ports.ceiling ?? machineDayCeiling)(), catch: fail }).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+    return { reportedCents: day.reportedCents, estimatedCents: day.estimatedCents, configuredUsd }
+  })
 
 /** What a `paused` callback answers: the ceiling first, then the control stream, a sentence either way. */
 export async function pausedSentence(ports: {

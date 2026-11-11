@@ -346,6 +346,7 @@ describe('a withdrawal written with a handoff, before #167', () => {
       'cause',
       'ceilingWaivedUntil',
       'continuing',
+      'dayCeiling',
       'discussions',
       'holdsAcrossStarts',
       'paused',
@@ -564,5 +565,70 @@ describe('ConductorStarted ends a standing shutdown (0126)', () => {
     expect(before.paused).toBe(true)
     expect(before.requested.length).toBeGreaterThan(0)
     expect(after).toEqual({ ...before, shutdown: null })
+  })
+})
+
+describe('the day ceiling pair (#1003)', () => {
+  const REACHED = { day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }
+
+  it('DayCeilingReached sets reached, with its time and position', () => {
+    const state = reduceControl(log([{ type: 'DayCeilingReached', data: REACHED }]), NOW)
+    expect(state.dayCeiling.reached).toMatchObject({ ...REACHED, seq: 1 })
+    expect(state.dayCeiling.raised).toBeNull()
+  })
+
+  it('DayCeilingLifted clears reached; a system lift sets no raise', () => {
+    const state = reduceControl(
+      log([
+        { type: 'DayCeilingReached', data: REACHED },
+        { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'new-day' } },
+      ]),
+      NOW,
+    )
+    expect(state.dayCeiling).toEqual({ reached: null, raised: null })
+  })
+
+  it('a person’s lift also sets raised', () => {
+    const state = reduceControl(
+      log([
+        { type: 'DayCeilingReached', data: REACHED },
+        { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
+      ]),
+      NOW,
+    )
+    expect(state.dayCeiling.reached).toBeNull()
+    expect(state.dayCeiling.raised).toMatchObject({ day: REACHED.day, toUsd: 40, by: 'human:steven' })
+  })
+
+  it('a system lift leaves an earlier raise standing', () => {
+    const state = reduceControl(
+      log([
+        { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
+        { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'config-raised' } },
+      ]),
+      NOW,
+    )
+    expect(state.dayCeiling.raised?.toUsd).toBe(40)
+  })
+
+  it('neither touches the pause, its cause or the waiver', () => {
+    const base = reduceControl(
+      log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'r', until: null, cause: 'person' } }]),
+      NOW,
+    )
+    const after = reduceControl(
+      log([
+        { type: 'ConductorPaused', data: { by: 'human:steven', reason: 'r', until: null, cause: 'person' } },
+        { type: 'DayCeilingReached', data: REACHED },
+        { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
+      ]),
+      NOW,
+    )
+    expect({ ...after, dayCeiling: base.dayCeiling }).toEqual(base)
+  })
+
+  it('an unparseable reached is the same answer as none', () => {
+    const state = reduceControl(log([{ type: 'DayCeilingReached', data: { day: 5 } }]), NOW)
+    expect(state.dayCeiling.reached).toBeNull()
   })
 })

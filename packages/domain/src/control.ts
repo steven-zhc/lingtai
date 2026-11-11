@@ -38,6 +38,8 @@ export const CONTROL_FOLD_TYPES = [
   'ConductorShutdownWithdrawn',
   'ConductorStarted',
   'ContinueRequested',
+  'DayCeilingLifted',
+  'DayCeilingReached',
   'DiscussionRequested',
   'RunRequested',
 ] as const satisfies readonly EventType[]

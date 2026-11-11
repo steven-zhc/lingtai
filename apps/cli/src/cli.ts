@@ -1117,22 +1117,22 @@ const ceilingRaiseCommand = Command.make(
   'raise',
   { usd: Argument.String('usd').pipe(Argument.optional), noColor },
   (args) =>
-    daemonHandler(args, async () => {
-      const { ceilingRaise, parseUsd } = await import('./ceiling-raise.ts')
-      const toUsd = parseUsd(given(args.usd))
-      if (toUsd === undefined) {
-        console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
-        return 2
-      }
-      const { runEffect } = await import('./project-pause.ts')
-      return runEffect(
-        ceilingRaise({
-          toUsd,
-          by: `human:${process.env['USER'] ?? 'operator'}`,
-          log: (line) => console.log(line),
-        }),
-      )
-    }),
+    daemonHandler(args, () =>
+      Promise.all([import('./ceiling-raise.ts'), import('./project-pause.ts')]).then(([raise, pause]) => {
+        const toUsd = raise.parseUsd(given(args.usd))
+        if (toUsd === undefined) {
+          console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
+          return 2
+        }
+        return pause.runEffect(
+          raise.ceilingRaise({
+            toUsd,
+            by: `human:${process.env['USER'] ?? 'operator'}`,
+            log: (line) => console.log(line),
+          }),
+        )
+      }),
+    ),
 )
 
 const ceilingCommand = Command.make('ceiling', {}, () =>
