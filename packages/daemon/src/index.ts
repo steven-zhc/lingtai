@@ -52,6 +52,7 @@ export {
   readStatus,
   recordStart,
   startAfter,
+  requestsBetween,
   type RecordedStart,
   requestRun,
   requestShutdown,

@@ -5,6 +5,7 @@ import {
   CONTROL_STREAM,
   type ControlState,
   controlReducer,
+  decodeShutdownRequest,
   evaluateControl,
   scopeControl,
   type ShutdownRequest,
@@ -78,6 +79,7 @@ import {
 import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasks, type TaskCard } from '@lingtai/projector'
+import { Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -329,6 +331,26 @@ export async function startAfter(version: number, store: EventStore = eventStore
     version: found.version,
     at: found.at,
   }
+}
+
+/**
+ * Every shutdown request on `ctl-conductor` after `from` and at or below `to`,
+ * oldest first.
+ *
+ * The reducer keeps only the newest, and a start ends whatever stands (0126), so
+ * a request that landed during a start is gone from the state by the time the
+ * start is read back. This is the read that still sees it (#1001). Fails when
+ * the stream could not be read: that is never an empty list.
+ */
+export function requestsBetween(
+  from: number,
+  to: number,
+  store: EventStore = eventStore,
+): Effect.Effect<ShutdownRequest[], Error> {
+  return Effect.tryPromise({
+    try: () => store.readTypes(CONTROL_STREAM, ['ConductorShutdownRequested'], from + 1),
+    catch: (err) => (err instanceof Error ? err : new Error(String(err))),
+  }).pipe(Effect.map((found) => found.filter((e) => e.version <= to).map(decodeShutdownRequest)))
 }
 
 /** What `withdrawShutdown` found, and so what it did. */

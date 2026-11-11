@@ -166,6 +166,26 @@ export const emptyControl: ControlState = {
 }
 
 /**
+ * A `ConductorShutdownRequested` as the request it asked for. The one decode:
+ * the reducer folds it into `shutdown`, and a read of the events between two
+ * versions (`requestsBetween`) lists them, so neither can disagree about what a
+ * missing field means.
+ */
+export function decodeShutdownRequest(e: Envelope): ShutdownRequest {
+  const d = (e.data ?? {}) as Record<string, unknown>
+  const timeout = d['timeoutMs']
+  return {
+    by: typeof d['by'] === 'string' ? d['by'] : '',
+    reason: typeof d['reason'] === 'string' ? d['reason'] : '',
+    timeoutMs: typeof timeout === 'number' ? timeout : null,
+    // Absent on every request written before `#159`, and those were all
+    // drains — so the absence reads as `false` rather than as unknown.
+    force: d['force'] === true,
+    version: e.version,
+  }
+}
+
+/**
  * One event reduced into the state. Pure, reads no clock, and never mutates its
  * argument (0124 §2).
  */
@@ -196,21 +216,8 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
         ceilingWaivedUntil: cause === 'day-ceiling' ? null : state.ceilingWaivedUntil,
       }
     }
-    case 'ConductorShutdownRequested': {
-      const timeout = d['timeoutMs']
-      return {
-        ...state,
-        shutdown: {
-          by: str('by') ?? '',
-          reason: str('reason') ?? '',
-          timeoutMs: typeof timeout === 'number' ? timeout : null,
-          // Absent on every request written before `#159`, and those were all
-          // drains — so the absence reads as `false` rather than as unknown.
-          force: d['force'] === true,
-          version: e.version,
-        },
-      }
-    }
+    case 'ConductorShutdownRequested':
+      return { ...state, shutdown: decodeShutdownRequest(e) }
     case 'ConductorStarted':
       // A drain lasts from its request to the next start (0126): the start is
       // the unlock. Nothing else changes — the pause is still the watermark's.
