@@ -199,7 +199,7 @@ export function Recipe({ view, edit = false }: { view: ProjectRecipe; edit?: boo
           <span className="mono">recipe · {view.project}</span>
         </Bar>
 
-        <div className="detail-body">
+        <div className="detail-body detail-body-wide">
           <section>
             <h2>
               <span className="hlab">Recipe</span>
@@ -245,7 +245,7 @@ export function Recipe({ view, edit = false }: { view: ProjectRecipe; edit?: boo
                 resolve re-renders the editor in place rather than remounting it
                 and dropping the message the save just earned. Without `.s2` the
                 broken case sits below the refusal. */}
-            <div className={view.ok ? 's2' : undefined}>
+            <div className={view.ok ? 's2 s2-even' : undefined}>
               {view.ok ? <LeftColumn view={view} /> : null}
               <div className="s2-right">
                 {text === null ? null : (

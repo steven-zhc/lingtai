@@ -39,5 +39,5 @@ export default function YamlView({ text, onReady }: { text: string; onReady: () 
     const spec = replaceDoc(view.state, text)
     if (spec) view.dispatch(spec)
   }, [text])
-  return <div ref={host} />
+  return <div ref={host} className="rfile-fill" />
 }
