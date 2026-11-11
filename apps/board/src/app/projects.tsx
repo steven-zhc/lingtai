@@ -1,13 +1,13 @@
 /**
- * The left half of the bar: which repositories there are, and each one's recipe.
+ * The left half of the bar: which repositories there are, and a way to add one.
  *
  * **The filter is one of the three, and it is one control** (the-bar.md, *Since
  * 2026-11-05*). The objects are filter, health, headline — the filter
  * among them, left of the separator. The `<summary>` names the project
- * in view, and the menu under it is a row per repository: its name, and its own
- * `recipe` (#218, #948), then *add a repository* (#972), which goes where the
- * slot's own link goes. The recipe is an entry in that menu and not an object of
- * its own, so nothing here may be cited to put a fourth on the row.
+ * in view, and the menu under it is *all projects* and a row per repository,
+ * each one link. A registered project's row hints, on hover, at what choosing
+ * it gives: its `recipe`, now on the bar's right (#993). The `+` beside the
+ * menu adds a repository (#216: the filter's affordance, not a fourth object).
  *
  * With no project configured there is no menu: the slot is the link to setup
  * (#169), the same object saying *there is nothing here yet*.
@@ -31,15 +31,25 @@ import { FilterMenu } from './filter-menu'
  * reach the wizard*, *the target follows the App* — are claims about markup,
  * and a reducer alone cannot catch a state that renders without the link.
  */
-export function Projects({ filters, only, app }: { filters: string[]; only: string | undefined; app: boolean }) {
+export function Projects({
+  filters,
+  only,
+  app,
+  registered,
+}: {
+  filters: string[]
+  only: string | undefined
+  app: boolean
+  /** The registered projects: a row outside them has no recipe to give. */
+  registered: readonly string[]
+}) {
   // Step 0 is create the App, install it, add a repository; once the App
   // answers, the picker is the rest of it and the first step is done.
   const where = app ? '/setup/repository' : '/setup/github-app'
   const why = app ? 'add a repository' : 'create the GitHub App, then install it'
 
-  // The project this board is showing, or none: with one there is nothing to
-  // choose between, with several it is the filter, and `all` is not a project.
-  const inView = filters.length === 1 ? filters[0] : only
+  // What choosing a row gives, said once; the text is per project.
+  const hint = (p: string): string | null => (registered.includes(p) ? 'recipe' : null)
 
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fourth one: the slot already says *there is
@@ -53,44 +63,41 @@ export function Projects({ filters, only, app }: { filters: string[]; only: stri
   }
 
   // The summary names the project in view; on `all` there is none to name.
-  const label = inView ?? 'all projects'
+  const label = only ?? 'all projects'
   const current = { 'aria-current': 'page' } as const
 
-  // A <details>, closed by `FilterMenu` when any entry is followed: a Next
-  // <Link> navigation keeps the element and its `open` attribute, and selecting
-  // the current entry again changes no state a key could notice.
   return (
-    <FilterMenu
-      className="filter"
-      summary={
-        <>
-          {label} <span aria-hidden="true">▾</span>
-        </>
-      }
-    >
-      <div className="menu pm">
-        {filters.length > 1 ? (
-          <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
-            all projects
-          </Link>
-        ) : null}
-        {/* A row per repository: its name, which filters, and at the right its
-            own recipe — what it is configured to do, and which file each value
-            came from (#218, #948). */}
-        {filters.map((p) => (
-          <div key={p} className={`prow${inView === p ? ' on' : ''}`}>
-            <Link className="tab pname" href={`/?project=${encodeURIComponent(p)}`} {...(only === p ? current : {})}>
+    <>
+      <FilterMenu
+        className="filter"
+        summary={
+          <>
+            {label} <span aria-hidden="true">▾</span>
+          </>
+        }
+      >
+        <div className="menu pm">
+          {filters.length > 1 ? (
+            <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
+              all projects
+            </Link>
+          ) : null}
+          {filters.map((p) => (
+            <Link
+              key={p}
+              className={`tab prj${only === p ? ' on' : ''}`}
+              href={`/?project=${encodeURIComponent(p)}`}
+              {...(only === p ? current : {})}
+            >
               {p}
+              {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
             </Link>
-            <Link className="tab rcp" href={`/recipe/${encodeURIComponent(p)}`} title={`what ${p}'s recipe says today`}>
-              recipe
-            </Link>
-          </div>
-        ))}
-        <Link className="tab" href={where} title={why}>
-          add a repository
-        </Link>
-      </div>
-    </FilterMenu>
+          ))}
+        </div>
+      </FilterMenu>
+      <Link className="addp" href={where} title={why} aria-label={why}>
+        +
+      </Link>
+    </>
   )
 }

@@ -1,3 +1,4 @@
+import { loadProjects } from '@lingtai/conductor/projects'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -120,9 +121,12 @@ export function TaskBody({
   task,
   github,
   now,
+  registered = false,
   children,
 }: {
   task: TaskDetail
+  /** Whether the ticket's project is registered, so its `Recipe` has a page. */
+  registered?: boolean
   /**
    * What only the issue's answer knows — resolved, or the promise `loadTaskAnswer`
    * returned (0118 §2). Each place that reads it draws *asking GitHub…* until it
@@ -146,7 +150,7 @@ export function TaskBody({
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <Bar project={task.ticket?.project ?? undefined}>
+        <Bar project={task.ticket?.project ?? undefined} registered={registered}>
           <span className="sep" />
           {/* Rank 8: one muted line, each identifier once. */}
           <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
@@ -242,8 +246,13 @@ export default async function TaskLayout({
   // issue's answer knows streams in after it. Started inside `loadTask` its reads
   // would be under `page /task`, which ends before they do. Never rejects.
   const github = measure(() => loadTaskAnswer(taskId), { label: '/task github' }).then(([answer]) => answer)
-  const [task, timings] = await measure(() => loadTask(taskId), { label: '/task' })
+  const [[task, timings], projects] = await Promise.all([
+    measure(() => loadTask(taskId), { label: '/task' }),
+    loadProjects().catch(() => []),
+  ])
   if (!task) notFound()
+  const project = task.ticket?.project
+  const registered = project !== undefined && projects.some((p) => p.project === project)
   return (
     <>
       <TimingMeta timings={timings} />
@@ -255,7 +264,7 @@ export default async function TaskLayout({
           refreshes both segments. On the layout and not in `TaskBody`, which a
           test renders with no router to refresh. */}
       <Follow>
-        <TaskBody task={task} github={github}>
+        <TaskBody task={task} github={github} registered={registered}>
           {children}
         </TaskBody>
       </Follow>

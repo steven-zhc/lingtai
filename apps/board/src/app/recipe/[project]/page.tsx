@@ -1,12 +1,15 @@
 import { loadProjects } from '@lingtai/conductor/projects'
+import { hasGitHubAuth } from '@lingtai/env'
 import { notFound } from 'next/navigation'
 
 import { Bar } from '@/app/bar.tsx'
+import { filterOptions, onBoardProjects } from '@/lib/board'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
 import { StepRow } from '../../step-row'
+import { RecipeBar, type RecipeBarFilter } from './recipe-bar'
 import { RecipeText } from './recipe-text'
 
 /**
@@ -189,15 +192,16 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
  * recipe that will not parse names the file and the fault, nothing here writes
  * — are assertable without a database or a `~/.lingtai/`.
  */
-export function Recipe({ view, edit = false }: { view: ProjectRecipe; edit?: boolean }) {
+export function Recipe({ view, edit = false, bar }: { view: ProjectRecipe; edit?: boolean; bar?: RecipeBarFilter }) {
   const text = view.text
   return (
     <>
       <main className="detail">
-        <Bar project={view.project}>
-          <span className="sep" />
-          <span className="mono">recipe · {view.project}</span>
-        </Bar>
+        {bar === undefined ? (
+          <Bar project={view.project} registered here="recipe" />
+        ) : (
+          <RecipeBar project={view.project} {...bar} />
+        )}
 
         <div className="detail-body detail-body-wide">
           <section>
@@ -298,7 +302,12 @@ export default async function RecipePage({
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
   // here has heard of.
-  const state = (await loadProjects()).find((p) => p.project === name)
+  const projects = await loadProjects()
+  const state = projects.find((p) => p.project === name)
   if (state === undefined) notFound()
-  return <Recipe view={await projectRecipe(state)} edit={edit === '1'} />
+  const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
+  // The board's projection failing must not take the recipe page with it.
+  const onBoard = await onBoardProjects().catch(() => [] as string[])
+  const bar = { filters: filterOptions(registered, onBoard), registered, app: hasGitHubAuth() }
+  return <Recipe view={await projectRecipe(state)} edit={edit === '1'} bar={bar} />
 }

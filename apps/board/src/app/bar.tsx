@@ -16,12 +16,15 @@ export const withProject = (path: string, project: string | undefined): string =
 export function Bar({
   project,
   here,
+  registered = false,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
   project: string | undefined
   /** The page this bar is on, when it is one of the bar's own links. */
-  here?: 'report'
+  here?: 'report' | 'recipe'
+  /** Whether `project` is registered: only then has it a recipe page to go to. */
+  registered?: boolean
   children?: ReactNode
 }) {
   return (
@@ -35,6 +38,21 @@ export function Bar({
       </Link>
       {children}
       <nav className="topnav">
+        {project !== undefined && registered ? (
+          <>
+            {/* A selected project's actions; Pause joins Recipe here. */}
+            <span className="pacts">
+              <Link
+                className={here === 'recipe' ? 'navlink on' : 'navlink'}
+                href={`/recipe/${encodeURIComponent(project)}`}
+                aria-current={here === 'recipe' ? 'page' : undefined}
+              >
+                Recipe
+              </Link>
+            </span>
+            <span className="vsep" aria-hidden="true" />
+          </>
+        ) : null}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
           href={withProject('/report', project)}

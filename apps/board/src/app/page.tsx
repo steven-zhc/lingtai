@@ -19,6 +19,7 @@ import {
   issueUrl,
   loadBoard,
   queuedStanding,
+  selectedProject,
   skeletonCount,
   type BoardCard,
   type GithubQueue,
@@ -611,7 +612,7 @@ async function AwaitedCount({ queue, logCards }: { queue: Promise<GithubQueue>; 
  * by the first event from the project you had just stopped looking at.
  */
 export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  const only = (await searchParams).project
+  const param = (await searchParams).project
   // Before any read of the log: a refused store makes `loadBoard` throw the
   // same sentence, and Next would show that as its default error page. The
   // screen below says it instead, and mounts no `Live` — there is no log to
@@ -645,7 +646,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   ] = await measure(
     async () => {
       const [board, projects, control] = await Promise.all([
-        loadBoard(only),
+        loadBoard(param),
         timed('projects.read', () => loadProjects()).catch(() => []),
         timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
       ])
@@ -657,6 +658,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     },
     { label: '/' },
   )
+  // The selection: the URL's choice, else the only project there is (#993).
+  const only = selectedProject(param, filters)
   // GitHub's half of the Queued column, asked only now (#884): the page's own
   // `measure` has returned, so these timings are not in the meta tag already
   // sent — started inside it they would land in an array that has been
@@ -709,14 +712,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     >
       <>
         <TimingMeta timings={timings} />
-        <Bar project={only}>
+        <Bar project={only} registered={only !== undefined && owners.has(only)}>
           <span className="sep" />
           {/* The projects, and the way to add one — `projects.tsx`, which is
             where that argument is made. In short: the filter is one of the
             objects the rule below names, it has been a list of tabs since #81,
             and a list gaining an action at its end is that object rather than
             a fifth one (#216). */}
-          <Projects filters={filters} only={only} app={hasGitHubAuth()} />
+          <Projects
+            filters={filters}
+            only={only}
+            app={hasGitHubAuth()}
+            registered={registered.map((p) => p.project).filter((p): p is string => p !== null)}
+          />
           <span className="sep" />
           {/* Everything from here is the right rail, and it is a rail rather than
             more children of `.bar` so that a narrow window breaks between

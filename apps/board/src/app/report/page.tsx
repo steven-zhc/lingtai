@@ -11,6 +11,7 @@
  * (nothing reduces them), and the bar says how far behind either is. A read that fails is a
  * sentence in place of the panels, never a 500.
  */
+import { loadProjects } from '@lingtai/conductor/projects'
 import { report as buildReport, type Report } from '@lingtai/conductor/report'
 
 import { Bar } from '@/app/bar.tsx'
@@ -65,6 +66,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   let timings: readonly Timing[] = []
   // Never throws, and outside the try: a failed report read leaves the day's figure, and the reverse.
   const dayReading = readDayReading()
+  const projects = await loadProjects().catch(() => [])
   try {
     const [data, measured] = await measure(
       () => timed('report.read', () => currentReport(query.project, query.window.from)),
@@ -92,7 +94,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     <>
       <main className="detail">
         <TimingMeta timings={timings} />
-        <Bar project={only} here="report">
+        <Bar project={only} registered={only !== undefined && projects.some((p) => p.project === only)} here="report">
           <span className="sep" />
           <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>
           <span className="sep" />

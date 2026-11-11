@@ -1603,6 +1603,15 @@ export function filterOptions(registered: readonly string[], onBoard: readonly s
 }
 
 /**
+ * The project the board is showing: the URL's own choice, else the only one
+ * there is (#993). With several there is nothing to default to, and `all` is
+ * not a project.
+ */
+export function selectedProject(param: string | undefined, filters: readonly string[]): string | undefined {
+  return param ?? (filters.length === 1 ? filters[0] : undefined)
+}
+
+/**
  * Buckets cards into the four columns, by the column each card already knows.
  *
  * Never by the task's raw state: a state the columns do not carry then matches
