@@ -15,7 +15,7 @@ import { RuntimeId } from '@lingtai/domain'
 import { SETUP_KINDS } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import { detectSetup, type DetectedSetup, type SetupReader } from './detect-setup.ts'
+import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
 import { remedyFor, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
 import { githubSlugOfRemote, ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
@@ -153,9 +153,10 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
     const project = target.kind === 'github' ? target.repo : (target.path.split('/').filter(Boolean).at(-1) ?? '')
 
     const watch = watched(readers.setupReader)
-    const detected = yield* settle(() => detectSetup(watch.reader))
-    const readFailure = detected.ok ? watch.failure() : detected.reason
-    const found: DetectedSetup = detected.ok ? detected.value : { install: null, build: [], skipped: [], notes: [] }
+    const detected = yield* Effect.result(detectSetupEffect(watch.reader))
+    const readFailure = detected._tag === 'Success' ? watch.failure() : detected.failure.message
+    const found: DetectedSetup =
+      detected._tag === 'Success' ? detected.success : { install: null, build: [], skipped: [], notes: [] }
     const fromRepo = <A>(value: A, because: string, fallback: A): Line<A> =>
       readFailure === null
         ? { known: true, value, because }

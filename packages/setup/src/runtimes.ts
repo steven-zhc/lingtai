@@ -9,6 +9,9 @@ import type { AuthState } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { askEveryRuntime } from '@lingtai/agent/auth'
 import { RuntimeId } from '@lingtai/domain'
+import { Effect } from 'effect'
+
+import { messageOf, SetupFailed } from './failure.ts'
 
 /** `RuntimeId`, and not a list of its members written out again (`#313`). */
 export type RuntimeName = RuntimeId
@@ -29,13 +32,22 @@ export interface RuntimeFound {
  * hand-written lists this replaces was one insertion away from reporting
  * Codex's answer under Claude Code's name.
  */
-export async function askRuntimes(): Promise<RuntimeFound[]> {
-  return (await askEveryRuntime(runnableEnv({}))).map(({ id, status }) => ({
+export const askRuntimesEffect = Effect.fn('setup.runtimes')(function* () {
+  const every = yield* Effect.tryPromise({
+    try: () => askEveryRuntime(runnableEnv({})),
+    catch: (e) => new SetupFailed({ operation: 'runtimes', message: messageOf(e), cause: e }),
+  })
+  return every.map(({ id, status }): RuntimeFound => ({
     id,
     state: status.state,
     signedIn: status.state === 'signed-in',
     detail: status.detail,
   }))
+})
+
+/** The promise face, for callers outside this package that have not moved yet (#790). */
+export function askRuntimes(): Promise<RuntimeFound[]> {
+  return Effect.runPromise(askRuntimesEffect())
 }
 
 /** The first non-empty line of what a runtime printed. */

@@ -1,3 +1,9 @@
+import { boundedEvidence, runCommand } from '@lingtai/actions'
+import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
+import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
+import { provisionWorktree, removeWorktree, type ProvisionOptions } from '@lingtai/repo'
+import { Data, Effect, Ref } from 'effect'
+
 /**
  * The trial run #436 adds to #397's install and build questions: the confirmed
  * commands, run once in a throwaway worktree cut from the mirror at the base,
@@ -10,10 +16,7 @@
  * `setup-build.ts` turns that into a refusal rather than the failed-list
  * question.
  */
-import { boundedEvidence, runCommand } from '@lingtai/actions'
-import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
-import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
-import { provisionWorktree, removeWorktree, type ProvisionOptions } from '@lingtai/repo'
+import { messageOf } from './failure.ts'
 
 /**
  * One command the trial run tried, and how it went. A command the trial never
@@ -36,10 +39,9 @@ export interface Trial {
 }
 
 /** Thrown by the runner, after its worktree is gone, when Ctrl+C stopped the trial. */
-export class TrialInterrupted extends Error {
-  constructor() {
-    super('the trial run was interrupted')
-    this.name = 'TrialInterrupted'
+export class TrialInterrupted extends Data.TaggedError('TrialInterrupted') {
+  override get message() {
+    return 'the trial run was interrupted'
   }
 }
 
@@ -92,19 +94,26 @@ function asStrings(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((v) => typeof v === 'string') ? (value as string[]) : undefined
 }
 
+/** A recipe key, or `null` when it cannot be read. */
+const recipeKey = (at: TrialAt, path: string[]): Effect.Effect<unknown> =>
+  Effect.tryPromise(() => readRecipeKey(at.project, path, { home: at.home, files: at.files })).pipe(
+    Effect.catch(() => Effect.succeed(null)),
+  )
+
 /** The timeouts of `run:` actions already in the file, by command text. */
-async function keptTimeouts(at: TrialAt): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  for (const step of ['prepared', 'build']) {
-    const value = await readRecipeKey(at.project, ['steps', step], { home: at.home, files: at.files }).catch(() => null)
-    if (!Array.isArray(value)) continue
-    for (const a of value) {
-      const { run, timeout } = (a ?? {}) as { run?: unknown; timeout?: unknown }
-      if (typeof run === 'string' && typeof timeout === 'string') out.set(run, timeout)
+const keptTimeouts = (at: TrialAt): Effect.Effect<Map<string, string>> =>
+  Effect.gen(function* () {
+    const out = new Map<string, string>()
+    for (const step of ['prepared', 'build']) {
+      const value = yield* recipeKey(at, ['steps', step])
+      if (!Array.isArray(value)) continue
+      for (const a of value) {
+        const { run, timeout } = (a ?? {}) as { run?: unknown; timeout?: unknown }
+        if (typeof run === 'string' && typeof timeout === 'string') out.set(run, timeout)
+      }
     }
-  }
-  return out
-}
+    return out
+  })
 
 /**
  * Where the next pass cuts from, and whether it takes submodules: what the file
@@ -113,138 +122,175 @@ async function keptTimeouts(at: TrialAt): Promise<Map<string, string>> {
  * base the caller was handed. A flag or GitHub's default branch is not where an
  * existing project's passes run.
  */
-async function cutOf(at: TrialAt): Promise<{ base: string; submodules: boolean }> {
-  const options = { home: at.home, files: at.files }
-  const read = (path: string[]) => readRecipeKey(at.project, path, options).catch(() => null)
-  const admit = await read(['steps', 'admit'])
-  const declared = Array.isArray(admit)
-    ? (admit.find((a) => a !== null && typeof a === 'object' && 'worktree' in a) as { worktree?: unknown } | undefined)
-    : undefined
-  const wt = (declared?.worktree ?? {}) as { base?: unknown; submodules?: unknown }
-  const repoBase = await read(['repo', 'base'])
-  const repoSubmodules = await read(['repo', 'submodules'])
-  const base = typeof wt.base === 'string' ? wt.base : typeof repoBase === 'string' ? repoBase : at.base
-  const submodules = typeof wt.submodules === 'boolean' ? wt.submodules : repoSubmodules === true
-  return { base, submodules }
-}
+const cutOf = (at: TrialAt): Effect.Effect<{ base: string; submodules: boolean }> =>
+  Effect.gen(function* () {
+    const admit = yield* recipeKey(at, ['steps', 'admit'])
+    const declared = Array.isArray(admit)
+      ? (admit.find((a) => a !== null && typeof a === 'object' && 'worktree' in a) as
+          | { worktree?: unknown }
+          | undefined)
+      : undefined
+    const wt = (declared?.worktree ?? {}) as { base?: unknown; submodules?: unknown }
+    const repoBase = yield* recipeKey(at, ['repo', 'base'])
+    const repoSubmodules = yield* recipeKey(at, ['repo', 'submodules'])
+    const base = typeof wt.base === 'string' ? wt.base : typeof repoBase === 'string' ? repoBase : at.base
+    const submodules = typeof wt.submodules === 'boolean' ? wt.submodules : repoSubmodules === true
+    return { base, submodules }
+  })
 
-export function trialBuild(at: TrialAt, deps: TrialDeps): Trial {
-  const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
-    const options = { home: at.home, files: at.files }
-    const envBlock = await readRecipeKey(at.project, ['env'], options).catch(() => null)
-    const declared = (envBlock ?? {}) as Record<string, unknown>
-    const plantAt = typeof declared['plantAt'] === 'string' ? declared['plantAt'] : DEFAULT_PLANT_AT
-    const nothingDeclared = asStrings(declared['required'])?.length ? false : asStrings(declared['allow']) === undefined
+export const trialBaseEffect = Effect.fn('setup.trial.base')(function* (at: TrialAt) {
+  return (yield* cutOf(at)).base
+})
 
-    const env = await deps
-      .resolveEnv({
-        project: at.project,
-        required: asStrings(declared['required']),
-        allow: asStrings(declared['allow']),
-        deny: asStrings(declared['deny']),
-        patterns: productionPatterns(asStrings(declared['refuseHosts'])),
-        home: at.home,
-      })
-      .catch((err: Error) => ({ refusal: err.message, values: {} as Record<string, string> }))
-    const runs = [...(install === null ? [] : [install]), ...build]
-    if (env.refusal) {
-      return {
-        results: [{ command: 'env', outcome: 'failed', evidence: env.refusal }, ...notRun(runs, 'the env refused')],
-        nothingDeclared,
-      }
-    }
+type Used = { results: TrialResult[]; interrupted: boolean }
 
-    const timeouts = await keptTimeouts(at)
-    const commands: Run[] = runs.map((run) => ({
-      run,
-      timeout: timeouts.get(run) ?? RUN_TIMEOUT,
-    }))
+export const runTrialEffect = Effect.fn('setup.trial')(function* (
+  at: TrialAt,
+  deps: TrialDeps,
+  install: string | null,
+  build: string[],
+) {
+  const envBlock = yield* recipeKey(at, ['env'])
+  const declared = (envBlock ?? {}) as Record<string, unknown>
+  const plantAt = typeof declared['plantAt'] === 'string' ? declared['plantAt'] : DEFAULT_PLANT_AT
+  const nothingDeclared = asStrings(declared['required'])?.length ? false : asStrings(declared['allow']) === undefined
 
-    const cut = await cutOf(at)
-    const runId = deps.runId()
-    const results: TrialResult[] = []
-    let interrupted = false
-    let leftBehind = null as string | null
-    try {
-      deps.log(`cutting a throwaway worktree at ${cut.base} — the first time this clones the repository`)
-      let path: string | null
-      try {
-        path = (
-          await deps.provision({
-            project: at.project,
-            owner: at.owner,
-            repo: at.repo,
-            base: cut.base,
-            branch: 'setup-trial',
-            runId,
-            submodules: cut.submodules,
-            plantAt,
-            env: env.values,
-            token: at.token,
-            remote: at.remote,
-            home: at.home,
-          })
-        ).path
-      } catch (err) {
-        // Ctrl+C stops git as well, and that is not a git failure.
-        path = null
-        if (at.interrupt?.aborted) interrupted = true
-        else {
-          results.push({ command: 'git', outcome: 'failed', evidence: boundedEvidence((err as Error).message) })
-          results.push(...notRun(runs, 'the worktree could not be cut'))
+  const env = yield* Effect.tryPromise(() =>
+    deps.resolveEnv({
+      project: at.project,
+      required: asStrings(declared['required']),
+      allow: asStrings(declared['allow']),
+      deny: asStrings(declared['deny']),
+      patterns: productionPatterns(asStrings(declared['refuseHosts'])),
+      home: at.home,
+    }),
+  ).pipe(Effect.catch((err) => Effect.succeed({ refusal: messageOf(err.cause), values: {} as Record<string, string> })))
+  const runs = [...(install === null ? [] : [install]), ...build]
+  if (env.refusal) {
+    return {
+      results: [{ command: 'env', outcome: 'failed', evidence: env.refusal }, ...notRun(runs, 'the env refused')],
+      nothingDeclared,
+    } as TrialReport
+  }
+
+  const timeouts = yield* keptTimeouts(at)
+  const commands: Run[] = runs.map((run) => ({
+    run,
+    timeout: timeouts.get(run) ?? RUN_TIMEOUT,
+  }))
+
+  const cut = yield* cutOf(at)
+  const leftBehind = yield* Ref.make<string | null>(null)
+
+  // The resource is the run id, not the worktree: a half-cut checkout is
+  // removed too, so `remove` runs even when `provision` threw.
+  const used: Used = yield* Effect.acquireUseRelease(
+    Effect.sync(() => deps.runId()),
+    (runId) =>
+      Effect.gen(function* () {
+        const results: TrialResult[] = []
+        let interrupted = false
+        deps.log(`cutting a throwaway worktree at ${cut.base} — the first time this clones the repository`)
+        // Uninterruptible: `remove` must not start while git is still writing.
+        // Ctrl+C reaches git through its process group, not through the fiber.
+        const cutting = yield* Effect.uninterruptible(
+          Effect.tryPromise({
+            try: () =>
+              deps.provision({
+                project: at.project,
+                owner: at.owner,
+                repo: at.repo,
+                base: cut.base,
+                branch: 'setup-trial',
+                runId,
+                submodules: cut.submodules,
+                plantAt,
+                env: env.values,
+                token: at.token,
+                remote: at.remote,
+                home: at.home,
+              }),
+            catch: (err) => err,
+          }),
+        ).pipe(
+          Effect.match({
+            onSuccess: (wt) => ({ path: wt.path as string | null, error: null as unknown }),
+            onFailure: (error) => ({ path: null as string | null, error }),
+          }),
+        )
+        const path = cutting.path
+        if (path === null) {
+          // Ctrl+C stops git as well, and that is not a git failure.
+          if (at.interrupt?.aborted) interrupted = true
+          else {
+            results.push({ command: 'git', outcome: 'failed', evidence: boundedEvidence(messageOf(cutting.error)) })
+            results.push(...notRun(runs, 'the worktree could not be cut'))
+          }
         }
-      }
 
-      for (const [i, command] of path === null ? [] : commands.entries()) {
-        if (at.interrupt?.aborted) {
-          interrupted = true
-          break
+        for (const [i, command] of path === null ? [] : commands.entries()) {
+          if (at.interrupt?.aborted) {
+            interrupted = true
+            break
+          }
+          // `Effect.promise`, not `tryPromise`: a throw is a defect carrying the
+          // runner's own error. Interrupting the fiber aborts the signal and
+          // resumes at once without awaiting the runner, so `remove` may start
+          // while the killed group is still exiting; a host that interrupts the
+          // fiber is where to make the run wait for its own kill.
+          const outcome = yield* Effect.promise((signal) =>
+            deps.run({
+              run: command.run,
+              timeoutMs: parseDuration(command.timeout),
+              timeoutLabel: command.timeout,
+              cwd: path!,
+              env: runnableEnv(env.values),
+              signal: at.interrupt ? AbortSignal.any([at.interrupt, signal]) : signal,
+              ownGroup: true,
+            }),
+          )
+          if (at.interrupt?.aborted) {
+            interrupted = true
+            break
+          }
+          const ok = outcome.ok && outcome.exitCode === 0
+          results.push({ command: command.run, outcome: ok ? 'passed' : 'failed', evidence: outcome.evidence })
+          if (!ok) {
+            results.push(...notRun(runs.slice(i + 1), `\`${command.run}\` failed first`))
+            break
+          }
         }
-        const outcome = await deps.run({
-          run: command.run,
-          timeoutMs: parseDuration(command.timeout),
-          timeoutLabel: command.timeout,
-          cwd: path!,
-          env: runnableEnv(env.values),
-          signal: at.interrupt,
-          ownGroup: true,
-        })
-        if (at.interrupt?.aborted) {
-          interrupted = true
-          break
-        }
-        const ok = outcome.ok && outcome.exitCode === 0
-        results.push({ command: command.run, outcome: ok ? 'passed' : 'failed', evidence: outcome.evidence })
-        if (!ok) {
-          results.push(...notRun(runs.slice(i + 1), `\`${command.run}\` failed first`))
-          break
-        }
-      }
-    } finally {
+        return { results, interrupted }
+      }),
+    (runId) =>
       // A failed cleanup must not replace the failure it cleans up after — and
       // must not be hidden either: the checkout holds a planted env file.
-      await deps.remove({ project: at.project, runId, home: at.home }).catch((err: Error) => {
-        leftBehind = err.message
-      })
-    }
-    if (leftBehind !== null) {
-      deps.log(`could not remove the throwaway checkout (${runId}): ${leftBehind}`)
-      deps.log('it may still hold the env file setup planted — remove it by hand')
-    }
-    if (interrupted) throw new TrialInterrupted()
-    if (leftBehind !== null) {
-      results.push({
-        command: 'cleanup',
-        outcome: 'failed',
-        evidence: boundedEvidence(
-          `the throwaway checkout was not removed and may still hold the planted env file: ${leftBehind}`,
+      Effect.tryPromise(() => deps.remove({ project: at.project, runId, home: at.home })).pipe(
+        Effect.catch((err) =>
+          Effect.gen(function* () {
+            const why = messageOf(err.cause)
+            yield* Ref.set(leftBehind, why)
+            deps.log(`could not remove the throwaway checkout (${runId}): ${why}`)
+            deps.log('it may still hold the env file setup planted — remove it by hand')
+          }),
         ),
-      })
-    }
-    return { results, nothingDeclared }
+      ),
+  )
+
+  if (used.interrupted) return yield* new TrialInterrupted()
+  const left = yield* Ref.get(leftBehind)
+  const results = [...used.results]
+  if (left !== null) {
+    results.push({
+      command: 'cleanup',
+      outcome: 'failed',
+      evidence: boundedEvidence(
+        `the throwaway checkout was not removed and may still hold the planted env file: ${left}`,
+      ),
+    })
   }
-  return { base: async () => (await cutOf(at)).base, run }
-}
+  return { results, nothingDeclared } as TrialReport
+})
 
 function notRun(runs: string[], because: string): TrialResult[] {
   return runs.map((command) => ({ command, outcome: 'not-run', because }))
@@ -252,22 +298,41 @@ function notRun(runs: string[], because: string): TrialResult[] {
 
 /**
  * The live runner: Ctrl+C aborts the running command for the length of the
- * trial only, and the listener goes in the same `finally`, so the process's
+ * trial only, and the listener is released on every exit, so the process's
  * own Ctrl+C handling is back afterwards.
  */
-export function liveTrialBuild(at: Omit<TrialAt, 'interrupt'>): Trial {
-  const run = async (install: string | null, build: string[]): Promise<TrialReport> => {
-    const controller = new AbortController()
-    const onSigint = () => controller.abort()
-    process.once('SIGINT', onSigint)
-    try {
-      return await trialBuild(
-        { ...at, interrupt: controller.signal },
-        liveTrialDeps((line) => console.log(line)),
-      ).run(install, build)
-    } finally {
-      process.off('SIGINT', onSigint)
-    }
-  }
-  return { base: async () => (await cutOf(at)).base, run }
+export const liveTrialEffect = Effect.fn('setup.trial.live')(function* (
+  at: Omit<TrialAt, 'interrupt'>,
+  install: string | null,
+  build: string[],
+  deps: TrialDeps = liveTrialDeps((line) => console.log(line)),
+) {
+  const controller = new AbortController()
+  const onSigint = () => controller.abort()
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => void process.once('SIGINT', onSigint)),
+        () => Effect.sync(() => void process.off('SIGINT', onSigint)),
+      )
+      return yield* runTrialEffect({ ...at, interrupt: controller.signal }, deps, install, build)
+    }),
+  )
+})
+
+export function trialBase(at: TrialAt): Promise<string> {
+  return Effect.runPromise(trialBaseEffect(at))
 }
+
+export function runLiveTrial(
+  at: Omit<TrialAt, 'interrupt'>,
+  install: string | null,
+  build: string[],
+): Promise<TrialReport> {
+  return Effect.runPromise(liveTrialEffect(at, install, build))
+}
+
+export const liveTrialBuild = (at: Omit<TrialAt, 'interrupt'>): Trial => ({
+  base: () => trialBase(at),
+  run: (install, build) => runLiveTrial(at, install, build),
+})

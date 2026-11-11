@@ -85,6 +85,17 @@ describe('proposeSetup', () => {
     expect(p.kinds.known).toBe(true)
   })
 
+  it('a read that rejects in detection is a known:false line carrying the reader’s message', async () => {
+    const failing = {
+      has: async (path: string) => path === 'package.json',
+      read: async () => {
+        throw new Error('boom')
+      },
+    }
+    const p = await run({ kind: 'github', owner: 'acme', repo: 'widget' }, readers({ setupReader: failing }))
+    expect(p.install).toMatchObject({ known: false, reason: 'the repository could not be read: boom' })
+  })
+
   it('a runtime probe that fails is unknown for the runtimes and the agents', async () => {
     const p = await run(
       { kind: 'github', owner: 'acme', repo: 'widget' },

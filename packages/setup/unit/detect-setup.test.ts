@@ -2,9 +2,10 @@
  * `detectSetup` (#397): a pure read of a `SetupReader`, never asked of
  * anybody and never run.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { DETECTORS, detectSetup, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
+import { DETECTORS, detectSetup, detectSetupEffect, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
 
 function reader(files: Record<string, string>, opts: { haveNotRead?: string[] } = {}): SetupReader {
   const haveNotRead = new Set(opts.haveNotRead ?? [])
@@ -169,13 +170,14 @@ describe('detectSetup', () => {
   describe('more than one stack at the root', () => {
     const stub: StackDetector = {
       stack: 'Stub',
-      detect: async () => ({
-        presence: 'present',
-        install: { run: 'stub install', because: 'stub.lock is at the root' },
-        build: [{ name: 'test', run: 'stub test', because: 'stub' }],
-        skipped: [{ script: 'stub-e2e', why: 'stub' }],
-        notes: ['a stub note'],
-      }),
+      detect: () =>
+        Effect.succeed({
+          presence: 'present',
+          install: { run: 'stub install', because: 'stub.lock is at the root' },
+          build: [{ name: 'test', run: 'stub test', because: 'stub' }],
+          skipped: [{ script: 'stub-e2e', why: 'stub' }],
+          notes: ['a stub note'],
+        }),
     }
     const files = { 'pnpm-lock.yaml': '', 'package.json': pkg({ lint: 'eslint .' }) }
 
@@ -661,5 +663,22 @@ describe('detectSetup — Rust', () => {
     const r = await detectSetup(reader({ 'package.json': pkg({ test: 'vitest' }), 'Cargo.toml': TOML }))
     expect(r.build.map((b) => b.run)).not.toContain('cargo test')
     expect(r.notes).toContain('Rust is also at the root; Node was used')
+  })
+})
+
+describe('detectSetupEffect', () => {
+  it('a read that rejects where nothing catches it is SetupFailed, never an empty detection', async () => {
+    const failing: SetupReader = {
+      has: async (path) => path === 'package.json',
+      read: async () => {
+        throw new Error('boom')
+      },
+    }
+    const result = await Effect.runPromise(Effect.result(detectSetupEffect(failing)))
+    expect(result._tag).toBe('Failure')
+    if (result._tag === 'Failure') {
+      expect(result.failure).toMatchObject({ _tag: 'SetupFailed', operation: 'detect', message: 'boom' })
+    }
+    await expect(detectSetup(failing)).rejects.toThrow('boom')
   })
 })
