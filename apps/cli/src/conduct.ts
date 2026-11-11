@@ -424,11 +424,10 @@ export function conductWork(
 
     // Asked right before an awaited start, after the reads that precede it: the
     // answer is a fact about the moment it is asked, not about before them.
-    const stoppedNow = async (): Promise<string | null> => {
-      const paused = options.paused ? await options.paused() : null
-      if (paused !== null) return paused
-      return options.locked ? await options.locked(name) : null
-    }
+    const stoppedNow = (): Promise<string | null> =>
+      (options.paused ? options.paused() : Promise.resolve(null)).then((paused) =>
+        paused !== null || !options.locked ? paused : options.locked(name),
+      )
 
     for (const c of options.control.continuing) {
       if (c.project !== name) continue
