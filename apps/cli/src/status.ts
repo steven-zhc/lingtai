@@ -115,6 +115,13 @@ export function conflictLines(
  * supplied a recommendation line of its own, as `FixerDisagrees` does not (#656).
  * The rule stays in `conflictLines`; this only places its lines.
  */
+export function waitPassOf(
+  issue: string,
+  base: string | null | undefined,
+): { branch: string; base: string; findings: never[] } {
+  return { branch: agentBranchOf(issue), base: base ?? '', findings: [] }
+}
+
 export function waitDetail(
   words: Parameters<typeof describeWaitLines>[0],
   reason: WaitReason,
@@ -485,8 +492,7 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
               now,
             )
           : null
-      const words =
-        t.wait == null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
+      const words = t.wait == null ? null : waitWords(t.wait.reason, waitPassOf(t.issue, project.base))
       return {
         taskId: t.taskId,
         ref: t.issue,

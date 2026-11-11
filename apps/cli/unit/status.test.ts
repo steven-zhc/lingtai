@@ -20,6 +20,7 @@ import {
   conflictLines,
   conflictRecommendation,
   waitDetail,
+  waitPassOf,
   statusJson,
   type StatusFilter,
   type StatusReport,
@@ -775,5 +776,22 @@ describe('what holds new work (#1005)', () => {
     expect(j.projects[0].locks.map((l: any) => l.kind)).toEqual(['ceiling', 'paused'])
     expect(statusJson(report({ unread: 'x' })).ceiling).toEqual({ unread: 'x' })
     expect(j.projects[0].locks[0].since).toBe(at.toISOString())
+  })
+})
+
+describe('waitPassOf (#1030)', () => {
+  const reason = {
+    _tag: 'MergeRefused',
+    run: { runId: 'r', ref: 'agent/1', sha: 'abc' },
+    reason: 'push-rejected',
+    raw: 'rejected',
+  } as never
+  const first = (base: string | null) => {
+    const pass = waitPassOf('1', base)
+    return waitDetail(waitWords(reason, pass), reason, undefined)[0]
+  }
+  it('names the project’s base in a refusal, and says the base when none is recorded', () => {
+    expect(first('main')).toMatch(/^main moved while agent\/1/)
+    expect(first(null)).toMatch(/^the base moved while agent\/1/)
   })
 })
