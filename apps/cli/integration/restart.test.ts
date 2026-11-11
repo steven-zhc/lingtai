@@ -271,8 +271,16 @@ describe('a drain that is already standing', () => {
       if (plan.go !== 'refuse') continue
       expect(plan.because[0]?.waiver).toBeNull()
       expect(plan.because[0]?.line).toContain('human:ops')
-      expect(plan.because[0]?.line).toContain('lingtai resume')
+      expect(plan.because[0]?.line).toContain('the next start ends it')
+      expect(plan.because[0]?.line).not.toContain('lingtai resume')
     }
+  })
+
+  it('says a start ends it where nothing is conducting', () => {
+    const plan = planRestart(before({ shutdown: asked, conducting: null, daemonUp: false }), none)
+    expect(plan.go).toBe('refuse')
+    if (plan.go !== 'refuse') return
+    expect(plan.because[0]?.line).toContain('Starting a conductor (lingtai daemon) ends it')
   })
 
   it('is named beside whatever else was wrong, so one reading gets all of it', () => {
@@ -392,6 +400,7 @@ describe('the refusals only a started daemon can be asked', () => {
     const r = startRefusals({
       examined,
       running: { sha: 'c0ffee'.padEnd(40, '0'), dirty: false },
+      by: 'human:me',
       standing: null,
       unreadThrough: 20,
     })
@@ -399,9 +408,44 @@ describe('the refusals only a started daemon can be asked', () => {
   })
 
   it('refuses a drain it will never read, and not one it will', () => {
-    expect(startRefusals({ examined, running: examined, standing: ops, unreadThrough: 20 })).toHaveLength(1)
-    expect(startRefusals({ examined, running: examined, standing: ops, unreadThrough: 14 })).toEqual([])
-    expect(startRefusals({ examined, running: examined, standing: null, unreadThrough: 20 })).toEqual([])
+    const by = 'human:me'
+    expect(startRefusals({ examined, running: examined, by, standing: ops, unreadThrough: 20 })).toHaveLength(1)
+    expect(startRefusals({ examined, running: examined, by, standing: ops, unreadThrough: 14 })).toEqual([])
+    expect(startRefusals({ examined, running: examined, by, standing: null, unreadThrough: 20 })).toEqual([])
+  })
+
+  it("does not refuse this person's own standing request, which the start ends", () => {
+    const mine: ShutdownRequest = { ...ops, by: 'human:me' }
+    expect(startRefusals({ examined, running: examined, by: 'human:me', standing: mine, unreadThrough: 20 })).toEqual(
+      [],
+    )
+  })
+
+  it("names a foreign request the start ended, and not this person's", () => {
+    const mine: ShutdownRequest = { ...ops, by: 'human:me', version: 16 }
+    const r = startRefusals({
+      examined,
+      running: examined,
+      by: 'human:me',
+      standing: null,
+      ended: [mine, ops],
+      unreadThrough: 20,
+    })
+    expect(r).toHaveLength(1)
+    expect(r[0]?.line).toContain('the start ended a shutdown asked by human:ops — moving the database')
+  })
+
+  it('refuses when the requests between could not be read', () => {
+    const r = startRefusals({
+      examined,
+      running: examined,
+      by: 'human:me',
+      standing: null,
+      ended: { unread: 'the connection dropped' },
+      unreadThrough: 20,
+    })
+    expect(r).toHaveLength(1)
+    expect(r[0]?.line).toContain('the connection dropped')
   })
 })
 
@@ -464,7 +508,7 @@ interface Scene {
     startsUnread?: boolean
   }
   /** A drain standing when the start is asked for, or one that lands while the supervisor starts it. */
-  atStart?: { standing?: ShutdownRequest; landsDuring?: ShutdownRequest }
+  atStart?: { standing?: ShutdownRequest; landsDuring?: ShutdownRequest; endedUnread?: boolean }
   /** What the daemon that starts runs, when not what was checked — or null, when it takes no work and records nothing. */
   runs?: Pick<Identity, 'sha' | 'dirty'> | null
 }
@@ -494,8 +538,8 @@ function worldOf(scene: Scene) {
     w.phase === 'before' ? (scene.identity ?? pushed) : (scene.after?.identity ?? scene.identity ?? pushed)
   const shutdownNow = (): ShutdownRequest | null => {
     if (w.phase === 'before') return scene.shutdown ?? null
-    if (w.phase === 'started')
-      return scene.atStart?.landsDuring ?? scene.atStart?.standing ?? scene.after?.shutdown ?? null
+    // A request that landed during the start has been ended by it (0126).
+    if (w.phase === 'started') return scene.atStart?.standing ?? scene.after?.shutdown ?? null
     // The first read after the drain is the checks'; a later one is the start's.
     return drainedReads++ === 0
       ? (scene.after?.shutdown ?? null)
@@ -543,6 +587,10 @@ function worldOf(scene: Scene) {
       ]
       return starts.find((s) => s !== null && s.version > version) ?? null
     },
+    requestsBetween: async () => {
+      if (scene.atStart?.endedUnread) throw new Error('the connection dropped')
+      return scene.atStart?.landsDuring ? [scene.atStart.landsDuring] : []
+    },
     pollMs: 1,
   }
   const log = (line: string): void => void w.lines.push(line)
@@ -581,7 +629,7 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
   w.phase = 'started'
   let stopped = false
   const opened = await openDaemon(
-    { examined: prepared.examined },
+    { examined: prepared.examined, by: prepared.by },
     {
       start: async () =>
         scene.runs === null
@@ -824,8 +872,9 @@ describe('the table of refusals', () => {
     const s = await supervised({})
     expect(s.code, s.said).toBe(0)
     expect(s.said).toContain('restarted 2926f2d as mac:4242 — the commit that was checked')
-    // The drain it asked for is withdrawn on both, by its version.
-    expect(t.withdrew).toEqual([11])
+    // The terminal path withdraws nothing: its start ends the drain (0126). The
+    // supervised path's `service shutdown` still lifts its own, until #1002.
+    expect(t.withdrew).toEqual([])
     expect(s.withdrew).toEqual([11])
   })
 
@@ -926,7 +975,22 @@ describe("#167's five findings, on the supervised path", () => {
     const out = await supervised({ atStart: { landsDuring: ops(15) } })
     expect(out.code).toBe(1)
     expect(out.said).toContain('a daemon started, and it is not the start that was checked')
+    expect(out.said).toContain('the start ended a shutdown asked by human:ops')
     expect(out.said).toContain('landed between the checks and the start')
+  })
+
+  it('a read of the requests between the checks and the start that fails is a refusal', async () => {
+    const out = await supervised({ atStart: { endedUnread: true } })
+    expect(out.code).toBe(1)
+    expect(out.said).toContain('whether a shutdown landed between the checks and the start could not be read')
+  })
+
+  /** An own request adopted on the terminal path is waited on as it stands and ended by the start. */
+  it('the terminal path adopts its own standing request and withdraws nothing', async () => {
+    const mine: ShutdownRequest = { ...ops(7), by: BY, reason: "restarting: ctrl-c'd" }
+    const out = await terminal({ shutdown: mine })
+    expect(out.code, out.said).toBe(0)
+    expect(out.withdrew).toEqual([])
   })
 
   /** major 3 — guarded, and the handoff state that caused it is gone: nothing recorded is exit 1. */

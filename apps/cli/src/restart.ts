@@ -347,8 +347,8 @@ export function planRestart(before: Before, waivers: Waivers): Plan {
         // started could not be read, which is not the same as none.
         (started === null
           ? before.conducting === null
-            ? `starting a conductor (lingtai daemon) ends it, and then this will start`
-            : `that daemon finishes its attempt and exits; the next start ends it, and then this will start`
+            ? `Starting a conductor (lingtai daemon) ends it, and then this will start`
+            : `That daemon finishes its attempt and exits; the next start ends it, and then this will start`
           : 'unread' in started
             ? `It may be aimed at a daemon that started since — whether one did could not be read — so lifting it is theirs to decide, not this command's`
             : `It may be aimed at the daemon that started since, so lifting it is theirs to decide, not this command's`),
