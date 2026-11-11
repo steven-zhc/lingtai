@@ -516,10 +516,29 @@ describe('pausedAt and scopeControl (#874)', () => {
     expect(scopeControl(state, 5).paused).toBe(true)
   })
 
-  it('clears a shutdown below the watermark while keeping a pause above it', () => {
+  it('no longer changes a shutdown at any watermark, and keeps a pause above it', () => {
     const state = reduceControl(log([ask, pause()]), NOW)
-    const scoped = scopeControl(state, 1)
-    expect(scoped.shutdown).toBeNull()
-    expect(scoped.paused).toBe(true)
+    for (const since of [0, 1, 5]) expect(scopeControl(state, since).shutdown).toEqual(state.shutdown)
+    expect(scopeControl(state, 1).paused).toBe(true)
+  })
+})
+
+describe('ConductorStarted ends a standing shutdown (0126)', () => {
+  const ask = { type: 'ConductorShutdownRequested', data: { by: 'steven', reason: 'x', timeoutMs: null } }
+  const started = { type: 'ConductorStarted', data: { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'w', handoff: null } }
+
+  it('a start after a request ends it', () => {
+    expect(reduceControl(log([ask, started]), NOW).shutdown).toBeNull()
+  })
+
+  it('a request after a start stands', () => {
+    expect(reduceControl(log([started, ask]), NOW).shutdown).toMatchObject({ by: 'steven', reason: 'x' })
+  })
+
+  it('a start leaves a pause and the requests as they were', () => {
+    const run = { type: 'RunRequested', data: { project: 'p', issue: '1', by: 'steven' } }
+    const before = reduceControl(log([quotaPause, run]), NOW)
+    const after = reduceControl(log([quotaPause, run, started]), NOW)
+    expect(after).toEqual(before)
   })
 })

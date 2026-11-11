@@ -36,6 +36,7 @@ export const CONTROL_FOLD_TYPES = [
   'ConductorResumed',
   'ConductorShutdownRequested',
   'ConductorShutdownWithdrawn',
+  'ConductorStarted',
   'ContinueRequested',
   'DiscussionRequested',
   'RunRequested',
@@ -210,6 +211,10 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
         },
       }
     }
+    case 'ConductorStarted':
+      // A drain lasts from its request to the next start (0126): the start is
+      // the unlock. Nothing else changes — the pause is still the watermark's.
+      return state.shutdown === null ? state : { ...state, shutdown: null }
     case 'ConductorShutdownWithdrawn': {
       // The request named, or nothing. A withdrawal that lost a race to a
       // newer request must leave that request standing — it is somebody
@@ -320,20 +325,15 @@ export function evaluateControl(state: ControlState, now: Date): ControlState {
 /**
  * The whole-stream state, scoped to what a daemon started at `since` is told
  * (#159, #405, #874). A pause is kept when it was appended after `since` or
- * holds across starts; a shutdown request when its own version is after `since`.
+ * holds across starts. A shutdown is not scoped here: it is the whole stream's,
+ * and a `ConductorStarted` ends it (`reduceControlEvent`).
  * Pure. Returns its argument when nothing is cleared, so `since <= 0` is the
  * identity (versions start at 1). Evaluate for the clock before scoping.
  */
 export function scopeControl(state: ControlState, since: number): ControlState {
   const keepPause = !state.paused || state.holdsAcrossStarts || (state.pausedAt !== null && state.pausedAt > since)
-  const keepShutdown = state.shutdown === null || state.shutdown.version > since
-  if (keepPause && keepShutdown) return state
-  let next = state
-  if (!keepPause) {
-    next = { ...next, paused: false, pausedAt: null, by: null, reason: null, until: null, cause: null }
-  }
-  if (!keepShutdown) next = { ...next, shutdown: null }
-  return next
+  if (keepPause) return state
+  return { ...state, paused: false, pausedAt: null, by: null, reason: null, until: null, cause: null }
 }
 
 /**
@@ -358,7 +358,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 2,
+  version: 3,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,
