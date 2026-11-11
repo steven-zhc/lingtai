@@ -1,6 +1,7 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { ghExecOptions, ghSpawnOptions, ghStatus, ghToken, scrubbedEnv, type GhRun } from '../src/gh.ts'
+import { ghExecOptions, ghSpawnOptions, ghStatus, ghTokenEffect, scrubbedEnv, type GhRun } from '../src/gh.ts'
 
 const TOKENS = { GH_TOKEN: 'a', GITHUB_TOKEN: 'b', GH_ENTERPRISE_TOKEN: 'c', GITHUB_ENTERPRISE_TOKEN: 'd' }
 
@@ -22,7 +23,9 @@ describe('scrubbedEnv', () => {
   })
 })
 
-describe('ghToken', () => {
+const ghToken = (run: GhRun) => Effect.runPromise(ghTokenEffect(run))
+
+describe('ghTokenEffect', () => {
   it('trims the token', async () => {
     const run: GhRun = async () => ({ code: 0, stdout: 'gho_abc\n', stderr: '' })
     expect(await ghToken(run)).toBe('gho_abc')

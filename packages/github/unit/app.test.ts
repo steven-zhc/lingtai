@@ -1,3 +1,5 @@
+import { createPublicKey, createVerify, generateKeyPairSync } from 'node:crypto'
+
 /**
  * The App's authentication, without an App.
  *
@@ -11,15 +13,14 @@
  * `lingtai add`'s job against a real App, and it is the reason `lingtai add` checks
  * permissions before it writes anything.
  */
-import { createPublicKey, createVerify, generateKeyPairSync } from 'node:crypto'
-
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   type AppAuth,
   type Installation,
   appJwt,
-  createTokenSource,
+  installationToken,
   gapRemedyLines,
   parseSlug,
   permissionGaps,
@@ -127,8 +128,14 @@ describe('permissionGaps', () => {
   })
 })
 
-describe('createTokenSource', () => {
+describe('installationToken', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  /** One cache, built once, read as a promise. */
+  async function source() {
+    const read = await Effect.runPromise(installationToken(auth, 42))
+    return (signal?: AbortSignal) => Effect.runPromise(read, { signal })
+  }
 
   /** One stubbed token endpoint, counting how often it is actually called. */
   function stubTokens(expiresInMs: number) {
@@ -148,7 +155,7 @@ describe('createTokenSource', () => {
 
   it('fetches once and reuses the token', async () => {
     const issued = stubTokens(60 * 60_000)
-    const tokenFor = createTokenSource(auth, 42)
+    const tokenFor = await source()
 
     expect(await tokenFor()).toBe('ghs_token_1')
     expect(await tokenFor()).toBe('ghs_token_1')
@@ -160,7 +167,7 @@ describe('createTokenSource', () => {
     // Inside the one-minute margin: valid, but not valid enough to start a merge
     // with. The refresh has to happen here rather than when a call fails.
     const issued = stubTokens(30_000)
-    const tokenFor = createTokenSource(auth, 42)
+    const tokenFor = await source()
 
     expect(await tokenFor()).toBe('ghs_token_1')
     expect(await tokenFor()).toBe('ghs_token_2')
@@ -169,7 +176,7 @@ describe('createTokenSource', () => {
 
   it('coalesces a burst into one token request', async () => {
     const issued = stubTokens(60 * 60_000)
-    const tokenFor = createTokenSource(auth, 42)
+    const tokenFor = await source()
 
     const tokens = await Promise.all([tokenFor(), tokenFor(), tokenFor(), tokenFor()])
 
@@ -184,12 +191,32 @@ describe('createTokenSource', () => {
       calls++
       return new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
     })
-    const tokenFor = createTokenSource(auth, 42)
+    const tokenFor = await source()
 
     await expect(tokenFor()).rejects.toThrow(/401.*Bad credentials/)
     await expect(tokenFor()).rejects.toThrow()
     expect(calls).toBe(2)
   })
+
+  it('releases the permit when a refresh is interrupted, so the next read fetches', async () => {
+    // A fetch that settles only when it is aborted.
+    vi.stubGlobal(
+      'fetch',
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        }),
+    )
+    const tokenFor = await source()
+    const controller = new AbortController()
+    const first = tokenFor(controller.signal)
+    controller.abort()
+    await expect(first).rejects.toThrow()
+
+    const issued = stubTokens(60 * 60_000)
+    expect(await tokenFor()).toBe('ghs_token_1')
+    expect(issued()).toBe(1)
+  }, 2000)
 })
 
 describe('parseSlug', () => {

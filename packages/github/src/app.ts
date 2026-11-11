@@ -25,7 +25,9 @@ import { createSign } from 'node:crypto'
  * No dependency for the JWT: `node:crypto` signs RS256, which is the whole of
  * what GitHub asks for.
  */
-import { Cause, Data, Effect, Exit, Semaphore } from 'effect'
+import { Data, Effect, Ref, Semaphore } from 'effect'
+
+import type { BodyChanged } from './client.ts'
 
 export const GITHUB_API = 'https://api.github.com'
 
@@ -130,55 +132,96 @@ export function appJwt(auth: AppAuth, now = Date.now()): string {
   return `${header}.${payload}.${signer.sign(auth.privateKey, 'base64url')}`
 }
 
-async function githubJson<T>(path: string, init: RequestInit & { token: string; tokenKind: 'bearer' }): Promise<T> {
-  const response = await fetch(`${GITHUB_API}${path}`, {
-    ...init,
-    headers: {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      // GitHub rejects a request with no User-Agent, with a message that does
-      // not say so.
-      'user-agent': 'lingtai',
-      authorization: `Bearer ${init.token}`,
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...init.headers,
-    },
+/** The promise face over every Effect in this package that a caller outside it still holds a promise for (#790). */
+export function runGitHub<A>(
+  effect: Effect.Effect<A, GitHubFailed | BodyChanged | NotInstalledError>,
+  signal?: AbortSignal,
+): Promise<A> {
+  return Effect.runPromise(effect, { signal })
+}
+
+/** A rejection that is not already a `GitHubFailed` is one with status 0: no answer from GitHub. */
+function failed(path: string) {
+  return (err: unknown): GitHubFailed =>
+    err instanceof GitHubFailed ? err : new GitHubFailed(0, path, (err as Error).message)
+}
+
+/** The App's JWT, as an Effect: it is signed per use, and a key that will not sign is a failure and not a throw. */
+const appJwtEffect = (auth: AppAuth, path: string): Effect.Effect<string, GitHubFailed> =>
+  Effect.try({ try: () => appJwt(auth), catch: failed(path) })
+
+/**
+ * One request to GitHub — the only place a header is built or a non-2xx is
+ * turned into a `GitHubFailed`. A rejection from `fetch`, or a 2xx whose body
+ * does not parse, is a `GitHubFailed` with status 0.
+ */
+export const githubJson = <T>(
+  method: string,
+  path: string,
+  token: string,
+  body?: unknown,
+): Effect.Effect<T, GitHubFailed> =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: (signal) =>
+        fetch(`${GITHUB_API}${path}`, {
+          method,
+          headers: {
+            accept: 'application/vnd.github+json',
+            'x-github-api-version': '2022-11-28',
+            // GitHub rejects a request with no User-Agent, with a message that
+            // does not say so.
+            'user-agent': 'lingtai',
+            authorization: `Bearer ${token}`,
+            ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal,
+        }),
+      catch: failed(path),
+    })
+    if (!response.ok) {
+      const text = yield* Effect.tryPromise({ try: () => response.text(), catch: failed(path) })
+      let message = text.slice(0, 400)
+      try {
+        message = (JSON.parse(text) as { message?: string }).message ?? message
+      } catch {
+        // Not JSON. The raw prefix is more useful than nothing.
+      }
+      return yield* new GitHubFailed(response.status, path, message)
+    }
+    if (response.status === 204) return undefined as T
+    return yield* Effect.tryPromise({ try: () => response.json() as Promise<T>, catch: failed(path) })
   })
 
-  if (!response.ok) {
-    const body = await response.text()
-    let message = body.slice(0, 400)
-    try {
-      message = (JSON.parse(body) as { message?: string }).message ?? message
-    } catch {
-      // Not JSON. The raw prefix is more useful than nothing.
-    }
-    throw new GitHubFailed(response.status, path, message)
-  }
-  return (await response.json()) as T
+/** Which installation covers a repository, as an Effect. */
+export const installationForRepoEffect = (
+  auth: AppAuth,
+  owner: string,
+  repo: string,
+): Effect.Effect<Installation, GitHubFailed | NotInstalledError> => {
+  const path = `/repos/${owner}/${repo}/installation`
+  return appJwtEffect(auth, path).pipe(
+    Effect.flatMap((jwt) => githubJson<RawInstallation>('GET', path, jwt)),
+    Effect.map((raw) => toInstallation(raw, owner)),
+    // 404 here means "no installation covers this repository", which is not the
+    // same as "no such repository" and reads very differently to whoever is
+    // trying to onboard it.
+    Effect.catchIf(
+      (err) => err.status === 404,
+      () => Effect.fail(new NotInstalledError(owner, repo)),
+    ),
+  )
 }
 
 /** Which installation covers a repository, and what it may do there. */
-export async function installationForRepo(
+export function installationForRepo(
   auth: AppAuth,
   owner: string,
   repo: string,
   signal?: AbortSignal,
 ): Promise<Installation> {
-  try {
-    const raw = await githubJson<RawInstallation>(`/repos/${owner}/${repo}/installation`, {
-      token: appJwt(auth),
-      tokenKind: 'bearer',
-      signal,
-    })
-    return toInstallation(raw, owner)
-  } catch (err) {
-    // 404 here means "no installation covers this repository", which is not the
-    // same as "no such repository" and reads very differently to whoever is
-    // trying to onboard it.
-    if (err instanceof GitHubFailed && err.status === 404) throw new NotInstalledError(owner, repo)
-    throw err
-  }
+  return runGitHub(installationForRepoEffect(auth, owner, repo), signal)
 }
 
 /**
@@ -253,55 +296,37 @@ interface CachedToken {
  * what turns "one at a time" into "one request"
  * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  */
-export function installationToken(auth: AppAuth, installationId: number): Effect.Effect<string, GitHubFailed> {
-  let cached: CachedToken | null = null
-  const refreshing = Effect.runSync(Semaphore.make(1))
-  const fresh = () => cached !== null && cached.expiresAtMs - Date.now() > 60_000
+export const installationToken = (
+  auth: AppAuth,
+  installationId: number,
+): Effect.Effect<Effect.Effect<string, GitHubFailed>> =>
+  Effect.gen(function* () {
+    const refreshing = yield* Semaphore.make(1)
+    const cached = yield* Ref.make<CachedToken | null>(null)
+    const path = `/app/installations/${installationId}/access_tokens`
 
-  const fetchToken = Effect.tryPromise({
-    // Effect hands `try` a signal that aborts when the fiber is interrupted,
-    // which is how a caller's `tokenFor(signal)` stops the request itself.
-    try: async (signal) => {
-      const raw = await githubJson<{ token: string; expires_at: string }>(
-        `/app/installations/${installationId}/access_tokens`,
-        { method: 'POST', token: appJwt(auth), tokenKind: 'bearer', signal },
-      )
-      cached = { token: raw.token, expiresAtMs: Date.parse(raw.expires_at) }
-      return raw.token
-    },
-    catch: (err) =>
-      err instanceof GitHubFailed
-        ? err
-        : new GitHubFailed(0, `/app/installations/${installationId}/access_tokens`, (err as Error).message),
+    const fresh = Effect.map(Ref.get(cached), (c) =>
+      c !== null && c.expiresAtMs - Date.now() > 60_000 ? c.token : null,
+    )
+
+    // `tryPromise` hands `fetch` a signal that aborts when the fiber is
+    // interrupted, which is how a caller's signal stops the request itself.
+    const fetchToken = appJwtEffect(auth, path).pipe(
+      Effect.flatMap((jwt) => githubJson<{ token: string; expires_at: string }>('POST', path, jwt)),
+      Effect.tap((raw) => Ref.set(cached, { token: raw.token, expiresAtMs: Date.parse(raw.expires_at) })),
+      Effect.map((raw) => raw.token),
+    )
+
+    return Effect.flatMap(fresh, (token) =>
+      token !== null
+        ? Effect.succeed(token)
+        : refreshing.withPermits(1)(
+            // Checked again inside the permit: whoever was queued behind the one
+            // request wants its answer, not another request.
+            Effect.flatMap(fresh, (again) => (again !== null ? Effect.succeed(again) : fetchToken)),
+          ),
+    )
   })
-
-  return Effect.suspend(() =>
-    fresh()
-      ? Effect.succeed(cached!.token)
-      : refreshing.withPermits(1)(
-          // Checked again inside the permit: whoever was queued behind the one
-          // request wants its answer, not another request.
-          Effect.suspend(() => (fresh() ? Effect.succeed(cached!.token) : fetchToken)),
-        ),
-  )
-}
-
-/**
- * The same source, as the `() => Promise<string>` that `TokenSource` means.
- *
- * `git` passes it to a child process's environment and the board calls it from
- * a server action; neither has a runtime to run an `Effect` in. The rejection
- * is the `GitHubFailed` itself rather than a fiber's wrapper, because a caller
- * that reads `.status` should not have to know which face it took.
- */
-export function createTokenSource(auth: AppAuth, installationId: number): (signal?: AbortSignal) => Promise<string> {
-  const token = installationToken(auth, installationId)
-  return async function tokenFor(signal?: AbortSignal): Promise<string> {
-    const exit = await Effect.runPromiseExit(token, { signal })
-    if (Exit.isSuccess(exit)) return exit.value
-    throw Cause.squash(exit.cause)
-  }
-}
 
 /** One repository an installation can see. */
 export interface VisibleRepository {
@@ -329,23 +354,27 @@ export interface AppReader {
 }
 
 export function createAppReader(auth: AppAuth): AppReader {
-  const tokens = new Map<number, () => Promise<string>>()
-  return {
-    async request<T>(method: 'GET', path: string, as: 'app' | number): Promise<T> {
-      if (method !== 'GET') throw new Error(`the App reader only reads: refused ${method} ${path}`)
+  const tokens = new Map<number, Effect.Effect<string, GitHubFailed>>()
+  // A miss yields between the `get` and the `set`, so two first reads for one
+  // installation can each build a cache: one extra token request, once per reader.
+  const readAsApp = <T>(method: string, path: string, as: 'app' | number): Effect.Effect<T, GitHubFailed> =>
+    Effect.gen(function* () {
+      if (method !== 'GET') return yield* Effect.die(new Error(`the App reader only reads: refused ${method} ${path}`))
       let token: string
       if (as === 'app') {
-        token = appJwt(auth)
+        token = yield* appJwtEffect(auth, path)
       } else {
         let source = tokens.get(as)
         if (source === undefined) {
-          source = createTokenSource(auth, as)
+          source = yield* installationToken(auth, as)
           tokens.set(as, source)
         }
-        token = await source()
+        token = yield* source
       }
-      return githubJson<T>(path, { method, token, tokenKind: 'bearer' })
-    },
+      return yield* githubJson<T>(method, path, token)
+    })
+  return {
+    request: <T>(method: 'GET', path: string, as: 'app' | number) => runGitHub(readAsApp<T>(method, path, as)),
   }
 }
 
@@ -361,18 +390,27 @@ const MAX_PAGES = 20
  * is not in here is not one of this App's installations, whatever the query
  * string says.
  */
-export async function appInstallations(reader: AppReader): Promise<Installation[]> {
-  const out: Installation[] = []
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const raw = await reader.request<RawInstallation[]>(
-      'GET',
-      `/app/installations?per_page=${PAGE}&page=${page}`,
-      'app',
+export const appInstallationsEffect = (reader: AppReader): Effect.Effect<Installation[], GitHubFailed> =>
+  Effect.gen(function* () {
+    const out: Installation[] = []
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const path = `/app/installations?per_page=${PAGE}&page=${page}`
+      const raw = yield* Effect.tryPromise({
+        try: () => reader.request<RawInstallation[]>('GET', path, 'app'),
+        catch: failed(path),
+      })
+      out.push(...raw.map((r) => toInstallation(r)))
+      if (raw.length < PAGE) return out
+    }
+    return yield* new GitHubFailed(
+      0,
+      '/app/installations',
+      `more than ${MAX_PAGES * PAGE} installations — the listing is incomplete`,
     )
-    out.push(...raw.map((r) => toInstallation(r)))
-    if (raw.length < PAGE) return out
-  }
-  throw new Error(`more than ${MAX_PAGES * PAGE} installations — the listing is incomplete`)
+  })
+
+export function appInstallations(reader: AppReader): Promise<Installation[]> {
+  return Effect.runPromise(appInstallationsEffect(reader))
 }
 
 /**
@@ -388,19 +426,31 @@ export async function appInstallations(reader: AppReader): Promise<Installation[
  * can see* is the right answer rather than a compromise. Reach for the `/user/`
  * endpoints and there is no token to call them with.
  */
-export async function installationRepositories(
+export const installationRepositoriesEffect = (
   reader: AppReader,
   installationId: number,
-): Promise<VisibleRepository[]> {
-  const out: VisibleRepository[] = []
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const raw = await reader.request<{
-      repositories: { name: string; owner: { login: string }; private: boolean }[]
-    }>('GET', `/installation/repositories?per_page=${PAGE}&page=${page}`, installationId)
-    out.push(...raw.repositories.map((r) => ({ owner: r.owner.login, repo: r.name, private: r.private })))
-    if (raw.repositories.length < PAGE) return out
-  }
-  throw new Error(
-    `installation ${installationId} can see more than ${MAX_PAGES * PAGE} repositories — the listing is incomplete`,
-  )
+): Effect.Effect<VisibleRepository[], GitHubFailed> =>
+  Effect.gen(function* () {
+    const out: VisibleRepository[] = []
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const path = `/installation/repositories?per_page=${PAGE}&page=${page}`
+      const raw = yield* Effect.tryPromise({
+        try: () =>
+          reader.request<{
+            repositories: { name: string; owner: { login: string }; private: boolean }[]
+          }>('GET', path, installationId),
+        catch: failed(path),
+      })
+      out.push(...raw.repositories.map((r) => ({ owner: r.owner.login, repo: r.name, private: r.private })))
+      if (raw.repositories.length < PAGE) return out
+    }
+    return yield* new GitHubFailed(
+      0,
+      '/installation/repositories',
+      `installation ${installationId} can see more than ${MAX_PAGES * PAGE} repositories — the listing is incomplete`,
+    )
+  })
+
+export function installationRepositories(reader: AppReader, installationId: number): Promise<VisibleRepository[]> {
+  return Effect.runPromise(installationRepositoriesEffect(reader, installationId))
 }
