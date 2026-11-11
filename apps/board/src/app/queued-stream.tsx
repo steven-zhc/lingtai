@@ -12,6 +12,7 @@
  * `page.tsx`, which may export nothing but the page. The grouping and the loop
  * over it are here.
  */
+import Link from 'next/link'
 import { Fragment, type ReactNode } from 'react'
 
 import { EMPTY_BOARD_HALF, blockerChip, type BoardHalf } from '@/lib/blocker-state'
@@ -37,12 +38,19 @@ export const ASKING_COLUMN = 'asking GitHub for runnable issues…'
  */
 export type ListQueued = (card: BoardCard, showProject: boolean, next: boolean, arrive: boolean) => ReactNode
 
-function Problems({ problems }: { problems: readonly QueueProblem[] }) {
+function Problems({ problems, recipe }: { problems: readonly QueueProblem[]; recipe: boolean }) {
   return (
     <>
       {problems.map((p) => (
         <p key={p.project} className="empty broken">
-          <strong>{p.project}</strong>: the queue could not be listed — {p.reason}
+          {recipe ? (
+            <Link href={`/recipe/${encodeURIComponent(p.project)}`}>
+              <strong>{p.project}</strong>
+            </Link>
+          ) : (
+            <strong>{p.project}</strong>
+          )}
+          : the queue could not be listed — {p.reason}
         </p>
       ))}
     </>
@@ -301,7 +309,7 @@ export function QueuedFallback({
   const { entries } = groupQueue(logCards, [], order, new Map(), [], false)
   return (
     <>
-      <Problems problems={unreadable} />
+      <Problems recipe problems={unreadable} />
       {logCards.length > 0 ? (
         <QueuedList
           entries={entries}
@@ -361,7 +369,6 @@ export function QueuedAnswered({
     ...github.held.map((h) => h.project),
     ...github.epics.map((e) => e.project),
   ])
-  const problems = [...unreadable, ...github.problems]
   const arriving = new Set(github.cards.map((c) => c.taskId))
   const waiting = github.blocked.length
   const drawn = github.blocked.filter((b) => !b.unread)
@@ -389,13 +396,14 @@ export function QueuedAnswered({
   return (
     <>
       {summary}
-      <Problems problems={problems} />
+      <Problems recipe problems={unreadable} />
+      <Problems recipe={false} problems={github.problems} />
       {github.notes.map((n) => (
         <p key={`${n.project}:${n.reason}`} className="empty">
           <strong>{n.project}</strong>: {n.reason}
         </p>
       ))}
-      {cards.length === 0 && problems.length === 0 && waiting === 0 ? (
+      {cards.length === 0 && unreadable.length === 0 && github.problems.length === 0 && waiting === 0 ? (
         empty
       ) : (
         <QueuedList

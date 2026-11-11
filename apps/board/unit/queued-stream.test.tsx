@@ -41,6 +41,25 @@ const answer = (over: Partial<GithubQueue> = {}): GithubQueue => ({
 
 const html = (node: React.ReactElement) => renderToStaticMarkup(node)
 
+describe('a problem links to the recipe only where it is about the recipe (#1014)', () => {
+  const out = html(
+    <QueuedAnswered
+      unreadable={[{ project: 'broken', reason: 'recipe.yml: missing' }]}
+      logCards={[]}
+      onBoard={new Set()}
+      list={list}
+      order={[]}
+      empty={null}
+      github={answer({ problems: [{ project: 'quiet', reason: 'GitHub said no' }] })}
+    />,
+  )
+  it('links the first and not the second', () => {
+    expect(out).toContain('<a href="/recipe/broken"><strong>broken</strong></a>')
+    expect(out).toContain('<strong>quiet</strong>: the queue could not be listed')
+    expect(out).not.toContain('/recipe/quiet')
+  })
+})
+
 describe('the Queued column while GitHub is being asked', () => {
   const out = html(
     <QueuedFallback
@@ -58,7 +77,9 @@ describe('the Queued column while GitHub is being asked', () => {
   })
 
   it('shows a recipe that will not read, which GitHub cannot change', () => {
-    expect(out).toContain('<strong>broken</strong>: the queue could not be listed — recipe.yml: missing')
+    expect(out).toContain(
+      '<a href="/recipe/broken"><strong>broken</strong></a>: the queue could not be listed — recipe.yml: missing',
+    )
   })
 
   it('says GitHub is being asked, and never that the column is empty', () => {
