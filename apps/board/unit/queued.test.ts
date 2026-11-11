@@ -285,6 +285,24 @@ describe('what a Queued card says about whether it will come back', () => {
     expect(said?.text).toBe('paused — nothing will start')
   })
 
+  describe("a project's own pause (#995)", () => {
+    const lock = [{ kind: 'paused' as const, by: 'steven', since: new Date('2026-11-01T00:00:00Z') }]
+
+    it('marks a Queued card with the project named', () => {
+      const said = queuedStanding(card('74', 'bug'), false, now, lock)
+      expect(said?.state).toBe('paused')
+      expect(said?.text).toBe(`${card('74', 'bug').project} is paused — nothing will start`)
+    })
+
+    it('says nothing about a Running card', () => {
+      expect(queuedStanding({ ...card('74', 'bug'), column: 'running' }, false, now, lock)).toBeNull()
+    })
+
+    it('is outranked by the conductor-wide pause', () => {
+      expect(queuedStanding(card('74', 'bug'), true, now, lock)?.text).toBe('paused — nothing will start')
+    })
+  })
+
   /** The whole complaint, as one assertion: three states, three readings. */
   it('gives the three of them three different readings', () => {
     const readings = [

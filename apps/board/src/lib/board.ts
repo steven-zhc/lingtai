@@ -9,6 +9,7 @@ import {
   CONFLICT_ROUND_HUNKS,
   type AttemptState,
   type BlockDiagnosis,
+  type Lock,
   type ProjectState,
   type WaitId,
   agentBranchOf,
@@ -66,6 +67,7 @@ import type { ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
+import { isPaused } from './lock-marks.ts'
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
 import { savedFixWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -504,20 +506,52 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
  * column is where a person looks when a lane is bare, so it is the one place
  * that has to know.
  *
+ * **A person's pause is per project** (#995), and follows the filter: with
+ * `pausedInScope` (the paused projects in the selected scope) an empty Running
+ * column names them. `everyProjectPaused` is the caller's to say — only it knows
+ * how many projects are registered.
+ *
  * **Under a filter it says whose emptiness it is.** "Nothing here yet" is a
  * claim about the log, and with one project selected the log may be full of
  * another project's work: the lane is bare because of a choice the reader made,
  * and saying so is the difference between a filter that is working and a board
- * that has nothing on it (#86). The pause is not narrowed — `ctl-` is one
- * stream for the whole installation — so that sentence is the filter's to leave
- * alone.
+ * that has nothing on it (#86). The conductor-wide pause is not narrowed —
+ * `ctl-` is one stream for the whole installation — so that sentence is the
+ * filter's to leave alone; only that one.
  */
-export function emptyNote(column: ColumnId, paused: boolean, project?: string): string {
+export function emptyNote(
+  column: ColumnId,
+  paused: boolean,
+  project?: string,
+  pausedInScope: readonly string[] = [],
+  everyProjectPaused = false,
+): string {
   if (column === 'running' && paused) return 'Paused — nothing will start.'
+  if (column === 'running' && pausedInScope.length > 0) {
+    if (project !== undefined) return `Nothing here yet. ${project} is paused.`
+    if (everyProjectPaused) return 'Nothing here yet. Every project is paused.'
+    const names = [...pausedInScope]
+    const last = names.pop()
+    const list = names.length === 0 ? last : `${names.join(', ')} and ${last}`
+    return `Nothing here yet. ${list} ${pausedInScope.length === 1 ? 'is' : 'are'} paused; the others are taking work.`
+  }
   if (column === 'waiting') {
     return project === undefined ? 'Nothing is waiting on you.' : `Nothing in ${project} is waiting on you.`
   }
   return project === undefined ? 'Nothing here yet.' : `Nothing here for ${project}.`
+}
+
+/** Whether the empty line is drawn in the hold colour: all but "some are paused, the others work". */
+export function emptyHeld(
+  column: ColumnId,
+  paused: boolean,
+  project: string | undefined,
+  pausedInScope: readonly string[],
+  everyProjectPaused: boolean,
+): boolean {
+  if (column !== 'running') return false
+  if (paused) return true
+  return pausedInScope.length > 0 && (project !== undefined || everyProjectPaused)
 }
 
 /**
@@ -1708,15 +1742,17 @@ export interface QueuedStanding {
  * move while the conductor is taking nothing, so promising a time would be the
  * more precise of two answers and the wrong one.
  *
- * The pause's wording is `emptyNote`'s, because it is the same fact the empty
- * Running column already says (#77) — and its who, why and Resume stay on the
- * chip in the bar, which is where 0031 §5 leaves them. Nothing here is new UI;
+ * The conductor-wide pause's wording is `emptyNote`'s, because it is the same
+ * fact the empty Running column already says (#77) — and its who, why and Resume
+ * stay on the chip in the bar, which is where 0031 §5 leaves them. A project's
+ * pause is only marked (0126 §8): its who, since and Resume are the banner's. Nothing here is new UI;
  * it is a fact reaching the column it was missing from.
  */
 export function queuedStanding(
-  card: Pick<BoardCard, 'column' | 'runnableAt'>,
+  card: Pick<BoardCard, 'column' | 'runnableAt' | 'project'>,
   paused: boolean,
   now: number = Date.now(),
+  projectLocks: readonly Lock[] = [],
 ): QueuedStanding | null {
   // Only Queued. Every other lane is describing something that is running or
   // over, and neither the backoff nor the pause says anything about those.
@@ -1726,6 +1762,14 @@ export function queuedStanding(
       state: 'paused',
       text: 'paused — nothing will start',
       title: 'the conductor has been told to take no new work; this card keeps its place',
+    }
+  }
+  // The project's own pause (#995): after the conductor-wide one, before a backoff.
+  if (isPaused(projectLocks)) {
+    return {
+      state: 'paused',
+      text: `${card.project} is paused — nothing will start`,
+      title: `${card.project} takes no new work until it is resumed; this card keeps its place`,
     }
   }
   if (card.runnableAt === null) return null

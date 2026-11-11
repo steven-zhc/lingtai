@@ -6,7 +6,9 @@
  * among them, left of the separator. The `<summary>` names the project
  * in view, and the menu under it is *all projects* and a row per repository,
  * each one link. A registered project's row hints, on hover, at what choosing
- * it gives: its `recipe`, now on the bar's right (#993). The `+` beside the
+ * it gives: its `recipe`, now on the bar's right (#993), and the action the bar
+ * offers — `pause` or `resume`. A paused project also wears a `paused` tag; that
+ * is a mark only, and the action itself is the bar's button (0126 §8, #995). The `+` beside the
  * menu adds a repository (#216: the filter's affordance, not a fourth object).
  *
  * With no project configured there is no menu: the slot is the link to setup
@@ -22,6 +24,8 @@
  */
 import Link from 'next/link'
 
+import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
+
 import { FilterMenu } from './filter-menu'
 
 /**
@@ -36,12 +40,15 @@ export function Projects({
   only,
   app,
   registered,
+  locks,
 }: {
   filters: string[]
   only: string | undefined
   app: boolean
   /** The registered projects: a row outside them has no recipe to give. */
   registered: readonly string[]
+  /** What holds each project: a paused one is marked, never explained (0126 §8). */
+  locks: LockMap
 }) {
   // Step 0 is create the App, install it, add a repository; once the App
   // answers, the picker is the rest of it and the first step is done.
@@ -49,7 +56,8 @@ export function Projects({
   const why = app ? 'add a repository' : 'create the GitHub App, then install it'
 
   // What choosing a row gives, said once; the text is per project.
-  const hint = (p: string): string | null => (registered.includes(p) ? 'recipe' : null)
+  const hint = (p: string): string | null =>
+    registered.includes(p) ? `recipe · ${isPaused(locks.get(p)) ? 'resume' : 'pause'}` : null
 
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fourth one: the slot already says *there is
@@ -90,6 +98,7 @@ export function Projects({
               {...(only === p ? current : {})}
             >
               {p}
+              {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}
               {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
             </Link>
           ))}
