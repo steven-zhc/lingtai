@@ -16,7 +16,14 @@ import { deferredEvents, deferredLog, processEvents, processLog } from './choose
 import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
 import { promiseStore } from './store-face.ts'
-export { closeProcessLog, eventsLayer, processEventStore, processLog, processTicketSql } from './choose.ts'
+export {
+  closeProcessLog,
+  eventsLayer,
+  processEventStore,
+  queriesLayer,
+  processLog,
+  processTicketSql,
+} from './choose.ts'
 export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
 export type { TicketSql } from './ticket-sql.ts'
 export {
@@ -34,6 +41,8 @@ export {
   type EndedWithoutEnd,
   type LogQueries,
   type PostgresLogQueriesOptions,
+  Queries,
+  type QueriesPort,
   type SubscriberFailures,
   type TypeCount,
   type TypeRow,
@@ -45,7 +54,7 @@ export {
   Events,
   type EventsPort,
   LogPredatesHoldError,
-  logPredatesHold,
+  logPredatesHoldEffect,
   SchemaVersionUnsupportedError,
   RetiredEventTypeError,
   UnknownEventTypeError,
@@ -81,7 +90,7 @@ export const eventStore: EventStore = promiseStore(deferredEvents(processEvents)
  * than with the poll #178 built for it.
  */
 export const log: Log = deferredLog(processLog)
-export { fromPromiseStore, promiseStore } from './store-face.ts'
+export { fromPromiseQueries, fromPromiseStore, logPredatesHold, promiseQueries, promiseStore } from './store-face.ts'
 export { subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
 export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
 export { parseTimestamptz } from './timestamptz.ts'

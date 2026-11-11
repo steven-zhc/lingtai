@@ -13,9 +13,27 @@
   },
   {
     "file": "packages/event-store/src/store-face.ts",
+    "fn": "endedWithoutEndActionsFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
     "fn": "headFace",
     "until": "#790",
     "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "logPredatesHold",
+    "until": "#790",
+    "why": "apps/cli (doctor, projection, projector) and packages/daemon call it as a promise"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "projectStreamsFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -34,6 +52,30 @@
     "fn": "readTypesFace",
     "until": "#790",
     "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "rowsOfTypeFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "subscriberFailuresFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "typeCountsFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+  },
+  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "unconvergedUpdatesFace",
+    "until": "#790",
+    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
   },
   {
     "file": "packages/repo/src/integrate.ts",
