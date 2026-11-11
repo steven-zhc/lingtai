@@ -12,6 +12,7 @@
  * belongs here.
  */
 export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from './git.ts'
+export { mirrorWrite, withMirrorWrite } from './mirror-lock.ts'
 export {
   ensureMirror,
   provisionWorktree,

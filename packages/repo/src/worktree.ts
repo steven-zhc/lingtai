@@ -16,6 +16,7 @@ import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
 import { RepoFailed, type TokenSource, git } from './git.ts'
+import { withMirrorWrite } from './mirror-lock.ts'
 
 // -------------------------------------------------------------- worktrees ----
 
@@ -111,23 +112,32 @@ export async function ensureMirror(options: {
   const remote = options.remote ?? `https://github.com/${options.owner}/${options.repo}.git`
   const run = { token: options.token, env: options.gitEnv }
 
-  const present = await git(['rev-parse', '--git-dir'], { ...run, cwd: path }).then(
-    () => true,
-    () => false,
+  // The presence check is inside the hold: it and the fetch-or-clone are one
+  // decision about the mirror, or two provisions could both read it absent.
+  await withMirrorWrite(path, () =>
+    git(['rev-parse', '--git-dir'], { ...run, cwd: path })
+      .then(
+        () => true,
+        () => false,
+      )
+      .then((present) => {
+        if (present) {
+          // A fetch that fails (a concurrent ref update, the network) says nothing
+          // about the mirror: it is shared with every pass in flight, whose worktrees
+          // point into its metadata and whose unpushed commits live only in it, so it
+          // is never removed on the strength of a failed fetch.
+          return git(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
+        }
+        return (
+          mkdir(dirname(path), { recursive: true })
+            .then(() => rm(path, { recursive: true, force: true }))
+            .then(() => git(['clone', '--bare', remote, path], run))
+            // A bare clone's origin is not wired for later fetches by default.
+            .then(() => git(['remote', 'set-url', 'origin', remote], { ...run, cwd: path }))
+        )
+      })
+      .then(() => undefined),
   )
-  if (present) {
-    // A fetch that fails (a concurrent ref update, the network) says nothing
-    // about the mirror: it is shared with every pass in flight, whose worktrees
-    // point into its metadata and whose unpushed commits live only in it, so it
-    // is never removed on the strength of a failed fetch.
-    await git(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
-  } else {
-    await mkdir(dirname(path), { recursive: true })
-    await rm(path, { recursive: true, force: true })
-    await git(['clone', '--bare', remote, path], run)
-    // A bare clone's origin is not wired for later fetches by default.
-    await git(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
-  }
   return path
 }
 
@@ -198,10 +208,12 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
    * `remoteHead` above is now simply what origin has rather than a value
    * rescued before a local write.
    */
-  await git(['worktree', 'add', '--force', '--detach', path, baseSha], {
-    ...run,
-    cwd: mirror,
-  })
+  await withMirrorWrite(mirror, () =>
+    git(['worktree', 'add', '--force', '--detach', path, baseSha], {
+      ...run,
+      cwd: mirror,
+    }),
+  )
 
   if (options.submodules) {
     // Not optional when the recipe says so. `worktree add` leaves submodule
@@ -225,7 +237,7 @@ export async function removeWorktree(options: { project: string; runId: string; 
   await rm(path, { recursive: true, force: true })
   // Tell git the directory is gone, so a later `worktree add` at the same path
   // is not refused by a stale registration.
-  await git(['worktree', 'prune'], { cwd: mirror }).catch(() => {
+  await withMirrorWrite(mirror, () => git(['worktree', 'prune'], { cwd: mirror })).catch(() => {
     // No mirror, nothing registered. Not worth failing a cleanup over.
   })
 }
