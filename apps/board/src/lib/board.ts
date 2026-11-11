@@ -62,6 +62,7 @@ import {
   type TaskCard,
   type TaskState,
 } from '@lingtai/projector/task-view'
+import type { ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
@@ -186,7 +187,7 @@ export interface BoardCard {
     advised?: Resolution['_tag']
   } | null
   /** A triage that has not finished, for the card to say so; null once there is a result or none is owed (#576). */
-  triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | null
+  triage: 'Queued' | 'Running' | 'Interrupted' | 'Unknown' | 'RecipeUnreadable' | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -553,6 +554,8 @@ export interface TriageContext {
   /** Null where the project registry could not be read: the card says it does not know (#583). */
   declared: boolean | null
   daemonStartedAt: Date | null
+  /** Set only with `declared: null`: the registry read, this project's recipe did not (#1014). Absent is the registry (#583). */
+  unread?: 'recipe'
 }
 
 /**
@@ -567,6 +570,11 @@ export function triageContextOf(
 export function triageContextOf(declared: boolean | null, status: { startedAt: Date } | null): TriageContext
 export function triageContextOf(declared: boolean | null, status: { startedAt: Date } | null): TriageContext {
   return { declared, daemonStartedAt: status?.startedAt ?? null }
+}
+
+/** The context of a card whose project's recipe could not be read: unknown, and the recipe is why (#1014). */
+export function recipeUnreadContext(status: { startedAt: Date } | null): TriageContext {
+  return { ...triageContextOf(null, status), unread: 'recipe' }
 }
 
 /** The card's `TriageStatus`: the page's `currentTriageStatus` over the same wait gives the same answer. */
@@ -586,15 +594,37 @@ export function cardTriageStatus(
 }
 
 /**
- * The projects whose current recipe declares `triage:`, read the way the task
- * page reads it — and failing the way it fails: an unreadable recipe rejects
- * and reaches the board as an error, as it reaches the page. Answering `false`
- * for it would let the page, whose own read may succeed, say `Queued` about a
- * wait the card said nothing of.
+ * Whether each project's current recipe declares `triage:`, read the way the
+ * task page reads it. A recipe that will not read maps to `null`, never `false`:
+ * `false` would let the page, whose own read may succeed, say `Queued` about a
+ * wait the card said nothing of. One project's recipe stays inside that project
+ * (#1014).
  */
-async function declaredTriage(projects: ProjectState[]): Promise<Set<string>> {
-  const declared = await Promise.all(projects.map((p) => currentRecipe(p).then((r) => r.recipe.triage !== undefined)))
-  return new Set(projects.flatMap((p, i) => (declared[i] && p.project !== null ? [p.project] : [])))
+export async function declaredTriage(
+  projects: ProjectState[],
+  recipeFor: (p: ProjectState) => Promise<ResolvedRecipe> = (p) => currentRecipe(p),
+): Promise<Map<string, boolean | null>> {
+  const declared = await Promise.all(
+    projects.map((p) =>
+      recipeFor(p).then(
+        (r) => r.recipe.triage !== undefined,
+        () => null,
+      ),
+    ),
+  )
+  return new Map(projects.flatMap((p, i) => (p.project !== null ? [[p.project, declared[i] ?? null] as const] : [])))
+}
+
+/** One card's triage inputs: the registry's unknown, or this project's recipe's (#1014). */
+function triageContextFor(
+  declared: Map<string, boolean | null> | null,
+  project: string,
+  daemon: { startedAt: Date } | null,
+): TriageContext {
+  if (declared === null) return triageContextOf(null, daemon)
+  const v = declared.get(project)
+  if (v === undefined) return triageContextOf(null, daemon)
+  return v === null ? recipeUnreadContext(daemon) : triageContextOf(v, daemon)
 }
 
 /** What the card's one button does, decided from the same `status` as its cause line (#647). */
@@ -710,7 +740,9 @@ export function toCard(
     move: moveOf(t, status, fixHead),
     triage:
       status === 'Unknown'
-        ? 'Unknown'
+        ? triage.unread === 'recipe'
+          ? 'RecipeUnreadable'
+          : 'Unknown'
         : status?._tag === 'Queued' || status?._tag === 'Running' || status?._tag === 'Interrupted'
           ? status._tag
           : null,
@@ -1449,7 +1481,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       limitsByProject.get(t.project) ?? null,
       bills.Work,
       bills.Answering,
-      triageContextOf(triageDeclared === null ? null : triageDeclared.has(t.project), daemon),
+      triageContextFor(triageDeclared, t.project, daemon),
       fixHeads.get(t.taskId) ?? null,
       opened === undefined ? null : { spent: spentOf(opened, granted), granted },
     )
