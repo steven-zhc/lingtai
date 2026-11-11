@@ -1,11 +1,18 @@
 /**
  * 0101 §6: every backend function that does IO is an Effect, and `Effect.run*`
- * runs only at a host's edge. #790 moves the eleven packages below over one at a
+ * runs only at a host's edge. #790 moves the ten packages below over one at a
  * time; this holds each package's `async` functions and `Effect.run*`
  * references to only go down (#792).
  *
  * Counted with the TypeScript parser, one `createSourceFile` per file and no
  * `Program` (#785) — a comment that names `runPromise` is not a run.
+ *
+ * A promise face is not counted. A face is an exported function whose whole body is
+ * `return Effect.runPromise(<call>)`, or the generic `return Effect.runPromise(<parameter>, { signal })`,
+ * kept for callers not yet moved (#790), and listed in `effect-ratchet.faces.json` with the issue that
+ * deletes it. The shape is checked, not trusted: an entry that does anything else, or whose function is
+ * gone, is a red. Only `runPromise`: a face that inspects an `Exit` or runs synchronously is a caller
+ * doing work, and is counted.
  *
  * The test never writes the baseline: a unit test that edits the checkout would
  * undo the ratchet. A red prints the JSON value to paste.
@@ -17,10 +24,16 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 import baseline from './effect-ratchet.baseline.json'
+import faces from './effect-ratchet.faces.json'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 
-/** 0101 §6's list. Pinned here: a baseline that could drop a key would be a way out. */
+/**
+ * 0101 §6's list. Pinned here: a baseline that could drop a key would be a way out.
+ * `packages/telegram` is not on it: it is deliberately free of `effect` (`packages/telegram/src/cli.ts:12-17`
+ * imports nothing a third party's notifier could not, and `:35-37` says a merge reaches it with no
+ * `pnpm install`), so converting it would break both.
+ */
 const PACKAGES = [
   'apps/cli',
   'packages/event-store',
@@ -31,7 +44,6 @@ const PACKAGES = [
   'packages/actions',
   'packages/conductor',
   'packages/daemon',
-  'packages/telegram',
   'packages/setup',
 ] as const
 
@@ -40,6 +52,8 @@ const NOT_COUNTED: readonly { path: string; reason: string }[] = []
 
 interface Hit {
   line: number
+  /** Where the run's callee text begins, so a face is matched by position and never by line. */
+  pos: number
 }
 interface Counts {
   async: Hit[]
@@ -67,10 +81,15 @@ export function parse(name: string, text: string): ts.SourceFile {
   return sf
 }
 
-export function count(name: string, text: string): Counts {
-  const sf = parse(name, text)
+interface Imports {
+  effects: Set<string>
+  /** local name → the name it was imported as */
+  bare: Map<string, string>
+}
+
+function importsOf(sf: ts.SourceFile): Imports {
   const effects = new Set<string>()
-  const bare = new Set<string>()
+  const bare = new Map<string, string>()
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue
     const from = st.moduleSpecifier.text
@@ -84,13 +103,22 @@ export function count(name: string, text: string): Counts {
         if (el.isTypeOnly) continue
         const imported = (el.propertyName ?? el.name).text
         if (from === 'effect' && imported === 'Effect') effects.add(el.name.text)
-        else if (RUN.test(imported)) bare.add(el.name.text)
+        else if (RUN.test(imported)) bare.set(el.name.text, imported)
       }
     }
   }
+  return { effects, bare }
+}
+
+export function count(name: string, text: string): Counts {
+  const sf = parse(name, text)
+  const { effects, bare } = importsOf(sf)
 
   const out: Counts = { async: [], run: [] }
-  const at = (n: ts.Node): Hit => ({ line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1 })
+  const at = (n: ts.Node): Hit => ({
+    line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+    pos: n.getStart(sf),
+  })
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) return
     if (
@@ -120,6 +148,180 @@ export function count(name: string, text: string): Counts {
   }
   visit(sf)
   return out
+}
+
+export interface FaceEntry {
+  file: string
+  fn: string
+  until: string
+  why: string
+}
+
+const isExported = (n: ts.Node): boolean =>
+  ts.canHaveModifiers(n) && (ts.getModifiers(n)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false)
+
+/**
+ * Is `fn` in this file a promise face? Either its one run's position, or why not. The span check reuses
+ * `count`, so what a face is allowed to contain and what the package loop counts cannot drift apart.
+ */
+export function face(name: string, text: string, fn: string): { pos: number } | { refused: string } {
+  const sf = parse(name, text)
+  const { effects, bare } = importsOf(sf)
+  const who = `${name} ${fn}`
+
+  let span: ts.Node | undefined
+  let fnNode: ts.FunctionDeclaration | ts.ArrowFunction | undefined
+  let unexported = false
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === fn && st.body) {
+      if (isExported(st) && !(ts.getModifiers(st) ?? []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)) {
+        span = st
+        fnNode = st
+      } else unexported = true
+    } else if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name) || d.name.text !== fn) continue
+        if (!isExported(st)) unexported = true
+        else if (st.declarationList.declarations.length !== 1) {
+          return { refused: `${who} is declared beside others in one statement.` }
+        } else if (d.initializer && ts.isArrowFunction(d.initializer)) {
+          span = st
+          fnNode = d.initializer
+        } else return { refused: `${who} is not a function declaration or an arrow function.` }
+      }
+    }
+  }
+  if (!span || !fnNode) {
+    return {
+      refused: unexported
+        ? `${who} is not exported: a face is \`export function ${fn}\` or \`export const ${fn} = (…) =>\`.`
+        : `${name} ${fn}: no exported function \`${fn}\` in this file.`,
+    }
+  }
+
+  let expr: ts.Expression | undefined
+  const body = fnNode.body
+  if (!body) return { refused: `${who} has no body.` }
+  if (ts.isBlock(body)) {
+    if (body.statements.length !== 1) {
+      return {
+        refused: `${who} is not a promise face: its body has ${body.statements.length} statements. A face is exactly \`return Effect.runPromise(<call>)\` (0101 §6, #790).`,
+      }
+    }
+    const only = body.statements[0]!
+    if (!ts.isReturnStatement(only) || !only.expression) {
+      return { refused: `${who} is not a promise face: its one statement is not a \`return\` with an expression.` }
+    }
+    expr = only.expression
+  } else expr = body
+
+  if (!ts.isCallExpression(expr)) return { refused: `${who} does not return a call to \`Effect.runPromise\`.` }
+  const callee = expr.expression
+  let runName: string | undefined
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    effects.has(callee.expression.text)
+  ) {
+    if (RUN.test(callee.name.text)) runName = callee.name.text
+  } else if (ts.isIdentifier(callee) && bare.has(callee.text)) runName = bare.get(callee.text)
+  if (runName === undefined) return { refused: `${who} does not return a call to \`Effect.runPromise\`.` }
+  if (runName !== 'runPromise') {
+    return { refused: `${who} runs \`Effect.${runName}\`. A face runs \`Effect.runPromise\` and nothing else.` }
+  }
+
+  const params = new Set(fnNode.parameters.flatMap((p) => (ts.isIdentifier(p.name) ? [p.name.text] : [])))
+  if (expr.arguments.length < 1 || expr.arguments.length > 2) {
+    return {
+      refused: `${who} passes ${expr.arguments.length} arguments to \`Effect.runPromise\`. A face passes the Effect and at most \`{ signal }\`.`,
+    }
+  }
+  const [first, second] = expr.arguments as unknown as readonly [ts.Expression, ts.Expression | undefined]
+  const generic = ts.isIdentifier(first) && params.has(first.text)
+  if (!generic && !ts.isCallExpression(first)) {
+    return { refused: `${who} runs \`${first.getText(sf)}\`, not a call. A face runs the Effect a function returns.` }
+  }
+  if (second) {
+    const props = ts.isObjectLiteralExpression(second) ? second.properties : undefined
+    const prop = props?.length === 1 ? props[0]! : undefined
+    let value: ts.Expression | undefined
+    if (prop && ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'signal') value = prop.name
+    else if (prop && ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'signal') {
+      value = prop.initializer
+    }
+    if (!value) {
+      return {
+        refused: `${who} passes \`${second.getText(sf)}\` as the second argument. A face passes \`{ signal }\` or nothing.`,
+      }
+    }
+    if (generic && !(ts.isIdentifier(value) && params.has(value.text))) {
+      return { refused: `${who} passes a \`signal\` that is not one of its own parameters.` }
+    }
+  }
+
+  const pos = callee.getStart(sf)
+  const inside = count(name, text).run.filter((h) => h.pos >= span.getStart(sf) && h.pos < span.end)
+  const other = inside.find((h) => h.pos !== pos)
+  if (other) return { refused: `${who} has a second \`Effect.run*\` at line ${other.line}. A face runs one Effect.` }
+  if (inside.length !== 1) return { refused: `${who} has no counted run in its own span.` }
+  return { pos }
+}
+
+/**
+ * The faces file, checked without the filesystem: `read` hands back a file's text or undefined.
+ * `exempt` maps a file to the positions of the runs not to count, each to the entry that excuses it.
+ */
+export function checkFaces(
+  entries: unknown,
+  read: (file: string) => string | undefined,
+): { exempt: Map<string, Map<number, FaceEntry>>; refusals: string[] } {
+  const exempt = new Map<string, Map<number, FaceEntry>>()
+  const refusals: string[] = []
+  const head = 'effect-ratchet.faces.json:'
+  if (!Array.isArray(entries)) return { exempt, refusals: [`${head} is not an array.`] }
+  const seen = new Set<string>()
+  let prev: FaceEntry | undefined
+  const skip = NOT_COUNTED.map((n) => n.path)
+  for (const [i, raw] of (entries as unknown[]).entries()) {
+    const e = raw as Partial<Record<keyof FaceEntry, unknown>> | null
+    const str = (k: keyof FaceEntry): string => (typeof e?.[k] === 'string' ? (e[k] as string) : '')
+    const entry: FaceEntry = { file: str('file'), fn: str('fn'), until: str('until'), why: str('why') }
+    const who = `${head} ${entry.file} ${entry.fn}`
+    if (!entry.file || !/^[A-Za-z_$][\w$]*$/.test(entry.fn)) {
+      refusals.push(`${head} entry ${i} needs a \`file\` and a \`fn\` that is an identifier.`)
+      continue
+    }
+    if (prev && (entry.file < prev.file || (entry.file === prev.file && entry.fn < prev.fn))) {
+      refusals.push(`${who} is out of order: entries are sorted by file, then fn, after ${prev.file} ${prev.fn}.`)
+    }
+    prev = entry
+    if (!/^#\d+$/.test(entry.until)) refusals.push(`${who}: \`until\` must be an issue, as "#790".`)
+    if (entry.why.trim() === '') refusals.push(`${who}: \`why\` is empty.`)
+    const key = `${entry.file}\0${entry.fn}`
+    if (seen.has(key)) {
+      refusals.push(`${who} is listed twice.`)
+      continue
+    }
+    seen.add(key)
+    if (!PACKAGES.some((p) => entry.file.startsWith(`${p}/src/`)) || skip.includes(entry.file)) {
+      refusals.push(`${who} is outside the ten packages the ratchet counts.`)
+      continue
+    }
+    const text = read(entry.file)
+    if (text === undefined) {
+      refusals.push(`${who}: no file ${entry.file}.`)
+      continue
+    }
+    const r = face(entry.file, text, entry.fn)
+    if ('refused' in r) {
+      refusals.push(`${head} ${r.refused}`)
+      continue
+    }
+    const byPos = exempt.get(entry.file) ?? new Map<number, FaceEntry>()
+    byPos.set(r.pos, entry)
+    exempt.set(entry.file, byPos)
+  }
+  return { exempt, refusals }
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -200,12 +402,141 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     expect(() => count('broken.ts', 'async function (')).toThrow(/broken\.ts:1/)
   })
 
-  it('has the eleven packages of 0101 §6 as the baseline keys', () => {
+  describe('face', () => {
+    const E = `import { Effect } from 'effect'\n`
+    const pos = (text: string, needle: string): number => text.indexOf(needle)
+    const refused = (text: string, fn = 'f'): string => {
+      const r = face('y.ts', text, fn)
+      if (!('refused' in r)) throw new Error('expected a refusal')
+      return r.refused
+    }
+
+    it('accepts a function returning one runPromise over a call, at the position of the callee', () => {
+      const t = `${E}export function f() { return Effect.runPromise(g()) }\n`
+      expect(face('y.ts', t, 'f')).toEqual({ pos: pos(t, 'Effect.runPromise') })
+    })
+    it('accepts an exported arrow, an aliased runPromise, and a call on a property', () => {
+      const a = `${E}export const f = (x) => Effect.runPromise(g(x))\n`
+      expect(face('y.ts', a, 'f')).toEqual({ pos: pos(a, 'Effect.runPromise') })
+      const b = `import { runPromise as go } from 'effect/Effect'\nexport function f() { return go(g()) }\n`
+      expect(face('y.ts', b, 'f')).toEqual({ pos: pos(b, 'go(') })
+      expect(face('y.ts', `${E}export function f(e) { return Effect.runPromise(e.append(x)) }`, 'f')).toHaveProperty(
+        'pos',
+      )
+    })
+    it('accepts { signal } and { signal: options.signal } as a second argument, and nothing else', () => {
+      expect(
+        face('y.ts', `${E}export function f(signal) { return Effect.runPromise(g(x), { signal }) }`, 'f'),
+      ).toHaveProperty('pos')
+      expect(
+        face(
+          'y.ts',
+          `${E}export function f(options) { return Effect.runPromise(g(x), { signal: options.signal }) }`,
+          'f',
+        ),
+      ).toHaveProperty('pos')
+      expect(refused(`${E}export function f(signal) { return Effect.runPromise(g(x), { signal, other }) }`)).toMatch(
+        /second argument/,
+      )
+      expect(refused(`${E}export function f(o) { return Effect.runPromise(g(x), o) }`)).toMatch(/second argument/)
+      expect(refused(`${E}export function f() { return Effect.runPromise(g(x), { signal }, 3) }`)).toMatch(
+        /3 arguments/,
+      )
+    })
+    it('accepts a generic face over its own parameters, and refuses one that is not', () => {
+      expect(
+        face(
+          'y.ts',
+          `${E}export function f<A>(effect: Effect.Effect<A>, signal?: AbortSignal) { return Effect.runPromise(effect, { signal }) }`,
+          'f',
+        ),
+      ).toHaveProperty('pos')
+      expect(refused(`${E}export function f(effect) { return Effect.runPromise(program) }`)).toMatch(/not a call/)
+      expect(
+        refused(`${E}export function f(effect, s) { return Effect.runPromise(effect, { signal: other }) }`),
+      ).toMatch(/own parameters/)
+      expect(refused(`${E}export function f(effect, s) { return Effect.runPromise(effect, { other: s }) }`)).toMatch(
+        /second argument/,
+      )
+    })
+    it('refuses a second statement and names the count', () => {
+      expect(refused(`${E}export async function f() { const r = await Effect.runPromise(g()); return r }`)).toMatch(
+        /2 statements/,
+      )
+    })
+    it('refuses runPromiseExit and runSync by name, even aliased', () => {
+      expect(refused(`${E}export function f() { return Effect.runPromiseExit(g()) }`)).toMatch(/runPromiseExit/)
+      expect(refused(`${E}export function f() { return Effect.runSync(g()) }`)).toMatch(/runSync/)
+      expect(refused(`import { runSync as go } from 'effect/Effect'\nexport function f() { return go(g()) }`)).toMatch(
+        /runSync/,
+      )
+    })
+    it('refuses an identifier that is not a parameter', () => {
+      expect(refused(`${E}export function f() { return Effect.runPromise(program) }`)).toMatch(/not a call/)
+    })
+    it('refuses a second run inside and names its line', () => {
+      const t = `${E}export function f() {\n  return Effect.runPromise(g(Effect.runSync(h)))\n}\n`
+      expect(refused(t)).toMatch(/second `Effect.run\*` at line 3/)
+    })
+    it('refuses a function that is not exported, an export list, and a missing fn', () => {
+      expect(refused(`${E}function f() { return Effect.runPromise(g()) }`)).toMatch(/not exported/)
+      expect(refused(`${E}function f() { return Effect.runPromise(g()) }\nexport { f }`)).toMatch(/not exported/)
+      expect(refused(`${E}export function other() { return Effect.runPromise(g()) }`)).toMatch(/no exported function/)
+    })
+    it('still counts a run on the same line but outside the face', () => {
+      const t = `${E}export const f = () => Effect.runPromise(g()); Effect.runSync(h)\n`
+      const r = face('y.ts', t, 'f')
+      if (!('pos' in r)) throw new Error('expected a face')
+      const others = count('y.ts', t).run.filter((h) => h.pos !== r.pos)
+      expect(others).toHaveLength(1)
+    })
+  })
+
+  describe('checkFaces', () => {
+    const src: Record<string, string> = {
+      'packages/repo/src/a.ts': `import { Effect } from 'effect'\nexport function f() { return Effect.runPromise(g()) }\n`,
+    }
+    const read = (f: string): string | undefined => src[f]
+    const ok = { file: 'packages/repo/src/a.ts', fn: 'f', until: '#790', why: 'callers' }
+    const run = (entries: unknown): string => checkFaces(entries, read).refusals.join('\n')
+
+    it('accepts a good entry and exempts the position of its run', () => {
+      const r = checkFaces([ok], read)
+      expect(r.refusals).toEqual([])
+      expect(r.exempt.get(ok.file)?.size).toBe(1)
+    })
+    it('refuses, each by name, an outside-the-packages entry, a bad until, an empty why and a duplicate', () => {
+      expect(run([{ ...ok, file: 'packages/domain/src/z.ts' }])).toMatch(/z\.ts f is outside the ten packages/)
+      expect(run([{ ...ok, file: 'packages/telegram/src/z.ts' }])).toMatch(/outside the ten packages/)
+      expect(run([{ ...ok, until: '790' }])).toMatch(/`until` must be an issue/)
+      expect(run([{ ...ok, why: ' ' }])).toMatch(/`why` is empty/)
+      expect(run([ok, ok])).toMatch(/listed twice/)
+      expect(run([{ ...ok, file: 'packages/repo/src/missing.ts' }])).toMatch(/no file/)
+      expect(run('nope')).toMatch(/not an array/)
+    })
+    it('refuses an entry out of order', () => {
+      expect(run([{ ...ok, fn: 'g' }, ok])).toMatch(/out of order/)
+    })
+  })
+
+  it('has the ten packages of 0101 §6 as the baseline keys', () => {
     expect(Object.keys(baseline).sort()).toEqual([...PACKAGES].sort())
   })
 
   it('holds every package at or below its baseline, and asks for it lowered when below', async () => {
-    const problems: string[] = []
+    const listed = Array.isArray(faces) ? (faces as { file?: unknown }[]).map((e) => e?.file) : []
+    const texts = new Map<string, string>()
+    for (const f of listed) {
+      if (typeof f !== 'string' || texts.has(f)) continue
+      try {
+        texts.set(f, await readFile(`${root}${f}`, 'utf8'))
+      } catch {
+        // a missing file is a refusal by name, in checkFaces
+      }
+    }
+    const { exempt, refusals } = checkFaces(faces, (f) => texts.get(f))
+    const problems: string[] = [...refusals]
+    const notCounted: string[] = []
     const measured: Record<string, { async: number; run: number }> = {}
     await Promise.all(
       PACKAGES.map(async (pkg) => {
@@ -219,7 +550,11 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
         const hits = { async: [] as string[], run: [] as string[] }
         for (const { f, c } of parsed) {
           for (const h of c.async) hits.async.push(`${f}:${h.line}`)
-          for (const h of c.run) hits.run.push(`${f}:${h.line}`)
+          for (const h of c.run) {
+            const entry = exempt.get(f)?.get(h.pos)
+            if (entry) notCounted.push(`${f}:${h.line} ${entry.fn} (until ${entry.until})`)
+            else hits.run.push(`${f}:${h.line}`)
+          }
         }
         measured[pkg] = { async: hits.async.length, run: hits.run.length }
         for (const measure of ['async', 'run'] as const) {
@@ -230,7 +565,7 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
             problems.push(
               `${pkg}.${measure} is ${n}, baseline ${base}:\n${hits[measure].map((h) => `  ${h}`).join('\n')}\n` +
                 `0101 §6: every backend function that does IO is an Effect, and \`Effect.run*\` runs only at a host's edge — see epic #790. ` +
-                `Write it as an Effect, or raise this number in this diff where a reviewer sees it.`,
+                `Write it as an Effect. A promise face kept for callers not yet moved is listed in effect-ratchet.faces.json, and is never paid for by raising this number.`,
             )
           } else if (n < base) {
             problems.push(
@@ -242,6 +577,13 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     )
     if (problems.length > 0) {
       problems.push(`measured now:\n${JSON.stringify(measured, null, 2)}`)
+      if (notCounted.length > 0)
+        problems.push(
+          `not counted, listed as promise faces:\n${notCounted
+            .sort()
+            .map((l) => `  ${l}`)
+            .join('\n')}`,
+        )
     }
     expect(problems.join('\n\n')).toBe('')
   })
