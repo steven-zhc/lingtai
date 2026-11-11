@@ -47,6 +47,25 @@ describe('ceilingRaise', () => {
     expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
   })
 
+  it('refuses, and appends nothing, when limits.day_usd does not parse', async () => {
+    const { store, lines, log } = await setup()
+    const code = await Effect.runPromise(
+      ceilingRaise({
+        ...healthy,
+        ceiling: () => {
+          throw new Error('day_usd: not a number')
+        },
+        toUsd: 40,
+        by: 'human:steven',
+        store,
+        log,
+      }),
+    )
+    expect(code).toBe(1)
+    expect(lines.join('\n')).toContain('day_usd')
+    expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
+  })
+
   it('refuses, and appends nothing, while the spend projection is rebuilding', async () => {
     const { store, lines, log } = await setup()
     const code = await Effect.runPromise(

@@ -209,10 +209,11 @@ export const raiseDayCeiling = (input: {
 }): Effect.Effect<Raising, unknown> => {
   const store = input.store ?? eventStore
   const attempt = Effect.gen(function* () {
-    const at = yield* Effect.tryPromise(() => store.head(CONTROL_STREAM))
-    const state = yield* Effect.tryPromise(() =>
-      readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }),
-    )
+    const at = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: (e) => e })
+    const state = yield* Effect.tryPromise({
+      try: () => readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }),
+      catch: (e) => e,
+    })
     const verdict = raiseTransition({
       state,
       now: input.now ?? new Date(),
@@ -221,7 +222,7 @@ export const raiseDayCeiling = (input: {
       spentCents: input.spentCents,
     })
     if (!verdict.ok) return { raised: false, refused: verdict.refused } as Raising
-    yield* Effect.tryPromise(() => store.append(CONTROL_STREAM, at, [verdict.event]))
+    yield* Effect.tryPromise({ try: () => store.append(CONTROL_STREAM, at, [verdict.event]), catch: (e) => e })
     return { raised: true, version: at + 1 } as Raising
   })
   return attempt.pipe(Effect.catch((err: unknown) => (err instanceof ConcurrencyError ? attempt : Effect.fail(err))))

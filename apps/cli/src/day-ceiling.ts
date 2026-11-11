@@ -153,9 +153,14 @@ export const readDaySpendTrusted = (
       return { refused: "could not check today's spend: the spend projection began a rebuild while it was read" }
     }
     const day = daySpend(rows, now, readRateSnapshot())
-    const configuredUsd = yield* Effect.try({ try: () => (ports.ceiling ?? machineDayCeiling)(), catch: fail }).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
+    const configured = yield* Effect.try({ try: () => (ports.ceiling ?? machineDayCeiling)(), catch: fail }).pipe(
+      Effect.map((usd) => ({ usd })),
+      Effect.catch((err: Error) => Effect.succeed({ unreadable: err.message })),
     )
+    if ('unreadable' in configured) {
+      return { refused: `could not read limits.day_usd: ${configured.unreadable}` }
+    }
+    const configuredUsd = configured.usd
     return { reportedCents: day.reportedCents, estimatedCents: day.estimatedCents, configuredUsd }
   })
 

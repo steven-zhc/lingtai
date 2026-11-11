@@ -41,7 +41,13 @@ export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
       return 1 as const
     }
     const spentCents = spend.reportedCents + spend.estimatedCents
-    const result = yield* raiseDayCeiling({ toUsd: o.toUsd, by: o.by, spentCents, store: o.store }).pipe(
+    const result = yield* raiseDayCeiling({
+      toUsd: o.toUsd,
+      by: o.by,
+      spentCents,
+      store: o.store,
+      now: (o.now ?? (() => new Date()))(),
+    }).pipe(
       Effect.catch((err: unknown) => Effect.succeed({ failed: err instanceof Error ? err.message : String(err) })),
     )
     if ('failed' in result) {
@@ -56,7 +62,7 @@ export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
     o.log(
       `today's ceiling raised to ${usd(o.toUsd)} by ${o.by} — until midnight; ` +
         (configured === undefined
-          ? "the configuration's figure could not be read"
+          ? 'the configuration sets no figure'
           : `the configuration still says ${usd(configured)}`),
     )
     return 0 as const

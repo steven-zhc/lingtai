@@ -67,4 +67,26 @@ describe('raiseDayCeiling', () => {
     expect(raced).toBe(true)
     expect(answer).toEqual({ raised: false, refused: 'not-reached' })
   })
+
+  it('re-reads once when the append itself loses the race, then raises', async () => {
+    const real = createMemoryEventStore()
+    await real.append(CONTROL_STREAM, 0, [{ type: 'DayCeilingReached', actor: 'conductor', data: REACHED }])
+    let raced = false
+    const store = {
+      ...real,
+      append: async (...args: Parameters<typeof real.append>) => {
+        if (!raced) {
+          raced = true
+          // Another writer lands between the state read and this append, leaving the lock standing.
+          await real.append(CONTROL_STREAM, args[1], [
+            { type: 'ConductorResumed', actor: 'human:other', data: { by: 'human:other' } },
+          ])
+        }
+        return real.append(...args)
+      },
+    } as typeof real
+    const answer = await run(raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, store, now: NOW }))
+    expect(raced).toBe(true)
+    expect(answer).toEqual({ raised: true, version: 3 })
+  })
 })
