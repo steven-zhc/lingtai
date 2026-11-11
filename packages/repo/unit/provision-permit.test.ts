@@ -3,22 +3,30 @@
  * mirror and not for one on another (0122 §6, #1026). Unit: `git` and the
  * filesystem are mocked.
  */
+import { Effect } from 'effect'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const calls = vi.hoisted(() => ({ list: [] as string[][], absent: false }))
 
-vi.mock('../src/git.ts', () => ({
-  RepoFailed: class extends Error {},
-  git: vi.fn((args: string[]) => {
-    calls.list.push([...args])
-    if (args[0] === 'rev-parse' && args[1] === '--git-dir' && calls.absent) {
-      calls.absent = false
-      return Promise.reject(new Error('not a repository'))
-    }
-    return Promise.resolve('2'.repeat(40))
-  }),
-  gitEffect: vi.fn(),
-}))
+vi.mock('../src/git.ts', async () => {
+  const actual = await vi.importActual<typeof import('../src/git.ts')>('../src/git.ts')
+  const { Effect } = await import('effect')
+  return {
+    ...actual,
+    // Lazy: a call is recorded when the Effect runs, not when it is built, since
+    // `mirrorWrite(path, gitEffect(...))` builds it before the permit is taken.
+    gitEffect: vi.fn((args: string[]) =>
+      Effect.suspend(() => {
+        calls.list.push([...args])
+        if (args[0] === 'rev-parse' && args[1] === '--git-dir' && calls.absent) {
+          calls.absent = false
+          return Effect.fail(new actual.RepoFailed({ operation: 'git rev-parse', detail: 'not a repository' }))
+        }
+        return Effect.succeed('2'.repeat(40))
+      }),
+    ),
+  }
+})
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(() => Promise.resolve()),
   rm: vi.fn(() => Promise.resolve()),
@@ -27,7 +35,7 @@ vi.mock('node:fs/promises', () => ({
 
 import { withMirrorWrite } from '../src/mirror-lock.ts'
 import { provisionWorktree } from '../src/worktree.ts'
-import { ensureMirror } from '../src/worktree.ts'
+import { ensureMirrorEffect } from '../src/worktree.ts'
 
 const settle = () => new Promise((r) => setTimeout(r, 0))
 const opts = (project: string) => ({
@@ -68,8 +76,8 @@ describe('provisionWorktree and the mirror permit', () => {
   it('clones an absent mirror once when two ensure it at once', async () => {
     calls.absent = true
     await Promise.all([
-      ensureMirror({ project: 'n', owner: 'o', repo: 'r', home: '/h' }),
-      ensureMirror({ project: 'n', owner: 'o', repo: 'r', home: '/h' }),
+      Effect.runPromise(ensureMirrorEffect({ project: 'n', owner: 'o', repo: 'r', home: '/h' })),
+      Effect.runPromise(ensureMirrorEffect({ project: 'n', owner: 'o', repo: 'r', home: '/h' })),
     ])
     expect(calls.list.filter((c) => c[0] === 'clone')).toHaveLength(1)
   })

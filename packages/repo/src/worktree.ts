@@ -15,8 +15,8 @@ import { renderEnvFile } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
-import { RepoFailed, type TokenSource, git } from './git.ts'
-import { withMirrorWrite } from './mirror-lock.ts'
+import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
+import { mirrorWrite } from './mirror-lock.ts'
 
 // -------------------------------------------------------------- worktrees ----
 
@@ -98,7 +98,7 @@ export function worktreePath(home: string, project: string, runId: string): stri
  * Bare and owned by Lingtai: there is no working copy here to be dirty, which
  * removes the failure mode entirely rather than checking for it.
  */
-export async function ensureMirror(options: {
+export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (options: {
   project: string
   owner: string
   repo: string
@@ -106,161 +106,183 @@ export async function ensureMirror(options: {
   remote?: string
   home?: string
   gitEnv?: NodeJS.ProcessEnv
-}): Promise<string> {
+}): Effect.fn.Return<string, RepoFailed> {
   const home = options.home ?? stateDir()
   const path = mirrorPath(home, options.project)
   const remote = options.remote ?? `https://github.com/${options.owner}/${options.repo}.git`
   const run = { token: options.token, env: options.gitEnv }
+  const io = <A>(f: () => Promise<A>) =>
+    // Uninterruptible: an interrupt waits for the removal to settle, so the
+    // mirror permit is not released while `rm` is still deleting under it.
+    Effect.uninterruptible(
+      Effect.tryPromise({
+        try: f,
+        catch: (err) => new RepoFailed({ operation: 'git clone', detail: (err as Error).message }),
+      }),
+    )
 
   // The presence check is inside the hold: it and the fetch-or-clone are one
   // decision about the mirror, or two provisions could both read it absent.
-  await withMirrorWrite(path, () =>
-    git(['rev-parse', '--git-dir'], { ...run, cwd: path })
-      .then(
-        () => true,
-        () => false,
+  yield* mirrorWrite(
+    path,
+    Effect.gen(function* () {
+      const present = yield* gitEffect(['rev-parse', '--git-dir'], { ...run, cwd: path }).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
       )
-      .then((present) => {
-        if (present) {
-          // A fetch that fails (a concurrent ref update, the network) says nothing
-          // about the mirror: it is shared with every pass in flight, whose worktrees
-          // point into its metadata and whose unpushed commits live only in it, so it
-          // is never removed on the strength of a failed fetch.
-          return git(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
-        }
-        return (
-          mkdir(dirname(path), { recursive: true })
-            .then(() => rm(path, { recursive: true, force: true }))
-            .then(() => git(['clone', '--bare', remote, path], run))
-            // A bare clone's origin is not wired for later fetches by default.
-            .then(() => git(['remote', 'set-url', 'origin', remote], { ...run, cwd: path }))
-        )
-      })
-      .then(() => undefined),
-  )
-  return path
-}
-
-export async function provisionWorktree(options: ProvisionOptions): Promise<Worktree> {
-  const home = options.home ?? stateDir()
-  const run = { token: options.token, env: options.gitEnv }
-  const mirror = await ensureMirror({
-    project: options.project,
-    owner: options.owner,
-    repo: options.repo,
-    token: options.token,
-    remote: options.remote,
-    home,
-    gitEnv: options.gitEnv,
-  })
-
-  const path = worktreePath(home, options.project, options.runId)
-  await rm(path, { recursive: true, force: true })
-  await mkdir(dirname(path), { recursive: true })
-
-  // From the base branch as the mirror has it, which is `origin/<base>` — never
-  // from anything local, and never from the agent's previous branch. A
-  // continuation names its own sha instead (`options.at`, #465): the tree a
-  // held pass left is gone once its scope closes, and this is where it is
-  // re-cut from — the branch, not the base, because what is being continued
-  // is the diff an approval was about, not a fresh one.
-  const baseSha = options.at ?? (await git(['rev-parse', options.base], { ...run, cwd: mirror }))
-  const remoteHead = await git(['rev-parse', '--verify', `refs/heads/${options.branch}`], {
-    ...run,
-    cwd: mirror,
-  }).catch(() => null)
-  // The one check `options.at` adds: between the approval and this cut,
-  // somebody may have pushed to `branch` — the agent, on a re-run, or a
-  // second decision. Re-cutting from a moved branch would continue a diff
-  // nobody approved, so this refuses rather than silently taking it.
-  const checkedRef = options.atRef ?? options.branch
-  const checkedHead =
-    options.atRef === undefined
-      ? remoteHead
-      : await git(['rev-parse', '--verify', `refs/heads/${checkedRef}`], { ...run, cwd: mirror }).catch(() => null)
-  if (options.at !== undefined && checkedHead !== options.at) {
-    throw new Error(`${checkedRef} is now ${checkedHead ?? 'gone'}, not ${options.at} — the continuation is stale`)
-  }
-  /**
-   * **Detached, and that is what lets the worktree outlive the merge lane**
-   * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
-   *
-   * This used to be `-B <branch>`, which checks `agent/<n>` out here — and git
-   * refuses to update a ref that some worktree has checked out, *including when
-   * the update is a no-op*:
-   *
-   *     fatal: refusing to fetch into branch 'refs/heads/agent/7'
-   *            checked out at '.../worktrees/<runId>'
-   *
-   * The merge lane fetches exactly that ref before it merges, so a worktree
-   * alive at that moment broke the first end-to-end run, and the answer for a
-   * year was to release the worktree first. That ordering is what 0039 §1
-   * overturns, so the collision has to go instead of the worktree.
-   *
-   * **Nothing needed the branch to be checked out here.** The push below has
-   * always been `HEAD:refs/heads/<branch>` — the code already treats HEAD as
-   * what is being proposed and the branch as where it goes — and every gate
-   * works on the diff against `baseSha`. What the agent loses is `git status`
-   * naming a branch; what it gains is a worktree that is still there when
-   * something refuses.
-   *
-   * It also stops `-B` from clobbering `refs/heads/<branch>` in the mirror, so
-   * `remoteHead` above is now simply what origin has rather than a value
-   * rescued before a local write.
-   */
-  await withMirrorWrite(mirror, () =>
-    git(['worktree', 'add', '--force', '--detach', path, baseSha], {
-      ...run,
-      cwd: mirror,
+      if (present) {
+        // A fetch that fails (a concurrent ref update, the network) says nothing
+        // about the mirror: it is shared with every pass in flight, whose worktrees
+        // point into its metadata and whose unpushed commits live only in it, so it
+        // is never removed on the strength of a failed fetch.
+        yield* gitEffect(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
+        return
+      }
+      yield* io(() => mkdir(dirname(path), { recursive: true }))
+      yield* io(() => rm(path, { recursive: true, force: true }))
+      yield* gitEffect(['clone', '--bare', remote, path], run)
+      // A bare clone's origin is not wired for later fetches by default.
+      yield* gitEffect(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
     }),
   )
+  return path
+})
 
-  if (options.submodules) {
-    // Not optional when the recipe says so. `worktree add` leaves submodule
-    // directories empty, and the tests that import them fail in a way that reads
-    // as the agent's fault.
-    await git(['submodule', 'update', '--init', '--recursive'], { ...run, cwd: path })
-  }
+export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
+  options: ProvisionOptions,
+): Effect.fn.Return<Worktree, RepoFailed> {
+  return yield* Effect.gen(function* () {
+    const home = options.home ?? stateDir()
+    const run = { token: options.token, env: options.gitEnv }
+    const io = <A>(f: () => Promise<A>) =>
+      Effect.uninterruptible(
+        Effect.tryPromise({
+          try: f,
+          catch: (err) => new RepoFailed({ operation: 'provision', detail: (err as Error).message }),
+        }),
+      )
+    const mirror = yield* ensureMirrorEffect({
+      project: options.project,
+      owner: options.owner,
+      repo: options.repo,
+      token: options.token,
+      remote: options.remote,
+      home,
+      gitEnv: options.gitEnv,
+    })
 
-  const plantedAt = resolve(path, options.plantAt)
-  await mkdir(dirname(plantedAt), { recursive: true })
-  await writeFile(plantedAt, renderEnvFile(options.env), { mode: 0o600 })
+    const path = worktreePath(home, options.project, options.runId)
+    yield* io(() => rm(path, { recursive: true, force: true }))
+    yield* io(() => mkdir(dirname(path), { recursive: true }))
 
-  return { path, branch: options.branch, baseSha, plantedAt, remoteHead }
-}
+    // From the base branch as the mirror has it, which is `origin/<base>` — never
+    // from anything local, and never from the agent's previous branch. A
+    // continuation names its own sha instead (`options.at`, #465): the tree a
+    // held pass left is gone once its scope closes, and this is where it is
+    // re-cut from — the branch, not the base, because what is being continued
+    // is the diff an approval was about, not a fresh one.
+    const baseSha = options.at ?? (yield* gitEffect(['rev-parse', options.base], { ...run, cwd: mirror }))
+    const remoteHead = yield* gitEffect(['rev-parse', '--verify', `refs/heads/${options.branch}`], {
+      ...run,
+      cwd: mirror,
+    }).pipe(Effect.orElseSucceed(() => null))
+    // The one check `options.at` adds: between the approval and this cut,
+    // somebody may have pushed to `branch` — the agent, on a re-run, or a
+    // second decision. Re-cutting from a moved branch would continue a diff
+    // nobody approved, so this refuses rather than silently taking it.
+    const checkedRef = options.atRef ?? options.branch
+    const checkedHead =
+      options.atRef === undefined
+        ? remoteHead
+        : yield* gitEffect(['rev-parse', '--verify', `refs/heads/${checkedRef}`], { ...run, cwd: mirror }).pipe(
+            Effect.orElseSucceed(() => null),
+          )
+    if (options.at !== undefined && checkedHead !== options.at) {
+      return yield* new RepoFailed({
+        operation: 'provision',
+        detail: `${checkedRef} is now ${checkedHead ?? 'gone'}, not ${options.at} — the continuation is stale`,
+      })
+    }
+    /**
+     * **Detached, and that is what lets the worktree outlive the merge lane**
+     * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
+     *
+     * This used to be `-B <branch>`, which checks `agent/<n>` out here — and git
+     * refuses to update a ref that some worktree has checked out, *including when
+     * the update is a no-op*:
+     *
+     *     fatal: refusing to fetch into branch 'refs/heads/agent/7'
+     *            checked out at '.../worktrees/<runId>'
+     *
+     * The merge lane fetches exactly that ref before it merges, so a worktree
+     * alive at that moment broke the first end-to-end run, and the answer for a
+     * year was to release the worktree first. That ordering is what 0039 §1
+     * overturns, so the collision has to go instead of the worktree.
+     *
+     * **Nothing needed the branch to be checked out here.** The push below has
+     * always been `HEAD:refs/heads/<branch>` — the code already treats HEAD as
+     * what is being proposed and the branch as where it goes — and every gate
+     * works on the diff against `baseSha`. What the agent loses is `git status`
+     * naming a branch; what it gains is a worktree that is still there when
+     * something refuses.
+     *
+     * It also stops `-B` from clobbering `refs/heads/<branch>` in the mirror, so
+     * `remoteHead` above is now simply what origin has rather than a value
+     * rescued before a local write.
+     */
+    yield* mirrorWrite(
+      mirror,
+      gitEffect(['worktree', 'add', '--force', '--detach', path, baseSha], { ...run, cwd: mirror }),
+    )
 
-/** Removes a run's worktree. The mirror stays; it is the expensive part. */
-export async function removeWorktree(options: { project: string; runId: string; home?: string }): Promise<void> {
-  const home = options.home ?? stateDir()
-  const path = worktreePath(home, options.project, options.runId)
-  const mirror = mirrorPath(home, options.project)
-  await rm(path, { recursive: true, force: true })
-  // Tell git the directory is gone, so a later `worktree add` at the same path
-  // is not refused by a stale registration.
-  await withMirrorWrite(mirror, () => git(['worktree', 'prune'], { cwd: mirror })).catch(() => {
-    // No mirror, nothing registered. Not worth failing a cleanup over.
-  })
+    if (options.submodules) {
+      // Not optional when the recipe says so. `worktree add` leaves submodule
+      // directories empty, and the tests that import them fail in a way that reads
+      // as the agent's fault.
+      yield* gitEffect(['submodule', 'update', '--init', '--recursive'], { ...run, cwd: path })
+    }
+
+    const plantedAt = resolve(path, options.plantAt)
+    yield* io(() => mkdir(dirname(plantedAt), { recursive: true }))
+    yield* io(() => writeFile(plantedAt, renderEnvFile(options.env), { mode: 0o600 }))
+
+    return { path, branch: options.branch, baseSha, plantedAt, remoteHead }
+  }).pipe(
+    // Every failure out of here is a `provision` one, with whatever git said kept.
+    Effect.mapError((e) => new RepoFailed({ ...e, operation: 'provision' })),
+  )
+})
+
+export function provisionWorktree(options: ProvisionOptions): Promise<Worktree> {
+  return Effect.runPromise(provisionWorktreeEffect(options))
 }
 
 /**
- * The two above, as `Effect`s — which is what a `Scope` is built out of.
+ * Removes a run's worktree. The mirror stays; it is the expensive part.
  *
- * They are a pair on purpose. `runOnce` acquires the worktree and releases it
- * with `Effect.acquireRelease`, so the removal that used to be a `finally` two
- * frames up now happens because the scope closed, whichever way control left it
+ * It is a pair with the above on purpose. `runOnce` acquires the worktree and
+ * releases it with `Effect.acquireRelease`, so the removal happens because the
+ * scope closed, whichever way control left it
  * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
- *
- * The removal swallows its own failure, as the `.catch(() => {})` it replaces
- * did: a cleanup must not replace the failure it is cleaning up after.
+ * It swallows its own failure: a cleanup must not replace the failure it is
+ * cleaning up after.
  */
-export const provisionWorktreeEffect = (options: ProvisionOptions): Effect.Effect<Worktree, RepoFailed> =>
-  Effect.tryPromise({
-    try: () => provisionWorktree(options),
-    catch: (err) => new RepoFailed({ operation: 'provision', detail: (err as Error).message }),
-  })
+export const removeWorktreeEffect = Effect.fn('repo.remove')(function* (options: {
+  project: string
+  runId: string
+  home?: string
+}) {
+  const home = options.home ?? stateDir()
+  const path = worktreePath(home, options.project, options.runId)
+  const mirror = mirrorPath(home, options.project)
+  yield* Effect.uninterruptible(Effect.tryPromise(() => rm(path, { recursive: true, force: true }))).pipe(
+    // Tell git the directory is gone, so a later `worktree add` at the same path
+    // is not refused by a stale registration.
+    Effect.andThen(mirrorWrite(mirror, gitEffect(['worktree', 'prune'], { cwd: mirror }))),
+    Effect.ignore,
+  )
+})
 
-export const removeWorktreeEffect = (options: { project: string; runId: string; home?: string }): Effect.Effect<void> =>
-  Effect.tryPromise({
-    try: () => removeWorktree(options),
-    catch: (err) => new RepoFailed({ operation: 'remove', detail: (err as Error).message }),
-  }).pipe(Effect.ignore)
+export function removeWorktree(options: { project: string; runId: string; home?: string }): Promise<void> {
+  return Effect.runPromise(removeWorktreeEffect(options))
+}

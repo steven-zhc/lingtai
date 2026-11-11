@@ -24,8 +24,9 @@ import { join } from 'node:path'
  * what killed the repair.
  */
 import { stateDir } from '@lingtai/env'
+import { Effect } from 'effect'
 
-import { git } from './git.ts'
+import { RepoFailed, gitEffect } from './git.ts'
 
 /** `<home>/repos/<project>.git`. The bare clone the conductor cuts worktrees from. */
 export function mirrorPathFor(project: string, home = stateDir()): string {
@@ -40,27 +41,34 @@ export interface MirrorOptions {
 }
 
 /** The commit a ref points at, or null when the mirror has no such ref. */
-export async function refSha(options: MirrorOptions & { ref: string }): Promise<string | null> {
-  return git(['rev-parse', '--verify', `${options.ref}^{commit}`], {
+export const refShaEffect = (options: MirrorOptions & { ref: string }): Effect.Effect<string | null> =>
+  gitEffect(['rev-parse', '--verify', `${options.ref}^{commit}`], {
     cwd: mirrorPathFor(options.project, options.home),
     signal: options.signal,
-  }).catch(() => null)
+  }).pipe(Effect.orElseSucceed(() => null))
+
+export function refSha(options: MirrorOptions & { ref: string }): Promise<string | null> {
+  return Effect.runPromise(refShaEffect(options))
 }
 
 /** Read a branch without treating a missing ref as a failed mirror read. */
-export async function mirrorBranchSha(
+export const mirrorBranchShaEffect = Effect.fn('mirrorBranchShaEffect')(function* (
   options: MirrorOptions & { ref: string },
-): Promise<{ at: string } | { missing: true } | { unreadable: string }> {
+): Effect.fn.Return<{ at: string } | { missing: true } | { unreadable: string }> {
   const cwd = mirrorPathFor(options.project, options.home)
-  try {
-    if ((await git(['rev-parse', '--is-bare-repository'], { cwd })) !== 'true') {
+  return yield* Effect.gen(function* () {
+    if ((yield* gitEffect(['rev-parse', '--is-bare-repository'], { cwd })) !== 'true') {
       return { unreadable: `${cwd} is not a bare git mirror` }
     }
-    const sha = await git(['for-each-ref', '--format=%(objectname)', options.ref], { cwd })
-    return sha === '' ? { missing: true } : { at: sha }
-  } catch (error) {
-    return { unreadable: (error as Error).message }
-  }
+    const sha = yield* gitEffect(['for-each-ref', '--format=%(objectname)', options.ref], { cwd })
+    return sha === '' ? { missing: true as const } : { at: sha }
+  }).pipe(Effect.catchTag('RepoFailed', (error) => Effect.succeed({ unreadable: error.detail })))
+})
+
+export function mirrorBranchSha(
+  options: MirrorOptions & { ref: string },
+): Promise<{ at: string } | { missing: true } | { unreadable: string }> {
+  return Effect.runPromise(mirrorBranchShaEffect(options))
 }
 
 /**
@@ -70,18 +78,24 @@ export async function mirrorBranchSha(
  * or a lockfile would spend the whole context on one file. Truncation is said
  * in the returned text rather than left for the reader to notice.
  */
-export async function readAt(
+export const readAtEffect = Effect.fn('readAtEffect')(function* (
   options: MirrorOptions & { ref: string; path: string; limitBytes?: number },
-): Promise<string | null> {
+): Effect.fn.Return<string | null> {
   const limit = options.limitBytes ?? 64_000
-  const text = await git(['show', `${options.ref}:${options.path}`], {
+  const text = yield* gitEffect(['show', `${options.ref}:${options.path}`], {
     cwd: mirrorPathFor(options.project, options.home),
     signal: options.signal,
-  }).catch(() => null)
+  }).pipe(Effect.orElseSucceed(() => null))
   if (text === null) return null
   return text.length > limit
     ? `${text.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${text.length}]`
     : text
+})
+
+export function readAt(
+  options: MirrorOptions & { ref: string; path: string; limitBytes?: number },
+): Promise<string | null> {
+  return Effect.runPromise(readAtEffect(options))
 }
 
 /**
@@ -97,18 +111,24 @@ export async function readAt(
  * treats absence as "no diff stat could be read", the same way `readAt`'s
  * caller does.
  */
-export async function diffStatAt(
+export const diffStatAtEffect = Effect.fn('diffStatAtEffect')(function* (
   options: MirrorOptions & { base: string; head: string; limitBytes?: number },
-): Promise<string | null> {
+): Effect.fn.Return<string | null> {
   const limit = options.limitBytes ?? 8_000
-  const text = await git(['diff', '--stat', `${options.base}...${options.head}`], {
+  const text = yield* gitEffect(['diff', '--stat', `${options.base}...${options.head}`], {
     cwd: mirrorPathFor(options.project, options.home),
     signal: options.signal,
-  }).catch(() => null)
+  }).pipe(Effect.orElseSucceed(() => null))
   if (text === null) return null
   return text.length > limit
     ? `${text.slice(0, limit)}\n\n[truncated at ${limit} bytes; the diff stat is ${text.length}]`
     : text
+})
+
+export function diffStatAt(
+  options: MirrorOptions & { base: string; head: string; limitBytes?: number },
+): Promise<string | null> {
+  return Effect.runPromise(diffStatAtEffect(options))
 }
 
 /**
@@ -118,17 +138,23 @@ export async function diffStatAt(
  * a repository large enough for that to be unreasonable is one where the list
  * is cut and said to be cut. Lingtai's own tree is about 200 files.
  */
-export async function listAt(
+export const listAtEffect = Effect.fn('listAtEffect')(function* (
   options: MirrorOptions & { ref: string; limit?: number },
-): Promise<{ paths: string[]; truncated: boolean }> {
+): Effect.fn.Return<{ paths: string[]; truncated: boolean }> {
   const limit = options.limit ?? 1_500
-  const out = await git(['ls-tree', '-r', '--name-only', options.ref], {
+  const out = yield* gitEffect(['ls-tree', '-r', '--name-only', options.ref], {
     cwd: mirrorPathFor(options.project, options.home),
     signal: options.signal,
-  }).catch(() => null)
+  }).pipe(Effect.orElseSucceed(() => null))
   if (out === null) return { paths: [], truncated: false }
   const paths = out.split('\n').filter((p) => p !== '')
   return { paths: paths.slice(0, limit), truncated: paths.length > limit }
+})
+
+export function listAt(
+  options: MirrorOptions & { ref: string; limit?: number },
+): Promise<{ paths: string[]; truncated: boolean }> {
+  return Effect.runPromise(listAtEffect(options))
 }
 
 export interface ConflictedPath {
@@ -150,28 +176,34 @@ export interface ConflictedPath {
  * creates loose tree and blob objects there, but never moves or creates a ref.
  * Each side is bounded because the caller puts it in a triage prompt.
  */
-export async function conflictedPathsAt(
+export const conflictedPathsAtEffect = Effect.fn('conflictedPathsAtEffect')(function* (
   options: MirrorOptions & { baseSha: string; headSha: string; limitBytes?: number },
-): Promise<ConflictedPath[]> {
+): Effect.fn.Return<ConflictedPath[], RepoFailed> {
+  const operation = 'conflictedPathsAt'
   const cwd = mirrorPathFor(options.project, options.home)
   const signal = options.signal
-  const version = await git(['--version'], { cwd, signal })
+  const version = yield* gitEffect(['--version'], { cwd, signal })
   const match = /git version (\d+)\.(\d+)/.exec(version)
   if (!match || Number(match[1]) < 2 || (Number(match[1]) === 2 && Number(match[2]) < 38)) {
-    throw new Error(`git merge-tree --write-tree requires git 2.38 or later; found ${version}`)
+    return yield* new RepoFailed({
+      operation,
+      detail: `git merge-tree --write-tree requires git 2.38 or later; found ${version}`,
+    })
   }
 
-  let output: string
-  try {
-    output = await git(['merge-tree', '--write-tree', '-z', options.baseSha, options.headSha], { cwd, signal })
-  } catch (err) {
-    const failure = err as Error & { code?: number; stdout?: string }
-    if (failure.code !== 1 || typeof failure.stdout !== 'string') throw err
-    output = failure.stdout
-  }
+  // `merge-tree` exits 1 on a conflict and still writes the tree to stdout.
+  const output = yield* gitEffect(['merge-tree', '--write-tree', '-z', options.baseSha, options.headSha], {
+    cwd,
+    signal,
+  }).pipe(
+    Effect.catchTag('RepoFailed', (err) =>
+      err.exitCode === 1 && typeof err.stdout === 'string' ? Effect.succeed(err.stdout) : Effect.fail(err),
+    ),
+  )
   const records = output.split('\0')
   const tree = records[0]?.trim()
-  if (!tree || !/^[0-9a-f]{40,64}$/.test(tree)) throw new Error('git merge-tree returned no written tree')
+  if (!tree || !/^[0-9a-f]{40,64}$/.test(tree))
+    return yield* new RepoFailed({ operation, detail: 'git merge-tree returned no written tree' })
 
   const stages = new Map<string, [string | null, string | null, string | null]>()
   for (const record of records.slice(1)) {
@@ -184,20 +216,22 @@ export async function conflictedPathsAt(
   }
 
   const limit = options.limitBytes ?? 64_000
-  const readBlob = async (oid: string | null): Promise<string | null> => {
+  const readBlob = Effect.fn('readBlob')(function* (oid: string | null) {
     if (oid === null) return null
-    const content = await git(['cat-file', '-p', oid], { cwd, trimOutput: false, signal })
+    const content = yield* gitEffect(['cat-file', '-p', oid], { cwd, trimOutput: false, signal })
     return content.length > limit
       ? `${content.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${content.length}]`
       : content
-  }
+  })
   const paths: ConflictedPath[] = []
   for (const [path, [baseOid, oursOid, theirsOid]] of stages) {
-    const merged = await git(['show', `${tree}:${path}`], { cwd, trimOutput: false, signal }).catch((err: unknown) => {
-      const failure = err as Error & { code?: number; stderr?: string }
-      if (failure.code === 128 && /fatal: path .* does not exist in /.test(failure.stderr ?? '')) return null
-      throw err
-    })
+    const merged = yield* gitEffect(['show', `${tree}:${path}`], { cwd, trimOutput: false, signal }).pipe(
+      Effect.catchTag('RepoFailed', (err) =>
+        err.exitCode === 128 && /fatal: path .* does not exist in /.test(err.stderr ?? '')
+          ? Effect.succeed(null)
+          : Effect.fail(err),
+      ),
+    )
     const markerLines =
       merged?.split('\n').flatMap((line, index) => (line.startsWith('<<<<<<< ') ? [index + 1] : [])) ?? []
     const hunkLines = markerLines.length === 0 ? [1] : markerLines
@@ -206,12 +240,18 @@ export async function conflictedPathsAt(
       baseOid,
       oursOid,
       theirsOid,
-      base: await readBlob(baseOid),
-      ours: await readBlob(oursOid),
-      theirs: await readBlob(theirsOid),
+      base: yield* readBlob(baseOid),
+      ours: yield* readBlob(oursOid),
+      theirs: yield* readBlob(theirsOid),
       hunks: hunkLines.length,
       hunkLines,
     })
   }
   return paths
+})
+
+export function conflictedPathsAt(
+  options: MirrorOptions & { baseSha: string; headSha: string; limitBytes?: number },
+): Promise<ConflictedPath[]> {
+  return Effect.runPromise(conflictedPathsAtEffect(options))
 }
