@@ -1,9 +1,11 @@
-import { loadProjects } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
 import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
+import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
+import { readRegistered } from '@/lib/locks.ts'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
@@ -192,16 +194,30 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
  * recipe that will not parse names the file and the fault, nothing here writes
  * — are assertable without a database or a `~/.lingtai/`.
  */
-export function Recipe({ view, edit = false, bar }: { view: ProjectRecipe; edit?: boolean; bar?: RecipeBarFilter }) {
+export function Recipe({
+  view,
+  edit = false,
+  bar,
+  pause,
+  banner,
+}: {
+  view: ProjectRecipe
+  edit?: boolean
+  bar?: RecipeBarFilter
+  /** The bar's Pause button and the row under it, built by the page that read the locks (#994): this stays pure. */
+  pause?: ReactNode
+  banner?: ReactNode
+}) {
   const text = view.text
   return (
     <>
       <main className="detail">
         {bar === undefined ? (
-          <Bar project={view.project} registered here="recipe" />
+          <Bar project={view.project} registered here="recipe" pause={pause} />
         ) : (
-          <RecipeBar project={view.project} {...bar} />
+          <RecipeBar project={view.project} {...bar} pause={pause} />
         )}
+        {banner}
 
         <div className="detail-body detail-body-wide">
           <section>
@@ -302,12 +318,32 @@ export default async function RecipePage({
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
   // here has heard of.
-  const projects = await loadProjects()
+  // A failed read is said under the bar (#994) and not thrown: the banner reads
+  // the same cached rejection and draws "could not read which projects are paused".
+  let projects: Awaited<ReturnType<typeof readRegistered>>
+  try {
+    projects = await readRegistered()
+  } catch {
+    return (
+      <main className="detail">
+        <Bar project={name} here="recipe" />
+        <LockBanner project={name} />
+      </main>
+    )
+  }
   const state = projects.find((p) => p.project === name)
   if (state === undefined) notFound()
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
   // The board's projection failing must not take the recipe page with it.
   const onBoard = await onBoardProjects().catch(() => [] as string[])
   const bar = { filters: filterOptions(registered, onBoard), registered, app: hasGitHubAuth() }
-  return <Recipe view={await projectRecipe(state)} edit={edit === '1'} bar={bar} />
+  return (
+    <Recipe
+      view={await projectRecipe(state)}
+      edit={edit === '1'}
+      bar={bar}
+      pause={await pauseSlot(name)}
+      banner={<LockBanner project={name} />}
+    />
+  )
 }

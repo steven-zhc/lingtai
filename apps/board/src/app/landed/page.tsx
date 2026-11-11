@@ -9,9 +9,8 @@
  * without the landing columns says the rebuild it needs.
  */
 
-import { loadProjects } from '@lingtai/conductor/projects'
-
 import { Bar } from '@/app/bar.tsx'
+import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import {
   currentLanded,
   landedContext,
@@ -20,6 +19,7 @@ import {
   type LandedData,
   type LandedParams,
 } from '@/lib/landed.ts'
+import { readRegistered } from '@/lib/locks.ts'
 import { projectionChip, type ReportChip } from '@/lib/report.ts'
 import { measure, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
@@ -38,7 +38,7 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
   let timings: readonly Timing[] = []
   const [env, projects] = await Promise.all([
     landedContext().catch(() => ({ kinds: [], owners: new Map(), sources: new Map() })),
-    loadProjects().catch(() => []),
+    readRegistered().catch(() => []),
   ])
   const query = landedQuery(params, env.kinds)
   const only = query.project ?? undefined
@@ -55,7 +55,11 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
   return (
     <main className="detail">
       <TimingMeta timings={timings} />
-      <Bar project={only} registered={only !== undefined && projects.some((p) => p.project === only)}>
+      <Bar
+        project={only}
+        registered={only !== undefined && projects.some((p) => p.project === only)}
+        pause={await pauseSlot(only)}
+      >
         <span className="sep" />
         <span className="mono">landed{only === undefined ? '' : ` · ${only}`}</span>
         <span className="sep" />
@@ -63,6 +67,7 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
           {chip.label}
         </span>
       </Bar>
+      <LockBanner project={only} />
 
       <div className="detail-body ld">
         {data === null ? (

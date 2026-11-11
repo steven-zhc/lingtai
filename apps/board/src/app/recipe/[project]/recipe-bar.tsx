@@ -6,14 +6,22 @@
  * imports `@/lib/recipe` and the conductor, this imports only the bar. Nothing
  * here may import `app/actions` — only the form does.
  */
+import type { ReactNode } from 'react'
+
 import { Bar } from '@/app/bar.tsx'
 import { Projects } from '@/app/projects.tsx'
 
 export type RecipeBarFilter = { filters: string[]; registered: readonly string[]; app: boolean }
 
-export function RecipeBar({ project, filters, registered, app }: { project: string } & RecipeBarFilter) {
+export function RecipeBar({
+  project,
+  filters,
+  registered,
+  app,
+  pause,
+}: { project: string; pause?: ReactNode } & RecipeBarFilter) {
   return (
-    <Bar project={project} registered here="recipe">
+    <Bar project={project} registered here="recipe" pause={pause}>
       <span className="sep" />
       <Projects filters={filters} only={project} app={app} registered={registered} />
     </Bar>

@@ -66,6 +66,7 @@ import { eventStore, log } from '@lingtai/event-store'
 import { saveRecipeText } from '@lingtai/recipe'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
+import { Effect } from 'effect'
 import { revalidatePath } from 'next/cache'
 
 // Who is acting — next door for the same reason, and so a test can hold the
@@ -74,6 +75,7 @@ import { actor } from '@/lib/actor'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
+import { setProjectPaused } from '@/lib/locks'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
@@ -525,6 +527,29 @@ export async function resumeWork(): Promise<ActionResult> {
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
+}
+
+/**
+ * A person pauses or resumes one project from the bar or the banner (#994).
+ * Each ends with a layout-wide revalidation, so every page with a banner is
+ * drawn again and not only `/`, which `Live` already does.
+ */
+async function projectLock(verb: 'pause' | 'resume', project: string): Promise<ActionResult> {
+  try {
+    const result = await Effect.runPromise(setProjectPaused(eventStore, verb, project, actor()))
+    revalidatePath('/', 'layout')
+    return result
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+export async function pauseProjectNow(input: { project: string }): Promise<ActionResult> {
+  return projectLock('pause', input.project)
+}
+
+export async function resumeProjectNow(input: { project: string }): Promise<ActionResult> {
+  return projectLock('resume', input.project)
 }
 
 /**

@@ -1,10 +1,11 @@
-import { loadProjects } from '@lingtai/conductor/projects'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
+import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { readRegistered } from '@/lib/locks.ts'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
 import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } from '@/lib/task'
@@ -122,11 +123,16 @@ export function TaskBody({
   github,
   now,
   registered = false,
+  pause,
+  banner,
   children,
 }: {
   task: TaskDetail
   /** Whether the ticket's project is registered, so its `Recipe` has a page. */
   registered?: boolean
+  /** The bar's Pause button and the row under it, built by the layout that read the locks (#994): this stays sync. */
+  pause?: ReactNode
+  banner?: ReactNode
   /**
    * What only the issue's answer knows — resolved, or the promise `loadTaskAnswer`
    * returned (0118 §2). Each place that reads it draws *asking GitHub…* until it
@@ -150,7 +156,7 @@ export function TaskBody({
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <Bar project={task.ticket?.project ?? undefined} registered={registered}>
+        <Bar project={task.ticket?.project ?? undefined} registered={registered} pause={pause}>
           <span className="sep" />
           {/* Rank 8: one muted line, each identifier once. */}
           <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
@@ -163,6 +169,7 @@ export function TaskBody({
           {/* Nothing while the page follows the log; the sentence when it stopped. */}
           <Following />
         </Bar>
+        {banner}
 
         {/* A link written before the record had tabs, `#attempt-N` or
           `#record-ticket`, is sent to the tab it meant. */}
@@ -248,10 +255,10 @@ export default async function TaskLayout({
   const github = measure(() => loadTaskAnswer(taskId), { label: '/task github' }).then(([answer]) => answer)
   const [[task, timings], projects] = await Promise.all([
     measure(() => loadTask(taskId), { label: '/task' }),
-    loadProjects().catch(() => []),
+    readRegistered().catch(() => []),
   ])
   if (!task) notFound()
-  const project = task.ticket?.project
+  const project = task.ticket?.project ?? undefined
   const registered = project !== undefined && projects.some((p) => p.project === project)
   return (
     <>
@@ -264,7 +271,13 @@ export default async function TaskLayout({
           refreshes both segments. On the layout and not in `TaskBody`, which a
           test renders with no router to refresh. */}
       <Follow>
-        <TaskBody task={task} github={github} registered={registered}>
+        <TaskBody
+          task={task}
+          github={github}
+          registered={registered}
+          pause={await pauseSlot(project)}
+          banner={<LockBanner project={project} />}
+        >
           {children}
         </TaskBody>
       </Follow>
