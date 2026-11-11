@@ -10,17 +10,24 @@
  * The one exception is discovery, which reads issues *once* to learn that a work
  * item exists. After that the log is the authority.
  */
-import { Data } from 'effect'
+import { Data, Effect } from 'effect'
 
 import {
   type AppAuth,
-  GITHUB_API,
   GitHubFailed,
   type Installation,
-  createTokenSource,
-  installationForRepo,
+  NotInstalledError,
+  githubJson,
+  installationForRepoEffect,
+  installationToken,
+  runGitHub,
 } from './app.ts'
-import { type GhRun, ghToken, liveGh } from './gh.ts'
+import { type GhRun, ghTokenEffect, liveGh } from './gh.ts'
+
+// The face lives in `app.ts`, which `client.ts` imports: a face here would make
+// the two import each other, and `PermissionDenied` extends a class `app.ts`
+// defines. It is exported from this file for the faces check, and not from `index.ts`.
+export { runGitHub }
 
 /**
  * `updateBody`'s `ifUnchanged` refused: the body read no longer matches what
@@ -176,17 +183,25 @@ export interface Issue {
   subIssues: { total: number; completed: number } | null
 }
 
-export interface GitHubClient {
+/** Every call fails with a `GitHubFailed`, never a defect. */
+type E<A> = Effect.Effect<A, GitHubFailed>
+
+/**
+ * The client, as Effects (#1025). Every member fails with `GitHubFailed`
+ * (`updateBody` also with `BodyChanged`), and each is a span named
+ * `github.<method>`. A value, as 0101 §5 has it: passed in, not provided.
+ */
+export interface GitHub {
   readonly owner: string
   readonly repo: string
   /** Null under `gh`, which has none. */
   readonly installation: Installation | null
 
   /** Raw REST, for the calls that do not have a method yet. */
-  request<T>(method: string, path: string, body?: unknown): Promise<T>
+  request<T>(method: string, path: string, body?: unknown): E<T>
 
   /** The repository's default branch, when the recipe does not name one. */
-  defaultBranch(): Promise<string>
+  defaultBranch(): E<string>
 
   /**
    * A file's contents at a ref, or null if it is not there.
@@ -196,10 +211,10 @@ export interface GitHubClient {
    * whatever the agent's worktree happens to contain
    * (doc/decisions-archive/0005-config-in-target-repo.md).
    */
-  fileAt(path: string, ref: string): Promise<string | null>
+  fileAt(path: string, ref: string): E<string | null>
 
   /** The commit a ref points at right now, so a resolution can be replayed. */
-  refSha(ref: string): Promise<string>
+  refSha(ref: string): E<string>
 
   /**
    * Every ref beginning `refs/<prefix>`, named without that `refs/` —
@@ -218,7 +233,7 @@ export interface GitHubClient {
    * repository it has lost access to as a remote with no refs on it — and a
    * sweep would then record a success saying there was nothing to delete.
    */
-  matchingRefs(prefix: string): Promise<readonly string[]>
+  matchingRefs(prefix: string): E<readonly string[]>
 
   /**
    * Deletes a ref, named as `matchingRefs` names it.
@@ -226,9 +241,9 @@ export interface GitHubClient {
    * A ref that is not there answers 422, which is a throw like any other: the
    * caller that must not fail on one deletes only what it has just listed.
    */
-  deleteRef(ref: string): Promise<void>
+  deleteRef(ref: string): E<void>
 
-  listOpenIssues(): Promise<Issue[]>
+  listOpenIssues(): E<Issue[]>
 
   /**
    * Every issue, open or closed, created at or after `since` — oldest first.
@@ -244,8 +259,8 @@ export interface GitHubClient {
    * before `since`, so the pages are the window's issues and not every issue
    * anybody commented on since.
    */
-  listIssuesSince(since: Date): Promise<Issue[]>
-  getIssue(number: number, signal?: AbortSignal): Promise<Issue>
+  listIssuesSince(since: Date): E<Issue[]>
+  getIssue(number: number): E<Issue>
 
   /**
    * Posts a comment.
@@ -259,7 +274,7 @@ export interface GitHubClient {
    * record: a failed call there vanished, leaving nobody able to tell "we never
    * commented" from "we commented and it did not help".
    */
-  comment(issue: number, body: string): Promise<{ id: number }>
+  comment(issue: number, body: string): E<{ id: number }>
 
   /**
    * Replaces the whole label set.
@@ -269,7 +284,7 @@ export interface GitHubClient {
    * `agent:review` at the same time with nothing able to notice. A state that
    * is computed and then *set* cannot hold two contradictory values.
    */
-  setLabels(issue: number, labels: readonly string[]): Promise<void>
+  setLabels(issue: number, labels: readonly string[]): E<void>
 
   /**
    * Adds labels to what the issue already has, leaving the rest alone.
@@ -277,10 +292,10 @@ export interface GitHubClient {
    * For a caller that has not just read the set: `setLabels` from a snapshot
    * would drop a label somebody added since (an `agent:hold`, say).
    */
-  addLabels(issue: number, labels: readonly string[]): Promise<void>
+  addLabels(issue: number, labels: readonly string[]): E<void>
 
   /** Replaces one comment's whole body (#750). The response is read for its status only. */
-  editComment(issue: number, commentId: number, body: string): Promise<void>
+  editComment(issue: number, commentId: number, body: string): E<void>
 
   /**
    * Closes an issue, as completed.
@@ -291,7 +306,7 @@ export interface GitHubClient {
    * failure was state living in labels; the failure after it was state living
    * nowhere.
    */
-  closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
+  closeIssue(issue: number, reason?: 'completed' | 'not_planned'): E<void>
 
   /**
    * Replaces the issue body.
@@ -315,7 +330,11 @@ export interface GitHubClient {
    * Refuses with `BodyChanged` when the issue's body is no longer that; see
    * the class's own comment for how far that check reaches.
    */
-  updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
+  updateBody(
+    issue: number,
+    body: string,
+    opts?: { ifUnchanged?: string },
+  ): Effect.Effect<void, GitHubFailed | BodyChanged>
 
   /**
    * Opens an issue.
@@ -325,7 +344,7 @@ export interface GitHubClient {
    * the conductor's `TicketStore`. Nothing decides on its own that an issue
    * should exist — Lingtai proposes, a person decides.
    */
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
+  createIssue(input: { title: string; body: string; labels: readonly string[] }): E<Issue>
 
   /**
    * Attaches `child` to `parent` as a sub-issue. Both are issue **numbers** in
@@ -335,16 +354,16 @@ export interface GitHubClient {
    * 422 and throws, and a caller that must be idempotent lists first. A child
    * with a different parent fails too — `replace_parent` is never sent.
    */
-  addSubIssue(parent: number, child: number): Promise<void>
+  addSubIssue(parent: number, child: number): E<void>
 
   /** Every sub-issue of `parent`, across all pages, or a throw — never a short list. */
-  listSubIssues(parent: number): Promise<LinkedIssue[]>
+  listSubIssues(parent: number): E<LinkedIssue[]>
 
   /** Records that `issue` is blocked by `blocker` (numbers). The same 422 rule as `addSubIssue`. */
-  addBlockedBy(issue: number, blocker: number): Promise<void>
+  addBlockedBy(issue: number, blocker: number): E<void>
 
   /** Every issue blocking `issue`, open or closed, across all pages, or a throw. */
-  listBlockedBy(issue: number): Promise<LinkedIssue[]>
+  listBlockedBy(issue: number): E<LinkedIssue[]>
 
   /**
    * The current installation token, refreshed if it is about to expire.
@@ -354,11 +373,44 @@ export interface GitHubClient {
    * an anonymous one — which fails at the first fetch, before anything else in a
    * run has a chance to.
    *
-   * A function rather than a value on purpose. An installation token lasts an
+   * An Effect rather than a value on purpose. An installation token lasts an
    * hour and a run's wall limit is two, so a snapshot taken at the start would
    * be expired by the time the integrator pushes. Callers hold *this*, and
-   * resolve it per git invocation.
+   * run it per git invocation.
    */
+  readonly token: E<string>
+}
+
+/**
+ * The promise face over `GitHub`, kept for the callers #790 has not moved. Its
+ * members are those of `GitHub` — read the contracts there — with a promise for
+ * an `Effect`, a rejection that is the `GitHubFailed` itself, and `token` a
+ * function, resolved per git invocation and never memoised.
+ */
+export interface GitHubClient {
+  readonly owner: string
+  readonly repo: string
+  readonly installation: Installation | null
+  request<T>(method: string, path: string, body?: unknown): Promise<T>
+  defaultBranch(): Promise<string>
+  fileAt(path: string, ref: string): Promise<string | null>
+  refSha(ref: string): Promise<string>
+  matchingRefs(prefix: string): Promise<readonly string[]>
+  deleteRef(ref: string): Promise<void>
+  listOpenIssues(): Promise<Issue[]>
+  listIssuesSince(since: Date): Promise<Issue[]>
+  getIssue(number: number, signal?: AbortSignal): Promise<Issue>
+  comment(issue: number, body: string): Promise<{ id: number }>
+  setLabels(issue: number, labels: readonly string[]): Promise<void>
+  addLabels(issue: number, labels: readonly string[]): Promise<void>
+  editComment(issue: number, commentId: number, body: string): Promise<void>
+  closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
+  updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
+  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
+  addSubIssue(parent: number, child: number): Promise<void>
+  listSubIssues(parent: number): Promise<LinkedIssue[]>
+  addBlockedBy(issue: number, blocker: number): Promise<void>
+  listBlockedBy(issue: number): Promise<LinkedIssue[]>
   token(): Promise<string>
 }
 
@@ -385,365 +437,384 @@ function isGh(auth: AppAuth | { kind: 'gh' }): auth is { kind: 'gh' } {
   return 'kind' in auth && auth.kind === 'gh'
 }
 
-export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
-  const { auth, owner, repo } = options
-  let installation: Installation | null = null
-  let tokenFor: (signal?: AbortSignal) => Promise<string>
-  if (isGh(auth)) {
-    // No installation: the saved login is a person's, and each call asks `gh` afresh.
-    const run = options.gh ?? liveGh
-    tokenFor = (signal) => ghToken(run, signal)
-  } else {
-    installation = options.installation ?? (await installationForRepo(auth, owner, repo, options.signal))
-    tokenFor = createTokenSource(auth, installation.id)
-  }
+/**
+ * GitHub's `color` as a CSS colour, or null.
+ *
+ * Six hex digits, no `#`, is what the REST API documents and what it has
+ * always sent. Anything else — an empty string, a name, a shorthand — is
+ * refused rather than repaired: a renderer that is handed a colour it cannot
+ * parse has to invent one, and not having a colour is a case it already
+ * handles.
+ */
+function hexColour(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null
+  const hex = raw.startsWith('#') ? raw.slice(1) : raw
+  return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null
+}
 
-  async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-    const token = await tokenFor(signal)
-    const response = await fetch(`${GITHUB_API}${path}`, {
-      method,
-      headers: {
-        accept: 'application/vnd.github+json',
-        'x-github-api-version': '2022-11-28',
-        'user-agent': 'lingtai',
-        authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    })
+/**
+ * GitHub's `issue_dependencies_summary`, or null when it did not send one.
+ *
+ * **It arrives with the issue.** The per-issue endpoints
+ * (`/issues/{n}/dependencies/blocked_by`) answer the same question one
+ * request at a time, and a pass considers every open issue — so reading them
+ * would turn one listing into one call per candidate. This field is on the
+ * object `listOpenIssues` and `getIssue` already fetch, which is why asking
+ * costs nothing, exactly as the label colour does.
+ *
+ * Refused rather than repaired when it is not two numbers: a partial summary
+ * would decide which tickets the queue passes over, and `null` is a case the
+ * caller already handles by saying so and carrying on.
+ */
+function dependenciesOf(raw: {
+  issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
+}): Dependencies | null {
+  const summary = raw.issue_dependencies_summary
+  if (!summary) return null
+  const { blocked_by: open, total_blocked_by: total } = summary
+  if (typeof open !== 'number' || typeof total !== 'number') return null
+  return { blockedBy: open, totalBlockedBy: total }
+}
 
-    if (!response.ok) {
-      const text = await response.text()
-      let message = text.slice(0, 400)
-      try {
-        message = (JSON.parse(text) as { message?: string }).message ?? message
-      } catch {
-        // Not JSON; the prefix is still the most useful thing available.
-      }
-      throw new GitHubFailed(response.status, path, message)
-    }
-    if (response.status === 204) return undefined as T
-    return (await response.json()) as T
-  }
+/**
+ * The parent named by `parent_issue_url`
+ * (`https://api.github.com/repos/o/r/issues/n`). Refused rather than
+ * repaired, as `dependenciesOf` is: anything else is null.
+ */
+function parentOf(url: string | null | undefined): Issue['parent'] {
+  const m = typeof url === 'string' ? /^https?:\/\/[^/]+\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(url) : null
+  if (!m) return null
+  const number = Number(m[2])
+  return Number.isSafeInteger(number) && number > 0 ? { repository: m[1]!, number } : null
+}
 
-  async function comment(issue: number, body: string): Promise<{ id: number }> {
-    return request<{ id: number }>('POST', `/repos/${owner}/${repo}/issues/${issue}/comments`, {
-      body,
-    })
-  }
+/** `sub_issues_summary`, or null unless both counts are numbers. */
+function subIssuesOf(summary: { total?: number; completed?: number } | null | undefined): Issue['subIssues'] {
+  if (!summary) return null
+  const { total, completed } = summary
+  if (typeof total !== 'number' || typeof completed !== 'number') return null
+  return { total, completed }
+}
 
-  async function editComment(_issue: number, commentId: number, body: string): Promise<void> {
-    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body })
-  }
-
-  async function closeIssue(issue: number, reason: 'completed' | 'not_planned' = 'completed'): Promise<void> {
-    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/${issue}`, {
-      state: 'closed',
-      state_reason: reason,
-    })
-  }
-
-  async function updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void> {
-    if (opts?.ifUnchanged !== undefined) {
-      const current = toIssue(
-        await request<Parameters<typeof toIssue>[0]>('GET', `/repos/${owner}/${repo}/issues/${issue}`),
-      )
-      if (current.body !== opts.ifUnchanged) throw new BodyChanged(issue)
-    }
-    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/${issue}`, { body })
-  }
-
-  async function setLabels(issue: number, labels: readonly string[]): Promise<void> {
-    await request<unknown>('PUT', `/repos/${owner}/${repo}/issues/${issue}/labels`, {
-      labels: [...labels],
-    })
-  }
-
-  async function addLabels(issue: number, labels: readonly string[]): Promise<void> {
-    await request<unknown>('POST', `/repos/${owner}/${repo}/issues/${issue}/labels`, {
-      labels: [...labels],
-    })
-  }
-
-  /**
-   * GitHub's `color` as a CSS colour, or null.
-   *
-   * Six hex digits, no `#`, is what the REST API documents and what it has
-   * always sent. Anything else — an empty string, a name, a shorthand — is
-   * refused rather than repaired: a renderer that is handed a colour it cannot
-   * parse has to invent one, and not having a colour is a case it already
-   * handles.
-   */
-  function hexColour(raw: string | null | undefined): string | null {
-    if (typeof raw !== 'string') return null
-    const hex = raw.startsWith('#') ? raw.slice(1) : raw
-    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null
-  }
-
-  /**
-   * GitHub's `issue_dependencies_summary`, or null when it did not send one.
-   *
-   * **It arrives with the issue.** The per-issue endpoints
-   * (`/issues/{n}/dependencies/blocked_by`) answer the same question one
-   * request at a time, and a pass considers every open issue — so reading them
-   * would turn one listing into one call per candidate. This field is on the
-   * object `listOpenIssues` and `getIssue` already fetch, which is why asking
-   * costs nothing, exactly as the label colour does.
-   *
-   * Refused rather than repaired when it is not two numbers: a partial summary
-   * would decide which tickets the queue passes over, and `null` is a case the
-   * caller already handles by saying so and carrying on.
-   */
-  function dependenciesOf(raw: {
-    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
-  }): Dependencies | null {
-    const summary = raw.issue_dependencies_summary
-    if (!summary) return null
-    const { blocked_by: open, total_blocked_by: total } = summary
-    if (typeof open !== 'number' || typeof total !== 'number') return null
-    return { blockedBy: open, totalBlockedBy: total }
-  }
-
-  /**
-   * The parent named by `parent_issue_url`
-   * (`https://api.github.com/repos/o/r/issues/n`). Refused rather than
-   * repaired, as `dependenciesOf` is: anything else is null.
-   */
-  function parentOf(url: string | null | undefined): Issue['parent'] {
-    const m = typeof url === 'string' ? /^https?:\/\/[^/]+\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(url) : null
-    if (!m) return null
-    const number = Number(m[2])
-    return Number.isSafeInteger(number) && number > 0 ? { repository: m[1]!, number } : null
-  }
-
-  /** `sub_issues_summary`, or null unless both counts are numbers. */
-  function subIssuesOf(summary: { total?: number; completed?: number } | null | undefined): Issue['subIssues'] {
-    if (!summary) return null
-    const { total, completed } = summary
-    if (typeof total !== 'number' || typeof completed !== 'number') return null
-    return { total, completed }
-  }
-
-  /** The internal id of an issue in this repository. A 404 throws: there is no such issue to link. */
-  async function idOf(number: number): Promise<number> {
-    const raw = await request<{ id: number }>('GET', `/repos/${owner}/${repo}/issues/${number}`)
-    return raw.id
-  }
-
-  /**
-   * Runs a link call, turning a 403 that is a missing permission into
-   * `PermissionDenied`. A secondary rate limit is also a 403 and is rethrown
-   * unchanged: calling it a permission would send a person to the wrong page.
-   */
-  async function asLinkCall<T>(_path: string, level: 'read' | 'write', run: () => Promise<T>): Promise<T> {
-    try {
-      return await run()
-    } catch (err) {
-      if (err instanceof GitHubFailed && err.status === 403 && !err.rateLimited) {
-        throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
-      }
-      throw err
-    }
-  }
-
-  async function listLinked(path: string): Promise<LinkedIssue[]> {
-    return asLinkCall(path, 'read', async () => {
-      const out: LinkedIssue[] = []
-      for (let page = 1; ; page++) {
-        if (page > LINK_PAGES) {
-          throw new Error(
-            `more than ${LINK_PAGES * 100} issues are linked at ${path} — the listing is incomplete, ` +
-              `so it cannot say a link is not there`,
-          )
-        }
-        // A 404 is not an empty list either: it is the issue or the repository.
-        const raw = await request<(Parameters<typeof toIssue>[0] & { id: number; repository_url?: string })[]>(
-          'GET',
-          `${path}?per_page=100&page=${page}`,
-        )
-        for (const each of raw) {
-          const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
-          out.push({ ...toIssue(each), repository, id: each.id })
-        }
-        if (raw.length < 100) break
-      }
-      return out
-    })
-  }
-
-  function toIssue(raw: {
-    number: number
-    title: string
-    body: string | null
-    labels: ({ name?: string; color?: string | null } | string)[]
-    state: string
-    state_reason?: string | null
-    html_url: string
-    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
-    assignees?: ({ login?: string } | null)[] | null
-    parent_issue_url?: string | null
-    sub_issues_summary?: { total?: number; completed?: number } | null
-  }): Issue {
-    return {
-      dependencies: dependenciesOf(raw),
-      parent: parentOf(raw.parent_issue_url),
-      subIssues: subIssuesOf(raw.sub_issues_summary),
-      // Off the listing, never `/issues/{n}/assignees`: a pass considers every
-      // open issue, and one request each would be the cost `dependenciesOf`
-      // refuses for the same reason.
-      assignees: (raw.assignees ?? []).map((a) => a?.login ?? '').filter((login) => login !== ''),
-      number: raw.number,
-      title: raw.title,
-      body: raw.body ?? '',
-      labels: raw.labels
-        .map((l) =>
-          typeof l === 'string' ? { name: l, color: null } : { name: l.name ?? '', color: hexColour(l.color) },
-        )
-        .filter((l) => l.name !== ''),
-      state: raw.state === 'closed' ? 'closed' : 'open',
-      stateReason: raw.state_reason === 'completed' || raw.state_reason === 'not_planned' ? raw.state_reason : null,
-      url: raw.html_url,
-    }
-  }
-
+function toIssue(raw: {
+  number: number
+  title: string
+  body: string | null
+  labels: ({ name?: string; color?: string | null } | string)[]
+  state: string
+  state_reason?: string | null
+  html_url: string
+  issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
+  assignees?: ({ login?: string } | null)[] | null
+  parent_issue_url?: string | null
+  sub_issues_summary?: { total?: number; completed?: number } | null
+}): Issue {
   return {
-    owner,
-    repo,
-    installation,
-    request,
-    // The same source `request` uses, handed out so git can authenticate too.
-    token: tokenFor,
-    comment,
-    editComment,
-    setLabels,
-    addLabels,
-    closeIssue,
-    updateBody,
+    dependencies: dependenciesOf(raw),
+    parent: parentOf(raw.parent_issue_url),
+    subIssues: subIssuesOf(raw.sub_issues_summary),
+    // Off the listing, never `/issues/{n}/assignees`: a pass considers every
+    // open issue, and one request each would be the cost `dependenciesOf`
+    // refuses for the same reason.
+    assignees: (raw.assignees ?? []).map((a) => a?.login ?? '').filter((login) => login !== ''),
+    number: raw.number,
+    title: raw.title,
+    body: raw.body ?? '',
+    labels: raw.labels
+      .map((l) =>
+        typeof l === 'string' ? { name: l, color: null } : { name: l.name ?? '', color: hexColour(l.color) },
+      )
+      .filter((l) => l.name !== ''),
+    state: raw.state === 'closed' ? 'closed' : 'open',
+    stateReason: raw.state_reason === 'completed' || raw.state_reason === 'not_planned' ? raw.state_reason : null,
+    url: raw.html_url,
+  }
+}
 
-    async defaultBranch() {
-      const raw = await request<{ default_branch: string }>('GET', `/repos/${owner}/${repo}`)
-      return raw.default_branch
-    },
+/**
+ * Builds the Effect-shaped client. The token cache is made here, once, inside
+ * the Effect that makes the client — a cache made per call would pass every
+ * test and ask GitHub for a token on every request.
+ *
+ * `signal` is not an option: interruption replaces it.
+ */
+export const makeGitHub = (
+  options: Omit<CreateClientOptions, 'signal'>,
+): Effect.Effect<GitHub, GitHubFailed | NotInstalledError> =>
+  Effect.gen(function* () {
+    const { auth, owner, repo } = options
+    let installation: Installation | null = null
+    let token: E<string>
+    if (isGh(auth)) {
+      // No installation: the saved login is a person's, and each call asks `gh` afresh.
+      const run = options.gh ?? liveGh
+      token = Effect.suspend(() => ghTokenEffect(run))
+    } else {
+      installation = options.installation ?? (yield* installationForRepoEffect(auth, owner, repo))
+      token = yield* installationToken(auth, installation.id)
+    }
 
-    async fileAt(path, ref) {
-      try {
-        const raw = await request<{ content?: string; encoding?: string }>(
-          'GET',
-          `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`,
-        )
-        if (!raw.content) return null
-        return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? 'base64').toString('utf8')
-      } catch (err) {
-        // A missing file is an answer, not a failure — a repository with no
-        // recipe is a repository that has not been onboarded yet.
-        if (err instanceof GitHubFailed && err.status === 404) return null
-        throw err
-      }
-    },
+    const send = <T>(method: string, path: string, body?: unknown): E<T> =>
+      Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body))
 
-    async refSha(ref) {
-      const raw = await request<{ sha: string }>('GET', `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`)
-      return raw.sha
-    },
+    const repoPath = `/repos/${owner}/${repo}`
 
-    async matchingRefs(prefix) {
-      // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
-      // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
-      // status that means *absence* — a 404 here is the repository, not the
-      // refs, and reading it as an empty list would tell a sweep there was
-      // nothing to delete on a remote it can no longer see.
-      const raw = await request<{ ref: string }[]>('GET', `/repos/${owner}/${repo}/git/matching-refs/${prefix}`)
-      return raw.map((each) => each.ref.replace(/^refs\//, ''))
-    },
+    /** The internal id of an issue in this repository. A 404 fails: there is no such issue to link. */
+    const idOf = (number: number): E<number> =>
+      Effect.map(send<{ id: number }>('GET', `${repoPath}/issues/${number}`), (raw) => raw.id)
 
-    async deleteRef(ref) {
-      await request<unknown>('DELETE', `/repos/${owner}/${repo}/git/refs/${ref}`)
-    },
+    /**
+     * Runs a link call, turning a 403 that is a missing permission into
+     * `PermissionDenied`. A secondary rate limit is also a 403 and is passed on
+     * unchanged: calling it a permission would send a person to the wrong page.
+     */
+    const asLinkCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
+      Effect.catchIf(
+        call,
+        (err) => err.status === 403 && !err.rateLimited,
+        (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
+      )
 
-    async listOpenIssues() {
-      const out: Issue[] = []
-      for (let page = 1; page <= 10; page++) {
-        const raw = await request<Parameters<typeof toIssue>[0][]>(
-          'GET',
-          `/repos/${owner}/${repo}/issues?state=open&per_page=100&page=${page}`,
-        )
-        // GitHub returns pull requests from the issues endpoint. A PR is not a
-        // work item.
-        const issues = raw.filter((r) => !('pull_request' in r))
-        out.push(...issues.map(toIssue))
-        if (raw.length < 100) break
-      }
-      return out
-    },
-
-    async createIssue(input) {
-      return toIssue(
-        await request<Parameters<typeof toIssue>[0]>('POST', `/repos/${owner}/${repo}/issues`, {
-          title: input.title,
-          body: input.body,
-          labels: [...input.labels],
+    const listLinked = (path: string): E<LinkedIssue[]> =>
+      asLinkCall(
+        'read',
+        Effect.gen(function* () {
+          const out: LinkedIssue[] = []
+          for (let page = 1; ; page++) {
+            if (page > LINK_PAGES) {
+              return yield* new GitHubFailed(
+                0,
+                path,
+                `more than ${LINK_PAGES * 100} issues are linked at ${path} — the listing is incomplete, ` +
+                  `so it cannot say a link is not there`,
+              )
+            }
+            // A 404 is not an empty list either: it is the issue or the repository.
+            const raw = yield* send<(Parameters<typeof toIssue>[0] & { id: number; repository_url?: string })[]>(
+              'GET',
+              `${path}?per_page=100&page=${page}`,
+            )
+            for (const each of raw) {
+              const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
+              out.push({ ...toIssue(each), repository, id: each.id })
+            }
+            if (raw.length < 100) break
+          }
+          return out
         }),
       )
-    },
 
-    async addSubIssue(parent, child) {
-      const path = `/repos/${owner}/${repo}/issues/${parent}/sub_issues`
-      await asLinkCall(path, 'write', async () => {
-        await request<unknown>('POST', path, { sub_issue_id: await idOf(child) })
-      })
-    },
+    const github: GitHub = {
+      owner,
+      repo,
+      installation,
+      // The same source `send` uses, handed out so git can authenticate too.
+      token,
+      request: <T>(method: string, path: string, body?: unknown) =>
+        Effect.withSpan(send<T>(method, path, body), 'github.request'),
 
-    async listSubIssues(parent) {
-      return listLinked(`/repos/${owner}/${repo}/issues/${parent}/sub_issues`)
-    },
+      comment: Effect.fn('github.comment')(function* (issue: number, body: string) {
+        return yield* send<{ id: number }>('POST', `${repoPath}/issues/${issue}/comments`, { body })
+      }),
 
-    async addBlockedBy(issue, blocker) {
-      const path = `/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`
-      await asLinkCall(path, 'write', async () => {
-        await request<unknown>('POST', path, { issue_id: await idOf(blocker) })
-      })
-    },
+      editComment: Effect.fn('github.editComment')(function* (_issue: number, commentId: number, body: string) {
+        yield* send<unknown>('PATCH', `${repoPath}/issues/comments/${commentId}`, { body })
+      }),
 
-    async listBlockedBy(issue) {
-      return listLinked(`/repos/${owner}/${repo}/issues/${issue}/dependencies/blocked_by`)
-    },
+      closeIssue: Effect.fn('github.closeIssue')(function* (
+        issue: number,
+        reason: 'completed' | 'not_planned' = 'completed',
+      ) {
+        yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { state: 'closed', state_reason: reason })
+      }),
 
-    async listIssuesSince(since) {
-      const out: Issue[] = []
-      for (let page = 1; ; page++) {
-        if (page > LIST_SINCE_PAGES) {
-          throw new Error(
-            `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
-              `the listing is incomplete, so it cannot say an issue is not there`,
-          )
+      updateBody: Effect.fn('github.updateBody')(function* (
+        issue: number,
+        body: string,
+        opts?: { ifUnchanged?: string },
+      ) {
+        if (opts?.ifUnchanged !== undefined) {
+          const current = toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${issue}`))
+          if (current.body !== opts.ifUnchanged) return yield* new BodyChanged(issue)
         }
-        // `since` filters on `updated_at`, which every issue created since also
-        // passes; the order is by creation, so the window ends at the first
-        // issue older than it.
-        const raw = await request<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
-          'GET',
-          `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
-            `&sort=created&direction=desc&per_page=100&page=${page}`,
-        )
-        const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime())
-        out.push(...inWindow.filter((r) => !('pull_request' in r)).map(toIssue))
-        if (raw.length < 100 || inWindow.length < raw.length) break
-      }
-      return out.reverse()
-    },
+        yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { body })
+      }),
 
-    async getIssue(number, signal) {
-      return toIssue(
-        await request<Parameters<typeof toIssue>[0]>(
+      setLabels: Effect.fn('github.setLabels')(function* (issue: number, labels: readonly string[]) {
+        yield* send<unknown>('PUT', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
+      }),
+
+      addLabels: Effect.fn('github.addLabels')(function* (issue: number, labels: readonly string[]) {
+        yield* send<unknown>('POST', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
+      }),
+
+      defaultBranch: Effect.fn('github.defaultBranch')(function* () {
+        const raw = yield* send<{ default_branch: string }>('GET', repoPath)
+        return raw.default_branch
+      }),
+
+      fileAt: Effect.fn('github.fileAt')(function* (path: string, ref: string) {
+        // A missing file is an answer, not a failure — a repository with no
+        // recipe is a repository that has not been onboarded yet.
+        const raw = yield* send<{ content?: string; encoding?: string }>(
           'GET',
-          `/repos/${owner}/${repo}/issues/${number}`,
-          undefined,
-          signal,
-        ),
-      )
-    },
-  }
+          `${repoPath}/contents/${path}?ref=${encodeURIComponent(ref)}`,
+        ).pipe(
+          Effect.catchIf(
+            (err) => err.status === 404,
+            () => Effect.succeed(null),
+          ),
+        )
+        if (raw === null || !raw.content) return null
+        return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? 'base64').toString('utf8')
+      }),
+
+      refSha: Effect.fn('github.refSha')(function* (ref: string) {
+        const raw = yield* send<{ sha: string }>('GET', `${repoPath}/commits/${encodeURIComponent(ref)}`)
+        return raw.sha
+      }),
+
+      matchingRefs: Effect.fn('github.matchingRefs')(function* (prefix: string) {
+        // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
+        // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
+        // status that means *absence* — a 404 here is the repository, not the
+        // refs, and reading it as an empty list would tell a sweep there was
+        // nothing to delete on a remote it can no longer see.
+        const raw = yield* send<{ ref: string }[]>('GET', `${repoPath}/git/matching-refs/${prefix}`)
+        return raw.map((each) => each.ref.replace(/^refs\//, ''))
+      }),
+
+      deleteRef: Effect.fn('github.deleteRef')(function* (ref: string) {
+        yield* send<unknown>('DELETE', `${repoPath}/git/refs/${ref}`)
+      }),
+
+      listOpenIssues: Effect.fn('github.listOpenIssues')(function* () {
+        const out: Issue[] = []
+        for (let page = 1; page <= 10; page++) {
+          const raw = yield* send<Parameters<typeof toIssue>[0][]>(
+            'GET',
+            `${repoPath}/issues?state=open&per_page=100&page=${page}`,
+          )
+          // GitHub returns pull requests from the issues endpoint. A PR is not a
+          // work item.
+          const issues = raw.filter((r) => !('pull_request' in r))
+          out.push(...issues.map(toIssue))
+          if (raw.length < 100) break
+        }
+        return out
+      }),
+
+      createIssue: Effect.fn('github.createIssue')(function* (input: {
+        title: string
+        body: string
+        labels: readonly string[]
+      }) {
+        return toIssue(
+          yield* send<Parameters<typeof toIssue>[0]>('POST', `${repoPath}/issues`, {
+            title: input.title,
+            body: input.body,
+            labels: [...input.labels],
+          }),
+        )
+      }),
+
+      addSubIssue: Effect.fn('github.addSubIssue')(function* (parent: number, child: number) {
+        const path = `${repoPath}/issues/${parent}/sub_issues`
+        yield* asLinkCall(
+          'write',
+          Effect.gen(function* () {
+            yield* send<unknown>('POST', path, { sub_issue_id: yield* idOf(child) })
+          }),
+        )
+      }),
+
+      listSubIssues: Effect.fn('github.listSubIssues')(function* (parent: number) {
+        return yield* listLinked(`${repoPath}/issues/${parent}/sub_issues`)
+      }),
+
+      addBlockedBy: Effect.fn('github.addBlockedBy')(function* (issue: number, blocker: number) {
+        const path = `${repoPath}/issues/${issue}/dependencies/blocked_by`
+        yield* asLinkCall(
+          'write',
+          Effect.gen(function* () {
+            yield* send<unknown>('POST', path, { issue_id: yield* idOf(blocker) })
+          }),
+        )
+      }),
+
+      listBlockedBy: Effect.fn('github.listBlockedBy')(function* (issue: number) {
+        return yield* listLinked(`${repoPath}/issues/${issue}/dependencies/blocked_by`)
+      }),
+
+      listIssuesSince: Effect.fn('github.listIssuesSince')(function* (since: Date) {
+        const out: Issue[] = []
+        for (let page = 1; ; page++) {
+          if (page > LIST_SINCE_PAGES) {
+            return yield* new GitHubFailed(
+              0,
+              `${repoPath}/issues`,
+              `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
+                `the listing is incomplete, so it cannot say an issue is not there`,
+            )
+          }
+          // `since` filters on `updated_at`, which every issue created since also
+          // passes; the order is by creation, so the window ends at the first
+          // issue older than it.
+          const raw = yield* send<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
+            'GET',
+            `${repoPath}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
+              `&sort=created&direction=desc&per_page=100&page=${page}`,
+          )
+          const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime())
+          out.push(...inWindow.filter((r) => !('pull_request' in r)).map(toIssue))
+          if (raw.length < 100 || inWindow.length < raw.length) break
+        }
+        return out.reverse()
+      }),
+
+      getIssue: Effect.fn('github.getIssue')(function* (number: number) {
+        return toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${number}`))
+      }),
+    }
+    return github
+  })
+
+/** The promise object over a `GitHub`: every member an arrow into the one face. */
+const makeGitHubClient = (
+  options: CreateClientOptions,
+): Effect.Effect<GitHubClient, GitHubFailed | NotInstalledError> =>
+  Effect.map(makeGitHub(options), (github): GitHubClient => ({
+    owner: github.owner,
+    repo: github.repo,
+    installation: github.installation,
+    request: <T>(method: string, path: string, body?: unknown) => runGitHub(github.request<T>(method, path, body)),
+    // A fresh run per call, never a memoised promise: an installation token
+    // lasts an hour and git resolves this per invocation.
+    token: () => runGitHub(github.token),
+    defaultBranch: () => runGitHub(github.defaultBranch()),
+    fileAt: (path, ref) => runGitHub(github.fileAt(path, ref)),
+    refSha: (ref) => runGitHub(github.refSha(ref)),
+    matchingRefs: (prefix) => runGitHub(github.matchingRefs(prefix)),
+    deleteRef: (ref) => runGitHub(github.deleteRef(ref)),
+    listOpenIssues: () => runGitHub(github.listOpenIssues()),
+    listIssuesSince: (since) => runGitHub(github.listIssuesSince(since)),
+    getIssue: (number, signal) => runGitHub(github.getIssue(number), signal),
+    comment: (issue, body) => runGitHub(github.comment(issue, body)),
+    setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
+    addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
+    editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
+    closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
+    updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),
+    createIssue: (input) => runGitHub(github.createIssue(input)),
+    addSubIssue: (parent, child) => runGitHub(github.addSubIssue(parent, child)),
+    listSubIssues: (parent) => runGitHub(github.listSubIssues(parent)),
+    addBlockedBy: (issue, blocker) => runGitHub(github.addBlockedBy(issue, blocker)),
+    listBlockedBy: (issue) => runGitHub(github.listBlockedBy(issue)),
+  }))
+
+/** `options.signal` stops the installation lookup; later requests take their own. */
+export function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
+  return runGitHub(makeGitHubClient(options), options.signal)
 }
 
 /**

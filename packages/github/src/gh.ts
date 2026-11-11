@@ -107,10 +107,6 @@ export const ghTokenEffect = Effect.fn('github.ghToken')(function* (run: GhRun =
   return token
 })
 
-export function ghToken(run: GhRun = liveGh, signal?: AbortSignal): Promise<string> {
-  return Effect.runPromise(ghTokenEffect(run), { signal })
-}
-
 export type GhStatus =
   | { ok: true; login: string; scopes: string[] }
   | { ok: false; reason: 'missing' | 'signed-out' | 'no-account' | 'too-old' | 'unparsed'; detail: string }
