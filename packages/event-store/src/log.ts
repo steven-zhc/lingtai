@@ -64,6 +64,8 @@ export interface Log {
 export interface PostgresLogOptions {
   /** The store. Passed in so that building a log constructs no second client. */
   store: EventStore
+  /** The questions, when the caller built them already; defaults to a fresh set over `url`. */
+  queries?: LogQueries
   /** Pooled connection for the questions. Defaults to `postgresUrl()`. */
   url?: string
   /**
@@ -76,7 +78,7 @@ export interface PostgresLogOptions {
 }
 
 export function createPostgresLog(options: PostgresLogOptions): Log {
-  const queries = createPostgresLogQueries(options.url === undefined ? {} : { url: options.url })
+  const queries = options.queries ?? createPostgresLogQueries(options.url === undefined ? {} : { url: options.url })
   return {
     store: options.store,
     queries,

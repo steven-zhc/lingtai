@@ -38,7 +38,7 @@ import { Context, Effect } from 'effect'
 // this machine wrote down.
 import type { Db } from './db.ts'
 import type { CodecTypes } from './prisma/contract.d.ts'
-import type { LogQueries } from './queries.ts'
+import type { QueriesPort } from './queries.ts'
 import { promiseStore } from './store-face.ts'
 import { parseTimestamptz } from './timestamptz.ts'
 
@@ -296,10 +296,13 @@ export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
  * check, daemon start wants a result arm, rebuild wants an exit code
  * — none of the three wants a `try`/`catch` of their own for this.
  */
-export async function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
-  const counts = await queries.typeCounts()
-  const unknown = counts.find((c) => !isEventType(c.type))
-  return unknown ? new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows }) : null
+export function logPredatesHoldEffect(
+  queries: Pick<QueriesPort, 'typeCounts'>,
+): Effect.Effect<LogPredatesHoldError | null> {
+  return Effect.map(queries.typeCounts(), (counts) => {
+    const unknown = counts.find((c) => !isEventType(c.type))
+    return unknown ? new LogPredatesHoldError(0n, { name: unknown.type, rows: unknown.rows }) : null
+  })
 }
 
 /**
