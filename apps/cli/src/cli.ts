@@ -1113,6 +1113,35 @@ const resume = Command.make('resume', { project: optionalProject, noColor }, (ar
   }),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 
+const ceilingRaiseCommand = Command.make(
+  'raise',
+  { usd: Argument.String('usd').pipe(Argument.optional), noColor },
+  (args) =>
+    daemonHandler(args, async () => {
+      const { ceilingRaise, parseUsd } = await import('./ceiling-raise.ts')
+      const toUsd = parseUsd(given(args.usd))
+      if (toUsd === undefined) {
+        console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
+        return 2
+      }
+      const { runEffect } = await import('./project-pause.ts')
+      return runEffect(
+        ceilingRaise({
+          toUsd,
+          by: `human:${process.env['USER'] ?? 'operator'}`,
+          log: (line) => console.log(line),
+        }),
+      )
+    }),
+)
+
+const ceilingCommand = Command.make('ceiling', {}, () =>
+  Effect.sync(() => {
+    console.error(commandHelp('ceiling'))
+    handlerCode = 2
+  }),
+).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
+
 const shutdown = Command.make(
   'shutdown',
   {
@@ -1279,6 +1308,7 @@ export const root = Command.make('lingtai').pipe(
     shutdown,
     pause,
     resume,
+    ceilingCommand,
   ]),
 )
 

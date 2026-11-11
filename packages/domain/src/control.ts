@@ -140,6 +140,23 @@ export interface ControlState {
    * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6).
    */
   discussions: DiscussionRequest[]
+  /**
+   * The day's ceiling as a lock of its own (0126 §2). `reached` stands from a
+   * `DayCeilingReached` until a `DayCeilingLifted`; `raised` is the figure a
+   * person raised a day to. Whether either is from today is the caller's
+   * question: the reducer reads no clock.
+   */
+  dayCeiling: {
+    reached: {
+      day: string
+      reportedUsd: number
+      estimatedUsd: number
+      ceilingUsd: number
+      at: Date
+      seq: number
+    } | null
+    raised: { day: string; toUsd: number; by: string; at: Date } | null
+  }
 }
 
 /** One question, as `DiscussionRequested` recorded it. */
@@ -164,6 +181,7 @@ export const emptyControl: ControlState = {
   requested: [],
   continuing: [],
   discussions: [],
+  dayCeiling: { reached: null, raised: null },
 }
 
 /**
@@ -255,6 +273,35 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
         cause: null,
         ceilingWaivedUntil: waived,
       }
+    }
+    case 'DayCeilingReached': {
+      const { day, reportedUsd, estimatedUsd, ceilingUsd } = d
+      // An unparseable one is the same answer as none.
+      if (
+        typeof day !== 'string' ||
+        typeof reportedUsd !== 'number' ||
+        typeof estimatedUsd !== 'number' ||
+        typeof ceilingUsd !== 'number'
+      ) {
+        return state
+      }
+      return {
+        ...state,
+        dayCeiling: {
+          ...state.dayCeiling,
+          reached: { day, reportedUsd, estimatedUsd, ceilingUsd, at: e.at, seq: Number(e.seq) },
+        },
+      }
+    }
+    case 'DayCeilingLifted': {
+      const raised =
+        d['why'] === 'person' &&
+        typeof d['day'] === 'string' &&
+        typeof d['toUsd'] === 'number' &&
+        typeof d['by'] === 'string'
+          ? { day: d['day'], toUsd: d['toUsd'], by: d['by'], at: e.at }
+          : state.dayCeiling.raised
+      return { ...state, dayCeiling: { reached: null, raised } }
     }
     case 'RunRequested':
       return {
@@ -362,7 +409,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 4,
+  version: 5,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

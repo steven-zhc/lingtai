@@ -133,6 +133,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
       "return { type: 'ProjectRecovered', actor: 'conductor', data: { project, ref: seen.ref, codeSha: seen.codeSha } }",
   },
   {
+    event: 'DayCeilingReached',
+    why: 'returned from a function; the caller appends it (the guard, in the next ticket)',
+    file: 'packages/domain/src/ceiling-lock.ts',
+    anchor: "type: 'DayCeilingReached',",
+  },
+  {
     event: 'ProjectPaused',
     why: 'returned from a function; the caller appends it',
     file: 'packages/domain/src/locks.ts',
@@ -276,6 +282,8 @@ export const STREAMS = {
   ProposalRouted: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
+  DayCeilingReached: ['ctl-'],
+  DayCeilingLifted: ['ctl-'],
   ConductorShutdownRequested: ['ctl-'],
   ConductorStarted: ['ctl-'],
   ConductorShutdownWithdrawn: ['ctl-'],

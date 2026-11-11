@@ -1416,6 +1416,8 @@ const late_everyControlEvent = stamp(
       // Moved here for version 4 (#999): a resume after a request leaves it standing. Moved rather
       // than added, because an added event shifts the `seq` every later fixture is stamped with.
       c('ConductorResumed', { by: 'steven' }),
+      c('DayCeilingReached', { day: '2026-08-03', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }),
+      c('DayCeilingLifted', { day: '2026-08-03', why: 'person', by: 'steven', toUsd: 40 }),
       c('RunRequested', { project: PROJECT, issue: '9002', by: 'steven' }),
       c('ContinueRequested', { project: PROJECT, issue: '9002', runId: attemptStream('fixture'), by: 'steven' }),
       c('DiscussionRequested', {

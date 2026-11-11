@@ -45,6 +45,7 @@ const EMPTY_CONTROL: ControlState = {
   requested: [],
   continuing: [],
   discussions: [],
+  dayCeiling: { reached: null, raised: null },
 }
 
 const LOCAL_PROJECT: ProjectState = {
