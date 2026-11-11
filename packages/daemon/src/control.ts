@@ -6,6 +6,8 @@ import {
   type ControlState,
   controlReducer,
   pauseTransition,
+  raiseTransition,
+  type RaiseRefusal,
   projectStream,
   type ProjectState,
   reduceProject,
@@ -185,6 +187,45 @@ export async function pauseConductor(
 
 export async function resumeConductor(by: string, store: EventStore = eventStore, at?: number): Promise<void> {
   await append('ConductorResumed', { by }, store, at)
+}
+
+/** What `raiseDayCeiling` did: the version the lift landed at, or the refusal, by name. */
+export type Raising = { raised: true; version: number } | { raised: false; refused: RaiseRefusal }
+
+/**
+ * A person raises today's ceiling (0126 §7).
+ *
+ * Reads the head, then the state, asks `raiseTransition`, and appends at the
+ * head it read; on a concurrency error it re-reads once and asks again. It is
+ * handed `spentCents` rather than reading spend: the spend read and its trust
+ * checks are the CLI's. A refusal is a value, not a failure.
+ */
+export const raiseDayCeiling = (input: {
+  toUsd: number
+  by: string
+  spentCents: number
+  store?: EventStore
+  now?: Date
+}): Effect.Effect<Raising, unknown> => {
+  const store = input.store ?? eventStore
+  const attempt = Effect.gen(function* () {
+    const at = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: (e) => e })
+    const state = yield* Effect.tryPromise({
+      try: () => readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }),
+      catch: (e) => e,
+    })
+    const verdict = raiseTransition({
+      state,
+      now: input.now ?? new Date(),
+      toUsd: input.toUsd,
+      by: input.by,
+      spentCents: input.spentCents,
+    })
+    if (!verdict.ok) return { raised: false, refused: verdict.refused } as Raising
+    yield* Effect.tryPromise({ try: () => store.append(CONTROL_STREAM, at, [verdict.event]), catch: (e) => e })
+    return { raised: true, version: at + 1 } as Raising
+  })
+  return attempt.pipe(Effect.catch((err: unknown) => (err instanceof ConcurrencyError ? attempt : Effect.fail(err))))
 }
 
 /**

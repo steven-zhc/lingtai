@@ -228,6 +228,11 @@ const SAMPLES = {
   ],
   ConductorPaused: [{ by: 'human:steven', reason: 'maintenance', until: null, holdsAcrossStarts: false }],
   ConductorResumed: [{ by: 'human:steven' }],
+  DayCeilingReached: [{ day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }],
+  DayCeilingLifted: [
+    { day: '2026-11-11', why: 'new-day' },
+    { day: '2026-11-11', why: 'person', by: 'human:steven', toUsd: 40 },
+  ],
   ConductorShutdownRequested: [{ by: 'human:steven', reason: 'picking up #88', timeoutMs: null, force: false }],
   ConductorStarted: [
     { by: 'daemon', reason: null, sha: SHA, dirty: false, worker: 'h:1', handoff: null },

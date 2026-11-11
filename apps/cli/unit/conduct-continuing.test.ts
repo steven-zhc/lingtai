@@ -66,6 +66,7 @@ function controlWith(continuing: ControlState['continuing']): ControlState {
     requested: [],
     continuing,
     discussions: [],
+    dayCeiling: { reached: null, raised: null },
   }
 }
 

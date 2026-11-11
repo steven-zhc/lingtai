@@ -458,6 +458,20 @@ export const COMMANDS = [
     examples: ['lingtai resume lingtai', 'lingtai resume'],
   }),
   define({
+    name: 'ceiling',
+    group: 'daemon',
+    task: "raise today's spending ceiling once it has been reached",
+    effect: 'changes',
+    usage: [
+      'lingtai ceiling raise <usd>',
+      "  Raises today's ceiling to <usd> dollars, a figure above both what has been",
+      '  spent and the ceiling that was reached. Lasts until midnight; the',
+      '  configuration (limits.day_usd) is not changed. Refused while the ceiling',
+      "  has not been reached, or while today's spend cannot be read.",
+    ],
+    examples: ['lingtai ceiling raise 40'],
+  }),
+  define({
     name: 'init',
     group: 'install and upkeep',
     task: 'a bare machine to the board, on the wizard',

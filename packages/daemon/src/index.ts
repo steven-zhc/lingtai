@@ -64,6 +64,8 @@ export {
   requestShutdownUnlessStanding,
   type Asking,
   resumeConductor,
+  raiseDayCeiling,
+  type Raising,
   startBeacon,
   type Beacon,
   type BeaconOptions,

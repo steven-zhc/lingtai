@@ -477,6 +477,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     (d['reason'] ? `: ${clip(d['reason'])}` : ''),
   ConductorPaused: (d) => `${need(d, 'by')}: ${clip(d['reason'])}`,
   ConductorResumed: (d) => need(d, 'by'),
+  DayCeilingReached: (d) => `${need(d, 'day')}: reached $${need(d, 'ceilingUsd')}`,
+  DayCeilingLifted: (d) =>
+    d['why'] === 'person'
+      ? `${need(d, 'by')} raised ${need(d, 'day')} to $${need(d, 'toUsd')}`
+      : `${need(d, 'day')}: ${need(d, 'why')}`,
   // The timeout is on the row because it is the whole difference between a
   // drain that waits for the pass and one that walks away from it (0030 §6).
   ConductorShutdownRequested: (d) =>

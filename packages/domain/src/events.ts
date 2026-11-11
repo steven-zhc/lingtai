@@ -1573,6 +1573,22 @@ export const ConductorPaused = z.object({
 /** @summary The conductor was resumed, by a person or by itself when the daily spending limit was lifted. */
 export const ConductorResumed = z.object({ by: z.string() })
 
+/** @summary Today's spend reached the daily ceiling; no new work starts until it is lifted. */
+export const DayCeilingReached = z.object({
+  /** The local calendar day, YYYY-MM-DD. */
+  day: z.string(),
+  reportedUsd: z.number(),
+  estimatedUsd: z.number(),
+  /** The figure that was reached: the configured one, or today's raised one. */
+  ceilingUsd: z.number(),
+})
+
+/** @summary The daily ceiling was lifted: a new day, the configuration, or a person raising today's figure. */
+export const DayCeilingLifted = z.union([
+  z.object({ day: z.string(), why: z.enum(['new-day', 'config-raised', 'config-removed']) }),
+  z.object({ day: z.string(), why: z.literal('person'), by: z.string(), toUsd: z.number().positive() }),
+])
+
 /**
  * Stop, once the pass in flight has finished.
  *
@@ -2464,6 +2480,8 @@ export const EVENTS = {
   ProposalRouted,
   ConductorPaused,
   ConductorResumed,
+  DayCeilingReached,
+  DayCeilingLifted,
   ConductorShutdownRequested,
   ConductorStarted,
   ConductorShutdownWithdrawn,
@@ -2564,6 +2582,8 @@ export const EVENT_AT = {
   ProposalRouted: ['review', 'proposed', 'end'],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
+  DayCeilingReached: ['outside'],
+  DayCeilingLifted: ['outside'],
   ConductorShutdownRequested: ['outside'],
   ConductorStarted: ['outside'],
   ConductorShutdownWithdrawn: [],
