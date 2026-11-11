@@ -64,7 +64,7 @@ import { Data, Effect, type Layer } from 'effect'
 
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
 import { stillOwed } from './continuing.ts'
-import { dayCeilingStop, type DayCeilingPorts } from './day-ceiling.ts'
+import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
@@ -149,10 +149,9 @@ class Paused extends Data.TaggedError('Paused')<{
  * asks `stillPaused` before each ticket after this — the ticket in hand
  * finishes, and the next is not taken.
  */
-const heedThePause = (store: EventStore | undefined, ceiling?: DayCeilingPorts) =>
+const heedThePause = (store: EventStore | undefined) =>
   Effect.tryPromise({
-    // The ceiling first: a raised figure lifts its own pause before it is read.
-    try: async () => (await dayCeilingStop(store, ceiling), readControl(store)),
+    try: () => readControl(store),
     // Not "not paused": a pause that could not be read is not consent.
     catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
   }).pipe(
@@ -167,12 +166,15 @@ const heedThePause = (store: EventStore | undefined, ceiling?: DayCeilingPorts) 
 class ProjectLocked extends Data.TaggedError('ProjectLocked')<{ readonly sentence: string }> {}
 
 /** This project's lock, from the guard: the one callback the daemon's gates are handed too. */
-const lockedFor = (store: EventStore | undefined) => lockedBy(makeGuard({ store: store ?? eventStore }))
+const lockedFor = (store: EventStore | undefined, ceiling?: DayCeilingPorts) =>
+  lockedBy(makeGuard({ store: store ?? eventStore, ceiling: ceilingPort(store, ceiling) }))
 
 /**
- * The lock on this project, before the conductor lock is taken. A person's pause
- * exits 0 like the conductor's; a read that failed is a refusal, because
- * unknown is not *unpaused*.
+ * The lock on this project, asked **after** the conductor lock is taken: the
+ * guard appends the ceiling's transitions and writes only in the lock holder
+ * (0126 §4). A person's pause exits 0 like the conductor's; a read that failed
+ * — a pause, or a spend that cannot be trusted — is a refusal, because unknown
+ * is not *unlocked*.
  */
 const heedTheLock = (
   locked: (project: string) => Promise<string | null>,
@@ -194,17 +196,14 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  * The same rule as above, too: a pause that could not be read is not consent,
  * so it stops the pass rather than taking the next ticket unasked.
  */
-const pausedSentence = async (store: EventStore | undefined, ceiling?: DayCeilingPorts): Promise<string | null> => {
-  // The daily ceiling first, so its own pause lifts when the figure was raised.
-  const stop = await dayCeilingStop(store, ceiling)
+const pausedSentence = async (store: EventStore | undefined): Promise<string | null> => {
   const control = await readControl(store)
-  if (control.paused) return `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}`
-  return stop
+  return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null
 }
 
-const stillPaused = (store: EventStore | undefined, ceiling?: DayCeilingPorts) => async (): Promise<string | null> => {
+const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
   try {
-    return await pausedSentence(store, ceiling)
+    return await pausedSentence(store)
   } catch (err) {
     return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
@@ -334,7 +333,7 @@ export async function run(
   world: RunWorld = liveRunWorld(options, log),
 ): Promise<number> {
   await startTracing()
-  const locked = lockedFor(options.store)
+  const locked = lockedFor(options.store, options.dayCeiling)
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -352,6 +351,9 @@ export async function run(
      * projector — which creates tables and replays to the head — cannot.
      */
     yield* ConductorLock
+    // The first the guard is asked: it appends the ceiling's transitions, and
+    // only the lock's holder may (0126 §4).
+    yield* heedTheLock(locked, options.project)
     startRates()
 
     const project = yield* Effect.tryPromise({
@@ -569,12 +571,9 @@ export async function run(
             // A pause that cannot be read is a refusal here, not a stop: the approval
             // is still owed and a clean exit would say nothing was wrong.
             const sentence = yield* Effect.tryPromise({
-              try: () => pausedSentence(options.store, options.dayCeiling),
+              try: () => pausedSentence(options.store),
               catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
             })
-            // `pausedSentence` answers a failed read as a sentence too (the ceiling's
-            // own check catches it): the approval is still owed, so that refuses.
-            if (sentence !== null && sentence.startsWith('could not ')) return yield* Effect.fail(refuse(sentence))
             if (sentence !== null) {
               log(sentence)
               return { ran, stopped: sentence }
@@ -624,7 +623,7 @@ export async function run(
                 // an exclusion, must not need a projection rebuild.
                 recipe: resolved.recipe,
                 ...(left === undefined ? {} : { max: left }),
-                paused: stillPaused(options.store, options.dayCeiling),
+                paused: stillPaused(options.store),
                 locked,
               })
         // An approval made while the queue ran is the next conductor's unless the
@@ -656,14 +655,6 @@ export async function run(
       }
 
       // ---- one nominated issue -----------------------------------------------
-      // The daily ceiling is asked before this claim as `runQueue` asks it
-      // before each one: a nomination is not a waiver of it.
-      const stop = yield* Effect.promise(() => dayCeilingStop(options.store, options.dayCeiling))
-      if (stop !== null) {
-        log(stop)
-        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
-        return 0
-      }
       // Approved and owed a continuation: continue that run rather than start one.
       let continuing: { runId: string } | undefined
       for (const row of (yield* owedRows).filter(
@@ -715,8 +706,7 @@ export async function run(
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
   const code = await Effect.runPromise(
-    heedThePause(options.store, options.dayCeiling).pipe(
-      Effect.andThen(heedTheLock(locked, options.project)),
+    heedThePause(options.store).pipe(
       Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this

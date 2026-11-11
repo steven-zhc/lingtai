@@ -150,14 +150,12 @@ export {
 } from './edit-body.ts'
 export {
   ceilingReached,
-  dayCeilingPause,
   dayFigure,
   daySpend,
   fetchedNote,
   daySpendText,
   nextLocalMidnight,
   startOfLocalDay,
-  type DayCeilingOptions,
   type DayRow,
   type DaySpend,
 } from './day-ceiling.ts'

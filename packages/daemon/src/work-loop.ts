@@ -98,14 +98,14 @@ import type { DaemonStore } from './store.ts'
  * resume that lifts what held one back. One list, read by the loop's delivery
  * and by the handler's own guard, so the next unlock event is added once.
  */
-export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed'] as const
+export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed', 'DayCeilingLifted'] as const
 
 /**
  * The events triage is handed (#997): a new wait, and a resume that lifts what
  * held one back. One list, read by the loop's delivery and by the handler's own
  * guard, so the next unlock event is added once.
  */
-export const TRIAGE_EVENTS = ['WaitStarted', 'ProjectResumed'] as const
+export const TRIAGE_EVENTS = ['WaitStarted', 'ProjectResumed', 'DayCeilingLifted'] as const
 
 /**
  * The events that mean the conductor is free to look again.
@@ -128,6 +128,10 @@ export const COMPLETION_EVENTS = [
   'ProjectResumed',
   // A person's lift of a runtime's usage limit, for the same reason (0126 §4).
   'AccountLimitLifted',
+  // The day's ceiling lifted — by a person's raise or by the guard (a new day,
+  // a raised or removed figure): what it held back is served now (0126 §4).
+  // `DayCeilingReached` is not here: it stops work.
+  'DayCeilingLifted',
   'RunRequested',
   'ContinueRequested',
   // And a shutdown, most of all. An idle daemon appends nothing, so without

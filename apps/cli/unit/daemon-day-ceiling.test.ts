@@ -2,40 +2,19 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { pausedSentence } from '../src/day-ceiling.ts'
-
 // Both `paused` callbacks live inline in the daemon's closure, where no port can
-// be handed in, so the claim that each asks the daily ceiling is held on the
-// source: both go through `pausedSentence`, which asks the ceiling first (#637).
+// be handed in, so the claims are held on the source (#637, #1004).
 const source = readFileSync(new URL('../src/daemon.ts', import.meta.url), 'utf8')
 
-describe('the daemon asks the daily ceiling', () => {
-  it('in both paused callbacks, through the one composed hook that asks the ceiling', () => {
+describe('the daemon and the daily ceiling', () => {
+  it('has the one composed hook in both paused callbacks, which reads the control stream alone', () => {
     expect(source.match(/\bpaused: claiming,/g)).toHaveLength(2)
-    expect(source.match(/\bpausedSentence\(/g)).toHaveLength(1)
+    expect(source.match(/\bpausedSentence\(/g)).toHaveLength(2) // the call and the definition
+    expect(source).not.toContain('dayCeilingStop')
   })
 
-  it('and surfaces the ceiling sentence rather than a bare true', async () => {
-    const sentence = 'could not check the daily ceiling: the spend projection is 3 behind — taking no work'
-    expect(await pausedSentence({ ceiling: async () => sentence, control: async () => ({ paused: false }) })).toBe(
-      sentence,
-    )
-  })
-
-  it('names the control pause ahead of the ceiling, and refuses where it cannot read', async () => {
-    expect(
-      await pausedSentence({
-        ceiling: async () => null,
-        control: async () => ({ paused: true, by: 'sam', reason: 'lunch' }),
-      }),
-    ).toBe('paused by sam — lunch')
-    expect(
-      await pausedSentence({
-        ceiling: async () => null,
-        control: async () => {
-          throw new Error('down')
-        },
-      }),
-    ).toMatch(/could not read whether the conductor is paused: down/)
+  it('asks the ceiling through its one guard, built with a ceiling port', () => {
+    expect(source).toMatch(/makeGuard\(\{ store: eventStore, ceiling: ceilingPort\(undefined, \{\}\) \}\)/)
+    expect(source.match(/\bmakeGuard\(/g)).toHaveLength(1)
   })
 })

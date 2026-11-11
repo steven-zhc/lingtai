@@ -25,7 +25,7 @@ async function configured() {
 describe('the guard', () => {
   it('reads fresh each time: none, a paused lock, then none', async () => {
     const store = await configured()
-    const guard = makeGuard({ store })
+    const guard = makeGuard({ store, ceiling: 'not-the-holder' })
     expect(await Effect.runPromise(guard.locksFor('lingtai'))).toEqual([])
 
     await Effect.runPromise(pauseProject('lingtai', 'human:a', store))
@@ -38,13 +38,13 @@ describe('the guard', () => {
 
   it('lockedBy answers a sentence for a lock, null for none, and a sentence for a failed read', async () => {
     const store = await configured()
-    const locked = lockedBy(makeGuard({ store }))
+    const locked = lockedBy(makeGuard({ store, ceiling: 'not-the-holder' }))
     expect(await locked('lingtai')).toBeNull()
     await Effect.runPromise(pauseProject('lingtai', 'human:a', store))
     expect(await locked('lingtai')).toMatch(/^lingtai is paused by human:a since /)
 
     const broken = { ...store, read: async () => Promise.reject(new Error('db down')) } as EventStore
-    expect(await lockedBy(makeGuard({ store: broken }))('lingtai')).toBe(
+    expect(await lockedBy(makeGuard({ store: broken, ceiling: 'not-the-holder' }))('lingtai')).toBe(
       'could not read whether lingtai is paused — db down',
     )
   })

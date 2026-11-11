@@ -13,12 +13,14 @@ import { COMPLETION_EVENTS, createWorkLoop, DISCUSSION_EVENTS, TRIAGE_EVENTS } f
 
 describe('what discuss is handed', () => {
   it('names a request and a resume, and no landing', () => {
-    expect([...DISCUSSION_EVENTS]).toEqual(['DiscussionRequested', 'ProjectResumed'])
+    expect([...DISCUSSION_EVENTS]).toEqual(['DiscussionRequested', 'ProjectResumed', 'DayCeilingLifted'])
     expect(DISCUSSION_EVENTS as readonly string[]).not.toContain('TicketLanded')
   })
 
   it('every unlock that wakes a pass is either delivered to discuss or known not to be', () => {
     expect(COMPLETION_EVENTS as readonly string[]).toContain('ProjectResumed')
+    expect(COMPLETION_EVENTS as readonly string[]).toContain('DayCeilingLifted')
+    expect(COMPLETION_EVENTS as readonly string[]).not.toContain('DayCeilingReached')
   })
 })
 
@@ -52,7 +54,7 @@ describe('the loop delivers to discuss', () => {
 
 describe('the loop delivers to triage', () => {
   it('names a new wait and a resume', () => {
-    expect([...TRIAGE_EVENTS]).toEqual(['WaitStarted', 'ProjectResumed'])
+    expect([...TRIAGE_EVENTS]).toEqual(['WaitStarted', 'ProjectResumed', 'DayCeilingLifted'])
   })
 
   it('hands a ProjectResumed to triage, and not a pause', async () => {

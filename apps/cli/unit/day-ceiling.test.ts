@@ -1,9 +1,11 @@
+import { makeGuard } from '@lingtai/daemon'
 import { CONTROL_STREAM } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { ProjectionLag } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { dayCeilingStop, spendStall } from '../src/day-ceiling.ts'
+import { ceilingPort, type DayCeilingPorts, spendStall } from '../src/day-ceiling.ts'
 
 const now = new Date('2026-10-26T12:00:00Z')
 const spend = (lag: bigint, ageMs: number | null): ProjectionLag => ({
@@ -13,6 +15,23 @@ const spend = (lag: bigint, ageMs: number | null): ProjectionLag => ({
   lag,
   updatedAt: ageMs === null ? null : new Date(now.getTime() - ageMs),
 })
+
+/** The sentence the guard's `locked` gives where today's spend cannot be trusted, or null. */
+const dayCeilingStop = (
+  store: ReturnType<typeof createMemoryEventStore>,
+  p: DayCeilingPorts,
+  at: Date = now,
+): Promise<string | null> =>
+  Effect.runPromise(
+    ceilingPort(store, p)
+      .todaysSpend(at)
+      .pipe(
+        Effect.match({
+          onFailure: (e) => `could not check the daily ceiling: ${e.why} — taking no work`,
+          onSuccess: () => null,
+        }),
+      ),
+  )
 
 const ports = (lags: () => Promise<readonly ProjectionLag[]>, ceiling: () => number | undefined = () => 10) => ({
   ceiling,
@@ -58,7 +77,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
         data: { for: { _tag: 'Discussion' }, runtime: 'claude-code', turns: 1, durationMs: 1, costUsd: 1, usage: [] },
       },
     ])
-    const stop = await dayCeilingStop(store, { ...ports(async () => []), now: () => new Date() })
+    const stop = await dayCeilingStop(store, { ...ports(async () => []), now: () => new Date() }, new Date())
     expect(stop).toMatch(/^could not check the daily ceiling: the spend projection has never checkpointed/)
   })
 
@@ -72,16 +91,20 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
   })
 
   it('never reads the lag where no ceiling is set', async () => {
-    const stop = await dayCeilingStop(
-      createMemoryEventStore(),
-      ports(
-        async () => {
-          throw new Error('read')
-        },
-        () => undefined,
+    const store = createMemoryEventStore()
+    const guard = makeGuard({
+      store,
+      ceiling: ceilingPort(
+        store,
+        ports(
+          async () => {
+            throw new Error('read')
+          },
+          () => undefined,
+        ),
       ),
-    )
-    expect(stop).toBeNull()
+    })
+    expect(await Effect.runPromise(guard.locksFor('lingtai'))).toEqual([])
   })
 
   it('takes no work when the lag cannot be read', async () => {
