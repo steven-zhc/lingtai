@@ -18,6 +18,7 @@
  * A beacon that could not be read is an error, never an empty list.
  */
 import { held as heldBy, lastBeat, readStatus } from '@lingtai/daemon/control'
+import { conductorLockHolder } from '@lingtai/daemon/lock'
 import { projectionLag, readTasks } from '@lingtai/projector'
 
 import { stoppedOnTheWire, type StoppedOnTheWire } from './stopped.ts'
@@ -36,11 +37,35 @@ export interface Health {
    * read, or one written before the field — and is never the same as empty.
    */
   stoppedProjections: StoppedOnTheWire[] | null
+  /**
+   * Who holds the conductor lock, read without taking it. Null when not asked:
+   * the beacon is up, or the health read itself failed. `unread` is a lock that
+   * could not be read, which is never the same answer as nobody holding it.
+   */
+  conductor: { held: string | null } | { unread: string } | null
   /** Set when the health read itself failed, which is its own kind of answer. */
   error?: string
 }
 
 const PROJECTION = 'task_view'
+
+/**
+ * Whether anything holds the conductor lock — asked only while the beacon is
+ * not up, because `holder()` waits out a settle window whenever the flag is up
+ * and that would land on every SSE tick. A read that fails is `unread`, never
+ * *nobody*.
+ */
+export async function askConductor(
+  daemon: Health['daemon'],
+  holder: () => Promise<string | null> = conductorLockHolder,
+): Promise<Health['conductor']> {
+  if (daemon === 'up') return null
+  try {
+    return { held: await holder() }
+  } catch (err) {
+    return { unread: err instanceof Error ? err.message : String(err) }
+  }
+}
 
 export async function readHealth(): Promise<Health> {
   try {
@@ -62,7 +87,16 @@ export async function readHealth(): Promise<Health> {
     const lag = row ? Number(row.lag) : null
 
     if (statusError) throw new Error(`could not read the daemon status: ${(statusError as Error).message}`)
-    if (!status) return { lag, daemon: 'never', sinceBeatMs: null, inFlight: held, stoppedProjections: null }
+    if (!status) {
+      return {
+        lag,
+        daemon: 'never',
+        sinceBeatMs: null,
+        inFlight: held,
+        stoppedProjections: null,
+        conductor: await askConductor('never'),
+      }
+    }
     // The same function `lingtai doctor` reads this row with, so the chip and
     // the check cannot come to different answers about one row — which is the
     // shape of `#64`. `starting` counts as `up` here and reads as *catching
@@ -70,12 +104,14 @@ export async function readHealth(): Promise<Health> {
     // is a daemon that is about to reduce: the lag it has is temporary, and
     // `#144` is the ticket about calling it dead.
     const beat = lastBeat(status)
+    const daemon = beat.up ? 'up' : 'stale'
     return {
       lag,
-      daemon: beat.up ? 'up' : 'stale',
+      daemon,
       sinceBeatMs: beat.ageMs,
       inFlight: held,
       stoppedProjections: stoppedOnTheWire(status.stoppedProjections),
+      conductor: await askConductor(daemon),
     }
   } catch (err) {
     // Reported as its own state. A board that cannot tell you whether it is
@@ -86,6 +122,7 @@ export async function readHealth(): Promise<Health> {
       sinceBeatMs: null,
       inFlight: [],
       stoppedProjections: null,
+      conductor: null,
       error: (err as Error).message,
     }
   }

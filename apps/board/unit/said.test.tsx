@@ -20,6 +20,7 @@ const health = (over: Partial<Health> = {}): Health =>
     sinceBeatMs: 2_000,
     inFlight: [],
     stoppedProjections: [],
+    conductor: null,
     ...over,
   }) as unknown as Health
 
@@ -31,20 +32,20 @@ const stale: CodeNews = {
 
 describe('Said', () => {
   it('draws the command in <code>, after the sentence and outside it', () => {
-    const out = renderToStaticMarkup(<Said said={bearing('open', health(), stale)} />)
+    const out = renderToStaticMarkup(<Said said={bearing('open', health(), stale, null)} />)
     expect(out).toContain('<code>lingtai restart</code>')
     expect(out).toMatch(/<span class="why"[^>]*>daemon 4 commits behind<\/span><code>/)
   })
 
   it('draws a command a task page can reach the same way', () => {
     const out = renderToStaticMarkup(
-      <Said said={bearing('open', health({ lag: 3, daemon: 'never', sinceBeatMs: null }), null)} />,
+      <Said said={bearing('open', health({ lag: 3, daemon: 'never', sinceBeatMs: null }), null, null)} />,
     )
     expect(out).toContain('<code>lingtai daemon --no-conduct</code>')
   })
 
   it('draws no sentence and no code when well', () => {
-    const out = renderToStaticMarkup(<Said said={bearing('open', health(), null)} />)
+    const out = renderToStaticMarkup(<Said said={bearing('open', health(), null, null)} />)
     expect(out).not.toContain('<code>')
     expect(out).not.toContain('class="why"')
   })

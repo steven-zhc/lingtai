@@ -25,6 +25,7 @@ const board = (over: Partial<Health> = {}): Health => ({
   sinceBeatMs: 2_000,
   inFlight: [],
   stoppedProjections: [],
+  conductor: null,
   ...over,
 })
 
@@ -52,15 +53,21 @@ const level: CodeNews = {
  * about the board: nothing in them mentions the daemon, and that is exactly why
  * they stopped carrying what it is running.
  */
-const EVERY_STATE: [Parameters<typeof bearing>[0], Health | null][] = [
-  ['trouble', board()],
-  ['connecting', null],
-  ['open', null],
-  ['open', board({ error: 'no such relation' })],
-  ['open', board({ lag: null })],
-  ['open', board({ lag: 3, daemon: 'never', sinceBeatMs: null })],
-  ['open', board({ lag: 7 })],
-  ['open', board()],
+const EVERY_STATE: [Parameters<typeof bearing>[0], Health | null, number | null][] = [
+  ['trouble', board(), null],
+  ['connecting', null, null],
+  ['open', null, null],
+  ['open', board({ error: 'no such relation' }), null],
+  ['open', board({ lag: null }), null],
+  ['open', board({ lag: 3, daemon: 'never', sinceBeatMs: null }), null],
+  ['open', board({ lag: 7 }), null],
+  ['open', board(), null],
+
+  ['open', board({ lag: 0, daemon: 'stale', conductor: { held: null } }), 4],
+  ['open', board({ lag: 5, daemon: 'never', sinceBeatMs: null, conductor: { held: null } }), 4],
+  ['open', board({ lag: 0, daemon: 'stale', conductor: { unread: 'EACCES' } }), 4],
+  ['open', board({ lag: 0, daemon: 'stale', conductor: { held: null } }), 0],
+  ['open', board({ lag: 0, daemon: 'stale', conductor: { held: 'lingtai run' } }), 4],
 ]
 
 describe('the health dot', () => {
@@ -70,7 +77,7 @@ describe('the health dot', () => {
    * ordinary case is one nobody reads when it is not.
    */
   it('is green and silent when the board is current and the daemon is level', () => {
-    const said = bearing('open', board(), level)
+    const said = bearing('open', board(), level, null)
 
     expect(said.tone).toBe('pass')
     expect(said.why).toBeNull()
@@ -82,8 +89,8 @@ describe('the health dot', () => {
    * which is the property that is easy to drop and impossible to see.
    */
   it('keeps the fact that is not the headline in the title', () => {
-    expect(bearing('open', board(), level).title).toContain('level with origin/main')
-    expect(bearing('open', board({ lag: 0 }), behind).title).toContain('task_view is at the head')
+    expect(bearing('open', board(), level, null).title).toContain('level with origin/main')
+    expect(bearing('open', board({ lag: 0 }), behind, null).title).toContain('task_view is at the head')
   })
 
   /**
@@ -91,7 +98,7 @@ describe('the health dot', () => {
    * thirty-nine minutes in which the fix that had landed could not run.
    */
   it('carries the sentence and the action when the daemon holds old code', () => {
-    const said = bearing('open', board(), behind)
+    const said = bearing('open', board(), behind, null)
 
     expect(said.tone).toBe('warn')
     expect(said.why).toBe('daemon 4 commits behind')
@@ -104,7 +111,7 @@ describe('the health dot', () => {
    * still says how to fix it.
    */
   it('puts a projection nobody is advancing ahead of stale code, with both reachable', () => {
-    const said = bearing('open', board({ lag: 12, daemon: 'stale', sinceBeatMs: 400_000 }), behind)
+    const said = bearing('open', board({ lag: 12, daemon: 'stale', sinceBeatMs: 400_000 }), behind, null)
 
     expect(said.tone).toBe('warn')
     expect(said.label).toContain('no daemon')
@@ -117,7 +124,7 @@ describe('the health dot', () => {
    * beating daemon is ordinary. It says so rather than raising an alarm.
    */
   it('does not call catching up a fault', () => {
-    const said = bearing('open', board({ lag: 7 }), level)
+    const said = bearing('open', board({ lag: 7 }), level, null)
 
     expect(said.tone).toBe('idle')
     expect(said.why).toBe('catching up')
@@ -130,14 +137,14 @@ describe('the health dot', () => {
    * frozen.
    */
   it('lets a dead stream beat everything under it', () => {
-    expect(bearing('trouble', board(), level).tone).toBe('warn')
-    expect(bearing('trouble', board(), level).why).toContain('live connection to the log is down')
+    expect(bearing('trouble', board(), level, null).tone).toBe('warn')
+    expect(bearing('trouble', board(), level, null).why).toContain('live connection to the log is down')
   })
 
   /** Not yet an answer is not a green one. */
   it('says nothing green before the first health frame arrives', () => {
-    expect(bearing('connecting', null, null).tone).toBe('idle')
-    expect(bearing('open', null, null).tone).toBe('idle')
+    expect(bearing('connecting', null, null, null).tone).toBe('idle')
+    expect(bearing('open', null, null, null).tone).toBe('idle')
   })
 
   /**
@@ -151,11 +158,11 @@ describe('the health dot', () => {
    * so nothing on screen changes when a branch stops carrying it.
    */
   it("keeps the daemon's code reachable in every state, not only the ones about it", () => {
-    for (const [socket, health] of EVERY_STATE) {
+    for (const [socket, health, runnable] of EVERY_STATE) {
       // Level and behind both, because `code.wrong` opens a branch of its own
       // and a branch is where the fact goes missing.
-      expect(bearing(socket, health, level).title).toContain('running d4fbd1a')
-      expect(bearing(socket, health, behind).title).toContain('4 commit(s) behind')
+      expect(bearing(socket, health, level, runnable).title).toContain('running d4fbd1a')
+      expect(bearing(socket, health, behind, runnable).title).toContain('4 commit(s) behind')
     }
   })
 
@@ -164,9 +171,9 @@ describe('the health dot', () => {
    * empty is one that has quietly stopped being a health indicator.
    */
   it('always has something to say on hover', () => {
-    for (const [socket, health] of EVERY_STATE) {
-      expect(bearing(socket, health, level).title.length).toBeGreaterThan(0)
-      expect(bearing(socket, health, null).title.length).toBeGreaterThan(0)
+    for (const [socket, health, runnable] of EVERY_STATE) {
+      expect(bearing(socket, health, level, runnable).title.length).toBeGreaterThan(0)
+      expect(bearing(socket, health, null, runnable).title.length).toBeGreaterThan(0)
     }
   })
 })
@@ -298,17 +305,17 @@ describe("the bar's amber", () => {
    */
   it('is not what the health dot paints with, in any state', () => {
     const amber = wearers.map((sel) => sel.replace(/\s+/g, ''))
-    for (const [socket, health] of EVERY_STATE) {
-      expect(amber).not.toContain(`.bar.dot.${bearing(socket, health, level).tone}`)
+    for (const [socket, health, runnable] of EVERY_STATE) {
+      expect(amber).not.toContain(`.bar.dot.${bearing(socket, health, level, runnable).tone}`)
     }
   })
 })
 
 describe('the health dot counts attempts in flight (#640)', () => {
   it('says how many in the title when there are two, and nothing for one', () => {
-    const two = bearing('open', board({ inFlight: ['lingtai#1', 'lingtai#2'] }), null)
+    const two = bearing('open', board({ inFlight: ['lingtai#1', 'lingtai#2'] }), null, null)
     expect(two.title).toContain('2 attempts in flight')
-    expect(bearing('open', board({ inFlight: ['lingtai#1'] }), null).title).not.toContain('in flight')
+    expect(bearing('open', board({ inFlight: ['lingtai#1'] }), null, null).title).not.toContain('in flight')
   })
 })
 
@@ -316,7 +323,7 @@ describe('the health dot names a stopped projection (#840)', () => {
   const spend = { name: 'spend', checkpoint: '12', error: 'boom' }
 
   it('is warn and names the projection while the beacon is up', () => {
-    const b = bearing('open', board({ stoppedProjections: [spend] }), null)
+    const b = bearing('open', board({ stoppedProjections: [spend] }), null, null)
     expect(b.tone).toBe('warn')
     expect(b.label).toBe('spend stopped')
     expect(b.why).toContain('rebuild first, then restart')
@@ -325,7 +332,12 @@ describe('the health dot names a stopped projection (#840)', () => {
   })
 
   it('says not taking work for a stopped task_view', () => {
-    const b = bearing('open', board({ stoppedProjections: [{ name: 'task_view', checkpoint: '4', error: 'x' }] }), null)
+    const b = bearing(
+      'open',
+      board({ stoppedProjections: [{ name: 'task_view', checkpoint: '4', error: 'x' }] }),
+      null,
+      null,
+    )
     expect(b.label).toBe('task_view stopped')
     expect(b.why).toContain('not taking work')
     expect(b.command).toContain('lingtai projection rebuild task_view')
@@ -336,6 +348,7 @@ describe('the health dot names a stopped projection (#840)', () => {
       'open',
       board({ stoppedProjections: [spend, { name: 'ticket_report', checkpoint: null, error: 'x' }] }),
       behind,
+      null,
     )
     expect(b.label).toBe('2 projections stopped')
     expect(b.command).toBe(
@@ -346,27 +359,27 @@ describe('the health dot names a stopped projection (#840)', () => {
   })
 
   it('an empty list is exactly today’s answer', () => {
-    const b = bearing('open', board(), null)
+    const b = bearing('open', board(), null, null)
     expect(b.tone).toBe('pass')
     expect(b.why).toBeNull()
   })
 
   it('null gives today’s result with the predates title', () => {
-    const b = bearing('open', board({ stoppedProjections: null }), null)
+    const b = bearing('open', board({ stoppedProjections: null }), null, null)
     expect(b.tone).toBe('pass')
     expect(b.title).toContain('the running daemon predates the stopped-projection report')
   })
 
   it('null with no board yet still says the daemon predates the report', () => {
-    const b = bearing('open', board({ lag: null, stoppedProjections: null }), null)
+    const b = bearing('open', board({ lag: null, stoppedProjections: null }), null, null)
     expect(b.label).toBe('no board yet')
     expect(b.title).toContain('the running daemon predates the stopped-projection report')
   })
 
   it('a stale beacon says stale, not stopped', () => {
     const stale = { daemon: 'stale', sinceBeatMs: 90_000, lag: 3 } as const
-    const withList = bearing('open', board({ ...stale, stoppedProjections: [spend] }), null)
-    expect(withList).toEqual(bearing('open', board({ ...stale, stoppedProjections: [] }), null))
+    const withList = bearing('open', board({ ...stale, stoppedProjections: [spend] }), null, null)
+    expect(withList).toEqual(bearing('open', board({ ...stale, stoppedProjections: [] }), null, null))
     expect(`${withList.label} ${withList.why} ${withList.title}`).not.toContain('stopped')
   })
 
@@ -390,22 +403,27 @@ describe('health keeps its command apart from its sentence (#904)', () => {
       'lingtai daemon --no-conduct', // behind, no daemon
       null, // catching up
       null, // current
+      'lingtai daemon', // no daemon, nobody holds the lock, runnable
+      'lingtai daemon', // the same, with a lag
+      'lingtai doctor', // the lock could not be read
+      null, // no daemon, nothing runnable
+      null, // a run holds the lock
     ]
-    EVERY_STATE.forEach(([socket, health], i) => {
-      const said = bearing(socket, health, null)
+    EVERY_STATE.forEach(([socket, health, runnable], i) => {
+      const said = bearing(socket, health, null, runnable)
       expect(said.command, `state ${i}`).toBe(want[i])
       if (said.why !== null) expect(said.why, `state ${i}`).not.toMatch(COMMAND)
     })
   })
 
   it('reads daemon 4 commits behind with lingtai restart for stale code', () => {
-    const said = bearing('open', board(), behind)
+    const said = bearing('open', board(), behind, null)
     expect(said.why).toBe('daemon 4 commits behind')
     expect(said.command).toBe('lingtai restart')
   })
 
   it('is silent when well: no sentence and no command', () => {
-    const said = bearing('open', board(), level)
+    const said = bearing('open', board(), level, null)
     expect(said.why).toBeNull()
     expect(said.command).toBeNull()
   })
@@ -424,5 +442,54 @@ describe('the home bar in page.tsx (#904)', () => {
   it('links the headline to the Waiting column, only while something waits', () => {
     expect(bar).toMatch(/waiting > 0 \? \(\s*<a className="head sig" href="#waiting"/)
     expect(page).toContain("id={col.id === 'waiting' ? 'waiting' : undefined}")
+  })
+})
+
+describe('the dot warns when nothing conducts and the queue has runnable tickets (#1015)', () => {
+  const idle = (over: Partial<Health> = {}) =>
+    board({ daemon: 'stale', sinceBeatMs: 88_870_000, conductor: { held: null }, ...over })
+
+  it('is a warning with the count, the command apart from the sentence', () => {
+    const said = bearing('open', idle(), null, 4)
+    expect(said.tone).toBe('warn')
+    expect(said.label).toBe('no daemon · 4 runnable')
+    expect(said.command).toBe('lingtai daemon')
+    expect(said.why).not.toMatch(/lingtai /)
+    expect(said.title).toContain('nobody holds the conductor lock')
+  })
+
+  it('is the same warning when the beacon was never written', () => {
+    const said = bearing('open', idle({ daemon: 'never', sinceBeatMs: null }), null, 1)
+    expect(said.label).toBe('no daemon · 1 runnable')
+  })
+
+  it('is quiet for zero runnable, and says so in the title', () => {
+    const said = bearing('open', idle(), null, 0)
+    expect(said.tone).toBe('pass')
+    expect(said.why).toBeNull()
+    expect(said.title).toContain('no daemon, and nothing is runnable')
+  })
+
+  it('is today’s answer when the count is unknown', () => {
+    const was = bearing('open', idle({ conductor: null }), null, null)
+    expect(bearing('open', idle(), null, null)).toEqual(was)
+  })
+
+  it('is today’s answer while something holds the lock, and names the holder', () => {
+    const said = bearing('open', idle({ conductor: { held: 'lingtai run' } }), null, 4)
+    expect(said.tone).toBe('pass')
+    expect(said.title).toContain('conducted by lingtai run')
+  })
+
+  it('warns with lingtai doctor when the lock could not be read, never as nobody', () => {
+    const said = bearing('open', idle({ conductor: { unread: 'EACCES' } }), null, 4)
+    expect(said.tone).toBe('warn')
+    expect(said.label).toBe('no daemon · 4 runnable')
+    expect(said.command).toBe('lingtai doctor')
+    expect(said.title).toContain('EACCES')
+  })
+
+  it('never warns from this branch while the daemon beats', () => {
+    expect(bearing('open', board({ conductor: { held: null } }), null, 4).tone).toBe('pass')
   })
 })

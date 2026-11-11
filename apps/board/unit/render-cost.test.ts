@@ -162,6 +162,26 @@ describe('what GitHub offers', () => {
     expect(result).toMatchObject({ asked: 2, answered: 2 })
   })
 
+  it('counts what selectRunnable returned, before the log takes its cards out (#1015)', async () => {
+    const result = await githubQueue([lingtai, other], new Set(['ticket-lingtai-1']), async (f) =>
+      listed(f, ['1', '2']),
+    )
+
+    expect(result.runnable).toBe(4)
+  })
+
+  it('has no count rather than 0 when a project did not answer and nothing else was runnable (#1015)', async () => {
+    const down = async () => {
+      throw new Error('no answer')
+    }
+    expect((await githubQueue([lingtai], new Set(), down)).runnable).toBeNull()
+    const mixed = await githubQueue([lingtai, other], new Set(), async (f) => {
+      if (f.project === 'lingtai') throw new Error('no answer')
+      return listed(f, ['1'])
+    })
+    expect(mixed.runnable).toBe(1)
+  })
+
   it('does not add a task the log already has a card for a second time', async () => {
     const result = await githubQueue([lingtai], new Set(['ticket-lingtai-1']), async (f) => listed(f, ['1', '2']))
 

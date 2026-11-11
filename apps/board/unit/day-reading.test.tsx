@@ -65,7 +65,8 @@ describe('nearCeiling', () => {
 })
 
 describe('Live', () => {
-  const html = (near: string | null) => renderToStaticMarkup(<Live code={null} near={near} />)
+  const html = (near: string | null) =>
+    renderToStaticMarkup(<Live code={null} near={near} runnable={Promise.resolve(null)} />)
 
   it('draws the sentence after the dot, in .near, without changing the dot', () => {
     const withNear = html('today $150.00 + ~$0.00 of $200.00')

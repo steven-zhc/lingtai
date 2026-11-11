@@ -732,7 +732,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               read. Green and silent when both are true, and a sentence with the
               action in it when either is not. Never amber — that is the
               headline's, below. */}
-            <Health near={nearCeiling(today.day, today.ceilingUsd)} />
+            <Health
+              near={nearCeiling(today.day, today.ceilingUsd)}
+              runnable={queue.then(
+                (q) => q.runnable,
+                () => null,
+              )}
+            />
             {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
               has been told to take nothing, which is what the board showed for
