@@ -509,13 +509,15 @@ export async function daemonCommand(
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
   const since = started.since
   const triageHashes = new Map<string, string>()
+  // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
+  const locked = lockedBy(makeGuard({ store: eventStore }))
   const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
     try {
       await catchUpChangedTriage(
         project,
         triage,
         triageHashes,
-        daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined),
+        daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
       )
     } catch (err) {
       console.error(`triage catch-up ${project}: ${(err as Error).message}`)
@@ -564,8 +566,6 @@ export async function daemonCommand(
     // The passes in flight, held across looks (0122 §1): a look that starts
     // several returns, and the next look must still know they are running.
     const slots = createSlots()
-    // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-    const locked = lockedBy(makeGuard({ store: eventStore }))
     loop = createWorkLoop({
       log: trace,
       tell: (line) => console.log(line),
@@ -577,7 +577,7 @@ export async function daemonCommand(
       triage: (event) =>
         onWaitStarted(
           event,
-          daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined),
+          daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
         ),
       // Asked from the log every pass. A pause issued while a run is in flight
       // has to land at the next opportunity without anybody restarting this.

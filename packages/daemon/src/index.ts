@@ -23,6 +23,7 @@ export {
 export {
   COMPLETION_EVENTS,
   DISCUSSION_EVENTS,
+  TRIAGE_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
   type EventSubscriber,
