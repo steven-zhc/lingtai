@@ -1506,7 +1506,7 @@ describe('one command to stop, one to start', () => {
         after: async (v) => {
           const { recordStart, startAfter } = await import('@lingtai/daemon/control')
           if ((await startAfter(v, store)) === null)
-            await recordStart('daemon', null, { sha: RECORDED.sha, dirty: false }, store)
+            await recordStart('daemon', null, { sha: RECORDED.sha, dirty: false }, v, store)
           return startAfter(v, store)
         },
       },

@@ -319,7 +319,7 @@ describe('withdrawing a drain', () => {
     const { store, held, appended, before } = recording([restarting])
     before.next = () => held.push({ type: 'RunRequested', data: { project: 'lingtai', issue: '88', by: 'human:ops' } })
 
-    await recordStart('human:steven', 'restarted', { sha: '2926f2d', dirty: false }, store)
+    await recordStart('human:steven', 'restarted', { sha: '2926f2d', dirty: false }, 1, store)
 
     expect(appended.map((e) => e.type)).toEqual(['ConductorStarted'])
     expect(held.map((e) => e.type)).toEqual(['ConductorShutdownRequested', 'RunRequested', 'ConductorStarted'])
@@ -354,12 +354,13 @@ describe('a signal belongs to the daemon it was sent to', () => {
     expect(state.shutdown?.reason).toBe('stopping for the day')
   })
 
-  it('is invisible to the daemon that started after it', async () => {
-    // The request is at version 1; this daemon started with the stream one
-    // event long, so the request belongs to its predecessor.
-    const state = await readControl(storeOf([shutdown]), 1)
-
-    expect(state.shutdown).toBeNull()
+  it('is ended by the start that follows it, and stands without one', async () => {
+    const started = {
+      type: 'ConductorStarted',
+      data: { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'w', handoff: null },
+    }
+    expect((await readControl(storeOf([shutdown, started]), 1)).shutdown).toBeNull()
+    expect((await readControl(storeOf([shutdown]), 1)).shutdown?.reason).toBe('stopping for the day')
   })
 
   it('does not carry a pause across a restart either', async () => {

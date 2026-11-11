@@ -286,25 +286,24 @@ export async function daemonCommand(
   // that one *started*, from what code, or at whose hand. A restart at 23:06 on
   // 2026-09-09 is unattributable for exactly that reason (0042).
   //
-  // Reported and not fatal. Refusing to conduct because a control append lost a
-  // version race would be a daemon that will not run for want of a record of
-  // itself — but a start nobody can trace is the defect this closes, so it is
-  // said in the accent that means *look at this*.
+  // **A start that cannot record itself takes no work** (0126): it says why and
+  // exits non-zero, and a supervisor or a person starts it again. The record is
+  // also what ends a drain from before this daemon, so a daemon that did not
+  // make it would leave that drain standing for every other reader.
   //
   // **A person only where a person's hand is on it**, and whose hand is
   // `attributeStart`'s to decide: `lingtai restart` here, a terminal, or
   // nobody's — launchd's and systemd's starts included (0048).
   //
-  // **Not decided here.** A read taken now and a shutdown noticed after the
-  // reconcile are two reads, and a restart's withdrawal can land between them —
-  // a start that saw the drain, recorded nothing, and then took work. So this
-  // is handed the one read that decides whether work is taken: the loop's
-  // shutdown check, or the `--no-conduct` listener's (`startRecorder`).
+  // **Not made here, but first.** `recordStart` reads, decides and appends at
+  // that read's head, so it is the first thing the loop's shutdown check or the
+  // `--no-conduct` listener does with the control stream (`startRecorder`): a
+  // request that landed while this daemon was starting is obeyed, never ended.
   const noteStart = startRecorder({
     restart,
     tty: Boolean(process.stdin.isTTY),
     user: process.env['USER'] ?? 'operator',
-    record: (a) => recordStart(a.by, a.reason, code),
+    record: (a) => recordStart(a.by, a.reason, code, started.since),
     log: (line) => console.log(line),
   })
 
@@ -401,6 +400,8 @@ export async function daemonCommand(
 
   /** The request the loop read, when the log is what began this. */
   let asked: ShutdownRequest | null = null
+  // Set when the start could not record itself: `onShutdown` then stops non-zero.
+  let failedStart: string | null = null
   let draining = false
   let stopping = false
 
@@ -414,7 +415,7 @@ export async function daemonCommand(
    * holding the event loop open — returning would be a daemon that says it has
    * stopped and has not.
    */
-  const stopNow = (why: string): void => {
+  const stopNow = (why: string, code = 0): void => {
     if (stopping) return
     stopping = true
     console.log(paint.held(why))
@@ -427,7 +428,7 @@ export async function daemonCommand(
       // does not do, and must not, is wait for the pass.
       await started.daemon.stopped
       await ratesSettled()
-      process.exit(0)
+      process.exit(code)
     })()
   }
 
@@ -494,11 +495,13 @@ export async function daemonCommand(
     started.daemon.stop()
   }
 
-  // **Where the control stream was when this daemon started** (`#159`). Every
-  // signal it obeys is read from here, so a pause or a shutdown appended before
-  // it began belongs to the daemon before it and not to this one — which is
-  // what makes `lingtai start` need nothing lifted first, for every signal but
-  // one. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
+  // **Where the control stream was when this daemon started** (`#159`). A pause
+  // it obeys is read from here, so one appended before it began belongs to the
+  // daemon before it and not to this one. **A shutdown is not scoped by it any
+  // more** (0126): a request is ended by the next `ConductorStarted`, and the
+  // watermark survives only as the line `recordStart` decides by — at or below
+  // it, the request was asked of an earlier process and the record ends it;
+  // above it, it is this daemon's to obey. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
   // the conductor itself appends over a tier the setup cannot provide carries
   // `holdsAcrossStarts`, and `readControl` (`packages/daemon/src/control.ts`)
   // obeys it whatever `since` says, because a restart loads the same setup
@@ -584,20 +587,24 @@ export async function daemonCommand(
       // And a shutdown in the same breath, from the same reduce (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
+        // The start is recorded first, off its own read, and decides whether this
+        // daemon takes work at all (`startRecorder`): a request asked of it is
+        // obeyed, one from before it is ended by the record, and a start that
+        // cannot record itself takes nothing.
+        const start = await noteStart()
+        if ('failed' in start) {
+          failedStart = start.failed
+          return `the start could not be recorded: ${start.failed}`
+        }
+        if (!start.take) {
+          asked = start.standing
+          return `asked by ${asked.by} — ${asked.reason}`
+        }
+        // Later reads are the whole stream's: this daemon's own record has ended
+        // everything from before it. Reaching a request here means somebody
+        // asked *this* daemon to stop, and they know they did.
         const control = await controlRead(since)
         asked = control.shutdown
-        // The start is recorded off this read and no other, before the first
-        // pass it permits — see `startRecorder`.
-        await noteStart(control)
-        // The remedy in the sentence, because this is also what a daemon
-        // started *after* an unwithdrawn request prints on its way straight
-        // back out — and at that point it is the only thing worth knowing.
-        // No remedy in the sentence any more. It used to say "lingtai resume
-        // lifts it", because this was also what a daemon started *after* an
-        // unwithdrawn request printed on its way straight back out. That start
-        // cannot happen now: `since` makes an older request invisible, so
-        // reaching here means somebody asked *this* daemon to stop, and they
-        // know they did.
         return asked ? `asked by ${asked.by} — ${asked.reason}` : null
       },
       // The loop has stopped taking work. What it cannot do is exit the
@@ -606,11 +613,14 @@ export async function daemonCommand(
       // `--timeout` already went when it tripped, so forcing asks for a state
       // the system already knows how to be in rather than inventing one.
       onShutdown: (why) =>
-        asked?.force === true
-          ? stopNow(
-              `${why} — forced, so the attempt is not finished. The agent is left running for the next conductor to kill.`,
-            )
-          : void drain(why, asked?.timeoutMs ?? null),
+        failedStart !== null
+          ? // Nothing is in flight on the first check, so stopping now costs nothing.
+            stopNow(why, 1)
+          : asked?.force === true
+            ? stopNow(
+                `${why} — forced, so the attempt is not finished. The agent is left running for the next conductor to kill.`,
+              )
+            : void drain(why, asked?.timeoutMs ?? null),
 
       pass: async (reason, started) => {
         await declared.retry()
@@ -667,25 +677,38 @@ export async function daemonCommand(
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
-    await loop.start()
-    startRates()
-    // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
-    setInterval(() => startRates(), 3_600_000).unref()
-    // The subscription is live; a wait made during this scan is delivered by its live handler.
-    await catchUpRegisteredTriage(
-      await loadProjects(),
-      async (state) => (await currentRecipe(state)).recipe.triage ?? null,
-      scanTriage,
-      (line) => console.error(line),
-    )
-    // A question asked while nothing was listening is waiting in the stream,
-    // exactly as a pause is (0013). After `start`, so the subscription is
-    // already up and a question that arrives during this one is not missed.
-    const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
-      console.error(`discussions: ${(err as Error).message}`)
-      return 0
-    })
-    if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
+    // **The start is decided before anything that can spend money is switched
+    // on** (0126). `loop.start()` opens the subscription that delivers
+    // discussions and waits, so a start that is still recording would already be
+    // taking work. Nothing is in flight until this resolves, so stopping on a
+    // failed or declined record costs nothing and orphans nothing.
+    const start = await noteStart()
+    if ('failed' in start) {
+      stopNow(`the start could not be recorded: ${start.failed}`, 1)
+    } else if (!start.take) {
+      asked = start.standing
+      await drain(`asked by ${asked.by} — ${asked.reason}`, asked.timeoutMs)
+    } else {
+      await loop.start()
+      startRates()
+      // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
+      setInterval(() => startRates(), 3_600_000).unref()
+      // The subscription is live; a wait made during this scan is delivered by its live handler.
+      await catchUpRegisteredTriage(
+        await loadProjects(),
+        async (state) => (await currentRecipe(state)).recipe.triage ?? null,
+        scanTriage,
+        (line) => console.error(line),
+      )
+      // A question asked while nothing was listening is waiting in the stream,
+      // exactly as a pause is (0013). After `start`, so the subscription is
+      // already up and a question that arrives during this one is not missed.
+      const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
+        console.error(`discussions: ${(err as Error).message}`)
+        return 0
+      })
+      if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
+    }
   } else {
     // Discussions go with the conductor, and that is what this flag says: they
     // spend money and 0033 §3 puts everything that spends money in the process
@@ -697,15 +720,24 @@ export async function daemonCommand(
     // the honest shape of "finish what you are holding" for a daemon holding
     // nothing.
     const hearShutdown = async (): Promise<void> => {
+      // The `.catch` is for the ticks only: it never stands in for the start's
+      // decision, and a failed read is not taken as *nothing stands*.
       const control = await controlRead().catch(() => null)
-      if (control) await noteStart(control)
       const standing = control?.shutdown ?? null
       if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs)
     }
-    listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
-    // Asked once before waiting for the timer, so a daemon started after an
-    // unwithdrawn request goes straight back out — as a conducting one does.
-    await hearShutdown()
+    // The start first, before the first tick: a drain asked of this daemon goes
+    // straight back out, one from before it is ended by the record, and a start
+    // that cannot record itself takes nothing.
+    const start = await noteStart()
+    if ('failed' in start) {
+      stopNow(`the start could not be recorded: ${start.failed}`, 1)
+    } else if (!start.take) {
+      await drain(`asked by ${start.standing.by} — ${start.standing.reason}`, start.standing.timeoutMs)
+    }
+    // Not once a drain or a stop has begun: it has already cleared the timers, and
+    // an interval installed after it would hold the process open for ever.
+    if (!draining && !stopping) listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is

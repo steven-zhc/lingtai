@@ -1403,9 +1403,10 @@ export const COVERS = {
  * registered reducer, holding every type it handles. Frozen for a version — it
  * changes only in the commit that raises the version and adds the row.
  */
+const controlStream = makeStream(CONTROL_STREAM)
 const late_everyControlEvent = stamp(
   (() => {
-    const c = makeStream(CONTROL_STREAM)
+    const c = controlStream
     return [
       c('ConductorPaused', { ...pause('2026-08-03T00:00:00.000Z', true), cause: 'day-ceiling' }),
       c('ConductorResumed', { by: 'steven' }),
@@ -1483,8 +1484,24 @@ const late_everyAttemptType = stamp(
   })(),
 )
 
+/**
+ * The control fixture's last event (version 3 of the control reducer): a start after a standing request, which
+ * ends it. Stamped here, after the ticket and attempt fixtures, because `stamp` numbers `seq` and `at` across
+ * the module and stamping it beside the others would move their hashes (their versions did not change).
+ */
+const late_controlStarted = stamp([
+  controlStream('ConductorStarted', {
+    by: 'steven',
+    reason: 'restart',
+    sha: 'a'.repeat(40),
+    dirty: false,
+    worker: 'fixture',
+    handoff: null,
+  }),
+])
+
 export const reducerFixtures = {
-  control: { everyControlEvent: late_everyControlEvent },
+  control: { everyControlEvent: [...late_everyControlEvent, ...late_controlStarted] },
   ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
   attempt: { everyAttemptEvent: late_everyAttemptType },
 } as const
