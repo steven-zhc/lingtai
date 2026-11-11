@@ -5,7 +5,7 @@ import { readControl, readStatus } from '@lingtai/daemon/control'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { eventStore } from '@lingtai/event-store'
-import { GitHubError } from '@lingtai/github'
+import { GitHubFailed } from '@lingtai/github'
 import { readTasks } from '@lingtai/projector/task-view'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -200,7 +200,7 @@ describe('loadTaskAnswer', () => {
     vi.mocked(readProjectTicket).mockResolvedValue({
       ok: false,
       from: 'github',
-      error: new GitHubError(404, '/repos/o/lingtai/issues/774', 'Not Found'),
+      error: new GitHubFailed(404, '/repos/o/lingtai/issues/774', 'Not Found'),
     } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
     const answer = await loadTaskAnswer(taskId)
     expect(answer.ticket).toMatchObject({ found: false, askedGitHub: true, body: null })
@@ -216,7 +216,7 @@ describe('loadTaskAnswer', () => {
     vi.mocked(readProjectTicket).mockResolvedValue({
       ok: false,
       from: 'github',
-      error: new GitHubError(403, '/repos/o/lingtai/issues/774', 'rate limit exceeded'),
+      error: new GitHubFailed(403, '/repos/o/lingtai/issues/774', 'rate limit exceeded'),
     } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
     const failed = await loadTaskAnswer(taskId)
     expect(failed.ticket).toMatchObject({ found: null, askedGitHub: true, body: null })

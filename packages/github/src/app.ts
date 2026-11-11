@@ -73,7 +73,7 @@ function toInstallation(raw: RawInstallation, owner = ''): Installation {
   }
 }
 
-export class GitHubError extends Data.TaggedError('GitHubFailed')<{
+export class GitHubFailed extends Data.TaggedError('GitHubFailed')<{
   readonly status: number
   readonly path: string
   readonly detail: string
@@ -153,7 +153,7 @@ async function githubJson<T>(path: string, init: RequestInit & { token: string; 
     } catch {
       // Not JSON. The raw prefix is more useful than nothing.
     }
-    throw new GitHubError(response.status, path, message)
+    throw new GitHubFailed(response.status, path, message)
   }
   return (await response.json()) as T
 }
@@ -176,7 +176,7 @@ export async function installationForRepo(
     // 404 here means "no installation covers this repository", which is not the
     // same as "no such repository" and reads very differently to whoever is
     // trying to onboard it.
-    if (err instanceof GitHubError && err.status === 404) throw new NotInstalledError(owner, repo)
+    if (err instanceof GitHubFailed && err.status === 404) throw new NotInstalledError(owner, repo)
     throw err
   }
 }
@@ -253,7 +253,7 @@ interface CachedToken {
  * what turns "one at a time" into "one request"
  * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  */
-export function installationToken(auth: AppAuth, installationId: number): Effect.Effect<string, GitHubError> {
+export function installationToken(auth: AppAuth, installationId: number): Effect.Effect<string, GitHubFailed> {
   let cached: CachedToken | null = null
   const refreshing = Effect.runSync(Semaphore.make(1))
   const fresh = () => cached !== null && cached.expiresAtMs - Date.now() > 60_000
@@ -270,9 +270,9 @@ export function installationToken(auth: AppAuth, installationId: number): Effect
       return raw.token
     },
     catch: (err) =>
-      err instanceof GitHubError
+      err instanceof GitHubFailed
         ? err
-        : new GitHubError(0, `/app/installations/${installationId}/access_tokens`, (err as Error).message),
+        : new GitHubFailed(0, `/app/installations/${installationId}/access_tokens`, (err as Error).message),
   })
 
   return Effect.suspend(() =>
@@ -291,7 +291,7 @@ export function installationToken(auth: AppAuth, installationId: number): Effect
  *
  * `git` passes it to a child process's environment and the board calls it from
  * a server action; neither has a runtime to run an `Effect` in. The rejection
- * is the `GitHubError` itself rather than a fiber's wrapper, because a caller
+ * is the `GitHubFailed` itself rather than a fiber's wrapper, because a caller
  * that reads `.status` should not have to know which face it took.
  */
 export function createTokenSource(auth: AppAuth, installationId: number): (signal?: AbortSignal) => Promise<string> {

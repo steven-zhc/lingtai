@@ -41,7 +41,7 @@ import { baseProtectedRemedies, parsePayload } from '@lingtai/domain'
 import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import {
-  GitHubError,
+  GitHubFailed,
   type GhRun,
   type Installation,
   NotInstalledError,
@@ -364,19 +364,23 @@ export async function checkGhAccess(
   try {
     found = await deps.repository(owner, repo)
   } catch (err) {
-    if (err instanceof GitHubError && err.status === 404) {
+    if (err instanceof GitHubFailed && err.status === 404) {
       log(`${slug} is not visible to ${status.login} — ${err.message}`)
-    } else if (err instanceof GitHubError && err.status === 403 && /OAuth App access restrictions/i.test(err.message)) {
+    } else if (
+      err instanceof GitHubFailed &&
+      err.status === 403 &&
+      /OAuth App access restrictions/i.test(err.message)
+    ) {
       log(
         `${owner} blocks the GitHub CLI's access to it (${err.message}); this organisation blocks the GitHub ` +
           "CLI's access — use the App (`--github-auth app`)",
       )
-    } else if (err instanceof GitHubError && err.status === 403 && /SAML/i.test(err.message)) {
+    } else if (err instanceof GitHubFailed && err.status === 403 && /SAML/i.test(err.message)) {
       log(
         `${slug} is behind ${owner}'s SAML single sign-on (${err.message}) — authorise gh's token for the ` +
           `${owner} organisation on GitHub, then run this again`,
       )
-    } else if (err instanceof GitHubError && err.status === 403) {
+    } else if (err instanceof GitHubFailed && err.status === 403) {
       log(`${slug} is not visible to ${status.login} — ${err.message}`)
     } else {
       // A 5xx, a failed fetch, or `gh` signed out between the status and the token.

@@ -4,7 +4,7 @@ export {
   createAppReader,
   createTokenSource,
   GITHUB_API,
-  GitHubError,
+  GitHubFailed,
   gapRemedyLines,
   installationForRepo,
   installationRepositories,

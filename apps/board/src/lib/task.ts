@@ -87,7 +87,7 @@ import { eventStore } from '@lingtai/event-store'
 // For the one distinction a message cannot carry: `status === 404` is GitHub
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
-import { GitHubError } from '@lingtai/github'
+import { GitHubFailed } from '@lingtai/github'
 import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
@@ -1551,7 +1551,7 @@ export const loadTicketAnswer = cache(async (taskId: string): Promise<TicketAnsw
         problem: null,
       }
     }
-    const missing = read.error instanceof GitHubError && read.error.status === 404
+    const missing = read.error instanceof GitHubFailed && read.error.status === 404
     return {
       ...NO_ANSWER,
       found: missing ? false : null,

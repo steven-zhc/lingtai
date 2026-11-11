@@ -12,7 +12,7 @@ import { generateKeyPairSync } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createGitHubClient, GitHubError, PermissionDenied, type AppAuth, type Installation } from '../src/index.ts'
+import { createGitHubClient, GitHubFailed, PermissionDenied, type AppAuth, type Installation } from '../src/index.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -169,7 +169,7 @@ describe('sub-issue and blocked-by links', () => {
     const write = await c.addSubIssue(599, 161).catch((e: unknown) => e)
 
     expect(read).toBeInstanceOf(PermissionDenied)
-    expect(read).toBeInstanceOf(GitHubError)
+    expect(read).toBeInstanceOf(GitHubFailed)
     expect((read as PermissionDenied).message).toMatch(/`issues`.*`read`/)
     expect(write).toBeInstanceOf(PermissionDenied)
     expect((write as PermissionDenied).message).toMatch(/`issues`.*`write`/)
@@ -192,7 +192,7 @@ describe('sub-issue and blocked-by links', () => {
     expect(err.message).not.toMatch(/installation|App/)
   })
 
-  it('leaves a secondary rate limit as the GitHubError it was', async () => {
+  it('leaves a secondary rate limit as the GitHubFailed it was', async () => {
     stub({
       [`GET ${REPO}/issues/599/sub_issues?per_page=100&page=1`]: {
         status: 403,
@@ -202,7 +202,7 @@ describe('sub-issue and blocked-by links', () => {
 
     const err = await (await client()).listSubIssues(599).catch((e: unknown) => e)
 
-    expect(err).toBeInstanceOf(GitHubError)
+    expect(err).toBeInstanceOf(GitHubFailed)
     expect(err).not.toBeInstanceOf(PermissionDenied)
   })
 })

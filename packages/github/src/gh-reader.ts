@@ -12,7 +12,7 @@
  */
 import { Effect } from 'effect'
 
-import { GITHUB_API, GitHubError } from './app.ts'
+import { GITHUB_API, GitHubFailed } from './app.ts'
 import { type GhRun, ghToken, liveGh } from './gh.ts'
 
 const TIMEOUT = '15 seconds'
@@ -50,7 +50,7 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
           } catch {
             // Not JSON. The raw prefix is more useful than nothing.
           }
-          return yield* Effect.fail(new GitHubError(response.status, path, message))
+          return yield* Effect.fail(new GitHubFailed(response.status, path, message))
         }
         return (yield* Effect.tryPromise({ try: () => response.json(), catch: asError })) as T
       }).pipe(

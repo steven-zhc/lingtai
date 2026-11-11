@@ -7,7 +7,7 @@
  * fakes too, so every test here is also the test that nothing is written.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { GitHubError, type GhReader, type GhStatus } from '@lingtai/github'
+import { GitHubFailed, type GhReader, type GhStatus } from '@lingtai/github'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -45,13 +45,13 @@ function fakeReader(installations: FakeInstallation[], suspended: number[] = [])
       const one = /^\/app\/installations\/(\d+)$/.exec(url.pathname)
       if (one && as === 'app') {
         const found = installations.find((i) => i.id === Number(one[1]))
-        if (found === undefined) throw new GitHubError(404, path, 'Not Found')
+        if (found === undefined) throw new GitHubFailed(404, path, 'Not Found')
         return raw(found) as T
       }
       if (url.pathname === '/installation/repositories' && typeof as === 'number') {
         // A suspended installation's token is refused before any listing.
         if (suspended.includes(as))
-          throw new GitHubError(403, `/app/installations/${as}/access_tokens`, 'This installation has been suspended')
+          throw new GitHubFailed(403, `/app/installations/${as}/access_tokens`, 'This installation has been suspended')
         const i = installations.find((x) => x.id === as)!
         return {
           repositories: (page === 1 ? i.repositories : []).map((name) => ({
@@ -61,7 +61,7 @@ function fakeReader(installations: FakeInstallation[], suspended: number[] = [])
           })),
         } as T
       }
-      throw new GitHubError(404, path, 'Not Found')
+      throw new GitHubFailed(404, path, 'Not Found')
     },
   }
 }
@@ -224,7 +224,7 @@ describe('listRepositories on a gh machine', () => {
   })
 
   it('fails with the error rather than an empty list, and a partial list is not shown', async () => {
-    const gh = fakeGh(many(250), { page: 2, error: new GitHubError(502, '/user/repos', 'Bad Gateway') })
+    const gh = fakeGh(many(250), { page: 2, error: new GitHubFailed(502, '/user/repos', 'Bad Gateway') })
 
     await expect(listGh(gh)).rejects.toThrow('502 on /user/repos: Bad Gateway')
   })

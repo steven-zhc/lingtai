@@ -15,7 +15,7 @@ import { Data } from 'effect'
 import {
   type AppAuth,
   GITHUB_API,
-  GitHubError,
+  GitHubFailed,
   type Installation,
   createTokenSource,
   installationForRepo,
@@ -45,15 +45,15 @@ export class BodyChanged extends Data.TaggedError('BodyChanged')<{ readonly issu
 /**
  * A sub-issue or dependency call was refused for want of a permission.
  *
- * A `GitHubError` still, so an `instanceof GitHubError` check keeps catching it.
+ * A `GitHubFailed` still, so an `instanceof GitHubFailed` check keeps catching it.
  * Never an empty list: a caller reads *no links* as *nothing attached* and
  * writes one again.
  */
-export class PermissionDenied extends GitHubError {
+export class PermissionDenied extends GitHubFailed {
   readonly permission: string
   readonly level: 'read' | 'write'
 
-  constructor(denied: GitHubError, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
+  constructor(denied: GitHubFailed, permission: string, level: 'read' | 'write', kind: 'app' | 'gh' = 'app') {
     super(
       denied.status,
       denied.path,
@@ -421,7 +421,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       } catch {
         // Not JSON; the prefix is still the most useful thing available.
       }
-      throw new GitHubError(response.status, path, message)
+      throw new GitHubFailed(response.status, path, message)
     }
     if (response.status === 204) return undefined as T
     return (await response.json()) as T
@@ -540,7 +540,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     try {
       return await run()
     } catch (err) {
-      if (err instanceof GitHubError && err.status === 403 && !err.rateLimited) {
+      if (err instanceof GitHubFailed && err.status === 403 && !err.rateLimited) {
         throw new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')
       }
       throw err
@@ -637,7 +637,7 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       } catch (err) {
         // A missing file is an answer, not a failure — a repository with no
         // recipe is a repository that has not been onboarded yet.
-        if (err instanceof GitHubError && err.status === 404) return null
+        if (err instanceof GitHubFailed && err.status === 404) return null
         throw err
       }
     },

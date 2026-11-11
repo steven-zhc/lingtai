@@ -34,7 +34,7 @@
  */
 import {
   type AppReader,
-  GitHubError,
+  GitHubFailed,
   type Installation,
   type PermissionGap,
   gapRemedyLines,
@@ -235,7 +235,7 @@ export async function verifiedInstallation(reader: AppReader, raw: string | null
     const installation = await reader.request<{ id: number }>('GET', `/app/installations/${raw}`, 'app')
     return installation.id
   } catch (err) {
-    if (err instanceof GitHubError && err.status === 404) return null
+    if (err instanceof GitHubFailed && err.status === 404) return null
     throw err
   }
 }

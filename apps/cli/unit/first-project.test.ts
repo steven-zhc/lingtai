@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 
 import { ownerlessRefusal } from '@lingtai/conductor'
 import type { ProjectState } from '@lingtai/domain'
-import { type AppReader, GitHubError, type GhRun, type GhStatus } from '@lingtai/github'
+import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
@@ -690,7 +690,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
             repositories: found.repositories.map((name) => ({ name, owner: { login: found.account }, private: true })),
           } as T
         }
-        throw new GitHubError(404, path, 'Not Found')
+        throw new GitHubFailed(404, path, 'Not Found')
       },
     }
   }
@@ -778,7 +778,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
         if (url.pathname === '/installation/repositories' && typeof as === 'number') {
           return { repositories: [{ name: 'widget', owner: { login: 'acme' }, private: true }] } as T
         }
-        throw new GitHubError(404, path, 'Not Found')
+        throw new GitHubFailed(404, path, 'Not Found')
       },
     }
     const picker = await listRepositories({ reader: scopedReader, projects: [], installUrl: null })

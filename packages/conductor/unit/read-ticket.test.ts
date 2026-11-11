@@ -5,7 +5,7 @@
  */
 import type { ProjectState } from '@lingtai/domain'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
-import { GitHubError } from '@lingtai/github'
+import { GitHubFailed } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -73,7 +73,7 @@ describe('readProjectTicket', () => {
   })
 
   it('hands a GitHub rejection back unchanged, so a 404 survives', async () => {
-    const failure = new GitHubError(404, 'GET /x', 'Not Found')
+    const failure = new GitHubFailed(404, 'GET /x', 'Not Found')
     const answer = await readProjectTicket(state, 7, {
       recipeFor: recipeFor(recipe('')),
       clientFor: async () =>

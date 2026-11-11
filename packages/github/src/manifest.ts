@@ -34,7 +34,7 @@
  * manifest and performs the conversion; `@lingtai/conductor`'s `create-app.ts`
  * is what writes a key to disk and what may never print one.
  */
-import { GITHUB_API, GitHubError, REQUIRED_PERMISSIONS } from './app.ts'
+import { GITHUB_API, GitHubFailed, REQUIRED_PERMISSIONS } from './app.ts'
 
 /** Lingtai's own page. GitHub's form requires a homepage and nothing reads it. */
 export const LINGTAI_URL = 'https://github.com/steven-zhc/lingtai'
@@ -266,7 +266,7 @@ export async function convertManifest(code: string, deps: { fetch?: typeof fetch
     } catch {
       // Not JSON. The raw prefix is more useful than nothing.
     }
-    throw new GitHubError(response.status, path, message)
+    throw new GitHubFailed(response.status, path, message)
   }
 
   const raw = (await response.json()) as {

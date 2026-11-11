@@ -27,7 +27,7 @@ import { promisify } from 'node:util'
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
-import { createGitHubClient, GitHubError, installationForRepo, type GitHubClient } from '@lingtai/github'
+import { createGitHubClient, GitHubFailed, installationForRepo, type GitHubClient } from '@lingtai/github'
 import { baseOf, diskFiles, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
@@ -110,7 +110,7 @@ function githubReader(client: Promise<GitHubClient>, owner: string, repo: string
         c.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`).then(
           () => true,
           (err) => {
-            if (err instanceof GitHubError && err.status === 404) return false
+            if (err instanceof GitHubFailed && err.status === 404) return false
             throw err
           },
         ),
