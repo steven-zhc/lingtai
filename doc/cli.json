@@ -620,33 +620,39 @@
     {
       "name": "pause",
       "group": "daemon",
-      "task": "stop the daemon taking new tickets",
+      "task": "stop one project, or every project, taking new tickets",
       "effect": "changes",
       "usage": [
-        "lingtai pause <why> [--no-color]",
+        "lingtai pause [project] [--no-color]",
+        "  Locks the project, or every registered project when none is named.",
+        "  A person's pause carries no reason and holds until lingtai resume.",
         "  A run in flight finishes. About the daemon that is running, and",
         "  gone when it is — but not for lingtai run, which takes no ticket",
         "  while a pause stands, daemon or none: one already working",
         "  finishes the ticket in hand and takes no other."
       ],
       "examples": [
-        "lingtai pause \"reviewing the recipe\""
+        "lingtai pause lingtai",
+        "lingtai pause"
       ],
       "flags": [
-        "--no-color",
-        "--reason"
+        "--no-color"
       ],
       "json": null
     },
     {
       "name": "resume",
       "group": "daemon",
-      "task": "take tickets again",
+      "task": "take tickets again, for one project or every project",
       "effect": "changes",
       "usage": [
-        "lingtai resume [--no-color]"
+        "lingtai resume [project] [--no-color]",
+        "  Unlocks the project. With none named it unlocks every paused",
+        "  registered project and also lifts a conductor-wide pause or a",
+        "  shutdown request that stands."
       ],
       "examples": [
+        "lingtai resume lingtai",
         "lingtai resume"
       ],
       "flags": [

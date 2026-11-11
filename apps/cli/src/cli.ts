@@ -1097,17 +1097,19 @@ function startCommand(name: 'start' | 'daemon') {
 const whyArg = Argument.String('why').pipe(Argument.variadic())
 const reasonOption = optionalText('reason')
 
-const pause = Command.make('pause', { why: whyArg, reason: reasonOption, noColor }, (args) =>
+const optionalProject = Argument.String('project').pipe(Argument.optional)
+
+const pause = Command.make('pause', { project: optionalProject, noColor }, (args) =>
   daemonHandler(args, async () => {
     const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('pause', { reason: given(args.reason) ?? args.why.join(' ') })
+    return controlCommand('pause', { project: given(args.project) })
   }),
 ).pipe(Command.withDescription(definitionOf('pause').task))
 
-const resume = Command.make('resume', { noColor }, (args) =>
+const resume = Command.make('resume', { project: optionalProject, noColor }, (args) =>
   daemonHandler(args, async () => {
     const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('resume', {})
+    return controlCommand('resume', { project: given(args.project) })
   }),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 

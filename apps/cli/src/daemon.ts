@@ -20,7 +20,6 @@ import {
   reconcile,
   requestShutdown,
   requestShutdownUnlessStanding,
-  resumeConductor,
   controlWatermark,
   startAfter,
   HEARTBEAT_MS,
@@ -49,7 +48,7 @@ import { daemonLiveness } from './doctor.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
-import { pauseCommand } from './pause.ts'
+import { pauseProjects, resumeProjects, runEffect } from './project-pause.ts'
 import { PROJECTIONS } from './projection.ts'
 import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
@@ -784,26 +783,20 @@ export async function daemonCommand(
  */
 export async function controlCommand(
   verb: 'pause' | 'resume' | 'shutdown',
-  input: { reason?: string; timeout?: string; force?: boolean },
+  input: { reason?: string; timeout?: string; force?: boolean; project?: string },
 ): Promise<number> {
   const by = `human:${process.env['USER'] ?? 'operator'}`
 
-  if (verb === 'pause') {
-    const reason = input.reason ?? ''
-    if (!reason.trim()) {
-      // A pause with no reason is one nobody can undo confidently, because
-      // nobody can tell whether the thing it was waiting for has happened.
-      console.error('lingtai pause <why>  — a pause needs a reason')
-      return 2
+  // A pause and a resume lock and unlock projects (#992, 0126 §7). Neither
+  // appends `ConductorPaused`; bare `resume` still lifts one that stands.
+  if (verb === 'pause' || verb === 'resume') {
+    const effect = verb === 'pause' ? pauseProjects(input.project, by) : resumeProjects(input.project, by)
+    try {
+      return await runEffect(effect)
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err))
+      return 1
     }
-    await pauseCommand(by, reason)
-    return 0
-  }
-
-  if (verb === 'resume') {
-    await resumeConductor(by)
-    for (const line of renderVerdict('resumed', { outcome: 'accepted', detail: `resumed by ${by}` })) console.log(line)
-    return 0
   }
 
   if (verb === 'shutdown') {
