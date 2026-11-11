@@ -3,7 +3,7 @@
   "packages/event-store": { "async": 15, "run": 0 },
   "packages/projector": { "async": 80, "run": 0 },
   "packages/github": { "async": 0, "run": 0 },
-  "packages/repo": { "async": 4, "run": 0 },
+  "packages/repo": { "async": 0, "run": 0 },
   "packages/agent": { "async": 23, "run": 0 },
   "packages/actions": { "async": 16, "run": 0 },
   "packages/conductor": { "async": 197, "run": 16 },

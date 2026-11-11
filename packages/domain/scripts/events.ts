@@ -99,13 +99,13 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'IntegrationRefused',
     why: "type is a string argument of the module's own `append`",
     file: 'packages/repo/src/integrate.ts',
-    anchor: "await append('IntegrationRefused', {",
+    anchor: "yield* append('IntegrationRefused', {",
   },
   {
     event: 'IntegrationSucceeded',
     why: "type is a string argument of the module's own `append`",
     file: 'packages/repo/src/integrate.ts',
-    anchor: "await append('IntegrationSucceeded', {",
+    anchor: "yield* append('IntegrationSucceeded', {",
   },
   {
     event: 'IssueUpdated',

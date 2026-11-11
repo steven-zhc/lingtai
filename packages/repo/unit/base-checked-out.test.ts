@@ -9,7 +9,9 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { RepoFailed } from '../src/git.ts'
-import { checkedOutAt, integrate, isLocalRemote } from '../src/integrate.ts'
+import { checkedOutAt, integrateEffect, isLocalRemote } from '../src/integrate.ts'
+
+const integrate = (options: Parameters<typeof integrateEffect>[0]) => Effect.runPromise(integrateEffect(options))
 
 const REMOTE = '/Users/me/code/app'
 const sha = '1'.repeat(40)

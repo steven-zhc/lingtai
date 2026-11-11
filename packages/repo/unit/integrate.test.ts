@@ -9,12 +9,15 @@
  * part of a pass: it asserts the fetch's destinations instead, which is what
  * stands in for a real worktree collision until that suite runs.
  */
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { RepoFailed } from '../src/git.ts'
-import { integrate } from '../src/integrate.ts'
+import { integrateEffect } from '../src/integrate.ts'
+
+const integrate = (options: Parameters<typeof integrateEffect>[0]) => Effect.runPromise(integrateEffect(options))
 
 const PROJECT = 'lane-fixture'
 const BASE = 'main'
@@ -204,5 +207,35 @@ describe('a push the base refuses (#662)', () => {
     if (result.ok) throw new Error('unreachable')
     expect(result.reason).toBe('push-rejected')
     expect(pushes(fake.calls)).toHaveLength(4)
+  })
+})
+
+describe('the lane records its events through the store (#1027)', () => {
+  const wrap = (fail: (call: number) => Error | undefined): EventStore => {
+    const inner = createMemoryEventStore()
+    let calls = 0
+    return {
+      ...inner,
+      read: inner.read.bind(inner),
+      append: async (...args: Parameters<EventStore['append']>) => {
+        const err = fail(++calls)
+        if (err !== undefined) throw err
+        return inner.append(...args)
+      },
+    } as EventStore
+  }
+
+  it('retries a lost race on the lane stream and still records', async () => {
+    const store = wrap((n) => (n <= 2 ? new ConcurrencyError('lane', 0, []) : undefined))
+    const result = await integrate({ ...options(fakeGit().git), store })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
+
+  it('answers a store that always fails with unexpected, carrying its message', async () => {
+    const store = wrap(() => new Error('connection dropped'))
+    const result = await integrate({ ...options(fakeGit().git), store })
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('unexpected')
+    expect(result.detail).toBe('the integration failed unexpectedly: connection dropped')
   })
 })

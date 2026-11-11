@@ -3,8 +3,10 @@ import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { RepoFailed } from '../src/git.ts'
-import { integrate } from '../src/integrate.ts'
+import { integrateEffect } from '../src/integrate.ts'
 import { mirrorWrite, withMirrorWrite } from '../src/mirror-lock.ts'
+
+const integrate = (options: Parameters<typeof integrateEffect>[0]) => Effect.runPromise(integrateEffect(options))
 
 const deferred = () => {
   let resolve!: () => void
