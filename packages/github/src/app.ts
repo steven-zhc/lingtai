@@ -143,7 +143,9 @@ export function runGitHub<A>(
 /** A rejection that is not already a `GitHubFailed` is one with status 0: no answer from GitHub. */
 function failed(path: string) {
   return (err: unknown): GitHubFailed =>
-    err instanceof GitHubFailed ? err : new GitHubFailed(0, path, (err as Error).message)
+    err instanceof GitHubFailed
+      ? err
+      : new GitHubFailed(0, path, (err as Error | null | undefined)?.message ?? String(err))
 }
 
 /** The App's JWT, as an Effect: it is signed per use, and a key that will not sign is a failure and not a throw. */
@@ -162,7 +164,9 @@ export const githubJson = <T>(
   body?: unknown,
 ): Effect.Effect<T, GitHubFailed> =>
   Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
+    // One `tryPromise` owns the signal from the request to the last byte of the
+    // body, so an interruption after the headers still aborts the transfer.
+    const result = yield* Effect.tryPromise({
       try: (signal) =>
         fetch(`${GITHUB_API}${path}`, {
           method,
@@ -177,21 +181,25 @@ export const githubJson = <T>(
           },
           body: body === undefined ? undefined : JSON.stringify(body),
           signal,
-        }),
+        }).then((response): Promise<{ ok: true; data: unknown } | { ok: false; status: number; text: string }> =>
+          !response.ok
+            ? response.text().then((text) => ({ ok: false, status: response.status, text }))
+            : response.status === 204
+              ? Promise.resolve({ ok: true, data: undefined })
+              : response.json().then((data: unknown) => ({ ok: true, data })),
+        ),
       catch: failed(path),
     })
-    if (!response.ok) {
-      const text = yield* Effect.tryPromise({ try: () => response.text(), catch: failed(path) })
-      let message = text.slice(0, 400)
+    if (!result.ok) {
+      let message = result.text.slice(0, 400)
       try {
-        message = (JSON.parse(text) as { message?: string }).message ?? message
+        message = (JSON.parse(result.text) as { message?: string }).message ?? message
       } catch {
         // Not JSON. The raw prefix is more useful than nothing.
       }
-      return yield* new GitHubFailed(response.status, path, message)
+      return yield* new GitHubFailed(result.status, path, message)
     }
-    if (response.status === 204) return undefined as T
-    return yield* Effect.tryPromise({ try: () => response.json() as Promise<T>, catch: failed(path) })
+    return result.data as T
   })
 
 /** Which installation covers a repository, as an Effect. */

@@ -7,7 +7,15 @@ import { generateKeyPairSync } from 'node:crypto'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createGitHubClient, GitHubFailed, makeGitHub, type AppAuth, type Installation } from '../src/index.ts'
+import {
+  appInstallationsEffect,
+  createGitHubClient,
+  GitHubFailed,
+  makeGitHub,
+  type AppAuth,
+  type AppReader,
+  type Installation,
+} from '../src/index.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -85,5 +93,34 @@ describe('the GitHub client as Effects', () => {
     expect(error).toBeInstanceOf(GitHubFailed)
     expect(error.status).toBe(0)
     expect(error.message).toBe('0 on /repos/o/r/issues/1: fetch failed')
+  })
+
+  it('aborts the fetch signal when interrupted after the headers, while the body is streaming', async () => {
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      if (String(url).includes('/access_tokens')) return token()
+      signal = init.signal ?? undefined
+      // Headers arrive; the body never does until aborted.
+      const body = new ReadableStream({
+        start(controller) {
+          init.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')))
+        },
+      })
+      return new Response(body, { status: 200 })
+    })
+    const controller = new AbortController()
+    const client = await createGitHubClient(options)
+    const pending = client.getIssue(1, controller.signal).catch((e: unknown) => e)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    controller.abort()
+    await pending
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('fails a null rejection from an AppReader with a GitHubFailed, not a defect', async () => {
+    const reader = { request: () => Promise.reject(null) } as unknown as AppReader
+    const error = await Effect.runPromise(Effect.flip(appInstallationsEffect(reader)))
+    expect(error).toBeInstanceOf(GitHubFailed)
+    expect(error.status).toBe(0)
   })
 })
