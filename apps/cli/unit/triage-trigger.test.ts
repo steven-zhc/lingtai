@@ -195,14 +195,48 @@ describe('a locked project', () => {
     const f = fixture(judgement)
     const log = vi.fn()
     f.deps.log = log
-    f.deps.locked = async (project) => (project === 'lingtai' ? 'paused by steven' : null)
+    const asked: string[] = []
+    f.deps.locked = async (project) => {
+      asked.push(project)
+      return project === 'lingtai' ? 'paused by steven' : null
+    }
     await onWaitStarted(f.started, f.deps)
     await drained()
     expect(f.dispatched).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith(expect.stringContaining('not started — paused by steven'))
-    f.deps.locked = async () => null
-    await onWaitStarted(f.started, f.deps)
+
+    const otherStream = ticketStream('other', 7)
+    const other = makeStream(otherStream)('WaitStarted', { waitId: 'wait-7' as WaitId, reason: judgement })
+    f.deps.store = { ...f.deps.store, read: async () => [other] }
+    await onWaitStarted(other, f.deps)
     await drained()
+    expect(asked).toEqual(['lingtai', 'other'])
+    expect(f.dispatched).toHaveBeenCalledOnce()
+  })
+
+  it('a resume that joins a worker whose lock read is still in flight is not consumed by it', async () => {
+    const f = fixture(judgement)
+    let release: (why: string | null) => void = () => {}
+    let calls = 0
+    f.deps.locked = () => {
+      calls += 1
+      return calls === 1 ? new Promise<string | null>((r) => (release = r)) : Promise.resolve(null)
+    }
+    f.deps.readTasks = async () => [{ issue: '413', state: 'waiting' as const }]
+    await onWaitStarted(f.started, f.deps)
+    for (let i = 0; i < 50 && calls === 0; i++) await drained()
+    expect(calls).toBe(1)
+    const resumed = makeStream(ticketStream('lingtai', 1))(
+      'ProjectResumed' as never,
+      {
+        project: 'lingtai',
+        by: 'human:steven',
+      } as never,
+    )
+    await onWaitStarted(resumed as Envelope, f.deps)
+    await drained()
+    release('paused')
+    for (let i = 0; i < 50 && f.dispatched.mock.calls.length === 0; i++) await drained()
     expect(f.dispatched).toHaveBeenCalledOnce()
   })
 
