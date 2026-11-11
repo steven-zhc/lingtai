@@ -11,7 +11,15 @@
  */
 import { loadProjects } from '@lingtai/conductor/projects'
 import { pauseProject, resumeProject } from '@lingtai/daemon/control'
-import { isRegistered, locksOn, projectStream, reduceProject, type Lock } from '@lingtai/domain'
+import {
+  isRegistered,
+  lockSentence,
+  locksOn,
+  projectStream,
+  reduceProject,
+  type Envelope,
+  type Lock,
+} from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { cache } from 'react'
@@ -97,3 +105,17 @@ export const setProjectPaused = (
         return { ok: true, detail: `${project} is not paused` } satisfies ActionResult
     }
   })
+
+/**
+ * Why a new question may not be asked of this project, or null (#996).
+ *
+ * A reader's refusal (0126 §5), not the gate: the board does not hold the
+ * conductor lock, and the daemon's `locked` still decides whether a turn
+ * starts. `read` is the project's stream, or the error reading it failed with —
+ * unknown is not unlocked.
+ */
+export function askRefusal(project: string, read: readonly Envelope[] | Error): string | null {
+  if (read instanceof Error) return `could not read whether ${project} is paused — ${read.message}`
+  const sentence = lockSentence(project, locksOn({ project: reduceProject(read) }))
+  return sentence === null ? null : `${sentence} — resume it, then ask`
+}

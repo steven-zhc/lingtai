@@ -40,14 +40,6 @@
     "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan §1.6)."
   },
   {
-    "file": "apps/cli/src/discuss.ts",
-    "function": "onDiscussionRequested",
-    "type": "DiscussionRequested",
-    "count": 1,
-    "class": "reaction",
-    "reason": "A trigger: it queues the answering loop on that one event (plan §1.9)."
-  },
-  {
     "file": "apps/cli/src/triage.ts",
     "function": "onWaitStarted",
     "type": "WaitStarted",
@@ -142,14 +134,6 @@
     "count": 1,
     "class": "select",
     "reason": "The last refs resolved, a lookup beside item.github, which is already TicketState's (#832)."
-  },
-  {
-    "file": "packages/daemon/src/work-loop.ts",
-    "function": "onEvent",
-    "type": "DiscussionRequested",
-    "count": 1,
-    "class": "reaction",
-    "reason": "A trigger on one event as it arrives (plan §1.7)."
   },
   {
     "file": "packages/daemon/src/work-loop.ts",

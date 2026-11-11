@@ -61,7 +61,7 @@ import {
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
 import { runLogPath } from '@lingtai/conductor/run-log'
-import { readControl } from '@lingtai/daemon'
+import { DISCUSSION_EVENTS, readControl } from '@lingtai/daemon'
 import {
   chatStream,
   parseTicketStream,
@@ -452,7 +452,8 @@ export function nextRequest(asks: readonly DiscussionRequest[], chat: ChatState)
 /**
  * Every question the log holds that nothing has answered, answered.
  *
- * Called at daemon startup, because a request made while the daemon was down is
+ * Called at daemon startup, on a new request, and on a resume (#996): a turn
+ * whose project is locked is not started and stays outstanding. Called at startup because a request made while the daemon was down is
  * waiting in the stream rather than lost — the property `pause` and `now`
  * already have and the reason control goes through the log at all (0013).
  *
@@ -460,33 +461,67 @@ export function nextRequest(asks: readonly DiscussionRequest[], chat: ChatState)
  * starting them together is the one place this could surprise somebody with a
  * bill they did not watch accumulate.
  */
-export async function answerOutstanding(log: (line: string) => void = () => {}): Promise<number> {
-  const control = await readControl()
+export interface AnswerPorts {
+  log?: (line: string) => void
+  /** Why a project may not start work, or null (#991's `locked`). Default: nothing is locked. */
+  locked?: (project: string) => Promise<string | null>
+  control?: typeof readControl
+  read?: (chatId: string) => Promise<readonly Envelope[]>
+  answer?: typeof answerDiscussion
+}
+
+export interface Outstanding {
+  answered: number
+  /** Chats with a turn held back by a lock; one per chat, not per turn. */
+  heldBack: number
+}
+
+const readChat = (chatId: string) => eventStore.read(chatStream(chatId))
+const notLocked = () => Promise.resolve(null)
+
+export async function answerOutstanding(ports: AnswerPorts = {}): Promise<Outstanding> {
+  const log = ports.log ?? (() => {})
+  const locked = ports.locked ?? notLocked
+  const answer = ports.answer ?? answerDiscussion
+  const read = ports.read ?? readChat
+  const control = await (ports.control ?? readControl)()
   const byChat = new Map<string, DiscussionRequest[]>()
   for (const d of control.discussions) {
     byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d])
   }
 
   let answered = 0
+  let heldBack = 0
   for (const [chatId, asks] of byChat) {
     // Until the chat has caught up, not once: two questions can land in one
     // burst, and answering only the first would leave the second waiting for
     // an event that has already been.
     for (;;) {
-      const events = await eventStore.read(chatStream(chatId))
+      const events = await read(chatId)
       // D14: requests are counted against answered *turns*, and an answer with
       // no open ask counts for nothing. Never "some turn has no answer": a
       // daemon that died between ask and answer leaves that turn unanswered for
       // ever, and the retry appends a second ask.
       const next = nextRequest(asks, reduceChat(events))
       if (next === null) break
-      await answerDiscussion(next, log).catch((err: unknown) =>
-        log(`discussion ${chatId} failed: ${(err as Error).message}`),
-      )
+      // A lock is asked per turn, before the agent starts (0126 §6). Held back
+      // means nothing is appended: the request stays outstanding and a resume
+      // brings it round again. `break`, never `continue` — nothing changes, so
+      // the same request would come back as `next` for ever.
+      const project = parseTicketStream(next.ticketId)?.project ?? ''
+      if (project !== '') {
+        const why = await locked(project).catch((err: unknown) => (err as Error).message)
+        if (why !== null) {
+          log(`discussion ${chatId} on ${next.ticketId}: not started — ${why}`)
+          heldBack += 1
+          break
+        }
+      }
+      await answer(next, log).catch((err: unknown) => log(`discussion ${chatId} failed: ${(err as Error).message}`))
       answered += 1
     }
   }
-  return answered
+  return { answered, heldBack }
 }
 
 /**
@@ -507,13 +542,17 @@ let queue: Promise<unknown> = Promise.resolve()
  * outstandingness: two requests can land in one burst, and answering the one in
  * hand while an earlier one is still unanswered would answer them out of order.
  */
-export async function onDiscussionRequested(event: Envelope, log: (line: string) => void = () => {}): Promise<void> {
-  if (event.type !== 'DiscussionRequested') return
+export async function onDiscussionRequested(
+  event: Envelope,
+  log: (line: string) => void = () => {},
+  locked?: AnswerPorts['locked'],
+): Promise<void> {
+  if (!(DISCUSSION_EVENTS as readonly string[]).includes(event.type)) return
   queue = queue
-    .then(() => answerOutstanding(log))
+    .then(() => answerOutstanding({ log, locked }))
     .catch((err: unknown) => {
       log(`discussions: ${(err as Error).message}`)
-      return 0
+      return { answered: 0, heldBack: 0 }
     })
   await queue
 }

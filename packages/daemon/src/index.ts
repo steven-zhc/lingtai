@@ -22,6 +22,7 @@ export {
 } from './daemon.ts'
 export {
   COMPLETION_EVENTS,
+  DISCUSSION_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
   type EventSubscriber,

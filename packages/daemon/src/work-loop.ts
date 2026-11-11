@@ -94,6 +94,13 @@ import { createInFlight } from './in-flight.ts'
 import type { DaemonStore } from './store.ts'
 
 /**
+ * The events a discussion is answered on (#996): a question asked, and a
+ * resume that lifts what held one back. One list, read by the loop's delivery
+ * and by the handler's own guard, so the next unlock event is added once.
+ */
+export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed'] as const
+
+/**
  * The events that mean the conductor is free to look again.
  *
  * A list rather than "anything": a run appends steadily — touched files, guard
@@ -586,7 +593,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project)
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
-          if (event.type === 'DiscussionRequested' && options.discuss) {
+          if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {
             deliver('discuss', event, options.discuss)
           }
           if (event.type === 'WaitStarted' && options.triage) {
