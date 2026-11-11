@@ -1,0 +1,14 @@
+[
+  {
+    "file": "packages/conductor/src/snapshot-state.ts",
+    "fn": "readState",
+    "until": "#790",
+    "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (reconcile, control) and apps/board read a reducer's state as a promise"
+  },
+  {
+    "file": "packages/repo/src/integrate.ts",
+    "fn": "integrate",
+    "until": "#790",
+    "why": "packages/repo's own tests call the promise; no production caller is left (conductor/src/live.ts wires integrateEffect)"
+  }
+]
