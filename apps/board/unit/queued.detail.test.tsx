@@ -63,6 +63,8 @@ const QUEUED: QueuedView = {
   notOffered: null,
   runnableAt: null,
   paused: false,
+  project: 'lingtai',
+  locks: [],
   dependenciesUnread: null,
   plan: null,
   kind: 'bug',
@@ -114,7 +116,7 @@ describe('what is holding it', () => {
   it('puts a pause above a backoff', () => {
     const now = Date.parse('2026-09-09T04:00:00Z')
     const view = { ...QUEUED, position: null, paused: true, runnableAt: '2026-09-09T04:32:00Z' }
-    expect(holding(view, now)).toBe('paused — nothing will start')
+    expect(holding(view, now)).toBe('paused until the setup is fixed — nothing will start')
   })
 
   /**

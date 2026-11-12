@@ -772,7 +772,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             />
             {/* And whether anything is going to move, which is neither of those:
               the projection can be at the head of the log while the conductor
-              has been told to take nothing, which is what the board showed for
+              is under the setup's pause, which is what the board showed for
               four days without a word for it (#77). Draws nothing when it is
               not paused, which is why it costs the quiet row nothing. */}
             {control.paused ? (

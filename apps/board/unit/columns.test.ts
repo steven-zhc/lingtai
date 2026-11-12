@@ -139,7 +139,7 @@ describe("the board's columns", () => {
  */
 describe('what an empty column says', () => {
   it('says Running is stopped, not bare, while the conductor is paused', () => {
-    expect(emptyNote('running', true)).toBe('Paused — nothing will start.')
+    expect(emptyNote('running', true)).toBe('Paused until the setup is fixed — nothing will start.')
   })
 
   it('keeps the ordinary copy when nothing is paused', () => {
@@ -172,8 +172,10 @@ describe('what an empty column says', () => {
   })
 
   it('leaves the conductor-wide pause alone under a filter, because `ctl-` is one stream', () => {
-    expect(emptyNote('running', true, 'esctest')).toBe('Paused — nothing will start.')
-    expect(emptyNote('running', true, 'esctest', pausedMap('esctest'))).toBe('Paused — nothing will start.')
+    expect(emptyNote('running', true, 'esctest')).toBe('Paused until the setup is fixed — nothing will start.')
+    expect(emptyNote('running', true, 'esctest', pausedMap('esctest'))).toBe(
+      'Paused until the setup is fixed — nothing will start.',
+    )
   })
 
   it('says a selected project is paused (#995)', () => {
@@ -205,7 +207,9 @@ describe('what an empty column says', () => {
     expect(emptyNote('running', false, undefined, map, false, WHEN)).toBe(line)
     expect(emptyNote('running', false, 'a', new Map([['a', map.get('a')!]]), false, WHEN)).toBe(line)
     expect(emptyHeld('running', false, undefined, map, false, WHEN)).toBe(true)
-    expect(emptyNote('running', true, undefined, map, false, WHEN)).toBe('Paused — nothing will start.')
+    expect(emptyNote('running', true, undefined, map, false, WHEN)).toBe(
+      'Paused until the setup is fixed — nothing will start.',
+    )
     expect(emptyNote('queued', false, undefined, map, false, WHEN)).toBe('Nothing here yet.')
   })
 
@@ -258,7 +262,7 @@ describe('what an empty Running says about a usage limit (#1010)', () => {
     const passed = new Map([['lingtai', [{ ...account, until: new Date(2026, 10, 11, 17, 30) }]]])
     expect(emptyNote('running', false, 'lingtai', passed, false, now, uses)).toBe('Nothing here for lingtai.')
     expect(emptyNote('running', true, 'lingtai', new Map([['lingtai', [account]]]), false, now, uses)).toBe(
-      'Paused — nothing will start.',
+      'Paused until the setup is fixed — nothing will start.',
     )
   })
 })

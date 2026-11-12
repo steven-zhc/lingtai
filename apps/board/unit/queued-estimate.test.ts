@@ -107,6 +107,8 @@ describe('estimateLine', () => {
     notOffered: null,
     runnableAt: null,
     paused: false,
+    project: 'lingtai',
+    locks: [],
     dependenciesUnread: null,
     plan: null,
     kind: 'bug',

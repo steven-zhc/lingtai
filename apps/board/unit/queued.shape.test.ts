@@ -40,6 +40,8 @@ const VIEW: QueuedView = {
   notOffered: null,
   runnableAt: null,
   paused: false,
+  project: 'lingtai',
+  locks: [],
   dependenciesUnread: null,
   plan: null,
   kind: 'bug',
@@ -78,7 +80,7 @@ describe('queuedChip and queuedSentence', () => {
     expect(queuedSentence(out, null)).toContain('GitHub is not offering it')
     const paused = { ...VIEW, position: null, paused: true }
     expect(queuedChip(paused, null)).toBe('paused')
-    expect(queuedSentence(paused, null)).toBe('paused — nothing will start')
+    expect(queuedSentence(paused, null)).toBe('paused until the setup is fixed — nothing will start')
     const off = { ...VIEW, position: null, runnableAt: new Date(Date.now() + 600_000).toISOString() }
     expect(queuedChip(off, null)).toBe('backing off')
     expect(queuedSentence(off, null)).toMatch(/back/i)
@@ -121,7 +123,7 @@ describe('queuedFor', () => {
       { taskId: 't5', issue: '5', title: 'five', kind: 'feature' },
     ] as never)
   })
-  const ask = (issue: string) => queuedFor({ project: 'p', issue, own: [], paused: false })
+  const ask = (issue: string) => queuedFor({ project: 'p', issue, own: [], paused: false, locks: [] })
 
   it('carries the kind, the order and what is behind it', async () => {
     const view = await ask('7')

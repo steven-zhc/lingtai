@@ -76,6 +76,7 @@ import {
   isPaused,
   joinNames,
   type LockMap,
+  lockStanding,
   pausedNames,
 } from './lock-marks.ts'
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
@@ -511,7 +512,7 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
  * What an empty column says.
  *
  * "Nothing here yet" under Running is false in the way that matters while the
- * conductor is paused (#77): there is plenty to run, and the reason none of it
+ * setup's pause stands (#77): there is plenty to run, and the reason none of it
  * is running is a decision somebody made and the log remembers. The empty
  * column is where a person looks when a lane is bare, so it is the one place
  * that has to know.
@@ -539,7 +540,7 @@ export function emptyNote(
   now: Date = new Date(),
   uses: ReadonlyMap<string, readonly RuntimeId[]> = new Map(),
 ): string {
-  if (column === 'running' && paused) return 'Paused — nothing will start.'
+  if (column === 'running' && paused) return 'Paused until the setup is fixed — nothing will start.'
   const ceiling = column === 'running' ? anyCeilingToday(locksInScope, now) : null
   if (ceiling !== null) {
     return `Nothing here yet. Today's spend reached the $${ceiling.ceilingUsd} ceiling — see the banner.`
@@ -1817,7 +1818,7 @@ export interface QueuedStanding {
  *
  * **A pause outranks a backoff.** They can both hold at once and only one of
  * them decides anything: an item whose backoff lifts in a minute still does not
- * move while the conductor is taking nothing, so promising a time would be the
+ * move while the setup's pause stands, so promising a time would be the
  * more precise of two answers and the wrong one.
  *
  * The conductor-wide pause's wording is `emptyNote`'s, because it is the same
@@ -1838,37 +1839,14 @@ export function queuedStanding(
   if (paused) {
     return {
       state: 'paused',
-      text: 'paused — nothing will start',
-      title: 'the conductor has been told to take no new work; this card keeps its place',
+      text: 'paused until the setup is fixed — nothing will start',
+      title: 'a recipe asks for a tier its runtime cannot provide; this card keeps its place',
     }
   }
-  // Today's ceiling (#1007, 0126 §8): it holds every project, so after the
-  // conductor-wide pause and before a person's. A passed day's is not marked.
-  if (ceilingToday(projectLocks, new Date(now)) !== null) {
-    return {
-      state: 'paused',
-      text: "today's spend reached the ceiling — nothing will start",
-      title: 'no new work starts until midnight or until today’s ceiling is raised; this card keeps its place',
-    }
-  }
-  // A runtime at its usage limit (#1010): after the ceiling, before a person's
-  // pause. A passed `until` marks nothing; the first by runtime when there are two.
-  const limit = accountsHolding(projectLocks, new Date(now))[0]
-  if (limit !== undefined) {
-    return {
-      state: 'paused',
-      text: `${limit.runtime} is at its usage limit until ${whenLabel(limit.until, new Date(now))} — nothing will start`,
-      title: `${card.project}'s recipe uses ${limit.runtime}; this card keeps its place`,
-    }
-  }
-  // The project's own pause (#995): after the ceiling, before a backoff.
-  if (isPaused(projectLocks)) {
-    return {
-      state: 'paused',
-      text: `${card.project} is paused — nothing will start`,
-      title: `${card.project} takes no new work until it is resumed; this card keeps its place`,
-    }
-  }
+  // A lock (#995, #1007, #1010): after the setup pause, before a backoff. The
+  // words are `lockStanding`'s, shared with the task page's Queued panel.
+  const lock = lockStanding(card.project, projectLocks, new Date(now))
+  if (lock !== null) return { state: 'paused', text: lock.text, title: lock.title }
   if (card.runnableAt === null) return null
   return {
     state: 'backing-off',

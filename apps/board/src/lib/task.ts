@@ -104,6 +104,7 @@ import {
 } from './board.ts'
 import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, summarise, toLine } from './history.ts'
+import { readProjectLocks } from './locks.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
 import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
@@ -2132,6 +2133,15 @@ export async function loadTaskAnswer(taskId: string): Promise<TaskAnswer> {
       url: null,
       compareUrl: null,
     }
+    // The ticket's project's locks, from the read the banner on this page makes
+    // too. Null is a read that failed — never `[]`, which says nothing holds it.
+    const lockRead = standing.state === 'queued' ? await readProjectLocks() : null
+    const locks =
+      lockRead === null
+        ? []
+        : lockRead.ok
+          ? (lockRead.held.find((h) => h.project === parsed.project)?.locks ?? [])
+          : null
     const [outgoing, queued] = await Promise.all([
       standing.state === 'blocked' || standing.state === 'queued'
         ? timed('next.outgoing', () => outgoingFor({ own, streams, ticket: withAnswer(base, ticket) })).catch((err) =>
@@ -2140,8 +2150,8 @@ export async function loadTaskAnswer(taskId: string): Promise<TaskAnswer> {
         : null,
       standing.state === 'queued'
         ? timed('next.queued', () =>
-            queuedFor({ project: parsed.project, issue: parsed.issue, own, paused: control.paused }),
-          ).catch((err) => refusedQueued((err as Error).message, null, control.paused))
+            queuedFor({ project: parsed.project, issue: parsed.issue, own, paused: control.paused, locks }),
+          ).catch((err) => refusedQueued((err as Error).message, null, control.paused, parsed.project, locks))
         : null,
     ])
     return { ticket, outgoing, queued }
