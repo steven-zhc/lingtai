@@ -1506,7 +1506,7 @@ describe('what a person is shown when the restarts are over too', () => {
  */
 describe('what a conflict tells the fixer', () => {
   const brief = fixBrief({
-    refusal: { on: 'conflict', base: 'main', paths: 'src/queue.ts\npackages/domain/src/events.ts' },
+    refusal: { on: 'conflict', base: 'main', paths: 'src/queue.ts\npackages/domain/src/events.ts', findings: [] },
     round: 1,
     of: 2,
     action: 'merge',
@@ -1514,6 +1514,34 @@ describe('what a conflict tells the fixer', () => {
     diffBytes: 400_000,
     checks: ['pnpm typecheck && pnpm test'],
     ticket: TICKET,
+  })
+
+  it('names build and then review as what runs again, and prints no open-findings heading without findings', () => {
+    expect(brief).toMatch(/`build` and then `review` run again/)
+    expect(brief).not.toContain('## Also open from the last review')
+  })
+
+  it("briefs the conflict first and a passing review's open findings after it, as context", () => {
+    const withMinor = fixBrief({
+      refusal: {
+        on: 'conflict',
+        base: 'main',
+        paths: 'src/queue.ts',
+        findings: [{ file: 'a.ts', line: 3, claim: 'a stray name', failureScenario: 'x', severity: 'minor' }],
+      },
+      round: 1,
+      of: 2,
+      action: 'merge',
+      diff: 'd',
+      diffBytes: 400_000,
+      checks: ['pnpm test'],
+      ticket: TICKET,
+    })
+    const merge = withMinor.indexOf('run git merge `main`')
+    const open = withMinor.indexOf('## Also open from the last review')
+    expect(merge).toBeGreaterThan(-1)
+    expect(open).toBeGreaterThan(merge)
+    expect(withMinor).not.toContain('which is the acceptance criterion')
   })
 
   it('tells the agent to stop and ask rather than choose when the behaviours contradict', () => {
@@ -1551,7 +1579,7 @@ describe('what a conflict tells the fixer', () => {
    * answer, so the second half — the step runs again — is what catches it.
    */
   it('asks for both the merge and the step, and refuses picking a side', () => {
-    expect(brief).toMatch(/the whole `proposed` step runs\s+again/i)
+    expect(brief).toMatch(/`build` and then `review` run\s+again/i)
     expect(brief).toMatch(/both have to\s+pass/i)
     expect(brief).toMatch(/--ours` and `--theirs` wholesale are not a resolution/i)
     expect(brief).toMatch(/Do not\s+`git merge --abort`/i)

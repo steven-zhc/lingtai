@@ -743,6 +743,11 @@ export interface FakeTree {
   at: string
   /** Whether the implementing agent commits — `b`*40, recorded at `wire`. */
   implementerCommits: boolean
+  /**
+   * Opt-in (#1119): the lane refuses every landing as a merge conflict on these
+   * paths. Absent, `integrate` always lands — every other test relies on that.
+   */
+  conflicts?: { paths: string[]; baseSha: string; headSha: string }
 }
 
 export function fakePorts(
@@ -809,6 +814,13 @@ export function fakePorts(
         Effect.sync(() => {
           did.push('integrate')
           if (!merges) throw new Error('a held run must not reach the integrator')
+          if (tree.conflicts)
+            return {
+              ok: false,
+              reason: 'conflict',
+              detail: `conflict in ${tree.conflicts.paths.join(', ')}`,
+              conflict: tree.conflicts,
+            } as never
           return { ok: true, mergeCommit: 'c'.repeat(40) } as never
         }),
     },

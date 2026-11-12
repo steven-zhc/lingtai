@@ -261,7 +261,7 @@ describe('allowedResolutions', () => {
           headSha: null,
         }),
       )
-      expect(criterion).toEqual({ printed: { step: 'merge', detail: 'a.ts\nb.ts' }, findings: [] })
+      expect(criterion).toEqual({ printed: { step: 'merge', detail: 'a.ts\nb.ts', because: 'conflict' }, findings: [] })
     })
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {

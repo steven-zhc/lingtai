@@ -1962,7 +1962,13 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
   // refusal raises no findings.
   const printed =
     asked === null && arrived !== undefined && 'detail' in arrived.ending && arrived.ending.detail !== ''
-      ? { step: arrived.step, detail: arrived.ending.detail }
+      ? {
+          step: arrived.step,
+          detail: arrived.ending.detail,
+          ...(arrived.step === 'merge' && arrived.ending.ending === 'refused' && arrived.ending.because !== undefined
+            ? { because: arrived.ending.because }
+            : {}),
+        }
       : null
   return { why: route.why, asked, printed }
 }

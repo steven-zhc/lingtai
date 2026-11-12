@@ -4275,19 +4275,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const findings = brief.context.recheck ?? []
           const from = again.printed?.step ?? 'proposed'
           const said = again.printed?.detail ?? again.asked ?? again.why
-          const refusal =
-            findings.length > 0
+          // A conflict is briefed on the conflict first, and a passing review's open
+          // findings follow it as context (#1119). Keyed on the lane's own reason
+          // and not on `from` alone: a `verify-failed` or `push-rejected` also
+          // arrives from `merge`, and is output, not a merge to run.
+          const conflict = from === 'merge' && again.printed?.because === 'conflict'
+          const refusal = conflict
+            ? ({ on: 'conflict', base, paths: said, findings } as const)
+            : findings.length > 0
               ? ({ on: 'findings', findings } as const)
-              : from === 'merge'
-                ? ({
-                    on: 'conflict',
-                    base,
-                    paths: said,
-                  } as const)
-                : ({ on: 'output', output: said } as const)
+              : ({ on: 'output', output: said } as const)
 
-          // Keyed on where the fix came from and not on `refusal`: a passing review's
-          // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
+          // Keyed on where the fix came from and not on `refusal`: a conflict round
+          // keeps its own session id whichever brief it was given.
           const fixId =
             from === 'merge'
               ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`

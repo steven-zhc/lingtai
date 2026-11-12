@@ -367,7 +367,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function grantCriterion(
   reason: WaitReason,
   refusal?: { readonly key: string; readonly findings: readonly Finding[] } | null,
-): { printed: { step: Step; detail: string }; findings: Finding[]; declined?: string } | null {
+): { printed: { step: Step; detail: string; because?: string }; findings: Finding[]; declined?: string } | null {
   if (reason._tag === 'AgentCrashed' && reason.standing !== undefined)
     return grantCriterion(reason.standing.reason, refusal)
   // A fixer declined: the criterion is the review findings it declined (the
@@ -393,8 +393,9 @@ export function grantCriterion(
   }
   const text = (value: string | null | undefined) => (value != null && value.trim().length > 0 ? value : null)
   const checkBrief = (from: Step, action: string | null | undefined, output: string) => ({
-    // `proposed`, never the step the check ran at: `fixRound` reads a printed
-    // `merge` as a conflict and treats the detail as its paths.
+    // `proposed`, never the step the check ran at: `fixRound` briefs a printed
+    // `merge` whose `because` is `'conflict'` as a conflict, with the detail as its
+    // paths, and a printed `merge` without it as plain output.
     step: 'proposed' as const,
     detail: `the ${action ?? 'declared'} check at ${from} refused:\n\n${output}`,
   })
@@ -429,9 +430,13 @@ export function grantCriterion(
       return declinedBrief(text(proposal.said))
     case 'MergeConflict':
       // A conflict always has a criterion: merge the base, resolve, commit.
-      // `fixRound` reads a printed `merge` as a conflict and the detail as its
-      // paths.
-      return { printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n') }, findings: [] }
+      // `fixRound` briefs a conflict only on `because: 'conflict'` (with `step:
+      // 'merge'`), reading the detail as its paths; a `step: 'merge'` without it is
+      // briefed as output.
+      return {
+        printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n'), because: 'conflict' },
+        findings: [],
+      }
     default:
       return null
   }

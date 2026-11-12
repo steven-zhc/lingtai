@@ -480,7 +480,7 @@ export interface SentBack {
   /** What this step asked the first time, where it asked anything. */
   readonly asked: string | null
   /** What the refusing step printed, where the round was not bought on a question. */
-  readonly printed: { readonly step: Step; readonly detail: string } | null
+  readonly printed: { readonly step: Step; readonly detail: string; readonly because?: string } | null
 }
 
 export interface ActionContext {
