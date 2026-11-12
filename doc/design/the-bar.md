@@ -34,6 +34,10 @@ The row's objects:
 - **The counts are not on the bar**: each column carries its own, so *2 queued
   · 3 running · 65 landed* was the same numbers twice. *nothing waiting on you*
   goes for the same reason.
+- **A project switch draws the bar and the columns' frame at once.** The paused
+  chip, the headline, the health dot, the filter's summary and each column's
+  count are the loading pulse until they answer; the project actions, the
+  filter's menu and the banner are absent until they do.
 
 **The footer** holds the reading, which is looked at and not acted on
 (`apps/board/src/app/footer.tsx`): today's spend against the ceiling as a meter
