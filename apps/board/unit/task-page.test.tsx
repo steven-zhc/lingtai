@@ -1140,7 +1140,8 @@ describe('the places that wait for GitHub', () => {
     const html = page(t)
     expect(html).toContain('class="btn go"')
     expect(html).toContain('offered by GitHub')
-    expect(html).not.toContain('class="skeleton"')
+    // the footer's spend skeleton is not GitHub's: look in the page's body
+    expect(html.replace(/<footer[\s\S]*<\/footer>/, '')).not.toContain('class="skeleton"')
   })
 
   it('offers no move on an untouched ticket until GitHub says the issue exists', () => {
@@ -1246,7 +1247,7 @@ describe('what a pending page cannot lose or hide', () => {
     expect(out).toContain('Close the ticket')
     // Only what GitHub knows waits.
     expect(html).toContain('class="skeleton"')
-    expect(out).not.toContain('class="skeleton"')
+    expect(out.replace(/<footer[\s\S]*<\/footer>/, '')).not.toContain('class="skeleton"')
     expect(out).toContain('/task/ticket-lingtai-147/ticket')
   })
 
