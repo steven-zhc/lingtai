@@ -61,13 +61,11 @@
  * hands `ports.judge` is `judgeDeclaredAt(recipe.steps.proposed, when)`. The port
  * did not change shape for it, which was the claim.
  *
- * **Why plain promises rather than [0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)'s
- * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
- * the conversion is at the boundary the *caller* stands on. `runAttempt` is plain,
- * its `actionsAt` and `emit` seams are plain, and a second calling convention
- * inside one file would be a thing to learn for no gain. The caller that builds
- * a live `AttemptPorts` from `Repo` and `AgentHost` runs the conversion there, once,
- * where it already has a runtime.
+ * **Why a body and the `end` ports are Effects** (#1055). `runAttempt` walks in the
+ * pass's own fiber, so a body is run there rather than lifted from a promise, and
+ * `readEnd` and `recordEnd` are Effects for the same reason. The other ports
+ * here are still plain promises, and the caller that builds a live `AttemptPorts`
+ * lifts them where it already has a runtime.
  *
  * ## What travels between the steps, and how
  *

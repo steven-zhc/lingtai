@@ -739,7 +739,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * An append at whatever version the stream is at, and nothing else.
      *
      * A promise rather than an `Effect`, because the ports below are plain
-     * promises (`attempt-steps.ts`'s *Why plain promises*) and this is what they
+     * promises (`attempt-steps.ts`'s *Why a body and the `end` ports are Effects*) and this is what they
      * append with. **For the callers that answer a refused append themselves**
      * — the account of the publish, the diff's counts, the release's record of
      * what `end` resolved — each of which has already decided that losing its
