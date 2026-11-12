@@ -46,9 +46,9 @@ import { Events, type EventStore, type EventsPort, makePostgresEvents } from './
 import { createPostgresLog, type Log } from './log.ts'
 import { makePostgresLogSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
 import { makeSqlSnapshots, Snapshots, type SnapshotsPort } from './snapshots.ts'
-import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore } from './store-face.ts'
+import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore, promiseWaker } from './store-face.ts'
 import { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
-import type { WakeListener, Waker, WakeSession } from './wake.ts'
+import { makePostgresWaker, type WakerPort } from './wake.ts'
 
 /** What one process opens: the log, and the ticket store beside it (#379). */
 interface Opened {
@@ -62,6 +62,8 @@ interface Opened {
   /** The snapshot store, as Effects, over `logSql`. */
   snapshots: SnapshotsPort
   tickets: TicketSql
+  /** A waker port for `name`, off the same choice as `log`'s own. */
+  wake(name?: string): WakerPort
   /** Ends the one connection this process holds, so the process can exit (#725). */
   close: Effect.Effect<void>
 }
@@ -140,6 +142,9 @@ const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
       logSql,
       snapshots,
       tickets: promiseLogSql(logSql),
+      // `choice.directUrl`, never the default: a default could put the `LISTEN`
+      // on a different database from the appends (see above).
+      wake: (name) => makePostgresWaker({ ...(name === undefined ? {} : { name }), url: choice.directUrl }),
       close: Effect.promise(() => db.close()),
     }
   }
@@ -149,6 +154,7 @@ const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
   const queries = sqlite.makeSqliteQueries(db)
   const logSql = sqlite.makeSqliteLogSql(db)
   const snapshots = makeSqlSnapshots(logSql)
+  const wakePort = sqlite.makePollingWaker({ path: choice.path })
   return {
     log: sqlite.createSqliteLog({
       db,
@@ -162,6 +168,7 @@ const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
     logSql,
     snapshots,
     tickets: promiseLogSql(logSql),
+    wake: () => wakePort,
     close: Effect.sync(() => db.close()),
   }
 })
@@ -253,50 +260,27 @@ export const processSnapshots: Effect.Effect<SnapshotsPort> = Effect.map(process
 export const snapshotsLayer = Layer.succeed(Snapshots, deferredSnapshotsPort(processSnapshots))
 
 /**
- * A waker whose session opens once the log is open.
- *
- * `open()` is synchronous and a store is not, so the session is a handle to a
- * session-to-be: `ready` resolves when the real one is ready — which is exactly
- * what `subscribe` waits on before it reads — and rejects with the refusal on a
- * machine that chose nothing. `close()` never waits on `ready`, as the contract
- * requires, and a close that arrives first is remembered so the session that
- * turns up is closed rather than left listening.
+ * A waker whose session opens once the log is open: the open is the first step
+ * of the session, inside the caller's scope, so a close before the log has
+ * opened interrupts the wait and acquires nothing. A machine that chose nothing
+ * is refused as a defect, which reaches `ready` as the refusal itself.
  */
-function deferredWaker(resolve: () => Promise<Waker>): Waker {
-  return {
-    open(listener: WakeListener): WakeSession {
-      let session: WakeSession | null = null
-      let closed = false
-      const ready = (async () => {
-        const waker = await resolve()
-        if (closed) return
-        session = waker.open(listener)
-        await session.ready
-      })()
-      return {
-        ready,
-        close() {
-          closed = true
-          session?.close()
-          session = null
-        },
-      }
-    },
-  }
+function deferredWakerPort(open: Effect.Effect<WakerPort>): WakerPort {
+  return { open: (nudge) => Effect.flatMap(open, (p) => p.open(nudge)) }
 }
 
 /**
  * The whole log, deferred: the store, the questions and the waker (#221).
  *
  * `store`, `queries` and `snapshots` are the process's, read through
- * `processEvents`, `processQueries` and `processSnapshots`, and not `resolve`'s;
- * the one caller passes `processLog`, which is the same `openOnce()`.
+ * `processEvents`, `processQueries` and `processSnapshots`; the waker's is
+ * `Opened.wake`, off the same open.
  */
-export function deferredLog(resolve: () => Promise<Log>): Log {
+export function deferredLog(): Log {
   return {
     store: promiseStore(deferredEvents(processEvents)),
     queries: promiseQueries(deferredQueries(processQueries)),
     snapshots: promiseSnapshots(deferredSnapshotsPort(processSnapshots)),
-    waker: (name) => deferredWaker(async () => (await resolve()).waker(name)),
+    waker: (name) => promiseWaker(deferredWakerPort(Effect.map(process_.get(), (o) => o.wake(name)))),
   }
 }

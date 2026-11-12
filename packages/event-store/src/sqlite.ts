@@ -31,15 +31,15 @@
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
-import { Effect } from 'effect'
+import { Deferred, Effect, Schedule } from 'effect'
 
 import { ConcurrencyError, decodeRow, type EventStore, type EventsPort, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, QueriesPort, UnconvergedUpdate } from './queries.ts'
 import { makeSqlSnapshots, type SnapshotStore } from './snapshots.ts'
-import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore } from './store-face.ts'
+import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore, promiseWaker } from './store-face.ts'
 import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
-import type { Waker } from './wake.ts'
+import type { Waker, WakerPort } from './wake.ts'
 
 /**
  * How often a session asks whether the log moved.
@@ -326,81 +326,84 @@ export interface PollingWakerOptions {
  * timeout of zero: a busy file is tried again on a timer, for up to `BUSY_MS`
  * before `ready` rejects, and a busy poll is simply skipped until the next.
  */
-export function createPollingWaker(options: PollingWakerOptions): Waker {
+export function makePollingWaker(options: PollingWakerOptions): WakerPort {
   const every = options.intervalMs ?? POLL_MS
   return {
-    open(listener) {
-      let db: DatabaseSync | null = null
-      let timer: NodeJS.Timeout | undefined
-      let closed = false
-
-      const stop = () => {
-        clearInterval(timer)
-        timer = undefined
-        try {
-          db?.close()
-        } catch {
-          // Already closed. `close()` must never throw.
-        }
-        db = null
-      }
-
-      const ready = (async () => {
+    open: (nudge) =>
+      Effect.gen(function* () {
         const giveUp = Date.now() + BUSY_MS
-        let head: StatementSync
-        let seen: bigint
-        for (;;) {
-          if (closed) return
-          try {
-            db = openSqliteLog(options.path, 0)
-            head = bigints(db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events'))
-            seen = (head.get() as { head: bigint }).head
-            break
-          } catch (err) {
-            stop()
-            if (!isBusy(err) || Date.now() >= giveUp) throw err
-            await new Promise((resolve) => setTimeout(resolve, Math.min(every, POLL_MS)))
-          }
-        }
-        if (closed) {
-          stop()
-          return
-        }
-        timer = setInterval(() => {
-          let now: bigint
-          try {
-            now = (head.get() as { head: bigint }).head
-          } catch (err) {
-            // Busy is somebody else's instant on the file, not a lost session:
-            // the next poll asks again.
-            if (isBusy(err)) return
-            // A file that cannot be read can wake nobody. Said once, and the
-            // subscriber opens another session — whose catch-up read is what
-            // recovers anything this one missed.
-            stop()
-            if (!closed) listener.lost(err)
-            return
-          }
-          if (now !== seen) {
-            seen = now
-            listener.nudge()
-          }
-        }, every)
-      })()
-      ready.catch(() => {
-        stop()
-      })
-
-      return {
-        ready,
-        close() {
-          if (closed) return
-          closed = true
-          stop()
-        },
-      }
-    },
+        // One attempt is synchronous, so nothing in the acquire can block, and
+        // the retry sits outside it: closing the scope during the wait for a busy
+        // file ends the sleep at once. A failed attempt closes what it opened and
+        // registers no finalizer.
+        const attempt = Effect.acquireRelease(
+          Effect.try({
+            try: () => {
+              const db = openSqliteLog(options.path, 0)
+              try {
+                const head = bigints(db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events'))
+                return { db, head, seen: (head.get() as { head: bigint }).head }
+              } catch (err) {
+                try {
+                  db.close()
+                } catch {
+                  // Already closed.
+                }
+                throw err
+              }
+            },
+            catch: (err) => err,
+          }),
+          ({ db }) =>
+            Effect.sync(() => {
+              try {
+                db.close()
+              } catch {
+                // Already closed. A close must never throw.
+              }
+            }),
+        )
+        const first = yield* attempt.pipe(
+          Effect.retry({
+            while: (err: unknown) => isBusy(err) && Date.now() < giveUp,
+            schedule: Schedule.spaced(Math.min(every, POLL_MS)),
+          }),
+          Effect.orDie,
+        )
+        const lost = Deferred.makeUnsafe<void>()
+        let seen = first.seen
+        const poll: Effect.Effect<void> = Effect.flatMap(Effect.sleep(every), () =>
+          Effect.suspend(() => {
+            let now: bigint
+            try {
+              now = (first.head.get() as { head: bigint }).head
+            } catch (err) {
+              // Busy is somebody else's instant on the file, not a lost session:
+              // the next poll asks again.
+              if (isBusy(err)) return poll
+              // A file that cannot be read can wake nobody. Said once, and the
+              // subscriber opens another session — whose catch-up read is what
+              // recovers anything this one missed.
+              Deferred.doneUnsafe(lost, Effect.die(err))
+              return Effect.void
+            }
+            if (now !== seen) {
+              seen = now
+              nudge()
+            }
+            return poll
+          }),
+        )
+        // Forked after the connection, so closing the scope stops the poll
+        // before the connection closes.
+        yield* Effect.forkScoped(poll)
+        return { lost: Deferred.await(lost) }
+      }),
   }
+}
+
+export function createPollingWaker(options: PollingWakerOptions): Waker {
+  return promiseWaker(makePollingWaker(options))
 }
 
 // ------------------------------------------------------------- questions ----

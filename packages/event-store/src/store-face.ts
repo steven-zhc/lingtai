@@ -14,7 +14,7 @@
  * `fromPromiseStore` is for the memory store and for test fakes.
  */
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
-import { Effect } from 'effect'
+import { Cause, Effect, Exit } from 'effect'
 
 import {
   ConcurrencyError,
@@ -32,6 +32,7 @@ import {
   type SnapshotStore,
 } from './snapshots.ts'
 import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
+import type { WakeListener, Waker, WakerPort } from './wake.ts'
 
 export function appendFace(events: EventsPort, streamId: string, expectedVersion: number, batch: readonly ToAppend[]) {
   return Effect.runPromise(events.append(streamId, expectedVersion, batch))
@@ -216,4 +217,58 @@ export function fromPromiseSnapshots(store: SnapshotStore): SnapshotsPort {
 /** The idempotent DDL, as a promise: rejects with the very error a non-race `exec` failed with. */
 export function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
   return Effect.runPromise(execIdempotentlyEffect(fromPromiseLogSql(sql), ddl))
+}
+
+// ------------------------------------------------------------ waker (#1048) ----
+
+/**
+ * One session: acquire it in a scope of its own, say it is ready, then wait for
+ * it to be lost. Interrupting the fiber closes the scope and reaches nobody:
+ * `listener.lost` is called for what the driver ended with, never for a close.
+ */
+function wakeSession(port: WakerPort, listener: WakeListener, onReady: () => void): Effect.Effect<void> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const { lost } = yield* port.open(() => listener.nudge())
+      onReady()
+      const exit = yield* Effect.exit(lost)
+      if (Exit.isSuccess(exit)) listener.lost()
+      else listener.lost(Cause.squash(exit.cause))
+    }),
+  )
+}
+
+export function wakeSessionFace(port: WakerPort, listener: WakeListener, onReady: () => void, signal: AbortSignal) {
+  return Effect.runPromise(wakeSession(port, listener, onReady), { signal })
+}
+
+/**
+ * The promise `Waker` every subscriber holds, over `port`. `close()` aborts the
+ * session's fiber and returns at once; `ready` never settles for a close.
+ */
+export function promiseWaker(port: WakerPort): Waker {
+  return {
+    open(listener) {
+      const abort = new AbortController()
+      let resolve!: () => void
+      let reject!: (err: unknown) => void
+      const ready = new Promise<void>((res, rej) => {
+        resolve = res
+        reject = rej
+      })
+      // Whoever opened the session is told through its own await; this only
+      // keeps an unobserved rejection from taking the process down.
+      ready.catch(() => {})
+      // Caught where it starts: an abort rejects the run, and a close is no failure.
+      wakeSessionFace(port, listener, () => resolve(), abort.signal).then(undefined, (err: unknown) => {
+        if (!abort.signal.aborted) reject(err)
+      })
+      return {
+        ready,
+        close() {
+          abort.abort()
+        },
+      }
+    },
+  }
 }
