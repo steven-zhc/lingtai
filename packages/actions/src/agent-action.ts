@@ -52,7 +52,7 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import { runtimeVersionOf, type RunOutcome, type Runtime } from '@lingtai/agent'
+import { runtimeVersionOf, type RunOutcome, type RunRequest, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
 import type { RuntimeId } from '@lingtai/domain'
 import {
@@ -64,10 +64,14 @@ import {
   type RefusedAbout,
   type Severity,
 } from '@lingtai/domain'
+import { Cause, Effect, Exit } from 'effect'
 
 import {
   NEEDS_INPUT,
+  liftPromise,
+  promiseAction,
   type Action,
+  type ActionPort,
   type ActionContext,
   type ActionFinding,
   type ActionResult,
@@ -184,6 +188,102 @@ export interface AgentActionDeps {
    */
   limits: { turns?: number; wallMs: number; diffBytes: number; usd?: number }
 }
+
+/**
+ * `AgentActionDeps` with `issue`, `diff`, `landed` and `restore` as Effects whose
+ * error channel is `never` (#1043): a rejection is a defect. `runtime` stays a
+ * promise. `settingsPath` and `limits` are read when the action runs.
+ */
+export interface AgentPortDeps {
+  runtime: Runtime
+  issue(): Effect.Effect<ReviewIssue>
+  designAsks?: number
+  diff(from?: string): Effect.Effect<string | DiffRead>
+  landed?(moved: {
+    paths: readonly string[]
+    fromSha: string
+    toSha: string
+  }): Effect.Effect<{ path: string; diff: string }[]>
+  restore(onSha: string): Effect.Effect<RestoreAnswer>
+  settingsPath: string
+  limits: AgentActionDeps['limits']
+}
+
+/**
+ * Lifts the promise deps. Every key is written out, and `settingsPath` and
+ * `limits` are getters delegating to `deps` — a spread would read them at build
+ * time, before `admit` has written the settings (#370). An absent `landed` stays
+ * absent.
+ */
+export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
+  const lifted: { [K in keyof Required<AgentActionDeps>]: AgentPortDeps[K] } = {
+    runtime: deps.runtime,
+    issue: () => liftPromise(() => deps.issue()),
+    designAsks: deps.designAsks,
+    diff: (from) => liftPromise(() => deps.diff(from)),
+    landed:
+      deps.landed === undefined
+        ? undefined
+        : (moved) => liftPromise(() => (deps.landed as NonNullable<AgentActionDeps['landed']>)(moved)),
+    restore: (onSha) => liftPromise(() => deps.restore(onSha)),
+    get settingsPath() {
+      return deps.settingsPath
+    },
+    get limits() {
+      return deps.limits
+    },
+  }
+  return lifted
+}
+
+/**
+ * One runtime dispatch as an Effect, aborted by the context's signal or by the
+ * fiber's interruption, whichever comes first. A throw from the adapter is a
+ * defect that is the thrown value itself, as `liftPromise`'s.
+ */
+const dispatch = (
+  runtime: Runtime,
+  context: ActionContext,
+  request: Omit<RunRequest, 'signal'>,
+): Effect.Effect<RunOutcome> =>
+  Effect.callback<RunOutcome>((resume) => {
+    const controller = new AbortController()
+    let settled = false
+    let onSettled: (() => void) | undefined
+    const settle = () => {
+      settled = true
+      onSettled?.()
+    }
+    new Promise<RunOutcome>((resolve) =>
+      resolve(
+        runtime.run({
+          ...request,
+          signal:
+            context.signal === undefined ? controller.signal : AbortSignal.any([context.signal, controller.signal]),
+        }),
+      ),
+    ).then(
+      (outcome) => {
+        settle()
+        resume(Effect.succeed(outcome))
+      },
+      (error) => {
+        settle()
+        resume(Effect.die(error))
+      },
+    )
+    // An interruption aborts the run and then waits for it to settle: the
+    // adapter's own interruption waits for its process group, and a caller that
+    // cleans the tree after this returns relies on the agent no longer writing.
+    return Effect.suspend(() => {
+      if (settled) return Effect.void
+      controller.abort()
+      return Effect.callback<void>((done) => {
+        onSettled = () => done(Effect.void)
+        if (settled) done(Effect.void)
+      })
+    })
+  })
 
 const RUBRIC = `
 Severity is not a judgement call. Use this rubric exactly.
@@ -669,192 +769,219 @@ function summarise(findings: readonly ActionFinding[]): string {
   return findings.map((f) => `${f.severity} ${f.file}${f.line === null ? '' : `:${f.line}`} — ${f.claim}`).join('\n')
 }
 
-export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
+export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'agent',
     yields: 'verdict',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const moved = context.landedOnBase
-      // No start: the port answers the merge-base with the base, wherever
-      // anybody's base merge has put it (#937).
-      const read = readOf(await deps.diff())
-      const diff = read.text
-      if (!diff.trim()) {
-        // Nothing to review is not the same as nothing wrong, and saying so is
-        // cheaper than an agent call that reads an empty diff.
-        return { verdict: 'passed', evidence: 'the diff is empty; nothing to review', findings: [] }
-      }
-
-      // 0108 §14: a diff the reviewer would read only part of ends the review
-      // before anything is paid — no ticket read, no dispatch, no spend. The
-      // string measured is the one `buildReviewPrompt` clips below.
-      //
-      // Unless a person approved reading it clipped, for this head (#892): the
-      // review then runs once on what `buildReviewPrompt` keeps, and says so.
-      const overLimit = clippedAt(diff, deps.limits.diffBytes)
-      const approvedClipped = overLimit && context.readClippedAt === context.onSha
-      if (overLimit && !approvedClipped) {
-        const size = diff.length
-        const limit = deps.limits.diffBytes
-        return {
-          verdict: 'failed',
-          evidence: `the diff is ${size} characters and the reviewer reads ${limit}; no reviewer was run`,
-          findings: [],
-          diffTooLarge: { size, limit },
+    run: (context: ActionContext): Effect.Effect<ActionResult> =>
+      Effect.gen(function* () {
+        const moved = context.landedOnBase
+        // No start: the port answers the merge-base with the base, wherever
+        // anybody's base merge has put it (#937).
+        const read = readOf(yield* deps.diff())
+        const diff = read.text
+        if (!diff.trim()) {
+          // Nothing to review is not the same as nothing wrong, and saying so is
+          // cheaper than an agent call that reads an empty diff.
+          return { verdict: 'passed', evidence: 'the diff is empty; nothing to review', findings: [] }
         }
-      }
 
-      const issue = await deps.issue()
-      const recheck = context.recheck ?? []
-      // **Not** `context.runId`. The session id is derived from it, so reusing
-      // it would resume the implementer's session and make this a warm review
-      // wearing a cold review's name.
-      //
-      // A re-review gets an id of its own for the same reason *again*: a
-      // second review that resumed the first one would be a reviewer asked
-      // whether it still agrees with itself, which is the warm-review failure
-      // experiment 001 measured, one level up (0038 §2).
-      //
-      // **So the commit is in it on every path, and not only when findings
-      // travelled** (`#195`). This read `${context.runId}:review:${spec.name}`
-      // whenever `recheck` was empty — which is every fix round bought by a
-      // refusal that carried no findings, a red build or an unreadable answer.
-      // Round 2 then handed Claude Code round 1's session id, and the binary
-      // refuses one it has already been given: `Session ID ... is already in
-      // use`, one second, no receipt, the round spent, the diff never read
-      // (`pass-9e510ffc`, `ticket-lingtai-192`). **The crash was the lucky
-      // outcome** — a runtime that resumed instead would have produced the
-      // warm review the paragraph above exists to prevent, silently.
-      //
-      // A function of what the log already records — the run and the commit —
-      // so a transcript is still findable from a verdict, which is
-      // `sessionIdFor`'s whole reason. The head moves every round a fix is
-      // bought for (`conduct.ts` only continues the loop when the fixer
-      // committed), so the commit is what makes each round's review a
-      // different reviewer.
-      const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
-      const landedBlock =
-        moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, await deps.landed(moved))
-      // The fix's own delta (#671): only when a review of this pass has read an
-      // earlier head. Anything unreadable falls back to a full review.
-      let delta: ReviewDelta | undefined
-      let deltaHunks: DiffHunks | undefined
-      if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
-        try {
-          const got = readOf(await deps.diff(context.reviewedSha))
-          const text = got.text
-          const hunks = text.trim() === '' ? null : hunksOf(text)
-          if (hunks === null) {
-            context.log?.note('review', 'the fix delta was empty or unreadable; this is a full review')
-          } else {
-            // The shas the diff was run between when it says them, so a reference and
-            // the text name the same pair; otherwise the context's, written out.
-            const exact = got.from !== null && got.to !== null
-            delta = {
-              fromSha: got.from ?? context.reviewedSha,
-              toSha: got.to ?? context.onSha,
-              text,
-              exact,
-            }
-            deltaHunks = hunks
+        // 0108 §14: a diff the reviewer would read only part of ends the review
+        // before anything is paid — no ticket read, no dispatch, no spend. The
+        // string measured is the one `buildReviewPrompt` clips below.
+        //
+        // Unless a person approved reading it clipped, for this head (#892): the
+        // review then runs once on what `buildReviewPrompt` keeps, and says so.
+        const overLimit = clippedAt(diff, deps.limits.diffBytes)
+        const approvedClipped = overLimit && context.readClippedAt === context.onSha
+        if (overLimit && !approvedClipped) {
+          const size = diff.length
+          const limit = deps.limits.diffBytes
+          return {
+            verdict: 'failed',
+            evidence: `the diff is ${size} characters and the reviewer reads ${limit}; no reviewer was run`,
+            findings: [],
+            diffTooLarge: { size, limit },
           }
-        } catch (error) {
-          context.log?.note('review', `the fix delta could not be read (${errorMessage(error)}); this is a full review`)
         }
-      }
-      context.log?.note(
-        'review',
-        `${reviewId} · ${diff.length} bytes of diff` +
-          (delta === undefined ? '' : ` · fix delta ${delta.text.length} bytes since ${delta.fromSha.slice(0, 7)}`) +
-          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : '') +
-          (moved === undefined ? '' : ` · base moved on ${moved.paths.length} paths`),
-      )
-      let outcome: RunOutcome | undefined
-      let thrown: { error: unknown } | undefined
-      try {
-        const composed = composePrompt(
-          reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
-        )
-        const prompt = composed.handed
-        // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
-        await context.prompted?.(
-          `review@${prompt.length}`,
-          composed,
-          await runtimeVersionOf(deps.runtime, context.env, context.cwd),
-        )
-        outcome = await deps.runtime.run({
-          runId: reviewId,
-          cwd: context.cwd,
-          prompt,
-          // The cold reviewer's own flag (`#369`): the only action that sends one.
-          // Each adapter turns it into the runtime's own way of forcing the shape
-          // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
-          outputSchema: REVIEW_ANSWER_JSON_SCHEMA,
-          // The recipe's, or the key is not sent at all — `RunRequest.model` is
-          // optional and the adapter omits `--model` without it, which is what
-          // "the runtime's own default" means in the one place it has to be true.
-          ...(spec.model === undefined ? {} : { model: spec.model }),
-          settingsPath: deps.settingsPath,
-          // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
-          // runs without the hook, so its tool calls are the stream's to write.
-          log: context.log,
-          traceTools: true,
-          env: context.env,
-          limits: deps.limits,
-          signal: context.signal,
-        })
-      } catch (error) {
-        thrown = { error }
-      }
 
-      // **Whatever the outcome — passed, refused, or thrown — the worktree goes
-      // back** (`#587`). "Do not change it" is a sentence in the prompt; a
-      // reviewer that edited a file or moved `HEAD` would hand the next fix
-      // round a tree it did not leave, and the fixer's `git add -A` would
-      // commit the leftovers as its own. Steps run one after another, so this
-      // cannot overlap another step's use of the worktree.
-      const restored = await deps.restore(context.onSha)
-      let restoredNote: string | undefined
-      if ('restored' in restored) {
-        restoredNote = restored.restored
-        context.log?.note('review', restoredNote)
-      } else if ('failed' in restored) {
-        const failure = `the worktree could not be restored to ${context.onSha.slice(0, 7)} after the review: ${restored.failed}`
-        context.log?.note('review', failure)
-        throw new Error(
-          thrown === undefined ? failure : `${failure} (the review had also thrown: ${errorMessage(thrown.error)})`,
+        const issue = yield* deps.issue()
+        const recheck = context.recheck ?? []
+        // **Not** `context.runId`. The session id is derived from it, so reusing
+        // it would resume the implementer's session and make this a warm review
+        // wearing a cold review's name.
+        //
+        // A re-review gets an id of its own for the same reason *again*: a
+        // second review that resumed the first one would be a reviewer asked
+        // whether it still agrees with itself, which is the warm-review failure
+        // experiment 001 measured, one level up (0038 §2).
+        //
+        // **So the commit is in it on every path, and not only when findings
+        // travelled** (`#195`). This read `${context.runId}:review:${spec.name}`
+        // whenever `recheck` was empty — which is every fix round bought by a
+        // refusal that carried no findings, a red build or an unreadable answer.
+        // Round 2 then handed Claude Code round 1's session id, and the binary
+        // refuses one it has already been given: `Session ID ... is already in
+        // use`, one second, no receipt, the round spent, the diff never read
+        // (`pass-9e510ffc`, `ticket-lingtai-192`). **The crash was the lucky
+        // outcome** — a runtime that resumed instead would have produced the
+        // warm review the paragraph above exists to prevent, silently.
+        //
+        // A function of what the log already records — the run and the commit —
+        // so a transcript is still findable from a verdict, which is
+        // `sessionIdFor`'s whole reason. The head moves every round a fix is
+        // bought for (`conduct.ts` only continues the loop when the fixer
+        // committed), so the commit is what makes each round's review a
+        // different reviewer.
+        const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
+        const landedBlock =
+          moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, yield* deps.landed(moved))
+        // The fix's own delta (#671): only when a review of this pass has read an
+        // earlier head. Anything unreadable falls back to a full review.
+        let delta: ReviewDelta | undefined
+        let deltaHunks: DiffHunks | undefined
+        if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
+          const reviewedSha = context.reviewedSha
+          // Soft, as it was under a `try`: a rejected read is a defect now, so it is an `Exit` to read.
+          const deltaRead = yield* Effect.exit(
+            Effect.gen(function* () {
+              const got = readOf(yield* deps.diff(reviewedSha))
+              const text = got.text
+              const hunks = text.trim() === '' ? null : hunksOf(text)
+              if (hunks === null) {
+                context.log?.note('review', 'the fix delta was empty or unreadable; this is a full review')
+              } else {
+                // The shas the diff was run between when it says them, so a reference and
+                // the text name the same pair; otherwise the context's, written out.
+                const exact = got.from !== null && got.to !== null
+                delta = {
+                  fromSha: got.from ?? reviewedSha,
+                  toSha: got.to ?? context.onSha,
+                  text,
+                  exact,
+                }
+                deltaHunks = hunks
+              }
+            }),
+          )
+          if (Exit.isFailure(deltaRead)) {
+            context.log?.note(
+              'review',
+              `the fix delta could not be read (${errorMessage(Cause.squash(deltaRead.cause))}); this is a full review`,
+            )
+          }
+        }
+        context.log?.note(
+          'review',
+          `${reviewId} · ${diff.length} bytes of diff` +
+            (delta === undefined ? '' : ` · fix delta ${delta.text.length} bytes since ${delta.fromSha.slice(0, 7)}`) +
+            (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : '') +
+            (moved === undefined ? '' : ` · base moved on ${moved.paths.length} paths`),
         )
-      }
-      if (thrown !== undefined) {
-        // The error is all a throwing review leaves on the log, so the
-        // restoration rides on it; the original stays as the cause.
-        if (restoredNote === undefined) throw thrown.error
-        throw new Error(`${errorMessage(thrown.error)} (${restoredNote})`, { cause: thrown.error })
-      }
-      if (outcome === undefined) throw new Error('the review returned no outcome')
+        // The dispatch alone is interruptible. An interruption is read as an `Exit` here and
+        // the restore below still runs, uninterruptibly, before it continues (#587).
+        return yield* Effect.uninterruptibleMask((mask) =>
+          Effect.gen(function* () {
+            const dispatched = yield* Effect.exit(
+              mask(
+                Effect.gen(function* () {
+                  const composed = composePrompt(
+                    reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
+                  )
+                  const prompt = composed.handed
+                  // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
+                  if (context.prompted !== undefined) {
+                    const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
+                    yield* liftPromise(() => context.prompted?.(`review@${prompt.length}`, composed, version))
+                  }
+                  return yield* dispatch(deps.runtime, context, {
+                    runId: reviewId,
+                    cwd: context.cwd,
+                    prompt,
+                    // The cold reviewer's own flag (`#369`): the only action that sends one.
+                    // Each adapter turns it into the runtime's own way of forcing the shape
+                    // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
+                    outputSchema: REVIEW_ANSWER_JSON_SCHEMA,
+                    // The recipe's, or the key is not sent at all — `RunRequest.model` is
+                    // optional and the adapter omits `--model` without it, which is what
+                    // "the runtime's own default" means in the one place it has to be true.
+                    ...(spec.model === undefined ? {} : { model: spec.model }),
+                    settingsPath: deps.settingsPath,
+                    // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
+                    // runs without the hook, so its tool calls are the stream's to write.
+                    log: context.log,
+                    traceTools: true,
+                    env: context.env,
+                    limits: deps.limits,
+                  })
+                }),
+              ),
+            )
+            const outcome: RunOutcome | undefined = Exit.isSuccess(dispatched) ? dispatched.value : undefined
+            const thrown: { error: unknown } | undefined = Exit.isFailure(dispatched)
+              ? { error: Cause.squash(dispatched.cause) }
+              : undefined
 
-      const result = {
-        ...reviewAnswer(
-          outcome,
-          deps.runtime.capabilities.id,
-          diff,
-          context.log,
-          deltaHunks,
-          recheck,
-          approvedClipped ? { read: deps.limits.diffBytes, of: diff.length } : undefined,
-        ),
-        spent: spentOf(outcome, deps.runtime),
-      }
-      // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
-      // and `verdict`, `findings` and `because` are not touched: a reviewer
-      // that edited the tree has not refused the diff.
-      return restoredNote === undefined
-        ? result
-        : { ...result, evidence: boundedEvidence(`${result.evidence}\n${restoredNote}`) }
-    },
+            // **Whatever the outcome — passed, refused, or thrown — the worktree goes
+            // back** (`#587`). "Do not change it" is a sentence in the prompt; a
+            // reviewer that edited a file or moved `HEAD` would hand the next fix
+            // round a tree it did not leave, and the fixer's `git add -A` would
+            // commit the leftovers as its own. Steps run one after another, so this
+            // cannot overlap another step's use of the worktree.
+            const restored = yield* deps.restore(context.onSha)
+            let restoredNote: string | undefined
+            if ('restored' in restored) {
+              restoredNote = restored.restored
+              context.log?.note('review', restoredNote)
+            } else if ('failed' in restored) {
+              const failure = `the worktree could not be restored to ${context.onSha.slice(0, 7)} after the review: ${restored.failed}`
+              context.log?.note('review', failure)
+              throw new Error(
+                thrown === undefined
+                  ? failure
+                  : `${failure} (the review had also thrown: ${errorMessage(thrown.error)})`,
+              )
+            }
+            if (thrown !== undefined) {
+              // An interruption goes on once the tree is back; there is no error to ride on.
+              if (Exit.isFailure(dispatched) && Cause.hasInterruptsOnly(dispatched.cause))
+                return yield* Effect.failCause(dispatched.cause)
+              // The error is all a throwing review leaves on the log, so the
+              // restoration rides on it; the original stays as the cause.
+              if (restoredNote === undefined) throw thrown.error
+              throw new Error(`${errorMessage(thrown.error)} (${restoredNote})`, { cause: thrown.error })
+            }
+            if (outcome === undefined) throw new Error('the review returned no outcome')
+
+            const result = {
+              ...reviewAnswer(
+                outcome,
+                deps.runtime.capabilities.id,
+                diff,
+                context.log,
+                deltaHunks,
+                recheck,
+                approvedClipped ? { read: deps.limits.diffBytes, of: diff.length } : undefined,
+              ),
+              spent: spentOf(outcome, deps.runtime),
+            }
+            // Appended after `reviewAnswer`, so `evidence`'s own shape is unchanged
+            // and `verdict`, `findings` and `because` are not touched: a reviewer
+            // that edited the tree has not refused the diff.
+            return restoredNote === undefined
+              ? result
+              : { ...result, evidence: boundedEvidence(`${result.evidence}\n${restoredNote}`) }
+          }),
+        )
+      }),
   }
+}
+
+/** The review as an `Action`: `makeAgentAction` over lifted deps. */
+export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
+  return promiseAction(makeAgentAction(spec, agentPortDepsFrom(deps)))
 }
 
 /**
@@ -1398,47 +1525,51 @@ export function parseDraft(text: string | null): Drafted {
  * this returns for an unreadable answer arrives at the step as a `did-not-finish`
  * (`endingOf` in `run-attempt.ts`) and buys nothing, exactly as `#279` wants.
  */
-export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
+export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'agent',
     yields: 'design',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const issue = await deps.issue()
-      // **Not** `context.runId`, for the reviewer's reason one function up: the
-      // session id is derived from it, so reusing it would resume the
-      // implementer's session — and here it would resume a session that has not
-      // happened yet, which is the same mistake read backwards.
-      const draftId = `${context.runId}:design:${spec.name}`
-      context.log?.note('design', `${draftId} · drafting for #${issue.ref}`)
-      // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
-      // and it is null on every way through — which is every pass but one a
-      // judge sent back here.
-      const composed = composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0))
-      const prompt = composed.handed
-      // The body is a reference where the claim it came from is known (#928).
-      await context.prompted?.(
-        `design@${prompt.length}`,
-        composed,
-        await runtimeVersionOf(deps.runtime, context.env, context.cwd),
-      )
-      const outcome = await deps.runtime.run({
-        runId: draftId,
-        cwd: context.cwd,
-        prompt,
-        ...(spec.model === undefined ? {} : { model: spec.model }),
-        settingsPath: deps.settingsPath,
-        log: context.log,
-        traceTools: true,
-        env: context.env,
-        limits: deps.limits,
-        signal: context.signal,
-      })
+    run: (context: ActionContext): Effect.Effect<ActionResult> =>
+      Effect.gen(function* () {
+        const issue = yield* deps.issue()
+        // **Not** `context.runId`, for the reviewer's reason one function up: the
+        // session id is derived from it, so reusing it would resume the
+        // implementer's session — and here it would resume a session that has not
+        // happened yet, which is the same mistake read backwards.
+        const draftId = `${context.runId}:design:${spec.name}`
+        context.log?.note('design', `${draftId} · drafting for #${issue.ref}`)
+        // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
+        // and it is null on every way through — which is every pass but one a
+        // judge sent back here.
+        const composed = composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0))
+        const prompt = composed.handed
+        // The body is a reference where the claim it came from is known (#928).
+        if (context.prompted !== undefined) {
+          const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
+          yield* liftPromise(() => context.prompted?.(`design@${prompt.length}`, composed, version))
+        }
+        const outcome = yield* dispatch(deps.runtime, context, {
+          runId: draftId,
+          cwd: context.cwd,
+          prompt,
+          ...(spec.model === undefined ? {} : { model: spec.model }),
+          settingsPath: deps.settingsPath,
+          log: context.log,
+          traceTools: true,
+          env: context.env,
+          limits: deps.limits,
+        })
 
-      return { ...draftAnswer(outcome, deps.runtime.capabilities.id), spent: spentOf(outcome, deps.runtime) }
-    },
+        return { ...draftAnswer(outcome, deps.runtime.capabilities.id), spent: spentOf(outcome, deps.runtime) }
+      }),
   }
+}
+
+/** The draft as an `Action`: `makeDraftAction` over lifted deps. */
+export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
+  return promiseAction(makeDraftAction(spec, agentPortDepsFrom(deps)))
 }
 
 /**
