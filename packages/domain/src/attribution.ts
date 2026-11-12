@@ -140,6 +140,8 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   'dirty-base': 'lingtai',
   /** A person must switch the remote's checkout to another branch; nothing Lingtai or an agent can do. */
   'base-checked-out': 'person',
+  /** origin did not answer; a network fault, not a verdict on the branch or on a person. */
+  unreachable: 'lingtai',
   /** Lingtai's mirror and origin disagree about the base. Lingtai's mirror. */
   'unpushed-base': 'lingtai',
   /**
@@ -303,6 +305,14 @@ const REFUSAL_READING: Record<
     move: {
       action: 'approve',
       why: 'once the remote has another branch checked out, approving re-runs only the land — a requeue would pay for the work again',
+    },
+  },
+  unreachable: {
+    says: ({ branch, base }) =>
+      `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`,
+    move: {
+      action: 'approve',
+      why: 'approving re-runs only the land, at the head the steps already passed — a requeue would pay for the work again',
     },
   },
   'unpushed-base': {

@@ -12,6 +12,14 @@
  * belongs here.
  */
 export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from './git.ts'
+export {
+  BASE_PROTECTED,
+  PUSH_REJECTED,
+  UNREACHABLE_WAITS,
+  isUnreachable,
+  isUnreachableFailure,
+  retryUnreachable,
+} from './network.ts'
 export { mirrorWrite, withMirrorWrite } from './mirror-lock.ts'
 export {
   ensureMirrorEffect,

@@ -281,4 +281,16 @@ describe('waitWords', () => {
       expect(recommendedResolution(other, { _tag: 'NotNeeded' })).not.toBe('Requeue')
     })
   })
+
+  it('recommends nothing for a refused land whose branch was not pushed, since approve is not offered (#1029)', () => {
+    const run = { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'timed out' } }
+    const reason = { _tag: 'MergeRefused', run, reason: 'unreachable', raw: 'x' } as WaitReason
+    const cols = waitWords(reason, { branch: 'agent/1', base: 'main', findings: [] })
+    expect(cols.diagnosis?.what).toContain('origin could not be reached')
+    expect(cols.diagnosis?.recommendation).toBeNull()
+    const pushed = { ...reason, run: { runId: 'pass-1' } } as WaitReason
+    expect(waitWords(pushed, { branch: 'agent/1', base: 'main', findings: [] }).diagnosis?.recommendation?.action).toBe(
+      'approve',
+    )
+  })
 })

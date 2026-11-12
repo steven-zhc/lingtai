@@ -72,6 +72,9 @@ export const RefusalReason = z.enum([
   // The base is checked out in the local, non-bare remote the lane would push to,
   // which git refuses; held for a person before anything is fetched or pushed (0104 §15).
   'base-checked-out',
+  // Git could not reach origin for the fetch or push, after the lane's own tries —
+  // nothing about the branch was judged, and approve re-runs only the land (#1029).
+  'unreachable',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 

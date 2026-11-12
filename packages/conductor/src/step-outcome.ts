@@ -39,7 +39,7 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * outright) and no effect on `cleared`/`headOf`, so dropping the trailing run
  * costs nothing once the action in front of it already cleared.
  */
-import { type Action as DomainAction, type RefusalReason, type Step, type StepOutcome, cleared } from '@lingtai/domain'
+import { type Action as DomainAction, RefusalReason, type Step, type StepOutcome, cleared } from '@lingtai/domain'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]
@@ -50,19 +50,10 @@ type ResultOf<Y extends DomainAction['yields']> = Extract<DomainAction, { yields
 /** Every `RefusalReason` but `conflict` and `base-moved`, which `mergeResultOf` has already handled by the time this is asked. */
 type RefusalReasonNoConflict = Exclude<RefusalReason, 'conflict' | 'base-moved'>
 
-const REFUSAL_REASONS: readonly RefusalReasonNoConflict[] = [
-  'dirty-base',
-  'unpushed-base',
-  'pending-migration',
-  'verify-failed',
-  'no-commits',
-  'push-rejected',
-  'lane-busy',
-  'wip-commit',
-  'base-protected',
-  'base-checked-out',
-  'unexpected',
-]
+/** Built from the enum, so a reason added there cannot silently become `unexpected` below. */
+const REFUSAL_REASONS: readonly RefusalReasonNoConflict[] = RefusalReason.options.filter(
+  (r): r is RefusalReasonNoConflict => r !== 'conflict' && r !== 'base-moved',
+)
 
 function refusalReasonOf(because: string | undefined): RefusalReasonNoConflict {
   return because !== undefined && (REFUSAL_REASONS as readonly string[]).includes(because)

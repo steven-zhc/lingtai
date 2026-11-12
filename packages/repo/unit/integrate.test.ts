@@ -9,6 +9,7 @@
  * part of a pass: it asserts the fetch's destinations instead, which is what
  * stands in for a real worktree collision until that suite runs.
  */
+import { integrationStream } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
@@ -33,12 +34,26 @@ type Call = { args: string[]; cwd: string }
  * except what a test asks to fail.
  */
 function fakeGit(
-  opts: { failMerge?: boolean; failCompareAndSwap?: boolean; subjects?: string[]; failPush?: string } = {},
+  opts: {
+    failMerge?: boolean
+    failCompareAndSwap?: boolean
+    subjects?: string[]
+    failPush?: string
+    /** How many pushes fail before one succeeds; every one when absent. */
+    failPushTimes?: number
+    failFetch?: string
+    failFetchTimes?: number
+  } = {},
 ) {
+  let pushes = 0
+  let fetches = 0
   const calls: Call[] = []
   const sha = '1'.repeat(40)
 
-  const git = (args: string[], options: { cwd?: string }): Effect.Effect<string, RepoFailed> => {
+  // Suspended, as the real port is: running the same Effect again is another call.
+  const git = (args: string[], options: { cwd?: string }): Effect.Effect<string, RepoFailed> =>
+    Effect.suspend(() => run(args, options))
+  const run = (args: string[], options: { cwd?: string }): Effect.Effect<string, RepoFailed> => {
     calls.push({ args: [...args], cwd: options.cwd ?? '' })
     const [cmd, second] = args
     if (cmd === 'rev-parse') return Effect.succeed(sha)
@@ -48,7 +63,10 @@ function fakeGit(
     if (cmd === 'merge' && second !== '--abort' && opts.failMerge) {
       return Effect.fail(new RepoFailed({ operation: 'git merge', detail: 'CONFLICT (content): Merge conflict' }))
     }
-    if (cmd === 'push' && opts.failPush !== undefined) {
+    if (cmd === 'fetch' && opts.failFetch !== undefined && fetches++ < (opts.failFetchTimes ?? Infinity)) {
+      return Effect.fail(new RepoFailed({ operation: 'git fetch', detail: opts.failFetch }))
+    }
+    if (cmd === 'push' && opts.failPush !== undefined && pushes++ < (opts.failPushTimes ?? Infinity)) {
       return Effect.fail(new RepoFailed({ operation: 'git push', detail: opts.failPush }))
     }
     // The delete half of cleanup (`update-ref -d`) must never be the thing a
@@ -237,5 +255,69 @@ describe('the lane records its events through the store (#1027)', () => {
     if (result.ok) throw new Error('unreachable')
     expect(result.reason).toBe('unexpected')
     expect(result.detail).toBe('the integration failed unexpectedly: connection dropped')
+  })
+})
+
+describe('a fetch or push that cannot reach origin is retried in place (#1029)', () => {
+  const TIMEOUT =
+    "fatal: unable to access 'https://github.com/steven-zhc/lingtai.git/': Recv failure: Operation timed out"
+  const zero = { unreachableWaits: ['0 millis', '0 millis'] as const }
+  const count = (calls: Call[], cmd: string) => calls.filter((c) => c.args[0] === cmd).length
+  const run = (fake: ReturnType<typeof fakeGit>) => {
+    const opts = { ...options(fake.git), ...zero }
+    return integrate(opts).then(async (result) => ({
+      result,
+      types: (await opts.store.read(integrationStream(PROJECT, BASE))).map((e) => e.type),
+    }))
+  }
+
+  it('lands a base push that fails once and then succeeds, with one attempt and no refusal', async () => {
+    const fake = fakeGit({ failPush: TIMEOUT, failPushTimes: 1 })
+    const { result, types } = await run(fake)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(count(fake.calls, 'push')).toBe(2)
+    expect(types.filter((t) => t === 'IntegrationAttempted')).toHaveLength(1)
+    expect(types).not.toContain('IntegrationRefused')
+  })
+
+  it('refuses unreachable when every base push fails, after three tries and no LostPush loop', async () => {
+    const fake = fakeGit({ failPush: TIMEOUT })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('unreachable')
+    expect(result.detail).toContain('(after 3 tries)')
+    expect(count(fake.calls, 'push')).toBe(3)
+  })
+
+  it('lands a fetch that fails once and then succeeds', async () => {
+    const fake = fakeGit({ failFetch: TIMEOUT, failFetchTimes: 1 })
+    const { result, types } = await run(fake)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(count(fake.calls, 'fetch')).toBe(2)
+    expect(types).not.toContain('IntegrationRefused')
+  })
+
+  it('refuses unreachable when every fetch fails', async () => {
+    const fake = fakeGit({ failFetch: TIMEOUT })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('unreachable')
+    expect(count(fake.calls, 'fetch')).toBe(3)
+  })
+
+  it('leaves a non-fast-forward on the LostPush path, four pushes', async () => {
+    const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)' })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('push-rejected')
+    expect(count(fake.calls, 'push')).toBe(4)
+  })
+
+  it('does not retry a fetch that failed for another reason', async () => {
+    const fake = fakeGit({ failFetch: "fatal: couldn't find remote ref refs/heads/agent/438" })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('unexpected')
+    expect(count(fake.calls, 'fetch')).toBe(1)
   })
 })

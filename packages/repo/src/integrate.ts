@@ -69,11 +69,12 @@ import {
 } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { Effect, Result } from 'effect'
+import { type Duration, Effect, Result } from 'effect'
 
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { landingSubject } from './landing-subject.ts'
 import { mirrorWrite } from './mirror-lock.ts'
+import { BASE_PROTECTED, PUSH_REJECTED, UNREACHABLE_WAITS, isUnreachableFailure, retryUnreachable } from './network.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -107,6 +108,12 @@ export interface IntegrateOptions {
    * closes over this.
    */
   git?: (args: string[], options: GitRunOptions) => Effect.Effect<string, RepoFailed>
+  /**
+   * The waits between tries of a fetch or push that could not reach origin
+   * (#1029); one more try than there are waits. Defaults to `UNREACHABLE_WAITS`;
+   * a unit test passes zeros.
+   */
+  unreachableWaits?: readonly Duration.Input[]
   /**
    * Re-run after the branch is merged into the base, before the push. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
@@ -205,26 +212,6 @@ interface LostPush {
 
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
 const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i
-
-/**
- * Git's words for *somebody else got there first*.
- *
- * The bracketed reason differs — `fetch first`, `non-fast-forward` — and the
- * wording has moved between versions, so what is matched is the rejection
- * itself rather than any one cause of it. A push that failed for some other
- * reason (no credentials, no network) is not this, and goes to the unexpected
- * channel where it belongs. The exception is a protected base (`BASE_PROTECTED`).
- */
-const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i
-
-/**
- * GitHub's words for *this branch is protected*: `GH006` and `protected branch
- * hook declined` for a classic rule, `GH013` and `repository rule violations`
- * for a ruleset. Matched before `PUSH_REJECTED`, which a `[remote rejected]`
- * line would otherwise satisfy — and never retried, because nothing a later
- * push does can lift a setting (#662).
- */
-const BASE_PROTECTED = /protected branch hook declined|GH006|GH013|repository rule violations/i
 
 /**
  * How many times a base may move out from under this merge before a person is
@@ -365,6 +352,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
 
   const gitPort = options.git ?? gitEffect
   const at = (args: string[], cwd: string) => gitPort(args, { ...run, cwd })
+  const waits = options.unreachableWaits ?? UNREACHABLE_WAITS
 
   /**
    * The worktrees and lane refs of this lane that nothing is coming back for.
@@ -480,12 +468,21 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           )
         }
       }
-      yield* mirrorWrite(
-        mirror,
-        at(
-          ['fetch', 'origin', `+refs/heads/${options.base}:${laneBase}`, `+refs/heads/${options.branch}:${laneBranch}`],
+      // The retry wraps the permit: each try takes its own and the wait holds none.
+      yield* retryUnreachable(
+        mirrorWrite(
           mirror,
+          at(
+            [
+              'fetch',
+              'origin',
+              `+refs/heads/${options.base}:${laneBase}`,
+              `+refs/heads/${options.branch}:${laneBranch}`,
+            ],
+            mirror,
+          ),
         ),
+        waits,
       )
 
       // What an earlier integration was killed in the middle of, before this one
@@ -654,7 +651,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // because nothing is wrong with the branch and nobody's judgement is
       // owed. Only a base that beats every one of those pushes becomes an
       // `IntegrationRefused`, at the loop below — see `LostPush`.
-      const pushed = yield* Effect.result(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd))
+      const pushed = yield* Effect.result(
+        retryUnreachable(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd), waits),
+      )
       if (Result.isFailure(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
@@ -684,7 +683,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // entire difference from six silent `return 1`s — and now the compiler
       // knows that is the only thing it has to answer for.
       Effect.catchTag('RepoFailed', (err) =>
-        refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
+        // origin did not answer, after the tries: nothing was judged (#1029).
+        isUnreachableFailure(err)
+          ? refuse('unreachable', `origin could not be reached: ${err.detail}`)
+          : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
       ),
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
