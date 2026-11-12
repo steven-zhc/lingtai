@@ -1,4 +1,6 @@
-# Why Lingtai is built this way
+# Why Lingtai
+
+*Why Lingtai is built this way*
 
 The design argument, moved out of the root README so that it can start with
 what to type. For the commands, begin at the [tutorial](tutorial.md).

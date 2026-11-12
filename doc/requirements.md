@@ -1,4 +1,6 @@
-# What Lingtai needs — the minimum is short; everything else is a choice you make
+# Requirements
+
+*What Lingtai needs — the minimum is short; everything else is a choice you make*
 
 Read this before [the tutorial](tutorial.md), or when `lingtai doctor`
 complains about something you did not know you needed. Coming from Symphony and

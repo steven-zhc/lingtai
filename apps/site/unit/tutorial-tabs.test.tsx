@@ -39,3 +39,30 @@ echo fish
     expect(html).not.toContain('&lt;details&gt;')
   })
 })
+
+describe('page subtitle', () => {
+  const render = (slug: string, body: string) =>
+    renderToStaticMarkup(<Document slug={slug} source={`${slug}.md`} body={body} published={[]} />)
+
+  it('marks an emphasis-only paragraph after the h1, through the sanitizer', () => {
+    const html = render('requirements', '# Requirements\n\n*What Lingtai needs — a choice; short*\n\nBody text.')
+    expect(html).toContain('<p class="subtitle"><em>What Lingtai needs — a choice; short</em></p>')
+  })
+
+  it('marks the subtitle on the tutorial and leaves the intro as the next paragraph', () => {
+    const html = render('tutorial', '# Tutorial\n\n*Get one ticket to land*\n\nIntro here.')
+    expect(html).toContain('<p class="subtitle">')
+    expect(html).toContain('<p>Intro here.</p>')
+  })
+
+  it('does not mark bold, mixed or non-adjacent paragraphs', () => {
+    expect(render('x', '# T\n\n**bold**\n\nBody')).not.toContain('subtitle')
+    expect(render('x', '# T\n\n*em* and more\n\nBody')).not.toContain('subtitle')
+    expect(render('x', '# T\n\nBody\n\n*em*')).not.toContain('subtitle')
+  })
+
+  it('draws nothing on a plugin page without one', () => {
+    const body = readFileSync(new URL('../../../doc/plugins/agent.md', import.meta.url), 'utf8')
+    expect(render('plugins/agent', body)).not.toContain('class="subtitle"')
+  })
+})

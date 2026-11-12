@@ -1,4 +1,6 @@
-# How Lingtai thinks about a ticket
+# Concepts
+
+*How Lingtai thinks about a ticket*
 
 The tutorial has you open one ticket and watch it land. This page is the short
 model behind that: what Lingtai keeps track of, and why a ticket can run, wait,

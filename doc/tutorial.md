@@ -1,4 +1,6 @@
-# Tutorial — get one ticket to land
+# Tutorial
+
+*Tutorial — get one ticket to land*
 
 Use [Chapter Garden](https://github.com/steven-zhc/chapter-garden), a small
 Astro site for jointly written novels, to try the full Lingtai flow: set up a

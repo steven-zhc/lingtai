@@ -29,6 +29,7 @@ const SANITIZE = {
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div ?? []), ['className', 'shell-tabs']],
+    p: [...(defaultSchema.attributes?.p ?? []), ['className', 'subtitle']],
   },
 }
 
@@ -39,9 +40,10 @@ const SHELLS = [
 type MarkdownNode = {
   type: string
   children?: MarkdownNode[]
+  depth?: number
   value?: string
   lang?: string | null
-  data?: { hName: string; hProperties?: { className: string[] } }
+  data?: { hName?: string; hProperties?: { className: string[] } }
 }
 
 /** GitHub renders Markdown inside `<details>`; project the same disclosure on
@@ -99,6 +101,20 @@ function remarkShellTabs() {
   }
 }
 import { headingsOf, resolveHref } from '@/lib/docs'
+
+/**
+ * The page's subtitle: the paragraph straight after the `h1` that is one
+ * emphasis and nothing else. The file stays plain Markdown for GitHub; the site
+ * only marks the paragraph so the stylesheet can draw it under the title.
+ */
+function remarkSubtitle() {
+  return (tree: { children: MarkdownNode[] }) => {
+    const at = tree.children.findIndex((node) => node.type === 'heading' && node.depth === 1)
+    const next = at < 0 ? undefined : tree.children[at + 1]
+    if (next?.type !== 'paragraph' || next.children?.length !== 1 || next.children[0]?.type !== 'emphasis') return
+    next.data = { hProperties: { className: ['subtitle'] } }
+  }
+}
 
 /**
  * A file from `doc/`, rendered.
@@ -230,7 +246,11 @@ export function Document({
   return (
     <div className={slug === 'tutorial' ? 'prose tutorial-prose' : 'prose'}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, ...(slug === 'tutorial' ? [remarkShellTabs, remarkTutorialDetails] : [])]}
+        remarkPlugins={[
+          remarkGfm,
+          remarkSubtitle,
+          ...(slug === 'tutorial' ? [remarkShellTabs, remarkTutorialDetails] : []),
+        ]}
         rehypePlugins={[
           [rehypeSanitize, SANITIZE],
           [rehypeHighlight, HIGHLIGHT],

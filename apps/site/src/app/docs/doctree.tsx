@@ -22,7 +22,11 @@ export function DocTree({ groups, current }: { groups: TreeGroup[]; current: str
             <ul>
               {group.entries.map((entry) => (
                 <li key={entry.slug}>
-                  <Link href={`/docs/${entry.slug}/`} aria-current={entry.slug === current ? 'page' : undefined}>
+                  <Link
+                    href={`/docs/${entry.slug}/`}
+                    title={entry.title}
+                    aria-current={entry.slug === current ? 'page' : undefined}
+                  >
                     {entry.title}
                   </Link>
                 </li>
