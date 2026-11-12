@@ -125,7 +125,9 @@ const GROUP_NOTES: Partial<Record<Group, string>> = {
 /** The page: a function of the manifest alone. Headings carry no backticks, so the anchor is `lingtai-<name>`. */
 export function renderCliPage(manifest: Manifest): string {
   const out: string[] = [
-    '# The lingtai command line',
+    '# CLI',
+    '',
+    '*The lingtai command line*',
     '',
     'Generated from `apps/cli/src/commands.ts` and the parser; `lingtai --help` prints the same. Do not edit — run `pnpm docs:cli`.',
   ]

@@ -1,4 +1,6 @@
-# What an agent can read, write and reach
+# Safety
+
+*What an agent can read, write and reach*
 
 An agent Lingtai launches runs on your machine, as your user. This page says
 what it can touch, per runtime, for a reader deciding whether to run Lingtai.

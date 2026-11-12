@@ -406,4 +406,32 @@ describe('treeOf', () => {
     expect(guides!.entries[at + 1]).toEqual({ slug: 'events', title: 'Events' })
     expect(tree.flatMap((group) => group.entries).filter((entry) => entry.slug === 'events')).toHaveLength(1)
   })
+
+  it('keeps every sidebar title to three words, so no entry wraps at 13rem', async () => {
+    const titles = (await treeOf()).flatMap((group) => group.entries.map((entry) => entry.title))
+    for (const title of titles) expect(title.split(/\s+/).length, title).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('short titles with the old title as a subtitle', () => {
+  const SHORT: Record<string, string> = {
+    'tutorial.md': 'Tutorial',
+    'concepts.md': 'Concepts',
+    'recipe.md': 'Recipe',
+    'cli.md': 'CLI',
+    'requirements.md': 'Requirements',
+    'safety.md': 'Safety',
+    'why.md': 'Why Lingtai',
+  }
+  for (const [file, short] of Object.entries(SHORT)) {
+    it(`${file}: titled ${short}, and its lede is not the subtitle`, async () => {
+      const body = await readFile(path.join(docRoot, file), 'utf8')
+      expect(titleOf(body, file)).toBe(short)
+      const subtitle = body.split('\n')[2]!
+      expect(subtitle).toMatch(/^\*[^*].*\*$/)
+      const lede = ledeOf(body)
+      expect(lede).not.toBe('')
+      expect(lede).not.toBe(subtitle.slice(1, -1))
+    })
+  }
 })

@@ -1,4 +1,6 @@
-# Reading and changing your recipe
+# Recipe
+
+*Reading and changing your recipe*
 
 The tutorial's `lingtai init` wrote one file, the project's **recipe**. It is
 the only place that says what an attempt does for this project: which agent writes

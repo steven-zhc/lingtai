@@ -326,7 +326,7 @@ p { max-width: var(--measure); }
 .doc-wrap { max-width: 96rem; }
 .doc-layout {
   display: grid; gap: 24px; align-items: start; justify-content: center;
-  grid-template-columns: 11rem minmax(0, 60rem) 10rem;
+  grid-template-columns: 13rem minmax(0, 60rem) 10rem;
 }
 /* The document fills its column. A measure of about 80 characters at 16px is
    what long-form reading tolerates best; the column is that measure, so the
@@ -353,6 +353,7 @@ p { max-width: var(--measure); }
 .doctree a {
   display: block; padding: 4px 8px; border-left: 2px solid transparent;
   color: var(--ink-2); text-decoration: none; border-radius: 0 3px 3px 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .doctree a:hover { color: var(--accent-ink); background: var(--surface); }
 .doctree a[aria-current="page"] {
@@ -428,6 +429,9 @@ p { max-width: var(--measure); }
 }
 .source a { color: var(--muted); }
 
+/* The subtitle under a page's title: the long name the short title replaced. */
+.prose p.subtitle { margin: 4px 0 20px; color: var(--muted); font-size: 18px; line-height: 1.5; }
+
 /* The tutorial is a path, not a reference page. Its source is still the same
    Markdown file the repository reads; this only makes the steps scan like the
    sequence they describe. */
@@ -436,10 +440,12 @@ p { max-width: var(--measure); }
   margin-bottom: 20px;
   font-size: clamp(36px, 5vw, 52px); line-height: 1.05;
 }
-.tutorial-prose > h1 + p {
+.tutorial-prose > h1 + p:not(.subtitle),
+.tutorial-prose > h1 + p.subtitle + p {
   margin-bottom: 12px;
   color: var(--ink-2); font-size: 18px; line-height: 1.6;
 }
+.tutorial-prose h1:has(+ .subtitle) { margin-bottom: 0; }
 .tutorial-prose blockquote {
   margin: 24px 0 34px; padding: 14px 16px;
   border: 1px solid var(--rule); border-left: 3px solid var(--accent);
