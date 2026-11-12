@@ -78,11 +78,16 @@ function barrier() {
   return {
     runtime: {
       ...fakeRuntime,
-      run: async (...args: Parameters<typeof fakeRuntime.run>) => {
-        entered++
-        if (!open) await new Promise<void>((resolve) => waiting.push(resolve))
-        return fakeRuntime.run(...args)
-      },
+      run: (...args: Parameters<typeof fakeRuntime.run>) =>
+        Effect.suspend(() => {
+          entered++
+          const held = open
+            ? Effect.void
+            : Effect.callback<void>((resume) => {
+                waiting.push(() => resume(Effect.void))
+              })
+          return Effect.andThen(held, fakeRuntime.run(...args))
+        }),
     },
     get entered() {
       return entered

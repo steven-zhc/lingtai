@@ -35,13 +35,15 @@ const MANY_ROUNDS = JUDGED_BY_AN_AGENT.replace('rounds: 2, restarts: 0', 'rounds
 
 const judging = (ran: string[]): Runtime => ({
   ...refusingRuntime,
-  run: async (request) => {
+  run: (request) => {
     ran.push(request.runId)
     if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-    return {
-      ...(await refusingRuntime.run(request)),
-      text: '```json\n{"next": "waiting", "why": "a person should read these"}\n```',
-    }
+    return refusingRuntime.run(request).pipe(
+      Effect.map((outcome) => ({
+        ...outcome,
+        text: '```json\n{"next": "waiting", "why": "a person should read these"}\n```',
+      })),
+    )
   },
 })
 
@@ -65,7 +67,7 @@ describe('a judge asked in a continuation has a session of its own', () => {
       const inner = judging(ran)
       const runtime: Runtime = {
         ...inner,
-        run: async (request) => {
+        run: (request) => {
           if (request.runId.includes(':judge:') || request.runId.includes(':fix:')) head += 1
           return inner.run(request)
         },
@@ -174,7 +176,7 @@ describe('a granted round is briefed with the ticket as it reads at the round (#
     const fixPrompts: string[] = []
     const runtime: Runtime = {
       ...refusingRuntime,
-      run: async (request) => {
+      run: (request) => {
         if (request.runId.includes(':fix:')) fixPrompts.push(request.prompt)
         return refusingRuntime.run(request)
       },

@@ -15,6 +15,7 @@ import {
   parsePayload,
   type ComposedPrompt,
 } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -69,9 +70,9 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
       providesTier: 'guarded',
       enforces: ['turns', 'wall'],
     },
-    async run(request) {
+    run: (request) => {
       seen.push(request)
-      return reply
+      return Effect.succeed(reply)
     },
   }
 }
@@ -404,22 +405,23 @@ describe('asking the reviewer again after a fix', () => {
   it('reviews the round after a refusal that carried no findings, under a session of its own', async () => {
     const taken = new Set<string>()
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
-    runtime.run = async (request) => {
-      runtime.seen.push(request)
-      const session = sessionIdFor(request.runId)
-      if (taken.has(session)) {
-        // `pass-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
-        return outcome({
-          exitCode: 1,
-          turns: 0,
-          costUsd: null,
-          text: null,
-          failure: { kind: 'crash', detail: `Error: Session ID ${session} is already in use.` },
-        })
-      }
-      taken.add(session)
-      return outcome({ text: '{"findings":[]}' })
-    }
+    runtime.run = (request) =>
+      Effect.sync(() => {
+        runtime.seen.push(request)
+        const session = sessionIdFor(request.runId)
+        if (taken.has(session)) {
+          // `pass-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
+          return outcome({
+            exitCode: 1,
+            turns: 0,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'crash', detail: `Error: Session ID ${session} is already in use.` },
+          })
+        }
+        taken.add(session)
+        return outcome({ text: '{"findings":[]}' })
+      })
     const action = createAgentAction(
       { name: 'review', prompt: '' },
       {
@@ -734,12 +736,13 @@ describe('the action', () => {
    */
   it("hands its agent the run's log, tagged with the step and the action", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
-    runtime.run = async (request) => {
-      runtime.seen.push(request)
-      request.log?.note('Read', 'src/x.ts')
-      request.log?.note('receipt', 'success · 7 turns · $0.42 · exit 0')
-      return outcome({ text: '{"findings":[]}' })
-    }
+    runtime.run = (request) =>
+      Effect.sync(() => {
+        runtime.seen.push(request)
+        request.log?.note('Read', 'src/x.ts')
+        request.log?.note('receipt', 'success · 7 turns · $0.42 · exit 0')
+        return outcome({ text: '{"findings":[]}' })
+      })
     const action = createAgentAction(
       { name: 'review', prompt: '' },
       {
@@ -1801,7 +1804,7 @@ describe('RunSpent, on every branch (#494)', () => {
           providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
-        run: async () => outcome({ text: '{"findings":[]}' }),
+        run: () => Effect.succeed(outcome({ text: '{"findings":[]}' })),
       }
       const action = createAgentAction(
         { name: 'review', prompt: '' },
@@ -1857,9 +1860,7 @@ describe('RunSpent, on every branch (#494)', () => {
           providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
-        run: async () => {
-          throw new Error('the process died')
-        },
+        run: () => Effect.die(new Error('the process died')),
       }
       const action = createAgentAction(
         { name: 'review', prompt: '' },
@@ -2104,9 +2105,7 @@ describe('the worktree after a review (#587)', () => {
   const sha = context.onSha
   const throwing: Runtime = {
     ...reviewer(outcome()),
-    async run() {
-      throw new Error('the runtime fell over')
-    },
+    run: () => Effect.die(new Error('the runtime fell over')),
   }
 
   function withRestore(restore: AgentActionDeps['restore'], runtime: Runtime, diff = HUNK_DIFF) {
@@ -2402,7 +2401,7 @@ describe('recording the prompt an agent action was handed (#923)', () => {
     const action = createAgentAction(
       { name: 'review', prompt: '' },
       {
-        runtime: { ...runtime, run: async (r) => (order.push('run'), runtime.run(r)) },
+        runtime: { ...runtime, run: (r) => Effect.suspend(() => (order.push('run'), runtime.run(r))) },
         issue: async () => ISSUE,
         diff: async () => HUNK_DIFF,
         restore: async () => ({ untouched: true as const }),

@@ -44,7 +44,7 @@ describe('a reviewer built through actionsAt before the cut', () => {
     const asked: string[] = []
     const reviewer: Runtime = {
       ...runtime,
-      run: async (request) => {
+      run: (request) => {
         if (request.prompt.includes('EARLY-REVIEWER')) asked.push(request.settingsPath)
         return runtime.run(request)
       },

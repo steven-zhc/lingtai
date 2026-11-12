@@ -38,7 +38,7 @@ function withBody(first: string) {
 function recording(prompts: string[]): Runtime {
   return {
     ...runtime,
-    run: async (request, ...rest) => {
+    run: (request, ...rest) => {
       prompts.push(request.prompt)
       return runtime.run(request, ...rest)
     },

@@ -19,7 +19,7 @@ describe('the reviewer built before the cut', () => {
     const asked: string[] = []
     const reviewer: Runtime = {
       ...runtime,
-      run: async (request) => {
+      run: (request) => {
         // Only the cold reviewer sends an output schema (`#369`).
         if (request.outputSchema !== undefined) asked.push(request.settingsPath)
         return runtime.run(request)
@@ -56,7 +56,7 @@ describe('the reviewer built before the cut, over the same deps shape', () => {
     const seen: string[] = []
     const reviewer: Runtime = {
       ...runtime,
-      run: async (request) => {
+      run: (request) => {
         seen.push(request.settingsPath)
         return runtime.run(request)
       },

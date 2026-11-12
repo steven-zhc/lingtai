@@ -52,7 +52,7 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import { runtimeVersionOfEffect, type RunOutcome, type RunRequest, type Runtime } from '@lingtai/agent'
+import { runtimeVersionOfEffect, type RunOutcome, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
 import type { RuntimeId } from '@lingtai/domain'
 import {

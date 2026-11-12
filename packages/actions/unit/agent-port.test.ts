@@ -55,14 +55,12 @@ const baseDeps = (runtime: Runtime, over: Record<string, unknown> = {}) => ({
 describe('the review as an Effect (#1043)', () => {
   it('restores the worktree once, with onSha, when the fiber is interrupted', async () => {
     let aborted = false
-    const runtime = runtimeOf(
-      (request) =>
-        new Promise<RunOutcome>((_, reject) => {
-          request.signal?.addEventListener('abort', () => {
-            aborted = true
-            reject(new Error('aborted'))
-          })
+    const runtime = runtimeOf(() =>
+      Effect.callback<RunOutcome>(() =>
+        Effect.sync(() => {
+          aborted = true
         }),
+      ),
     )
     const restored: string[] = []
     const port = makeAgentAction(
@@ -89,16 +87,15 @@ describe('the review as an Effect (#1043)', () => {
 
   it('waits for the run to settle before it restores, and restores through the interruption', async () => {
     const order: string[] = []
-    const runtime = runtimeOf(
-      (request) =>
-        new Promise<RunOutcome>((_, reject) => {
-          request.signal?.addEventListener('abort', () =>
-            setTimeout(() => {
-              order.push('run settled')
-              reject(new Error('killed'))
-            }, 30),
-          )
+    const runtime = runtimeOf(() =>
+      Effect.callback<RunOutcome>(() =>
+        Effect.callback<void>((done) => {
+          setTimeout(() => {
+            order.push('run settled')
+            done(Effect.void)
+          }, 30)
         }),
+      ),
     )
     const port = makeAgentAction(
       { name: 'review', prompt: '' },
@@ -119,12 +116,7 @@ describe('the review as an Effect (#1043)', () => {
   })
 
   it('keeps a restore that fails after an interruption', async () => {
-    const runtime = runtimeOf(
-      (request) =>
-        new Promise<RunOutcome>((_, reject) =>
-          request.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
-        ),
-    )
+    const runtime = runtimeOf(() => Effect.callback<RunOutcome>(() => Effect.void))
     const port = makeAgentAction(
       { name: 'review', prompt: '' },
       agentPortDepsFrom(baseDeps(runtime, { restore: async () => ({ failed: 'git said no' }) })),
@@ -142,7 +134,7 @@ describe('the review as an Effect (#1043)', () => {
   })
 
   it('falls back to a full review when the fix delta cannot be read', async () => {
-    const runtime = runtimeOf(async () => answer)
+    const runtime = runtimeOf(() => Effect.succeed(answer))
     const notes: string[] = []
     const port = makeAgentAction(
       { name: 'review', prompt: '' },
@@ -175,7 +167,7 @@ describe('settingsPath is read when the action runs (#1043)', () => {
 
   it('through actionsFromRecipe', async () => {
     let path = '/tmp/before.json'
-    const runtime = runtimeOf(async () => answer)
+    const runtime = runtimeOf(() => Effect.succeed(answer))
     const deps = baseDeps(runtime)
     const [action] = actionsFromRecipe('review', step, {
       agent: {
@@ -192,7 +184,7 @@ describe('settingsPath is read when the action runs (#1043)', () => {
 
   it('through actionPortsFromRecipe', async () => {
     let path = '/tmp/before.json'
-    const runtime = runtimeOf(async () => answer)
+    const runtime = runtimeOf(() => Effect.succeed(answer))
     const deps = baseDeps(runtime)
     const [port] = actionPortsFromRecipe(
       'review',

@@ -6,6 +6,7 @@
  * `installTracing`, so the provider, the batch processor, the context manager and
  * the Effect tracer are the production ones.
  */
+import type { RunOutcome } from '@lingtai/agent'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
@@ -238,6 +239,21 @@ describe('with an endpoint', () => {
     for (const name of parents) expect(name === 'action judge' || name?.startsWith('step '), String(name)).toBe(true)
   })
 
+  it('agent.run is a span of the step that dispatched it, or of the judge action (#1065)', async () => {
+    const spanned = {
+      ...refusingRuntime,
+      run: (request) => refusingRuntime.run(request).pipe(Effect.withSpan('agent.run')),
+    } as typeof refusingRuntime
+    const { spans } = await pass(JUDGED_BY_AN_AGENT, spanned)
+    const run = spans.find((s) => s.name === 'conductor.run')!
+    const runs = spans.filter((s) => s.name === 'agent.run')
+    expect(runs.length).toBeGreaterThan(0)
+    for (const one of runs) expect(one.spanContext().traceId).toBe(run.spanContext().traceId)
+    const parents = runs.map((one) => spans.find((s) => idOf(s) === parentOf(one))?.name)
+    expect(parents).toContain('action judge')
+    for (const name of parents) expect(name === 'action judge' || name?.startsWith('step '), String(name)).toBe(true)
+  })
+
   it('a failing action exports ERROR with no message and no events', async () => {
     const { spans } = await pass(REVIEWED, refusingRuntime)
     const failed = spans.filter((s) => s.name === 'action agent' && s.status.code === 2)
@@ -312,11 +328,11 @@ runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
 `
-    const asking = (judged: Awaited<ReturnType<typeof runtime.run>>): typeof runtime => ({
+    const asking = (judged: RunOutcome): typeof runtime => ({
       ...runtime,
-      run: async (request) =>
+      run: (request) =>
         request.runId.includes(':design:')
-          ? {
+          ? Effect.succeed({
               exitCode: 0,
               turns: 2,
               durationMs: 1234,
@@ -324,8 +340,8 @@ runtime:
               failure: null,
               text: '```question\nWhich wins?\n```',
               sessionId: 'sess-design',
-            }
-          : judged,
+            })
+          : Effect.succeed(judged),
     })
 
     it('a judge that crashed exports the run as ERROR, with no message and no events', async () => {

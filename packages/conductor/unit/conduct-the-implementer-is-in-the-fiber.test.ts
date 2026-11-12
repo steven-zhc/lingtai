@@ -7,7 +7,7 @@
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1.
  */
-import type { Runtime } from '@lingtai/agent'
+import type { RunOutcome, Runtime } from '@lingtai/agent'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -51,19 +51,27 @@ describe('the implementer in the pass’s fiber', () => {
     const isEntered = new Promise<void>((resolve) => (entered = resolve))
     const runtime: Runtime = {
       ...refusingRuntime,
-      run: async (request) => {
+      run: (request) => {
         if (request.runId.includes(':judge:') || request.runId.includes(':fix:')) return refusingRuntime.run(request)
-        log.push('started')
-        entered()
-        let settle!: () => void
-        const mayRelease = new Promise<void>((resolve) => (settle = resolve))
-        request.signal?.addEventListener('abort', () => {
-          log.push('aborted')
-          settle()
+        return Effect.callback<RunOutcome>((_resume) => {
+          log.push('started')
+          entered()
+          let settled = false
+          let onSettled: (() => void) | undefined
+          // Interruption is the abort now: record it, then wait where the agent waited.
+          return Effect.suspend(() => {
+            log.push('aborted')
+            queueMicrotask(() => {
+              log.push('settled')
+              settled = true
+              onSettled?.()
+            })
+            if (settled) return Effect.void
+            return Effect.callback<void>((done) => {
+              onSettled = () => done(Effect.void)
+            })
+          })
         })
-        await mayRelease
-        log.push('settled')
-        return refusingRuntime.run(request)
       },
     }
     const client = fakeGitHub([])

@@ -269,10 +269,10 @@ describe('the restore under interruption (#1043, #587)', () => {
           providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
-        run: (request) =>
-          new Promise((_, reject) => {
+        run: () =>
+          Effect.callback<never>(() => {
             dispatched()
-            request.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+            return Effect.void
           }),
       },
       issue: () => Effect.succeed({ ref: '1', title: 't', body: '' }),

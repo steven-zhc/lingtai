@@ -31,15 +31,16 @@ import {
 
 const atTheWall: Runtime = {
   ...runtime,
-  run: async () => ({
-    exitCode: 1,
-    turns: 151,
-    durationMs: 1_800_000,
-    costUsd: 20.81,
-    failure: { kind: 'out-of-turns', detail: '151 turns, and the recipe allows 151 · $20.81' },
-    text: null,
-    sessionId: 'sess-237',
-  }),
+  run: () =>
+    Effect.succeed({
+      exitCode: 1,
+      turns: 151,
+      durationMs: 1_800_000,
+      costUsd: 20.81,
+      failure: { kind: 'out-of-turns', detail: '151 turns, and the recipe allows 151 · $20.81' },
+      text: null,
+      sessionId: 'sess-237',
+    }),
 }
 
 describe('a publish whose pass is interrupted while the push is pending', () => {

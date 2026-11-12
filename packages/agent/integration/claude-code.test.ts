@@ -48,6 +48,7 @@ import {
   traceOf,
   type RunTrace,
 } from '../src/index.ts'
+import type { RunOutcome } from '../src/runtime.ts'
 
 let root: string
 
@@ -252,7 +253,7 @@ describe('run', () => {
     const binary = await fakeClaude(
       `echo '{"is_error":false,"num_turns":63,"duration_ms":4210000,"total_cost_usd":5.42}'`,
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure).toBeNull()
     expect(outcome.turns).toBe(63)
@@ -265,7 +266,7 @@ describe('run', () => {
     // The arguments are what wire the hook, the session and the model. A test
     // that only checks the exit code would not notice one going missing.
     const binary = await fakeClaude(`printf '%s\\n' "$@" > "${join(root, 'args.txt')}"; echo '{}'`)
-    await createClaudeCodeRuntime({ binary }).run(request({ model: 'claude-opus-5' }))
+    await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request({ model: 'claude-opus-5' })))
 
     const args = (await import('node:fs/promises')).readFile
     const written = await args(join(root, 'args.txt'), 'utf8')
@@ -299,7 +300,7 @@ describe('run', () => {
     const runtime = createClaudeCodeRuntime({ binary })
     const req = request({ model: 'claude-opus-5' })
 
-    await runtime.run(req)
+    await Effect.runPromise(runtime.run(req))
     const spawned = (await readFile(dump, 'utf8')).split('\n').slice(0, -1)
     const described = runtime.invocation!(req)
 
@@ -314,7 +315,7 @@ describe('run', () => {
   /** The old loop's failures produced no event at all. Every ending has a kind. */
   it('turns a non-zero exit into a crash, with the detail', async () => {
     const binary = await fakeClaude(`echo "context window exceeded" >&2; exit 1`)
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind).toBe('crash')
     expect(outcome.failure?.detail).toContain('context window exceeded')
@@ -323,7 +324,7 @@ describe('run', () => {
 
   it('turns is_error into a crash even when the exit code is zero', async () => {
     const binary = await fakeClaude(`echo '{"is_error":true,"result":"the model refused","num_turns":2}'; exit 0`)
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     // A clean exit code with an error result is still a failure, and saying so
     // is the difference between a receipt and a rumour.
@@ -334,7 +335,9 @@ describe('run', () => {
 
   it('turns a run that never ends into a timeout, not a hang', async () => {
     const binary = await fakeClaude('sleep 30')
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request({ limits: { turns: 300, wallMs: 400 } }))
+    const outcome = await Effect.runPromise(
+      createClaudeCodeRuntime({ binary }).run(request({ limits: { turns: 300, wallMs: 400 } })),
+    )
 
     expect(outcome.failure?.kind).toBe('timeout')
     expect(outcome.failure?.detail).toContain('400ms')
@@ -363,8 +366,10 @@ describe('run', () => {
     )
 
   it("stops a run at the recipe's turns, and says it was the turns and not the time", async () => {
-    const outcome = await createClaudeCodeRuntime({ binary: await honoursMaxTurns() }).run(
-      request({ limits: { turns: 3, wallMs: 30_000 } }),
+    const outcome = await Effect.runPromise(
+      createClaudeCodeRuntime({ binary: await honoursMaxTurns() }).run(
+        request({ limits: { turns: 3, wallMs: 30_000 } }),
+      ),
     )
 
     expect(outcome.failure?.kind).toBe('out-of-turns')
@@ -420,12 +425,14 @@ describe('run', () => {
     const controller = new AbortController()
     setTimeout(() => controller.abort(), 200)
 
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request({ signal: controller.signal }))
+    const outcome = await Effect.runPromise(
+      createClaudeCodeRuntime({ binary }).run(request({ signal: controller.signal })),
+    )
     expect(outcome.failure?.kind).toBe('aborted')
   })
 
   it('turns a missing binary into a crash rather than a stack trace', async () => {
-    const outcome = await createClaudeCodeRuntime({ binary: join(root, 'not-here') }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary: join(root, 'not-here') }).run(request()))
     expect(outcome.failure?.kind).toBe('crash')
     expect(outcome.failure?.detail.length).toBeGreaterThan(0)
   })
@@ -453,7 +460,7 @@ describe('run', () => {
         'exit 1',
       ].join('\n'),
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind).toBe('never-started')
     // Evidence, not a verdict: the prose is kept, and nothing was decided by it.
@@ -483,7 +490,7 @@ describe('run', () => {
       stream({ ...RECEIPT, subtype: 'success', is_error: true, num_turns: 1, total_cost_usd: 0, result: said }),
       1,
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind).toBe('never-started')
     expect(outcome.failure?.detail).toBe(said)
@@ -497,7 +504,7 @@ describe('run', () => {
       stream({ ...RECEIPT, subtype: 'success', is_error: false, num_turns: 1, total_cost_usd: 0, result: said }),
       1,
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind).toBe('never-started')
   })
@@ -509,7 +516,7 @@ describe('run', () => {
    */
   it('leaves an unparseable ending a crash, however little it appears to have spent', async () => {
     const binary = await fakeClaude(`echo "Segmentation fault" >&2; exit 139`)
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.turns).toBe(0)
     expect(outcome.costUsd).toBeNull()
@@ -527,7 +534,7 @@ describe('run', () => {
  * printed produce **the same outcome, field for field**.
  */
 describe('the stream, and the accounting that must not move', () => {
-  const accounting = (o: Awaited<ReturnType<ReturnType<typeof createClaudeCodeRuntime>['run']>>) => ({
+  const accounting = (o: RunOutcome) => ({
     exitCode: o.exitCode,
     turns: o.turns,
     durationMs: o.durationMs,
@@ -539,10 +546,10 @@ describe('the stream, and the accounting that must not move', () => {
 
   it('reads a real stream to the same fields the lone object produced', async () => {
     const runtime = createClaudeCodeRuntime
-    const streamed = await runtime({ binary: await fakeStream(stream()) }).run(request())
+    const streamed = await Effect.runPromise(runtime({ binary: await fakeStream(stream()) }).run(request()))
     // The same receipt, alone, which is exactly what `--output-format json`
     // printed and what the parser was written against.
-    const lone = await runtime({ binary: await fakeStream([RECEIPT]) }).run(request())
+    const lone = await Effect.runPromise(runtime({ binary: await fakeStream([RECEIPT]) }).run(request()))
 
     expect(accounting(streamed)).toEqual(accounting(lone))
     // Named as well as compared, so a change to both at once is still caught.
@@ -592,7 +599,7 @@ describe('the stream, and the accounting that must not move', () => {
 
   it.each(subtypes)('carries %s through the stream unchanged', async (subtype, receipt, exit, kind) => {
     const binary = await fakeStream(stream({ ...RECEIPT, subtype, ...receipt }), exit)
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind ?? null).toBe(kind)
     expect(outcome.turns).toBe(receipt.num_turns)
@@ -609,7 +616,7 @@ describe('the stream, and the accounting that must not move', () => {
   it('carries structured_output through on a clean answer', async () => {
     const structured = { findings: [], about: null }
     const binary = await fakeStream(stream({ ...RECEIPT, structured_output: structured }))
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure).toBeNull()
     expect(outcome.structured).toEqual(structured)
@@ -617,7 +624,7 @@ describe('the stream, and the accounting that must not move', () => {
 
   it('carries nothing where the receipt had no structured_output', async () => {
     const binary = await fakeStream(stream())
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.structured).toBeUndefined()
   })
@@ -644,7 +651,7 @@ describe('the stream, and the accounting that must not move', () => {
       // Half a line, with no newline after it: a pipe closed mid-object.
       `printf '%s' '{"type":"assistant","message":{"content":[{"type":"tex'`,
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
 
     expect(outcome.failure?.kind).toBe('crash')
     expect(outcome.turns).toBe(0)
@@ -658,7 +665,7 @@ describe('the stream, and the accounting that must not move', () => {
     const binary = await fakeClaude(
       ["echo 'npm warn Unknown env config'", "cat <<'JSON'", JSON.stringify(RECEIPT), 'JSON'].join('\n'),
     )
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
     expect(outcome.turns).toBe(63)
     expect(outcome.failure).toBeNull()
   })
@@ -674,7 +681,7 @@ describe("the agent's output in the run log", () => {
   it('writes what the agent said and thought, and not what the hook already writes', async () => {
     const trace = recordingTrace()
     const binary = await fakeStream(stream())
-    await createClaudeCodeRuntime({ binary }).run(request({ log: trace }))
+    await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request({ log: trace })))
 
     expect(trace.lines).toContain('agent\tReading the adapter first.')
     expect(trace.lines).toContain('think\tthe close handler is what produces the accounting')
@@ -695,7 +702,7 @@ describe("the agent's output in the run log", () => {
   it('writes the tool calls too, when no hook is there to', async () => {
     const trace = recordingTrace()
     const binary = await fakeStream(stream())
-    await createClaudeCodeRuntime({ binary }).run(request({ log: trace, traceTools: true }))
+    await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request({ log: trace, traceTools: true })))
 
     expect(trace.lines).toContain('Read\tpackages/agent/src/claude-code.ts')
     expect(trace.lines.join('\n')).not.toContain('four hundred lines')
@@ -725,7 +732,7 @@ describe("the agent's output in the run log", () => {
     log.note('run', 'pass-01JX · ticket-lingtai-109 · agent/109 → main')
 
     const binary = await fakeStream(stream())
-    await createClaudeCodeRuntime({ binary }).run(request({ log }))
+    await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request({ log })))
 
     log.note('run', 'did not land — this file is kept, and is the only account of why')
     await log.close('keep')
@@ -746,7 +753,7 @@ describe("the agent's output in the run log", () => {
    */
   it('runs without a log at all', async () => {
     const binary = await fakeStream(stream())
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    const outcome = await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request()))
     expect(outcome.turns).toBe(63)
   })
 
@@ -887,14 +894,16 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
     await chmod(binary, 0o755)
     let pid: number | undefined
     try {
-      await createCodexRuntime({ binary }).run({
-        runId: 'detached-tool',
-        cwd,
-        prompt: 'start the tool',
-        settingsPath: await settingsAt({}),
-        env: { PATH: process.env.PATH ?? '', TOOL_PID_FILE: pidFile },
-        limits: { turns: 3, wallMs: 10_000 },
-      })
+      await Effect.runPromise(
+        createCodexRuntime({ binary }).run({
+          runId: 'detached-tool',
+          cwd,
+          prompt: 'start the tool',
+          settingsPath: await settingsAt({}),
+          env: { PATH: process.env.PATH ?? '', TOOL_PID_FILE: pidFile },
+          limits: { turns: 3, wallMs: 10_000 },
+        }),
+      )
       pid = Number(await readFile(pidFile, 'utf8'))
       expect(() => process.kill(pid!, 0)).toThrow()
     } finally {
@@ -923,17 +932,19 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
     const onUnhandled = (reason: unknown) => unhandled.push(reason)
     process.on('unhandledRejection', onUnhandled)
     try {
-      const outcome = await createCodexRuntime({
-        binary,
-        stopProcesses: () => Effect.fail(new Error('ps unavailable')),
-      }).run({
-        runId: 'scan-throws',
-        cwd,
-        prompt: 'x',
-        settingsPath: await settingsAt({}),
-        env: { PATH: process.env.PATH ?? '' },
-        limits: { turns: 3, wallMs: 10_000 },
-      })
+      const outcome = await Effect.runPromise(
+        createCodexRuntime({
+          binary,
+          stopProcesses: () => Effect.fail(new Error('ps unavailable')),
+        }).run({
+          runId: 'scan-throws',
+          cwd,
+          prompt: 'x',
+          settingsPath: await settingsAt({}),
+          env: { PATH: process.env.PATH ?? '' },
+          limits: { turns: 3, wallMs: 10_000 },
+        }),
+      )
       await new Promise((resolve) => setTimeout(resolve, 50))
       expect(outcome.failure?.kind).toBe('crash')
       expect(outcome.failure?.detail).toContain('process cleanup incomplete')
@@ -963,14 +974,16 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
    * an outcome rather than a throw so the conductor records it.
    */
   it('refuses to start where the wiring cannot be read, rather than running unhooked', async () => {
-    const outcome = await createCodexRuntime().run({
-      runId: 'pass-1',
-      cwd: '/tmp/tree',
-      prompt: 'do the thing',
-      settingsPath: join(tmpdir(), 'lingtai-no-such-settings.json'),
-      env: {},
-      limits: { turns: 150, wallMs: 1_000 },
-    })
+    const outcome = await Effect.runPromise(
+      createCodexRuntime().run({
+        runId: 'pass-1',
+        cwd: '/tmp/tree',
+        prompt: 'do the thing',
+        settingsPath: join(tmpdir(), 'lingtai-no-such-settings.json'),
+        env: {},
+        limits: { turns: 150, wallMs: 1_000 },
+      }),
+    )
     expect(outcome.failure?.kind).toBe('crash')
     expect(outcome.failure?.detail).toMatch(/could not be read/)
     // Unknown cost is not free (#198).

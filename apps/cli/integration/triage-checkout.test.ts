@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { createRuntime } from '@lingtai/agent'
 import { git, mirrorPathFor } from '@lingtai/repo'
+import { Effect } from 'effect'
 import { afterEach, expect, it } from 'vitest'
 
 import { prepareTriageCheckout } from '../src/triage-checkout.ts'
@@ -57,14 +58,16 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_t
     try {
       expect(await git(['rev-parse', 'HEAD'], { cwd: checkout.cwd, env: checkout.env })).toBe(sha)
       expect(await git(['remote'], { cwd: checkout.cwd, env: checkout.env })).toBe('')
-      const result = await runtime.run({
-        runId: `triage-${sha}`,
-        cwd: checkout.cwd,
-        prompt: 'Inspect answer.txt',
-        settingsPath: checkout.settingsPath,
-        env: checkout.env,
-        limits: { turns: 3, wallMs: 10_000, usd: 0.5 },
-      })
+      const result = await Effect.runPromise(
+        runtime.run({
+          runId: `triage-${sha}`,
+          cwd: checkout.cwd,
+          prompt: 'Inspect answer.txt',
+          settingsPath: checkout.settingsPath,
+          env: checkout.env,
+          limits: { turns: 3, wallMs: 10_000, usd: 0.5 },
+        }),
+      )
       expect(result.failure).toBeNull()
       expect(result.text).toBe(expected)
       expect(await readFile(join(checkout.cwd, 'answer.txt'), 'utf8')).toBe('edited by tool\n')

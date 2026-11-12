@@ -18,6 +18,7 @@ import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
  * which is the Done-when's own distinction: a `Discuss` that parses `turns: 7`
  * proves nothing about whether that `7` ever reaches a call.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { discussionAsk, discussionVersion } from '../src/discuss.ts'
@@ -32,18 +33,19 @@ function stubRuntime(): { runtime: Runtime; requests: RunRequest[] } {
       canRewriteToolCall: false,
       tier: 'guarded',
     } as unknown as Runtime['capabilities'],
-    run: async (request: RunRequest): Promise<RunOutcome> => {
-      requests.push(request)
-      return {
-        exitCode: 0,
-        turns: 1,
-        durationMs: 1,
-        costUsd: null,
-        failure: null,
-        text: null,
-        sessionId: '',
-      }
-    },
+    run: (request: RunRequest) =>
+      Effect.sync((): RunOutcome => {
+        requests.push(request)
+        return {
+          exitCode: 0,
+          turns: 1,
+          durationMs: 1,
+          costUsd: null,
+          failure: null,
+          text: null,
+          sessionId: '',
+        }
+      }),
   }
   return { runtime, requests }
 }

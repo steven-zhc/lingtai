@@ -11,6 +11,7 @@
  * `conduct.ts`'s `keep`.
  */
 import type { Runtime } from '@lingtai/agent'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -404,15 +405,16 @@ describe("what the drafter's own event still carries", () => {
       providesTier: 'guarded',
       enforces: ['turns', 'wall'],
     },
-    run: async () => ({
-      exitCode: 0,
-      turns: 7,
-      durationMs: 1234,
-      costUsd: 0.42,
-      text,
-      failure: null,
-      sessionId: 's',
-    }),
+    run: () =>
+      Effect.succeed({
+        exitCode: 0,
+        turns: 7,
+        durationMs: 1234,
+        costUsd: 0.42,
+        text,
+        failure: null,
+        sessionId: 's',
+      }),
   })
 
   const drafter = (text: string): Action =>

@@ -254,10 +254,11 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     const handed: string[] = []
     const spying: typeof runtime = {
       ...runtime,
-      run: async (request) => {
-        if (!request.runId.includes(':')) handed.push(request.prompt)
-        return runtime.run(request)
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':')) handed.push(request.prompt)
+          return yield* runtime.run(request)
+        }),
     }
 
     const result = await once(
@@ -316,13 +317,13 @@ describe('what a pass writes today, one row per ending (#461)', () => {
     const reviewed = { n: 0 }
     const twoSided: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':review:')) return runtime.run(request)
-        reviewed.n += 1
-        return reviewed.n === 1
-          ? refusingRuntime.run(request)
-          : { ...(await runtime.run(request)), text: JSON.stringify({ findings: [] }) }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':review:')) return yield* runtime.run(request)
+          reviewed.n += 1
+          if (reviewed.n === 1) return yield* refusingRuntime.run(request)
+          return { ...(yield* runtime.run(request)), text: JSON.stringify({ findings: [] }) }
+        }),
     }
     const ports = fakePorts(did, store, true)
     const git = ports.repo.git
@@ -482,14 +483,15 @@ runtime:
     const judgePrompts: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        judgePrompts.push(request.prompt)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          judgePrompts.push(request.prompt)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+          }
+        }),
     }
 
     const result = await once(
@@ -609,13 +611,14 @@ runtime:
     const did: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+          }
+        }),
     }
 
     const r1 = await once(
@@ -1213,26 +1216,28 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const asked = 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?'
     const asking: Runtime = {
       ...runtime,
-      run: async (request) =>
-        request.runId.includes(':design:')
-          ? {
-              exitCode: 0,
-              turns: 2,
-              durationMs: 1234,
-              costUsd: 0.21,
-              failure: null,
-              text: `\`\`\`question\n${asked}\n\`\`\``,
-              sessionId: 'sess-design',
-            }
-          : {
-              exitCode: 0,
-              turns: 3,
-              durationMs: 1234,
-              costUsd: 0.42,
-              failure: null,
-              text: 'done',
-              sessionId: 'sess-1',
-            },
+      run: (request) =>
+        Effect.succeed(
+          request.runId.includes(':design:')
+            ? {
+                exitCode: 0,
+                turns: 2,
+                durationMs: 1234,
+                costUsd: 0.21,
+                failure: null,
+                text: `\`\`\`question\n${asked}\n\`\`\``,
+                sessionId: 'sess-design',
+              }
+            : {
+                exitCode: 0,
+                turns: 3,
+                durationMs: 1234,
+                costUsd: 0.42,
+                failure: null,
+                text: 'done',
+                sessionId: 'sess-1',
+              },
+        ),
     }
 
     const result = await once(
@@ -1365,10 +1370,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return { ...(await refusingRuntime.run(request)), text: 'I am not sure what to say here.' }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return { ...(yield* refusingRuntime.run(request)), text: 'I am not sure what to say here.' }
+        }),
     }
 
     const result = await once(
@@ -1452,10 +1458,11 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const reviewUnreadable: Runtime = {
       ...runtime,
-      run: async (request) => {
-        if (!request.runId.includes(':review:')) return runtime.run(request)
-        return { ...(await runtime.run(request)), text: 'I am not sure what to say here.' }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':review:')) return yield* runtime.run(request)
+          return { ...(yield* runtime.run(request)), text: 'I am not sure what to say here.' }
+        }),
     }
 
     const result = await once(
@@ -1497,21 +1504,22 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const fixCeiling: Runtime = {
       ...runtime,
-      run: async (request) => {
-        if (request.runId.includes(':review:')) return refusingRuntime.run(request)
-        if (request.runId.includes(':fix:')) {
-          return {
-            exitCode: 1,
-            turns: 7,
-            durationMs: 3_000,
-            costUsd: 0.77,
-            failure: { kind: 'out-of-turns', detail: 'spent all 7 turns mid-fix' },
-            text: null,
-            sessionId: 'sess-fix',
+      run: (request) =>
+        Effect.gen(function* () {
+          if (request.runId.includes(':review:')) return yield* refusingRuntime.run(request)
+          if (request.runId.includes(':fix:')) {
+            return {
+              exitCode: 1,
+              turns: 7,
+              durationMs: 3_000,
+              costUsd: 0.77,
+              failure: { kind: 'out-of-turns', detail: 'spent all 7 turns mid-fix' },
+              text: null,
+              sessionId: 'sess-fix',
+            }
           }
-        }
-        return runtime.run(request)
-      },
+          return yield* runtime.run(request)
+        }),
     }
 
     const result = await once(
@@ -1554,18 +1562,19 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const reviewCeiling: Runtime = {
       ...runtime,
-      run: async (request) => {
-        if (!request.runId.includes(':review:')) return runtime.run(request)
-        return {
-          exitCode: 1,
-          turns: 5,
-          durationMs: 2_000,
-          costUsd: 0.33,
-          failure: { kind: 'out-of-turns', detail: 'spent all 5 turns reviewing' },
-          text: null,
-          sessionId: 'sess-review',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':review:')) return yield* runtime.run(request)
+          return {
+            exitCode: 1,
+            turns: 5,
+            durationMs: 2_000,
+            costUsd: 0.33,
+            failure: { kind: 'out-of-turns', detail: 'spent all 5 turns reviewing' },
+            text: null,
+            sessionId: 'sess-review',
+          }
+        }),
     }
 
     const result = await once(
@@ -1613,15 +1622,16 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const ceilingRuntime: Runtime = {
       ...runtime,
-      run: async () => ({
-        exitCode: 1,
-        turns: 10,
-        durationMs: 5_000,
-        costUsd: 1.1,
-        failure: { kind: 'out-of-turns', detail: 'spent all 10 turns with no commit' },
-        text: null,
-        sessionId: 'sess-1',
-      }),
+      run: () =>
+        Effect.succeed({
+          exitCode: 1,
+          turns: 10,
+          durationMs: 5_000,
+          costUsd: 1.1,
+          failure: { kind: 'out-of-turns', detail: 'spent all 10 turns with no commit' },
+          text: null,
+          sessionId: 'sess-1',
+        }),
     }
 
     const result = await once(
@@ -1700,15 +1710,16 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     const did: string[] = []
     const timeoutRuntime: Runtime = {
       ...runtime,
-      run: async () => ({
-        exitCode: 1,
-        turns: 2,
-        durationMs: 120_000,
-        costUsd: 0.2,
-        failure: { kind: 'timeout', detail: 'exceeded wall 2m' },
-        text: null,
-        sessionId: 'sess-1',
-      }),
+      run: () =>
+        Effect.succeed({
+          exitCode: 1,
+          turns: 2,
+          durationMs: 120_000,
+          costUsd: 0.2,
+          failure: { kind: 'timeout', detail: 'exceeded wall 2m' },
+          text: null,
+          sessionId: 'sess-1',
+        }),
     }
 
     const result = await once(
@@ -1947,34 +1958,35 @@ runtime:
     const judged = { n: 0 }
     const judging: Runtime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (request.runId.includes(':fix:')) {
-          head = FIX_SHA
-          dirty = true
-          return {
-            exitCode: 1,
-            turns: 8,
-            durationMs: 90_000,
-            costUsd: 1.5,
-            failure: { kind: 'out-of-turns', detail: 'spent all 8 turns mid-fix' },
-            text: null,
-            sessionId: 'sess-fix',
+      run: (request) =>
+        Effect.gen(function* () {
+          if (request.runId.includes(':fix:')) {
+            head = FIX_SHA
+            dirty = true
+            return {
+              exitCode: 1,
+              turns: 8,
+              durationMs: 90_000,
+              costUsd: 1.5,
+              failure: { kind: 'out-of-turns', detail: 'spent all 8 turns mid-fix' },
+              text: null,
+              sessionId: 'sess-fix',
+            }
           }
-        }
-        if (request.runId.includes(':judge:')) {
-          judged.n += 1
-          // The first arrival still has a round to spend — buy it. The
-          // second has none left (`stepsOnOffer`), and the point of this
-          // fixture is what the judge says there: start over.
-          const next = judged.n === 1 ? 'implement' : 'claim'
-          return {
-            ...(await refusingRuntime.run(request)),
-            text: `\`\`\`json\n{"next": "${next}", "why": "round ${judged.n}"}\n\`\`\``,
+          if (request.runId.includes(':judge:')) {
+            judged.n += 1
+            // The first arrival still has a round to spend — buy it. The
+            // second has none left (`stepsOnOffer`), and the point of this
+            // fixture is what the judge says there: start over.
+            const next = judged.n === 1 ? 'implement' : 'claim'
+            return {
+              ...(yield* refusingRuntime.run(request)),
+              text: `\`\`\`json\n{"next": "${next}", "why": "round ${judged.n}"}\n\`\`\``,
+            }
           }
-        }
-        if (!request.runId.includes(':review:')) return runtime.run(request)
-        return refusingRuntime.run(request)
-      },
+          if (!request.runId.includes(':review:')) return yield* runtime.run(request)
+          return yield* refusingRuntime.run(request)
+        }),
     }
 
     const ports = fakePorts(did, store, false)
@@ -2138,15 +2150,16 @@ runtime:
     const did: string[] = []
     const crashingRuntime: Runtime = {
       ...runtime,
-      run: async () => ({
-        exitCode: 1,
-        turns: 2,
-        durationMs: 500,
-        costUsd: null,
-        failure: { kind: 'crash', detail: 'the runtime exited 1' },
-        text: null,
-        sessionId: 'sess-crash',
-      }),
+      run: () =>
+        Effect.succeed({
+          exitCode: 1,
+          turns: 2,
+          durationMs: 500,
+          costUsd: null,
+          failure: { kind: 'crash', detail: 'the runtime exited 1' },
+          text: null,
+          sessionId: 'sess-crash',
+        }),
     }
 
     const result = await once(

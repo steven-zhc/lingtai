@@ -1,3 +1,7 @@
+import type { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+
 /**
  * The pure half of the Claude Code adapter: `usageFromModelUsage` (#316) and
  * `claudeClose` (#369).
@@ -8,10 +12,7 @@
  * `modelUsage` object a real receipt already carries, and `claudeClose` is
  * the close handler's decision, pulled out so a unit test can reach it.
  */
-import type { spawn } from 'node:child_process'
-import { EventEmitter } from 'node:events'
-import { PassThrough } from 'node:stream'
-
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { claudeClose, createClaudeCodeRuntime, spawnEnvFor, usageFromModelUsage } from '../src/claude-code.ts'
@@ -255,8 +256,8 @@ describe('a stopped run signals its whole process group (#606)', () => {
     })
     const controller = new AbortController()
     let outcome: RunOutcome | undefined
-    const started = runtime
-      .run({
+    const started = Effect.runPromise(
+      runtime.run({
         runId: 'r1',
         cwd: '/tmp',
         prompt: 'p',
@@ -264,8 +265,8 @@ describe('a stopped run signals its whole process group (#606)', () => {
         env: {},
         limits: { wallMs: 1_000 },
         signal: controller.signal,
-      })
-      .then((o) => (outcome = o))
+      }),
+    ).then((o) => (outcome = o))
     return {
       child,
       calls,

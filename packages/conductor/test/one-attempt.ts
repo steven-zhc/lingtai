@@ -504,15 +504,16 @@ export const runtime: Runtime = {
     providesTier: 'guarded',
     enforces: ['turns', 'wall'],
   },
-  run: async () => ({
-    exitCode: 0,
-    turns: 3,
-    durationMs: 1234,
-    costUsd: 0.42,
-    failure: null,
-    text: 'done',
-    sessionId: 'sess-1',
-  }),
+  run: () =>
+    Effect.succeed({
+      exitCode: 0,
+      turns: 3,
+      durationMs: 1234,
+      costUsd: 0.42,
+      failure: null,
+      text: 'done',
+      sessionId: 'sess-1',
+    }),
 }
 
 /**
@@ -527,25 +528,26 @@ export const runtime: Runtime = {
  */
 export const refusingRuntime: Runtime = {
   ...runtime,
-  run: async () => ({
-    exitCode: 0,
-    turns: 5,
-    durationMs: 2_000,
-    costUsd: 1.25,
-    failure: null,
-    text: JSON.stringify({
-      findings: [
-        {
-          file: 'src/fix.ts',
-          line: 12,
-          severity: 'blocker',
-          claim: 'the approach cannot work',
-          failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
-        },
-      ],
+  run: () =>
+    Effect.succeed({
+      exitCode: 0,
+      turns: 5,
+      durationMs: 2_000,
+      costUsd: 1.25,
+      failure: null,
+      text: JSON.stringify({
+        findings: [
+          {
+            file: 'src/fix.ts',
+            line: 12,
+            severity: 'blocker',
+            claim: 'the approach cannot work',
+            failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
+          },
+        ],
+      }),
+      sessionId: 'sess-review',
     }),
-    sessionId: 'sess-review',
-  }),
 }
 
 /**
@@ -567,9 +569,9 @@ export const refusingRuntime: Runtime = {
 export function reviewerThatCrashes(tried: { n: number }): Runtime {
   return {
     ...runtime,
-    run: async (request) => {
+    run: (request) => {
       if (!request.runId.includes(':review:')) {
-        return {
+        return Effect.succeed({
           exitCode: 0,
           turns: 3,
           durationMs: 1234,
@@ -577,10 +579,10 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
           failure: null,
           text: 'done',
           sessionId: 'sess-1',
-        }
+        })
       }
       tried.n += 1
-      return {
+      return Effect.succeed({
         exitCode: 1,
         turns: 0,
         durationMs: 1_000,
@@ -591,7 +593,7 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
         },
         text: null,
         sessionId: 'sess-review',
-      }
+      })
     },
   }
 }
@@ -605,18 +607,19 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
  */
 export const quotaRuntime: Runtime = {
   ...runtime,
-  run: async () => ({
-    exitCode: 1,
-    turns: 0,
-    durationMs: 25_000,
-    costUsd: 0,
-    failure: {
-      kind: 'never-started',
-      detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
-    },
-    text: null,
-    sessionId: 'sess-quota',
-  }),
+  run: () =>
+    Effect.succeed({
+      exitCode: 1,
+      turns: 0,
+      durationMs: 25_000,
+      costUsd: 0,
+      failure: {
+        kind: 'never-started',
+        detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
+      },
+      text: null,
+      sessionId: 'sess-quota',
+    }),
 }
 
 /**
@@ -635,29 +638,31 @@ export const quotaRuntime: Runtime = {
  */
 export const reviewerAtTheWall: Runtime = {
   ...runtime,
-  run: async (request) =>
-    request.runId.includes(':review:')
-      ? {
-          exitCode: 1,
-          turns: 0,
-          durationMs: 8_000,
-          costUsd: 0,
-          failure: {
-            kind: 'never-started',
-            detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
+  run: (request) =>
+    Effect.succeed(
+      request.runId.includes(':review:')
+        ? {
+            exitCode: 1,
+            turns: 0,
+            durationMs: 8_000,
+            costUsd: 0,
+            failure: {
+              kind: 'never-started',
+              detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
+            },
+            text: null,
+            sessionId: 'sess-review',
+          }
+        : {
+            exitCode: 0,
+            turns: 3,
+            durationMs: 1234,
+            costUsd: 0.42,
+            failure: null,
+            text: 'done',
+            sessionId: 'sess-1',
           },
-          text: null,
-          sessionId: 'sess-review',
-        }
-      : {
-          exitCode: 0,
-          turns: 3,
-          durationMs: 1234,
-          costUsd: 0.42,
-          failure: null,
-          text: 'done',
-          sessionId: 'sess-1',
-        },
+    ),
 }
 
 /**
@@ -675,29 +680,31 @@ export const reviewerAtTheWall: Runtime = {
  */
 export const designerAtTheWall: Runtime = {
   ...runtime,
-  run: async (request) =>
-    request.runId.includes(':design:')
-      ? {
-          exitCode: 1,
-          turns: 0,
-          durationMs: 6_000,
-          costUsd: 0,
-          failure: {
-            kind: 'never-started',
-            detail: "You've hit your session limit \u00b7 resets 4pm (America/Chicago)",
+  run: (request) =>
+    Effect.succeed(
+      request.runId.includes(':design:')
+        ? {
+            exitCode: 1,
+            turns: 0,
+            durationMs: 6_000,
+            costUsd: 0,
+            failure: {
+              kind: 'never-started',
+              detail: "You've hit your session limit \u00b7 resets 4pm (America/Chicago)",
+            },
+            text: null,
+            sessionId: 'sess-design',
+          }
+        : {
+            exitCode: 0,
+            turns: 3,
+            durationMs: 1234,
+            costUsd: 0.42,
+            failure: null,
+            text: 'done',
+            sessionId: 'sess-1',
           },
-          text: null,
-          sessionId: 'sess-design',
-        }
-      : {
-          exitCode: 0,
-          turns: 3,
-          durationMs: 1234,
-          costUsd: 0.42,
-          failure: null,
-          text: 'done',
-          sessionId: 'sess-1',
-        },
+    ),
 }
 
 /**
