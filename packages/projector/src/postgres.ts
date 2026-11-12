@@ -15,15 +15,18 @@ import { postgresUrl } from '@lingtai/env'
  * know about has no ORM surface, and a projection needs DDL, `drop` and its own
  * upserts regardless. The same deliberate split as the subscriber.
  */
+import { Effect, Exit } from 'effect'
 import pg from 'pg'
 
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
-import { CheckpointRewoundError, clampLanded, columnOf, ProjectionShapeError } from './store.ts'
+import { promiseProjectionStore } from './store-face.ts'
+import { CheckpointRewoundError, clampLanded, columnOf, mapRows, ProjectionShapeError } from './store.ts'
 import type {
   BacklogQuery,
-  ProjectionContext,
+  ProjectionContextPort,
   ProjectionLag,
+  ProjectionsPort,
   ProjectionStore,
   SpendQuery,
   TaskQuery,
@@ -66,12 +69,10 @@ const RESET_CHECKPOINT = `
   on conflict (name) do update
     set last_seq = 0, updated_at = now()`
 
-function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContext {
+function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContextPort {
   return {
-    async query(text, values) {
-      const r = await client.query(text, values ? [...values] : undefined)
-      return r.rows
-    },
+    query: (text, values) =>
+      Effect.promise(() => client.query(text, values ? [...values] : undefined).then((r) => r.rows)),
   }
 }
 
@@ -235,7 +236,15 @@ export function listenForIdleErrors(
   emitter.on('error', (err) => write(`lingtai: a projection connection dropped while idle (${err.message})`))
 }
 
+/** The promise `ProjectionStore`: a face over `makePostgresProjections`. */
 export function createPostgresProjectionStore(options: PostgresProjectionStoreOptions = {}): ProjectionStore {
+  return promiseProjectionStore(makePostgresProjections(options))
+}
+
+const codeOf = (err: unknown) => (err as { code?: string }).code
+
+/** `Projections` over a `pg.Pool`. A driver error is a defect, as itself. */
+export function makePostgresProjections(options: PostgresProjectionStoreOptions = {}): ProjectionsPort {
   const pool = new pg.Pool({
     connectionString: options.url ?? postgresUrl(),
     max: options.max ?? 2,
@@ -243,67 +252,90 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
   })
   listenForIdleErrors(pool)
 
+  const rows = (text: string, args?: unknown[]) => Effect.promise(() => pool.query(text, args).then((r) => r.rows))
+
+  /** A read whose missing table (`42P01`) is no rows rather than a failure. */
+  const rowsOrNone = (text: string, args?: unknown[]) =>
+    Effect.promise(() =>
+      pool.query(text, args).then(
+        (r) => r.rows,
+        (err: unknown) => {
+          if (codeOf(err) === '42P01') return []
+          throw err
+        },
+      ),
+    )
+
   return {
-    async transact(fn) {
-      const client = await pool.connect()
-      try {
-        await client.query('begin')
-        const result = await fn(ctxFor(client))
-        await client.query('commit')
-        return result
-      } catch (err) {
-        await client.query('rollback').catch(() => {
-          // The connection is already gone; the transaction died with it.
-        })
-        throw err
-      } finally {
-        client.release()
-      }
-    },
+    transact: <A, E>(fn: (ctx: ProjectionContextPort) => Effect.Effect<A, E>) =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => pool.connect()),
+        (client) =>
+          Effect.gen(function* () {
+            yield* Effect.promise(() => client.query('begin'))
+            const result = yield* fn(ctxFor(client))
+            yield* Effect.promise(() => client.query('commit'))
+            return result
+          }),
+        (client, exit) =>
+          (Exit.isSuccess(exit)
+            ? Effect.void
+            : Effect.promise(() =>
+                client.query('rollback').then(
+                  () => undefined,
+                  () => {
+                    // The connection is already gone; the transaction died with it.
+                  },
+                ),
+              )
+          ).pipe(Effect.ensuring(Effect.sync(() => client.release()))),
+      ).pipe(Effect.withSpan('Projections.transact')),
 
-    async checkpoint(name) {
-      const r = await pool.query<{ last_seq: string }>(
-        'select last_seq::text as last_seq from checkpoints where name = $1',
-        [name],
-      )
-      return BigInt(r.rows[0]?.last_seq ?? '0')
-    },
+    checkpoint: Effect.fn('Projections.checkpoint')(function* (name: string) {
+      const r = yield* rows('select last_seq::text as last_seq from checkpoints where name = $1', [name])
+      return BigInt((r[0]?.last_seq as string | undefined) ?? '0')
+    }),
 
-    async advance(ctx, name, seq, from) {
+    advance: Effect.fn('Projections.advance')(function* (
+      ctx: ProjectionContextPort,
+      name: string,
+      seq: bigint,
+      from?: bigint,
+    ) {
       if (from === undefined) {
-        await ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()])
+        yield* ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()])
         return
       }
-      const moved = await ctx.query(ADVANCE_CHECKPOINT_FENCED, [name, seq.toString(), from.toString()])
-      if (moved.length === 0) throw new CheckpointRewoundError(name)
-    },
+      const moved = yield* ctx.query(ADVANCE_CHECKPOINT_FENCED, [name, seq.toString(), from.toString()])
+      if (moved.length === 0) return yield* Effect.fail(new CheckpointRewoundError(name))
+    }),
 
-    async register(ctx, name) {
-      await ctx.query(REGISTER_CHECKPOINT, [name])
-    },
+    register: Effect.fn('Projections.register')(function* (ctx: ProjectionContextPort, name: string) {
+      yield* ctx.query(REGISTER_CHECKPOINT, [name])
+    }),
 
-    async rewind(ctx, name) {
-      await ctx.query(RESET_CHECKPOINT, [name])
-    },
+    rewind: Effect.fn('Projections.rewind')(function* (ctx: ProjectionContextPort, name: string) {
+      yield* ctx.query(RESET_CHECKPOINT, [name])
+    }),
 
-    async columnsOf(tables) {
+    columnsOf: Effect.fn('Projections.columnsOf')(function* (tables: readonly string[]) {
       const live = new Map<string, ReadonlySet<string>>()
       if (tables.length === 0) return live
-      const r = await pool.query<{ table_name: string; column_name: string }>(
+      const r = yield* rows(
         `select table_name, column_name from information_schema.columns
          where table_schema = current_schema() and table_name = any($1::text[])`,
         [[...tables]],
       )
-      for (const row of r.rows) {
+      for (const row of r) {
         const set = (live.get(row.table_name) as Set<string> | undefined) ?? new Set<string>()
         set.add(row.column_name)
         live.set(row.table_name, set)
       }
       return live
-    },
+    }),
 
-    async lag(name) {
-      const r = await pool.query<{ last_seq: string; head_seq: string; updated_at: Date | null }>(
+    lag: Effect.fn('Projections.lag')(function* (name: string) {
+      const r = yield* rows(
         `select coalesce(c.last_seq, 0)::text as last_seq,
                 (select coalesce(max(seq), 0) from events)::text as head_seq,
                 c.updated_at
@@ -311,19 +343,14 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
          left join checkpoints c on c.name = $1`,
         [name],
       )
-      const row = r.rows[0]
+      const row = r[0]
       const lastSeq = BigInt(row?.last_seq ?? '0')
       const headSeq = BigInt(row?.head_seq ?? '0')
-      return { name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row?.updated_at ?? null }
-    },
+      return { name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: (row?.updated_at as Date | null) ?? null }
+    }),
 
-    async lags(): Promise<ProjectionLag[]> {
-      const r = await pool.query<{
-        name: string
-        last_seq: string
-        head_seq: string
-        updated_at: Date | null
-      }>(
+    lags: Effect.fn('Projections.lags')(function* () {
+      const r = yield* rows(
         `select c.name,
                 c.last_seq::text as last_seq,
                 (select coalesce(max(seq), 0) from events)::text as head_seq,
@@ -331,14 +358,14 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
          from checkpoints c
          order by c.name`,
       )
-      return r.rows.map((row) => {
+      return r.map((row): ProjectionLag => {
         const lastSeq = BigInt(row.last_seq)
         const headSeq = BigInt(row.head_seq)
         return { name: row.name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row.updated_at }
       })
-    },
+    }),
 
-    async tasks(query: TaskQuery) {
+    tasks: Effect.fn('Projections.tasks')(function* (query: TaskQuery) {
       const args: unknown[] = [query.retentionDays]
       let where = `where (t.closed_at is null or t.closed_at > now() - ($1 || ' days')::interval)`
       if (query.project) {
@@ -346,7 +373,7 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         where += ` and t.project = $2`
       }
 
-      const r = await pool.query(
+      const r = yield* rows(
         `select t.*
          from task_view t
          ${where}
@@ -358,21 +385,21 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
            nullif(regexp_replace(t.issue, '\\D', '', 'g'), '')::bigint`,
         args,
       )
-      return r.rows.map(toCard)
-    },
+      return yield* mapRows(() => r.map(toCard))
+    }),
 
-    async taskProjects(query) {
-      const r = await pool.query<{ project: string }>(
+    taskProjects: Effect.fn('Projections.taskProjects')(function* (query: Pick<TaskQuery, 'retentionDays'>) {
+      const r = yield* rows(
         `select distinct project
          from task_view
          where (closed_at is null or closed_at > now() - ($1 || ' days')::interval)
          order by project`,
         [query.retentionDays],
       )
-      return r.rows.map((row) => row.project)
-    },
+      return r.map((row) => row.project as string)
+    }),
 
-    async backlog(query: BacklogQuery) {
+    backlog: Effect.fn('Projections.backlog')(function* (query: BacklogQuery) {
       const where: string[] = []
       const args: unknown[] = []
       for (const [column, value] of [
@@ -389,23 +416,18 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         args.push([...query.taskIds])
         where.push(`task_id = any($${args.length}::text[])`)
       }
-      try {
-        const r = await pool.query(
-          `select * from finding_backlog
-           ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
-           order by project, raised_seq`,
-          args,
-        )
-        return r.rows.map(toEntry)
-      } catch (err) {
-        // A database no projector has ever started has no table, and that is an
-        // empty backlog rather than a failure.
-        if ((err as { code?: string }).code === '42P01') return []
-        throw err
-      }
-    },
+      // A database no projector has ever started has no table, and that is an
+      // empty backlog rather than a failure.
+      const r = yield* rowsOrNone(
+        `select * from finding_backlog
+         ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
+         order by project, raised_seq`,
+        args,
+      )
+      return r.map(toEntry)
+    }),
 
-    async spend(query: SpendQuery) {
+    spend: Effect.fn('Projections.spend')(function* (query: SpendQuery) {
       const where: string[] = []
       const args: unknown[] = []
       if (query.ticket !== undefined) {
@@ -420,37 +442,26 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         args.push(query.since)
         where.push(`at >= $${args.length}`)
       }
-      try {
-        const r = await pool.query(
-          `select * from spend
-           ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
-           order by seq`,
-          args,
-        )
-        return r.rows.map(toSpendRow)
-      } catch (err) {
-        // A database no projector has ever started has no table, and that is
-        // no spend rather than a failure — `backlog`'s own reason.
-        if ((err as { code?: string }).code === '42P01') return []
-        throw err
-      }
-    },
+      // No table is no spend rather than a failure — `backlog`'s own reason.
+      const r = yield* rowsOrNone(
+        `select * from spend
+         ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
+         order by seq`,
+        args,
+      )
+      return r.map(toSpendRow)
+    }),
 
-    async ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]> {
-      try {
-        const r =
-          query.project === undefined
-            ? await pool.query('select * from ticket_report order by ticket')
-            : await pool.query('select * from ticket_report where project = $1 order by ticket', [query.project])
-        return r.rows.map(ticketReportRowOf)
-      } catch (err) {
-        // `spend`'s own reason: no table is no tickets, not a failure.
-        if ((err as { code?: string }).code === '42P01') return []
-        throw err
-      }
-    },
+    ticketReport: Effect.fn('Projections.ticketReport')(function* (query: TicketReportQuery) {
+      // `spend`'s own reason: no table is no tickets, not a failure.
+      const r =
+        query.project === undefined
+          ? yield* rowsOrNone('select * from ticket_report order by ticket')
+          : yield* rowsOrNone('select * from ticket_report where project = $1 order by ticket', [query.project])
+      return r.map(ticketReportRowOf)
+    }),
 
-    async landed(query: TicketReportLandedQuery): Promise<TicketReportRow[]> {
+    landed: Effect.fn('Projections.landed')(function* (query: TicketReportLandedQuery) {
       const where = [`outcome = 'landed'`]
       const args: unknown[] = []
       if (query.project !== undefined) {
@@ -466,29 +477,37 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
         where.push(`(outcome_at, ticket) < ($${args.length - 1}::timestamptz, $${args.length})`)
       }
       args.push(clampLanded(query.limit))
-      try {
-        const r = await pool.query(
-          `select ${TICKET_REPORT_COLUMNS} from ticket_report
-           where ${where.join(' and ')}
-           order by outcome_at desc, ticket desc
-           limit $${args.length}`,
-          args,
-        )
-        return r.rows.map(ticketReportRowOf)
-      } catch (err) {
-        if ((err as { code?: string }).code === '42P01') return []
-        // A column the table lacks is drift, and drift names the rebuild.
-        if ((err as { code?: string }).code === '42703') {
-          throw new ProjectionShapeError(TICKET_REPORT_TABLE, [
-            { table: TICKET_REPORT_TABLE, missing: ['landing columns'], unexpected: [] },
-          ])
-        }
-        throw err
-      }
-    },
+      const read = yield* Effect.promise(() =>
+        pool
+          .query(
+            `select ${TICKET_REPORT_COLUMNS} from ticket_report
+             where ${where.join(' and ')}
+             order by outcome_at desc, ticket desc
+             limit $${args.length}`,
+            args,
+          )
+          .then(
+            (r): Effect.Effect<TicketReportRow[], ProjectionShapeError> =>
+              Effect.succeed(r.rows.map(ticketReportRowOf)),
+            (err: unknown): Effect.Effect<TicketReportRow[], ProjectionShapeError> => {
+              if (codeOf(err) === '42P01') return Effect.succeed([])
+              // A column the table lacks is drift, and drift names the rebuild.
+              if (codeOf(err) === '42703') {
+                return Effect.fail(
+                  new ProjectionShapeError(TICKET_REPORT_TABLE, [
+                    { table: TICKET_REPORT_TABLE, missing: ['landing columns'], unexpected: [] },
+                  ]),
+                )
+              }
+              throw err
+            },
+          ),
+      )
+      return yield* read
+    }),
 
-    async close() {
-      await pool.end()
-    },
+    close: Effect.fn('Projections.close')(function* () {
+      yield* Effect.promise(() => pool.end())
+    }),
   }
 }

@@ -36,15 +36,18 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 
 import type { TriageResult } from '@lingtai/domain/wait'
+import { Effect, Exit, Semaphore } from 'effect'
 
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
-import { CheckpointRewoundError, clampLanded, columnOf, ProjectionShapeError } from './store.ts'
+import { promiseProjectionStore } from './store-face.ts'
+import { CheckpointRewoundError, clampLanded, columnOf, mapRows, ProjectionShapeError } from './store.ts'
 import type {
   BacklogQuery,
-  ProjectionContext,
+  ProjectionContextPort,
   ProjectionLag,
   ProjectionRow,
+  ProjectionsPort,
   ProjectionStore,
   SpendQuery,
   TaskQuery,
@@ -101,8 +104,6 @@ function isMissingTable(err: unknown): boolean {
   const m = (err as { message?: unknown }).message
   return typeof m === 'string' && m.startsWith('no such table:')
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // -------------------------------------------------------------- dialect ----
 
@@ -420,28 +421,29 @@ export function openSqliteProjections(path: string): DatabaseSync {
   }
 }
 
+/** The promise `ProjectionStore`: a face over `makeSqliteProjections`. */
 export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
+  return promiseProjectionStore(makeSqliteProjections(db))
+}
+
+const REFUSED =
+  "a read on the projection store from inside its own transaction: one connection cannot answer both, so read the reducer's own writes through `ctx.query`"
+
+/** `Projections` over one `DatabaseSync`. A SQLite error is a defect, as itself. */
+export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
   /**
    * One transaction at a time on this connection.
    *
    * `node:sqlite` is synchronous but a reducer is not: `projection.reduce` awaits
    * between statements, and a second `transact` landing in that window would
-   * issue `BEGIN` inside an open transaction. Serialising them is what makes
+   * issue `BEGIN` inside an open transaction. One permit is what makes
    * two runners on one store behave like two runners on two pooled Postgres
-   * connections.
+   * connections. A transaction gives its permit up only after its `ROLLBACK`
+   * or `COMMIT`, so a waiter never meets an open transaction.
    */
-  let tail: Promise<unknown> = Promise.resolve()
+  const permit = Semaphore.makeUnsafe(1)
   let ensured = false
   let closed = false
-
-  function serialise<T>(fn: () => Promise<T>): Promise<T> {
-    const run = tail.then(fn, fn)
-    tail = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    return run
-  }
 
   const all = (sql: string, params: readonly unknown[] = []): ProjectionRow[] =>
     db.prepare(sql).all(...(params as never[])) as unknown as ProjectionRow[]
@@ -460,7 +462,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
   const inside = new AsyncLocalStorage<symbol>()
 
   /**
-   * A read, in the same queue the transactions are in.
+   * A read, behind the same permit the transactions hold.
    *
    * One connection is one transaction, so a read issued while a reducer's
    * `BEGIN IMMEDIATE` is open used to be a read *inside* that transaction: it
@@ -474,33 +476,29 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
    * outside the writer's transaction — so `transact`'s promise, *a reducer and
    * its checkpoint advance together, or neither*, is made to readers as well
    * as to writers, and sharing one store between the runner and the board is
-   * the shape the interface is built for. Queueing the reads behind the writes
-   * is how this store keeps that promise: a concurrent reader waits for the
-   * commit and then sees all of it.
+   * the shape the interface is built for. Waiting for the permit is how this
+   * store keeps that promise: a concurrent reader waits for the commit and then
+   * sees all of it.
    *
    * **A read from inside the transaction's own callback is refused instead**,
-   * because queueing that one would be waiting for a transaction that is
-   * waiting for the read. It is also the one case the connection cannot serve
-   * two ways at once, and it has an answer already: `ctx.query`, which is what
-   * a reducer reads its own writes with. `advance`, `register` and `rewind` are
-   * on that side too and take the connection directly rather than this.
+   * and **before it asks for the permit**, because waiting for it would be
+   * waiting for a transaction that is waiting for the read. It is also the one
+   * case the connection cannot serve two ways at once, and it has an answer
+   * already: `ctx.query`, which is what a reducer reads its own writes with.
+   * `advance`, `register` and `rewind` are on that side too and take the
+   * connection directly rather than this.
    */
-  const read = <T>(fn: () => T): Promise<T> => {
-    if (inside.getStore() !== undefined) {
-      return Promise.reject(
-        new Error(
-          "a read on the projection store from inside its own transaction: one connection cannot answer both, so read the reducer's own writes through `ctx.query`",
-        ),
-      )
-    }
-    return serialise(async () => fn())
-  }
+  const read = <A>(fn: () => A): Effect.Effect<A> =>
+    Effect.suspend(() =>
+      inside.getStore() !== undefined ? Effect.die(new Error(REFUSED)) : permit.withPermits(1)(Effect.sync(fn)),
+    )
 
-  const ctx: ProjectionContext = {
-    async query(text, values) {
-      const q = translate(text, values ?? [])
-      return all(q.text, q.params) as never[]
-    },
+  const ctx: ProjectionContextPort = {
+    query: (text, values) =>
+      Effect.sync(() => {
+        const q = translate(text, values ?? [])
+        return all(q.text, q.params) as never[]
+      }),
   }
 
   /** The log's high-water mark, in this file. Throws when there is no log in it. */
@@ -509,100 +507,131 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
     return BigInt(String(row?.head_seq ?? '0'))
   }
 
-  async function begin(): Promise<void> {
+  const begin = Effect.gen(function* () {
     const giveUp = Date.now() + BUSY_MS
     for (;;) {
-      try {
-        // IMMEDIATE takes the write lock up front, so a second writer waits at
-        // the start of the batch rather than failing in the middle of it.
-        db.exec('BEGIN IMMEDIATE')
-        return
-      } catch (err) {
-        if (!isBusy(err) || Date.now() >= giveUp) throw err
-        await sleep(RETRY_MS)
-      }
-    }
-  }
-
-  return {
-    transact(fn) {
-      return serialise(async () => {
-        await begin()
+      const started = yield* Effect.sync(() => {
         try {
-          // Inside the transaction, so the table a checkpoint needs is made by
-          // whoever gets there first and by nobody twice.
-          if (!ensured) db.exec(CHECKPOINTS)
-          // Named, so that a read reaching this store while the reducer is open
-          // can tell *the reducer itself is asking* from *somebody else is*.
-          const result = await inside.run(Symbol('transaction'), () => fn(ctx))
-          db.exec('COMMIT')
-          // Latched **after** the commit, and that is the whole of it: SQLite's
-          // DDL is transactional, so a rollback — a reducer that threw, or a
-          // `COMMIT` that came back busy — takes the `create` with it. Setting
-          // the flag beside the `exec` left a store that skipped the DDL for
-          // ever and answered `no such table: checkpoints` to every later
-          // advance, while `checkpoint()` went on reporting zero.
-          ensured = true
-          return result
+          // IMMEDIATE takes the write lock up front, so a second writer waits at
+          // the start of the batch rather than failing in the middle of it.
+          db.exec('BEGIN IMMEDIATE')
+          return true
         } catch (err) {
-          try {
-            db.exec('ROLLBACK')
-          } catch {
-            // SQLite may have ended the transaction itself; the error that got
-            // here is the one to report.
-          }
-          throw err
+          if (!isBusy(err) || Date.now() >= giveUp) throw err
+          return false
         }
       })
-    },
+      if (started) return
+      yield* Effect.sleep(RETRY_MS)
+    }
+  })
 
-    async checkpoint(name) {
-      return read(() => {
+  return {
+    transact: <A, E>(fn: (ctx: ProjectionContextPort) => Effect.Effect<A, E>) =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>()
+        return yield* permit.withPermits(1)(
+          Effect.acquireUseRelease(
+            begin,
+            () =>
+              Effect.gen(function* () {
+                // Inside the transaction, so the table a checkpoint needs is made by
+                // whoever gets there first and by nobody twice.
+                yield* Effect.sync(() => {
+                  if (!ensured) db.exec(CHECKPOINTS)
+                })
+                // Named, so that a read reaching this store while the reducer is open
+                // can tell *the reducer itself is asking* from *somebody else is*. The
+                // signal is what lets an interruption reach a suspended `fn`.
+                const exit = yield* Effect.promise((signal) =>
+                  inside.run(Symbol('transaction'), () => Effect.runPromiseExitWith(context)(fn(ctx), { signal })),
+                )
+                const result = yield* exit
+                yield* Effect.sync(() => {
+                  db.exec('COMMIT')
+                  // Latched **after** the commit, and that is the whole of it: SQLite's
+                  // DDL is transactional, so a rollback — a reducer that threw, or a
+                  // `COMMIT` that came back busy — takes the `create` with it. Setting
+                  // the flag beside the `exec` left a store that skipped the DDL for
+                  // ever and answered `no such table: checkpoints` to every later
+                  // advance, while `checkpoint()` went on reporting zero.
+                  ensured = true
+                })
+                return result
+              }),
+            (_, exit) =>
+              Exit.isSuccess(exit)
+                ? Effect.void
+                : Effect.sync(() => {
+                    try {
+                      db.exec('ROLLBACK')
+                    } catch {
+                      // SQLite may have ended the transaction itself; the error that got
+                      // here is the one to report.
+                    }
+                  }),
+          ),
+        )
+      }).pipe(Effect.withSpan('Projections.transact')),
+
+    checkpoint: Effect.fn('Projections.checkpoint')(function* (name: string) {
+      return yield* read(() => {
         const [row] = allOrEmpty('select cast(last_seq as text) as last_seq from checkpoints where name = ?', [name])
         return BigInt((row?.last_seq as string | undefined) ?? '0')
       })
-    },
+    }),
 
     // The checkpoint statements are this implementation's, written in SQLite
     // and run on the connection the transaction is open on — `translate` is for
     // the projections' own SQL and nothing else. `now` is spelled as the event
     // store spells it, so one file holds one format of time.
-    async advance(_ctx, name, seq, from) {
-      const moved = all(
-        `insert into checkpoints (name, last_seq, updated_at)
-         values (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-         on conflict (name) do update
-           set last_seq = case when ? is null then excluded.last_seq
-                               else max(checkpoints.last_seq, excluded.last_seq) end,
-               updated_at = excluded.updated_at
-           where ? is null or checkpoints.last_seq >= ?
-         returning name`,
-        [name, seq, from ?? null, from ?? null, from ?? 0],
+    advance: Effect.fn('Projections.advance')(function* (
+      _ctx: ProjectionContextPort,
+      name: string,
+      seq: bigint,
+      from?: bigint,
+    ) {
+      const moved = yield* Effect.sync(() =>
+        all(
+          `insert into checkpoints (name, last_seq, updated_at)
+           values (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+           on conflict (name) do update
+             set last_seq = case when ? is null then excluded.last_seq
+                                 else max(checkpoints.last_seq, excluded.last_seq) end,
+                 updated_at = excluded.updated_at
+             where ? is null or checkpoints.last_seq >= ?
+           returning name`,
+          [name, seq, from ?? null, from ?? null, from ?? 0],
+        ),
       )
-      if (from !== undefined && moved.length === 0) throw new CheckpointRewoundError(name)
-    },
+      if (from !== undefined && moved.length === 0) return yield* Effect.fail(new CheckpointRewoundError(name))
+    }),
 
-    async register(_ctx, name) {
-      all(
-        `insert into checkpoints (name, last_seq, updated_at)
-         values (?, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-         on conflict (name) do nothing`,
-        [name],
+    register: Effect.fn('Projections.register')(function* (_ctx: ProjectionContextPort, name: string) {
+      yield* Effect.sync(() =>
+        all(
+          `insert into checkpoints (name, last_seq, updated_at)
+           values (?, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+           on conflict (name) do nothing`,
+          [name],
+        ),
       )
-    },
+    }),
 
-    async rewind(_ctx, name) {
-      all(
-        `insert into checkpoints (name, last_seq, updated_at)
-         values (?, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-         on conflict (name) do update
-           set last_seq = 0, updated_at = excluded.updated_at`,
-        [name],
+    rewind: Effect.fn('Projections.rewind')(function* (_ctx: ProjectionContextPort, name: string) {
+      yield* Effect.sync(() =>
+        all(
+          `insert into checkpoints (name, last_seq, updated_at)
+           values (?, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+           on conflict (name) do update
+             set last_seq = 0, updated_at = excluded.updated_at`,
+          [name],
+        ),
       )
-    },
+    }),
 
-    async columnsOf(tables) {
-      return read(() => {
+    columnsOf: Effect.fn('Projections.columnsOf')(function* (tables: readonly string[]) {
+      return yield* read(() => {
         const live = new Map<string, ReadonlySet<string>>()
         for (const table of tables) {
           // No rows means the table is not there, which is what the Postgres
@@ -613,7 +642,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         }
         return live
       })
-    },
+    }),
 
     /**
      * **The head is read on its own, and it is not forgiven.**
@@ -627,8 +656,8 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
      * Postgres says `relation "events" does not exist` to the same file.
      * Only the checkpoint side tolerates a table no projector has made yet.
      */
-    async lag(name) {
-      return read(() => {
+    lag: Effect.fn('Projections.lag')(function* (name: string) {
+      return yield* read((): ProjectionLag => {
         const headSeq = headOf()
         const [row] = allOrEmpty(
           'select cast(last_seq as text) as last_seq, updated_at from checkpoints where name = ?',
@@ -643,10 +672,10 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           updatedAt: parseAt(row?.updated_at),
         }
       })
-    },
+    }),
 
-    async lags(): Promise<ProjectionLag[]> {
-      return read(() => {
+    lags: Effect.fn('Projections.lags')(function* () {
+      return yield* read((): ProjectionLag[] => {
         const rows = allOrEmpty(
           `select c.name, cast(c.last_seq as text) as last_seq, c.updated_at
            from checkpoints c
@@ -667,9 +696,9 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           }
         })
       })
-    },
+    }),
 
-    async tasks(query: TaskQuery) {
+    tasks: Effect.fn('Projections.tasks')(function* (query: TaskQuery) {
       // The window as an instant rather than an interval: ISO-8601 in UTC sorts
       // as text in the order it sorts as time, which is what lets a stored
       // timestamp be compared without a date type.
@@ -680,7 +709,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         args.push(query.project)
         where += ' and t.project = ?'
       }
-      return read(() =>
+      const rows = yield* read(() =>
         allOrEmpty(
           `select t.* from task_view t
            ${where}
@@ -688,13 +717,14 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
              case when t.state = 'waiting' then t.updated_at end asc nulls last,
              cast(t.issue as integer)`,
           args,
-        ).map(toCard),
+        ),
       )
-    },
+      return yield* mapRows(() => rows.map(toCard))
+    }),
 
-    async taskProjects(query) {
+    taskProjects: Effect.fn('Projections.taskProjects')(function* (query: Pick<TaskQuery, 'retentionDays'>) {
       const since = new Date(Date.now() - query.retentionDays * 86_400_000).toISOString()
-      return read(() =>
+      return yield* read(() =>
         allOrEmpty(
           `select distinct project from task_view
            where (closed_at is null or closed_at > ?)
@@ -702,9 +732,9 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           [since],
         ).map((r) => String(r.project)),
       )
-    },
+    }),
 
-    async backlog(query: BacklogQuery) {
+    backlog: Effect.fn('Projections.backlog')(function* (query: BacklogQuery) {
       const where: string[] = []
       const args: unknown[] = []
       for (const [column, value] of [
@@ -721,7 +751,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         for (const id of query.taskIds) args.push(id)
         where.push(`task_id in (${query.taskIds.map(() => '?').join(', ')})`)
       }
-      return read(() =>
+      return yield* read(() =>
         allOrEmpty(
           `select * from finding_backlog
            ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
@@ -729,9 +759,9 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           args,
         ).map(toEntry),
       )
-    },
+    }),
 
-    async spend(query: SpendQuery) {
+    spend: Effect.fn('Projections.spend')(function* (query: SpendQuery) {
       const where: string[] = []
       const args: unknown[] = []
       if (query.ticket !== undefined) {
@@ -747,7 +777,7 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         where.push('at >= ?')
         args.push(query.since.toISOString())
       }
-      return read(() =>
+      return yield* read(() =>
         allOrEmpty(
           `select * from spend
            ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
@@ -755,10 +785,10 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           args,
         ).map(toSpendRow),
       )
-    },
+    }),
 
-    async ticketReport(query: TicketReportQuery): Promise<TicketReportRow[]> {
-      return read(() =>
+    ticketReport: Effect.fn('Projections.ticketReport')(function* (query: TicketReportQuery) {
+      return yield* read(() =>
         allOrEmpty(
           query.project === undefined
             ? 'select * from ticket_report order by ticket'
@@ -766,9 +796,9 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
           query.project === undefined ? [] : [query.project],
         ).map(ticketReportRowOf),
       )
-    },
+    }),
 
-    async landed(query: TicketReportLandedQuery): Promise<TicketReportRow[]> {
+    landed: Effect.fn('Projections.landed')(function* (query: TicketReportLandedQuery) {
       const where = [`outcome = 'landed'`]
       const args: unknown[] = []
       if (query.project !== undefined) {
@@ -785,37 +815,44 @@ export function createSqliteProjectionStore(db: DatabaseSync): ProjectionStore {
         where.push('(outcome_at, ticket) < (?, ?)')
       }
       args.push(clampLanded(query.limit))
-      return read(() => {
+      const answer = yield* read((): Exit.Exit<TicketReportRow[], ProjectionShapeError> => {
         try {
-          return allOrEmpty(
-            `select ${TICKET_REPORT_COLUMNS} from ticket_report
-             where ${where.join(' and ')}
-             order by outcome_at desc, ticket desc
-             limit ?`,
-            args,
-          ).map(ticketReportRowOf)
+          return Exit.succeed(
+            allOrEmpty(
+              `select ${TICKET_REPORT_COLUMNS} from ticket_report
+               where ${where.join(' and ')}
+               order by outcome_at desc, ticket desc
+               limit ?`,
+              args,
+            ).map(ticketReportRowOf),
+          )
         } catch (err) {
           // A column the table lacks is drift, and drift names the rebuild.
           if (err instanceof Error && /no such column/i.test(err.message)) {
-            throw new ProjectionShapeError('ticket_report', [
-              { table: 'ticket_report', missing: ['landing columns'], unexpected: [] },
-            ])
+            return Exit.fail(
+              new ProjectionShapeError('ticket_report', [
+                { table: 'ticket_report', missing: ['landing columns'], unexpected: [] },
+              ]),
+            )
           }
           throw err
         }
       })
-    },
+      return yield* answer
+    }),
 
-    async close() {
+    close: Effect.fn('Projections.close')(function* () {
       // Whatever is in flight commits or rolls back first; closing under an
       // open transaction is how a batch gets lost.
-      await serialise(async () => {
-        // Twice is not an error. A caller unwinding two paths to the same store
-        // should not have to remember which of them got there first.
-        if (closed) return
-        closed = true
-        db.close()
-      })
-    },
+      yield* permit.withPermits(1)(
+        Effect.sync(() => {
+          // Twice is not an error. A caller unwinding two paths to the same store
+          // should not have to remember which of them got there first.
+          if (closed) return
+          closed = true
+          db.close()
+        }),
+      )
+    }),
   }
 }

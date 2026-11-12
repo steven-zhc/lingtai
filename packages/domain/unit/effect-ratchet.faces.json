@@ -3,7 +3,7 @@
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
     "until": "#790",
-    "why": "every promise `Action` holder — `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` — until row 7 builds ports"
+    "why": "every promise `Action` holder \u2014 `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` \u2014 until row 7 builds ports"
   },
   {
     "file": "packages/actions/src/action.ts",
@@ -244,6 +244,102 @@
     "fn": "convertManifest",
     "until": "#790",
     "why": "conductor create-app"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "advanceFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "backlogFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "checkpointFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "closeFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "columnsOfFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "lagFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "lagsFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "landedFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "queryFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "registerFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "rewindFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "spendFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "taskProjectsFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "tasksFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "ticketReportFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "transactFace",
+    "until": "#790",
+    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
   },
   {
     "file": "packages/repo/src/git.ts",
