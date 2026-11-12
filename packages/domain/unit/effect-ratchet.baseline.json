@@ -4,7 +4,7 @@
   "packages/projector": { "async": 0, "run": 0 },
   "packages/github": { "async": 0, "run": 0 },
   "packages/repo": { "async": 0, "run": 0 },
-  "packages/agent": { "async": 2, "run": 0 },
+  "packages/agent": { "async": 1, "run": 0 },
   "packages/actions": { "async": 0, "run": 0 },
   "packages/conductor": { "async": 141, "run": 0 },
   "packages/daemon": { "async": 56, "run": 0 },

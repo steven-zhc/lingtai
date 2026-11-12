@@ -233,14 +233,40 @@ export const openRunLogEffect = Effect.fn('agent.runLog')(function* (options: Op
       push(line)
     },
 
-    async close(fate) {
-      await tail.catch(() => {})
-      await handle.close().catch(() => {})
-      if (fate === 'delete') await rm(path, { force: true }).catch(() => {})
-    },
+    close: (fate) => closeRunLogFile(handle, tail, path, fate),
   }
   return log
 })
+
+/**
+ * Closing a log: wait for the write queue, close the handle, and remove the
+ * file on `delete`. Every step swallows its error — a run log is a trace and
+ * never a record (0034) — so it cannot fail.
+ */
+export const closeRunLogEffect = (
+  handle: FileHandle,
+  tail: Promise<unknown>,
+  path: string,
+  fate: 'keep' | 'delete',
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => tail.catch(() => {}))
+    yield* Effect.promise(() => handle.close().catch(() => {}))
+    if (fate === 'delete') yield* Effect.promise(() => rm(path, { force: true }).catch(() => {}))
+  })
+
+/**
+ * The close above, as the promise `RunLog.close` is (a listed face, #790).
+ * `tail` is passed as it stands when `close` is called, never when the log opened.
+ */
+export function closeRunLogFile(
+  handle: FileHandle,
+  tail: Promise<unknown>,
+  path: string,
+  fate: 'keep' | 'delete',
+): Promise<void> {
+  return Effect.runPromise(closeRunLogEffect(handle, tail, path, fate))
+}
 
 /**
  * The Effect above, as the promise `apps/cli/src/discuss.ts` awaits (a listed face, #790).
