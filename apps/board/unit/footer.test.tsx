@@ -122,7 +122,7 @@ describe('Footer currency line', () => {
 
   it('draws the amounts and the count in <b>, the count as text, and no links', () => {
     const html = render(r)
-    expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> of $200 + 2 unknown')
+    expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> <span class="of">of $200</span> + 2 unknown')
     expect(html).toContain('<b>3</b> landed</span>')
   })
 })
@@ -150,5 +150,39 @@ describe('home page', () => {
     expect(bar).not.toContain('spendChip')
     // The frame (#939) renders it after `</main>`; the page only hands it over.
     expect(page).toMatch(/<HomeFrame\s+footer=\{\s*<Footer/)
+  })
+})
+
+describe('Footer: the ceiling (#1007)', () => {
+  const clean = { ...day, unknown: 0 }
+  const raised = { fromUsd: 200, toUsd: 250, byShown: 'you', at: '16:40' }
+
+  it('marks a reached ceiling in the fail colour and says so', () => {
+    const html = render(dayReading(clean, 200, { reached: { ceilingUsd: 200, passed: false }, raised: null }))
+    expect(html).toContain('spend at-ceiling')
+    expect(text(html)).toContain('of $200 · reached the ceiling')
+  })
+
+  it('draws a passed reach as not reached', () => {
+    const html = render(dayReading(clean, 200, { reached: { ceilingUsd: 200, passed: true }, raised: null }))
+    expect(html).not.toContain('at-ceiling')
+    expect(text(html)).not.toContain('reached the ceiling')
+  })
+
+  it("shows a raised day's figure and who raised it", () => {
+    const html = render(dayReading(clean, 250, { reached: null, raised }))
+    expect(text(html)).toContain('of $250 today only, raised from $200 by you at 16:40')
+  })
+
+  it('leaves the from out when the raise did not record it', () => {
+    const html = render(dayReading(clean, 250, { reached: null, raised: { toUsd: 250, byShown: 'you', at: '16:40' } }))
+    expect(text(html)).toContain('today only, raised by you at 16:40')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('titles the figure when the control read failed, and marks nothing', () => {
+    const html = render(dayReading(clean, 200, { unread: 'down' }))
+    expect(html).toContain('could not be read')
+    expect(html).not.toContain('at-ceiling')
   })
 })

@@ -6,7 +6,7 @@
  * component, and `locks.ts` reaches the store. Only `paused` is drawn here; the
  * ceiling and account kinds add a case beside `isPaused`, never a new parameter.
  */
-import type { Lock } from '@lingtai/domain'
+import { type Lock, localDay } from '@lingtai/domain'
 
 import type { ProjectLocks } from './locks.ts'
 
@@ -20,6 +20,22 @@ export function lockMap(read: ProjectLocks): LockMap {
 /** The only place this ticket looks at a kind. */
 export function isPaused(locks: readonly Lock[] | undefined): boolean {
   return locks?.some((l) => l.kind === 'paused') ?? false
+}
+
+/** Today's ceiling lock, if one stands for the local day of `now`; a passed day's is the banner's to say. */
+export function ceilingToday(locks: readonly Lock[] | undefined, now: Date): Extract<Lock, { kind: 'ceiling' }> | null {
+  const today = localDay(now)
+  for (const l of locks ?? []) if (l.kind === 'ceiling' && l.day === today) return l
+  return null
+}
+
+/** The ceiling lock of today held on any project in the map (it holds every project, so any one will do). */
+export function anyCeilingToday(map: LockMap, now: Date): Extract<Lock, { kind: 'ceiling' }> | null {
+  for (const locks of map.values()) {
+    const c = ceilingToday(locks, now)
+    if (c !== null) return c
+  }
+  return null
 }
 
 /** Names of paused projects, alphabetical; narrowed to `project` when one is selected. */

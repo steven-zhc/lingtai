@@ -30,7 +30,7 @@ import { footerLags } from '@/lib/footer'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
-import { everyPaused, lockMap, pausedNames } from '@/lib/lock-marks.ts'
+import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
@@ -661,7 +661,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         timed('events.control', () => readControlOnce()),
       ])
       const [day, lags] = await Promise.all([
-        timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null }),
+        timed('spend.day', () => readDayReading(undefined, control), { failed: (r) => r.day === null }),
         timed('projections.lag', () => projectionLag()).then(footerLags, () => null),
       ])
       return [board, projects, control, day, lags] as const
@@ -674,7 +674,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // Running line (#995); a failed read is the empty map, and C1's banner says why.
   const projectLocks = lockMap(await readProjectLocks())
   const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
-  const pausedInScope = pausedNames(projectLocks, only)
+  const locksInScope: LockMap = new Map([...projectLocks].filter(([p]) => only === undefined || p === only))
   const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)
   // GitHub's half of the Queued column, asked only now (#884): the page's own
   // `measure` has returned, so these timings are not in the meta tag already
@@ -918,9 +918,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 ) : null}
                 {col.id === 'queued' ? null : col.cards.length === 0 ? (
                   <p
-                    className={`empty${emptyHeld(col.id, control.paused, only, pausedInScope, allPaused) ? ' held' : ''}`}
+                    className={`empty${emptyHeld(col.id, control.paused, only, locksInScope, allPaused) ? ' held' : ''}`}
                   >
-                    {emptyNote(col.id, control.paused, only, pausedInScope, allPaused)}
+                    {emptyNote(col.id, control.paused, only, locksInScope, allPaused)}
                   </p>
                 ) : col.id === 'landed' ? (
                   <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />

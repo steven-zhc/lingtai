@@ -1,6 +1,4 @@
 import { LABEL_STATES } from '@lingtai/domain'
-import { aWaitId } from '@lingtai/domain/test/events'
-import type { TaskCard } from '@lingtai/projector/task-view'
 /**
  * Every state a task can be in is on exactly one column.
  *
@@ -11,9 +9,25 @@ import type { TaskCard } from '@lingtai/projector/task-view'
  * was absent from the board for the whole three minutes its gates ran, while
  * `lingtai status` said `[gates]` throughout.
  */
+import type { Lock } from '@lingtai/domain'
+import { aWaitId } from '@lingtai/domain/test/events'
+import type { TaskCard } from '@lingtai/projector/task-view'
 import { describe, expect, it } from 'vitest'
 
-import { COLUMNS, emptyNote, railCandidates, toCard, toColumns } from '../src/lib/board.ts'
+import { COLUMNS, emptyHeld, emptyNote, railCandidates, toCard, toColumns } from '../src/lib/board.ts'
+
+const WHEN = new Date(2026, 10, 11, 12, 0)
+const pause: Lock = { kind: 'paused', by: 'human:x', since: WHEN }
+const reachedLock = (day: string): Lock => ({
+  kind: 'ceiling',
+  since: WHEN,
+  day,
+  reportedUsd: 120,
+  estimatedUsd: 80,
+  ceilingUsd: 200,
+  until: new Date(2026, 10, 12),
+})
+const pausedMap = (...names: string[]) => new Map<string, readonly Lock[]>(names.map((n) => [n, [pause]]))
 
 function task(state: TaskCard['state']): TaskCard {
   return {
@@ -159,25 +173,46 @@ describe('what an empty column says', () => {
 
   it('leaves the conductor-wide pause alone under a filter, because `ctl-` is one stream', () => {
     expect(emptyNote('running', true, 'esctest')).toBe('Paused — nothing will start.')
-    expect(emptyNote('running', true, 'esctest', ['esctest'])).toBe('Paused — nothing will start.')
+    expect(emptyNote('running', true, 'esctest', pausedMap('esctest'))).toBe('Paused — nothing will start.')
   })
 
   it('says a selected project is paused (#995)', () => {
-    expect(emptyNote('running', false, 'lingtai', ['lingtai'])).toBe('Nothing here yet. lingtai is paused.')
-    expect(emptyNote('queued', false, 'lingtai', ['lingtai'])).toBe('Nothing here for lingtai.')
+    expect(emptyNote('running', false, 'lingtai', pausedMap('lingtai'))).toBe('Nothing here yet. lingtai is paused.')
+    expect(emptyNote('queued', false, 'lingtai', pausedMap('lingtai'))).toBe('Nothing here for lingtai.')
   })
 
   it('names the paused ones under all projects, and says the others are taking work', () => {
-    expect(emptyNote('running', false, undefined, ['a'])).toBe(
+    expect(emptyNote('running', false, undefined, pausedMap('a'))).toBe(
       'Nothing here yet. a is paused; the others are taking work.',
     )
-    expect(emptyNote('running', false, undefined, ['a', 'b'])).toBe(
+    expect(emptyNote('running', false, undefined, pausedMap('a', 'b'))).toBe(
       'Nothing here yet. a and b are paused; the others are taking work.',
     )
   })
 
   it('says every project is paused when they all are', () => {
-    expect(emptyNote('running', false, undefined, ['a', 'b'], true)).toBe('Nothing here yet. Every project is paused.')
+    expect(emptyNote('running', false, undefined, pausedMap('a', 'b'), true)).toBe(
+      'Nothing here yet. Every project is paused.',
+    )
+  })
+
+  it('names the reached ceiling under all projects and under one, and it outranks the paused names (#1007)', () => {
+    const map = new Map<string, readonly Lock[]>([
+      ['a', [reachedLock('2026-11-11'), pause]],
+      ['b', [reachedLock('2026-11-11')]],
+    ])
+    const line = "Nothing here yet. Today's spend reached the $200 ceiling — see the banner."
+    expect(emptyNote('running', false, undefined, map, false, WHEN)).toBe(line)
+    expect(emptyNote('running', false, 'a', new Map([['a', map.get('a')!]]), false, WHEN)).toBe(line)
+    expect(emptyHeld('running', false, undefined, map, false, WHEN)).toBe(true)
+    expect(emptyNote('running', true, undefined, map, false, WHEN)).toBe('Paused — nothing will start.')
+    expect(emptyNote('queued', false, undefined, map, false, WHEN)).toBe('Nothing here yet.')
+  })
+
+  it('does not mark a ceiling from a passed day', () => {
+    const map = new Map<string, readonly Lock[]>([['a', [reachedLock('2026-11-10')]]])
+    expect(emptyNote('running', false, undefined, map, false, WHEN)).toBe('Nothing here yet.')
+    expect(emptyHeld('running', false, undefined, map, false, WHEN)).toBe(false)
   })
 
   it('names the project on every column a filter can empty', () => {

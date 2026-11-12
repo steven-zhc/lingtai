@@ -171,6 +171,8 @@ body {
 }
 .footer b { color: var(--ink); font-weight: 500; }
 .footer .spend { display: inline-flex; align-items: center; gap: 8px; }
+.footer .spend.at-ceiling > span:first-child, .footer .spend.at-ceiling .of { color: var(--fail); }
+.footer .raised { color: var(--muted); }
 .footer .meter {
   display: inline-flex; width: 180px; height: 8px; overflow: hidden;
   border-radius: 4px; background: color-mix(in srgb, var(--muted) 20%, transparent);

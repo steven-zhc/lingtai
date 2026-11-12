@@ -6,8 +6,15 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { Live } from '../src/app/live.tsx'
-import { dayReading, nearCeiling } from '../src/lib/day-spend.ts'
+import { dayReading, footerCeiling, nearCeiling, readDayReading } from '../src/lib/day-spend.ts'
 
+vi.mock('../src/lib/actor.ts', () => ({ actor: () => 'human:me' }))
+vi.mock('@lingtai/projector', async (orig) => ({
+  ...(await orig<typeof import('@lingtai/projector')>()),
+  readSpend: async () => {
+    throw new Error('no db')
+  },
+}))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }))
 
 const day = {
@@ -77,5 +84,29 @@ describe('Live', () => {
 
   it('says nothing extra without one', () => {
     expect(html(null)).not.toContain('near')
+  })
+})
+
+describe('the footer ceiling (#1007)', () => {
+  const at = new Date(2026, 10, 11, 16, 40)
+  const facts = (by: string) => ({
+    configuredUsd: 200,
+    todayUsd: 250,
+    raised: { fromUsd: 200, toUsd: 250, by, at },
+    reached: null,
+  })
+
+  it('says you for the actor of this server and the recorded by otherwise', () => {
+    const mine = footerCeiling(facts('human:me'))
+    const theirs = footerCeiling(facts('human:alice'))
+    expect('raised' in mine && mine.raised?.byShown).toBe('you')
+    expect('raised' in mine && mine.raised?.at).toBe('16:40')
+    expect('raised' in theirs && theirs.raised?.byShown).toBe('human:alice')
+  })
+
+  it('carries the control facts when the spend read fails, and the configured figure when control is unread', async () => {
+    const r = await readDayReading(new Date(2026, 10, 11, 17, 0), { unread: 'down' })
+    expect(r.day).toBeNull()
+    expect(r.ceiling).toEqual({ unread: 'down' })
   })
 })

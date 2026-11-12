@@ -67,7 +67,7 @@ import type { ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
-import { isPaused } from './lock-marks.ts'
+import { anyCeilingToday, ceilingToday, isPaused, type LockMap, pausedNames } from './lock-marks.ts'
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
 import { savedFixWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -507,9 +507,10 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
  * that has to know.
  *
  * **A person's pause is per project** (#995), and follows the filter: with
- * `pausedInScope` (the paused projects in the selected scope) an empty Running
+ * `locksInScope` (the locks of the projects in the selected scope) an empty Running
  * column names them. `everyProjectPaused` is the caller's to say — only it knows
- * how many projects are registered.
+ * how many projects are registered. **Today's ceiling outranks them** (#1007):
+ * it holds every project, and says so once, pointing at the banner.
  *
  * **Under a filter it says whose emptiness it is.** "Nothing here yet" is a
  * claim about the log, and with one project selected the log may be full of
@@ -523,10 +524,16 @@ export function emptyNote(
   column: ColumnId,
   paused: boolean,
   project?: string,
-  pausedInScope: readonly string[] = [],
+  locksInScope: LockMap = new Map(),
   everyProjectPaused = false,
+  now: Date = new Date(),
 ): string {
   if (column === 'running' && paused) return 'Paused — nothing will start.'
+  const ceiling = column === 'running' ? anyCeilingToday(locksInScope, now) : null
+  if (ceiling !== null) {
+    return `Nothing here yet. Today's spend reached the $${ceiling.ceilingUsd} ceiling — see the banner.`
+  }
+  const pausedInScope = pausedNames(locksInScope, undefined)
   if (column === 'running' && pausedInScope.length > 0) {
     if (project !== undefined) return `Nothing here yet. ${project} is paused.`
     if (everyProjectPaused) return 'Nothing here yet. Every project is paused.'
@@ -546,11 +553,14 @@ export function emptyHeld(
   column: ColumnId,
   paused: boolean,
   project: string | undefined,
-  pausedInScope: readonly string[],
+  locksInScope: LockMap,
   everyProjectPaused: boolean,
+  now: Date = new Date(),
 ): boolean {
   if (column !== 'running') return false
   if (paused) return true
+  if (anyCeilingToday(locksInScope, now) !== null) return true
+  const pausedInScope = pausedNames(locksInScope, undefined)
   return pausedInScope.length > 0 && (project !== undefined || everyProjectPaused)
 }
 
@@ -1764,7 +1774,16 @@ export function queuedStanding(
       title: 'the conductor has been told to take no new work; this card keeps its place',
     }
   }
-  // The project's own pause (#995): after the conductor-wide one, before a backoff.
+  // Today's ceiling (#1007, 0126 §8): it holds every project, so after the
+  // conductor-wide pause and before a person's. A passed day's is not marked.
+  if (ceilingToday(projectLocks, new Date(now)) !== null) {
+    return {
+      state: 'paused',
+      text: "today's spend reached the ceiling — nothing will start",
+      title: 'no new work starts until midnight or until today’s ceiling is raised; this card keeps its place',
+    }
+  }
+  // The project's own pause (#995): after the ceiling, before a backoff.
   if (isPaused(projectLocks)) {
     return {
       state: 'paused',

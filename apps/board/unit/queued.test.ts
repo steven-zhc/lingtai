@@ -1,3 +1,4 @@
+import type { Lock } from '@lingtai/domain'
 import type { TaskCard } from '@lingtai/projector/task-view'
 /**
  * The Queued column's grouping, which is where priority becomes legible.
@@ -348,5 +349,36 @@ describe('runNowCaption', () => {
     expect(
       runNowCaption({ ...none, problem: 'GitHub failed', runnableAt: '2026-10-31T00:00:00Z', paused: true }),
     ).toBeNull()
+  })
+})
+
+describe('queuedStanding: the ceiling (#1007)', () => {
+  const now = new Date(2026, 10, 11, 12, 0)
+  const card = { column: 'queued', runnableAt: null, project: 'esctest' } as const
+  const ceiling = (day: string): Lock => ({
+    kind: 'ceiling',
+    since: now,
+    day,
+    reportedUsd: 120,
+    estimatedUsd: 80,
+    ceilingUsd: 200,
+    until: new Date(2026, 10, 12),
+  })
+  const pause: Lock = { kind: 'paused', by: 'human:x', since: now }
+
+  it("marks a card held by today's ceiling, ahead of a person's pause", () => {
+    for (const locks of [[ceiling('2026-11-11')], [pause, ceiling('2026-11-11')]]) {
+      const s = queuedStanding(card, false, now.getTime(), locks)
+      expect(s?.state).toBe('paused')
+      expect(s?.text).toBe("today's spend reached the ceiling — nothing will start")
+    }
+  })
+
+  it('lets the conductor-wide pause outrank it', () => {
+    expect(queuedStanding(card, true, now.getTime(), [ceiling('2026-11-11')])?.text).toBe('paused — nothing will start')
+  })
+
+  it("says nothing of yesterday's ceiling", () => {
+    expect(queuedStanding(card, false, now.getTime(), [ceiling('2026-11-10')])).toBeNull()
   })
 })
