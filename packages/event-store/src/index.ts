@@ -26,7 +26,14 @@ export {
   processLog,
   processTicketSql,
 } from './choose.ts'
-export { closableOnce, ProcessLogClosedError, type Closable, type ClosableOnce } from './closable.ts'
+export {
+  closableOnce,
+  closableOnceEffect,
+  ProcessLogClosedError,
+  type Closable,
+  type ClosableOnce,
+  type ClosableOnceEffect,
+} from './closable.ts'
 export { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
 export {
   createSqlSnapshotStore,

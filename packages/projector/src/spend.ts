@@ -79,8 +79,9 @@ import {
 } from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
+import { Effect } from 'effect'
 
-import { withProjectionStore } from './choose.ts'
+import { withStoreEffect } from './choose.ts'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
 import { reduceStoredTicket } from './ticket-row.ts'
@@ -346,8 +347,13 @@ export interface ReadSpendOptions extends SpendQuery {
  * easy to lose: **a database no projector has ever started has no table, and
  * that is no spend rather than a failure.**
  */
-export async function readSpend(options: ReadSpendOptions = {}): Promise<SpendRow[]> {
-  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
-    store.spend({ ticket: options.ticket, project: options.project, since: options.since }),
+export const readSpendEffect = Effect.fn('projector.readSpend')(function* (options: ReadSpendOptions = {}) {
+  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+    p.spend({ ticket: options.ticket, project: options.project, since: options.since }),
   )
+})
+
+/** The promise face (0101 §7). */
+export function readSpend(options: ReadSpendOptions = {}): Promise<SpendRow[]> {
+  return Effect.runPromise(readSpendEffect(options))
 }

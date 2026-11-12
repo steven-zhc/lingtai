@@ -32,8 +32,9 @@
  */
 import type { Finding, FindingState, PayloadOf } from '@lingtai/domain'
 import { reduceFindingEvent, findingKey, findingsRaisedOf, isBacklogStream, parseTicketStream } from '@lingtai/domain'
+import { Effect } from 'effect'
 
-import { withProjectionStore } from './choose.ts'
+import { withStoreEffect } from './choose.ts'
 import type { Projection } from './store.ts'
 
 export const BACKLOG_TABLE = 'finding_backlog'
@@ -293,13 +294,18 @@ export interface ReadBacklogOptions {
  * has ever started has no table, and that is an empty backlog rather than a
  * failure.**
  */
-export async function readBacklog(options: ReadBacklogOptions = {}): Promise<BacklogEntry[]> {
-  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
-    store.backlog({
+export const readBacklogEffect = Effect.fn('projector.readBacklog')(function* (options: ReadBacklogOptions = {}) {
+  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+    p.backlog({
       project: options.project,
       status: options.status,
       key: options.key,
       taskIds: options.taskIds,
     }),
   )
+})
+
+/** The promise face (0101 §7). */
+export function readBacklog(options: ReadBacklogOptions = {}): Promise<BacklogEntry[]> {
+  return Effect.runPromise(readBacklogEffect(options))
 }
