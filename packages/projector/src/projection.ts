@@ -35,8 +35,9 @@ import type { Log } from '@lingtai/event-store/log'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type Subscription, subscribe } from '@lingtai/event-store/subscribe'
 import type { Waker } from '@lingtai/event-store/wake'
+import { Effect } from 'effect'
 
-import { projectionStore, withProjectionStore } from './choose.ts'
+import { projectionStore, withStoreEffect } from './choose.ts'
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
 import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
 
@@ -296,10 +297,15 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
  * `updatedAt` is old is a stopped subscriber, and the old loop had no way to
  * notice the equivalent at all.
  */
-export async function projectionLag(url?: string): Promise<ProjectionLag[]> {
+export const projectionLagEffect = Effect.fn('projector.projectionLag')(function* (url?: string) {
   // As `projectionShape`: a URL refines a Postgres connection and never picks
   // the store (#214, 0056).
-  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => store.lags())
+  return yield* withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) => p.lags())
+})
+
+/** The promise face (0101 §7). */
+export function projectionLag(url?: string): Promise<ProjectionLag[]> {
+  return Effect.runPromise(projectionLagEffect(url))
 }
 
 /**
@@ -308,6 +314,11 @@ export async function projectionLag(url?: string): Promise<ProjectionLag[]> {
  * has no checkpoint row and reads as `lag = head`, not as missing — which is
  * what a board reading its table straight needs to say *behind N* truthfully.
  */
-export async function readLag(name: string, url?: string): Promise<ProjectionLag> {
-  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => store.lag(name))
+export const readLagEffect = Effect.fn('projector.readLag')(function* (name: string, url?: string) {
+  return yield* withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) => p.lag(name))
+})
+
+/** The promise face (0101 §7). */
+export function readLag(name: string, url?: string): Promise<ProjectionLag> {
+  return Effect.runPromise(readLagEffect(name, url))
 }

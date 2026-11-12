@@ -89,7 +89,7 @@ describe('one store, and one place that knows which', () => {
     const both = sources
       .filter((s) => {
         const c = code(s.text)
-        return c.includes('createPostgresProjectionStore') && c.includes('createSqliteProjectionStore')
+        return c.includes('makePostgresProjections') && c.includes('makeSqliteProjections')
       })
       .map((s) => s.file)
 

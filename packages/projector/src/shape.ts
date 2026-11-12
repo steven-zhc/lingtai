@@ -31,7 +31,10 @@
  * so it can run on every `lingtai doctor` and at every daemon start — which is
  * the whole point, because the alternative is finding out when the daemon stops.
  */
-import { withProjectionStore } from './choose.ts'
+import { Effect } from 'effect'
+
+import { withStoreEffect } from './choose.ts'
+import { promiseProjectionStore } from './store-face.ts'
 import { describeDrift } from './store.ts'
 import type { Projection, ProjectionContext, ProjectionDrift, ProjectionStore } from './store.ts'
 
@@ -205,11 +208,15 @@ export async function shapeIn(projection: Projection, store: ProjectionStore): P
  * Reads the catalogue and nothing else, which is the rule the doctor is built
  * on: a diagnostic that writes to the system of record is the wrong shape.
  */
-export async function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
+export function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
   // `url` refines a Postgres connection and never picks the store: `lingtai
   // doctor` is the one caller that names one (#214), and a URL in an argument
   // must not open a store this machine did not choose (0056).
-  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => shapeIn(projection, store))
+  return Effect.runPromise(
+    withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) =>
+      Effect.promise(() => shapeIn(projection, promiseProjectionStore(p))),
+    ),
+  )
 }
 
 /** One line for a report: what was compared, and what it found. */

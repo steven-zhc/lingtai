@@ -25,7 +25,9 @@
 export {
   createProjectionRunner,
   projectionLag,
+  projectionLagEffect,
   readLag,
+  readLagEffect,
   type ProjectionRunner,
   type ProjectionRunnerOptions,
 } from './projection.ts'
@@ -46,9 +48,8 @@ export {
 export {
   closeProcessProjections,
   ProcessProjectionsClosedError,
+  openProjections,
   projectionStore,
-  withProjectionStore,
-  withStoreFrom,
   type ProjectionStoreOptions,
 } from './choose.ts'
 export {
@@ -65,6 +66,7 @@ export {
   BACKLOG_TABLE,
   backlogProjection,
   readBacklog,
+  readBacklogEffect,
   type BacklogEntry,
   type BacklogStatus,
   type ReadBacklogOptions,
@@ -79,12 +81,13 @@ export {
   type ReportWait,
   type TicketReportRow,
 } from './ticket-report.ts'
-export { readTicketReport, type ReadTicketReportOptions } from './read-ticket-report.ts'
-export { readLanded, type ReadLandedOptions } from './read-landed.ts'
+export { readTicketReport, readTicketReportEffect, type ReadTicketReportOptions } from './read-ticket-report.ts'
+export { readLanded, readLandedEffect, type ReadLandedOptions } from './read-landed.ts'
 export {
   SPEND_TABLE,
   spendProjectionWith,
   readSpend,
+  readSpendEffect,
   spendProjection,
   type ReadSpendOptions,
   type SpendRow,
@@ -96,7 +99,9 @@ export {
   describeWaitLines,
   describeWait,
   readTaskProjects,
+  readTaskProjectsEffect,
   readTasks,
+  readTasksEffect,
   taskViewProjection,
   type WaitLine,
   type ReadTasksOptions,

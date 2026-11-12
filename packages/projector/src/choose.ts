@@ -19,10 +19,12 @@
  * `process.moduleLoadList` back.
  */
 import { chosenStore } from '@lingtai/env'
-import { closableOnce, type ClosableOnce } from '@lingtai/event-store'
+import { closableOnceEffect, type ClosableOnceEffect } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
-import { createPostgresProjectionStore } from './postgres.ts'
-import type { ProjectionStore } from './store.ts'
+import { makePostgresProjections } from './postgres.ts'
+import { promiseProjectionStore } from './store-face.ts'
+import type { ProjectionsPort, ProjectionStore } from './store.ts'
 
 export interface ProjectionStoreOptions {
   /**
@@ -43,23 +45,40 @@ export interface ProjectionStoreOptions {
 }
 
 /**
- * A store to use and then `close()`.
+ * A port to use and then `close()`.
  *
- * Not memoised: each call opens its own, and the caller closes it. That is the
- * path a read with a `url` takes, and what the runners use. A read without one
- * goes through `withProjectionStore`'s shared store instead (#793).
+ * Not memoised: each run opens its own, and the caller closes it. That is the
+ * path a read with a `url` takes. A read without one goes through the process's
+ * shared port instead (#793). **Nothing runs until this Effect does** — the
+ * choice is read, the SQLite half imported and the pool built inside the body,
+ * so a module-scope `closableOnceEffect` over it opens nothing at import (#179).
+ * A refusal from `chosenStore()` is a defect carrying the same object a caller
+ * got from the promise form.
  */
-export async function projectionStore(options: ProjectionStoreOptions = {}): Promise<ProjectionStore> {
-  const choice = chosenStore()
-  if (choice.store === 'postgres') {
-    return createPostgresProjectionStore({
-      url: options.url ?? choice.url,
-      ...(options.max === undefined ? {} : { max: options.max }),
-      ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
-    })
-  }
-  const sqlite = await import('./sqlite.ts')
-  return sqlite.createSqliteProjectionStore(sqlite.openSqliteProjections(choice.path))
+export const openProjections = (options: ProjectionStoreOptions = {}): Effect.Effect<ProjectionsPort> =>
+  Effect.suspend(() => {
+    const choice = chosenStore()
+    if (choice.store === 'postgres') {
+      return Effect.sync(() =>
+        makePostgresProjections({
+          url: options.url ?? choice.url,
+          ...(options.max === undefined ? {} : { max: options.max }),
+          ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
+        }),
+      )
+    }
+    return Effect.promise(() => import('./sqlite.ts')).pipe(
+      Effect.map((sqlite) => sqlite.makeSqliteProjections(sqlite.openSqliteProjections(choice.path))),
+    )
+  })
+
+/**
+ * The promise `ProjectionStore`, opened fresh: the runner (`projection.ts`) and
+ * `packages/daemon/integration/the-written-choice.test.ts` hold it as a promise
+ * until their own tickets.
+ */
+export function projectionStore(options: ProjectionStoreOptions = {}): Promise<ProjectionStore> {
+  return Effect.runPromise(Effect.map(openProjections(options), promiseProjectionStore))
 }
 
 /** Raised by a read that asks for the shared projection store after it was closed. */
@@ -71,44 +90,40 @@ export class ProcessProjectionsClosedError extends Error {
 }
 
 /**
- * One store per process for every read that names no `url` (#793): a board
+ * One port per process for every read that names no `url` (#793): a board
  * render made five to eight reads and paid a fresh connection for each. Four
  * connections, since a render runs its reads in parallel. `allowExitOnIdle`
  * as well as the explicit close, for a script that never closes anything.
+ * Built at import and running nothing: a failed open is remembered and repeated.
  */
-const process_ = closableOnce(
-  () => projectionStore({ max: 4, allowExitOnIdle: true }),
+const process_ = closableOnceEffect(
+  openProjections({ max: 4, allowExitOnIdle: true }),
+  (p) => p.close(),
   () => new ProcessProjectionsClosedError(),
 )
 
 /** Close the shared store when a command has finished. Idempotent; reads after it are refused. */
 export function closeProcessProjections(): Promise<void> {
-  return process_.close()
+  return Effect.runPromise(process_.close())
 }
 
 /**
- * Runs `fn` on a store. With a `url`, one of its own, opened and closed around
- * `fn`; without, the process's shared one, which `fn` must not close.
- * Split from `withProjectionStore` so a test can hand it a fake opener.
+ * Runs `fn` on a port. With a `url`, one of its own, opened and closed around
+ * `fn` (on success, failure and interruption); without, the process's shared
+ * one, which `fn` must not close. Split from `withStoreEffect` so a test can
+ * hand it a fake opener.
  */
-export async function withStoreFrom<T>(
-  shared: ClosableOnce<ProjectionStore>,
-  open: (options: ProjectionStoreOptions) => Promise<ProjectionStore>,
+export const withStoreFrom = <A, E>(
+  shared: ClosableOnceEffect<ProjectionsPort>,
+  open: (options: ProjectionStoreOptions) => Effect.Effect<ProjectionsPort>,
   options: ProjectionStoreOptions,
-  fn: (store: ProjectionStore) => Promise<T>,
-): Promise<T> {
-  if (options.url === undefined) return fn(await shared.get())
-  const store = await open(options)
-  try {
-    return await fn(store)
-  } finally {
-    await store.close()
-  }
-}
+  fn: (port: ProjectionsPort) => Effect.Effect<A, E>,
+): Effect.Effect<A, E> =>
+  options.url === undefined
+    ? Effect.flatMap(shared.get(), fn)
+    : Effect.acquireUseRelease(open(options), fn, (p) => p.close())
 
-export function withProjectionStore<T>(
+export const withStoreEffect = <A, E>(
   options: ProjectionStoreOptions,
-  fn: (store: ProjectionStore) => Promise<T>,
-): Promise<T> {
-  return withStoreFrom(process_, projectionStore, options, fn)
-}
+  fn: (port: ProjectionsPort) => Effect.Effect<A, E>,
+): Effect.Effect<A, E> => withStoreFrom(process_, openProjections, options, fn)

@@ -67,8 +67,9 @@ import {
   WaitId,
 } from '@lingtai/domain'
 import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
+import { Effect } from 'effect'
 
-import { withProjectionStore } from './choose.ts'
+import { withStoreEffect } from './choose.ts'
 import type { Projection, ProjectionContext } from './store.ts'
 
 /**
@@ -996,9 +997,9 @@ export interface ReadTasksOptions {
  * does — and a caller that already has a store calls `store.tasks` and skips
  * this.
  */
-export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCard[]> {
-  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
-    store.tasks({
+export const readTasksEffect = Effect.fn('projector.readTasks')(function* (options: ReadTasksOptions = {}) {
+  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+    p.tasks({
       project: options.project,
       // Resolved here rather than in the store, so that changing the window
       // stays a different query and a store never has to know the board's
@@ -1006,6 +1007,11 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
       retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
     }),
   )
+})
+
+/** The promise face (0101 §7). */
+export function readTasks(options: ReadTasksOptions = {}): Promise<TaskCard[]> {
+  return Effect.runPromise(readTasksEffect(options))
 }
 
 /**
@@ -1021,10 +1027,15 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
  * either — **a card can outlive its project** (#86), so a repository that has
  * been unregistered still appears here for as long as its work does.
  */
-export async function readTaskProjects(
+export const readTaskProjectsEffect = Effect.fn('projector.readTaskProjects')(function* (
   options: Pick<ReadTasksOptions, 'retentionDays' | 'url'> = {},
-): Promise<string[]> {
-  return withProjectionStore({ url: options.url, max: 1 }, (store) =>
-    store.taskProjects({ retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS }),
+) {
+  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+    p.taskProjects({ retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS }),
   )
+})
+
+/** The promise face (0101 §7). */
+export function readTaskProjects(options: Pick<ReadTasksOptions, 'retentionDays' | 'url'> = {}): Promise<string[]> {
+  return Effect.runPromise(readTaskProjectsEffect(options))
 }
