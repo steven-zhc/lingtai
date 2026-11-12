@@ -21,9 +21,12 @@
  * between "read the log" and "start listening", and an event appended into it
  * is not seen until something else happens.
  */
+import { Deferred, Effect } from 'effect'
+import type { Scope } from 'effect'
 import pg from 'pg'
 
 import { directPostgresUrl } from './env.ts'
+import { promiseWaker } from './store-face.ts'
 
 /** The channel `NOTIFY_SQL`'s trigger writes to (`schema.ts`). */
 export const CHANNEL = 'lingtai'
@@ -82,6 +85,22 @@ export interface PostgresWaker extends Waker {
 }
 
 /**
+ * A waker session as an Effect (#1048). `open` succeeds once an append made from
+ * now on will nudge, and the session lives exactly as long as the `Scope` it was
+ * opened in: closing the scope ends it without waiting on anything, which is the
+ * contract `Waker.open`'s `close()` states, given by the scope rather than raced
+ * by hand.
+ */
+export interface WakerPort {
+  open(nudge: () => void): Effect.Effect<{ lost: Effect.Effect<void> }, never, Scope.Scope>
+}
+
+export interface PostgresWakerPort extends WakerPort {
+  /** As `PostgresWaker.backendPid`. */
+  readonly backendPid: number | null
+}
+
+/**
  * `LISTEN`/`NOTIFY` on a direct connection.
  *
  * **The connection is `DIRECT_DATABASE_URL`.** Through a transaction pooler the
@@ -89,9 +108,12 @@ export interface PostgresWaker extends Waker {
  * registration goes with it. Nothing errors; the notification simply never
  * comes. See doc/decisions-archive/0009-two-connections.md — that is the failure this
  * whole file is shaped around.
+ *
+ * **Only the client's construction is in the acquire, never the connect.** An
+ * acquire is uninterruptible, so a connect inside it would make closing the
+ * scope wait for a connect that may never answer.
  */
-export function createPostgresWaker(options: PostgresWakerOptions = {}): PostgresWaker {
-  const url = options.url ?? directPostgresUrl()
+export function makePostgresWaker(options: PostgresWakerOptions = {}): PostgresWakerPort {
   const applicationName = options.name ?? 'lingtai-subscriber'
   let backendPid: number | null = null
 
@@ -99,55 +121,69 @@ export function createPostgresWaker(options: PostgresWakerOptions = {}): Postgre
     get backendPid() {
       return backendPid
     },
-    open(listener) {
-      const client = new pg.Client({
-        connectionString: url,
-        application_name: applicationName,
-        // A backstop, not the mechanism. `close()` is raced against a hanging
-        // connect by the subscriber; this bounds the case where nobody is
-        // closing and the network simply never answers, which would otherwise
-        // leave a subscriber wedged with no backoff and no error.
-        connectionTimeoutMillis: 15_000,
-      })
-      let pid: number | null = null
-      let closed = false
-
-      // `pg` emits 'error' on a Client for a dropped backend. Without a listener
-      // that is an unhandled event and takes the process down — which is how a
-      // subscriber turns a survivable disconnect into an outage.
-      client.on('error', (err: unknown) => listener.lost(err))
-      client.on('end', () => listener.lost())
-      // The payload is the `seq`, and deliberately unread: the payload caps at
-      // 8000 bytes, and a nudge that named its event would invite fetching only
-      // that one.
-      client.on('notification', () => listener.nudge())
-
-      const ready = (async () => {
-        await client.connect()
-        // Before the subscriber's catch-up read, always — which is what `ready`
-        // resolving means.
-        await client.query(`LISTEN ${CHANNEL}`)
-        const r = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+    open: (nudge) =>
+      Effect.gen(function* () {
+        const lost = Deferred.makeUnsafe<void>()
+        let pid: number | null = null
+        let closed = false
+        const client = yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const c = new pg.Client({
+              connectionString: options.url ?? directPostgresUrl(),
+              application_name: applicationName,
+              // A backstop, not the mechanism. Closing the scope interrupts a
+              // hanging connect; this bounds the case where nobody is closing
+              // and the network simply never answers, which would otherwise
+              // leave a subscriber wedged with no backoff and no error.
+              connectionTimeoutMillis: 15_000,
+            })
+            // `pg` emits 'error' on a Client for a dropped backend. Without a
+            // listener that is an unhandled event and takes the process down —
+            // which is how a subscriber turns a survivable disconnect into an
+            // outage. The handler stays after a close and completes a
+            // `Deferred` nobody awaits.
+            c.on('error', (err: unknown) => {
+              Deferred.doneUnsafe(lost, Effect.die(err))
+            })
+            c.on('end', () => {
+              Deferred.doneUnsafe(lost, Effect.void)
+            })
+            // The payload is the `seq`, and deliberately unread: the payload
+            // caps at 8000 bytes, and a nudge that named its event would invite
+            // fetching only that one.
+            c.on('notification', () => nudge())
+            return c
+          }),
+          (c) =>
+            Effect.sync(() => {
+              closed = true
+              if (pid !== null && backendPid === pid) backendPid = null
+              // Fired, never awaited. `pg` gives no way to abort a connect that
+              // is in flight: `end()` settles on an 'end' event an unestablished
+              // socket never emits, and awaiting it here would put the hang back
+              // one level down.
+              void c.end().catch(() => {})
+            }),
+        )
+        yield* Effect.promise(() => client.connect())
+        // Before the subscriber's catch-up read, always — which is what the
+        // session being open means.
+        yield* Effect.promise(() => client.query(`LISTEN ${CHANNEL}`))
+        const r = yield* Effect.promise(() => client.query<{ pid: number }>('select pg_backend_pid() as pid'))
         pid = r.rows[0]?.pid ?? null
         if (!closed) backendPid = pid
-      })()
-      // Whoever opened the session is told through its own await; this only
-      // keeps an unobserved rejection from taking the process down.
-      ready.catch(() => {})
+        return { lost: Deferred.await(lost) }
+      }),
+  }
+}
 
-      return {
-        ready,
-        close() {
-          if (closed) return
-          closed = true
-          if (pid !== null && backendPid === pid) backendPid = null
-          // Fired, never awaited. `pg` gives no way to abort a connect that is
-          // in flight: `end()` settles on an 'end' event an unestablished socket
-          // never emits, and awaiting it here would put the hang back one level
-          // down.
-          void client.end().catch(() => {})
-        },
-      }
+export function createPostgresWaker(options: PostgresWakerOptions = {}): PostgresWaker {
+  const port = makePostgresWaker(options)
+  const w = promiseWaker(port)
+  return {
+    open: w.open,
+    get backendPid() {
+      return port.backendPid
     },
   }
 }

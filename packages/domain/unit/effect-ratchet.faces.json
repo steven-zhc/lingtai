@@ -228,6 +228,12 @@
     "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
   },
   {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "wakeSessionFace",
+    "until": "#790",
+    "why": "`Log.waker(name)` is a promise `Waker` that apps/board's stream route, packages/daemon's work-loop and packages/projector's projection runner pass to `subscribe`, and fakes in daemon and projector tests implement"
+  },
+  {
     "file": "packages/github/src/app.ts",
     "fn": "appInstallations",
     "until": "#790",

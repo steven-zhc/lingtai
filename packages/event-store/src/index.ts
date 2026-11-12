@@ -12,7 +12,7 @@
  */
 export { directPostgresUrl, postgresUrl } from './env.ts'
 export { createDb, type Db } from './db.ts'
-import { deferredEvents, deferredLog, processEvents, processLog } from './choose.ts'
+import { deferredEvents, deferredLog, processEvents } from './choose.ts'
 import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
 import { promiseStore } from './store-face.ts'
@@ -101,7 +101,7 @@ export const eventStore: EventStore = promiseStore(deferredEvents(processEvents)
  * which is what left a machine with no Postgres with no waker at all rather
  * than with the poll #178 built for it.
  */
-export const log: Log = deferredLog(processLog)
+export const log: Log = deferredLog()
 export {
   execIdempotently,
   fromPromiseLogSql,
