@@ -283,30 +283,10 @@ export function landedOnBaseOf(
   return moved
 }
 
-/**
- * The conflict a held run's last conflict round started from (#1120), **while no review
- * has seen the resolution yet**: the lane's `Conflicted` outcome, with a `FixRound` that
- * carries `conflict` as the last route. `fromSha` and the overlap are not in the log, so
- * the conductor reads them with git once the worktree stands (`headSha` is the fork's
- * other end). `null` once a review ran after it, or when a person was reached instead.
- */
-export function conflictLandedOf(
-  runEvents: readonly Envelope[],
-): { baseSha: string; paths: string[]; headSha: string | null } | null {
-  const outcomes = stepOutcomesOf(runEvents)
-  const at = outcomes.findLastIndex((o) => o.step === 'merge')
-  if (at < 0) return null
-  if (outcomes.slice(at + 1).some((o) => o.step === 'review')) return null
-  const route = routesOf(runEvents).at(-1)
-  if (route === undefined || route.next._tag !== 'FixRound' || route.next.conflict === undefined) return null
-  for (const action of outcomes[at]!.actions) {
-    if (action.yields !== 'merge' || action.result._tag !== 'Completed') continue
-    const { integration } = action.result
-    if (integration._tag === 'Conflicted' && integration.baseSha !== null)
-      return { baseSha: integration.baseSha, paths: integration.paths ?? [], headSha: integration.headSha }
-  }
-  return null
-}
+// A conflict round's merge (#1120) is not rebuilt here: the overlap it was shown is in no
+// event, so a continuation that resumes a review after a hold (a clipped diff, a person's
+// approval) reads the ordinary prompt, without the base-change block or the lost-changes
+// question. Known gap; rebuilding it would need that evidence in the log.
 
 function movedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   for (const action of outcome.actions) {

@@ -235,7 +235,7 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armForState, conflictLandedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
+import { armForState, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
@@ -1271,8 +1271,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
-        // A conflict round's resolution no review has read (#1120); finished with git below.
-        conflictLanded: conflictLandedOf(runEvents),
       }
     })
 
@@ -4764,36 +4762,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } satisfies RunOnceResult
       }
 
-      // **A held conflict round's review evidence, rebuilt** (#1120): the log has the lane's
-      // conflict, not the fork commit or the overlap, so they are read from the tree that now
-      // stands. Anything unreadable leaves the evidence out and says so; it is never guessed.
-      const resumedConflict = yield* Effect.gen(function* () {
-        const held = continuation?.landedOnBase === null ? continuation.conflictLanded : null
-        if (held === null || held === undefined) return null
-        if (held.headSha === null) {
-          runLog.note(
-            'review',
-            'the held conflict round names no lane head; its review is not told what the merge brought',
-          )
-          return null
-        }
-        const fork = yield* gitAskedEffect(['merge-base', held.headSha, held.baseSha])
-        const fromSha = Result.isSuccess(fork) ? fork.success.trim() : ''
-        const theirs = fromSha === '' ? null : yield* pathsBetween(`${fromSha}..${held.baseSha}`)
-        const mine = fromSha === '' ? null : yield* pathsBetween(`${fromSha}..${held.headSha}`)
-        if (theirs === null || mine === null) {
-          runLog.note('review', 'the held conflict round’s fork commit or overlap could not be read')
-          return null
-        }
-        const overlap = theirs.filter((p) => mine.includes(p))
-        return {
-          paths: [...new Set([...overlap, ...held.paths])],
-          conflicted: held.paths,
-          fromSha,
-          toSha: held.baseSha,
-        }
-      })
-
       const pass = yield* runAttemptEffect({
         recipe,
         context: passContext,
@@ -4817,11 +4785,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
-                ...(continuation.landedOnBase !== null
-                  ? { landedOnBase: continuation.landedOnBase }
-                  : resumedConflict !== null
-                    ? { landedOnBase: resumedConflict }
-                    : {}),
+                ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 ...(continuation.grant && continuation.conflict !== undefined
