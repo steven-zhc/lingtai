@@ -82,20 +82,29 @@ describe('a runner whose starting fiber is interrupted', () => {
           },
         },
       })
-      const fiber = Effect.runFork(
-        Effect.andThen(
-          Effect.andThen(
-            r.start(),
-            Effect.sync(() => void (caught = true)),
-          ),
-          Effect.never,
-        ).pipe(Effect.scoped, Effect.orDie),
+      // The outer scope outlives the child: the follow belongs to the fiber
+      // that started the runner, not to the scope that fiber happened to run in.
+      let child: Fiber.Fiber<void> | undefined
+      const outer = Effect.runFork(
+        Effect.gen(function* () {
+          child = yield* Effect.forkChild(
+            Effect.andThen(
+              Effect.andThen(
+                r.start(),
+                Effect.sync(() => void (caught = true)),
+              ),
+              Effect.never,
+            ).pipe(Effect.orDie),
+          )
+          yield* Effect.never
+        }).pipe(Effect.scoped),
       )
       while (!caught) await new Promise((x) => setTimeout(x, 10))
-      await Effect.runPromise(Fiber.interrupt(fiber))
+      await Effect.runPromise(Fiber.interrupt(child!))
       expect(r.running).toBe(false)
       expect(closed).toBe(true)
       nudge()
+      await Effect.runPromise(Fiber.interrupt(outer))
     } finally {
       db.close()
     }

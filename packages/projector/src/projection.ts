@@ -145,14 +145,14 @@ export interface ProjectionRunnerOptions {
  * holds this and not the promise one, so a batch has the parent fiber, span and
  * interruption of whatever started it.
  */
-export interface ProjectionRunnerPort<R = Scope.Scope> {
+export interface ProjectionRunnerPort<R = never> {
   readonly name: string
   readonly failure: unknown
   readonly running: boolean
   /**
    * Fails with `ProjectionShapeError` on drift, and with the stop if the first
-   * batch poisons. The `follow` fiber lives in a child of the caller's `Scope`,
-   * so interrupting or closing what started the runner stops it.
+   * batch poisons. The `follow` fiber is owned by the fiber that ran `start`,
+   * so interrupting that fiber stops it.
    */
   start(): Effect.Effect<void, unknown, R>
   stop(): Effect.Effect<void>
@@ -176,7 +176,10 @@ interface RunnerState {
   scope: Scope.Closeable | null
 }
 
-export function makeRunner(options: ProjectionRunnerOptions): ProjectionRunnerPort {
+export function makeRunner(
+  options: ProjectionRunnerOptions,
+  { detached = false }: { detached?: boolean } = {},
+): ProjectionRunnerPort {
   const { projection } = options
   const state: RunnerState = { failure: null, cursor: 0n, cell: null, scope: null }
 
@@ -242,8 +245,10 @@ export function makeRunner(options: ProjectionRunnerOptions): ProjectionRunnerPo
         reject: (error) => Deferred.doneUnsafe(caughtUp, Effect.fail(error)),
       },
     }
-    // A child of the caller's scope: the owner ending ends the follow.
-    const scope = yield* Scope.fork(yield* Scope.Scope)
+    // A scope of the runner's own. Unless the caller is a promise face, which
+    // has no fiber to outlive, the fiber that started the runner owns it: a
+    // child watcher closes it when that fiber ends, whatever scope it ran in.
+    const scope = Scope.makeUnsafe()
     state.cell = cell
     state.scope = scope
     yield* Effect.forkIn(
@@ -263,6 +268,7 @@ export function makeRunner(options: ProjectionRunnerOptions): ProjectionRunnerPo
       ),
       scope,
     )
+    if (!detached) yield* Effect.forkChild(Effect.never.pipe(Effect.ensuring(Scope.close(scope, Exit.void))))
     // A start that never caught up leaves no fiber behind.
     yield* Deferred.await(caughtUp).pipe(
       Effect.onError(() =>
@@ -366,30 +372,8 @@ export function promiseRunner(r: ProjectionRunnerPort<never>): ProjectionRunner 
   }
 }
 
-/**
- * A runner with its owner supplied: a promise caller has no fiber to own the
- * follow, so the runner's own scope does, and `stop`/`close` end it.
- */
-function ownedBy(r: ProjectionRunnerPort, owner: Scope.Scope): ProjectionRunnerPort<never> {
-  return {
-    name: r.name,
-    get failure() {
-      return r.failure
-    },
-    get running() {
-      return r.running
-    },
-    start: () => Effect.provideService(r.start(), Scope.Scope, owner),
-    stop: () => r.stop(),
-    rebuild: () => Effect.provideService(r.rebuild(), Scope.Scope, owner),
-    lag: () => r.lag(),
-    shape: () => r.shape(),
-    close: () => r.close(),
-  }
-}
-
 export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
-  return promiseRunner(ownedBy(makeRunner(options), Scope.makeUnsafe()))
+  return promiseRunner(makeRunner(options, { detached: true }))
 }
 
 /**
