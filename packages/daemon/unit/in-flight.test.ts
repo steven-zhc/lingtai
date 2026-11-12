@@ -2,6 +2,7 @@
  * #640: a drain waits for every pass in flight, and the count is said while it
  * waits (0122 §4).
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { describeInFlight } from '../src/control.ts'
@@ -23,7 +24,7 @@ describe('in-flight passes', () => {
     expect(set.size).toBe(2)
 
     let settled = false
-    const waiting = set.settled().then(() => (settled = true))
+    const waiting = Effect.runPromise(set.settled()).then(() => (settled = true))
     a.resolve()
     await new Promise((r) => setTimeout(r, 5))
     expect(settled).toBe(false)
@@ -41,7 +42,7 @@ describe('in-flight passes', () => {
     const late = deferred()
     set.track(a.promise)
     let settled = false
-    const waiting = set.settled().then(() => (settled = true))
+    const waiting = Effect.runPromise(set.settled()).then(() => (settled = true))
     set.track(late.promise)
     a.resolve()
     await new Promise((r) => setTimeout(r, 5))
@@ -54,7 +55,7 @@ describe('in-flight passes', () => {
   it('treats a rejected pass as finished', async () => {
     const set = createInFlight()
     set.track(Promise.reject(new Error('boom')))
-    await set.settled()
+    await Effect.runPromise(set.settled())
     expect(set.size).toBe(0)
   })
 })

@@ -1,3 +1,5 @@
+import { Effect } from 'effect'
+
 /**
  * The passes a work loop has started and not yet seen finish.
  *
@@ -13,7 +15,12 @@ export interface InFlight {
   /** How many are in flight now. */
   readonly size: number
   /** Resolves once the set is empty, including passes tracked while waiting. */
-  settled(): Promise<void>
+  settled(): Effect.Effect<void>
+}
+
+/** `work-loop.ts`'s promise `stop`, until DAEMON-1b, which deletes it. */
+export function inFlightSettledFace(inFlight: InFlight) {
+  return Effect.runPromise(inFlight.settled())
 }
 
 export function createInFlight(): InFlight {
@@ -31,8 +38,11 @@ export function createInFlight(): InFlight {
     get size() {
       return set.size
     },
-    async settled() {
-      while (set.size > 0) await Promise.all(set)
-    },
+    // Reads `set` when run, not when called, so passes tracked while waiting
+    // are waited for. Nothing in it can reject: `track` swallowed that.
+    settled: () =>
+      Effect.gen(function* () {
+        while (set.size > 0) yield* Effect.promise(() => Promise.all(set))
+      }),
   }
 }
