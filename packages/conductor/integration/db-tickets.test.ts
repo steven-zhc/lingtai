@@ -34,9 +34,10 @@
 import { postgresUrl, type TicketSql } from '@lingtai/event-store'
 import { createPostgresTicketSql } from '@lingtai/event-store/queries'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { type DbTickets, dbTickets, ensureTicketTables } from '../src/db-tickets.ts'
+import { type DbTickets, dbTickets, ensureTicketTablesEffect } from '../src/db-tickets.ts'
 import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 interface PgColumn {
@@ -87,7 +88,7 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
     await sql.exec('DROP TABLE IF EXISTS ticket_comments')
     await sql.exec('DROP TABLE IF EXISTS tickets')
 
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     expect(await columns(sql, 'tickets')).toEqual([
       { column_name: 'project', data_type: 'text', is_nullable: 'NO', column_default: null },
@@ -130,7 +131,7 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
 
     // The second run is the claim: it must not throw, and the row written
     // before it ran has to still be there afterwards.
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     const tickets = await sql.query<{ title: string }>('SELECT title FROM tickets WHERE project = $1', [project])
     expect(tickets).toEqual([{ title: 'a title' }])

@@ -1,5 +1,6 @@
-import { execIdempotently, type TicketSql } from '@lingtai/event-store'
+import { execIdempotentlyEffect, fromPromiseLogSql, type TicketSql } from '@lingtai/event-store'
 import { BodyChanged } from '@lingtai/github'
+import { Deferred, Effect } from 'effect'
 
 /**
  * `tickets` and `ticket_comments` — Lingtai's own ticket store, created on
@@ -34,6 +35,7 @@ import { BodyChanged } from '@lingtai/github'
  * accepted and not stored: nothing here reads it back.
  */
 import type { TicketListing } from './discover.ts'
+import { runPort } from './port-face.ts'
 import type { Ticket, Tickets } from './ticket-store.ts'
 
 const SQLITE_TICKETS = `
@@ -90,17 +92,20 @@ const POSTGRES_TICKET_COMMENTS = `
  * including concurrently: a second run finds both tables present and changes
  * nothing.
  *
- * **Called by `dbTickets`, on first use, and from nowhere else.** The tables
+ * **Called by `makeDbTickets`, on first use, and from nowhere else.** The tables
  * are created by the adapter the first time one of its verbs runs (#380), not
  * by every process that opens the log — calling this from
  * `processTicketSql()` would put ticket tables in front of every command that
  * merely reads the event store.
  */
-export async function ensureTicketTables(sql: TicketSql): Promise<void> {
+export function ensureTicketTablesEffect(sql: TicketSql): Effect.Effect<void> {
   const [tickets, comments] =
     sql.dialect === 'postgres' ? [POSTGRES_TICKETS, POSTGRES_TICKET_COMMENTS] : [SQLITE_TICKETS, SQLITE_TICKET_COMMENTS]
-  await execIdempotently(sql, tickets)
-  await execIdempotently(sql, comments)
+  const port = fromPromiseLogSql(sql)
+  return Effect.gen(function* () {
+    yield* execIdempotentlyEffect(port, tickets)
+    yield* execIdempotentlyEffect(port, comments)
+  })
 }
 
 /**
@@ -108,8 +113,8 @@ export async function ensureTicketTables(sql: TicketSql): Promise<void> {
  * `Tickets` with the one inspection seam `tickets-contract.ts`'s comment case
  * uses to verify storage rather than only `id` and the issue body.
  *
- * **Async, unlike `MemoryTickets.commentBodies`.** A database cannot answer
- * synchronously; `describeTicketsContract`'s `commentBodies` option accepts
+ * **Promise, unlike `MemoryTickets.commentBodies`.** A database cannot answer
+ * synchronously, and this is the face over `DbTicketsEffects`; `describeTicketsContract`'s `commentBodies` option accepts
  * either shape (`test/tickets-contract.ts`), and `await`ing `memoryTickets()`'s
  * array still answers the array.
  */
@@ -192,14 +197,39 @@ export interface DbTicketsOptions {
 }
 
 /**
+ * `DbTickets`, member for member, as Effects. A missing ticket, a moved body and
+ * a changed form fail with the very error the promise store throws; a store
+ * failure is a defect (0101 §6).
+ */
+export interface DbTicketsEffects {
+  listOpenIssues(): Effect.Effect<TicketListing[]>
+  listIssuesSince(since: Date): Effect.Effect<Ticket[]>
+  getIssue(number: number): Effect.Effect<Ticket, Error>
+  createIssue(input: Parameters<Tickets['createIssue']>[0]): Effect.Effect<Ticket>
+  comment(number: number, body: string): Effect.Effect<{ id: number }, Error>
+  editComment(number: number, commentId: number, body: string): Effect.Effect<void, Error>
+  commentBodies(number: number): Effect.Effect<readonly string[]>
+  setLabels(number: number, labels: readonly string[]): Effect.Effect<void, Error>
+  closeIssue(number: number, reason?: Parameters<Tickets['closeIssue']>[1]): Effect.Effect<void, Error>
+  updateBody(number: number, body: string, opts?: Parameters<Tickets['updateBody']>[2]): Effect.Effect<void, Error>
+  updateFields(
+    number: number,
+    expected: { title: string; labels: readonly string[]; body: string },
+    next: { title: string; labels: readonly string[]; body: string },
+  ): Effect.Effect<void, Error>
+}
+
+/**
  * `Tickets` over `tickets` and `ticket_comments`, for one `project` on `sql`
- * (#380). Passes the same contract suite `memoryTickets()` passes
- * (`test/tickets-contract.ts`), on SQLite under `unit/` and on Postgres under
- * `integration/`.
+ * (#380), as Effects. Passes the same contract suite `memoryTickets()` passes
+ * (`test/tickets-contract.ts`) through `dbTickets`, on SQLite under `unit/` and
+ * on Postgres under `integration/`.
  *
- * **Creates the tables on first use.** Every verb awaits one lazily-started
- * `ensureTicketTables(sql)` before it runs; a failed attempt is not cached, so
- * the next call tries again instead of failing forever on a transient error.
+ * **Creates the tables on first use.** Every verb waits on one masked,
+ * lazily-started `ensureTicketTablesEffect(sql)`; concurrent first callers join
+ * the one in flight, success is remembered for the store's lifetime and a
+ * failure is not, so the next call tries again instead of failing forever on a
+ * transient error. (`Effect.cached` would remember the failure too.)
  *
  * **Numbers are allocated by the insert statement itself, not by a
  * `BEGIN … COMMIT`.** `TicketSql` has no transaction verb — Postgres opens a
@@ -217,166 +247,221 @@ export interface DbTicketsOptions {
  * i.e. `n - 1` retries after the first try, and the slowest writer in this
  * file's own eight-way integration case is the eighth.
  */
-export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOptions = {}): DbTickets {
+export function makeDbTickets(sql: TicketSql, project: string, options: DbTicketsOptions = {}): DbTicketsEffects {
   const now = options.now ?? (() => new Date())
   const MAX_RETRIES = 7
+  // A rejection is a defect carrying the driver's own error.
+  const port = fromPromiseLogSql(sql)
+  const query = <T>(text: string, params: readonly unknown[]) => port.query<T>(text, params)
 
-  let ready: Promise<void> | undefined
-  async function ensureReady(): Promise<void> {
-    if (ready === undefined) ready = ensureTicketTables(sql)
-    try {
-      await ready
-    } catch (err) {
-      ready = undefined
-      throw err
-    }
-  }
-
-  return {
-    async listOpenIssues() {
-      await ensureReady()
-      const rows = await sql.query<Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>>(
-        `SELECT number, title, labels, state FROM tickets WHERE project = $1 AND state = 'open' ORDER BY number`,
-        [project],
+  // Success is kept, failure is not. Set and checked in one synchronous step, so
+  // two first callers cannot both ensure; masked so an interrupted first caller
+  // still fills the cell its joiners wait on.
+  let ready: Deferred.Deferred<void> | null = null
+  const ensureReady: Effect.Effect<void> = Effect.uninterruptibleMask((restore) =>
+    Effect.suspend(() => {
+      if (ready) return restore(Deferred.await(ready))
+      const cell = (ready = Deferred.makeUnsafe<void>())
+      return Effect.exit(ensureTicketTablesEffect(sql)).pipe(
+        Effect.tap((exit) =>
+          Effect.sync(() => {
+            if (exit._tag === 'Failure' && ready === cell) ready = null
+          }),
+        ),
+        Effect.flatMap((exit) => Deferred.done(cell, exit)),
+        Effect.andThen(restore(Deferred.await(cell))),
       )
-      return rows.map(toListing)
-    },
+    }),
+  )
 
-    async listIssuesSince(since) {
-      await ensureReady()
-      const rows = await sql.query<TicketRow>(
-        `SELECT number, title, body, labels, state FROM tickets
-         WHERE project = $1 AND created_at >= $2
-         ORDER BY created_at, number`,
-        [project, since.toISOString()],
-      )
-      return rows.map(toTicket)
-    },
-
-    async getIssue(number) {
-      await ensureReady()
-      const rows = await sql.query<TicketRow>(
-        `SELECT number, title, body, labels, state FROM tickets WHERE project = $1 AND number = $2`,
-        [project, number],
-      )
-      const row = rows[0]
-      if (!row) throw noSuchTicket(project, number)
-      return toTicket(row)
-    },
-
-    async createIssue(input) {
-      await ensureReady()
-      const labels = JSON.stringify(input.labels)
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const rows = await sql.query<TicketRow>(
-            `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
+  const insertIssue = (
+    input: Parameters<Tickets['createIssue']>[0],
+    labels: string,
+    attempt: number,
+  ): Effect.Effect<Ticket> =>
+    Effect.tryPromise({
+      try: () =>
+        sql.query<TicketRow>(
+          `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
              VALUES ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tickets WHERE project = $1), $2, $3, $4, 'open', $5, $5)
              RETURNING number, title, body, labels, state`,
-            [project, input.title, input.body, labels, now().toISOString()],
-          )
-          return toTicket(rows[0]!)
-        } catch (err) {
-          if (!isDuplicateTicketNumber(err) || attempt >= MAX_RETRIES) throw err
-        }
-      }
-    },
+          [project, input.title, input.body, labels, now().toISOString()],
+        ),
+      catch: (err) => err,
+    }).pipe(
+      Effect.map((rows) => toTicket(rows[0]!)),
+      Effect.catch((err) =>
+        isDuplicateTicketNumber(err) && attempt < MAX_RETRIES
+          ? insertIssue(input, labels, attempt + 1)
+          : Effect.die(err),
+      ),
+    )
 
-    async comment(number, body) {
-      await ensureReady()
-      const exists = await sql.query<{ number: number }>(
-        `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
-        [project, number],
-      )
-      if (exists.length === 0) throw noSuchTicket(project, number)
-
-      const rows = await sql.query<{ id: number | string }>(
-        `INSERT INTO ticket_comments (project, number, body, created_at) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [project, number, body, now().toISOString()],
-      )
-      return { id: Number(rows[0]!.id) }
-    },
-
-    async editComment(number, commentId, body) {
-      await ensureReady()
-      const rows = await sql.query<{ id: number | string }>(
-        `UPDATE ticket_comments SET body = $4 WHERE project = $1 AND number = $2 AND id = $3 RETURNING id`,
-        [project, number, commentId, body],
-      )
-      if (rows.length === 0) throw new Error(`no comment ${commentId} on ticket #${number}`)
-    },
-
-    async commentBodies(number) {
-      await ensureReady()
-      const rows = await sql.query<{ body: string }>(
-        `SELECT body FROM ticket_comments WHERE project = $1 AND number = $2 ORDER BY id`,
-        [project, number],
-      )
-      return rows.map((r) => r.body)
-    },
-
-    async setLabels(number, labels) {
-      await ensureReady()
-      const rows = await sql.query<{ number: number }>(
-        `UPDATE tickets SET labels = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
-        [project, number, JSON.stringify(labels), now().toISOString()],
-      )
-      if (rows.length === 0) throw noSuchTicket(project, number)
-    },
-
-    async closeIssue(number) {
-      await ensureReady()
-      const rows = await sql.query<{ number: number }>(
-        `UPDATE tickets SET state = 'closed', updated_at = $3 WHERE project = $1 AND number = $2 RETURNING number`,
-        [project, number, now().toISOString()],
-      )
-      if (rows.length === 0) throw noSuchTicket(project, number)
-    },
-
-    async updateBody(number, body, opts) {
-      await ensureReady()
-      if (opts?.ifUnchanged !== undefined) {
-        const rows = await sql.query<{ number: number }>(
-          `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 AND body = $5 RETURNING number`,
-          [project, number, body, now().toISOString(), opts.ifUnchanged],
+  return {
+    listOpenIssues: () =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>>(
+          `SELECT number, title, labels, state FROM tickets WHERE project = $1 AND state = 'open' ORDER BY number`,
+          [project],
         )
-        if (rows.length > 0) return
-        // Zero rows either way — settle which by asking again. This select
-        // plays no part in deciding whether the write landed; the UPDATE
-        // above already did, atomically.
-        const exists = await sql.query<{ number: number }>(
+        return rows.map(toListing)
+      }),
+
+    listIssuesSince: (since) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<TicketRow>(
+          `SELECT number, title, body, labels, state FROM tickets
+         WHERE project = $1 AND created_at >= $2
+         ORDER BY created_at, number`,
+          [project, since.toISOString()],
+        )
+        return rows.map(toTicket)
+      }),
+
+    getIssue: (number) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<TicketRow>(
+          `SELECT number, title, body, labels, state FROM tickets WHERE project = $1 AND number = $2`,
+          [project, number],
+        )
+        const row = rows[0]
+        if (!row) return yield* Effect.fail(noSuchTicket(project, number))
+        return toTicket(row)
+      }),
+
+    createIssue: (input) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        return yield* insertIssue(input, JSON.stringify(input.labels), 0)
+      }),
+
+    comment: (number, body) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const exists = yield* query<{ number: number }>(
           `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
           [project, number],
         )
-        if (exists.length === 0) throw noSuchTicket(project, number)
-        throw new BodyChanged(number)
-      }
-      const rows = await sql.query<{ number: number }>(
-        `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
-        [project, number, body, now().toISOString()],
-      )
-      if (rows.length === 0) throw noSuchTicket(project, number)
-    },
+        if (exists.length === 0) return yield* Effect.fail(noSuchTicket(project, number))
 
-    async updateFields(number, expected, next) {
-      await ensureReady()
-      const rows = await sql.query<{ number: number }>(
-        `UPDATE tickets SET title = $3, labels = $4, body = $5, updated_at = $6
+        const rows = yield* query<{ id: number | string }>(
+          `INSERT INTO ticket_comments (project, number, body, created_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+          [project, number, body, now().toISOString()],
+        )
+        return { id: Number(rows[0]!.id) }
+      }),
+
+    editComment: (number, commentId, body) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<{ id: number | string }>(
+          `UPDATE ticket_comments SET body = $4 WHERE project = $1 AND number = $2 AND id = $3 RETURNING id`,
+          [project, number, commentId, body],
+        )
+        if (rows.length === 0) return yield* Effect.fail(new Error(`no comment ${commentId} on ticket #${number}`))
+      }),
+
+    commentBodies: (number) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<{ body: string }>(
+          `SELECT body FROM ticket_comments WHERE project = $1 AND number = $2 ORDER BY id`,
+          [project, number],
+        )
+        return rows.map((r) => r.body)
+      }),
+
+    setLabels: (number, labels) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<{ number: number }>(
+          `UPDATE tickets SET labels = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
+          [project, number, JSON.stringify(labels), now().toISOString()],
+        )
+        if (rows.length === 0) return yield* Effect.fail(noSuchTicket(project, number))
+      }),
+
+    closeIssue: (number) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<{ number: number }>(
+          `UPDATE tickets SET state = 'closed', updated_at = $3 WHERE project = $1 AND number = $2 RETURNING number`,
+          [project, number, now().toISOString()],
+        )
+        if (rows.length === 0) return yield* Effect.fail(noSuchTicket(project, number))
+      }),
+
+    updateBody: (number, body, opts) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        if (opts?.ifUnchanged !== undefined) {
+          const rows = yield* query<{ number: number }>(
+            `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 AND body = $5 RETURNING number`,
+            [project, number, body, now().toISOString(), opts.ifUnchanged],
+          )
+          if (rows.length > 0) return
+          // Zero rows either way — settle which by asking again. This select
+          // plays no part in deciding whether the write landed; the UPDATE
+          // above already did, atomically.
+          const exists = yield* query<{ number: number }>(
+            `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
+            [project, number],
+          )
+          if (exists.length === 0) return yield* Effect.fail(noSuchTicket(project, number))
+          return yield* Effect.fail(new BodyChanged(number))
+        }
+        const rows = yield* query<{ number: number }>(
+          `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
+          [project, number, body, now().toISOString()],
+        )
+        if (rows.length === 0) return yield* Effect.fail(noSuchTicket(project, number))
+      }),
+
+    updateFields: (number, expected, next) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const rows = yield* query<{ number: number }>(
+          `UPDATE tickets SET title = $3, labels = $4, body = $5, updated_at = $6
          WHERE project = $1 AND number = $2 AND title = $7 AND labels = $8 AND body = $9
          RETURNING number`,
-        [
-          project,
-          number,
-          next.title,
-          JSON.stringify(next.labels),
-          next.body,
-          now().toISOString(),
-          expected.title,
-          JSON.stringify(expected.labels),
-          expected.body,
-        ],
-      )
-      if (rows.length === 0) throw new Error(`#${number} changed since this form was opened`)
-    },
+          [
+            project,
+            number,
+            next.title,
+            JSON.stringify(next.labels),
+            next.body,
+            now().toISOString(),
+            expected.title,
+            JSON.stringify(expected.labels),
+            expected.body,
+          ],
+        )
+        if (rows.length === 0) return yield* Effect.fail(new Error(`#${number} changed since this form was opened`))
+      }),
   }
+}
+
+/** The promise `DbTickets` over a `DbTicketsEffects`: each member is one call of `runPort`. */
+export function promiseDbTickets(t: DbTicketsEffects): DbTickets {
+  return {
+    listOpenIssues: () => runPort(t.listOpenIssues()),
+    listIssuesSince: (since) => runPort(t.listIssuesSince(since)),
+    getIssue: (number) => runPort(t.getIssue(number)),
+    createIssue: (input) => runPort(t.createIssue(input)),
+    comment: (number, body) => runPort(t.comment(number, body)),
+    editComment: (number, commentId, body) => runPort(t.editComment(number, commentId, body)),
+    commentBodies: (number) => runPort(t.commentBodies(number)),
+    setLabels: (number, labels) => runPort(t.setLabels(number, labels)),
+    closeIssue: (number, reason) => runPort(t.closeIssue(number, reason)),
+    updateBody: (number, body, opts) => runPort(t.updateBody(number, body, opts)),
+    updateFields: (number, expected, next) => runPort(t.updateFields(number, expected, next)),
+  }
+}
+
+/** `makeDbTickets` as the promise `DbTickets` every caller outside the package holds. */
+export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOptions = {}): DbTickets {
+  return promiseDbTickets(makeDbTickets(sql, project, options))
 }

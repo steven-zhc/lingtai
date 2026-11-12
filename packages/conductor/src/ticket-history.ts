@@ -1,4 +1,6 @@
-import { dbTickets } from './db-tickets.ts'
+import { Effect } from 'effect'
+
+import { makeDbTickets } from './db-tickets.ts'
 
 /**
  * The live `history`: a dynamic `import('@lingtai/event-store')`, for
@@ -13,16 +15,23 @@ import { dbTickets } from './db-tickets.ts'
  * `dbTickets.createIssue` (`db-tickets.ts`) is a plain `INSERT INTO
  * tickets` — so `lingtai ticket new` can leave a project with rows in
  * `tickets` and nothing in the log at all. `ticketsFor`'s own guard
- * (`ticket-store.ts:247-253`) checks the table before the log for exactly
+ * (`ticketsForEffect`, `ticket-store.ts`) checks the table before the log for exactly
  * that reason, and this checks both for the same one: either is enough that
  * switching away from the project's current source would strand work.
  */
-export async function liveHistory(project: string): Promise<readonly string[]> {
-  const { log, processTicketSql } = await import('@lingtai/event-store')
-  const { parseTicketStream, ticketStreamsOf } = await import('@lingtai/domain')
-  const streams = await log.queries.projectStreams(ticketStreamsOf(project))
-  const wiStreams = streams.filter((id) => parseTicketStream(id)?.project === project)
-  const sql = await processTicketSql()
-  const dbTicketRows = await dbTickets(sql, project).listIssuesSince(new Date(0))
-  return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
+export function liveHistoryEffect(project: string): Effect.Effect<readonly string[]> {
+  return Effect.gen(function* () {
+    const { log, processTicketSql } = yield* Effect.promise(() => import('@lingtai/event-store'))
+    const { parseTicketStream, ticketStreamsOf } = yield* Effect.promise(() => import('@lingtai/domain'))
+    const streams = yield* Effect.promise(() => log.queries.projectStreams(ticketStreamsOf(project)))
+    const wiStreams = streams.filter((id) => parseTicketStream(id)?.project === project)
+    const sql = yield* Effect.promise(() => processTicketSql())
+    const dbTicketRows = yield* makeDbTickets(sql, project).listIssuesSince(new Date(0))
+    return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
+  })
+}
+
+/** `liveHistoryEffect` as `packages/setup`'s promise `history` port. */
+export function liveHistory(project: string): Promise<readonly string[]> {
+  return Effect.runPromise(liveHistoryEffect(project))
 }

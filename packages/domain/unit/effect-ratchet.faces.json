@@ -66,6 +66,12 @@
     "why": "apps/cli/src/discuss.ts:291 (discussionVersion) and apps/cli/src/triage.ts:945 await it, until the apps/cli row"
   },
   {
+    "file": "packages/conductor/src/port-face.ts",
+    "fn": "runPort",
+    "until": "#790",
+    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), until `Tickets` is an Effect port"
+  },
+  {
     "file": "packages/conductor/src/run-attempt.ts",
     "fn": "claimStep",
     "until": "#790",
@@ -82,6 +88,18 @@
     "fn": "readState",
     "until": "#790",
     "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (reconcile, control) and apps/board read a reducer's state as a promise"
+  },
+  {
+    "file": "packages/conductor/src/ticket-history.ts",
+    "fn": "liveHistory",
+    "until": "#790",
+    "why": "`packages/setup`'s promise `history` port (`propose-setup.ts:66`), handed over by apps/cli add-github, init, first-project and `add-from-page.ts`"
+  },
+  {
+    "file": "packages/conductor/src/ticket-store.ts",
+    "fn": "ticketsFor",
+    "until": "#790",
+    "why": "apps/cli (conduct, run, ticket), `packages/daemon/src/converge.ts:187`, and `filter.ts`/`read-ticket.ts` until CONDUCT8-2"
   },
   {
     "file": "packages/event-store/src/choose.ts",
@@ -153,7 +171,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "execIdempotently",
     "until": "#790",
-    "why": "packages/conductor/src/db-tickets.ts ensureTicketTables calls it as a promise"
+    "why": "packages/event-store/unit/log-sql-effects.test.ts calls it as a promise; no production caller"
   },
   {
     "file": "packages/event-store/src/store-face.ts",

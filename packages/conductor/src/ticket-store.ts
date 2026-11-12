@@ -28,6 +28,7 @@ import type { LogQueries, TicketSql } from '@lingtai/event-store'
 import { BodyChanged, type GitHubClient } from '@lingtai/github'
 import type { Recipe } from '@lingtai/recipe'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
 /**
  * Re-exported so a conductor caller imports it from where `Tickets` lives,
@@ -37,7 +38,7 @@ import { ticketSourceOf } from '@lingtai/recipe/settings'
  */
 export { BodyChanged }
 
-import { dbTickets } from './db-tickets.ts'
+import { makeDbTickets, promiseDbTickets } from './db-tickets.ts'
 import type { TicketDetail, TicketListing } from './discover.ts'
 
 /**
@@ -220,13 +221,13 @@ export interface TicketsForOptions {
   log?: Pick<LogQueries, 'projectStreams'>
 }
 
-async function defaultSql(): Promise<TicketSql> {
-  return (await import('@lingtai/event-store')).processTicketSql()
-}
+const defaultSql: Effect.Effect<TicketSql> = Effect.promise(() => import('@lingtai/event-store')).pipe(
+  Effect.flatMap((m) => Effect.promise(() => m.processTicketSql())),
+)
 
-async function defaultLogQueries(): Promise<Pick<LogQueries, 'projectStreams'>> {
-  return (await import('@lingtai/event-store')).log.queries
-}
+const defaultLogQueries: Effect.Effect<Pick<LogQueries, 'projectStreams'>> = Effect.promise(
+  () => import('@lingtai/event-store'),
+).pipe(Effect.map((m) => m.log.queries))
 
 /**
  * Where a project's tickets come from, by its recipe (`#382`).
@@ -247,30 +248,43 @@ async function defaultLogQueries(): Promise<Pick<LogQueries, 'projectStreams'>> 
  * `dbTickets` holds any ticket of its own, the project switched deliberately
  * and this passes regardless of what the log holds from before.
  */
-export async function ticketsFor(
+export function ticketsForEffect(
+  state: ProjectState,
+  recipe: Recipe,
+  client: Tickets,
+  options: TicketsForOptions = {},
+): Effect.Effect<Tickets, Error> {
+  return Effect.gen(function* () {
+    if (ticketSourceOf(recipe) !== 'db') return client
+
+    const project = state.project
+    if (!project) return yield* Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
+
+    const sql = options.sql ?? (yield* defaultSql)
+    // One store, one memo: the one checked here is the one handed back, so its
+    // tables are ensured once and not again on the caller's first call.
+    const tickets = makeDbTickets(sql, project)
+
+    const already = yield* tickets.listIssuesSince(new Date(0))
+    if (already.length === 0) {
+      const log = options.log ?? (yield* defaultLogQueries)
+      const all = yield* Effect.promise(() => log.projectStreams(ticketStreamsOf(project)))
+      const streams = all.filter((id) => parseTicketStream(id)?.project === project)
+      if (streams.length > 0) return yield* Effect.fail(new TicketSourceConflict(project, streams))
+    }
+
+    return promiseDbTickets(tickets)
+  })
+}
+
+/** `ticketsForEffect` as the promise every caller outside the package holds. */
+export function ticketsFor(
   state: ProjectState,
   recipe: Recipe,
   client: Tickets,
   options: TicketsForOptions = {},
 ): Promise<Tickets> {
-  if (ticketSourceOf(recipe) !== 'db') return client
-
-  const project = state.project
-  if (!project) throw new Error('no repository name recorded — re-run lingtai add')
-
-  const sql = options.sql ?? (await defaultSql())
-  const tickets = dbTickets(sql, project)
-
-  const already = await tickets.listIssuesSince(new Date(0))
-  if (already.length === 0) {
-    const log = options.log ?? (await defaultLogQueries())
-    const streams = (await log.projectStreams(ticketStreamsOf(project))).filter(
-      (id) => parseTicketStream(id)?.project === project,
-    )
-    if (streams.length > 0) throw new TicketSourceConflict(project, streams)
-  }
-
-  return tickets
+  return Effect.runPromise(ticketsForEffect(state, recipe, client, options))
 }
 
 /**
