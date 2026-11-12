@@ -1,3 +1,18 @@
+import type { Envelope, PayloadOf } from '@lingtai/domain'
+import type { TicketState, TicketWait } from '@lingtai/domain'
+import {
+  chatStream,
+  cleared,
+  decodeTicket,
+  emptyTicket,
+  encodeTicket,
+  isAttemptStream,
+  isTicketStream,
+  parseTicketStream,
+  reviewSummaryOf,
+} from '@lingtai/domain'
+import type { RateRow } from '@lingtai/domain/rate-card'
+import { estimateRow } from '@lingtai/domain/rate-card'
 /**
  * `ticket_report` — one row per ticket with the facts the report needs
  * ([0123](../../../doc/decisions/0123-the-report-counts-what-the-log-holds.md) §2, #687).
@@ -37,25 +52,11 @@
  * - **A `RunSpent` with no link to a ticket is dropped**: there is no row to
  *   put it on (unlike `spend`, which keeps it with a null ticket).
  */
-import type { Envelope, PayloadOf } from '@lingtai/domain'
-import type { TicketState, TicketWait } from '@lingtai/domain'
-import {
-  chatStream,
-  cleared,
-  decodeTicket,
-  emptyTicket,
-  encodeTicket,
-  isAttemptStream,
-  isTicketStream,
-  parseTicketStream,
-  reviewSummaryOf,
-} from '@lingtai/domain'
-import type { RateRow } from '@lingtai/domain/rate-card'
-import { estimateRow } from '@lingtai/domain/rate-card'
+import { Effect } from 'effect'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
 import { columnOf } from './store.ts'
-import type { Projection, ProjectionContext } from './store.ts'
+import type { Projection, ProjectionContextPort } from './store.ts'
 import { reduceStoredTicket } from './ticket-row.ts'
 
 export const TICKET_REPORT_TABLE = 'ticket_report'
@@ -254,23 +255,25 @@ const fresh = (ticket: string): State => ({
  * The row for `ticket`, and its `ticket_state` column as stored: `undefined`
  * for no row, which is the one case that reduces from `emptyTicket`.
  */
-async function load(ctx: ProjectionContext, ticket: string): Promise<{ s: State; stored: unknown }> {
-  const [row] = await ctx.query<Record<string, unknown>>('select * from ticket_report where ticket = $1', [ticket])
-  if (!row) return { s: fresh(ticket), stored: undefined }
-  return {
-    stored: row.ticket_state,
-    s: {
-      ...fresh(ticket),
-      machineMs: Number(row.machine_ms),
-      intervalsEmpty: Number(row.intervals_empty),
-      reviews: json(row.reviews, []),
-      cost: json(row.cost, {}),
-      paid: json(row.paid, []),
-      rounds: json(row.rounds, []),
-      open: json(row.open_intervals, []),
-      byRun: json(row.by_run, {}),
-    },
-  }
+function load(ctx: ProjectionContextPort, ticket: string): Effect.Effect<{ s: State; stored: unknown }> {
+  return Effect.gen(function* () {
+    const [row] = yield* ctx.query<Record<string, unknown>>('select * from ticket_report where ticket = $1', [ticket])
+    if (!row) return { s: fresh(ticket), stored: undefined }
+    return {
+      stored: row.ticket_state,
+      s: {
+        ...fresh(ticket),
+        machineMs: Number(row.machine_ms),
+        intervalsEmpty: Number(row.intervals_empty),
+        reviews: json(row.reviews, []),
+        cost: json(row.cost, {}),
+        paid: json(row.paid, []),
+        rounds: json(row.rounds, []),
+        open: json(row.open_intervals, []),
+        byRun: json(row.by_run, {}),
+      },
+    }
+  })
 }
 
 /** A wait as the report shows it, off the reduce's. */
@@ -293,20 +296,21 @@ function reportWaitOf(w: TicketWait): ReportWait {
   }
 }
 
-async function save(ctx: ProjectionContext, s: State): Promise<void> {
-  const project = parseTicketStream(s.ticket)?.project ?? null
-  const t = s.ticketState
-  const status = t.lifecycle.status
-  const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
-  // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
-  const outcomeAt = outcome === 'open' ? null : t.since
-  // The landing run is the last claim (`claims` already leaves continuations out); `TicketLanded` does not name it.
-  const landing = outcome === 'landed' ? (t.claims.at(-1) ?? null) : null
-  const facts = landing === null ? null : (s.byRun[landing.runId] ?? null)
-  const landingRounds =
-    landing === null ? null : s.rounds.filter((k) => k.slice(0, k.lastIndexOf(':')) === landing.runId).length
-  await ctx.query(
-    `insert into ticket_report
+function save(ctx: ProjectionContextPort, s: State): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const project = parseTicketStream(s.ticket)?.project ?? null
+    const t = s.ticketState
+    const status = t.lifecycle.status
+    const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
+    // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
+    const outcomeAt = outcome === 'open' ? null : t.since
+    // The landing run is the last claim (`claims` already leaves continuations out); `TicketLanded` does not name it.
+    const landing = outcome === 'landed' ? (t.claims.at(-1) ?? null) : null
+    const facts = landing === null ? null : (s.byRun[landing.runId] ?? null)
+    const landingRounds =
+      landing === null ? null : s.rounds.filter((k) => k.slice(0, k.lastIndexOf(':')) === landing.runId).length
+    yield* ctx.query(
+      `insert into ticket_report
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
         paid, rounds, open_intervals, ticket_state, by_run, landing_run, landing_attempt, landing_fix_rounds,
@@ -326,53 +330,58 @@ async function save(ctx: ProjectionContext, s: State): Promise<void> {
        landing_fix_rounds = excluded.landing_fix_rounds, diff_files = excluded.diff_files,
        diff_insertions = excluded.diff_insertions, diff_deletions = excluded.diff_deletions,
        summary = excluded.summary, summary_clipped = excluded.summary_clipped`,
-    [
-      s.ticket,
-      project,
-      t.kind,
-      outcome,
-      outcomeAt,
-      t.claims.length,
-      s.rounds.length,
-      s.machineMs,
-      s.intervalsEmpty,
-      s.open.length,
-      t.claims.filter((c) => !s.paid.includes(c.runId)).length,
-      JSON.stringify(t.claims.map((c) => c.at.toISOString())),
-      JSON.stringify(s.reviews),
-      JSON.stringify(t.waits.map(reportWaitOf)),
-      JSON.stringify(s.cost),
-      JSON.stringify(s.paid),
-      JSON.stringify(s.rounds),
-      JSON.stringify(s.open),
-      encodeTicket(t),
-      JSON.stringify(s.byRun),
-      landing?.runId ?? null,
-      landing === null ? null : t.claims.length,
-      landingRounds,
-      facts?.diff?.files ?? null,
-      facts?.diff?.insertions ?? null,
-      facts?.diff?.deletions ?? null,
-      facts?.summary ?? null,
-      facts?.clipped == null ? null : JSON.stringify(facts.clipped),
-    ],
-  )
+      [
+        s.ticket,
+        project,
+        t.kind,
+        outcome,
+        outcomeAt,
+        t.claims.length,
+        s.rounds.length,
+        s.machineMs,
+        s.intervalsEmpty,
+        s.open.length,
+        t.claims.filter((c) => !s.paid.includes(c.runId)).length,
+        JSON.stringify(t.claims.map((c) => c.at.toISOString())),
+        JSON.stringify(s.reviews),
+        JSON.stringify(t.waits.map(reportWaitOf)),
+        JSON.stringify(s.cost),
+        JSON.stringify(s.paid),
+        JSON.stringify(s.rounds),
+        JSON.stringify(s.open),
+        encodeTicket(t),
+        JSON.stringify(s.byRun),
+        landing?.runId ?? null,
+        landing === null ? null : t.claims.length,
+        landingRounds,
+        facts?.diff?.files ?? null,
+        facts?.diff?.insertions ?? null,
+        facts?.diff?.deletions ?? null,
+        facts?.summary ?? null,
+        facts?.clipped == null ? null : JSON.stringify(facts.clipped),
+      ],
+    )
+  })
 }
 
-async function link(ctx: ProjectionContext, streamId: string, ticket: string): Promise<void> {
-  await ctx.query(
-    `insert into ticket_report_stream (stream_id, ticket) values ($1, $2)
+function link(ctx: ProjectionContextPort, streamId: string, ticket: string): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    yield* ctx.query(
+      `insert into ticket_report_stream (stream_id, ticket) values ($1, $2)
      on conflict (stream_id) do nothing`,
-    [streamId, ticket],
-  )
+      [streamId, ticket],
+    )
+  })
 }
 
-async function ticketOf(ctx: ProjectionContext, streamId: string): Promise<string | null> {
-  if (isTicketStream(streamId)) return streamId
-  const [row] = await ctx.query<{ ticket: string }>('select ticket from ticket_report_stream where stream_id = $1', [
-    streamId,
-  ])
-  return row ? row.ticket : null
+function ticketOf(ctx: ProjectionContextPort, streamId: string): Effect.Effect<string | null> {
+  return Effect.gen(function* () {
+    if (isTicketStream(streamId)) return streamId
+    const [row] = yield* ctx.query<{ ticket: string }>('select ticket from ticket_report_stream where stream_id = $1', [
+      streamId,
+    ])
+    return row ? row.ticket : null
+  })
 }
 
 /** The board's split of `Action` into the work and answering a refusal (`apps/board/src/lib/spend.ts`'s `purposeOf`). */
@@ -421,8 +430,9 @@ const blockingOf = (outcome: PayloadOf<'StepEnded'>['outcome']): number => {
 export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection => ({
   name: TICKET_REPORT_TABLE,
 
-  async create(ctx) {
-    await ctx.query(`
+  create(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(`
       create table if not exists ticket_report (
         ticket          text primary key,
         project         text,
@@ -453,180 +463,185 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         summary            text,
         summary_clipped    jsonb
       )`)
-    await ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
-    await ctx.query(
-      'create index if not exists ticket_report_landed_idx on ticket_report (outcome, outcome_at desc, ticket)',
-    )
-    // Which ticket a pass or chat stream is about — this projection's own, never `spend_stream`.
-    await ctx.query(`
+      yield* ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
+      yield* ctx.query(
+        'create index if not exists ticket_report_landed_idx on ticket_report (outcome, outcome_at desc, ticket)',
+      )
+      // Which ticket a pass or chat stream is about — this projection's own, never `spend_stream`.
+      yield* ctx.query(`
       create table if not exists ticket_report_stream (
         stream_id text primary key,
         ticket    text not null
       )`)
+    }).pipe(Effect.withSpan('projector.ticket_report.create'))
   },
 
-  async reset(ctx) {
-    await ctx.query('drop table if exists ticket_report')
-    await ctx.query('drop table if exists ticket_report_stream')
+  reset(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query('drop table if exists ticket_report')
+      yield* ctx.query('drop table if exists ticket_report_stream')
+    }).pipe(Effect.withSpan('projector.ticket_report.reset'))
   },
 
-  async reduce(events, ctx) {
-    let snapshot: readonly RateRow[] | null = null
+  reduce(events, ctx) {
+    return Effect.gen(function* () {
+      let snapshot: readonly RateRow[] | null = null
 
-    for (const event of events) {
-      // Which ticket's row this event touches, and what it does to it.
-      let ticket: string | null = null
-      let change: ((s: State, after: TicketState | null) => void) | null = null
+      for (const event of events) {
+        // Which ticket's row this event touches, and what it does to it.
+        let ticket: string | null = null
+        let change: ((s: State, after: TicketState | null) => void) | null = null
 
-      switch (event.type) {
-        case 'RunStarted': {
-          const d = event.data as PayloadOf<'RunStarted'>
-          await link(ctx, event.streamId, d.ticketId)
-          break
-        }
-
-        case 'DiscussionRequested': {
-          const d = event.data as PayloadOf<'DiscussionRequested'>
-          await link(ctx, chatStream(d.chatId), d.ticketId)
-          break
-        }
-
-        case 'TicketClaimed':
-        case 'TicketContinued': {
-          const d = event.data as PayloadOf<'TicketClaimed'>
-          // The stream belongs to this ticket whatever the reduce makes of the claim.
-          await link(ctx, d.runId, event.streamId)
-          change = (s, after) => {
-            // An interval opens only where the reduce holds this run: a claim `closed` absorbed, and a
-            // continuation of a run nobody claimed, open none (D6).
-            if (after?.lifecycle.status !== 'claimed' || after.lifecycle.runId !== d.runId) return
-            s.open.push({
-              openedSeq: event.seq.toString(),
-              runId: d.runId,
-              openedAt: event.at.toISOString(),
-              lifeSeq: null,
-              lifeAt: null,
-            })
+        switch (event.type) {
+          case 'RunStarted': {
+            const d = event.data as PayloadOf<'RunStarted'>
+            yield* link(ctx, event.streamId, d.ticketId)
+            break
           }
-          break
+
+          case 'DiscussionRequested': {
+            const d = event.data as PayloadOf<'DiscussionRequested'>
+            yield* link(ctx, chatStream(d.chatId), d.ticketId)
+            break
+          }
+
+          case 'TicketClaimed':
+          case 'TicketContinued': {
+            const d = event.data as PayloadOf<'TicketClaimed'>
+            // The stream belongs to this ticket whatever the reduce makes of the claim.
+            yield* link(ctx, d.runId, event.streamId)
+            change = (s, after) => {
+              // An interval opens only where the reduce holds this run: a claim `closed` absorbed, and a
+              // continuation of a run nobody claimed, open none (D6).
+              if (after?.lifecycle.status !== 'claimed' || after.lifecycle.runId !== d.runId) return
+              s.open.push({
+                openedSeq: event.seq.toString(),
+                runId: d.runId,
+                openedAt: event.at.toISOString(),
+                lifeSeq: null,
+                lifeAt: null,
+              })
+            }
+            break
+          }
+
+          case 'TicketLanded':
+            change = endIntervals
+            break
+
+          case 'WaitStarted':
+          case 'TicketReleased':
+          case 'TicketClosed':
+            change = endIntervals
+            break
+
+          case 'StepEnded': {
+            const d = event.data as PayloadOf<'StepEnded'>
+            ticket = (yield* ticketOf(ctx, d.runId)) ?? (yield* ticketOf(ctx, event.streamId))
+            if (d.outcome.step !== 'review') break
+            change = (s) => {
+              // The last review wins, a null too: an earlier summary describes a diff that is gone.
+              const r = reviewSummaryOf(d.outcome)
+              const facts = (s.byRun[d.runId] ??= { diff: null, summary: null, clipped: null })
+              facts.summary = r?.summary ?? null
+              facts.clipped = r?.clipped ?? null
+              s.reviews.push({
+                seq: event.seq.toString(),
+                at: event.at.toISOString(),
+                round: d.outcome.round,
+                blocking: blockingOf(d.outcome),
+                cleared: d.outcome.actions.every(cleared),
+              })
+            }
+            break
+          }
+
+          case 'RunProducedDiff': {
+            const d = event.data as PayloadOf<'RunProducedDiff'>
+            ticket = yield* ticketOf(ctx, event.streamId)
+            change = (s) => {
+              const facts = (s.byRun[event.streamId] ??= { diff: null, summary: null, clipped: null })
+              facts.diff = { files: d.files, insertions: d.insertions, deletions: d.deletions }
+            }
+            break
+          }
+
+          case 'IntegrationAttempted':
+          case 'IntegrationRefused':
+          case 'IntegrationSucceeded': {
+            const d = event.data as PayloadOf<'IntegrationAttempted'>
+            ticket = isTicketStream(d.ticketId) ? d.ticketId : isTicketStream(event.streamId) ? event.streamId : null
+            change = (s) => {
+              signOfLife(s, event, null)
+            }
+            break
+          }
+
+          case 'RunSpent': {
+            const d = event.data as PayloadOf<'RunSpent'>
+            ticket = yield* ticketOf(ctx, event.streamId)
+            const onPass = isAttemptStream(event.streamId)
+            let estimate: { usd: number } | null = null
+            if (d.costUsd === null) {
+              snapshot ??= ports.snapshot()
+              estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
+            }
+            change = (s) => {
+              const purpose = purposeOf(d.for)
+              const bill = (s.cost[purpose] ??= emptyCost())
+              if (d.costUsd !== null) {
+                bill.reportedCents += Math.round(d.costUsd * 100)
+                bill.reportedRuns += 1
+              } else if (estimate !== null) {
+                bill.estimatedUsd += estimate.usd
+                bill.estimatedRuns += 1
+              } else bill.unknown += 1
+
+              if (d.for._tag !== 'Action') return
+              if (onPass && !s.paid.includes(event.streamId)) s.paid.push(event.streamId)
+              if (d.for.round >= 1) {
+                const key = `${event.streamId}:${d.for.round}`
+                if (!s.rounds.includes(key)) s.rounds.push(key)
+              }
+            }
+            break
+          }
+
+          default:
+            break
         }
 
-        case 'TicketLanded':
-          change = endIntervals
-          break
+        // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not,
+        // so the state is current when the next lifecycle event arrives.
+        const onTicketStream = isTicketStream(event.streamId)
+        if (onTicketStream) ticket = event.streamId
 
-        case 'WaitStarted':
-        case 'TicketReleased':
-        case 'TicketClosed':
-          change = endIntervals
-          break
-
-        case 'StepEnded': {
-          const d = event.data as PayloadOf<'StepEnded'>
-          ticket = (await ticketOf(ctx, d.runId)) ?? (await ticketOf(ctx, event.streamId))
-          if (d.outcome.step !== 'review') break
-          change = (s) => {
-            // The last review wins, a null too: an earlier summary describes a diff that is gone.
-            const r = reviewSummaryOf(d.outcome)
-            const facts = (s.byRun[d.runId] ??= { diff: null, summary: null, clipped: null })
-            facts.summary = r?.summary ?? null
-            facts.clipped = r?.clipped ?? null
-            s.reviews.push({
-              seq: event.seq.toString(),
-              at: event.at.toISOString(),
-              round: d.outcome.round,
-              blocking: blockingOf(d.outcome),
-              cleared: d.outcome.actions.every(cleared),
-            })
-          }
-          break
-        }
-
-        case 'RunProducedDiff': {
-          const d = event.data as PayloadOf<'RunProducedDiff'>
-          ticket = await ticketOf(ctx, event.streamId)
-          change = (s) => {
-            const facts = (s.byRun[event.streamId] ??= { diff: null, summary: null, clipped: null })
-            facts.diff = { files: d.files, insertions: d.insertions, deletions: d.deletions }
-          }
-          break
-        }
-
-        case 'IntegrationAttempted':
-        case 'IntegrationRefused':
-        case 'IntegrationSucceeded': {
-          const d = event.data as PayloadOf<'IntegrationAttempted'>
-          ticket = isTicketStream(d.ticketId) ? d.ticketId : isTicketStream(event.streamId) ? event.streamId : null
-          change = (s) => {
-            signOfLife(s, event, null)
-          }
-          break
-        }
-
-        case 'RunSpent': {
-          const d = event.data as PayloadOf<'RunSpent'>
-          ticket = await ticketOf(ctx, event.streamId)
-          const onPass = isAttemptStream(event.streamId)
-          let estimate: { usd: number } | null = null
-          if (d.costUsd === null) {
-            snapshot ??= ports.snapshot()
-            estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
-          }
-          change = (s) => {
-            const purpose = purposeOf(d.for)
-            const bill = (s.cost[purpose] ??= emptyCost())
-            if (d.costUsd !== null) {
-              bill.reportedCents += Math.round(d.costUsd * 100)
-              bill.reportedRuns += 1
-            } else if (estimate !== null) {
-              bill.estimatedUsd += estimate.usd
-              bill.estimatedRuns += 1
-            } else bill.unknown += 1
-
-            if (d.for._tag !== 'Action') return
-            if (onPass && !s.paid.includes(event.streamId)) s.paid.push(event.streamId)
-            if (d.for.round >= 1) {
-              const key = `${event.streamId}:${d.for.round}`
-              if (!s.rounds.includes(key)) s.rounds.push(key)
+        // Anything else on a pass stream is a sign of life for the interval that opened it.
+        if (change === null && !onTicketStream && isAttemptStream(event.streamId)) {
+          ticket = yield* ticketOf(ctx, event.streamId)
+          if (ticket !== null) {
+            const { s, stored } = yield* load(ctx, ticket)
+            if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
+            if (signOfLife(s, event, event.streamId)) {
+              yield* save(ctx, s)
             }
           }
-          break
+          continue
         }
+        if (ticket === null) continue
+        if (change === null && !onTicketStream) continue
 
-        default:
-          break
+        const { s, stored } = yield* load(ctx, ticket)
+        let after: TicketState | null = null
+        if (onTicketStream) {
+          after = s.ticketState = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE).after
+        } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
+        change?.(s, after)
+        // A pass-stream event is also a sign of life, whatever else it did.
+        if (isAttemptStream(event.streamId)) signOfLife(s, event, event.streamId)
+        yield* save(ctx, s)
       }
-
-      // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not,
-      // so the state is current when the next lifecycle event arrives.
-      const onTicketStream = isTicketStream(event.streamId)
-      if (onTicketStream) ticket = event.streamId
-
-      // Anything else on a pass stream is a sign of life for the interval that opened it.
-      if (change === null && !onTicketStream && isAttemptStream(event.streamId)) {
-        ticket = await ticketOf(ctx, event.streamId)
-        if (ticket !== null) {
-          const { s, stored } = await load(ctx, ticket)
-          if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
-          if (signOfLife(s, event, event.streamId)) {
-            await save(ctx, s)
-          }
-        }
-        continue
-      }
-      if (ticket === null) continue
-      if (change === null && !onTicketStream) continue
-
-      const { s, stored } = await load(ctx, ticket)
-      let after: TicketState | null = null
-      if (onTicketStream) {
-        after = s.ticketState = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE).after
-      } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
-      change?.(s, after)
-      // A pass-stream event is also a sign of life, whatever else it did.
-      if (isAttemptStream(event.streamId)) signOfLife(s, event, event.streamId)
-      await save(ctx, s)
-    }
+    }).pipe(Effect.withSpan('projector.ticket_report.reduce'))
   },
 })
 

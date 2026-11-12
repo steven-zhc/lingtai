@@ -34,9 +34,8 @@
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
-import { promiseProjectionStore } from './store-face.ts'
 import { describeDrift } from './store.ts'
-import type { Projection, ProjectionContext, ProjectionDrift, ProjectionStore } from './store.ts'
+import type { Projection, ProjectionContextPort, ProjectionDrift, ProjectionsPort, ProjectionStore } from './store.ts'
 
 /**
  * Drift — what it is, how it is said, and the error that carries it — is
@@ -159,47 +158,60 @@ export function declaredColumns(sql: string): { table: string; columns: string[]
  * runs. It is also why `create` must not read its own query results — see the
  * note on `Projection.create`.
  */
-export async function declaredShape(projection: Projection): Promise<Map<string, string[]>> {
-  const declared = new Map<string, string[]>()
-  const recorder: ProjectionContext = {
-    async query(text: string) {
-      const table = declaredColumns(text)
-      if (table) declared.set(table.table, table.columns)
-      return []
-    },
-  }
-  await projection.create(recorder)
-  return declared
+export function declaredShape(projection: Projection): Effect.Effect<Map<string, string[]>> {
+  return Effect.gen(function* () {
+    const declared = new Map<string, string[]>()
+    const recorder: ProjectionContextPort = {
+      query: <T>(text: string) =>
+        Effect.sync(() => {
+          const table = declaredColumns(text)
+          if (table) declared.set(table.table, table.columns)
+          return [] as T[]
+        }),
+    }
+    yield* projection.create(recorder)
+    return declared
+  })
 }
 
 /** The comparison, against a store somebody else owns. */
-export async function shapeIn(projection: Projection, store: ProjectionStore): Promise<ProjectionShape> {
-  const declared = await declaredShape(projection)
-  const tables = [...declared.keys()]
-  if (tables.length === 0) {
-    return { projection: projection.name, matched: [], absent: [], drift: [] }
-  }
-
-  const live = await store.columnsOf(tables)
-
-  const matched: string[] = []
-  const absent: string[] = []
-  const drift: ProjectionDrift[] = []
-  for (const [table, columns] of declared) {
-    const have = live.get(table)
-    // Absent from the catalogue means the table does not exist, and a table
-    // that does not exist is not drifted — `create` makes it, at the current
-    // shape.
-    if (!have) {
-      absent.push(table)
-      continue
+export function shapeIn(
+  projection: Projection,
+  store: Pick<ProjectionsPort, 'columnsOf'>,
+): Effect.Effect<ProjectionShape> {
+  return Effect.gen(function* () {
+    const declared = yield* declaredShape(projection)
+    const tables = [...declared.keys()]
+    if (tables.length === 0) {
+      return { projection: projection.name, matched: [], absent: [], drift: [] }
     }
-    const missing = columns.filter((c) => !have.has(c))
-    const unexpected = [...have].filter((c) => !columns.includes(c)).sort()
-    if (missing.length === 0 && unexpected.length === 0) matched.push(table)
-    else drift.push({ table, missing, unexpected })
-  }
-  return { projection: projection.name, matched, absent, drift }
+
+    const live = yield* store.columnsOf(tables)
+
+    const matched: string[] = []
+    const absent: string[] = []
+    const drift: ProjectionDrift[] = []
+    for (const [table, columns] of declared) {
+      const have = live.get(table)
+      // Absent from the catalogue means the table does not exist, and a table
+      // that does not exist is not drifted — `create` makes it, at the current
+      // shape.
+      if (!have) {
+        absent.push(table)
+        continue
+      }
+      const missing = columns.filter((c) => !have.has(c))
+      const unexpected = [...have].filter((c) => !columns.includes(c)).sort()
+      if (missing.length === 0 && unexpected.length === 0) matched.push(table)
+      else drift.push({ table, missing, unexpected })
+    }
+    return { projection: projection.name, matched, absent, drift }
+  })
+}
+
+/** `shapeIn` over a promise store, for the promise runner (`projection.ts`) until the runner ticket. */
+export function shapeInFace(projection: Projection, store: ProjectionStore) {
+  return Effect.runPromise(shapeIn(projection, { columnsOf: (t) => Effect.promise(() => store.columnsOf(t)) }))
 }
 
 /**
@@ -208,15 +220,16 @@ export async function shapeIn(projection: Projection, store: ProjectionStore): P
  * Reads the catalogue and nothing else, which is the rule the doctor is built
  * on: a diagnostic that writes to the system of record is the wrong shape.
  */
-export function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
+export function projectionShapeEffect(projection: Projection, url?: string) {
   // `url` refines a Postgres connection and never picks the store: `lingtai
   // doctor` is the one caller that names one (#214), and a URL in an argument
   // must not open a store this machine did not choose (0056).
-  return Effect.runPromise(
-    withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) =>
-      Effect.promise(() => shapeIn(projection, promiseProjectionStore(p))),
-    ),
-  )
+  return withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) => shapeIn(projection, p))
+}
+
+/** The same, as a promise, for `lingtai doctor` until its row. */
+export function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
+  return Effect.runPromise(projectionShapeEffect(projection, url))
 }
 
 /** One line for a report: what was compared, and what it found. */

@@ -38,7 +38,8 @@ import type { Waker } from '@lingtai/event-store/wake'
 import { Effect } from 'effect'
 
 import { projectionStore, withStoreEffect } from './choose.ts'
-import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
+import { ProjectionShapeError, type ProjectionShape, shapeInFace } from './shape.ts'
+import { createFace, reduceFace, resetFace } from './store-face.ts'
 import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
 
 export type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
@@ -156,7 +157,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     if (!last) return
     const store = await landing()
     await store.transact(async (ctx: ProjectionContext) => {
-      await projection.reduce(events, ctx)
+      await reduceFace(projection, events, ctx)
       // The whole point: this is not a separate write. Fenced on `cursor`, so a
       // rebuild in any process that rewound the checkpoint refuses this batch
       // rather than have it carried to the head past unfolded history.
@@ -224,7 +225,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       failure = null
       const store = await landing()
       await store.transact(async (ctx) => {
-        await projection.create(ctx)
+        await createFace(projection, ctx)
         await store.register(ctx, projection.name)
       })
 
@@ -260,8 +261,8 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       await store.transact(async (ctx) => {
         // Remove first, then recreate. The other order drops what was just
         // built and leaves nothing behind.
-        await projection.reset(ctx)
-        await projection.create(ctx)
+        await resetFace(projection, ctx)
+        await createFace(projection, ctx)
         // Zeroed rather than deleted: the projection still exists and is still
         // being run, and a missing row would make it look like one nobody had
         // ever started.
@@ -281,7 +282,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     },
 
     async shape() {
-      return shapeIn(projection, await landing())
+      return shapeInFace(projection, await landing())
     },
 
     async lag() {

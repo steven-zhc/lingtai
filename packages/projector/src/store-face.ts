@@ -1,3 +1,4 @@
+import type { Envelope } from '@lingtai/domain'
 /**
  * The promise `ProjectionStore` as a face over `Projections` (0101 §7, #1046).
  *
@@ -16,6 +17,7 @@ import { Effect } from 'effect'
 
 import type {
   BacklogQuery,
+  Projection,
   ProjectionContext,
   ProjectionContextPort,
   ProjectionRow,
@@ -89,6 +91,24 @@ export function landedFace(p: ProjectionsPort, query: TicketReportLandedQuery) {
 
 export function closeFace(p: ProjectionsPort) {
   return Effect.runPromise(p.close())
+}
+
+/**
+ * A projection's three methods for the callers that are not moved: the promise
+ * runner (`projection.ts`) until the runner ticket, and the tests that reduce
+ * through a promise store. A reducer's throw is a defect, so the promise
+ * rejects with that very error and the transaction around it rolls back.
+ */
+export function createFace(projection: Projection, ctx: ProjectionContext) {
+  return Effect.runPromise(projection.create(fromPromiseContext(ctx)))
+}
+
+export function reduceFace(projection: Projection, events: readonly Envelope[], ctx: ProjectionContext) {
+  return Effect.runPromise(projection.reduce(events, fromPromiseContext(ctx)))
+}
+
+export function resetFace(projection: Projection, ctx: ProjectionContext) {
+  return Effect.runPromise(projection.reset(fromPromiseContext(ctx)))
 }
 
 /** The promise `ProjectionContext` a reducer holds, over the port's. */

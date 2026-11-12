@@ -174,7 +174,7 @@ export interface Projection {
    * (`shape.ts`). Recording returns no rows, so a `create` that branched on one
    * would be recorded wrong.
    */
-  create(ctx: ProjectionContext): Promise<void>
+  create(ctx: ProjectionContextPort): Effect.Effect<void>
 
   /**
    * **Removes** everything `create` made — dropped, not emptied.
@@ -188,7 +188,7 @@ export interface Projection {
    * Dropping is what makes the claim in `rebuild` true: a projection's shape is
    * free to change because changing it costs a rebuild rather than a migration.
    */
-  reset(ctx: ProjectionContext): Promise<void>
+  reset(ctx: ProjectionContextPort): Effect.Effect<void>
 
   /**
    * Reduces one batch, in `seq` order.
@@ -198,7 +198,7 @@ export interface Projection {
    * before the runner noticed will re-read the same events, and so will a
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
-  reduce(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>
+  reduce(events: readonly Envelope[], ctx: ProjectionContextPort): Effect.Effect<void>
 }
 
 export interface ProjectionLag {
