@@ -274,7 +274,7 @@ describe('follow, handler failures and reporters', () => {
             events: fromPromiseStore(store),
             waker: port,
             backoff: { baseMs: 1, capMs: 1 },
-            onError: (e, phase) => errors.push([e, phase]),
+            onError: (e: unknown, phase: string) => void errors.push([e, phase]),
             [which]: throwing,
           } as never,
           cell,
