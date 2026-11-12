@@ -119,7 +119,8 @@ budget.
     streams in after the page (GitHub's answers, a tab or section read when
     opened) is shown until then as a placeholder of the content's shape at its
     place: skeleton cards in a column of cards, skeleton lines in a body of
-    text, with a short label saying what is being asked (*asking GitHub…*). It
+    text, and no words: the shape is the whole placeholder, with no label
+    saying what is being asked, visible or for a reader of the text. It
     is sized from the last answer seen, when there was one, so the page does not
     jump when the answer arrives: on a project switch each column's cards are
     skeletons, as many as that column held for that project the last time it was
