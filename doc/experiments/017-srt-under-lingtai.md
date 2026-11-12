@@ -1,6 +1,6 @@
 # 017 — Does sandbox-runtime hold an agent the way 0.14 needs?
 
-**Run** 2026-11-12 · **Result** yes, with five things to build around and three
+**Run** 2026-11-12 (Codex on Linux re-run the same day, after a fresh login) · **Result** yes, with five things to build around and three
 for the operator to decide. This is the measurement
 [0.14.md](../design/0.14.md) puts first (S1). It was made by hand, before any
 ticket, on two machines. Nothing in the product changed.
@@ -12,7 +12,7 @@ ticket, on two machines. Nothing in the product changed.
 | `kernel.apparmor_restrict_unprivileged_userns` | `0` (already off on this machine) | — |
 | Node | 24.20.0 | 26.13.0 |
 | Claude Code | 2.1.278 | 2.1.312 |
-| Codex | 0.92.0 | 0.163.0 |
+| Codex | 0.92.0 installed; **0.167.2** installed under `~/srt-probe` and measured (0.92.0 is refused by the service for every model) | 0.163.0 |
 | srt | `@anthropic-ai/sandbox-runtime` 0.0.82, installed under `~/srt-probe`, outside every writable path | same |
 
 ## What was run
@@ -89,10 +89,11 @@ need write denies inside the grant (below).
 | `codex sandbox macos -- true` inside srt | — | **fails**, the same, rc 71 |
 | `bwrap` inside srt | **fails**, `No permissions to create new namespace` | — |
 | `codex sandbox linux -- true` inside srt | runs (rc 0; Codex uses Landlock, not a namespace) | — |
+| `codex exec --sandbox workspace-write` inside srt, told to write a file in the worktree | **cannot write** (it answered `FAILED`; no file) | — |
 
-So on macOS a runtime's own sandbox cannot run inside srt, which is decision 1
-in 0.14.md. On Linux Codex's own sandbox happens to nest, but one boundary is
-still the decision.
+So a runtime's own sandbox does not work inside srt on either platform: on
+macOS it cannot start, and on Linux Codex's starts but then cannot write even
+in the worktree. That is decision 1 in 0.14.md.
 
 ### The agents
 
@@ -100,7 +101,8 @@ still the decision.
 |---|---|---|
 | `claude -p` inside srt | **OK** | **OK**, once the token was fresh (below) |
 | Claude told to `cat` the canary and `touch ~/…` with `bypassPermissions` | both failed; it reported the file as absent and the write as `Read-only file system` | — |
-| `codex exec --sandbox danger-full-access` inside srt | not measured: harbor's Codex login has expired, outside srt too | **fails**: `workspace routing discovery failed` with `chatgpt.com` allowed |
+| `codex exec --sandbox danger-full-access` inside srt | **OK** (0.167.2) | **fails**: `workspace routing discovery failed` with `chatgpt.com` allowed |
+| Codex told to `cat` the canary and `touch ~/…` | both failed, `READ=1 WRITE=1` | — |
 | the same with `enableWeakerNetworkIsolation: true` | — | **OK** |
 
 - **Codex on macOS needs `trustd`.** It verifies TLS through the system's
@@ -134,8 +136,8 @@ still the decision.
   `packages/conductor/unit/conduct-before-the-claim.test.ts` *refuses before
   the claim when runtime.agent is not the runtime it was handed*.** It times
   out at 20 s inside srt twice out of two runs, and the file passes outside in
-  8 s. `--debug` showed no denial. Its cause is not found. It is the test whose
-  recipe names `codex`.
+  8 s. `--debug` showed no denial. The cause was found the same day (below,
+  *The test that fails only inside srt*).
 
 ### Two things the build gate has to work around
 
@@ -181,6 +183,65 @@ Read from the package, not built:
 - `bwrap`, `socat` and `rg` on Linux, and `rg` on macOS, stay host
   requirements.
 
+
+## The test that fails only inside srt
+
+Found on 2026-11-12, on harbor, after the run above.
+
+**A unit test spawns the machine's real `claude` and `codex`.** The test's
+recipe names `codex` at `runtime.agent` while the conductor dispatches
+`claude-code`
+(`packages/conductor/unit/conduct-before-the-claim.test.ts:299-316`). That
+puts `codex` among the second runtimes, so `runOnce` asks the real probe
+before it refuses:
+
+    const secondRuntimes = new Set<RuntimeId>(runtimesOf(recipe).filter((r) => r !== ownRuntime))
+    const dispatchable: readonly string[] =
+      secondRuntimes.size === 0
+        ? []
+        : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)())
+
+(`packages/conductor/src/conduct.ts:851-856`). `signedInHere` spawns
+`claude auth status` and `codex login status` with `runnableEnv({})`
+(`packages/conductor/src/projects.ts:100-114`), and each probe waits up to
+20 s (`packages/agent/src/auth.ts:110`). That is the test's own timeout. The
+option that keeps it out says what it is for: *A unit test that names one
+runtime never reaches it, which is what keeps the probe out of the half of the
+suite that may not spawn (0060 §1)* (`conduct.ts:516-520`). The two tests
+beside it pass `signedIn: async () => []` (`:359`, `:408`). This one does not.
+The refusal it asserts is on `runtime.agent` and needs no probe at all
+(`agentRefusal`'s first branch, `conduct.ts:432-440`).
+
+**Why the probe hangs inside srt.** `runnableEnv` keeps `HOME`, `LANG`,
+`LOGNAME`, `PATH`, `TMPDIR` and `USER`, so it drops the proxy variables srt
+sets (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and their lower-case forms).
+On Linux the proxy is the only way out of the sandbox's network namespace.
+Measured inside srt:
+
+| `claude auth status` (2.1.278) | |
+|---|---|
+| full environment | 2.7 s |
+| `PATH` and `HOME` only | **no answer; killed at 40 s** |
+| `PATH`, `HOME` and the proxy variables | 2.9 s |
+| `curl` with `PATH` and `HOME` only, for comparison | fails in 0.3 s (cannot resolve) |
+
+Lingtai's own probe inside srt gave the same: `claude` took 20,012 ms and
+returned *`claude auth status` did not answer in 20s*. Outside srt it took
+2,075 ms. `codex login status` answered in about 90 ms both ways.
+
+**Why it stayed hidden.** Outside a sandbox the probe answers in a second or
+two. On a machine without the binaries it fails at spawn at once. Either way
+the test is green, and nothing notices that a unit test started two
+processes. On harbor it also costs every `pnpm test` about 2 s. This
+`claude auth status` (2.1.278) even reaches the API: it answered with an API
+error rather than a sign-in state.
+
+**What it means beyond the test.** Anything Lingtai spawns with a filtered
+environment from inside a sandbox loses the network: a Lingtai under test in
+the build gate, or a Lingtai that runs inside a sandboxed step. So the
+product's wrap has to be applied after the environment is filtered, with srt's
+variables added by the wrap. The policy module (S3) must hold that order.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
@@ -200,14 +261,16 @@ Read from the package, not built:
 6. **Claude Code's token refresh inside srt** has to be reproduced and fixed,
    or it has to be proved that the refresh happens outside srt.
 7. **The build gate needs the package stores writable**, and Lingtai's own
-   `pnpm test` must be green inside srt before Lingtai opts in. One test is not
-   green yet.
-8. **Bundling is feasible**, with `apply-seccomp` extracted at start.
+   `pnpm test` must be green inside srt before Lingtai opts in. The one test
+   that is not is a test bug: it spawns the real runtimes (above). It is fixed
+   on its own, before S6.
+8. **The wrap goes outside the environment filter.** srt's proxy variables
+   are added after `runnableEnv` has chosen what a run gets, or every network
+   call a run makes hangs on Linux.
+9. **Bundling is feasible**, with `apply-seccomp` extracted at start.
 
 ## Not measured
 
-- Codex inside srt on Linux. harbor's Codex login has expired, and it fails
-  outside srt too.
 - A real Lingtai attempt: the hook, `guarded`'s fail-closed and the run log
   under srt. The socket test stands in for the hook.
 - Ubuntu 24.04's default AppArmor setting, since harbor already has it off.
