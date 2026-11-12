@@ -46,7 +46,7 @@ const openRunners: ProjectionRunner[] = []
 // contract against SQLite unconditionally.
 describe.skipIf(!postgresUnderTest())('against the real database', () => {
   function runStream(): string {
-    return streamId('run')
+    return streamId('pass')
   }
 
   /**
@@ -163,10 +163,19 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // behind, on a database the whole suite asserts is green.
       for (const table of CONTRACT_TABLES) await c.query(`drop table if exists "${table}"`)
       await c.query('delete from checkpoints where name = any($1::text[])', [[...CONTRACT_CHECKPOINTS]])
-      for (const table of ['task_view', 'finding_backlog', 'spend']) {
-        await c.query(`delete from "${table}" where project like 'esctest-pg-%'`)
+      // Only the tables that exist: this file creates none of them, so on a
+      // database no other file has touched they are absent, and a missing
+      // relation is not a failure of the cleanup. Any other error still throws.
+      for (const [table, where] of [
+        ['task_view', "project like 'esctest-pg-%'"],
+        ['finding_backlog', "project like 'esctest-pg-%'"],
+        ['spend', "project like 'esctest-pg-%'"],
+        ['spend_stream', "ticket like 'ticket-esctest-pg-%'"],
+      ] as const) {
+        const found = await c.query<{ rel: string | null }>('select to_regclass($1) as rel', [`public."${table}"`])
+        if (found.rows[0]?.rel === null) continue
+        await c.query(`delete from "${table}" where ${where}`)
       }
-      await c.query(`delete from spend_stream where ticket like 'ticket-esctest-pg-%'`)
     })
   })
 
@@ -196,7 +205,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // needs the project and the issue to be readable out of the id — a card is
       // found by project, and `parseTicketStream` splits at the last hyphen.
       stream(kind, suffix) {
-        const id = `${kind}-${project}-${suffix}`
+        const id = kind === 'wi' ? `ticket-${project}-${suffix}` : `pass-${project}-${suffix}`
         created.add(id)
         return id
       },
