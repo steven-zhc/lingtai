@@ -3,7 +3,7 @@
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
     "until": "#790",
-    "why": "every promise `Action` holder — `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` — until row 7 builds ports"
+    "why": "the tests in packages/actions and packages/conductor that call `action.run` on a promise `Action` — `conduct.ts` builds ports and calls no `create<Kind>Action` (#1056), so nothing else holds one"
   },
   {
     "file": "packages/actions/src/action.ts",
