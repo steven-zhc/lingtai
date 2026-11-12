@@ -321,29 +321,64 @@ function Counted({
   return <Said said={bearing(socket, health, code, use(runnable))} />
 }
 
+/** What waits on the code's news and the day's reading, both read under `Live`'s outer boundary. */
+function Answered({
+  socket,
+  health,
+  code,
+  near,
+  runnable,
+  projectKey,
+}: {
+  socket: 'connecting' | 'open' | 'trouble'
+  health: Health | null
+  code: Promise<CodeNews | null>
+  near: Promise<string | null>
+  runnable: Promise<number | null>
+  projectKey: string
+}) {
+  const news = use(code)
+  const closeTo = use(near)
+  return (
+    <>
+      <Suspense key={`runnable:${projectKey}`} fallback={<Said said={bearing(socket, health, news, null)} />}>
+        <Counted socket={socket} health={health} code={news} runnable={runnable} />
+      </Suspense>
+      {/* Today's spend, only near the ceiling, after whatever the bearing said
+          and never instead of it. The fail colour, never amber. */}
+      {closeTo ? <span className="near">{closeTo}</span> : null}
+    </>
+  )
+}
+
 /**
- * `runnable` is the Queued column's own count, as a promise: the subscription
- * stays mounted above the boundary and only the drawing waits for GitHub, so
- * the `EventSource` is not closed and reopened when the count arrives.
+ * `code`, `near` and `runnable` are promises: the subscription stays mounted
+ * above the boundaries and only the drawing waits, so the `EventSource` is not
+ * closed and reopened when an answer arrives or the project changes.
+ *
+ * **Both boundaries are keyed by `projectKey`** (#1037). An unkeyed boundary
+ * that already revealed its content holds a navigation until its read resolves,
+ * and `runnable` waits on GitHub. While loading the dot is a pulse, never a
+ * tone: a green dot drawn before the code's news is in would be a claim.
  */
 export function Live({
   code,
   near,
   runnable,
+  projectKey,
 }: {
-  code: CodeNews | null
-  near: string | null
+  code: Promise<CodeNews | null>
+  near: Promise<string | null>
   runnable: Promise<number | null>
+  projectKey: string
 }) {
   const { socket, health } = useFollow()
   return (
-    <>
-      <Suspense fallback={<Said said={bearing(socket, health, code, null)} />}>
-        <Counted socket={socket} health={health} code={code} runnable={runnable} />
-      </Suspense>
-      {/* Today's spend, only near the ceiling, after whatever the bearing said
-          and never instead of it. The fail colour, never amber. */}
-      {near ? <span className="near">{near}</span> : null}
-    </>
+    <Suspense
+      key={`health:${projectKey}`}
+      fallback={<span className="dot ct-pulse" role="img" aria-label="reading the log" />}
+    >
+      <Answered socket={socket} health={health} code={code} near={near} runnable={runnable} projectKey={projectKey} />
+    </Suspense>
   )
 }

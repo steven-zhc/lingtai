@@ -2,7 +2,7 @@
  * `dayReading`, the pure half of the board's day reading: the fetched-prices
  * note is never in `text` (#677) nor the footer's figures.
  */
-import { renderToStaticMarkup } from 'react-dom/server'
+import { prerender } from 'react-dom/static'
 import { describe, expect, it, vi } from 'vitest'
 
 import { Live } from '../src/app/live.tsx'
@@ -72,18 +72,24 @@ describe('nearCeiling', () => {
 })
 
 describe('Live', () => {
-  const html = (near: string | null) =>
-    renderToStaticMarkup(<Live code={null} near={near} runnable={Promise.resolve(null)} />)
+  // `prerender` and not `renderToStaticMarkup`: the answers are promises read
+  // under boundaries, and the static renderer draws their fallbacks instead.
+  const html = async (near: string | null) => {
+    const { prelude } = await prerender(
+      <Live code={Promise.resolve(null)} near={Promise.resolve(near)} runnable={Promise.resolve(null)} projectKey="" />,
+    )
+    return new Response(prelude).text()
+  }
 
-  it('draws the sentence after the dot, in .near, without changing the dot', () => {
-    const withNear = html('today $150.00 + ~$0.00 of $200.00')
+  it('draws the sentence after the dot, in .near, without changing the dot', async () => {
+    const withNear = await html('today $150.00 + ~$0.00 of $200.00')
     expect(withNear).toContain('<span class="near">today $150.00 + ~$0.00 of $200.00</span>')
     expect(withNear.indexOf('class="dot')).toBeLessThan(withNear.indexOf('class="near"'))
-    expect(withNear.replace(/<span class="near">.*<\/span>/, '')).toBe(html(null))
+    expect(withNear.replace(/<span class="near">.*<\/span>/, '')).toBe(await html(null))
   })
 
-  it('says nothing extra without one', () => {
-    expect(html(null)).not.toContain('near')
+  it('says nothing extra without one', async () => {
+    expect(await html(null)).not.toContain('near')
   })
 })
 

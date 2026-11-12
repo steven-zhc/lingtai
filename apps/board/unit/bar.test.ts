@@ -217,10 +217,15 @@ describe("the bar's amber", () => {
   const barClasses = (() => {
     const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), 'utf8')
     const page = read('page.tsx')
-    const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+    const bar = page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">'))
     expect(bar.length).toBeGreaterThan(0)
+    // The rail's late parts (the paused chip, the drain, the headline) stream in
+    // `RailTail`, and the filter's and the actions' slots are parts of their own.
+    const late = page.slice(page.indexOf('async function MenuRows'), page.indexOf('async function BannerPart'))
+    expect(late.length).toBeGreaterThan(0)
     const sources = [
       bar,
+      late,
       read('bar.tsx'),
       read('paused.tsx'),
       read('draining.tsx'),
@@ -440,7 +445,10 @@ describe('health keeps its command apart from its sentence (#904)', () => {
 
 describe('the home bar in page.tsx (#904)', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
-  const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+  // The bar's markup and the rail's late parts, which stream in `RailTail`.
+  const bar =
+    page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">')) +
+    page.slice(page.indexOf('async function PausedPart'), page.indexOf('async function BannerPart'))
   expect(bar.length).toBeGreaterThan(0)
 
   it('has no queued segment and no quiet headline', () => {

@@ -23,10 +23,90 @@
  * arguments and all three states are assertable without a configured App.
  */
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
 
 import { FilterMenu } from './filter-menu'
+
+/** Where `+` lands and why: step 0 before the App answers, the picker after. */
+const addTarget = (app: boolean) => ({
+  where: app ? '/setup/repository' : '/setup/github-app',
+  why: app ? 'add a repository' : 'create the GitHub App, then install it',
+})
+
+/** The `+` beside the menu. Needs only `app`, so the shell draws it before any read. */
+export function AddProject({ app }: { app: boolean }) {
+  const { where, why } = addTarget(app)
+  return (
+    <Link className="addp" href={where} title={why} aria-label={why}>
+      +
+    </Link>
+  )
+}
+
+/**
+ * What is inside the menu: *all projects* and a row per repository, or — with
+ * none configured — the link to setup, the same object saying *there is nothing
+ * here yet* (#169). Split from the summary so the home page can draw the
+ * summary at once and stream these rows.
+ */
+export function ProjectRows({
+  filters,
+  only,
+  app,
+  registered,
+  locks,
+}: {
+  filters: string[]
+  only: string | undefined
+  app: boolean
+  registered: readonly string[]
+  locks: LockMap
+}) {
+  const { where, why } = addTarget(app)
+  // What choosing a row gives, said once; the text is per project.
+  const hint = (p: string): string | null =>
+    registered.includes(p) ? `recipe · ${isPaused(locks.get(p)) ? 'resume' : 'pause'}` : null
+  const current = { 'aria-current': 'page' } as const
+
+  if (filters.length === 0) {
+    return (
+      <Link className="tab" href={where} title={why}>
+        no project configured
+      </Link>
+    )
+  }
+
+  return (
+    <div className="menu pm">
+      {filters.length > 1 ? (
+        <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
+          all projects
+        </Link>
+      ) : null}
+      {filters.map((p) => (
+        <Link
+          key={p}
+          className={`tab prj${only === p ? ' on' : ''}`}
+          href={`/?project=${encodeURIComponent(p)}`}
+          {...(only === p ? current : {})}
+        >
+          {p}
+          {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}
+          {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+/** The summary the filter wears: the project in view, or `all projects`. */
+export const filterSummary = (label: ReactNode): ReactNode => (
+  <>
+    {label} <span aria-hidden="true">▾</span>
+  </>
+)
 
 /**
  * The slot, in its three states.
@@ -50,63 +130,17 @@ export function Projects({
   /** What holds each project: a paused one is marked, never explained (0126 §8). */
   locks: LockMap
 }) {
-  // Step 0 is create the App, install it, add a repository; once the App
-  // answers, the picker is the rest of it and the first step is done.
-  const where = app ? '/setup/repository' : '/setup/github-app'
-  const why = app ? 'add a repository' : 'create the GitHub App, then install it'
-
-  // What choosing a row gives, said once; the text is per project.
-  const hint = (p: string): string | null =>
-    registered.includes(p) ? `recipe · ${isPaused(locks.get(p)) ? 'resume' : 'pause'}` : null
-
   // Nothing configured is the one board with somewhere to go, and it is the
-  // same object rather than a fourth one: the slot already says *there is
-  // nothing here yet*, so the sentence is the link (#169).
-  if (filters.length === 0) {
-    return (
-      <Link className="tab" href={where} title={why}>
-        no project configured
-      </Link>
-    )
-  }
-
-  // The summary names the project in view; on `all` there is none to name.
-  const label = only ?? 'all projects'
-  const current = { 'aria-current': 'page' } as const
+  // same object rather than a fourth one (#169).
+  if (filters.length === 0)
+    return <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} />
 
   return (
     <>
-      <FilterMenu
-        className="filter"
-        summary={
-          <>
-            {label} <span aria-hidden="true">▾</span>
-          </>
-        }
-      >
-        <div className="menu pm">
-          {filters.length > 1 ? (
-            <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
-              all projects
-            </Link>
-          ) : null}
-          {filters.map((p) => (
-            <Link
-              key={p}
-              className={`tab prj${only === p ? ' on' : ''}`}
-              href={`/?project=${encodeURIComponent(p)}`}
-              {...(only === p ? current : {})}
-            >
-              {p}
-              {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}
-              {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
-            </Link>
-          ))}
-        </div>
+      <FilterMenu className="filter" summary={filterSummary(only ?? 'all projects')}>
+        <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} />
       </FilterMenu>
-      <Link className="addp" href={where} title={why} aria-label={why}>
-        +
-      </Link>
+      <AddProject app={app} />
     </>
   )
 }

@@ -141,7 +141,7 @@ describe('footer source', () => {
 
 describe('home page', () => {
   const page = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
-  const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">'))
   expect(bar.length).toBeGreaterThan(0)
 
   it('has no reading or /report link in the bar, and hands Footer to the frame', () => {
@@ -149,7 +149,7 @@ describe('home page', () => {
     expect(bar).not.toContain('/report')
     expect(bar).not.toContain('spendChip')
     // The frame (#939) renders it after `</main>`; the page only hands it over.
-    expect(page).toMatch(/<HomeFrame\s+footer=\{\s*<Footer/)
+    expect(page).toMatch(/<HomeFrame\s+footer=\{[\s\S]*?<FooterPart/)
   })
 })
 

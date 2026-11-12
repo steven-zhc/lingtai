@@ -147,3 +147,30 @@ function Currency({ lags }: { lags: readonly FooterLag[] | null }) {
     </span>
   )
 }
+
+/**
+ * The footer's frame while the log is being read: every figure is the pulse,
+ * never `$0` (the-bar.md: *unknown said and never $0*). The home is known
+ * without a read and is drawn.
+ */
+export function FooterPending({ home }: { home: { path: string; shown: string } }) {
+  return (
+    <footer className="footer">
+      <span className="spend">
+        <span>Today</span>
+        <span className="figures">
+          <span className="ct-pulse" aria-hidden="true" />
+        </span>
+      </span>
+      <span>
+        <span className="ct-pulse" aria-hidden="true" /> landed
+      </span>
+      <span className="currency">
+        <span className="ct-pulse" aria-hidden="true" />
+      </span>
+      <span className="home-at mono" title={`${home.path} — the Lingtai home this board reads`}>
+        home <b>{home.shown}</b>
+      </span>
+    </footer>
+  )
+}
