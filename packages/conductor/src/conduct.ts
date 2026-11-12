@@ -1595,6 +1595,42 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let mergeCommit: string | null = null
       const landedAt = (): string | null => mergeCommit
+      /**
+       * **A landing that finished is recorded even when the pass was interrupted
+       * after it** (#1056). The lane makes the push and the merge uninterruptible,
+       * but the interruption then takes effect before the pass reaches its own
+       * `TicketLanded` append, and the outer finalizer would give back an item
+       * whose diff is already on the base. Runs on every exit of this scope; on a
+       * normal ending `released` is already true and it does nothing.
+       */
+      yield* Effect.addFinalizer(() =>
+        Effect.suspend(() => {
+          const merged = mergeCommit
+          if (merged === null || released || onStream === null) return Effect.void
+          released = true
+          return Effect.promise(() =>
+            appendNow(ticketId, [
+              {
+                type: 'TicketLanded',
+                actor: 'conductor',
+                data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
+              },
+            ]),
+          ).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                didLand = true
+              }),
+            ),
+            // An append that did not land leaves the item to the release below.
+            Effect.catchCause(() =>
+              Effect.sync(() => {
+                released = false
+              }),
+            ),
+          )
+        }),
+      )
       /** The tree, once `admit`'s `worktree:` action has cut it. */
       let worktree: Worktree | null = null
       /**

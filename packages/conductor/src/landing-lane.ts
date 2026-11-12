@@ -53,10 +53,15 @@ export function createLandingLane(): LandingLane {
   return {
     through(key, holder, hooks, land) {
       const acquire = Effect.gen(function* () {
-        const before = tails.get(key)
-        const done = yield* Deferred.make<void>()
-        const mine: Tail = { done, holder }
-        tails.set(key, mine)
+        // Read and written in one synchronous step: a yield between `get` and
+        // `set` lets a second caller capture the same predecessor.
+        const { before, mine, done } = yield* Effect.sync(() => {
+          const before = tails.get(key)
+          const done = Deferred.makeUnsafe<void>()
+          const mine: Tail = { done, holder }
+          tails.set(key, mine)
+          return { before, mine, done }
+        })
         if (before !== undefined) {
           // A refused append must not strand the callers queued behind us, and
           // must not let us land beside the holder either: the predecessor is

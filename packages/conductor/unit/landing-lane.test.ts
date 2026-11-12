@@ -240,4 +240,33 @@ describe('the landing lane', () => {
       }),
     )
   })
+
+  it('admits one landing at a time when many arrive together', async () => {
+    const peak = await Effect.runPromise(
+      Effect.gen(function* () {
+        const lane = createLandingLane()
+        let inside = 0
+        let most = 0
+        const one = (n: number) =>
+          lane.through(
+            'k',
+            { runId: `r${n}`, issue: n },
+            noWait,
+            Effect.gen(function* () {
+              inside += 1
+              most = Math.max(most, inside)
+              yield* settle
+              inside -= 1
+            }),
+          )
+        yield* Effect.forEach(
+          Array.from({ length: 10 }, (_, n) => n),
+          one,
+          { concurrency: 'unbounded' },
+        )
+        return most
+      }),
+    )
+    expect(peak).toBe(1)
+  })
 })

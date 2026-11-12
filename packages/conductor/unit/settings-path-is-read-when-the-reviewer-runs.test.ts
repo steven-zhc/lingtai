@@ -7,6 +7,8 @@
  * all. The pass builds the list `actionsAt` answers for `proposed` before `admit`
  * has cut anything, and the reviewer's request still carries the path `cut` wrote.
  */
+import { readFile } from 'node:fs/promises'
+
 import type { Runtime } from '@lingtai/agent'
 import { describe, expect, it } from 'vitest'
 
@@ -45,5 +47,17 @@ describe('the reviewer built before the cut', () => {
     expect(did.some((line) => line.startsWith('unhookedSettings review'))).toBe(true)
     expect(asked.length).toBeGreaterThan(0)
     for (const path of asked) expect(path).toMatch(/\.review\.settings\.json$/)
+  })
+})
+
+describe('the deps the reviewer is built over', () => {
+  // `actionsAt` is asked at each step's visit, so the behaviour above only shows
+  // the late read when the reviewer is built after `admit`. A reviewer built
+  // before the cut — the ticket's other case — is held by the shape that makes
+  // it safe: the path is a getter, never a value copied when the deps are built.
+  it('holds settingsPath as a getter that reads the path the cut writes', async () => {
+    const text = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
+    const deps = text.slice(text.indexOf('const stepDeps: ActionPortDeps = {'))
+    expect(deps).toMatch(/get settingsPath\(\) \{\s*return reviewSettingsPath/)
   })
 })
