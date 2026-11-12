@@ -621,7 +621,7 @@ export async function conductorTurn(options: ConductOptions = {}): Promise<TurnO
 
   // Read once for the whole pass. A request that arrives mid-pass is answered
   // by the next one — which the append itself triggers.
-  const control = await readControl(undefined, 0, options.controlWriter ? { writer: options.controlWriter } : {})
+  const control = await readControl(undefined, options.controlWriter ? { writer: options.controlWriter } : {})
 
   const registered = await loadProjects()
   const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)

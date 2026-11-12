@@ -166,7 +166,7 @@ export interface StreamQuery {
  */
 export interface DaemonStore {
   /**
-   * The log. `readControl`, `controlWatermark`, `pauseConductor` and the rest
+   * The log. `readControl`, `controlWatermark` and the rest
    * go through this, which is what makes the beacon and the control stream one
    * interface rather than two.
    */

@@ -7,7 +7,6 @@ import { readControl, readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   emptyControl,
-  evaluateControl,
   chatStream,
   reduceChat,
   reduceTicket,
@@ -1698,8 +1697,8 @@ export function heldRunOf(life: TicketLifecycle): string | null {
  * layout's reductions and the queue's `paused` (0118 §2). Never rejects.
  */
 const readConductor = cache(() =>
-  timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })).catch(() =>
-    evaluateControl(emptyControl, new Date()),
+  timed('events.control', async () => readControl(undefined, { writer: await boardWriterOrNone() })).catch(
+    () => emptyControl,
   ),
 )
 

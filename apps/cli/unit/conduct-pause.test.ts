@@ -51,11 +51,14 @@ describe('a pass across several projects', () => {
       work: async (project, where) => {
         entered.push(project.project!)
         where.ref = 'main'
-        // What `standDownConductor` appends when a run never started: the
-        // conductor's own pause, with a time on it.
-        const until = new Date(Date.now() + 3_600_000).toISOString()
+        // What `pauseConductorOnce` appends over a tier a runtime cannot provide:
+        // the conductor's own pause, the one that stops every project.
         await store.append(CONTROL_STREAM, (await store.read(CONTROL_STREAM)).length, [
-          { type: 'ConductorPaused', actor: 'conductor', data: { by: 'lingtai', reason: 'the weekly limit', until } },
+          {
+            type: 'ConductorPaused',
+            actor: 'conductor',
+            data: { by: 'lingtai', reason: 'the weekly limit', cause: 'setup', holdsAcrossStarts: true },
+          },
         ])
         return 'looked'
       },

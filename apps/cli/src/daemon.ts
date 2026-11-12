@@ -185,8 +185,8 @@ export function startLine(
 export function daemonControlRead(
   writer: Pick<SnapshotWriter, 'offer'> | null,
   read: typeof readControl = readControl,
-): (since?: number) => Promise<ControlState> {
-  return (since = 0) => read(undefined, since, writer ? { writer } : {})
+): () => Promise<ControlState> {
+  return () => read(undefined, writer ? { writer } : {})
 }
 
 /**
@@ -491,23 +491,19 @@ export async function daemonCommand(
     started.daemon.stop()
   }
 
-  // **Where the control stream was when this daemon started** (`#159`). A pause
-  // it obeys is read from here, so one appended before it began belongs to the
-  // daemon before it and not to this one. **A shutdown is not scoped by it any
-  // more** (0126): a request is ended by the next `ConductorStarted`, and the
-  // watermark survives only as the line `recordStart` decides by — at or below
-  // it, the request was asked of an earlier process and the record ends it;
-  // above it, it is this daemon's to obey. **One pause outlives this watermark** (`#405`): a `ConductorPaused`
-  // the conductor itself appends over a tier the setup cannot provide carries
-  // `holdsAcrossStarts`, and `readControl` (`packages/daemon/src/control.ts`)
-  // obeys it whatever `since` says, because a restart loads the same setup
-  // that could not provide the tier. `lingtai resume` is what lifts that one.
+  // **Where the control stream was when this daemon started** (`#159`).
+  // A shutdown is not scoped by it (0126): a request is ended by the next
+  // `ConductorStarted`, and the watermark survives only as the line `recordStart`
+  // decides by — at or below it, the request was asked of an earlier process and
+  // the record ends it; above it, it is this daemon's to obey. **The one pause
+  // left is the setup's, and it holds across starts** (`#405`): a restart loads
+  // the same setup that could not provide the tier, so every read of it is the
+  // whole stream's. `lingtai resume` is what lifts it.
   //
   // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
   // after the lock and the projections, and a `service shutdown` appended in
   // that gap was below the watermark of the only daemon holding the lock — so
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
-  const since = started.since
   const triageHashes = new Map<string, string>()
   // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
   const locked = lockedBy(makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) }))
@@ -558,7 +554,7 @@ export async function daemonCommand(
     const claiming = (): Promise<string | null> => {
       const before = notTakingWork(started.daemon.stoppedProjections)
       if (before !== null) return Promise.resolve(before)
-      return pausedSentence({ control: () => controlRead(since) }).then(
+      return pausedSentence({ control: () => controlRead() }).then(
         (paused) => notTakingWork(started.daemon.stoppedProjections) ?? paused,
       )
     }
@@ -601,7 +597,7 @@ export async function daemonCommand(
         // Later reads are the whole stream's: this daemon's own record has ended
         // everything from before it. Reaching a request here means somebody
         // asked *this* daemon to stop, and they know they did.
-        const control = await controlRead(since)
+        const control = await controlRead()
         asked = control.shutdown
         return asked ? `asked by ${asked.by} — ${asked.reason}` : null
       },
@@ -663,18 +659,11 @@ export async function daemonCommand(
         }
       },
     })
-    // **Scoped, like the loop's** (`#159`). It used to reduce the whole stream,
-    // so a daemon that had just started announced a pause from before it
-    // existed and then took work anyway — the report and the loop disagreeing
-    // about the same question, which is worse than either answer.
-    //
-    // A pause this daemon *will* obey is one somebody made after it started —
-    // or, since `#405`, one the conductor marked `holdsAcrossStarts` before it
-    // started, because `readControl` merges that one in whatever `since` says
-    // — and that is the whole of what is worth printing here. `lingtai status`
-    // keeps the unscoped read, because it answers *what is standing* rather
-    // than *what will this process do*.
-    const control = await controlRead(since)
+    // The whole stream's, like the loop's: the one pause left is the setup's,
+    // and it holds across starts, so a daemon that has just started announces
+    // it and obeys it. `lingtai status` answers *what is standing* from the
+    // same state.
+    const control = await controlRead()
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
     if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
@@ -964,10 +953,10 @@ async function restartSteps(
 /**
  * What the daemon's `paused` callback answers: the control stream's pause, a
  * sentence either way. The day's ceiling is not asked here any more — it is a
- * lock, asked through the guard per project (#1004) — and #1012 and #1013 delete
- * this with the pause it reads.
+ * lock, asked through the guard per project (#1004). The pause it reads is the
+ * setup's, the only one the control reducer still makes (#1013).
  */
-function pausedSentence(ports: {
+export function pausedSentence(ports: {
   control: () => Promise<{ paused: boolean; by?: string | null; reason?: string | null }>
 }): Promise<string | null> {
   return ports.control().then(

@@ -1,7 +1,7 @@
 import { makeGuard } from '@lingtai/daemon'
 /** `lingtai pause` / `resume` / `now` over a memory store (#992). */
-import { pauseConductor, readControl, requestShutdown } from '@lingtai/daemon/control'
-import { CONTROL_STREAM, accountStream, projectStream, reduceProject } from '@lingtai/domain'
+import { readControl, requestShutdown } from '@lingtai/daemon/control'
+import { CONTROL_STREAM, accountStream, parsePayload, projectStream, reduceProject } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -9,6 +9,23 @@ import { describe, expect, it } from 'vitest'
 import { accountLimits, pausedProjects } from '../src/doctor.ts'
 import { nowVerdict } from '../src/now.ts'
 import { pauseProjects, refuseIfLocked, resumeProjects } from '../src/project-pause.ts'
+
+/** The setup's pause, the one conductor-wide pause left, appended as `pauseConductorOnce` does. */
+async function setupPause(store: ReturnType<typeof createMemoryEventStore>, reason: string): Promise<void> {
+  await store.append(CONTROL_STREAM, await store.head(CONTROL_STREAM), [
+    {
+      type: 'ConductorPaused',
+      actor: 'conductor',
+      data: parsePayload('ConductorPaused', {
+        by: 'lingtai',
+        reason,
+        until: null,
+        cause: 'setup',
+        holdsAcrossStarts: true,
+      }),
+    },
+  ])
+}
 
 async function world(names: string[] = ['lingtai', 'other']) {
   const store = createMemoryEventStore()
@@ -84,13 +101,27 @@ describe('lingtai resume [project]', () => {
   it('bare resume lifts paused projects and a standing ConductorPaused', async () => {
     const w = await world()
     await Effect.runPromise(pauseProjects('lingtai', 'human:a', w.options))
-    await pauseConductor('human:a', 'because', w.store)
+    await setupPause(w.store, 'because')
     w.lines.length = 0
     await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
     expect(w.lines).toContain('lingtai: resumed')
-    expect(w.lines.join('\n')).toContain('lifted the conductor-wide pause (cause person)')
+    expect(w.lines.join('\n')).toContain("lifted the setup's pause — because")
     expect((await w.store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['ConductorPaused', 'ConductorResumed'])
     expect(await w.types('other')).toEqual(['ProjectConfigured'])
+  })
+
+  it("bare resume reads a person's old ConductorPaused as nothing standing", async () => {
+    const w = await world()
+    await w.store.append(CONTROL_STREAM, 0, [
+      {
+        type: 'ConductorPaused',
+        actor: 'human:a',
+        data: parsePayload('ConductorPaused', { by: 'human:a', reason: 'old', until: null, cause: 'person' }),
+      },
+    ])
+    await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
+    expect(w.lines).toEqual(['nothing to resume'])
+    expect((await w.store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['ConductorPaused'])
   })
 
   it('bare resume with nothing standing appends nothing', async () => {
@@ -100,11 +131,11 @@ describe('lingtai resume [project]', () => {
     expect(await w.store.read(CONTROL_STREAM)).toEqual([])
   })
 
-  it('reports the pause it lifted, not the one it first read, when the ceiling pauses in between', async () => {
+  it('reports the pause it lifted, not the one it first read, when the setup pauses in between', async () => {
     const w = await world()
     const real = w.store.head.bind(w.store)
     let raced = false
-    // A drain stands, and the ceiling's pause lands before the first read: the append at the stale head is retried.
+    // A drain stands, and the setup's pause lands before the first read: the append at the stale head is retried.
     await requestShutdown('human:a', 'x', null, w.store)
     const store = Object.assign(Object.create(w.store), {
       head: async (s: string) => {
@@ -117,9 +148,10 @@ describe('lingtai resume [project]', () => {
               actor: 'conductor',
               data: {
                 by: 'lingtai',
-                reason: 'day ceiling',
-                until: new Date(Date.now() + 3_600_000).toISOString(),
-                cause: 'day-ceiling',
+                reason: 'no tier',
+                until: null,
+                cause: 'setup',
+                holdsAcrossStarts: true,
               },
             },
           ])
@@ -128,7 +160,7 @@ describe('lingtai resume [project]', () => {
       },
     })
     await Effect.runPromise(resumeProjects(undefined, 'human:a', { ...w.options, store }))
-    expect(w.lines.join('\n')).toContain("also lifted today's spend ceiling")
+    expect(w.lines.join('\n')).toContain("lifted the setup's pause — no tier")
     // A resume is about the pause: the drain is still standing, and unmentioned.
     expect(w.lines.join('\n')).not.toContain('shutdown request')
     expect((await readControl(w.store)).shutdown).not.toBeNull()
@@ -142,21 +174,6 @@ describe('lingtai resume [project]', () => {
     expect((await w.store.read(CONTROL_STREAM)).length).toBe(before.length)
     expect(w.lines.join('\n')).toContain('nothing to resume')
     expect(w.lines.join('\n')).not.toContain('shutdown request')
-  })
-
-  it('says the ceiling is waived when it lifts the day ceiling pause', async () => {
-    const w = await world()
-    const until = new Date(Date.now() + 3_600_000)
-    await w.store.append(CONTROL_STREAM, 0, [
-      {
-        type: 'ConductorPaused',
-        actor: 'conductor',
-        data: { by: 'lingtai', reason: 'day ceiling', until: until.toISOString(), cause: 'day-ceiling' },
-      },
-    ])
-    await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
-    expect(w.lines.join('\n')).toContain("also lifted today's spend ceiling")
-    expect(w.lines.join('\n')).toContain('it is not checked again today')
   })
 })
 

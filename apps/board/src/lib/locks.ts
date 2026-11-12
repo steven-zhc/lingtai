@@ -47,7 +47,7 @@ export const readRegistered = cache(() => loadProjects())
  * Not caught: a caller that cannot say what it failed to read must not draw
  * "nothing holds" from it (#77). `readProjectLocks` catches it for itself.
  */
-export const readControlOnce = cache(async () => readControl(undefined, 0, { writer: await boardWriterOrNone() }))
+export const readControlOnce = cache(async () => readControl(undefined, { writer: await boardWriterOrNone() }))
 
 export type HeldProject = { project: string; locks: readonly Lock[] }
 export type ProjectLocks =

@@ -1,5 +1,5 @@
 /**
- * The control reduce, and the one thing in it that ends by itself.
+ * The control reduce.
  *
  * `ConductorPaused` carrying an `until` is
  * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5 — the
@@ -14,18 +14,11 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import {
-  CONTROL_FOLD_TYPES,
-  reduceControlEvent,
-  emptyControl,
-  evaluateControl,
-  reduceControl,
-  scopeControl,
-} from '../src/control.ts'
+import { CONTROL_FOLD_TYPES, reduceControlEvent, emptyControl, isSetupPause, reduceControl } from '../src/control.ts'
 import type { Envelope } from '../src/envelope.ts'
 import { Actor } from '../src/envelope.ts'
-import { type EventType, SCHEMA_VER } from '../src/events.ts'
-import { NOW as NOW_FIXTURE, histories, lateHistories } from '../test/histories.ts'
+import { type EventType, SCHEMA_VER, parsePayload } from '../src/events.ts'
+import { histories } from '../test/histories.ts'
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
@@ -44,149 +37,90 @@ function log(events: { type: string; data: unknown }[]): Envelope[] {
   )
 }
 
-const NOW = new Date('2026-09-09T08:44:14Z')
-const RESET = '2026-09-10T04:00:00.000Z'
-
-const quotaPause = {
+const setupPause = {
   type: 'ConductorPaused',
-  data: { by: 'lingtai', reason: 'a run ended without ever starting', until: RESET },
+  data: {
+    by: 'lingtai',
+    reason: 'a recipe asks for sandboxed, which purecheck cannot provide',
+    cause: 'setup',
+    holdsAcrossStarts: true,
+    until: null,
+  },
 }
 
-describe('a pause that ends by itself', () => {
-  it('holds until the instant it named', () => {
-    const state = reduceControl(log([quotaPause]), NOW)
-
+describe('the setup is the one pause that stops the conductor (0126)', () => {
+  it('reduces a tagged setup pause to a pause, with its by and reason', () => {
+    const state = reduceControl(log([setupPause]))
     expect(state.paused).toBe(true)
     expect(state.by).toBe('lingtai')
-    expect(state.until?.toISOString()).toBe(RESET)
+    expect(state.reason).toContain('purecheck')
   })
 
-  /**
-   * Nothing is appended when it ends, and nothing has to be. The event that set
-   * the expiry already says everything a reader needs, and an expiry that had
-   * to be written down would be a second thing that can be missed — by exactly
-   * the process that is not running, which is the case this exists for.
-   */
-  it('is over at that instant, with nobody having done anything', () => {
-    const state = reduceControl(log([quotaPause]), new Date(RESET))
-
-    expect(state.paused).toBe(false)
-    expect(state.until).toBeNull()
-    expect(state.reason).toBeNull()
-  })
-
-  /**
-   * The half that must not start working. `lingtai pause` is somebody deciding
-   * to stop the conductor, and a pause that quietly resumed itself would be a
-   * hold they thought they had.
-   */
-  it("is not what a person's pause is", () => {
-    const events = log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'thinking' } }])
-    const state = reduceControl(events, new Date('2027-01-01T00:00:00Z'))
-
+  it('reduces a setup pause written before `cause` existed, which held across starts', () => {
+    const state = reduceControl(
+      log([{ type: 'ConductorPaused', data: { by: 'lingtai', reason: 'old setup', holdsAcrossStarts: true } }]),
+    )
     expect(state.paused).toBe(true)
-    expect(state.until).toBeNull()
-    expect(state.by).toBe('human:steven')
+    expect(state.reason).toBe('old setup')
   })
 
-  /** A pause written before `until` existed is the pause it always was. */
-  it('reads an unparseable or absent expiry as no expiry at all', () => {
-    for (const until of [undefined, null, '', "eleven o'clock"]) {
-      const events = log([{ type: 'ConductorPaused', data: { by: 'x', reason: 'y', until } }])
-      const state = reduceControl(events, new Date('2099-01-01T00:00:00Z'))
-      expect(state.paused, String(until)).toBe(true)
+  it('reduces every other shape of ConductorPaused to nothing', () => {
+    const others = [
+      { by: 'human:steven', reason: 'thinking', cause: 'person' },
+      { by: 'human:steven', reason: 'thinking', cause: 'person', holdsAcrossStarts: true },
+      { by: 'lingtai', reason: 'a run never started', cause: 'account-limit', until: '2026-09-10T04:00:00.000Z' },
+      { by: 'lingtai', reason: 'the ceiling', cause: 'day-ceiling', until: '2026-08-03T00:00:00.000Z' },
+      { by: 'human:steven', reason: 'untagged' },
+      { by: 'human:steven', reason: 'untagged', holdsAcrossStarts: false },
+    ]
+    for (const data of others) {
+      const events = log([{ type: 'ConductorPaused', data }])
+      for (const e of events) parsePayload(e.type as never, e.data)
+      expect(reduceControl(events), data.reason).toEqual(emptyControl)
+    }
+    // Not valid payloads today, but a log may hold them: a cause that is not `setup` stops nothing.
+    for (const cause of ['somebody-else', null]) {
+      const data = { by: 'lingtai', reason: 'odd', cause, holdsAcrossStarts: true }
+      expect(reduceControl(log([{ type: 'ConductorPaused', data }]))).toEqual(emptyControl)
     }
   })
 
-  it('is lifted early by a person, like any other', () => {
-    const state = reduceControl(log([quotaPause, { type: 'ConductorResumed', data: { by: 'human:steven' } }]), NOW)
-
-    expect(state.paused).toBe(false)
-    expect(state.until).toBeNull()
-  })
-
-  /**
-   * 0031's last consequence: a drain and a quota pause **compose**. One stops
-   * taking work and exits, the other stops taking work and resumes, and they
-   * are separate fields because they are separate facts (#77). An expiring
-   * pause that cleared the drain would restart a daemon somebody had asked to
-   * stop.
-   */
-  it('leaves a drain exactly where it found it, expired or not', () => {
-    const events = log([
-      { type: 'ConductorShutdownRequested', data: { by: 'human:steven', reason: 'deploying', timeoutMs: null } },
-      quotaPause,
-    ])
-
-    const holding = reduceControl(events, NOW)
-    expect(holding.paused).toBe(true)
-    expect(holding.shutdown?.reason).toBe('deploying')
-
-    const lifted = reduceControl(events, new Date(RESET))
-    expect(lifted.paused).toBe(false)
-    expect(lifted.shutdown?.reason).toBe('deploying')
-  })
-})
-
-/**
- * **The one pause a daemon obeys whatever its watermark says** (`#405`).
- *
- * `readControl(store, since)` (`packages/daemon/src/control.ts`) is the reader
- * that cares about this field; `reduceControl` only has to reduce it correctly
- * and clear it with everything else a resume clears.
- */
-describe('holdsAcrossStarts', () => {
-  it('defaults to false on a pause written without the field', () => {
-    const state = reduceControl(log([{ type: 'ConductorPaused', data: { by: 'lingtai', reason: 'y' } }]), NOW)
-    expect(state.holdsAcrossStarts).toBe(false)
-  })
-
-  it('is false on an ordinary pause and true on one marked for it', () => {
-    const ordinary = reduceControl(
-      log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'thinking', holdsAcrossStarts: false } }]),
-      NOW,
-    )
-    expect(ordinary.holdsAcrossStarts).toBe(false)
-
-    const marked = reduceControl(
-      log([
-        {
-          type: 'ConductorPaused',
-          data: { by: 'lingtai', reason: 'purecheck cannot provide sandboxed', holdsAcrossStarts: true },
-        },
-      ]),
-      NOW,
-    )
-    expect(marked.holdsAcrossStarts).toBe(true)
-  })
-
-  /**
-   * **Sticky.** A person pausing on top of the conductor's own setup pause
-   * must not make the setup pause forgettable — the setup is still wrong, so
-   * a restart still has to meet it.
-   */
-  it('stays true once set, even under a later pause that is not marked', () => {
+  it("leaves the setup pause's reason alone when a person's pause lands after it", () => {
     const state = reduceControl(
-      log([
-        { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'setup', holdsAcrossStarts: true } },
-        { type: 'ConductorPaused', data: { by: 'human:steven', reason: 'also looking at this' } },
-      ]),
-      NOW,
+      log([setupPause, { type: 'ConductorPaused', data: { by: 'human:steven', reason: 'also', cause: 'person' } }]),
     )
     expect(state.paused).toBe(true)
-    expect(state.holdsAcrossStarts).toBe(true)
+    expect(state.by).toBe('lingtai')
+    expect(state.reason).toContain('purecheck')
   })
 
-  it('is cleared by ConductorResumed, like every other fact about the pause', () => {
+  it('is lifted by ConductorResumed', () => {
+    const state = reduceControl(log([setupPause, { type: 'ConductorResumed', data: { by: 'human:steven' } }]))
+    expect(state).toEqual(emptyControl)
+  })
+
+  it('holds no matter when it is read', () => {
+    expect(reduceControl(log([setupPause])).paused).toBe(true)
+  })
+
+  it('leaves a drain exactly where it found it', () => {
     const state = reduceControl(
       log([
-        { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'setup', holdsAcrossStarts: true } },
-        { type: 'ConductorResumed', data: { by: 'human:steven' } },
+        { type: 'ConductorShutdownRequested', data: { by: 'human:steven', reason: 'deploying', timeoutMs: null } },
+        setupPause,
       ]),
-      NOW,
     )
-    expect(state.paused).toBe(false)
-    expect(state.holdsAcrossStarts).toBe(false)
+    expect(state.paused).toBe(true)
+    expect(state.shutdown?.reason).toBe('deploying')
+  })
+
+  it('isSetupPause says the same of a bare payload', () => {
+    expect(isSetupPause({ cause: 'setup' })).toBe(true)
+    expect(isSetupPause({ holdsAcrossStarts: true })).toBe(true)
+    expect(isSetupPause({ holdsAcrossStarts: false })).toBe(false)
+    expect(isSetupPause({})).toBe(false)
+    expect(isSetupPause({ cause: 'person', holdsAcrossStarts: true })).toBe(false)
+    expect(isSetupPause({ cause: null, holdsAcrossStarts: true })).toBe(false)
   })
 })
 
@@ -219,7 +153,6 @@ describe('the discussions somebody asked for', () => {
           },
         },
       ]),
-      NOW,
     )
 
     expect(state.discussions).toHaveLength(2)
@@ -244,7 +177,6 @@ describe('the discussions somebody asked for', () => {
         },
         { type: 'ConductorResumed', data: { by: 'human:steven' } },
       ]),
-      NOW,
     )
 
     // A resume lifts a pause. It does not withdraw a question.
@@ -267,11 +199,13 @@ describe('withdrawing one shutdown request', () => {
   it('lifts the request it names, and leaves a pause exactly as it was', () => {
     const state = reduceControl(
       log([
-        { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'the importer is flaky', until: null } },
+        {
+          type: 'ConductorPaused',
+          data: { by: 'human:ops', reason: 'the importer is flaky', cause: 'setup', holdsAcrossStarts: true },
+        },
         asked('human:steven', 'restarting: picking up #88'),
         { type: 'ConductorShutdownWithdrawn', data: { by: 'human:steven', version: 2, reason: 'restarted' } },
       ]),
-      NOW,
     )
 
     expect(state.shutdown).toBeNull()
@@ -283,11 +217,10 @@ describe('withdrawing one shutdown request', () => {
   it('is not lifted by a resume, which still lifts the pause beside it (0126)', () => {
     const state = reduceControl(
       log([
-        { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'x', until: null } },
+        { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'x', cause: 'setup', holdsAcrossStarts: true } },
         asked('human:steven', 'restarting'),
         { type: 'ConductorResumed', data: { by: 'human:steven' } },
       ]),
-      NOW,
     )
 
     expect(state.paused).toBe(false)
@@ -301,7 +234,6 @@ describe('withdrawing one shutdown request', () => {
         asked('human:ops', 'the database is being moved'),
         { type: 'ConductorShutdownWithdrawn', data: { by: 'human:steven', version: 1, reason: 'restarted' } },
       ]),
-      NOW,
     )
 
     expect(state.shutdown).toEqual({
@@ -339,22 +271,17 @@ describe('a withdrawal written with a handoff, before #167', () => {
   }
 
   it('lifts the request it names, and leaves nothing else in the state', () => {
-    const state = reduceControl(log([asked, handed, started]), NOW)
+    const state = reduceControl(log([asked, handed, started]))
     expect(state.shutdown).toBeNull()
     expect(Object.keys(state).sort()).toEqual([
       'by',
-      'cause',
-      'ceilingWaivedUntil',
       'continuing',
       'dayCeiling',
       'discussions',
-      'holdsAcrossStarts',
       'paused',
-      'pausedAt',
       'reason',
       'requested',
       'shutdown',
-      'until',
     ])
   })
 })
@@ -386,7 +313,6 @@ describe('ContinueRequested (#465)', () => {
           data: { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' },
         },
       ]),
-      NOW,
     )
     expect(state.continuing).toEqual([
       { project: 'lingtai', issue: '465', runId: 'pass-465', by: 'human:steven' },
@@ -437,104 +363,21 @@ describe('CONTROL_FOLD_TYPES (#796)', () => {
   it.each(catalogue)('%s: reducing only the set gives the state reducing everything does', (type) => {
     const all = log([base, { type, data: universal }])
     const only = all.filter((e) => (CONTROL_FOLD_TYPES as readonly string[]).includes(e.type))
-    expect(reduceControl(only, NOW)).toEqual(reduceControl(all, NOW))
+    expect(reduceControl(only)).toEqual(reduceControl(all))
   })
 })
 
 describe('the control reduce in two halves (#836)', () => {
-  const cells = lateHistories.control
-
-  it('D8: a person’s resume of the ceiling’s pause waives it until that pause’s midnight', () => {
-    const c = reduceControl(cells.ceilingResumedByPerson, NOW_FIXTURE)
-    expect(c.paused).toBe(false)
-    expect(c.cause).toBeNull()
-    expect(c.ceilingWaivedUntil?.toISOString()).toBe('2026-09-02T00:00:00.000Z')
-  })
-
-  it('D8: the ceiling lifting its own pause waives nothing', () => {
-    expect(reduceControl(cells.ceilingResumedByLingtai, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
-  })
-
-  it('D8: a person’s pause on top of the ceiling’s is theirs, and their resume waives nothing', () => {
-    const standing = reduceControl(cells.ceilingThenPersonPause.slice(0, 2), NOW_FIXTURE)
-    expect(standing.cause).toBe('person')
-    expect(reduceControl(cells.ceilingThenPersonPause, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
-  })
-
-  it('D8: a new ceiling pause clears the waiver', () => {
-    const c = reduceControl(cells.ceilingWaivedThenRepaused, NOW_FIXTURE)
-    expect(c.paused).toBe(true)
-    expect(c.cause).toBe('day-ceiling')
-    expect(c.ceilingWaivedUntil).toBeNull()
-  })
-
-  it('D8: a waiver whose midnight has already passed is no waiver', () => {
-    expect(reduceControl(cells.ceilingLapsedThenResumed, NOW_FIXTURE).ceilingWaivedUntil).toBeNull()
-  })
-
-  it('0124 §2: reduceControlEvent reads no clock, and evaluateControl lapses a timed pause', () => {
-    const applied = histories.control.pausedUntilLifted.reduce(reduceControlEvent, emptyControl)
-    expect(applied.paused).toBe(true)
-    const evaluated = evaluateControl(applied, NOW_FIXTURE)
-    expect(evaluated.paused).toBe(false)
-    expect(evaluated.until).toBeNull()
-    // Nothing lapsing hands back the very state it was given.
-    expect(evaluateControl(evaluated, NOW_FIXTURE)).toBe(evaluated)
-  })
-
   it('0124 §2: reducing does not write into emptyControl', () => {
-    reduceControl(histories.control.requestsQueued, NOW_FIXTURE)
+    reduceControl(histories.control.requestsQueued)
     expect(emptyControl.requested).toEqual([])
     expect(emptyControl.continuing).toEqual([])
     expect(emptyControl.discussions).toEqual([])
   })
 
-  it('0100 §4: a pause with no cause is nobody’s in particular', () => {
-    const paused = (data: Record<string, unknown>) =>
-      reduceControl(log([{ type: 'ConductorPaused', data: { by: 'lingtai', reason: 'old', ...data } }]), NOW)
-    expect(paused({}).cause).toBeNull()
-    expect(paused({ cause: 'not-a-cause' }).cause).toBeNull()
-    expect(paused({ cause: 'setup' }).cause).toBe('setup')
-  })
-})
-
-describe('pausedAt and scopeControl (#874)', () => {
-  const pause = (until: string | null = null) => ({
-    type: 'ConductorPaused',
-    data: { by: 'steven', reason: 'r', until },
-  })
-  const ask = { type: 'ConductorShutdownRequested', data: { by: 'steven', reason: 'x', timeoutMs: null } }
-
-  it('is the version of the standing pause, and clears on resume and on expiry', () => {
-    const at = new Date('2026-01-01T00:00:00Z')
-    expect(reduceControl(log([ask, pause()]), at).pausedAt).toBe(2)
-    expect(reduceControl(log([pause(), { type: 'ConductorResumed', data: { by: 'steven' } }]), at).pausedAt).toBeNull()
-    const timed = log([pause('2026-01-01T01:00:00Z')])
-    expect(reduceControl(timed, at).pausedAt).toBe(1)
-    expect(reduceControl(timed, new Date('2026-01-01T02:00:00Z')).pausedAt).toBeNull()
-  })
-
-  it('is the identity at since 0', () => {
-    const state = reduceControl(log([pause(), ask]), NOW)
-    expect(scopeControl(state, 0)).toBe(state)
-  })
-
-  it('clears a pause at the watermark and keeps one after it', () => {
-    const state = reduceControl(log([pause()]), NOW)
-    expect(scopeControl(state, 1)).toMatchObject({ paused: false, pausedAt: null, by: null, reason: null })
-    expect(scopeControl(state, 0).paused).toBe(true)
-  })
-
-  it('keeps a pause that holds across starts, below the watermark', () => {
-    const holding = { type: 'ConductorPaused', data: { by: 'lingtai', reason: 'r', holdsAcrossStarts: true } }
-    const state = reduceControl(log([holding]), NOW)
-    expect(scopeControl(state, 5).paused).toBe(true)
-  })
-
-  it('no longer changes a shutdown at any watermark, and keeps a pause above it', () => {
-    const state = reduceControl(log([ask, pause()]), NOW)
-    for (const since of [0, 1, 5]) expect(scopeControl(state, since).shutdown).toEqual(state.shutdown)
-    expect(scopeControl(state, 1).paused).toBe(true)
+  it('0124 §2: reduceControlEvent is the whole fold of the fixture', () => {
+    const applied = histories.control.requestsQueued.reduce(reduceControlEvent, emptyControl)
+    expect(applied).toEqual(reduceControl(histories.control.requestsQueued))
   })
 })
 
@@ -546,19 +389,19 @@ describe('ConductorStarted ends a standing shutdown (0126)', () => {
   }
 
   it('a start after a request ends it', () => {
-    expect(reduceControl(log([ask, started]), NOW).shutdown).toBeNull()
+    expect(reduceControl(log([ask, started])).shutdown).toBeNull()
   })
 
   it('a request after a start stands', () => {
-    expect(reduceControl(log([started, ask]), NOW).shutdown).toMatchObject({ by: 'steven', reason: 'x' })
+    expect(reduceControl(log([started, ask])).shutdown).toMatchObject({ by: 'steven', reason: 'x' })
   })
 
   it('a start leaves a pause and the requests as they were', () => {
     const run = { type: 'RunRequested', data: { project: 'p', issue: '1', by: 'steven' } }
     const wait = { type: 'ContinueRequested', data: { project: 'p', issue: '2', by: 'steven' } }
     const talk = { type: 'DiscussionRequested', data: { chatId: 'c', ticketId: 't', attempt: 1 } }
-    const before = reduceControl(log([quotaPause, run, wait, talk, ask]), NOW)
-    const after = reduceControl(log([quotaPause, run, wait, talk, ask, started]), NOW)
+    const before = reduceControl(log([setupPause, run, wait, talk, ask]))
+    const after = reduceControl(log([setupPause, run, wait, talk, ask, started]))
     expect(before.continuing.length).toBeGreaterThan(0)
     expect(before.discussions.length).toBeGreaterThan(0)
     expect(before.shutdown).not.toBeNull()
@@ -572,7 +415,7 @@ describe('the day ceiling pair (#1003)', () => {
   const REACHED = { day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }
 
   it('DayCeilingReached sets reached, with its time and position', () => {
-    const state = reduceControl(log([{ type: 'DayCeilingReached', data: REACHED }]), NOW)
+    const state = reduceControl(log([{ type: 'DayCeilingReached', data: REACHED }]))
     expect(state.dayCeiling.reached).toMatchObject({ ...REACHED, seq: 1 })
     expect(state.dayCeiling.raised).toBeNull()
   })
@@ -583,7 +426,6 @@ describe('the day ceiling pair (#1003)', () => {
         { type: 'DayCeilingReached', data: REACHED },
         { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'new-day' } },
       ]),
-      NOW,
     )
     expect(state.dayCeiling).toEqual({ reached: null, raised: null })
   })
@@ -594,7 +436,6 @@ describe('the day ceiling pair (#1003)', () => {
         { type: 'DayCeilingReached', data: REACHED },
         { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
       ]),
-      NOW,
     )
     expect(state.dayCeiling.reached).toBeNull()
     expect(state.dayCeiling.raised).toMatchObject({ day: REACHED.day, toUsd: 40, by: 'human:steven' })
@@ -606,7 +447,6 @@ describe('the day ceiling pair (#1003)', () => {
         { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
         { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'config-raised' } },
       ]),
-      NOW,
     )
     expect(state.dayCeiling.raised?.toUsd).toBe(40)
   })
@@ -614,7 +454,6 @@ describe('the day ceiling pair (#1003)', () => {
   it('neither touches the pause, its cause or the waiver', () => {
     const base = reduceControl(
       log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'r', until: null, cause: 'person' } }]),
-      NOW,
     )
     const after = reduceControl(
       log([
@@ -622,13 +461,12 @@ describe('the day ceiling pair (#1003)', () => {
         { type: 'DayCeilingReached', data: REACHED },
         { type: 'DayCeilingLifted', data: { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40 } },
       ]),
-      NOW,
     )
     expect({ ...after, dayCeiling: base.dayCeiling }).toEqual(base)
   })
 
   it('an unparseable reached is the same answer as none', () => {
-    const state = reduceControl(log([{ type: 'DayCeilingReached', data: { day: 5 } }]), NOW)
+    const state = reduceControl(log([{ type: 'DayCeilingReached', data: { day: 5 } }]))
     expect(state.dayCeiling.reached).toBeNull()
   })
 })

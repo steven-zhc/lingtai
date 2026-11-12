@@ -9,7 +9,6 @@
 import { z } from 'zod'
 
 import type { ControlState } from './control.ts'
-import { PauseCause } from './events.ts'
 import { firstDifference } from './ticket-codec.ts'
 
 const IsoDate = z.iso.datetime().transform((s) => new Date(s))
@@ -18,10 +17,6 @@ const StoredControl = z.strictObject({
   paused: z.boolean(),
   by: z.string().nullable(),
   reason: z.string().nullable(),
-  until: IsoDate.nullable(),
-  holdsAcrossStarts: z.boolean(),
-  cause: PauseCause.nullable(),
-  ceilingWaivedUntil: IsoDate.nullable(),
   shutdown: z
     .strictObject({
       by: z.string(),
@@ -31,7 +26,6 @@ const StoredControl = z.strictObject({
       version: z.number(),
     })
     .nullable(),
-  pausedAt: z.number().nullable(),
   requested: z.array(z.strictObject({ project: z.string(), issue: z.string(), by: z.string() })),
   continuing: z.array(z.strictObject({ project: z.string(), issue: z.string(), runId: z.string(), by: z.string() })),
   discussions: z.array(

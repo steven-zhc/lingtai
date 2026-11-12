@@ -517,7 +517,7 @@ describe('shutdown', () => {
     const tick = async (): Promise<void> => {
       await during?.(++polls, store)
       for (const d of daemons.filter((x) => x.running)) {
-        if ((await readControl(store, d.since)).shutdown === null) continue
+        if ((await readControl(store)).shutdown === null) continue
         if (d.pass === 'in flight' && ++d.polls >= passPolls) {
           d.pass = 'finished'
           order.push(`${d.name}'s pass finished`)

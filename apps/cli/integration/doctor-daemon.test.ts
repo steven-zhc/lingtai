@@ -22,8 +22,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { pauseConductor, readControl, readStatus } from '@lingtai/daemon/control'
+import { readControl, readStatus } from '@lingtai/daemon/control'
 import { createSqliteDaemonStore, openSqliteDaemon } from '@lingtai/daemon/sqlite'
+import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { daemonCurrency, daemonLiveness } from '../src/doctor.ts'
@@ -98,13 +99,25 @@ describe('the daemon rows, read from a beacon in a file', () => {
     try {
       // Appended through the store's log rather than a memory one: the point is
       // that *this* store answers both questions.
-      await pauseConductor('human:ops', 'migrating', store.events)
+      await store.events.append(CONTROL_STREAM, await store.events.head(CONTROL_STREAM), [
+        {
+          type: 'ConductorPaused',
+          actor: 'conductor',
+          data: parsePayload('ConductorPaused', {
+            by: 'lingtai',
+            reason: 'migrating',
+            until: null,
+            cause: 'setup',
+            holdsAcrossStarts: true,
+          }),
+        },
+      ])
 
       const liveness = await daemonLiveness(
         () => readStatus(store),
         () => readControl(store.events),
       )
-      expect(liveness.detail).toContain('paused by human:ops (migrating)')
+      expect(liveness.detail).toContain('paused by lingtai (migrating)')
     } finally {
       await store.close()
     }
