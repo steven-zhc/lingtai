@@ -104,6 +104,12 @@ describe('lingtai ticket', () => {
     ])
   })
 
+  it('carries the flag form of ticket new to the runner', async () => {
+    const r = recording<Parameters<Runners['ticket']>[0]>()
+    await capture(['ticket', 'new', '--title', 't', '--label', 'bug,feature', '--body', '-'], { ticket: r.run })
+    expect(r.seen).toEqual([{ verb: 'new', title: 't', labels: 'bug,feature', body: '-' }])
+  })
+
   it('answers a runner that threw with the error document under --json, and prose otherwise', async () => {
     const boom = async (): Promise<number> => {
       throw new Error('database is down')

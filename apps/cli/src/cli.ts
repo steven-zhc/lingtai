@@ -469,6 +469,10 @@ export interface TicketRequest {
   issue?: number
   all?: boolean
   json?: boolean
+  /** `new`: the flag form — no editor. `labels` is the raw comma-separated value, and `body` may be `-` for stdin. */
+  title?: string
+  labels?: string
+  body?: string
 }
 export type BacklogRequest =
   | { verb: 'list'; project?: string; all: boolean; json: boolean }
@@ -536,7 +540,12 @@ const liveRunners: Runners = {
       case 'close':
         return ticketClose({ ...project, issue: request.issue! })
       case 'new':
-        return ticketNew(project)
+        return ticketNew({
+          ...project,
+          ...(request.title === undefined ? {} : { title: request.title }),
+          ...(request.labels === undefined ? {} : { label: request.labels }),
+          ...(request.body === undefined ? {} : { body: request.body }),
+        })
       case 'edit':
         return ticketEdit({ ...project, issue: request.issue! })
     }
@@ -773,12 +782,32 @@ const ticketList = Command.make(
     }),
 )
 
-const ticketNew = Command.make('new', { project: projectOption, noColor }, (args) =>
-  Effect.promise(async () => {
-    if (args.noColor) applyNoColor()
-    const project = given(args.project)
-    await guarded('ticket', () => runners.ticket({ verb: 'new', ...(project === undefined ? {} : { project }) }))
-  }),
+const ticketNew = Command.make(
+  'new',
+  {
+    project: projectOption,
+    title: optionalText('title'),
+    label: optionalText('label'),
+    body: optionalText('body'),
+    noColor,
+  },
+  (args) =>
+    Effect.promise(async () => {
+      if (args.noColor) applyNoColor()
+      const project = given(args.project)
+      const title = given(args.title)
+      const labels = given(args.label)
+      const body = given(args.body)
+      await guarded('ticket', () =>
+        runners.ticket({
+          verb: 'new',
+          ...(project === undefined ? {} : { project }),
+          ...(title === undefined ? {} : { title }),
+          ...(labels === undefined ? {} : { labels }),
+          ...(body === undefined ? {} : { body }),
+        }),
+      )
+    }),
 )
 
 const ticketCommand = Command.make('ticket', {}, () =>

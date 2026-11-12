@@ -35,7 +35,7 @@ describe('the generated CLI guide', () => {
 
   it("reads a verb's flags out of the parser tree, and no argument as a flag", () => {
     expect(flagsOf('backlog')).toEqual(expect.arrayContaining(['--kind', '--reason', '--json']))
-    expect(flagsOf('ticket')).toContain('--project')
+    expect(flagsOf('ticket')).toEqual(expect.arrayContaining(['--project', '--title', '--label', '--body']))
     for (const c of manifest.commands) expect(c.flags.every((f) => /^--[a-z][a-z-]*$/.test(f))).toBe(true)
   })
 
