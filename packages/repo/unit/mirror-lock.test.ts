@@ -126,11 +126,11 @@ describe('the mirror write permit (0122 §6, #1026)', () => {
   })
 
   it('queues, not refuses, a daemon fiber that asks after the holder released', async () => {
-    const gate = deferred()
+    const after = deferred()
     let ran = false
     const outer = Effect.gen(function* () {
       return yield* Effect.forkDetach(
-        Effect.promise(() => gate.promise).pipe(
+        Effect.promise(() => after.promise).pipe(
           Effect.andThen(
             mirrorWrite(
               '/m/d.git',
@@ -141,7 +141,7 @@ describe('the mirror write permit (0122 §6, #1026)', () => {
       )
     })
     const child = await Effect.runPromise(mirrorWrite('/m/d.git', outer))
-    gate.resolve()
+    after.resolve()
     await Effect.runPromise(Fiber.join(child))
     expect(ran).toBe(true)
   })
