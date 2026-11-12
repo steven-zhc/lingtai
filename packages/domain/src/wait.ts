@@ -367,7 +367,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function grantCriterion(
   reason: WaitReason,
   refusal?: { readonly key: string; readonly findings: readonly Finding[] } | null,
-): { printed: { step: Step; detail: string }; findings: Finding[]; declined?: string } | null {
+): { printed: { step: Step; detail: string; because?: string }; findings: Finding[]; declined?: string } | null {
   if (reason._tag === 'AgentCrashed' && reason.standing !== undefined)
     return grantCriterion(reason.standing.reason, refusal)
   // A fixer declined: the criterion is the review findings it declined (the
@@ -431,7 +431,10 @@ export function grantCriterion(
       // A conflict always has a criterion: merge the base, resolve, commit.
       // `fixRound` reads a printed `merge` as a conflict and the detail as its
       // paths.
-      return { printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n') }, findings: [] }
+      return {
+        printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n'), because: 'conflict' },
+        findings: [],
+      }
     default:
       return null
   }

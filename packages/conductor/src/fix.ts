@@ -481,7 +481,7 @@ export function fixBriefParts(input: {
   refusal:
     | { on: 'findings'; findings: readonly ActionFinding[] }
     | { on: 'output'; output: string }
-    | { on: 'conflict'; base: string; paths: string }
+    | { on: 'conflict'; base: string; paths: string; findings: readonly ActionFinding[] }
   round: number
   of: number
   /** The refusing action's name, so the prompt can say who refused. */
@@ -555,6 +555,7 @@ session. What you have is below, and the code in front of you.
 
 `,
     ...(typeof evidence === 'string' ? [evidence] : evidence),
+    ...(input.refusal.on === 'conflict' ? [openFindingsContext(input.refusal.findings)] : []),
     `
 ${adviceSection(input.advice)}${declinedSection(input.declined)}
 ## The ticket the reviewer held this change to
@@ -566,7 +567,7 @@ ${input.ticket.title}
     `
 
 This is what the cold reviewer read the change against. It is context for the
-findings, not the job handed to you again: the findings are still the criterion.
+refusal, not the job handed to you again: ${input.refusal.on === 'conflict' ? 'the merge is the criterion.' : 'the findings are still the criterion.'}
 
 ## The change under review
 
@@ -780,6 +781,28 @@ const STOP_AND_ASK = `- If the two sides' behaviours contradict and the ticket d
   does not settle it.
 `
 
+/**
+ * Findings still open from the review before a merge conflict (#1119): context
+ * for the conflict round, never its criterion. Empty renders nothing at all.
+ */
+function openFindingsContext(findings: readonly ActionFinding[]): string {
+  if (findings.length === 0) return ''
+  const items = findings.map((f, i) => {
+    const at = f.line === null ? f.file : `${f.file}:${f.line}`
+    return `### ${i + 1}. ${f.severity} · ${at}\n\n${f.claim}`
+  })
+  return `
+
+## Also open from the last review
+
+The review before the merge passed with these notes still open. They are context
+only: resolving the merge is the job, and none of these is what counts as done.
+Leave them unless resolving the conflict touches the same lines.
+
+${items.join('\n\n')}
+`
+}
+
 function conflictHalf(base: string, paths: string): { evidence: string; criterion: string } {
   const files = paths.trim()
   return {
@@ -804,7 +827,7 @@ ${files === '' ? `(git named no files; run git merge \`${base}\` first, then \`g
     criterion: `## What counts as done
 
 Run git merge \`${base}\`, resolve what it gives you, and commit the merge.
-Then the whole \`proposed\` step runs again on what you committed, and the
+Then \`build\` and then \`review\` run again on what you committed, and the
 merge is attempted again — **both have to pass.** The second is why this is
 not a matter of picking a side.
 
