@@ -1,0 +1,217 @@
+# 017 — Does sandbox-runtime hold an agent the way 0.14 needs?
+
+**Run** 2026-11-12 · **Result** yes, with five things to build around and three
+for the operator to decide. This is the measurement
+[0.14.md](../design/0.14.md) puts first (S1). It was made by hand, before any
+ticket, on two machines. Nothing in the product changed.
+
+| | harbor | foundry |
+|---|---|---|
+| OS | Linux Mint 22.2 (Ubuntu 24.04 base), kernel 6.8, x86_64 | macOS 15.7.7, x86_64 |
+| sandbox | bubblewrap 0.9.0, socat, rg | Seatbelt (`sandbox-exec`), rg |
+| `kernel.apparmor_restrict_unprivileged_userns` | `0` (already off on this machine) | — |
+| Node | 24.20.0 | 26.13.0 |
+| Claude Code | 2.1.278 | 2.1.312 |
+| Codex | 0.92.0 | 0.163.0 |
+| srt | `@anthropic-ai/sandbox-runtime` 0.0.82, installed under `~/srt-probe`, outside every writable path | same |
+
+## What was run
+
+A stand-in for `~/.lingtai` was built under `~/srt-probe/lt`: a `config.yml`
+canary, a bare mirror `repos/demo.git` and a worktree `worktrees/demo-1` added
+from it, the way Lingtai lays them out. Every check ran with
+`srt --settings <file> -c '<command>'` from inside the worktree, and printed
+only an exit status and the last line of output, never a file's contents. The
+real `~/.lingtai/config.yml` was never read.
+
+The policy is the one in 0.14.md, made concrete:
+
+```json
+{
+  "network": {
+    "allowedDomains": ["api.anthropic.com", "*.anthropic.com", "claude.ai", "*.claude.ai",
+      "sentry.io", "*.sentry.io", "api.openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com",
+      "registry.npmjs.org", "*.npmjs.org", "github.com", "*.github.com", "*.githubusercontent.com"]
+  },
+  "filesystem": {
+    "denyRead": ["~/.ssh", "~/.aws", "~/.config/gh", "~/.gnupg", "~/.netrc", "~/.docker/config.json",
+      "~/.kube", "~/.npmrc", "~/.lingtai/config.yml", "<lt>"],
+    "allowRead": ["<lt>/worktrees/demo-1", "<lt>/repos/demo.git"],
+    "allowWrite": ["<lt>/worktrees/demo-1", "<lt>/repos/demo.git", "/tmp", "/private/tmp", "$TMPDIR",
+      "~/.claude", "~/.claude.json", "~/.codex"]
+  }
+}
+```
+
+Three variants differ only in Unix sockets: none, `allowUnixSockets: [<the
+socket>]`, and `allowAllUnixSockets: true`.
+
+## Results
+
+### The boundary itself
+
+| Check | Want | Linux | macOS |
+|---|---|---|---|
+| `~/.ssh`'s entries visible | no | no (an empty directory) | no (`Operation not permitted`) |
+| the `config.yml` canary readable | no | no (hidden) | no |
+| the worktree, under the denied `lt`, readable | yes | yes | yes |
+| `~/.claude/.credentials.json`, `~/.codex/auth.json` readable | yes | yes | yes |
+| write to `$HOME` | no | no (`Read-only file system`) | no |
+| write in the worktree | yes | yes | yes |
+| `git commit` in the worktree (writes the mirror) | yes | yes | yes |
+| `git add -A` in the worktree | yes | **no** (below) | yes |
+| `api.anthropic.com`, `registry.npmjs.org` | yes | yes | yes |
+| `example.com` | no | no | no |
+| raw TCP to `1.1.1.1:443` | no | no | no |
+| a Unix socket under `$TMPDIR/lingtai/`, no allowance | — | `EPERM` | `EPERM` |
+| the same, `allowUnixSockets: [path]` | yes | **no** | yes |
+| the same, `allowAllUnixSockets: true` | yes | yes | yes |
+
+**Deny-then-allow under `~/.lingtai` works on both platforms.** A run can be
+given its own worktree and mirror while the rest of the directory is hidden, so
+the trap 0.14.md named first is answered by configuration.
+
+### Holes in the policy as written
+
+| Check | Linux | macOS | Why it matters |
+|---|---|---|---|
+| write a file in `~/.claude` | **yes** | **yes** | `~/.claude/settings.json` holds hooks. A run that writes a hook there has code run by the operator's next Claude Code session, outside any sandbox. |
+| `git config --local` in the worktree (writes the mirror's `config`) | **yes** | **yes** | `core.hooksPath` or `core.fsmonitor` in the mirror's config runs a program the next time Lingtai runs git there, and Lingtai's git runs outside the sandbox. srt only protects a file named `.git/config`; a bare mirror's `config` is not one. |
+
+Neither is srt's fault: both directories were granted write in the policy. Both
+need write denies inside the grant (below).
+
+### Nesting
+
+| | Linux | macOS |
+|---|---|---|
+| `sandbox-exec` inside srt | — | **fails**, `sandbox_apply: Operation not permitted` |
+| `codex sandbox macos -- true` inside srt | — | **fails**, the same, rc 71 |
+| `bwrap` inside srt | **fails**, `No permissions to create new namespace` | — |
+| `codex sandbox linux -- true` inside srt | runs (rc 0; Codex uses Landlock, not a namespace) | — |
+
+So on macOS a runtime's own sandbox cannot run inside srt, which is decision 1
+in 0.14.md. On Linux Codex's own sandbox happens to nest, but one boundary is
+still the decision.
+
+### The agents
+
+| Run | Linux | macOS |
+|---|---|---|
+| `claude -p` inside srt | **OK** | **OK**, once the token was fresh (below) |
+| Claude told to `cat` the canary and `touch ~/…` with `bypassPermissions` | both failed; it reported the file as absent and the write as `Read-only file system` | — |
+| `codex exec --sandbox danger-full-access` inside srt | not measured: harbor's Codex login has expired, outside srt too | **fails**: `workspace routing discovery failed` with `chatgpt.com` allowed |
+| the same with `enableWeakerNetworkIsolation: true` | — | **OK** |
+
+- **Codex on macOS needs `trustd`.** It verifies TLS through the system's
+  Security framework, and srt's profile shuts `com.apple.trustd.agent` unless
+  `enableWeakerNetworkIsolation` is set. srt's README calls that option *a
+  potential data exfiltration vector through the trustd service*.
+- **Claude Code's first run inside srt on macOS failed with a 401**,
+  `OAuth access token has expired`, while the same command outside succeeded.
+  After that outside run refreshed the token, every run inside succeeded. So a
+  sandboxed Claude Code may not be able to refresh its own token, and a daemon
+  whose only Claude Code runs are sandboxed may lose its login after the token
+  expires. This was not reproduced on purpose. It has to be, before S4 lands.
+- With `--debug`, Claude Code inside srt reached `api.anthropic.com` and
+  `mcp-proxy.anthropic.com`. It was refused `mcp.*` hosts for the operator's
+  own connectors and a Datadog intake host. The run still succeeded.
+
+### The build: Lingtai's own suite
+
+`origin/main` at `8abc8613`, cloned into the stand-in worktree, on harbor.
+
+| | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` inside srt | **fails**: `ENOENT … mkdir '~/.local/share/pnpm/store/v11'`, the shared store is not writable |
+| the same, with `~/.local/share/pnpm` and `~/.cache` writable | OK |
+| `pnpm test` outside srt | 504 passed, 1 failed, 453 s |
+| `pnpm test` inside srt | 503 passed, 2 failed, 433 s |
+
+- The failure in both is `apps/cli/unit/doctor.test.ts` *fails no row*. It is
+  harbor's: Node 24 is below the floor `.node-version` names.
+- **The one failure only inside srt is
+  `packages/conductor/unit/conduct-before-the-claim.test.ts` *refuses before
+  the claim when runtime.agent is not the runtime it was handed*.** It times
+  out at 20 s inside srt twice out of two runs, and the file passes outside in
+  8 s. `--debug` showed no denial. Its cause is not found. It is the test whose
+  recipe names `codex`.
+
+### Two things the build gate has to work around
+
+- **On Linux, srt puts `/dev/null` stand-ins into the worktree** for the paths
+  it always protects: `.bashrc`, `.bash_profile`, `.gitconfig`, `.gitmodules`,
+  `.idea`, `.mcp.json`, `.profile`, `.ripgreprc`, `.vscode`, `.zprofile` and
+  `.zshrc`. They show as untracked while the command runs, and `git add -A`
+  then fails with `can only add regular files`. They are gone from the host
+  afterwards. **Writing those names into the mirror's `info/exclude` from
+  outside the sandbox fixes it**: with that, `git add -A && git commit` inside
+  srt committed the one real file.
+- **A package manager's shared store must be writable**, and so it is shared
+  between every sandboxed run and the operator's own installs.
+
+### What srt reports
+
+Measured through the library: `SandboxManager.wrapWithSandbox(cmd, …,
+{ commandId })`, then
+`getSandboxViolationStore().getViolationsForCommand(commandId)`.
+
+| Refused | Linux | macOS |
+|---|---|---|
+| a connection | 1 violation, `deny network-outbound example.com:443 (host is not on the allow list)` | the same |
+| a read of the canary, of `~/.ssh` | 0 | 0 |
+| a write to `$HOME` | 0 | 0 |
+
+macOS's own log held 27 `Sandbox` deny lines from those two minutes, so the
+kernel saw the file denials. srt did not attribute them to the command through
+this API. Linux has no file-violation report at all (srt's README:
+*Bubblewrap doesn't provide built-in violation reporting*).
+
+### Bundling into the single binary (0113)
+
+Read from the package, not built:
+
+- 166 MB of the 180 MB install is Windows-only: `@microsoft/mxc-sdk`,
+  `node-pty` and `koffi`. srt loads it through one dynamic `import()`
+  (`dist/sandbox/mxc-sandbox-utils.js:98`), so a bundle can leave it out.
+- On Linux srt runs a 742 KB static `apply-seccomp` binary, which it finds
+  relative to its own file (`dist/sandbox/generate-seccomp-filter.js:119-123`).
+  A bundle has to write that binary to disk and name it with
+  `seccomp.applyPath`.
+- `bwrap`, `socat` and `rg` on Linux, and `rg` on macOS, stay host
+  requirements.
+
+## What this changes in 0.14.md
+
+1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
+   filter by path, so the only setting that lets the hook through lets every
+   Unix socket through. This includes `/var/run/docker.sock` when the operator
+   can reach it. That is an operator decision (below).
+2. **The writable runtime directories need write denies inside them**: at
+   least `~/.claude/settings*.json`, `~/.claude/hooks`, `~/.claude/plugins` and
+   `CLAUDE.md`, and the `mcpServers` that `~/.claude.json` can carry.
+   `~/.claude.json` is rewritten by Claude Code on every run, so it cannot
+   simply be read-only. This also needs a decision.
+3. **The mirror's `config`, `hooks/` and `info/` are not writable from a
+   run.** Lingtai writes `info/exclude` itself, from outside, at provision.
+4. **Codex on macOS needs `enableWeakerNetworkIsolation`.** This is a decision.
+5. **S8 records refused connections only.** That works on both platforms.
+   File refusals are not reported on Linux and not attributed on macOS.
+6. **Claude Code's token refresh inside srt** has to be reproduced and fixed,
+   or it has to be proved that the refresh happens outside srt.
+7. **The build gate needs the package stores writable**, and Lingtai's own
+   `pnpm test` must be green inside srt before Lingtai opts in. One test is not
+   green yet.
+8. **Bundling is feasible**, with `apply-seccomp` extracted at start.
+
+## Not measured
+
+- Codex inside srt on Linux. harbor's Codex login has expired, and it fails
+  outside srt too.
+- A real Lingtai attempt: the hook, `guarded`'s fail-closed and the run log
+  under srt. The socket test stands in for the hook.
+- Ubuntu 24.04's default AppArmor setting, since harbor already has it off.
+  srt's README says bubblewrap needs it off or a profile granting `userns`.
+- Claude Code with the OAuth token stored in the macOS Keychain rather than
+  `~/.claude/.credentials.json`. foundry has the file.
+- An arm64 machine.
