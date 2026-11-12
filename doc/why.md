@@ -42,8 +42,8 @@ exactly what it was.
 | **A configured check that did not run is a bug** | Not a preference — the thing the design is built to make visible. An unconfigured gate is *shown as skipped*, never omitted, because absent and silently-not-run must be distinguishable. |
 | **Refusing is cheap and early** | A missing environment value refuses the whole project before an issue is claimed: no worktree, no agent, no money. |
 
-**Lingtai merges its own tickets unattended**, and `lingtai pause` is there for
-when you want it to stop.
+**Lingtai merges its own tickets unattended**, and `lingtai pause <project>` is there for
+when you want a project to stop taking work.
 
 ## The big picture
 

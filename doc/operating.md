@@ -1037,19 +1037,70 @@ Running it while another copy is up is fine; the second exits saying who holds
 the lock.
 
 ```bash
-pnpm lingtai pause "the importer is flaky today"   # take nothing new
-pnpm lingtai resume
+pnpm lingtai pause nextloom-ai-admin               # that project takes nothing new
+pnpm lingtai resume nextloom-ai-admin
 pnpm lingtai shutdown "picking up #88"             # finish the attempt, then stop
 pnpm lingtai restart "picking up #88"              # …and start one again, checked
 pnpm lingtai now nextloom-ai-admin --issue 155     # one, ahead of the queue
 ```
 
-**Pause stops it taking new work; a run in flight finishes.** Killing a running
-agent is not implemented — a run you want gone ends when the conductor holding
-it does, and the next one to start releases the claim it left. Said plainly
-because a Stop button that means Pause is worse than no Stop button.
+### What stops new work
 
-**Shutdown is a pause the process does not come back from**
+A stop is a **lock**: something that holds one project's new work, that the
+board shows, and that something specific lifts
+([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md)). There are three
+kinds, and a fourth thing — the setup's pause — that looks like one and is not.
+**A lock stops new work, discussions and triage, and never an attempt in
+flight**: a run that has started finishes. Killing a running agent is not
+implemented — a run you want gone ends when the conductor holding it does, and
+the next one to start releases the claim it left. Said plainly because a Stop
+button that means Pause is worse than no Stop button.
+
+Each lock shows as the banner under the bar, scoped by the project filter, and
+the banner is the one place that says why a project's work does not start.
+
+- **A project's pause.** `lingtai pause [project]` and `lingtai resume
+  [project]`; with no project, every registered project. It takes no reason.
+  With one project selected, the bar has a `Pause` beside `Recipe`. It holds
+  only that project, and it holds across restarts. Only `resume` (or the bar's
+  button) lifts it.
+- **The day's ceiling.** `limits.day_usd` was reached today. It lifts at
+  midnight, when the configuration raises or removes the ceiling, or when a
+  person continues past it: *continue today to $x* on the banner, or `lingtai
+  ceiling raise <usd>` in the CLI. The raise is refused until the ceiling has
+  been reached and while today's spend cannot be read; it lasts until midnight
+  and leaves `limits.day_usd` as it was.
+- **A runtime's usage limit.** The runtime (`claude-code` or `codex`) said its
+  account is over its limit. It lifts at the `until` the runtime named, or when
+  a person who knows it is over lifts it: on the banner, or `lingtai account
+  lift <runtime>` (which appends nothing when no limit stands). **Never a
+  restart.** It holds only the projects whose recipe uses that runtime.
+
+`lingtai doctor` carries the person's pauses in its `daemon: paused projects`
+row, at level `info`.
+
+**The guard looks; nothing runs on a timer of its own.** The system's locks —
+the ceiling and the account limit — are checked when work is about to start:
+at a start, after every attempt, on a control event and on a five-minute sweep.
+So a passed midnight, a passed `until` or an edited ceiling takes effect at the
+next look, at most five minutes late and only when there is work to take it
+from; the banner does not clear by itself while the queue is idle. A raise and
+a lift append at once (0126 §4, §7).
+
+**The setup's pause is not one of the three.** A recipe that asks for a tier one
+of its runtimes cannot provide makes the pass append `DispatchRefused` and one
+conductor-wide `ConductorPaused` with `cause: 'setup'`
+(`packages/conductor/src/conduct.ts:990-1031`). It pauses **every** project,
+holds across a restart, shows as the bar's `paused` chip (who, why, and a
+Resume beside it) and inside `lingtai doctor`'s `daemon: liveness` row as
+`paused by <by> (<reason>)`. Fix the recipe, then lift it with the chip's Resume
+or bare `lingtai resume` — whose own sentence is *"run `lingtai resume` once it
+is"* (`conduct.ts:1101`). Bare `lingtai resume` also unlocks every project a person
+paused; `lingtai resume <project>` never touches the setup's pause. In the
+0.14.0 security epic (#676) this becomes a refused recipe for that project
+alone.
+
+**Shutdown is a stop the process does not come back from**
 ([0030](decisions-archive/0030-shutting-down-safely.md)). It appends and returns; the
 daemon reads it before its next turn, finishes the attempt in flight and exits. The
 boundary is the *attempt* and not the agent — the gates, the merge lane and the
@@ -1059,8 +1110,10 @@ rather than leaving it looking hung. There is no default timeout, deliberately:
 `--timeout 20m` exists for somebody who has decided to accept what it does when
 it trips, which is stop taking work, **leave the agent running** and exit.
 
-`lingtai resume` lifts a shutdown nobody acted on, as it lifts a pause. Without
-that the request would stop every daemon started after it.
+**A drain lasts until the next start** (0126): `ConductorStarted` ends it, and
+`lingtai resume` does not touch it. Without that, a request nothing acted on
+would stop every daemon started after it — so a drain somebody else asked for,
+with no daemon left, is ended by starting one (`lingtai daemon`).
 
 **Starting again is `lingtai restart`**, which is the drain above and then one
 daemon — in that terminal, or by the supervisor that keeps it
@@ -1086,8 +1139,8 @@ system that is down and a person reading about why it may not come back up:
   refused by a process at a commit older than this checkout (#148) — is printed
   and does not refuse, since this is the command it asks for.
 - **a shutdown somebody else asked for**, because it is another person's
-  decision. `lingtai resume` lifts it. One you asked for yourself — a `shutdown`,
-  or a `restart` you Ctrl+C'd — is picked up and waited on, not refused.
+  decision, and nothing but a start ends it. One you asked for yourself — a
+  `shutdown`, or a `restart` you Ctrl+C'd — is picked up and waited on, not refused.
 
 One flag per refusal, so overriding one never overrides the rest: `--dirty` for
 the worktree and `--despite-doctor` for the doctor. Nothing overrides an
@@ -1096,15 +1149,15 @@ still printed.
 
 Then it waits, saying what is still finishing and repeating itself so it never
 reads as hung; checks the commit and the worktree **again**, because a drain can
-take an hour and those are what the start freezes; withdraws the request it
-made — `ConductorShutdownWithdrawn`, naming that request, so a pause and a drain
+take an hour and those are what the start freezes; withdraws nothing — the
+start it makes is what ends the drain, and a project's pause and a drain
 somebody asked for meanwhile are both left exactly as they are — and starts a
 daemon in that terminal, unless a supervisor keeps one (below). **What makes
 it never two daemons is the lock, not the order of operations** — and losing the
 lock is not a daemon running. If anything takes it first, the restart starts
 nothing and exits non-zero: the winner may be a `lingtai run` that exits when its
-attempt ends, or a copy something else started that read the drain before it was
-withdrawn and drains straight back out, and either leaves no daemon. `lingtai
+attempt ends, or a copy something else started that read the drain before the start ended
+it and drains straight back out, and either leaves no daemon. `lingtai
 doctor` says whether one is up; if none is, run `lingtai restart` again. Ctrl+C
 during the wait leaves the drain standing.
 
@@ -1147,11 +1200,11 @@ A start is now in the log as well as in the beacon — `ConductorStarted`, with
 who, why and the commit. `by` is `human:<you>` for a restart in the
 terminal or a `lingtai start` typed at one, and `daemon` for one launchd or
 systemd started — a supervised restart included, which is recorded as your
-drain and withdrawal, then that start — so *who restarted it at 23:06* is a question the log answers. A start
+drain, then that start — so *who restarted it at 23:06* is a question the log answers. A start
 that reads a drain asked while it was starting is not recorded: it takes nothing
 and exits. A drain asked before a daemon started is never read by it (#159,
 0048), so a standing one does not hold a supervisor's copies down, and `lingtai
-resume` is not the answer to a start nothing recorded — something else holding
+resume` is not the answer to a start nothing recorded (it does not touch a drain) — something else holding
 the lock is, and `lingtai doctor` names it. A beacon
 is one mutable row the next start overwrites, and it never could.
 
@@ -1413,7 +1466,7 @@ restart` treats it as one.
 
 **`KeepAlive` and `Restart=always` are the same rule**: the daemon is a thing
 that is always supposed to be up, so there is no start button that matters.
-What you steer is whether it takes work — `lingtai pause` and `lingtai resume`.
+What you steer is whether it takes work — `lingtai pause [project]` and `lingtai resume [project]`.
 The Linux unit also sets `KillMode=process`, because systemd's default kills the
 whole cgroup, agent included, where launchd signals only the daemon.
 
@@ -1501,22 +1554,17 @@ restart`, and `service install` over a job the supervisor does not have, refuse
 and exit 1 without starting anything while a shutdown request stands — not
 because the daemon they started would exit on it, since it would not, but
 because it would take work over a stop somebody asked for, and lifting that is
-theirs or `resume`'s. A `service restart` that finds one landed during its own
+theirs, and only a start ends it. A `service restart` that finds one landed during its own
 wait has already unloaded the service, and leaves it so.
-(`install` still writes the file, and after `resume` it is `service start` that
-loads it.)
+(`install` still writes the file; it is `service start` that loads it, and
+that start ends the drain.)
 
-**`resume` lifts a pause as well as the shutdown** — it is one event, and both
-are cleared by it. If you had paused on purpose, `resume` alone lets the next
-daemon take the work you were holding. To keep the pause, take the supervisor
-out of the way first so nothing starts between the two commands: once the daemon
-has exited, `service shutdown`, `resume`, `pause "why"` again, `service start`. The
-refusal above names the pause and prints that order when one is in force.
-**Not for a pause that lifts itself** — the conductor's own, after a run that
-never started, carries a time (0031 §3) and `lingtai pause` cannot: pausing
-again would hold past that time until somebody resumed by hand. Wait out its
-time instead, then `resume`, which by then lifts only the shutdown. The refusal
-says which kind it found.
+**`resume` does not lift the shutdown, and a service start ends it.** A
+person's pause on a project is a lock of its own (*What stops new work*): the
+daemon the supervisor starts keeps honouring it, so a stop you wanted survives
+the `service shutdown`, `service start` round trip with no re-pausing. Only the
+setup's pause is conductor-wide, and bare `lingtai resume` lifts that along
+with every project's pause.
 
 #### Under a dedicated unprivileged user (Linux)
 
@@ -1595,8 +1643,9 @@ beside the dot, and the other is on hover. A board can still be perfectly
 current, taking work, and driven by code you replaced an hour ago; the dot goes
 red and says which.
 
-Whether the conductor is *paused* is a third fact and stays its own chip, absent
-unless there is something to say.
+Whether the conductor is under the *setup's pause* is a third fact and stays its
+own chip, absent unless there is something to say; a project's pause, the day's
+ceiling and a usage limit are the banner's, not the bar's.
 
 Neither restarts anything: `lingtai doctor` never writes, and a daemon still
 does not restart itself when `main` moves — that remains open, and 0042 decided
@@ -1628,10 +1677,11 @@ are read from tables: the Waiting-lane neighbours from `task_view`, and the
 spend lines from `spend`.
 
 The page updates itself: Postgres notifies on every append, the daemon advances
-the projection, and the board re-reads. When the conductor is paused the bar
-says so on its own chip — who paused it, why, and a Resume beside it — because a
-board that is perfectly current and going nowhere looks exactly like a quiet one
-(`#77`). If it stops moving for any other reason, `lingtai doctor` says whether
+the projection, and the board re-reads. When a project's work does not
+start, the banner under the bar says why and what lifts it (*What stops new
+work*); the bar's `paused` chip — who, why, and a Resume beside it — remains for
+the setup's conductor-wide pause alone. A board that is perfectly current and
+going nowhere looks exactly like a quiet one (`#77`). If it stops moving for any other reason, `lingtai doctor` says whether
 the daemon is up.
 
 That is the whole bet: if deciding still means opening GitHub, nothing changed.
@@ -1837,9 +1887,9 @@ other half of that choice.
 ### Before
 
 **Stop the conductor first — a note taken while it can still append is a note
-the next landing can outrun.** `pauseConductor` appends `ConductorPaused` to
-the control stream, which is itself inside `events`, so a pause written
-before the reset would not survive it either — stopping, not pausing, is what
+the next landing can outrun.** A pause is an event on a stream inside `events`
+(`prj-{project}` for a project's, the control stream for the setup's), so one
+written before the reset would not survive it either — stopping, not pausing, is what
 keeps every note below from being taken against a log still in motion:
 
 ```bash
@@ -2251,28 +2301,17 @@ table stream_snapshots;` on Postgres) is optional and safe; it only clears rows
 
 ### After
 
-**A pause cannot hold off a daemon that has not started yet — keep the daemon
-down for the rest of this section instead.** `readControl` scopes every
-signal to the watermark a daemon takes at its own start
-(`packages/daemon/src/control.ts:116-123`), and a person's `lingtai pause`
-never sets `holdsAcrossStarts` — only the conductor's own refusal-pause does
-(`:104-114`). So a pause appended before a daemon's first start is invisible
-to that daemon: it reduces the empty, unpaused log it actually sees and claims
-the top queued ticket. **It is no better off against a daemon that is
-already running from before the reset, on this host or another sharing the
-same log.** `controlWatermark` is read once, at that daemon's own start
-(`:131-133`), and never again — so a daemon that started pre-reset is still
-holding whatever version the control stream had reached back then, and the
-reset's `truncate … restart identity` sends the fresh stream back to
-counting from 1. A pause appended here lands below that daemon's own
-watermark exactly as it lands below a freshly started one's, and
-`readControl` filters it out the same way. Nothing makes this command hold
-off any daemon, old or new — what does that is the next paragraph's rule.
-Run it anyway, since it is what the board shows while
-this section is in progress:
+**A pause written before the reset is gone with it, and nothing here holds a
+daemon off — keep the daemon down for the rest of this section instead.** A
+project's pause is an event on `prj-{project}`, inside `events`, so the reset
+empties it with the rest; and a daemon already running from before the reset,
+on this host or another sharing the same log, is not stopped by a pause either.
+What keeps work from being claimed is the next paragraph's rule. Once `lingtai
+add` below has registered a project again, pause it anyway, since the banner is
+what the board shows while this section is in progress:
 
 ```bash
-pnpm lingtai pause "resetting the log — see #448"
+pnpm lingtai pause <project>
 ```
 
 None of `projection rebuild`, `add` or `doctor` below needs a daemon running.
@@ -2324,7 +2363,8 @@ freshly emptied log predates anything. Put `agent:hold` back only on the
 issues that should still stay held — the reset does not know which those
 were; *Before*'s held-items note says which, and so does its landed/closed
 note, for any issue you chose to hold there rather than close. Only now —
-holds restored — bring the daemon or supervisor back, then lift the pause:
+holds restored — bring the daemon or supervisor back, then lift each project's
+pause (bare `lingtai resume` lifts every project's at once):
 
 ```bash
 pnpm lingtai resume
@@ -2379,6 +2419,18 @@ recipes and the environment files are all untouched.
   instead of accepting that offer.
 
 ## Upgrade notes
+
+**#1013 — a stop is a lock, and an old pause stops nothing after the restart.**
+Before restarting onto it, run `lingtai doctor` on the daemon that is still
+running. If its `daemon: liveness` row says `paused by …` and the pause is not
+the setup's, run bare `lingtai resume`, and then `lingtai pause <project>` for
+each stop that is still wanted — in that order, because a bare resume run after
+the pause would unlock the project again. The reason: after the restart only
+`cause: 'setup'`, or a `holdsAcrossStarts` pause with no cause, still reduces to
+a pause (`isSetupPause`, `packages/domain/src/control.ts:173-179`); a person's,
+the ceiling's or an account limit's old `ConductorPaused` reduces to nothing
+([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md), *Upgrading*). A
+setup pause standing is unaffected.
 
 **#679 — `spend` stores each run's estimate and its ticket's kind.** The table
 has new columns (`estimated_usd`, `estimate_fetched`, `kind`), so `lingtai
