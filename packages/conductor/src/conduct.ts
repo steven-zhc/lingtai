@@ -225,7 +225,7 @@ import {
   type TokenSource,
   type Worktree,
 } from '@lingtai/repo'
-import { type Duration, Effect, Exit, Result } from 'effect'
+import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
 import { armsOnOrigin } from './arms.ts'
@@ -1595,42 +1595,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let mergeCommit: string | null = null
       const landedAt = (): string | null => mergeCommit
-      /**
-       * **A landing that finished is recorded even when the pass was interrupted
-       * after it** (#1056). The lane makes the push and the merge uninterruptible,
-       * but the interruption then takes effect before the pass reaches its own
-       * `TicketLanded` append, and the outer finalizer would give back an item
-       * whose diff is already on the base. Runs on every exit of this scope; on a
-       * normal ending `released` is already true and it does nothing.
-       */
-      yield* Effect.addFinalizer(() =>
-        Effect.suspend(() => {
-          const merged = mergeCommit
-          if (merged === null || released || onStream === null) return Effect.void
-          released = true
-          return Effect.promise(() =>
-            appendNow(ticketId, [
-              {
-                type: 'TicketLanded',
-                actor: 'conductor',
-                data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
-              },
-            ]),
-          ).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                didLand = true
-              }),
-            ),
-            // An append that did not land leaves the item to the release below.
-            Effect.catchCause(() =>
-              Effect.sync(() => {
-                released = false
-              }),
-            ),
-          )
-        }),
-      )
       /** The tree, once `admit`'s `worktree:` action has cut it. */
       let worktree: Worktree | null = null
       /**
@@ -2494,6 +2458,47 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       yield* Effect.addFinalizer(() => (didLand ? Effect.void : Effect.promise(publishWhatIsCommitted)))
+
+      /**
+       * **A landing that finished is recorded even when the pass was interrupted
+       * after it** (#1056). The lane makes the push and the merge uninterruptible,
+       * but the interruption then takes effect before the pass reaches its own
+       * `TicketLanded` append, and the outer finalizer would give back an item
+       * whose diff is already on the base. Runs on every exit of this scope; on a
+       * normal ending `released` is already true and it does nothing.
+       *
+       * **Registered after the publish and the run log's finalizers, so it runs
+       * before them**: the log's fate turns on `didLand`, which has to be true by
+       * then. **A refused append does not give the item back**: the diff is on
+       * the base, and a `TicketReleased` would return merged work to the queue,
+       * so `released` stays true and the failure is the log's to say.
+       */
+      yield* Effect.addFinalizer((exit) =>
+        Effect.suspend(() => {
+          const merged = mergeCommit
+          // Only an interruption: any other ending reaches the pass's own append
+          // and its handler, which decide a refused `TicketLanded` themselves.
+          if (!Exit.isFailure(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void
+          if (merged === null || released || onStream === null) return Effect.void
+          released = true
+          return Effect.promise(() =>
+            appendNow(ticketId, [
+              {
+                type: 'TicketLanded',
+                actor: 'conductor',
+                data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
+              },
+            ]),
+          ).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                didLand = true
+              }),
+            ),
+            Effect.catchCause(() => Effect.void),
+          )
+        }),
+      )
 
       // ---- the ports ---------------------------------------------------------
       // Eight methods, and every one of them wraps rather than reimplements —
