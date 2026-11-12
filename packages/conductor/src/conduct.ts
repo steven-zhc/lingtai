@@ -19,10 +19,11 @@ import {
   createQueueAction,
   createWorkAction,
   createWorktreeAction,
+  dispatchRuntime,
   fromPromiseAction,
   runCommand,
 } from '@lingtai/actions'
-import { FAILED, inSpan, markFailed } from '@lingtai/actions/spans'
+import { FAILED, markFailed } from '@lingtai/actions/spans'
 import {
   NO_RUN_LOG,
   type RunLog,
@@ -214,6 +215,7 @@ import {
   UNREACHABLE_WAITS,
   isUnreachableFailure,
   mirrorPathFor,
+  mirrorWrite,
   retryUnreachable,
   type RepoFailed,
   withMirrorWrite,
@@ -221,7 +223,7 @@ import {
   type TokenSource,
   type Worktree,
 } from '@lingtai/repo'
-import { type Duration, Effect, Result } from 'effect'
+import { type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
 import { armsOnOrigin } from './arms.ts'
@@ -1815,13 +1817,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       /** A git command in the worktree, which is where all of them run. */
       const gitHere = (args: string[]) => repo.git(args, { token: options.token, env: options.gitEnv, cwd })
-      /** …as a promise, for the ports. A failure here is a defect, not a verdict. */
-      const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
+      /** …as an Effect: a failure here is a defect, not a verdict. */
+      const gitOrDieEffect = (args: string[]) => Effect.orDie(gitHere(args))
+      /** …as a promise, for the ports not yet Effects. */
+      const gitOrDie = (args: string[]) => Effect.runPromise(gitOrDieEffect(args))
       /**
        * `retry` is the waits for a command that may not reach origin (#1029): the same single
        * run, with `retryUnreachable` inside it.
        */
-      const gitAsked = (
+      const gitAskedEffect = (
         args: string[],
         retry?: readonly Duration.Input[],
         recover?: (err: RepoFailed) => Effect.Effect<string, RepoFailed>,
@@ -1833,8 +1837,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return Result.isSuccess(r) ? r.success : yield* recover(r.failure)
             })
           : gitHere(args)
-        return Effect.runPromise(Effect.result(retry ? retryUnreachable(once, retry) : once))
+        return Effect.result(retry ? retryUnreachable(once, retry) : once)
       }
+      /** …as a promise, for the ports not yet Effects. */
+      const gitAsked = (
+        args: string[],
+        retry?: readonly Duration.Input[],
+        recover?: (err: RepoFailed) => Effect.Effect<string, RepoFailed>,
+      ) => Effect.runPromise(gitAskedEffect(args, retry, recover))
       /**
        * …for a command that writes the mirror's refs or worktree metadata,
        * which a worktree shares with it: one at a time per mirror, for that
@@ -2770,196 +2780,191 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `JudgeAsked` to reduce — the route is already the record of what was
        * decided, and what it spent is a `RunSpent` beside it.
        */
-      const askTheAgent = (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> =>
+      const askTheAgent = (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Effect.Effect<Judged> =>
         // A dispatched judge is an action of the `proposed` visit (#791); a
         // built-in spends nothing and is not. Its failures mark the span
-        // themselves — `held`, `neverStarted` and `unreadable` below.
-        inSpan('action judge', { 'lingtai.index': 0 }, () => askTheAgentBody(declared, on))
-      const askTheAgentBody = async (
+        // themselves — `held`, `neverStarted` and `unreadable` below — from the
+        // fiber, where the span is current. A failure exit (an interruption)
+        // marks it too, inside the span.
+        askTheAgentBody(declared, on).pipe(
+          Effect.onExit((exit) => (Exit.isFailure(exit) ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void)),
+          Effect.withSpan('action judge', { attributes: { 'lingtai.index': 0 } }, { captureStackTrace: false }),
+        )
+      const askTheAgentBody = (
         declared: Extract<Declared, { runtime: RuntimeId }>,
         on: Judging,
-      ): Promise<Judged> => {
-        const named = declared.named
-        const held = (why: string): Judged => {
-          markFailed()
-          return { next: 'waiting', named, why }
-        }
-        // `#462`: the set-of-one guard that used to live here (`on.offering
-        // .length < 2`) is dead — `replyFor` (`proposed-route.ts`) answers
-        // `NotAsked` before `judge` is ever called for a set that size, which
-        // is the ticket's own rule: a judge is paid, so one that cannot help
-        // is not asked, not even a built-in.
-
-        // **The runtime the entry named, dispatched** (`#314`). It used to be
-        // `options.runtime.capabilities.id` unconditionally, with a comment saying
-        // that was not the name being dropped — `agentRefusal` had refused any
-        // entry that disagreed, so the two always agreed. They need not now, and
-        // this is the reading that makes `judge: codex` beside `agent:
-        // claude-code` a thing the recipe can say.
-        const dispatched = runtimeNamed(declared.runtime)
-        const runtime = dispatched.capabilities.id
-        // **The model is in the sentence or it is nowhere.** `RunSpent` carries
-        // `runtime` and never `model`, so a `judge:` whose whole point is a
-        // cheap model must still say which one it bought here, where
-        // `PassRouted.why` and the run log can be read after the fact (`#314`,
-        // 0070 §2).
-        const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
-        const settings = await Effect.runPromise(Effect.result(host.unhookedSettings({ runId, label: 'judge', home })))
-        if (Result.isFailure(settings)) {
-          return held(`the "${named}" judge had no settings: ${settings.failure.detail}`)
-        }
-        judgements += 1
-        log(`judging a "${on.when}" with ${asKnown} — ${named}`)
-        runLog.note('judge', `${on.when}: asking ${asKnown}`)
-
-        // Set inside the `.catch` below: `dispatched.run` threw rather than
-        // returning, so the `RunOutcome` beneath it is made up by this
-        // function and not reported by the process — the `RunSpent` the
-        // ticket asks for is "whose process returned a `RunOutcome`", and
-        // this one did not.
-        let threw = false
-        // Built once, for the prompt record and for the `RunSpent` below (#923).
-        const judgeFor: SpentFor = { _tag: 'Judge', when: on.when }
-        const judgeParts = judgePromptParts(on)
-        const judgePromptText = judgePrompt(on)
-        const outcome = await Effect.runPromise(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const abort = yield* Effect.acquireRelease(
-                Effect.sync(() => new AbortController()),
-                (controller) => Effect.sync(() => controller.abort()),
-              )
-              const judgeEnv = runnableEnv(env.values)
-              return yield* Effect.promise(() =>
-                runtimeVersionOf(dispatched, judgeEnv, worktree?.path ?? home)
-                  .then((runtimeVersion) =>
-                    recordPrompt(
-                      store,
-                      runId,
-                      {
-                        for: judgeFor,
-                        promptVersion: `judge@${judgePromptText.length}`,
-                        runtimeVersion,
-                        prompt: judgeParts,
-                      },
-                      log,
-                    ),
-                  )
-                  .then(() =>
-                    dispatched
-                      .run({
-                        // The count is in it, so two arrivals on one pass are two
-                        // sessions: a judge asked whether it still agrees with itself
-                        // is the warm-review failure `sessionIdFor` exists to avoid,
-                        // and a session id reused is the refusal `#195` cost a run.
-                        // The wait this continuation resumes is in it too, since the
-                        // count restarts in each one (#580). See `judgements`.
-                        runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
-                        // The worktree where there is one, and the conductor's own
-                        // directory where `admit` never cut one. Nothing is read from
-                        // either — the prompt says so — but a process still needs a
-                        // directory that exists to start in.
-                        cwd: worktree?.path ?? home,
-                        prompt: judgePromptText,
-                        ...(declared.model === undefined ? {} : { model: declared.model }),
-                        settingsPath: settings.success,
-                        log: taggedTrace(runLog, `judge:${on.when}`),
-                        traceTools: true,
-                        env: judgeEnv,
-                        limits: spendFor(declared.limits),
-                        signal: abort.signal,
-                      })
-                      .catch((err) => {
-                        threw = true
-                        return {
-                          exitCode: null,
-                          turns: 0,
-                          durationMs: 0,
-                          costUsd: null,
-                          failure: { kind: 'crash' as const, detail: (err as Error).message },
-                          text: null,
-                          sessionId: '',
-                          usage: undefined,
-                        }
-                      }),
-                  ),
-              )
-            }),
-          ),
-        )
-
-        // **Who was asked is part of what it cost** (`#314`). This string is
-        // still the whole record of the *decision* — there is no `JudgeAsked`
-        // to reduce — and a `judge:` bought from a cheap model is one whose
-        // model has to be readable on `PassRouted.why` afterwards, or the
-        // saving is unprovable.
-        const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? '' : `, $${outcome.costUsd.toFixed(2)}`}`
-        runLog.note('judge', `${on.when}: ${outcome.failure?.kind ?? 'answered'} · ${spent}`)
-        // **One `RunSpent` per dispatch whose process returned a `RunOutcome`**
-        // (`#495`, 0110 *Consequences*) — whether the judge answered, answered
-        // something the offer did not contain, or answered nothing. `threw`
-        // excludes the one path where nothing came back to report: the
-        // `.catch` above makes up a `RunOutcome` so the rest of this function
-        // can read one, and `RunSpent.turns`/`.costUsd` may never be invented
-        // numbers (`events.ts`'s own doc on `RunSpent`).
-        if (!threw) {
-          await appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)])
-        }
-        /**
-         * **A quota wall is the account's, so it locks that account rather than
-         * backing off this item** (0031 §3) — the third depth that wall is met at, after the
-         * step's own agent and the agent a refusal bought.
-         *
-         * `never-started` is the adapter's classification and is not re-derived
-         * here (0031 §1). Everything else — a crash, a timeout, a turn budget
-         * spent without an answer — did start, is about this pass, and is a
-         * person's: that is the `held` below.
-         */
-        if (outcome.failure?.kind === 'never-started') {
-          markFailed()
-          return {
-            neverStarted: {
-              agent: runtime,
-              // The runtime's own words, whole: `standDown` reads a reset time out
-              // of them (0031 §4) and the log line shows them as what they are.
-              detail: outcome.failure.detail,
-            },
+      ): Effect.Effect<Judged> =>
+        Effect.gen(function* () {
+          const named = declared.named
+          const held = (why: string): Judged => {
+            markFailed()
+            return { next: 'waiting', named, why }
           }
-        }
-        if (outcome.failure) {
-          // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
-          const walled = outcome.failure.kind === 'crash' ? accountWallOf(outcome.failure.detail) : null
-          if (walled !== null) {
-            await Effect.runPromise(
-              standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail),
+          // `#462`: the set-of-one guard that used to live here (`on.offering
+          // .length < 2`) is dead — `replyFor` (`proposed-route.ts`) answers
+          // `NotAsked` before `judge` is ever called for a set that size, which
+          // is the ticket's own rule: a judge is paid, so one that cannot help
+          // is not asked, not even a built-in.
+
+          // **The runtime the entry named, dispatched** (`#314`). It used to be
+          // `options.runtime.capabilities.id` unconditionally, with a comment saying
+          // that was not the name being dropped — `agentRefusal` had refused any
+          // entry that disagreed, so the two always agreed. They need not now, and
+          // this is the reading that makes `judge: codex` beside `agent:
+          // claude-code` a thing the recipe can say.
+          const dispatched = runtimeNamed(declared.runtime)
+          const runtime = dispatched.capabilities.id
+          // **The model is in the sentence or it is nowhere.** `RunSpent` carries
+          // `runtime` and never `model`, so a `judge:` whose whole point is a
+          // cheap model must still say which one it bought here, where
+          // `PassRouted.why` and the run log can be read after the fact (`#314`,
+          // 0070 §2).
+          const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
+          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: 'judge', home }))
+          if (Result.isFailure(settings)) {
+            return held(`the "${named}" judge had no settings: ${settings.failure.detail}`)
+          }
+          judgements += 1
+          log(`judging a "${on.when}" with ${asKnown} — ${named}`)
+          runLog.note('judge', `${on.when}: asking ${asKnown}`)
+
+          // Set inside the `.catch` below: `dispatched.run` threw rather than
+          // returning, so the `RunOutcome` beneath it is made up by this
+          // function and not reported by the process — the `RunSpent` the
+          // ticket asks for is "whose process returned a `RunOutcome`", and
+          // this one did not.
+          let threw = false
+          // Built once, for the prompt record and for the `RunSpent` below (#923).
+          const judgeFor: SpentFor = { _tag: 'Judge', when: on.when }
+          const judgeParts = judgePromptParts(on)
+          const judgePromptText = judgePrompt(on)
+          const judgeEnv = runnableEnv(env.values)
+          const runtimeVersion = yield* Effect.promise(() =>
+            runtimeVersionOf(dispatched, judgeEnv, worktree?.path ?? home),
+          )
+          yield* Effect.promise(() =>
+            recordPrompt(
+              store,
+              runId,
+              {
+                for: judgeFor,
+                promptVersion: `judge@${judgePromptText.length}`,
+                runtimeVersion,
+                prompt: judgeParts,
+              },
+              log,
+            ),
+          )
+          // Only a defect is the crash outcome; an interruption stays one. The
+          // dispatch aborts the run and waits for it to settle before it continues.
+          const outcome = yield* dispatchRuntime(dispatched, undefined, {
+            // The count is in it, so two arrivals on one pass are two
+            // sessions: a judge asked whether it still agrees with itself
+            // is the warm-review failure `sessionIdFor` exists to avoid,
+            // and a session id reused is the refusal `#195` cost a run.
+            // The wait this continuation resumes is in it too, since the
+            // count restarts in each one (#580). See `judgements`.
+            runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
+            // The worktree where there is one, and the conductor's own
+            // directory where `admit` never cut one. Nothing is read from
+            // either — the prompt says so — but a process still needs a
+            // directory that exists to start in.
+            cwd: worktree?.path ?? home,
+            prompt: judgePromptText,
+            ...(declared.model === undefined ? {} : { model: declared.model }),
+            settingsPath: settings.success,
+            log: taggedTrace(runLog, `judge:${on.when}`),
+            traceTools: true,
+            env: judgeEnv,
+            limits: spendFor(declared.limits),
+          }).pipe(
+            Effect.catchDefect((err) =>
+              Effect.sync(() => {
+                threw = true
+                return {
+                  exitCode: null,
+                  turns: 0,
+                  durationMs: 0,
+                  costUsd: null,
+                  failure: { kind: 'crash' as const, detail: (err as Error).message },
+                  text: null,
+                  sessionId: '',
+                  usage: undefined,
+                }
+              }),
+            ),
+          )
+
+          // **Who was asked is part of what it cost** (`#314`). This string is
+          // still the whole record of the *decision* — there is no `JudgeAsked`
+          // to reduce — and a `judge:` bought from a cheap model is one whose
+          // model has to be readable on `PassRouted.why` afterwards, or the
+          // saving is unprovable.
+          const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? '' : `, $${outcome.costUsd.toFixed(2)}`}`
+          runLog.note('judge', `${on.when}: ${outcome.failure?.kind ?? 'answered'} · ${spent}`)
+          // **One `RunSpent` per dispatch whose process returned a `RunOutcome`**
+          // (`#495`, 0110 *Consequences*) — whether the judge answered, answered
+          // something the offer did not contain, or answered nothing. `threw`
+          // excludes the one path where nothing came back to report: the
+          // `.catch` above makes up a `RunOutcome` so the rest of this function
+          // can read one, and `RunSpent.turns`/`.costUsd` may never be invented
+          // numbers (`events.ts`'s own doc on `RunSpent`).
+          if (!threw) {
+            yield* Effect.promise(() => appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)]))
+          }
+          /**
+           * **A quota wall is the account's, so it locks that account rather than
+           * backing off this item** (0031 §3) — the third depth that wall is met at, after the
+           * step's own agent and the agent a refusal bought.
+           *
+           * `never-started` is the adapter's classification and is not re-derived
+           * here (0031 §1). Everything else — a crash, a timeout, a turn budget
+           * spent without an answer — did start, is about this pass, and is a
+           * person's: that is the `held` below.
+           */
+          if (outcome.failure?.kind === 'never-started') {
+            markFailed()
+            return {
+              neverStarted: {
+                agent: runtime,
+                // The runtime's own words, whole: `standDown` reads a reset time out
+                // of them (0031 §4) and the log line shows them as what they are.
+                detail: outcome.failure.detail,
+              },
+            }
+          }
+          if (outcome.failure) {
+            // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
+            const walled = outcome.failure.kind === 'crash' ? accountWallOf(outcome.failure.detail) : null
+            if (walled !== null) {
+              yield* standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail)
+            }
+            return held(
+              `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
+                `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
             )
           }
-          return held(
-            `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
-              `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
-          )
-        }
-        const chose = chosenIn(outcome.text)
-        if (chose === null) {
-          // `#462`: a judge's own unreadable answer is `Judged.unreadable`
-          // now, not reduced into `held`'s `next: 'waiting'` — it becomes
-          // `JudgeReply.Unreadable` in `replyFor`, which `decideRoute` reads
-          // as `UnreadableReply` rather than as a destination somebody chose.
-          markFailed()
-          return {
-            unreadable: {
-              named,
-              raw:
-                `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
-                `(${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
-            },
+          const chose = chosenIn(outcome.text)
+          if (chose === null) {
+            // `#462`: a judge's own unreadable answer is `Judged.unreadable`
+            // now, not reduced into `held`'s `next: 'waiting'` — it becomes
+            // `JudgeReply.Unreadable` in `replyFor`, which `decideRoute` reads
+            // as `UnreadableReply` rather than as a destination somebody chose.
+            markFailed()
+            return {
+              unreadable: {
+                named,
+                raw:
+                  `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
+                  `(${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
+              },
+            }
           }
-        }
-        // Held to the offer by `judged` in `attempt-steps.ts` and never here — a
-        // destination the set did not contain is refused by name there, with the
-        // ceiling that took it away, which is the one place that knows both.
-        return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` }
-      }
+          // Held to the offer by `judged` in `attempt-steps.ts` and never here — a
+          // destination the set did not contain is refused by name there, with the
+          // ceiling that took it away, which is the one place that knows both.
+          return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` }
+        })
 
       /**
        * `proposed` — **the judge the recipe declared for this direction** (`#274`,
@@ -2987,10 +2992,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * *choosing* `implement`; it cannot spend a second, because the offer it was
        * handed is what the counting already left.
        */
-      const judge = async (on: Judging): Promise<Judged> => {
+      const judge = (on: Judging): Effect.Effect<Judged> => {
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
-        if (declared === null) return { noJudge: true }
-        return 'built' in declared ? declared : askTheAgent(declared, on)
+        if (declared === null) return Effect.succeed({ noJudge: true })
+        return 'built' in declared ? Effect.succeed(declared) : askTheAgent(declared, on)
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -3151,24 +3156,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * The subject starts with `Merge`, so it can never look like the
        * `WIP_COMMIT_PREFIX` commit the lane refuses (`integrate.ts`).
        */
-      const mergeBase = async (toSha: string): Promise<{ head: string } | { failed: string }> => {
-        const fetched = await gitAsked(['fetch', 'origin', `refs/heads/${base}`])
-        if (Result.isFailure(fetched)) return { failed: `fetching ${base} failed: ${fetched.failure.detail}` }
-        const merged = await gitAsked([
-          'merge',
-          '--no-edit',
-          '-m',
-          `Merge ${base} at ${toSha.slice(0, 7)} into ${branch}`,
-          toSha,
-        ])
-        if (Result.isFailure(merged)) {
-          await gitAsked(['merge', '--abort'])
-          return { failed: merged.failure.detail }
-        }
-        const head = await gitAsked(['rev-parse', 'HEAD'])
-        if (Result.isFailure(head)) return { failed: head.failure.detail }
-        return { head: head.success.trim() }
-      }
+      const mergeBase = (toSha: string): Effect.Effect<{ head: string } | { failed: string }> =>
+        Effect.gen(function* () {
+          const fetched = yield* gitAskedEffect(['fetch', 'origin', `refs/heads/${base}`])
+          if (Result.isFailure(fetched)) return { failed: `fetching ${base} failed: ${fetched.failure.detail}` }
+          const merged = yield* gitAskedEffect([
+            'merge',
+            '--no-edit',
+            '-m',
+            `Merge ${base} at ${toSha.slice(0, 7)} into ${branch}`,
+            toSha,
+          ])
+          if (Result.isFailure(merged)) {
+            yield* gitAskedEffect(['merge', '--abort'])
+            return { failed: merged.failure.detail }
+          }
+          const head = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+          if (Result.isFailure(head)) return { failed: head.failure.detail }
+          return { head: head.success.trim() }
+        })
 
       /**
        * **Whether the command `build` refused fails on the base too** (#744, 0108 §13) — the port
@@ -3181,58 +3187,75 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const baseAbort = new AbortController()
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
-      const baseIsRed = async (asked: { action: string; mergedOnto: string | null }) => {
-        const action = recipe.steps.build.find((a) => a.name === asked.action)
-        if (action === undefined || !('run' in action)) {
-          runLog.note('base', `base not checked: \`${asked.action}\` is not a run: action in the recipe's build list`)
-          return { notRed: 'not a run: action in the recipe' }
-        }
-        const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
-        if (baseSha === null) return { notRed: 'no base commit was cut' }
-        const answer = await baseCheckFor(store, log, home).ask({
-          project,
-          base,
-          baseSha,
-          command: action.run,
-          prepared: recipe.steps.prepared.flatMap((a) =>
-            'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
-          ),
-          env: envForExtension(action.env),
-          runId,
-          signal: baseAbort.signal,
-          timeoutMs: parseDuration(action.timeout),
-          tree: {
-            cut: async (path, sha) => {
-              const cut = await gitAskedMirror(['worktree', 'add', '--force', '--detach', path, sha])
-              if (Result.isFailure(cut)) throw new Error(cut.failure.detail)
-              if (submodulesOf(recipe)) {
-                // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
-                await Effect.runPromise(
-                  repo.git(['submodule', 'update', '--init', '--recursive'], {
-                    token: options.token,
-                    env: options.gitEnv,
-                    cwd: path,
-                  }),
-                )
-              }
-            },
-            remove: async (path) => {
-              const gone = await gitAskedMirror(['worktree', 'remove', '--force', path])
-              if (Result.isFailure(gone)) throw new Error(gone.failure.detail)
-            },
-            plant: async (path) => {
-              const plantedAt = resolve(path, recipe.env.plantAt)
-              await mkdir(dirname(plantedAt), { recursive: true })
-              await writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 })
-            },
-          },
+      const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
+        Effect.gen(function* () {
+          // Read before any mirror write, so a permit holder is never carried into the detached runs.
+          const services = yield* Effect.context()
+          const detached = Effect.runPromiseWith(services)
+          const action = recipe.steps.build.find((a) => a.name === asked.action)
+          if (action === undefined || !('run' in action)) {
+            runLog.note('base', `base not checked: \`${asked.action}\` is not a run: action in the recipe's build list`)
+            return { notRed: 'not a run: action in the recipe' }
+          }
+          const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
+          if (baseSha === null) return { notRed: 'no base commit was cut' }
+          const answer = yield* Effect.promise(() =>
+            baseCheckFor(store, log, home).ask({
+              project,
+              base,
+              baseSha,
+              command: action.run,
+              prepared: recipe.steps.prepared.flatMap((a) =>
+                'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
+              ),
+              env: envForExtension(action.env),
+              runId,
+              signal: baseAbort.signal,
+              timeoutMs: parseDuration(action.timeout),
+              tree: {
+                cut: (path, sha) =>
+                  detached(
+                    Effect.gen(function* () {
+                      const cut = yield* mirrorWrite(
+                        mirrorPathFor(project, home),
+                        gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
+                      )
+                      if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
+                      if (submodulesOf(recipe)) {
+                        // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
+                        yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
+                          token: options.token,
+                          env: options.gitEnv,
+                          cwd: path,
+                        })
+                      }
+                    }),
+                  ),
+                remove: (path) =>
+                  detached(
+                    Effect.gen(function* () {
+                      const gone = yield* mirrorWrite(
+                        mirrorPathFor(project, home),
+                        gitAskedEffect(['worktree', 'remove', '--force', path]),
+                      )
+                      if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
+                    }),
+                  ),
+                plant: (path) => {
+                  const plantedAt = resolve(path, recipe.env.plantAt)
+                  return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
+                    writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
+                  )
+                },
+              },
+            }),
+          )
+          if (answer.verdict === 'red') {
+            return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
+          }
+          if (answer.verdict === 'unknown') runLog.note('base', `base not checked: ${answer.why}`)
+          return { notRed: answer.verdict }
         })
-        if (answer.verdict === 'red') {
-          return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
-        }
-        if (answer.verdict === 'unknown') runLog.note('base', `base not checked: ${answer.why}`)
-        return { notRed: answer.verdict }
-      }
 
       /**
        * `design` — the document into the worktree, and onto the branch (0066 §5,
@@ -4368,7 +4391,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
         bodies: passBodies,
         ceilings,
-        judge: (on) => Effect.promise(() => judge(on)),
+        judge,
       })
       if (unappended !== null) {
         log(`the store refused an append during the claim: ${whyOf(unappended)}`)
@@ -4437,9 +4460,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
         bodies: passBodies,
         ceilings,
-        judge: (on) => Effect.promise(() => judge(on)),
-        mergeBase: (toSha) => Effect.promise(() => mergeBase(toSha)),
-        baseIsRed: (asked) => Effect.promise(() => baseIsRed(asked)),
+        judge,
+        mergeBase,
+        baseIsRed,
         // **Where this walk jumps to, once `admit` and `prepared` have
         // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
         // every ordinary pass, which starts at `admit` and walks the
