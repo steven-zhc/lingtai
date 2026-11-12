@@ -178,9 +178,11 @@ export function bannerRows(
       })
       .map(([project, runtimes]) => ({ project, runtimes }))
       .sort((a, b) => (a.project < b.project ? -1 : 1))
-    // A ceiling holds every project, so nobody is left taking work.
+    // A ceiling holds every project, so nobody is left taking work; and when the
+    // control stream could not be read, whether one does is unknown, never "no".
     const anyCeiling = read.ceiling?.reached != null && !read.ceiling.reached.passed
-    for (const r of accountRows.values()) r.others = anyCeiling ? [] : others
+    const unknown = read.controlProblem !== undefined
+    for (const r of accountRows.values()) r.others = anyCeiling || unknown ? [] : others
   }
   for (const runtime of RuntimeId.options) {
     const r = accountRows.get(runtime)

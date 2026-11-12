@@ -674,7 +674,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // Running line (#995); a failed read is the empty map, and C1's banner says why.
   const lockRead = await readProjectLocks()
   const projectLocks = lockMap(lockRead)
-  const uses = lockRead.ok && lockRead.uses ? lockRead.uses : new Map<string, readonly RuntimeId[]>()
+  // An unread control stream leaves the ceiling unknown: no one is claimed to take work.
+  const uses =
+    lockRead.ok && lockRead.uses && lockRead.controlProblem === undefined
+      ? lockRead.uses
+      : new Map<string, readonly RuntimeId[]>()
   const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
   const locksInScope: LockMap = new Map([...projectLocks].filter(([p]) => only === undefined || p === only))
   const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)

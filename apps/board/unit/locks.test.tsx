@@ -177,6 +177,13 @@ describe('the account row (#1010)', () => {
     expect(html).toContain('>lift</button>')
   })
 
+  it('does not claim a project takes work when the control stream could not be read', () => {
+    const held = [{ project: 'lingtai', locks: [account('claude-code', tonight)] }]
+    const html = renderToStaticMarkup(<LockRows locks={{ ...read(held), controlProblem: 'boom' }} now={now} />)
+    expect(html).toContain('could not read whether today')
+    expect(html).not.toContain('still takes work')
+  })
+
   it('goes before a pause', () => {
     const held = [{ project: 'lingtai', locks: [account('claude-code', tonight), lock('human:x', now)] }]
     const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
@@ -198,6 +205,10 @@ describe('liftAccountWith', () => {
     expect(lifted.ok).toBe(true)
     const events = await store.read('acct-claude-code')
     expect(events.filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
+    expect(events.find((e) => e.type === 'AccountLimitLifted')?.data).toMatchObject({
+      runtime: 'claude-code',
+      by: 'human:steven',
+    })
     const again = await Effect.runPromise(liftAccountWith(store, 'claude-code', 'human:steven'))
     expect(again.detail).toContain('not at its usage limit')
     expect((await store.read('acct-claude-code')).filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
