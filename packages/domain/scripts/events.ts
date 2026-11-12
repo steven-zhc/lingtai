@@ -184,19 +184,19 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'RunAwaitingInput',
     why: 'type is a string argument of the hook socket’s `append`',
     file: 'packages/agent/src/hook-socket.ts',
-    anchor: "await append(run, 'RunAwaitingInput', { prompt: prompt.slice(0, 2_000) }).catch(() => {})",
+    anchor: "yield* appendQuietly(run, 'RunAwaitingInput', { prompt: prompt.slice(0, 2_000) })",
   },
   {
     event: 'RunContextExhausted',
     why: 'type is a string argument of the hook socket’s `append`',
     file: 'packages/agent/src/hook-socket.ts',
-    anchor: "await append(run, 'RunContextExhausted', { turn: run.calls }).catch(() => {})",
+    anchor: "yield* appendQuietly(run, 'RunContextExhausted', { turn: run.calls })",
   },
   {
     event: 'RunTouchedFile',
     why: 'type is a string argument of the hook socket’s `append`',
     file: 'packages/agent/src/hook-socket.ts',
-    anchor: "await append(run, 'RunTouchedFile', t)",
+    anchor: "yield* append(run, 'RunTouchedFile', t)",
   },
   {
     event: 'RunProducedDiff',

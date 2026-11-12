@@ -136,7 +136,7 @@ export interface RunLog {
 export const NO_RUN_LOG: RunLog = {
   path: '',
   note: () => {},
-  close: async () => {},
+  close: () => Promise.resolve(),
 }
 
 /**
@@ -165,17 +165,21 @@ export interface OpenRunLogOptions {
   started?: Date
 }
 
-export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
+export const openRunLogEffect = Effect.fn('agent.runLog')(function* (options: OpenRunLogOptions) {
   const path = options.path
   const started = options.started ?? new Date()
 
-  await mkdir(dirname(path), { recursive: true, mode: RUN_LOG_DIR_MODE })
+  const fail = (err: unknown) => new AgentHostFailed({ operation: 'runLog', detail: (err as Error).message })
+  yield* Effect.tryPromise({
+    try: () => mkdir(dirname(path), { recursive: true, mode: RUN_LOG_DIR_MODE }),
+    catch: fail,
+  })
   // Append, because a second attempt at the same run id is a thing that should
   // add to the story rather than erase it. The mode argument only applies at
   // creation and umask can only narrow it further, so the `chmod` below is what
   // actually makes 0600 a claim rather than a hope.
-  const handle: FileHandle = await open(path, 'a', RUN_LOG_MODE)
-  await handle.chmod(RUN_LOG_MODE).catch(() => {})
+  const handle: FileHandle = yield* Effect.tryPromise({ try: () => open(path, 'a', RUN_LOG_MODE), catch: fail })
+  yield* Effect.promise(() => handle.chmod(RUN_LOG_MODE).catch(() => {}))
 
   let bytes = 0
   let truncated = false
@@ -194,7 +198,7 @@ export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
   bytes += Buffer.byteLength(header)
   push(header)
 
-  return {
+  const log: RunLog = {
     path,
 
     note(label, detail = '') {
@@ -235,20 +239,16 @@ export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
       if (fate === 'delete') await rm(path, { force: true }).catch(() => {})
     },
   }
-}
+  return log
+})
 
 /**
- * The same, in the channel the ports speak.
- *
- * Deliberately **not** `acquireRelease`: the close carries the keep-or-delete
- * decision (0034 §4) and only the caller knows it, at the moment its scope
- * closes. `conduct.ts` is where that pair is made, beside the worktree's.
+ * The Effect above, as the promise `apps/cli/src/discuss.ts` awaits (a listed face, #790).
+ * Its rejection is the `AgentHostFailed`, not the raw fs error.
  */
-export const openRunLogEffect = (options: OpenRunLogOptions): Effect.Effect<RunLog, AgentHostFailed> =>
-  Effect.tryPromise({
-    try: () => openRunLog(options),
-    catch: (err) => new AgentHostFailed({ operation: 'runLog', detail: (err as Error).message }),
-  })
+export function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
+  return Effect.runPromise(openRunLogEffect(options))
+}
 
 /**
  * How often a follower looks for more.
