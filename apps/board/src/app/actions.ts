@@ -77,7 +77,7 @@ import { readDayReading } from '@/lib/day-spend'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
-import { askRefusal, continueTodayWith, setProjectPaused } from '@/lib/locks'
+import { askRefusal, continueTodayWith, liftAccountWith, setProjectPaused } from '@/lib/locks'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
@@ -552,6 +552,21 @@ export async function pauseProjectNow(input: { project: string }): Promise<Actio
 
 export async function resumeProjectNow(input: { project: string }): Promise<ActionResult> {
   return projectLock('resume', input.project)
+}
+
+/**
+ * A person lifts a runtime's usage limit (#1010). The core, and the refusal of a
+ * value that is no runtime, are `liftAccountWith`'s. Revalidates on either `ok`
+ * answer; a refusal leaves the row standing so its sentence is not unmounted.
+ */
+export async function liftAccountNow(input: { runtime: string }): Promise<ActionResult> {
+  try {
+    const result = await Effect.runPromise(liftAccountWith(eventStore, input.runtime, actor()))
+    if (result.ok) revalidatePath('/', 'layout')
+    return result
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
 }
 
 /**

@@ -12,7 +12,7 @@
  */
 import Link from 'next/link'
 
-import { isPaused } from '@/lib/lock-marks.ts'
+import { isPaused, joinNames } from '@/lib/lock-marks.ts'
 import {
   bannerRows,
   inScope,
@@ -25,7 +25,7 @@ import {
 
 import { withProject } from './bar.tsx'
 import { ContinueToday } from './continue-today.tsx'
-import { PauseButton, ResumeButton } from './pause-button.tsx'
+import { LiftButton, PauseButton, ResumeButton } from './pause-button.tsx'
 
 export async function LockBanner({ project }: { project: string | undefined }) {
   const read = await readProjectLocks()
@@ -74,6 +74,33 @@ function CeilingRow({ facts, now }: { facts: Extract<BannerRow, { kind: 'ceiling
   )
 }
 
+function AccountRow({ row, scope }: { row: Extract<BannerRow, { kind: 'account' }>; scope: string | undefined }) {
+  const plural = row.waiting.length > 1
+  const waits = `${joinNames(row.waiting)} ${plural ? 'wait' : 'waits'}`
+  let tail: string
+  if (scope !== undefined) {
+    tail = `${scope}'s recipe uses ${row.runtime}, so it waits`
+  } else if (row.others.length === 0) {
+    tail = waits
+  } else {
+    const names = row.others.map((o) => o.project)
+    const runtimes = [...new Set(row.others.flatMap((o) => o.runtimes))]
+    const many = names.length > 1
+    tail = `${waits}; ${joinNames(names)} ${many ? 'run' : 'runs'} on ${joinNames(runtimes)} and still ${many ? 'take' : 'takes'} work`
+  }
+  return (
+    <div className={row.passed ? 'pbrow passed' : 'pbrow'}>
+      <b className="lab">{row.runtime} limit</b>
+      <span className="what" title={row.title}>
+        until {row.untilLabel}
+        {row.passed ? <span className="sub"> — passed · lifts when the conductor next looks</span> : <> · {tail}</>}
+      </span>
+      <span className="grow" />
+      <LiftButton runtime={row.runtime} />
+    </div>
+  )
+}
+
 export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: string | undefined; now: Date }) {
   if (!locks.ok) {
     return (
@@ -85,7 +112,7 @@ export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: s
       </div>
     )
   }
-  const rows = bannerRows(locks, scope)
+  const rows = bannerRows(locks, scope, now)
   if (rows.length === 0) return null
   return (
     <div className="pbanner">
@@ -100,6 +127,8 @@ export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: s
                 <span className="what">could not read whether today's ceiling holds — {row.problem}</span>
               </div>
             )
+          case 'account':
+            return <AccountRow key={`account:${row.runtime}`} row={row} scope={scope} />
           case 'paused':
             return (
               <div className="pbrow" key={`paused:${row.project}`}>

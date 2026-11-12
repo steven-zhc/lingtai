@@ -29,6 +29,24 @@ export function ceilingToday(locks: readonly Lock[] | undefined, now: Date): Ext
   return null
 }
 
+/**
+ * The account limits that still hold at `now`, in `locksOn`'s order (by runtime).
+ * `locksOn` keeps a passed one (lifting it is the guard's); a passed one marks
+ * nothing, so every card and line reads this and only the banner sees the rest.
+ */
+export function accountsHolding(locks: readonly Lock[] | undefined, now: Date): Extract<Lock, { kind: 'account' }>[] {
+  const held: Extract<Lock, { kind: 'account' }>[] = []
+  for (const l of locks ?? []) if (l.kind === 'account' && l.until.getTime() > now.getTime()) held.push(l)
+  return held
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+export function joinNames(names: readonly string[]): string {
+  const rest = [...names]
+  const last = rest.pop() ?? ''
+  return rest.length === 0 ? last : `${rest.join(', ')} and ${last}`
+}
+
 /** The ceiling lock of today held on any project in the map (it holds every project, so any one will do). */
 export function anyCeilingToday(map: LockMap, now: Date): Extract<Lock, { kind: 'ceiling' }> | null {
   for (const locks of map.values()) {

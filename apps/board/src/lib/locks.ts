@@ -9,7 +9,7 @@
  * never `[]` for a failure: a banner fed an empty list would say "nothing is
  * paused", which is the silence #77 was about.
  */
-import { accountsFor } from '@lingtai/conductor'
+import { accountsFor, liftAccountLimit } from '@lingtai/conductor'
 import { loadProjects } from '@lingtai/conductor/projects'
 import { pauseProject, raiseDayCeiling, readControl, resumeProject } from '@lingtai/daemon/control'
 import {
@@ -24,6 +24,9 @@ import {
   type CeilingFacts,
   type Envelope,
   type Lock,
+  RuntimeId,
+  whenLabel,
+  untilFromWords,
 } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
@@ -31,6 +34,7 @@ import { Context, Effect } from 'effect'
 import { cache } from 'react'
 
 import type { ActionResult } from './diff.ts'
+import { accountsHolding, ceilingToday, isPaused } from './lock-marks.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 
 const run = Effect.runPromiseWith(Context.empty())
@@ -50,6 +54,11 @@ export type ProjectLocks =
   | {
       ok: true
       held: readonly HeldProject[]
+      /**
+       * The runtimes each registered project's recipe uses, held or not (#1010);
+       * a project whose recipe does not resolve has no entry.
+       */
+      uses?: ReadonlyMap<string, readonly RuntimeId[]>
       /** Today's ceiling as every reader says it; undefined when the control read failed or nothing is set. */
       ceiling: CeilingFacts | undefined
       /** Set when the control stream could not be read: the banner says so rather than drawing no ceiling. */
@@ -80,16 +89,19 @@ export const readProjectLocks = cache(async (): Promise<ProjectLocks> => {
     ])
     const state = 'state' in control ? control.state : undefined
     const held: HeldProject[] = []
+    const uses = new Map<string, readonly RuntimeId[]>()
     for (const project of projects) {
       // A failed `acct-` read fails the whole read: unknown is never *not limited*.
       const accounts = await run(accountsFor(eventStore, project))
       const locks = locksOn({ project, control: state, accounts })
+      if (project.project !== null && accounts.size > 0) uses.set(project.project, [...accounts.keys()].sort())
       if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
     }
     held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))
     return {
       ok: true,
       held,
+      uses,
       ceiling: state === undefined ? undefined : ceilingFacts(state, new Date(), configuredCeiling()),
       ...('problem' in control ? { controlProblem: control.problem } : {}),
     }
@@ -102,21 +114,79 @@ export type BannerRow =
   | { kind: 'ceiling'; facts: NonNullable<CeilingFacts['reached']> }
   | { kind: 'control-unread'; problem: string }
   | { kind: 'paused'; project: string; by: string; since: Date }
+  | {
+      kind: 'account'
+      runtime: RuntimeId
+      /** `until` as the row says it, and the phrase for its `title`. */
+      until: Date
+      untilLabel: string
+      title: string
+      passed: boolean
+      /** The projects in scope this limit holds, by name. */
+      waiting: string[]
+      /** *All projects* only: the projects nothing holds, with the runtimes their recipes use. */
+      others: { project: string; runtimes: readonly RuntimeId[] }[]
+    }
 
 /**
  * The banner's rows in 0126 §8's order: the ceiling once (it holds every
  * project, so it is one row however many projects are held), the could-not-read
- * row, then each paused project in scope. Pure. #1010 adds the account rows
- * after the ceiling.
+ * row, then one row per limited runtime (#1010 — the lock is per project, the row
+ * per runtime), then each paused project in scope. Pure.
  */
 export function bannerRows(
-  read: { held: readonly HeldProject[]; ceiling: CeilingFacts | undefined; controlProblem?: string },
+  read: {
+    held: readonly HeldProject[]
+    uses?: ReadonlyMap<string, readonly RuntimeId[]>
+    ceiling: CeilingFacts | undefined
+    controlProblem?: string
+  },
   scope: string | undefined,
+  now: Date = new Date(),
 ): readonly BannerRow[] {
   const rows: BannerRow[] = []
   if (read.ceiling?.reached) rows.push({ kind: 'ceiling', facts: read.ceiling.reached })
   if (read.controlProblem !== undefined) rows.push({ kind: 'control-unread', problem: read.controlProblem })
-  for (const h of inScope(read.held, scope)) {
+  const scoped = inScope(read.held, scope)
+  const accountRows = new Map<RuntimeId, Extract<BannerRow, { kind: 'account' }>>()
+  for (const h of scoped) {
+    for (const lock of h.locks) {
+      if (lock.kind !== 'account') continue
+      const existing = accountRows.get(lock.runtime)
+      if (existing !== undefined) {
+        existing.waiting.push(h.project)
+        continue
+      }
+      accountRows.set(lock.runtime, {
+        kind: 'account',
+        runtime: lock.runtime,
+        until: lock.until,
+        untilLabel: whenLabel(lock.until, now),
+        title: `${untilFromWords(lock.untilFrom)} — "${lock.said}"`,
+        passed: lock.until.getTime() <= now.getTime(),
+        waiting: [h.project],
+        others: [],
+      })
+    }
+  }
+  if (scope === undefined && accountRows.size > 0) {
+    const heldBy = new Map(read.held.map((h) => [h.project, h.locks]))
+    const others = [...(read.uses ?? [])]
+      .filter(([name]) => {
+        const locks = heldBy.get(name)
+        return !isPaused(locks) && ceilingToday(locks, now) === null && accountsHolding(locks, now).length === 0
+      })
+      .map(([project, runtimes]) => ({ project, runtimes }))
+      .sort((a, b) => (a.project < b.project ? -1 : 1))
+    // A ceiling holds every project, so nobody is left taking work.
+    const anyCeiling = read.ceiling?.reached != null && !read.ceiling.reached.passed
+    for (const r of accountRows.values()) r.others = anyCeiling ? [] : others
+  }
+  for (const runtime of RuntimeId.options) {
+    const r = accountRows.get(runtime)
+    if (r !== undefined) rows.push(r)
+  }
+  for (const h of scoped) {
     for (const lock of h.locks) {
       if (lock.kind === 'paused') rows.push({ kind: 'paused', project: h.project, by: lock.by, since: lock.since })
     }
@@ -249,4 +319,27 @@ export const continueTodayWith = (input: {
     })
     if (!raising.raised) return { ok: false, detail: RAISE_REFUSALS[raising.refused] } satisfies ActionResult
     return { ok: true, detail: `today's ceiling raised to $${toUsd}` } satisfies ActionResult
+  })
+
+/**
+ * Lift one runtime's usage limit for the board's *lift* (#1010, 0126 §7).
+ *
+ * `runtime` is `unknown` because it arrives over the wire: a value that is not
+ * a `RuntimeId` is refused by name before the appender is asked. The appender
+ * appends on the transition only, so a stale or doubled click answers
+ * `not limited` and appends nothing.
+ */
+export const liftAccountWith = (store: EventStore, runtime: unknown, by: string) =>
+  Effect.gen(function* () {
+    const parsed = RuntimeId.safeParse(runtime)
+    if (!parsed.success) {
+      return {
+        ok: false,
+        detail: `unknown runtime "${String(runtime)}" — runtimes: ${RuntimeId.options.join(', ')}`,
+      } satisfies ActionResult
+    }
+    const answer = yield* liftAccountLimit(store, parsed.data, by)
+    return answer.kind === 'appended'
+      ? ({ ok: true, detail: `${parsed.data}'s usage limit lifted` } satisfies ActionResult)
+      : ({ ok: true, detail: `${parsed.data} is not at its usage limit — nothing to lift` } satisfies ActionResult)
   })

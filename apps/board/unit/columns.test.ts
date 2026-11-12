@@ -221,3 +221,44 @@ describe('what an empty column says', () => {
     }
   })
 })
+
+describe('what an empty Running says about a usage limit (#1010)', () => {
+  const now = new Date(2026, 10, 11, 18, 0)
+  const account: Lock = {
+    kind: 'account',
+    runtime: 'claude-code',
+    by: 'lingtai',
+    since: new Date(2026, 10, 11, 17, 0),
+    until: new Date(2026, 10, 11, 23, 0),
+    untilFrom: 'message',
+    said: 'x',
+  }
+  const uses = new Map<string, readonly ('claude-code' | 'codex')[]>([
+    ['lingtai', ['claude-code']],
+    ['chapter-garden', ['codex']],
+  ])
+
+  it('names the one project waiting when it is selected', () => {
+    const locks = new Map([['lingtai', [account]]])
+    expect(emptyNote('running', false, 'lingtai', locks, false, now, uses)).toBe(
+      'Nothing here yet. lingtai waits for claude-code (limit until 23:00).',
+    )
+    expect(emptyHeld('running', false, 'lingtai', locks, false, now, uses)).toBe(true)
+  })
+
+  it('names who waits and who still takes work for all projects', () => {
+    const locks = new Map([['lingtai', [account]]])
+    expect(emptyNote('running', false, undefined, locks, false, now, uses)).toBe(
+      'Nothing here yet. lingtai waits for claude-code (limit until 23:00); chapter-garden runs on codex and is taking work.',
+    )
+    expect(emptyHeld('running', false, undefined, locks, false, now, uses)).toBe(false)
+  })
+
+  it('says nothing of a passed limit, and leaves the conductor-wide line first', () => {
+    const passed = new Map([['lingtai', [{ ...account, until: new Date(2026, 10, 11, 17, 30) }]]])
+    expect(emptyNote('running', false, 'lingtai', passed, false, now, uses)).toBe('Nothing here for lingtai.')
+    expect(emptyNote('running', true, 'lingtai', new Map([['lingtai', [account]]]), false, now, uses)).toBe(
+      'Paused — nothing will start.',
+    )
+  })
+})
