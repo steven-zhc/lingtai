@@ -12,18 +12,16 @@ export type SkeletonShape = 'card' | 'lines' | 'cells'
 export function Skeleton({
   shape,
   count,
-  label,
 }: {
   /** `card` draws a card's outline; `lines` draws text lines; `cells` draws a row of rail cells. */
   shape: SkeletonShape
-  /** How many placeholders. 0 draws the label alone. */
+  /** How many placeholders. 0 draws an empty container. */
   count: number
-  /** Said to a reader of the text, once; the outlines are hidden from them. */
-  label: string
 }) {
+  // The shape is the whole placeholder: no words, for anyone (0111 §15). The
+  // container is only marked busy; it has no name and no text node.
   return (
-    <div className="skeleton">
-      <p className="empty asking">{label}</p>
+    <div className="skeleton" aria-busy="true">
       {shape === 'cells' ? (
         <div className="sk-cells" aria-hidden="true" style={{ '--steps': Math.max(1, count) } as React.CSSProperties}>
           {Array.from({ length: Math.max(0, count) }, (_, i) => (

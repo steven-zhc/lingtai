@@ -1104,13 +1104,12 @@ describe('the places that wait for GitHub', () => {
       },
     })
 
-  it('draws the log’s title and the opening as asking', () => {
+  it('draws the log’s title and the opening as outlines', () => {
     const t = blocked()
     const html = waiting({ ...t, ticket: { ...t.ticket!, title: 'the log’s own title' } })
     expect(html).toContain('the log’s own title')
-    expect(html).toContain('asking GitHub…')
     expect(html).toContain('class="skeleton"')
-    expect(html).not.toContain('<p class="empty">asking GitHub…</p>')
+    expect(html).not.toContain('asking GitHub')
     // Nothing GitHub knows is drawn as though GitHub had said nothing.
     expect(html).not.toContain('The reviewer crashed.')
     expect(html).not.toContain('could not be asked')
@@ -1125,10 +1124,9 @@ describe('the places that wait for GitHub', () => {
   it('reads queued from the log at once, and asks about the reasons and the plan', () => {
     const html = waiting(queuedPage())
     expect(html).toMatch(/class="sstate">queued</)
-    expect(html).toContain('asking GitHub…')
     expect(html).toContain('class="skeleton"')
     expect(html).not.toContain('splan-pending')
-    expect(html).not.toContain('class="squestion">asking GitHub…')
+    expect(html).not.toContain('asking GitHub')
     expect(html.match(/class="sk-bar sk-cell"/g)?.length).toBe(STEPS.length)
     // The cards' heads and Close are drawn at once; only Run it now's button waits.
     expect(html).toContain('Close the ticket')
@@ -1142,7 +1140,7 @@ describe('the places that wait for GitHub', () => {
     const html = page(t)
     expect(html).toContain('class="btn go"')
     expect(html).toContain('offered by GitHub')
-    expect(html).not.toContain('asking GitHub…')
+    expect(html).not.toContain('class="skeleton"')
   })
 
   it('offers no move on an untouched ticket until GitHub says the issue exists', () => {
@@ -1189,13 +1187,12 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
   const tab = (answer: TicketAnswer | Promise<TicketAnswer>) =>
     renderToStaticMarkup(<TicketTab detail={detail} answer={answer} />)
 
-  it('draws the log’s part and asking GitHub… until the answer arrives', () => {
+  it('draws the log’s part and its shape until the answer arrives', () => {
     const html = tab(new Promise<TicketAnswer>(() => {}))
     expect(html).toContain('#147')
     expect(html).toContain(TICKET.title!)
-    expect(html).toContain('asking GitHub…')
     expect(html).toContain('class="skeleton"')
-    expect(html).not.toContain('<p class="empty">asking GitHub…</p>')
+    expect(html).not.toContain('asking GitHub')
     expect(html).not.toContain('arrive')
     expect(html).toContain('Events')
     expect(html).not.toContain('The whole ticket, as written.')
@@ -1206,7 +1203,7 @@ describe('the Ticket tab waits for GitHub in the body only', () => {
     expect(html).toContain('The whole ticket, as written.')
     expect(html).toContain('class="arrive"')
     expect(html).toContain('GitHub’s title')
-    expect(html).not.toContain('asking GitHub…')
+    expect(html).not.toContain('class="skeleton"')
   })
 
   it('says what failed, never an empty body', () => {
@@ -1248,8 +1245,8 @@ describe('what a pending page cannot lose or hide', () => {
     expect(out).toContain('Close')
     expect(out).toContain('Close the ticket')
     // Only what GitHub knows waits.
-    expect(html).toContain('asking GitHub…')
-    expect(out).not.toContain('asking GitHub…')
+    expect(html).toContain('class="skeleton"')
+    expect(out).not.toContain('class="skeleton"')
     expect(out).toContain('/task/ticket-lingtai-147/ticket')
   })
 

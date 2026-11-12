@@ -24,7 +24,7 @@ export function ShownPrompt({
   rawClass?: string
 }) {
   return (
-    <Deferred value={shown} fallback={<Skeleton shape="lines" count={lines} label="expanding the prompt…" />}>
+    <Deferred value={shown} fallback={<Skeleton shape="lines" count={lines} />}>
       {(got) => (
         <>
           {got.text === null ? null : <DocumentBody source="prompt" text={got.text} rawClass={rawClass} />}

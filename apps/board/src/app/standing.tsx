@@ -105,7 +105,7 @@ function QueuedBand({
   children?: ReactNode
 }) {
   const inLine = resolved && view !== null && view.position !== null
-  const asking = <Skeleton shape="lines" count={1} label="asking GitHub…" />
+  const asking = <Skeleton shape="lines" count={1} />
   const hold = resolved && view !== null ? holding(view) : null
   const running = inFlight?.running ?? []
   const estimate = resolved ? estimateLine(view, inFlight, startEstimate, now) : null
@@ -193,7 +193,7 @@ function QueuedBand({
         <>
           <h3 className="bandsub">What Attempt {next} will do</h3>
           {!resolved ? (
-            <Skeleton shape="lines" count={1} label="asking GitHub…" />
+            <Skeleton shape="lines" count={1} />
           ) : view?.plan ? (
             <ol className="planlist">
               {view.plan.steps.map((p) => (
@@ -643,7 +643,7 @@ function TicketContext({
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className={`topening${pending ? '' : ' arrive'}`}>
-      {pending ? <Skeleton shape="lines" count={3} label="asking GitHub…" /> : null}
+      {pending ? <Skeleton shape="lines" count={3} /> : null}
       {problem ? (
         <p className={problem.askedGitHub ? 'refusal' : 'note'}>
           {problem.askedGitHub ? `The issue could not be read from GitHub: ${problem.text}` : problem.text}
@@ -891,7 +891,7 @@ export function Standing({
   /**
    * GitHub has not answered yet (0118 §2), and `body`, `outgoing` and `queued`
    * are null for that reason and not because there is none. The opening, a
-   * queued ticket's reasons and Send say *asking GitHub…* / *waiting for GitHub*
+   * queued ticket's reasons draw their shape and Send says *waiting for GitHub*
    * instead of drawing as if GitHub had said nothing. `DeferredStanding` is the
    * one caller that sets it.
    */
@@ -1219,7 +1219,7 @@ export function Standing({
                   progress !== null ? (
                     <Rail progress={progress} live={false} held={budget} />
                   ) : standing.state === 'queued' ? (
-                    <Skeleton shape="cells" count={STEPS.length} label="asking GitHub…" />
+                    <Skeleton shape="cells" count={STEPS.length} />
                   ) : null
                 }
               >
@@ -1664,7 +1664,7 @@ export function Standing({
                     Taken on the conductor’s next turn, ahead of the queue. It still waits for a free slot.
                   </p>
                   <div className="sresolutionaction">
-                    <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} label="asking GitHub…" />}>
+                    <Gh g={g} pending={pending} fallback={<Skeleton shape="lines" count={1} />}>
                       {(a) =>
                         a.queued === null || project === null || !actable || missingOf(a) ? (
                           <p className="empty">Its place in the queue could not be read.</p>

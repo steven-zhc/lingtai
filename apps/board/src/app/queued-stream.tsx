@@ -30,8 +30,6 @@ import { kindDot } from '@/lib/kind-colour'
 
 import { Skeleton } from './skeleton'
 
-export const ASKING_COLUMN = 'asking GitHub for runnable issues…'
-
 /**
  * Draws one Queued card. `next` is true for the one *taken first*; `arrive`
  * for a card that has just arrived from GitHub, which fades in (#897).
@@ -323,7 +321,7 @@ export function QueuedFallback({
           github={EMPTY_GITHUB}
         />
       ) : null}
-      <Skeleton shape="card" count={count} label={ASKING_COLUMN} />
+      <Skeleton shape="card" count={count} />
     </>
   )
 }

@@ -9,7 +9,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import {
-  ASKING_COLUMN,
   QueuedAnswered,
   QueuedCountAnswered,
   QueuedCountPending,
@@ -83,9 +82,9 @@ describe('the Queued column while GitHub is being asked', () => {
     )
   })
 
-  it('says GitHub is being asked, and never that the column is empty', () => {
-    expect(out).toContain(ASKING_COLUMN)
-    expect(ASKING_COLUMN).toBe('asking GitHub for runnable issues…')
+  it('draws card outlines while GitHub is asked, and never says the column is empty', () => {
+    expect(out).toContain('class="skeleton"')
+    expect(out).toContain('class="sk-card"')
     expect(
       html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} order={[]} count={2} />),
     ).not.toContain('Nothing here')
@@ -100,11 +99,10 @@ describe('the Queued column while GitHub is being asked', () => {
   const fallback = (count: number) =>
     html(<QueuedFallback unreadable={[]} logCards={[]} onBoard={new Set()} list={list} order={[]} count={count} />)
 
-  it('draws as many card skeletons as it is told, under the label', () => {
+  it('draws as many card skeletons as it is told, and no words', () => {
     expect(fallback(3).match(/class="sk-card"/g)).toHaveLength(3)
-    expect(fallback(3)).toContain(ASKING_COLUMN)
     expect(fallback(0)).not.toContain('sk-card')
-    expect(fallback(0)).toContain(ASKING_COLUMN)
+    expect(fallback(0)).toContain('class="skeleton"')
   })
 
   it('stops the skeleton, the pulse and the fade under reduced motion', () => {
@@ -136,7 +134,7 @@ describe('the Queued column once GitHub has answered', () => {
     expect(out).toContain(
       '[lingtai-1|projects=false|next=true|arrive=false][lingtai-2|projects=false|next=false|arrive=true]',
     )
-    expect(out).not.toContain(ASKING_COLUMN)
+    expect(out).not.toContain('sk-card')
   })
 
   it('names the projects when a project only GitHub offers joins the column', () => {

@@ -110,7 +110,8 @@ describe('PaletteView', () => {
     expect(failed).toContain('the board could not be asked')
     expect(failed).not.toContain('nothing matches')
     const pending = renderToStaticMarkup(<PaletteView index="pending" query="x" selected={0} problems={[]} />)
-    expect(pending).toContain('reading the log…')
+    expect(pending).toContain('class="skeleton"')
+    expect(pending.match(/class="[^"]*sk-line/g)).toHaveLength(3)
     expect(pending).not.toContain('nothing matches')
   })
   it('says nothing matches only for a real answer', () => {

@@ -374,10 +374,7 @@ export function Live({
 }) {
   const { socket, health } = useFollow()
   return (
-    <Suspense
-      key={`health:${projectKey}`}
-      fallback={<span className="dot ct-pulse" role="img" aria-label="reading the log" />}
-    >
+    <Suspense key={`health:${projectKey}`} fallback={<span className="dot ct-pulse" aria-hidden="true" />}>
       <Answered socket={socket} health={health} code={code} near={near} runnable={runnable} projectKey={projectKey} />
     </Suspense>
   )

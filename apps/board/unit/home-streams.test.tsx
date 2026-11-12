@@ -121,7 +121,8 @@ describe('the shell, with every read pending', () => {
   it('draws every fallback as loading: a pulse, never $0, nothing paused or a tone', async () => {
     const html = renderToStaticMarkup(await render('lingtai'))
     expect(html).toContain('ct-pulse')
-    expect(html).toContain('reading the log…')
+    expect(html).toContain('class="skeleton"')
+    expect(html).toContain('sk-card')
     expect(html).not.toContain('$0')
     expect(html).not.toMatch(/class="dot (ok|current|green)/)
     expect(html).not.toContain('waiting on you')
@@ -175,10 +176,11 @@ describe('the boundaries', () => {
     const html = await settled('b')
     // the board, the register, the control and the locks answered: the counts, the cards and the paused slot are drawn
     expect(html).toContain('<span class="ct">0</span>')
-    // a drawn empty line is `class="empty"` or `empty held`; the skeleton's label is `empty asking`
+    // a drawn empty line is `class="empty"` or `empty held`; a skeleton is `class="skeleton"`
     expect(html.match(/class="empty( held)?"/g)).toHaveLength(4)
-    expect(html).not.toContain('empty asking')
-    expect(html).not.toContain('reading the log…')
+    expect(html).not.toContain('class="skeleton"')
+    expect(html).not.toContain('sk-card')
+    expect(html).not.toContain('sk-line')
     // Queued waits for the board and GitHub, not the day's spend: its empty line is drawn too, so all four columns count
     expect(html).not.toMatch(/<span class="rail"><span class="live"><\/span><span class="ct-pulse"/)
     // the day's spend and the lags did not answer: the footer is still its frame, never \$0
@@ -194,7 +196,8 @@ describe('the boundaries', () => {
     const html = await settled('b')
     expect(html).toContain('class="home-at')
     // the cards need the locks, so they are still skeletons
-    expect(html).toContain('empty asking')
+    expect(html).toContain('class="skeleton"')
+    expect(html).toContain('sk-card')
     expect(html).not.toMatch(
       /<footer class="footer"><span class="spend"><span>Today<\/span><span class="figures"><span class="ct-pulse"/,
     )

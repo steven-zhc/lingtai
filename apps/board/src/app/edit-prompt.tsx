@@ -19,7 +19,7 @@ export function EditPromptAction({
   taskId: string
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const fallback = <Skeleton shape="lines" count={1} label="asking GitHub…" />
+  const fallback = <Skeleton shape="lines" count={1} />
   if (pending) return fallback
   return (
     <Deferred value={g} fallback={fallback}>

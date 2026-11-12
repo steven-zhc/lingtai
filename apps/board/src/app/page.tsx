@@ -1147,7 +1147,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       count={
                         col.id === 'queued' ? queuedSkeletonCount(ctx.param) : columnSkeletonCount(ctx.param, col.id)
                       }
-                      label="reading the log…"
                     />
                   }
                 >

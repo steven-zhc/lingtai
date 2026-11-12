@@ -209,7 +209,7 @@ describe('the attempt tab draws the prompt as handed (#933)', () => {
     expect(resolved).toContain(BODY)
     expect(resolved).toContain(EVIDENCE)
     expect(resolved).not.toContain('⟪lingtai:')
-    expect(html).toContain('expanding the prompt…')
+    expect(html).toContain('class="skeleton"')
   })
 
   it('keeps an unresolved marker in place and says why under it', async () => {
@@ -226,7 +226,7 @@ describe('the attempt tab draws the prompt as handed (#933)', () => {
     const html = renderToStaticMarkup(
       <Attempt run={view('x')} promptShown={{ lines: 7, shown: new Promise(() => {}) }} />,
     )
-    expect(html).toContain('expanding the prompt…')
+    expect(html).toContain('class="skeleton"')
     expect(html.match(/sk-line/g)).toHaveLength(7)
     expect(html).toContain('>Changes<')
     expect(html).toContain('>Events<')

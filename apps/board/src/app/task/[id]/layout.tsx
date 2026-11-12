@@ -135,8 +135,8 @@ export function TaskBody({
   banner?: ReactNode
   /**
    * What only the issue's answer knows — resolved, or the promise `loadTaskAnswer`
-   * returned (0118 §2). Each place that reads it draws *asking GitHub…* until it
-   * arrives; a test passes the resolved value and sees what the page sees then.
+   * returned (0118 §2). Each place that reads it draws its shape until it
+   * arrives (0111 §15); a test passes the resolved value and sees what the page sees then.
    */
   github: Answered<TaskAnswer>
   now?: number
