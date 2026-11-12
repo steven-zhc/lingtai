@@ -999,6 +999,11 @@ export interface AttemptOptions {
      * continuation's first `implement` visit the conductor merges it in first.
      */
     readonly conflict?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /**
+     * A conflict round's merge that no review has seen yet, read off the log (#1120): a
+     * continuation that resumes the review is still owed the conflict block and question.
+     */
+    readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -1050,6 +1055,10 @@ export interface AttemptPortOptions {
    * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
    */
   readonly mergeForConflict?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
+  /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
+  readonly conflictEvidence?: (
+    baseSha: string,
+  ) => Effect.Effect<{ readonly fromSha: string; readonly overlap: readonly string[] } | null>
   readonly baseIsRed?: (asked: BaseIsRedAsked) => Effect.Effect<BaseIsRedAnswer>
 }
 
@@ -1674,6 +1683,25 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       })
 
     let grantedConflictMerged = false
+    // **A resumed review is owed the conflict evidence** (#1120): rebuilt from the committed merge.
+    if (
+      options.from?.conflictResolved !== undefined &&
+      options.from.landedOnBase === undefined &&
+      options.from.conflict === undefined &&
+      options.conflictEvidence !== undefined
+    ) {
+      const asked = options.from.conflictResolved
+      const found = yield* options.conflictEvidence(asked.baseSha)
+      if (found !== null) {
+        landedOnBase = {
+          paths: [...new Set([...found.overlap, ...asked.paths])],
+          conflicted: asked.paths,
+          fromSha: found.fromSha,
+          toSha: asked.baseSha,
+        }
+        mergedOnto = asked.baseSha
+      }
+    }
     while (at !== null && at !== 'end') {
       const spec = SPEC[at]
       // **A granted conflict round gets the same pre-merge** (#1120), once, before the

@@ -283,10 +283,33 @@ export function landedOnBaseOf(
   return moved
 }
 
-// A conflict round's merge (#1120) is not rebuilt here: the overlap it was shown is in no
-// event, so a continuation that resumes a review after a hold (a clipped diff, a person's
-// approval) reads the ordinary prompt, without the base-change block or the lost-changes
-// question. Known gap; rebuilding it would need that evidence in the log.
+/**
+ * **A conflict round's merge that no review has seen yet** (#1120): the base the lane found
+ * conflicting and the marked paths, while a conflict is followed by an implement and not
+ * by a review. A continuation that resumes the review (after a clipped diff, say) is
+ * owed the base-change block and the lost-changes question; the fork point and the
+ * overlap are read again from the worktree (`conflictEvidence`), since no event holds them.
+ */
+export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: string; paths: string[] } | null {
+  const outcomes = stepOutcomesOf(runEvents)
+  const at = outcomes.findLastIndex((o) => o.step === 'merge' && conflictedIn(o) !== null)
+  if (at < 0) return null
+  const after = outcomes.slice(at + 1)
+  if (after.some((o) => o.step === 'review')) return null
+  if (!after.some((o) => o.step === 'implement')) return null
+  return conflictedIn(outcomes[at]!)
+}
+
+function conflictedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
+  for (const action of outcome.actions) {
+    if (action.yields !== 'merge' || action.result._tag !== 'Completed') continue
+    const { integration } = action.result
+    if (integration._tag === 'Conflicted' && integration.baseSha !== null) {
+      return { baseSha: integration.baseSha, paths: integration.paths ?? [] }
+    }
+  }
+  return null
+}
 
 function movedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   for (const action of outcome.actions) {

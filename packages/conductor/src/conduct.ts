@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, posix, resolve } from 'node:path'
 
 import {
   NO_DESIGN,
@@ -235,7 +235,7 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armForState, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
+import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
@@ -1271,6 +1271,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
+        conflictResolved: conflictResolvedOf(runEvents),
       }
     })
 
@@ -3402,11 +3403,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             }
           }
           conflictMergeStood = false
-          const dirty = yield* gitAskedEffect(['status', '--porcelain'])
+          // `-z` and every untracked file by name, as `kept-run-port` reads it: an untracked
+          // directory is not collapsed to `?? private/`, and no name is quoted. The configured
+          // path is normalised (`./.env.local` is how git names `.env.local`).
+          const dirty = yield* gitAskedEffect(['status', '--porcelain', '-z', '--untracked-files=all'])
           if (Result.isFailure(dirty)) return { failed: `the tree could not be checked: ${dirty.failure.detail}` }
-          if (dirty.success.trim() !== '' && !onlyThePlantedFileIsDirty(dirty.success, recipe.env.plantAt)) {
+          const planted = posix.normalize(recipe.env.plantAt)
+          if (dirty.success.trim() !== '' && !onlyThePlantedFileIsDirty(dirty.success, planted)) {
             const named = dirty.success
-              .split('\n')
+              .split('\0')
               .map((line) => line.trim())
               .filter((line) => line !== '')
               .join(', ')
@@ -3450,6 +3455,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           conflictMergeStood = true
           return { conflicted: { paths, fromSha, overlap: theirs.filter((p) => mine.includes(p)) } }
+        })
+
+      /**
+       * **What a resolved conflict round's merge looked like, rebuilt for a continuation**
+       * (#1120): the fork point and the overlap that `mergeForConflict` read are in no event,
+       * so a review resumed after a hold reads them again from the committed merge. `null`
+       * unless the head is a merge commit with `baseSha` in its history: then there is
+       * nothing to show, and the review reads the ordinary prompt.
+       */
+      const conflictEvidence = (
+        baseSha: string,
+      ): Effect.Effect<{ fromSha: string; overlap: readonly string[] } | null> =>
+        Effect.gen(function* () {
+          const parents = yield* gitAskedEffect(['rev-list', '--parents', '-n', '1', 'HEAD'])
+          if (Result.isFailure(parents)) return null
+          const [, ours, theirs] = parents.success.trim().split(/\s+/)
+          if (ours === undefined || theirs === undefined) return null
+          const ancestor = yield* gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD'])
+          if (Result.isFailure(ancestor)) return null
+          const fork = yield* gitAskedEffect(['merge-base', ours, baseSha])
+          const fromSha = Result.isSuccess(fork) ? fork.success.trim() : ''
+          if (fromSha === '') return null
+          const base = yield* pathsBetween(`${fromSha}..${baseSha}`)
+          const mine = yield* pathsBetween(`${fromSha}..${ours}`)
+          if (base === null || mine === null) return null
+          return { fromSha, overlap: base.filter((p) => mine.includes(p)) }
         })
 
       /**
@@ -4408,6 +4439,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // and not on `from` alone: a `verify-failed` or `push-rejected` also
           // arrives from `merge`, and is output, not a merge to run.
           const conflict = from === 'merge' && again.printed?.because === 'conflict'
+          // A conflict round of any kind, including a granted one from an old wait whose brief
+          // tells the agent to merge: it may leave a merge standing, so the keep checks (#1120).
+          if (conflict) conflictMergeStood = true
           // The merge the conductor stood up before this agent started (#1120); read from the
           // context the round was dispatched with, which the route may clear for the next lap.
           const merge = conflict ? brief.context.conflictMerge : undefined
@@ -4773,6 +4807,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         judge,
         mergeBase,
         mergeForConflict,
+        conflictEvidence,
         baseIsRed,
         // **Where this walk jumps to, once `admit` and `prepared` have
         // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
@@ -4791,6 +4826,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.grant && continuation.conflict !== undefined
                   ? { conflict: continuation.conflict }
                   : {}),
+                ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
               },
             }
           : {}),
