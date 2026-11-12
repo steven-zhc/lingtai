@@ -130,13 +130,21 @@ export type FollowOptions = FollowBase & FollowHandler
  * design); an interruption is not a failure and passes through untouched.
  * This is the only `catchCause`: a session's end is never classified with one.
  */
-function guarded(event: Envelope, handler: Effect.Effect<void, unknown>): Effect.Effect<void, HandlerFailed> {
-  return handler.pipe(
-    Effect.catchCause((cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.failCause(cause as Cause.Cause<never>)
-        : Effect.fail(new HandlerFailed({ event, cause: Cause.squash(cause) })),
-    ),
+function guarded(
+  event: Envelope,
+  call: () => Effect.Effect<void, unknown>,
+  record: (failed: HandlerFailed) => void,
+): Effect.Effect<void, HandlerFailed> {
+  // `suspend`: a handler that throws while building its Effect is the handler's too.
+  return Effect.suspend(call).pipe(
+    Effect.catchCause((cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
+      const failed = new HandlerFailed({ event, cause: Cause.squash(cause) })
+      // Recorded here, inside the uninterruptible batch: a race that has already
+      // chosen the other side discards this failure, and it must still be seen.
+      record(failed)
+      return Effect.fail(failed)
+    }),
   )
 }
 
@@ -153,12 +161,17 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
    * One batch: the handler, then the advance, uninterruptible together. An
    * interrupted batch that had advanced first would skip an event for good.
    */
+  const handlerFailure: { value?: HandlerFailed } = {}
+  const record = (failed: HandlerFailed) => {
+    handlerFailure.value ??= failed
+  }
+
   const apply = (batch: readonly Envelope[]): Effect.Effect<void, HandlerFailed> => {
     if (options.onBatch) {
       const handler = options.onBatch
       return Effect.uninterruptible(
         // Before the advance: the whole batch is retried rather than any of it skipped.
-        guarded(batch[0]!, handler(batch)).pipe(
+        guarded(batch[0]!, () => handler(batch), record).pipe(
           Effect.andThen(
             Effect.sync(() => {
               cell.lastSeq = batch[batch.length - 1]!.seq
@@ -172,7 +185,7 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
       batch,
       (event) =>
         Effect.uninterruptible(
-          guarded(event, handler(event)).pipe(
+          guarded(event, () => handler(event), record).pipe(
             Effect.andThen(
               Effect.sync(() => {
                 cell.lastSeq = event.seq
@@ -198,6 +211,7 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
     Effect.scoped(
       Effect.gen(function* () {
         // Before the session opens, so a nudge during catch-up is kept.
+        handlerFailure.value = undefined
         const nudges = yield* Queue.sliding<void>(1)
         // Ready before the catch-up read, always: `open` returns once it is.
         const { lost } = yield* options.waker.open(() => {
@@ -208,7 +222,14 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
         cell.caughtUp.resolve()
         // `raceFirst`, not `race`: a handler failing in the nudge loop must end
         // this, and `race` would wait for `lost`.
-        yield* Effect.raceFirst(lost, Effect.forever(Queue.take(nudges).pipe(Effect.andThen(drain))))
+        // And a handler that fails while `lost` wins is still the handler's: the
+        // batch is uninterruptible, so its failure is recorded and read here.
+        yield* Effect.raceFirst(lost, Effect.forever(Queue.take(nudges).pipe(Effect.andThen(drain)))).pipe(
+          Effect.catchDefect((defect) =>
+            handlerFailure.value ? Effect.fail(handlerFailure.value) : Effect.die(defect),
+          ),
+          Effect.flatMap(() => (handlerFailure.value ? Effect.fail(handlerFailure.value) : Effect.void)),
+        )
       }),
     ).pipe(Effect.withSpan('Subscription.session'))
 
@@ -224,11 +245,13 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
       const served = { value: false }
       const outcome = yield* session(served).pipe(
         Effect.as('reconnect' as const),
-        Effect.catchTag('HandlerFailed', (failed) =>
-          Effect.sync(() => options.onError?.(failed.cause, 'handler')).pipe(Effect.as('stop' as const)),
-        ),
+        // Defects first: the reporters below are outside it, so an `onError` that
+        // throws is not read as a connection failure and retried.
         Effect.catchDefect((defect) =>
           Effect.sync(() => options.onError?.(defect, 'connection')).pipe(Effect.as('reconnect' as const)),
+        ),
+        Effect.catchTag('HandlerFailed', (failed) =>
+          Effect.sync(() => options.onError?.(failed.cause, 'handler')).pipe(Effect.as('stop' as const)),
         ),
       )
       if (outcome === 'stop') return

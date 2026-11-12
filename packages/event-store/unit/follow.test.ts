@@ -161,11 +161,13 @@ describe('follow', () => {
     const errors: [unknown, string][] = []
     const seen: bigint[] = []
     const lostOf: Deferred.Deferred<void>[] = []
+    const nudges: (() => void)[] = []
     const port: WakerPort = {
-      open: () =>
+      open: (nudge) =>
         Effect.sync(() => {
           const lost = Deferred.makeUnsafe<void>()
           lostOf.push(lost)
+          nudges.push(nudge)
           return { lost: Deferred.await(lost) }
         }),
     }
@@ -183,16 +185,136 @@ describe('follow', () => {
         cell,
       ),
     )
-    await append(store, 'a')
     await flush()
+    await append(store, 'a')
+    nudges[0]!()
+    await flush()
+    expect(seen).toEqual([1n])
     const dropped = new Error('socket')
     Deferred.doneUnsafe(lostOf[0]!, Effect.die(dropped))
     await flush(30)
     expect(errors).toEqual([[dropped, 'connection']])
     expect(lostOf).toHaveLength(2)
+    // A second session resumes from lastSeq: a restart from `fromSeq` would see 1n again.
     expect(seen).toEqual([1n])
-    expect(cell.lastSeq).toBe(1n)
+    await append(store, 'b')
+    nudges[1]!()
+    await flush()
+    expect(seen).toEqual([1n, 2n])
+    expect(cell.lastSeq).toBe(2n)
     void fiber
+  })
+})
+
+describe('follow, handler failures and reporters', () => {
+  const setup = () => {
+    const store = createMemoryEventStore()
+    const lostOf: Deferred.Deferred<void>[] = []
+    const nudges: (() => void)[] = []
+    const port: WakerPort = {
+      open: (nudge) =>
+        Effect.sync(() => {
+          const lost = Deferred.makeUnsafe<void>()
+          lostOf.push(lost)
+          nudges.push(nudge)
+          return { lost: Deferred.await(lost) }
+        }),
+    }
+    const cell = { lastSeq: 0n, stopped: false, caughtUp: { resolve() {}, reject() {} } }
+    return { store, lostOf, nudges, port, cell }
+  }
+
+  it("a handler failing after lost already died is still the handler's, and does not reconnect", async () => {
+    const { store, lostOf, nudges, port, cell } = setup()
+    const errors: [unknown, string][] = []
+    const boom = new Error('db down')
+    let entered = false
+    const run = Effect.runPromise(
+      follow(
+        {
+          fromSeq: 0n,
+          events: fromPromiseStore(store),
+          waker: port,
+          backoff: { baseMs: 1, capMs: 1 },
+          onError: (e, phase) => errors.push([e, phase]),
+          onEvent: () =>
+            Effect.promise(() => flush(20)).pipe(
+              Effect.tap(() => Effect.sync(() => void (entered = true))),
+              Effect.andThen(Effect.fail(boom)),
+            ),
+        },
+        cell,
+      ),
+    )
+    await flush()
+    await append(store, 'a')
+    nudges[0]!()
+    await flush(5)
+    Deferred.doneUnsafe(lostOf[0]!, Effect.die(new Error('socket')))
+    await run
+    expect(entered).toBe(true)
+    expect(errors).toEqual([[boom, 'handler']])
+    expect(lostOf).toHaveLength(1)
+    expect(cell.lastSeq).toBe(0n)
+  })
+
+  it.each(['onEvent', 'onBatch'] as const)(
+    'a %s that throws building its Effect is a handler failure',
+    async (which) => {
+      const { store, nudges, port, cell } = setup()
+      const errors: [unknown, string][] = []
+      const boom = new Error('threw')
+      const throwing = () => {
+        throw boom
+      }
+      const run = Effect.runPromise(
+        follow(
+          {
+            fromSeq: 0n,
+            events: fromPromiseStore(store),
+            waker: port,
+            backoff: { baseMs: 1, capMs: 1 },
+            onError: (e, phase) => errors.push([e, phase]),
+            [which]: throwing,
+          } as never,
+          cell,
+        ),
+      )
+      await flush()
+      await append(store, 'a')
+      nudges[0]!()
+      await run
+      expect(errors).toEqual([[boom, 'handler']])
+      expect(nudges).toHaveLength(1)
+    },
+  )
+
+  it('an onError that throws is not read as a connection failure and retried', async () => {
+    const { store, nudges, port, cell } = setup()
+    const calls: string[] = []
+    const run = Effect.runPromise(
+      follow(
+        {
+          fromSeq: 0n,
+          events: fromPromiseStore(store),
+          waker: port,
+          backoff: { baseMs: 1, capMs: 1 },
+          onError: (_e, phase) => {
+            calls.push(phase)
+            if (phase === 'handler') throw new Error('reporter')
+          },
+          onEvent: () => Effect.fail(new Error('boom')),
+        },
+        cell,
+      ),
+    )
+    await flush()
+    await append(store, 'a')
+    nudges[0]!()
+    await expect(run).rejects.toThrow()
+    expect(calls).toEqual(['handler'])
+    expect(nudges).toHaveLength(1)
+    expect(cell.stopped).toBe(true)
   })
 })
 
