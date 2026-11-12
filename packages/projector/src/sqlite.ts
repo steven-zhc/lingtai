@@ -545,10 +545,16 @@ export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
                 // callback runs as a fiber of its own, so that an interruption waits
                 // for it to finish, its finalizers included, before the rollback and
                 // the permit: nothing it does can land after either.
-                const result = yield* Effect.suspend(() => {
-                  const fiber = inside.run(Symbol('transaction'), () => Effect.runForkWith(context)(fn(ctx)))
-                  return Fiber.join(fiber).pipe(Effect.onInterrupt(() => Fiber.interrupt(fiber)))
-                })
+                // Forked uninterruptibly, and the join restored only once the handler that
+                // interrupts the fiber wraps it: the callback runs synchronously up to its
+                // first suspension, and an interruption arriving in that window must not
+                // leave the fiber behind.
+                const result = yield* Effect.uninterruptibleMask((restore) =>
+                  Effect.suspend(() => {
+                    const fiber = inside.run(Symbol('transaction'), () => Effect.runForkWith(context)(fn(ctx)))
+                    return restore(Fiber.join(fiber)).pipe(Effect.onInterrupt(() => Fiber.interrupt(fiber)))
+                  }),
+                )
                 yield* Effect.sync(() => {
                   db.exec('COMMIT')
                   // Latched **after** the commit, and that is the whole of it: SQLite's
