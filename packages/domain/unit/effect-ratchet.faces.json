@@ -1,5 +1,17 @@
 [
   {
+    "file": "packages/actions/src/action.ts",
+    "fn": "actionRunFace",
+    "until": "#790",
+    "why": "every promise `Action` holder — `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` — until row 7 builds ports"
+  },
+  {
+    "file": "packages/actions/src/action.ts",
+    "fn": "runActionPipeline",
+    "until": "#790",
+    "why": "packages/conductor/src/run-attempt.ts:1981 awaits it, and the tests in packages/actions, packages/conductor and packages/recipe, until row 7 runs the pipeline inside the pass"
+  },
+  {
     "file": "packages/agent/src/auth.ts",
     "fn": "askEveryRuntime",
     "until": "#790",

@@ -47,8 +47,10 @@ import type {
   WaitId,
 } from '@lingtai/domain'
 import type { RuntimeId } from '@lingtai/domain'
+import { context as otelContext } from '@opentelemetry/api'
+import { Cause, Effect } from 'effect'
 
-import { inSpan } from './spans.ts'
+import { inSpanEffect } from './spans.ts'
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -792,6 +794,72 @@ export interface PipelineOptions {
 }
 
 /**
+ * An `Action` whose `run` is an Effect (#1041, #790 row 6): the one
+ * implementation, which `promiseAction` wraps for the holders that still await.
+ *
+ * **Its error channel is `never`.** An action's answer is a verdict, as an agent
+ * run's is a `RunOutcome`; a dep that rejects is a defect, and the pipeline turns
+ * a defect inside an action into its `failed` verdict.
+ */
+export interface ActionPort {
+  readonly name: string
+  readonly kind: Action['kind']
+  readonly yields: Action['yields']
+  run(context: ActionContext): Effect.Effect<ActionResult>
+}
+
+/** The port a factory-built `Action` wraps, so the pipeline runs it in its own fiber. */
+const portsOf = new WeakMap<Action, ActionPort>()
+
+/**
+ * Runs a promise-shaped thunk as an Effect whose rejection — or synchronous
+ * throw — is a defect that is the thrown value itself. `Effect.promise` and not
+ * `Effect.tryPromise`, which would wrap it in `UnknownError`.
+ */
+export const liftPromise = <A>(thunk: () => PromiseLike<A> | A): Effect.Effect<A> =>
+  Effect.promise(() => new Promise<A>((resolve) => resolve(thunk())))
+
+/** Every promise `Action` holder's way in. */
+export function actionRunFace(port: ActionPort, context: ActionContext): Promise<ActionResult> {
+  return Effect.runPromise(port.run(context))
+}
+
+/** The promise shape of a port: same name, kind and yields, `run` through the face. */
+export function promiseAction(port: ActionPort): Action {
+  const action: Action = {
+    name: port.name,
+    kind: port.kind,
+    yields: port.yields,
+    run: (context) => actionRunFace(port, context),
+  }
+  portsOf.set(action, port)
+  return action
+}
+
+/**
+ * The port behind an action: the one `promiseAction` wrapped, when there is
+ * one, and otherwise a lift of a hand-written `run` (a test fake).
+ */
+export function fromPromiseAction(action: Action): ActionPort {
+  const known = portsOf.get(action)
+  if (known !== undefined) return known
+  return {
+    name: action.name,
+    kind: action.kind,
+    yields: action.yields,
+    run: (context) => liftPromise(() => action.run(context)),
+  }
+}
+
+/** `PipelineOptions` over ports. `emit` and `recordPrompt` stay promises: they are the pass's own. */
+export type PortPipelineOptions = Omit<PipelineOptions, 'actions'> & { actions: readonly ActionPort[] }
+
+const portOptions = (options: PipelineOptions): PortPipelineOptions => ({
+  ...options,
+  actions: options.actions.map(fromPromiseAction),
+})
+
+/**
  * Runs the actions in recipe order and stops at the first failure.
  *
  * Stopping is deliberate. Running the remaining actions after one has already
@@ -799,297 +867,324 @@ export interface PipelineOptions {
  * anywhere; worse, a board showing three green badges and one red invites the
  * reading that it is three-quarters fine.
  */
-export async function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  const { actions, step, emit } = options
-  const results: PipelineResult['results'] = []
-  /**
-   * **The context, advanced as the step's own list produces a design** (`#300`).
-   *
-   * Every other field is the same object at every entry — `onSha` is the commit
-   * the whole pipeline is about, `recheck` is what the round was bought on — and
-   * this one is not, because a destination plugin keeps what an earlier entry
-   * *made*. `runStep` fills `design` in from the last `design` **visit**
-   * (`designOn`); within one visit the step is producing it, and an action that
-   * could not see what the entry before it wrote would make the whole of 0066 §5
-   * unbuildable: `file:` would have no document to write.
-   *
-   * **The same rule `designFrom` reads the results by** — the last entry that
-   * carried a document wins, and the locator comes off that same entry (0069 §5)
-   * — so the value a later action is handed is the value the step will end with.
-   * Not a mutation of the caller's object: `runStep` holds `reaching.context` and
-   * a pipeline that edited it would leave `design` behind for the next step to
-   * read instead of `designOn`'s answer.
-   */
-  let context = options.context
-  // Each name is consumed by at most the first action it matches — a later
-  // entry declared under the same name is not the one an approval waived
-  // (`PipelineOptions.waived`'s own doc).
-  const waiversSpent = new Set<string>()
-  const keptSpent = new Set<string>()
-
-  for (const [index, action] of actions.entries()) {
-    const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
-    if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
-      keptSpent.add(kept.name)
-      context.log?.note(`${step}:${action.name}`, 'kept — it already passed on this head, reading it clipped')
-      results.push({
-        action: action.name,
-        verdict: 'passed',
-        evidence: kept.evidence,
-        findings: [...kept.findings],
-        ...(kept.summary === undefined ? {} : { summary: kept.summary }),
-        clipped: kept.clipped,
-      })
-      continue
-    }
-    const waiver = options.waived?.find((w) => w.name === action.name && !waiversSpent.has(w.name))
-    if (waiver !== undefined) {
-      waiversSpent.add(waiver.name)
-      context.log?.note(`${step}:${action.name}`, 'waived — a person approved past it')
-      results.push({
-        action: action.name,
-        verdict: 'waived',
-        evidence: '',
-        findings: [],
-        waitId: waiver.waitId,
-      })
-      continue
-    }
-
+export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Effect<PipelineResult> {
+  // Read here, synchronously, when the pipeline is built and never inside the
+  // fiber: the scheduler flushes from one `setImmediate`, so the context active
+  // there is whatever scheduled the flush, and the sink that keeps two passes
+  // apart (0122) rides this one.
+  const captured = otelContext.active()
+  return Effect.gen(function* () {
+    const { actions, step, emit } = options
+    const results: PipelineResult['results'] = []
     /**
-     * The start and the end on the run's log, for every kind (#153).
+     * **The context, advanced as the step's own list produces a design** (`#300`).
      *
-     * A review is eighteen minutes and a build four and a half, and the file a
-     * person was following said nothing for either. The line's own time is
-     * *since when*; the round is which question this is. An `agent` action is
-     * handed the log tagged as this action, so what its agent does lands between
-     * these two lines; any other kind has no agent and writes nothing between.
+     * Every other field is the same object at every entry — `onSha` is the commit
+     * the whole pipeline is about, `recheck` is what the round was bought on — and
+     * this one is not, because a destination plugin keeps what an earlier entry
+     * *made*. `runStep` fills `design` in from the last `design` **visit**
+     * (`designOn`); within one visit the step is producing it, and an action that
+     * could not see what the entry before it wrote would make the whole of 0066 §5
+     * unbuildable: `file:` would have no document to write.
+     *
+     * **The same rule `designFrom` reads the results by** — the last entry that
+     * carried a document wins, and the locator comes off that same entry (0069 §5)
+     * — so the value a later action is handed is the value the step will end with.
+     * Not a mutation of the caller's object: `runStep` holds `reaching.context` and
+     * a pipeline that edited it would leave `design` behind for the next step to
+     * read instead of `designOn`'s answer.
      */
-    const tag = `${step}:${action.name}`
-    const round = context.round ? ` · round ${context.round}` : ''
+    let context = options.context
+    // Each name is consumed by at most the first action it matches — a later
+    // entry declared under the same name is not the one an approval waived
+    // (`PipelineOptions.waived`'s own doc).
+    const waiversSpent = new Set<string>()
+    const keptSpent = new Set<string>()
 
-    /**
-     * **One run of the action, and no retry** (`#234`).
-     *
-     * [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4 put
-     * one here and it never once ran. The session id is a hash of
-     * `<runId>:review:<action>:<sha>` (`agent-action.ts:356`, `sessionIdFor` at
-     * `claude-code.ts:93`) and a second attempt moves none of the four, so the
-     * retry computed the id attempt 1 had already opened a session with and
-     * `claude` refused it in zero seconds: two retries on this machine's run
-     * logs, both `Session ID … is already in use`, neither reaching a reviewer.
-     * A retry could only help where attempt 1 died *before* opening a session,
-     * and 0057's own subject is an agent that started — which opened one.
-     *
-     * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
-     * that is the half that works: no round (§2), no stand-down (§3), and the
-     * pass reports it to a person. Whether to spend another agent on it is
-     * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
-     * §3c's judge, not a constant in a loop here.
-     */
-    const started = Date.now()
-    context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
+    for (const [index, action] of actions.entries()) {
+      const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
+      if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
+        keptSpent.add(kept.name)
+        context.log?.note(`${step}:${action.name}`, 'kept — it already passed on this head, reading it clipped')
+        results.push({
+          action: action.name,
+          verdict: 'passed',
+          evidence: kept.evidence,
+          findings: [...kept.findings],
+          ...(kept.summary === undefined ? {} : { summary: kept.summary }),
+          clipped: kept.clipped,
+        })
+        continue
+      }
+      const waiver = options.waived?.find((w) => w.name === action.name && !waiversSpent.has(w.name))
+      if (waiver !== undefined) {
+        waiversSpent.add(waiver.name)
+        context.log?.note(`${step}:${action.name}`, 'waived — a person approved past it')
+        results.push({
+          action: action.name,
+          verdict: 'waived',
+          evidence: '',
+          findings: [],
+          waitId: waiver.waitId,
+        })
+        continue
+      }
 
-    // Built once: the prompt the action records and the `RunSpent` it bills are
-    // the same call's, so they carry the same `for` (#923).
-    const spentFor: SpentFor = { _tag: 'Action', step, name: action.name, round: context.round ?? 0 }
-    const recordPrompt = options.recordPrompt
-    const handed: ActionContext =
-      recordPrompt === undefined
-        ? context
-        : {
-            ...context,
-            prompted: (promptVersion, prompt, runtimeVersion) =>
-              recordPrompt({ for: spentFor, promptVersion, runtimeVersion, prompt }),
-          }
+      /**
+       * The start and the end on the run's log, for every kind (#153).
+       *
+       * A review is eighteen minutes and a build four and a half, and the file a
+       * person was following said nothing for either. The line's own time is
+       * *since when*; the round is which question this is. An `agent` action is
+       * handed the log tagged as this action, so what its agent does lands between
+       * these two lines; any other kind has no agent and writes nothing between.
+       */
+      const tag = `${step}:${action.name}`
+      const round = context.round ? ` · round ${context.round}` : ''
 
-    let result: ActionResult
-    try {
+      /**
+       * **One run of the action, and no retry** (`#234`).
+       *
+       * [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4 put
+       * one here and it never once ran. The session id is a hash of
+       * `<runId>:review:<action>:<sha>` (`agent-action.ts:356`, `sessionIdFor` at
+       * `claude-code.ts:93`) and a second attempt moves none of the four, so the
+       * retry computed the id attempt 1 had already opened a session with and
+       * `claude` refused it in zero seconds: two retries on this machine's run
+       * logs, both `Session ID … is already in use`, neither reaching a reviewer.
+       * A retry could only help where attempt 1 died *before* opening a session,
+       * and 0057's own subject is an agent that started — which opened one.
+       *
+       * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
+       * that is the half that works: no round (§2), no stand-down (§3), and the
+       * pass reports it to a person. Whether to spend another agent on it is
+       * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
+       * §3c's judge, not a constant in a loop here.
+       */
+      const started = Date.now()
+      context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
+
+      // Built once: the prompt the action records and the `RunSpent` it bills are
+      // the same call's, so they carry the same `for` (#923).
+      const spentFor: SpentFor = { _tag: 'Action', step, name: action.name, round: context.round ?? 0 }
+      const recordPrompt = options.recordPrompt
+      const handed: ActionContext =
+        recordPrompt === undefined
+          ? context
+          : {
+              ...context,
+              prompted: (promptVersion, prompt, runtimeVersion) =>
+                recordPrompt({ for: spentFor, promptVersion, runtimeVersion, prompt }),
+            }
+
       // Named by kind, never by `action.name` (#791): a recipe author writes the
       // name and it can be the command itself.
-      result = await inSpan(
-        `action ${action.kind}`,
-        { 'lingtai.index': index },
-        () => action.run(handed.log ? { ...handed, log: taggedTrace(handed.log, tag) } : handed),
-        // 0120 §1's reading of the *domain* result, not the raw verdict: what
-        // `commitResultOf` / `worktreeResultOf` make of it. `asked` — a
-        // `NEEDS_INPUT` question, or a `needs-approval` from a `verdict` or
-        // `signoff` action — is not an error; a `commit` that passed with no
-        // head is `Completed{head:null}` and a `worktree` that passed with none
-        // is `NotDone`, and both read `did-not-finish`.
-        (r) =>
-          r.verdict === 'failed' ||
-          r.verdict === 'never-ran' ||
-          (r.verdict === 'did-not-finish' && r.because !== NEEDS_INPUT) ||
-          (r.verdict === 'passed' &&
-            (action.yields === 'commit' || action.yields === 'worktree') &&
-            r.head === undefined) ||
-          (r.verdict === 'needs-approval' && action.yields !== 'verdict' && action.yields !== 'signoff'),
+      const exit = yield* Effect.exit(
+        inSpanEffect(
+          captured,
+          `action ${action.kind}`,
+          { 'lingtai.index': index },
+          Effect.suspend(() => action.run(handed.log ? { ...handed, log: taggedTrace(handed.log, tag) } : handed)),
+          // 0120 §1's reading of the *domain* result, not the raw verdict: what
+          // `commitResultOf` / `worktreeResultOf` make of it. `asked` — a
+          // `NEEDS_INPUT` question, or a `needs-approval` from a `verdict` or
+          // `signoff` action — is not an error; a `commit` that passed with no
+          // head is `Completed{head:null}` and a `worktree` that passed with none
+          // is `NotDone`, and both read `did-not-finish`.
+          (r) =>
+            r.verdict === 'failed' ||
+            r.verdict === 'never-ran' ||
+            (r.verdict === 'did-not-finish' && r.because !== NEEDS_INPUT) ||
+            (r.verdict === 'passed' &&
+              (action.yields === 'commit' || action.yields === 'worktree') &&
+              r.head === undefined) ||
+            (r.verdict === 'needs-approval' && action.yields !== 'verdict' && action.yields !== 'signoff'),
+        ),
       )
-    } catch (err) {
-      // An action that throws is an action that failed. The alternative is an
-      // exception escaping the pipeline and a run ending with no verdict at all.
-      result = {
-        verdict: 'failed',
-        evidence: `the ${action.name} action threw: ${(err as Error).message}`,
-        findings: [],
+      let result: ActionResult
+      if (exit._tag === 'Success') {
+        result = exit.value
+      } else if (Cause.hasInterrupts(exit.cause)) {
+        // An interruption is not a defect and is never a verdict: the pipeline
+        // ends here, with no further action run and no `RunSpent` for this one.
+        return yield* Effect.failCause(exit.cause)
+      } else {
+        // An action that throws is an action that failed. The alternative is an
+        // exception escaping the pipeline and a run ending with no verdict at all.
+        // (Every port's error channel is `never`, so what is left is a defect.)
+        result = {
+          verdict: 'failed',
+          evidence: `the ${action.name} action threw: ${(Cause.squash(exit.cause) as Error).message}`,
+          findings: [],
+        }
       }
-    }
-    context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`)
+      context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`)
 
-    // Before any verdict branch, so none of the five can skip it (#494): a
-    // dispatch that crashed, timed out or came back unreadable still billed,
-    // and for months that cost was readable only inside `evidence`.
-    if (result.spent !== undefined) {
-      await emit({
-        type: 'RunSpent',
-        data: { for: spentFor, ...result.spent },
+      // Before any verdict branch, so none of the five can skip it (#494): a
+      // dispatch that crashed, timed out or came back unreadable still billed,
+      // and for months that cost was readable only inside `evidence`.
+      if (result.spent !== undefined) {
+        // Outside the catch above: `emit` is the pass's own append, and a
+        // rejection from it is the pass's, not an action's.
+        const event: ActionEvent = { type: 'RunSpent', data: { for: spentFor, ...result.spent } }
+        yield* Effect.promise(() => new Promise<void>((resolve) => resolve(emit(event))))
+      }
+
+      results.push({
+        action: action.name,
+        verdict: result.verdict,
+        evidence: result.evidence,
+        findings: result.findings,
+        // Spread rather than assigned, so *the tree did not move* reaches the
+        // caller as an absent key and not as an explicit `undefined`: `endingOf`
+        // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
+        // same reason.
+        ...(result.head === undefined ? {} : { head: result.head }),
+        // Spread for `head`'s reason: no summary is an absent key (#890).
+        ...(result.summary === undefined ? {} : { summary: result.summary }),
+        ...(result.clipped === undefined ? {} : { clipped: result.clipped }),
+        // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
+        // same `?? "action-refused"` fallback: an explicit `undefined` would be a
+        // kind claiming to have a word for its refusal and then not having one.
+        ...(result.because === undefined ? {} : { because: result.because }),
+        // Spread for `head`'s reason again, and the event below carries it the same
+        // way: *absent* is what says an action had no answer to read, and an
+        // explicit `undefined` would read the same to a program and differently to
+        // a person (`#279`).
+        ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+        ...(result.diffTooLarge === undefined ? {} : { diffTooLarge: result.diffTooLarge }),
+        // Spread for `head`'s reason a third time, and here *absent* is the whole
+        // value: a reviewer that did not classify its refusal and one that said
+        // `lines` must never reduce into the same row, because the only thing this
+        // field is for is being counted (`#293`).
+        ...(result.about === undefined ? {} : { about: result.about }),
+        // Spread for `head`'s reason once more, and here the absence is the one
+        // that matters: *nothing at this step drafted* and *the draft was empty*
+        // are different facts, and `designFrom` in `run-attempt.ts` distinguishes them by
+        // the key rather than by the string (`#265`).
+        ...(result.document === undefined ? {} : { document: result.document }),
+        // Spread for `head`'s reason a fifth time, and *beside* the document
+        // rather than instead of it (`#297`): 0066 §3's two things are two fields
+        // on one result, and `designFrom` reads the pair off one result so that a
+        // locator whose document did not survive is a locator nothing carries.
+        ...(result.locator === undefined ? {} : { locator: result.locator }),
+        // Spread for `head`'s reason a sixth time, since `#466`: an action that
+        // did not say how it was cut off carries no opinion on the point, and
+        // `adapters.ts`'s `actionOf` falls back to a crash rather than reading
+        // the absence as a second classification.
+        ...(result.interrupted === undefined ? {} : { interrupted: result.interrupted }),
+        // Spread for `head`'s reason a seventh time: *the agent ran and left no
+        // commit* and *nothing ran at all* are different facts and only the
+        // work action's own result can tell them apart (`#466`).
+        ...(result.committedNothing === undefined ? {} : { committedNothing: result.committedNothing }),
+        // Spread for `head`'s reason an eighth time: the merge lane's own commit,
+        // carried the way `worktree:`'s `head` is (`#466`).
+        ...(result.merged === undefined ? {} : { merged: result.merged }),
+        // Spread for `head`'s reason a ninth time: the three fields a real
+        // conflict carries, where the lane refused with one (`#466`).
+        ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
+        // And a tenth time, for a base that moved on the branch's own files (#593).
+        ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
       })
-    }
 
-    results.push({
-      action: action.name,
-      verdict: result.verdict,
-      evidence: result.evidence,
-      findings: result.findings,
-      // Spread rather than assigned, so *the tree did not move* reaches the
-      // caller as an absent key and not as an explicit `undefined`: `endingOf`
-      // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
-      // same reason.
-      ...(result.head === undefined ? {} : { head: result.head }),
-      // Spread for `head`'s reason: no summary is an absent key (#890).
-      ...(result.summary === undefined ? {} : { summary: result.summary }),
-      ...(result.clipped === undefined ? {} : { clipped: result.clipped }),
-      // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
-      // same `?? "action-refused"` fallback: an explicit `undefined` would be a
-      // kind claiming to have a word for its refusal and then not having one.
-      ...(result.because === undefined ? {} : { because: result.because }),
-      // Spread for `head`'s reason again, and the event below carries it the same
-      // way: *absent* is what says an action had no answer to read, and an
-      // explicit `undefined` would read the same to a program and differently to
-      // a person (`#279`).
-      ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
-      ...(result.diffTooLarge === undefined ? {} : { diffTooLarge: result.diffTooLarge }),
-      // Spread for `head`'s reason a third time, and here *absent* is the whole
-      // value: a reviewer that did not classify its refusal and one that said
-      // `lines` must never reduce into the same row, because the only thing this
-      // field is for is being counted (`#293`).
-      ...(result.about === undefined ? {} : { about: result.about }),
-      // Spread for `head`'s reason once more, and here the absence is the one
-      // that matters: *nothing at this step drafted* and *the draft was empty*
-      // are different facts, and `designFrom` in `run-attempt.ts` distinguishes them by
-      // the key rather than by the string (`#265`).
-      ...(result.document === undefined ? {} : { document: result.document }),
-      // Spread for `head`'s reason a fifth time, and *beside* the document
-      // rather than instead of it (`#297`): 0066 §3's two things are two fields
-      // on one result, and `designFrom` reads the pair off one result so that a
-      // locator whose document did not survive is a locator nothing carries.
-      ...(result.locator === undefined ? {} : { locator: result.locator }),
-      // Spread for `head`'s reason a sixth time, since `#466`: an action that
-      // did not say how it was cut off carries no opinion on the point, and
-      // `adapters.ts`'s `actionOf` falls back to a crash rather than reading
-      // the absence as a second classification.
-      ...(result.interrupted === undefined ? {} : { interrupted: result.interrupted }),
-      // Spread for `head`'s reason a seventh time: *the agent ran and left no
-      // commit* and *nothing ran at all* are different facts and only the
-      // work action's own result can tell them apart (`#466`).
-      ...(result.committedNothing === undefined ? {} : { committedNothing: result.committedNothing }),
-      // Spread for `head`'s reason an eighth time: the merge lane's own commit,
-      // carried the way `worktree:`'s `head` is (`#466`).
-      ...(result.merged === undefined ? {} : { merged: result.merged }),
-      // Spread for `head`'s reason a ninth time: the three fields a real
-      // conflict carries, where the lane refused with one (`#466`).
-      ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
-      // And a tenth time, for a base that moved on the branch's own files (#593).
-      ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
-    })
-
-    // And the same pair onto the context the *next* action is handed, so a
-    // destination written after the drafter keeps what the drafter made. Read the
-    // way `designFrom` reads it: off the result the document came from, and never
-    // pairing a locator with somebody else's document (0069 §5).
-    if (result.document !== undefined) {
-      context = {
-        ...context,
-        design: {
-          document: result.document,
-          ...(result.locator === undefined ? {} : { locator: result.locator }),
-        },
+      // And the same pair onto the context the *next* action is handed, so a
+      // destination written after the drafter keeps what the drafter made. Read the
+      // way `designFrom` reads it: off the result the document came from, and never
+      // pairing a locator with somebody else's document (0069 §5).
+      if (result.document !== undefined) {
+        context = {
+          ...context,
+          design: {
+            document: result.document,
+            ...(result.locator === undefined ? {} : { locator: result.locator }),
+          },
+        }
       }
-    }
 
-    if (result.verdict === 'passed') continue
+      if (result.verdict === 'passed') continue
 
-    if (result.verdict === 'never-ran') {
-      // No verdict here, because there is no verdict: `outcomeOf` (`run-attempt.ts`)
-      // reads this as a `NeverStarted` result, never a pass. The pipeline
-      // stops for the reason a refusal stops it and one it does not have —
-      // the actions after this one would ask the same account the same
-      // question and meet the same wall, which is 0031 §3 with a queue's
-      // worth of items replaced by a recipe's worth of actions.
+      if (result.verdict === 'never-ran') {
+        // No verdict here, because there is no verdict: `outcomeOf` (`run-attempt.ts`)
+        // reads this as a `NeverStarted` result, never a pass. The pipeline
+        // stops for the reason a refusal stops it and one it does not have —
+        // the actions after this one would ask the same account the same
+        // question and meet the same wall, which is 0031 §3 with a queue's
+        // worth of items replaced by a recipe's worth of actions.
+        return {
+          ok: false,
+          failedAt: null,
+          heldAt: null,
+          neverRanAt: { action: action.name, detail: result.evidence, runtime: result.runtime },
+          didNotFinishAt: null,
+          askedAt: null,
+          results,
+          skipped: actions.slice(index + 1).map((a) => a.name),
+        }
+      }
+
+      if (result.verdict === 'did-not-finish') {
+        /**
+         * **The one place `NEEDS_INPUT` is compared to anything** (`#296`).
+         *
+         * One verdict arrives here carrying two unlike outcomes — *the agent
+         * stopped and asked* and *the agent left no receipt* — and they go to
+         * different places: the first reaches `proposed` and may end at a person,
+         * the second stops the pass. That difference used to be re-derived from
+         * `because` at four call sites above this one (`endingOf`,
+         * `nextOf`, `onOffer`, `sentBackTo`), where a token spelled
+         * `"needs input"` or a plugin that forgot to set one would have silently
+         * lost the destination and every one of them would have compiled.
+         *
+         * So the string is read once, here, in the file that defines the token,
+         * and what leaves this function is a field and an event type.
+         */
+        const asked = result.because === NEEDS_INPUT
+        // No verdict here either, for the reason `never-ran` has none: the
+        // agent judged nothing. Which of the two it was is carried by
+        // `askedAt`/`didNotFinishAt` below — `run-attempt.ts`'s `endingOf` tells them
+        // apart the same way `StepAsked`/`StepDidNotFinish` used to.
+        return {
+          ok: false,
+          failedAt: null,
+          heldAt: null,
+          neverRanAt: null,
+          // **The action's own word where it has one**, exactly as `failedAt` takes
+          // one from the `merge` kind — and `NEEDS_INPUT` is no longer one of them,
+          // because it is the field beside this rather than a value in it.
+          didNotFinishAt: asked
+            ? null
+            : {
+                action: action.name,
+                detail: result.evidence,
+                ...(result.because === undefined ? {} : { because: result.because }),
+              },
+          askedAt: asked ? { action: action.name, detail: result.evidence } : null,
+          results,
+          skipped: actions.slice(index + 1).map((a) => a.name),
+        }
+      }
+
+      if (result.verdict === 'needs-approval') {
+        // Stops for the same reason a failure does — the actions after this one are
+        // about a diff that is not going anywhere yet — but it is not a failure:
+        // a `signoff` action's own `Completed{requested}` on the `StepEnded`
+        // outcome carries the question now, not an `ApprovalRequested` event.
+        return {
+          ok: false,
+          failedAt: null,
+          heldAt: action.name,
+          neverRanAt: null,
+          didNotFinishAt: null,
+          askedAt: null,
+          results,
+          skipped: actions.slice(index + 1).map((a) => a.name),
+        }
+      }
+
       return {
         ok: false,
-        failedAt: null,
+        failedAt: action.name,
         heldAt: null,
-        neverRanAt: { action: action.name, detail: result.evidence, runtime: result.runtime },
-        didNotFinishAt: null,
-        askedAt: null,
-        results,
-        skipped: actions.slice(index + 1).map((a) => a.name),
-      }
-    }
-
-    if (result.verdict === 'did-not-finish') {
-      /**
-       * **The one place `NEEDS_INPUT` is compared to anything** (`#296`).
-       *
-       * One verdict arrives here carrying two unlike outcomes — *the agent
-       * stopped and asked* and *the agent left no receipt* — and they go to
-       * different places: the first reaches `proposed` and may end at a person,
-       * the second stops the pass. That difference used to be re-derived from
-       * `because` at four call sites above this one (`endingOf`,
-       * `nextOf`, `onOffer`, `sentBackTo`), where a token spelled
-       * `"needs input"` or a plugin that forgot to set one would have silently
-       * lost the destination and every one of them would have compiled.
-       *
-       * So the string is read once, here, in the file that defines the token,
-       * and what leaves this function is a field and an event type.
-       */
-      const asked = result.because === NEEDS_INPUT
-      // No verdict here either, for the reason `never-ran` has none: the
-      // agent judged nothing. Which of the two it was is carried by
-      // `askedAt`/`didNotFinishAt` below — `run-attempt.ts`'s `endingOf` tells them
-      // apart the same way `StepAsked`/`StepDidNotFinish` used to.
-      return {
-        ok: false,
-        failedAt: null,
-        heldAt: null,
-        neverRanAt: null,
-        // **The action's own word where it has one**, exactly as `failedAt` takes
-        // one from the `merge` kind — and `NEEDS_INPUT` is no longer one of them,
-        // because it is the field beside this rather than a value in it.
-        didNotFinishAt: asked
-          ? null
-          : {
-              action: action.name,
-              detail: result.evidence,
-              ...(result.because === undefined ? {} : { because: result.because }),
-            },
-        askedAt: asked ? { action: action.name, detail: result.evidence } : null,
-        results,
-        skipped: actions.slice(index + 1).map((a) => a.name),
-      }
-    }
-
-    if (result.verdict === 'needs-approval') {
-      // Stops for the same reason a failure does — the actions after this one are
-      // about a diff that is not going anywhere yet — but it is not a failure:
-      // a `signoff` action's own `Completed{requested}` on the `StepEnded`
-      // outcome carries the question now, not an `ApprovalRequested` event.
-      return {
-        ok: false,
-        failedAt: null,
-        heldAt: action.name,
         neverRanAt: null,
         didNotFinishAt: null,
         askedAt: null,
@@ -1099,31 +1194,25 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     }
 
     return {
-      ok: false,
-      failedAt: action.name,
+      ok: true,
+      failedAt: null,
       heldAt: null,
       neverRanAt: null,
       didNotFinishAt: null,
       askedAt: null,
       results,
-      skipped: actions.slice(index + 1).map((a) => a.name),
+      skipped: [],
     }
-  }
-
-  return {
-    ok: true,
-    failedAt: null,
-    heldAt: null,
-    neverRanAt: null,
-    didNotFinishAt: null,
-    askedAt: null,
-    results,
-    skipped: [],
-  }
+  })
 }
 
 /** `4m27s`, `12s` — how long an action took, as the run log says it. */
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+/** The promise shape of `runActionPipelineEffect`: the same pipeline, awaited. */
+export function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
+  return Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 }

@@ -1,10 +1,13 @@
 import { SpanStatusCode, context, createContextKey, trace } from '@opentelemetry/api'
+import { Effect } from 'effect'
 
 /**
- * The step and action spans of a pass (#791), made through `@opentelemetry/api`
- * because `runAttempt` and `runActionPipeline` are still promises. 0101 §6 wants
- * `Effect.withSpan` here, and #790's later children replace this file's callers
- * as they move those functions, keeping the span names.
+ * The step and action spans of a pass (#791), made through `@opentelemetry/api`.
+ * `inSpan` is for a promise body (`runAttempt`'s steps and the judge); the action
+ * span is started from an Effect body by `inSpanEffect`. 0101 §6 wants
+ * `Effect.withSpan` here, but a fiber a promise face starts has no bridged tracer
+ * and would export nothing, so that waits for the conductor's pass loop (row 7),
+ * keeping the span names.
  *
  * With no provider registered the api hands out non-recording spans, so this is
  * a no-op until a host that has `telemetry.otlp_endpoint` installs one.
@@ -83,4 +86,37 @@ export function inSpan<T>(
       throw err
     },
   )
+}
+
+/**
+ * `inSpan` for an Effect body (#1041): an api span started under `captured` —
+ * the context active when the pipeline was built, **never read from inside the
+ * fiber**, because the scheduler flushes from one `setImmediate` and the context
+ * active there is not necessarily this pass's (0122). It reports to *that*
+ * context's sink, and ends once, `ERROR` on a defect, an interruption or
+ * `failed(value)` (a finalizer, so an interruption ends it too).
+ *
+ * The span is not made active around `body`: nothing under an action opens an
+ * api span or calls `markFailed`.
+ */
+export function inSpanEffect<A>(
+  captured: ReturnType<typeof context.active>,
+  name: string,
+  attributes: Readonly<Record<string, number>>,
+  body: Effect.Effect<A>,
+  failed: (value: A) => boolean = () => false,
+): Effect.Effect<A> {
+  return Effect.suspend(() => {
+    const parent = captured.getValue(SINK) as Sink | undefined
+    const span = trace.getTracer(SCOPE).startSpan(name, { attributes }, captured)
+    return Effect.onExit(body, (exit) =>
+      Effect.sync(() => {
+        if (exit._tag === 'Failure' || failed(exit.value)) {
+          span.setStatus({ code: SpanStatusCode.ERROR })
+          if (parent !== undefined) parent.errored = true
+        }
+        span.end()
+      }),
+    )
+  })
 }

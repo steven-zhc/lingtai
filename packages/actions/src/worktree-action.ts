@@ -28,7 +28,16 @@
  * `baseOf`/`submodulesOf` in `@lingtai/recipe` are the one place that knows
  * which of the two spellings a recipe wrote them in.
  */
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import { Effect } from 'effect'
+
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 /**
  * What the cut answers — three branches, and only two of them happen today.
@@ -74,34 +83,50 @@ export interface WorktreeActionSpec {
   submodules: boolean
 }
 
-export function createWorktreeAction(spec: WorktreeActionSpec, deps: WorktreeActionDeps): Action {
+/** `WorktreeActionDeps` with the cut an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface WorktreePortDeps {
+  cut(spec: { readonly base: string; readonly submodules: boolean }): Effect.Effect<CutAnswer>
+}
+
+export function makeWorktreeAction(spec: WorktreeActionSpec, deps: WorktreePortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'worktree',
     yields: 'worktree',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.cut({ base: spec.base, submodules: spec.submodules })
-      if ('head' in answer) {
-        return {
-          verdict: 'passed',
-          evidence: `${answer.where} at ${answer.head.slice(0, 7)}, from origin/${spec.base}${
-            spec.submodules ? ' with submodules' : ''
-          }`,
-          findings: [],
-          head: answer.head,
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const answer = yield* deps.cut({ base: spec.base, submodules: spec.submodules })
+        if ('head' in answer) {
+          return {
+            verdict: 'passed',
+            evidence: `${answer.where} at ${answer.head.slice(0, 7)}, from origin/${spec.base}${
+              spec.submodules ? ' with submodules' : ''
+            }`,
+            findings: [],
+            head: answer.head,
+          }
         }
-      }
-      if ('asked' in answer) {
-        return { verdict: 'needs-approval', evidence: answer.asked, findings: [] }
-      }
-      return {
-        // The head the caller handed in is all a person has, because nothing was
-        // cut — and at `admit` that is the base the pass started from.
-        verdict: 'did-not-finish',
-        evidence: `${answer.notCut} (nothing was cut at ${context.onSha.slice(0, 12)})`,
-        findings: [],
-      }
+        if ('asked' in answer) {
+          return { verdict: 'needs-approval', evidence: answer.asked, findings: [] }
+        }
+        return {
+          // The head the caller handed in is all a person has, because nothing was
+          // cut — and at `admit` that is the base the pass started from.
+          verdict: 'did-not-finish',
+          evidence: `${answer.notCut} (nothing was cut at ${context.onSha.slice(0, 12)})`,
+          findings: [],
+        }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const worktreePortDepsFrom = (deps: WorktreeActionDeps): WorktreePortDeps => ({
+  cut: (spec) => liftPromise(() => deps.cut(spec)),
+})
+
+export function createWorktreeAction(spec: WorktreeActionSpec, deps: WorktreeActionDeps): Action {
+  return promiseAction(makeWorktreeAction(spec, worktreePortDepsFrom(deps)))
 }

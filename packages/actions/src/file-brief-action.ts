@@ -55,8 +55,16 @@
  * cards can see whether `design` wrote what `implement` was given.
  */
 import { whyThePathEscapes } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 import { sizeOf } from './file-action.ts'
 
 /**
@@ -115,74 +123,90 @@ function notThisDestination(locator: string, why: string): string {
   )
 }
 
-export function createFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefActionDeps): Action {
+/** `FileBriefActionDeps` with the read an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface FileBriefPortDeps {
+  read(spec: { readonly path: string }): Effect.Effect<ReadAnswer>
+}
+
+export function makeFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefPortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'file-brief',
     yields: 'nothing',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const design = context.design
-      if (design === undefined) {
-        // A context nothing filled in, which is one built by hand: `runStep`
-        // sets `design` on every verdicts pipeline, off the last `design` visit.
-        // Reported rather than read as an empty brief, because *nobody handed
-        // this a design* and *the design step answered that none was needed* are
-        // different facts and only the second is an answer (0058 §3).
-        return {
-          verdict: 'did-not-finish',
-          evidence:
-            `nothing handed "${spec.name}" a design to read — a \`file-brief:\` reads what a ` +
-            'destination at `design` kept, and no pipeline filled `ActionContext.design` in',
-          findings: [],
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const design = context.design
+        if (design === undefined) {
+          // A context nothing filled in, which is one built by hand: `runStep`
+          // sets `design` on every verdicts pipeline, off the last `design` visit.
+          // Reported rather than read as an empty brief, because *nobody handed
+          // this a design* and *the design step answered that none was needed* are
+          // different facts and only the second is an answer (0058 §3).
+          return {
+            verdict: 'did-not-finish',
+            evidence:
+              `nothing handed "${spec.name}" a design to read — a \`file-brief:\` reads what a ` +
+              'destination at `design` kept, and no pipeline filled `ActionContext.design` in',
+            findings: [],
+          }
         }
-      }
 
-      // **Silent where nothing was kept.** No locator is *no destination was
-      // declared at `design`, or the drafter answered that this change needs
-      // none* (0069 §5) — and both of those are one brief to `implement`, which
-      // works from the issue either way (0058 §3). So this changes no fact: no
-      // `document` and no `locator` on the result, and the design the pass came
-      // in carrying is the one the agent after this is dispatched with.
-      if (design.locator === undefined) {
+        // **Silent where nothing was kept.** No locator is *no destination was
+        // declared at `design`, or the drafter answered that this change needs
+        // none* (0069 §5) — and both of those are one brief to `implement`, which
+        // works from the issue either way (0058 §3). So this changes no fact: no
+        // `document` and no `locator` on the result, and the design the pass came
+        // in carrying is the one the agent after this is dispatched with.
+        if (design.locator === undefined) {
+          return {
+            verdict: 'passed',
+            evidence: 'nothing to read back — no destination at `design` kept a document',
+            findings: [],
+          }
+        }
+
+        const why = whyThePathEscapes(design.locator)
+        if (why !== null) {
+          return {
+            verdict: 'did-not-finish',
+            evidence: notThisDestination(design.locator, why),
+            findings: [],
+          }
+        }
+
+        const answer = yield* deps.read({ path: design.locator })
+        if ('notRead' in answer) {
+          return {
+            verdict: 'did-not-finish',
+            evidence: `the design was not read back from \`${design.locator}\`: ${answer.notRead}`,
+            findings: [],
+          }
+        }
+
         return {
           verdict: 'passed',
-          evidence: 'nothing to read back — no destination at `design` kept a document',
+          // The mirror of the keep's sentence, and the fact a person reads the
+          // card for: the implementing agent was briefed with *this*, off *there*.
+          evidence: `read a ${sizeOf(answer.document)} design back from \`${design.locator}\``,
           findings: [],
+          // **Both, off one result** (0069 §5). The locator is the one it was
+          // handed, unchanged — this action kept nothing, so it has no new place
+          // to report — and the document is what came back, which is what the
+          // agent written after this is briefed with.
+          document: answer.document,
+          locator: design.locator,
         }
-      }
-
-      const why = whyThePathEscapes(design.locator)
-      if (why !== null) {
-        return {
-          verdict: 'did-not-finish',
-          evidence: notThisDestination(design.locator, why),
-          findings: [],
-        }
-      }
-
-      const answer = await deps.read({ path: design.locator })
-      if ('notRead' in answer) {
-        return {
-          verdict: 'did-not-finish',
-          evidence: `the design was not read back from \`${design.locator}\`: ${answer.notRead}`,
-          findings: [],
-        }
-      }
-
-      return {
-        verdict: 'passed',
-        // The mirror of the keep's sentence, and the fact a person reads the
-        // card for: the implementing agent was briefed with *this*, off *there*.
-        evidence: `read a ${sizeOf(answer.document)} design back from \`${design.locator}\``,
-        findings: [],
-        // **Both, off one result** (0069 §5). The locator is the one it was
-        // handed, unchanged — this action kept nothing, so it has no new place
-        // to report — and the document is what came back, which is what the
-        // agent written after this is briefed with.
-        document: answer.document,
-        locator: design.locator,
-      }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const fileBriefPortDepsFrom = (deps: FileBriefActionDeps): FileBriefPortDeps => ({
+  read: (spec) => liftPromise(() => deps.read(spec)),
+})
+
+export function createFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefActionDeps): Action {
+  return promiseAction(makeFileBriefAction(spec, fileBriefPortDepsFrom(deps)))
 }
