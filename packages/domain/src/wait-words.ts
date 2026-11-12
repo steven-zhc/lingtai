@@ -120,7 +120,9 @@ function mergeRefusedColumns(
       what: reading.what + unpushedSuffix(run),
       done: reading.done,
       raw,
-      recommendation: reading.recommendation,
+      // `allowedResolutions` removes Approve for a run with an unpushed head
+      // (`wait.ts`), so a card must not recommend the move it cannot offer.
+      recommendation: run.unpushed && reading.recommendation?.action === 'approve' ? null : reading.recommendation,
     },
   }
 }

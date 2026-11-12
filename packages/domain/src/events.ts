@@ -171,6 +171,10 @@ export type RuntimeId = z.infer<typeof RuntimeId>
  *                    and `attribution.ts` still has a sentence and a move for
  *                    it.
  *
+ *   `unreachable`    git could not reach origin for the lane's fetch or push, or
+ *                    for the branch push before it, after three tries (#1029).
+ *                    Nothing was judged; approve re-runs only the land.
+ *
  *   `unexpected`     the merge failed in a way that is not a conflict — a
  *                    dropped store connection, a failed fetch, a failed push
  *                    for a reason that is not `push-rejected`, or any other

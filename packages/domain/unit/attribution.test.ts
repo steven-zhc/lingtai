@@ -55,6 +55,7 @@ describe('whose failure it is', () => {
       'push-rejected',
       'lane-busy',
       'wip-commit',
+      'unreachable',
       'unexpected',
     ] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe('lingtai')
@@ -105,6 +106,7 @@ describe('whose failure it is', () => {
       'verify-failed',
       'no-commits',
       'push-rejected',
+      'unreachable',
       'lane-busy',
       'wip-commit',
       'base-protected',
@@ -163,6 +165,14 @@ describe('whose failure it is', () => {
  * and `lingtai status` both end up printing.
  */
 describe('a refusal, read for a person', () => {
+  it('says origin could not be reached for unreachable, and recommends approve (#1029)', () => {
+    const reading = diagnoseRefusal({ reason: 'unreachable', detail: 'x', branch: 'agent/1', base: 'main' })
+    expect(reading.what).toBe(
+      'origin could not be reached while agent/1 was being landed on main, after 3 tries; nothing about agent/1 was judged.',
+    )
+    expect(reading.recommendation?.action).toBe('approve')
+  })
+
   const REASONS: RefusalReason[] = [
     'conflict',
     'dirty-base',
@@ -171,6 +181,7 @@ describe('a refusal, read for a person', () => {
     'verify-failed',
     'no-commits',
     'push-rejected',
+    'unreachable',
     // Nothing writes this since #194 and everything still reads it: the value
     // is on the log, and a build that could not read it could not read this
     // repository's own history.

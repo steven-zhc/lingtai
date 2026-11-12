@@ -210,8 +210,17 @@ import {
   type StepAction,
 } from '@lingtai/recipe'
 import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
-import { mirrorPathFor, withMirrorWrite, worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
-import { Effect, Result } from 'effect'
+import {
+  UNREACHABLE_WAITS,
+  isUnreachableFailure,
+  mirrorPathFor,
+  retryUnreachable,
+  withMirrorWrite,
+  worktreePath,
+  type TokenSource,
+  type Worktree,
+} from '@lingtai/repo'
+import { type Duration, Effect, Result } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
 import {
@@ -523,6 +532,8 @@ export interface RunOnceOptions {
    */
   snapshotWriter?: { offer(snapshot: Snapshot): void }
   gitEnv?: NodeJS.ProcessEnv
+  /** The waits between tries of a landing's git network call (#1029); a test passes zeros. Default `UNREACHABLE_WAITS`. */
+  unreachableWaits?: readonly Duration.Input[]
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
   /**
@@ -1825,7 +1836,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const gitHere = (args: string[]) => repo.git(args, { token: options.token, env: options.gitEnv, cwd })
       /** …as a promise, for the ports. A failure here is a defect, not a verdict. */
       const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
-      const gitAsked = (args: string[]) => Effect.runPromise(Effect.result(gitHere(args)))
+      /**
+       * `retry` is the waits for a command that may not reach origin (#1029): the same single
+       * run, with `retryUnreachable` inside it.
+       */
+      const gitAsked = (args: string[], retry?: readonly Duration.Input[]) =>
+        Effect.runPromise(Effect.result(retry ? retryUnreachable(gitHere(args), retry) : gitHere(args)))
       /**
        * …for a command that writes the mirror's refs or worktree metadata,
        * which a worktree shares with it: one at a time per mirror, for that
@@ -3035,14 +3051,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * would be a lane told something the pass cannot be in a position to say.
        */
       const landNow = async (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> => {
-        const pushed = await gitAsked([
-          'push',
-          `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
-          'origin',
-          `HEAD:refs/heads/${branch}`,
-        ])
+        // Retried while origin cannot be reached (#1029). The waits run in this call and an
+        // interrupt does not reach them (`gitAsked` starts its own fiber), so a drain waits at
+        // most the tries' own bound: about 3 × git's timeout plus the waits.
+        const pushed = await gitAsked(
+          ['push', `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`, 'origin', `HEAD:refs/heads/${branch}`],
+          options.unreachableWaits ?? UNREACHABLE_WAITS,
+        )
         if (Result.isFailure(pushed)) {
-          return { notMerged: { reason: 'push-rejected', detail: pushed.failure.detail } }
+          if (isUnreachableFailure(pushed.failure)) {
+            return { notMerged: { reason: 'unreachable', detail: pushed.failure.detail } }
+          }
+          // A lease that no longer matches may mean a push whose reply was lost landed after all:
+          // if origin already holds the sha being landed, the push is done.
+          let landedAlready = false
+          if (/stale info/i.test(pushed.failure.stderr ?? pushed.failure.detail)) {
+            const listed = await gitAsked(['ls-remote', 'origin', `refs/heads/${branch}`])
+            if (Result.isFailure(listed)) {
+              if (isUnreachableFailure(listed.failure)) {
+                return { notMerged: { reason: 'unreachable', detail: listed.failure.detail } }
+              }
+            } else {
+              landedAlready = listed.success.split(/\s/)[0] === on.onSha
+            }
+          }
+          if (!landedAlready) {
+            return { notMerged: { reason: 'push-rejected', detail: pushed.failure.detail } }
+          }
         }
         lease = on.onSha
         // The branch and not the arm: the lane is about to merge this ref, and
@@ -3069,6 +3104,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             home,
             gitEnv: options.gitEnv,
             store,
+            unreachableWaits: options.unreachableWaits,
           }),
         )
         if (result.ok) {

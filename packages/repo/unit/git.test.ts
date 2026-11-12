@@ -8,6 +8,7 @@ describe('gitInvocation', () => {
     expect(args).toEqual(['-c', 'core.hooksPath=/dev/null', 'push', 'origin', 'main'])
     expect(env['GIT_CONFIG_VALUE_0']).toContain('AUTHORIZATION: basic ')
     expect(env['GIT_TERMINAL_PROMPT']).toBe('0')
+    expect(env['LC_ALL']).toBe('C')
   })
 
   it('keeps the token out of argv', () => {
@@ -22,5 +23,6 @@ describe('gitInvocation', () => {
     expect(args).toEqual(['worktree', 'prune'])
     expect(env['GIT_CONFIG_COUNT']).toBeUndefined()
     expect(env['GIT_TERMINAL_PROMPT']).toBe('0')
+    expect(env['LC_ALL']).toBe('C')
   })
 })
