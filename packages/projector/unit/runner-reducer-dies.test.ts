@@ -6,10 +6,10 @@
  */
 import type { Envelope } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { createProjectionRunner } from '../src/projection.ts'
+import { createProjectionRunner, makeRunner } from '../src/projection.ts'
 import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import type { Projection } from '../src/store.ts'
 
@@ -50,6 +50,52 @@ describe('a runner whose reducer dies', () => {
       expect(runner.running).toBe(false)
       expect(calls).toBe(1)
       expect(await Effect.runPromise(port.checkpoint('probe'))).toBe(0n)
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('a runner whose starting fiber is interrupted', () => {
+  it('stops following', async () => {
+    const store = { readAll: async () => [] } as unknown as EventStore
+    let nudge: () => void = () => {}
+    let closed = false
+    let caught = false
+    const projection: Projection = {
+      name: 'probe2',
+      create: () => Effect.void,
+      reset: () => Effect.void,
+      reduce: () => Effect.void,
+    }
+    const db = openSqliteProjections(':memory:')
+    const port = makeSqliteProjections(db)
+    try {
+      const r = makeRunner({
+        projection,
+        store,
+        into: port,
+        waker: {
+          open: (l: { nudge: () => void }) => {
+            nudge = l.nudge
+            return { ready: Promise.resolve(), close: () => void (closed = true) }
+          },
+        },
+      })
+      const fiber = Effect.runFork(
+        Effect.andThen(
+          Effect.andThen(
+            r.start(),
+            Effect.sync(() => void (caught = true)),
+          ),
+          Effect.never,
+        ).pipe(Effect.scoped, Effect.orDie),
+      )
+      while (!caught) await new Promise((x) => setTimeout(x, 10))
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(r.running).toBe(false)
+      expect(closed).toBe(true)
+      nudge()
     } finally {
       db.close()
     }

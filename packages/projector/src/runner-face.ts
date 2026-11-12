@@ -13,26 +13,26 @@ import { Effect } from 'effect'
 
 import type { ProjectionRunnerPort } from './projection.ts'
 
-export function runnerCloseFace(r: ProjectionRunnerPort) {
+export function runnerCloseFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.close())
 }
 
-export function runnerLagFace(r: ProjectionRunnerPort) {
+export function runnerLagFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.lag())
 }
 
-export function runnerRebuildFace(r: ProjectionRunnerPort) {
+export function runnerRebuildFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.rebuild())
 }
 
-export function runnerShapeFace(r: ProjectionRunnerPort) {
+export function runnerShapeFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.shape())
 }
 
-export function runnerStartFace(r: ProjectionRunnerPort) {
+export function runnerStartFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.start())
 }
 
-export function runnerStopFace(r: ProjectionRunnerPort) {
+export function runnerStopFace(r: ProjectionRunnerPort<never>) {
   return Effect.runPromise(r.stop())
 }

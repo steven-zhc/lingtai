@@ -145,14 +145,18 @@ export interface ProjectionRunnerOptions {
  * holds this and not the promise one, so a batch has the parent fiber, span and
  * interruption of whatever started it.
  */
-export interface ProjectionRunnerPort {
+export interface ProjectionRunnerPort<R = Scope.Scope> {
   readonly name: string
   readonly failure: unknown
   readonly running: boolean
-  /** Fails with `ProjectionShapeError` on drift, and with the stop if the first batch poisons. */
-  start(): Effect.Effect<void, unknown>
+  /**
+   * Fails with `ProjectionShapeError` on drift, and with the stop if the first
+   * batch poisons. The `follow` fiber lives in a child of the caller's `Scope`,
+   * so interrupting or closing what started the runner stops it.
+   */
+  start(): Effect.Effect<void, unknown, R>
   stop(): Effect.Effect<void>
-  rebuild(): Effect.Effect<void, unknown>
+  rebuild(): Effect.Effect<void, unknown, R>
   lag(): Effect.Effect<ProjectionLag>
   shape(): Effect.Effect<ProjectionShape>
   close(): Effect.Effect<void>
@@ -238,7 +242,8 @@ export function makeRunner(options: ProjectionRunnerOptions): ProjectionRunnerPo
         reject: (error) => Deferred.doneUnsafe(caughtUp, Effect.fail(error)),
       },
     }
-    const scope = yield* Scope.make()
+    // A child of the caller's scope: the owner ending ends the follow.
+    const scope = yield* Scope.fork(yield* Scope.Scope)
     state.cell = cell
     state.scope = scope
     yield* Effect.forkIn(
@@ -343,7 +348,7 @@ export function makeRunner(options: ProjectionRunnerOptions): ProjectionRunnerPo
 }
 
 /** The promise `ProjectionRunner` over `makeRunner`'s, for the daemon and the CLI until rows 9 and 11+ (#790). */
-export function promiseRunner(r: ProjectionRunnerPort): ProjectionRunner {
+export function promiseRunner(r: ProjectionRunnerPort<never>): ProjectionRunner {
   return {
     name: r.name,
     get failure() {
@@ -361,8 +366,30 @@ export function promiseRunner(r: ProjectionRunnerPort): ProjectionRunner {
   }
 }
 
+/**
+ * A runner with its owner supplied: a promise caller has no fiber to own the
+ * follow, so the runner's own scope does, and `stop`/`close` end it.
+ */
+function ownedBy(r: ProjectionRunnerPort, owner: Scope.Scope): ProjectionRunnerPort<never> {
+  return {
+    name: r.name,
+    get failure() {
+      return r.failure
+    },
+    get running() {
+      return r.running
+    },
+    start: () => Effect.provideService(r.start(), Scope.Scope, owner),
+    stop: () => r.stop(),
+    rebuild: () => Effect.provideService(r.rebuild(), Scope.Scope, owner),
+    lag: () => r.lag(),
+    shape: () => r.shape(),
+    close: () => r.close(),
+  }
+}
+
 export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
-  return promiseRunner(makeRunner(options))
+  return promiseRunner(ownedBy(makeRunner(options), Scope.makeUnsafe()))
 }
 
 /**
