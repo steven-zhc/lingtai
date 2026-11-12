@@ -41,8 +41,16 @@
  * strategy and nothing else, and the base reaches `integrate` from the caller.
  */
 import type { RefusalReason } from '@lingtai/domain'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 /**
  * How the lane lands it, and there is one value because `integrate.ts` offers
@@ -101,41 +109,57 @@ export interface MergeActionSpec {
   strategy: MergeStrategy
 }
 
-export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps): Action {
+/** `MergeActionDeps` with the lane an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface MergePortDeps {
+  land(spec: { readonly strategy: MergeStrategy; readonly onSha: string }): Effect.Effect<LandAnswer>
+}
+
+export function makeMergeAction(spec: MergeActionSpec, deps: MergePortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'merge',
     yields: 'merge',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.land({ strategy: spec.strategy, onSha: context.onSha })
-      if ('merged' in answer) {
-        return {
-          verdict: 'passed',
-          evidence: `merged as ${answer.merged.slice(0, 7)}`,
-          findings: [],
-          // The same sha `evidence` already names, for `Integration.Integrated
-          // .mergeSha` — carried the way `worktree:`'s `head` is (`#466`).
-          merged: answer.merged,
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const answer = yield* deps.land({ strategy: spec.strategy, onSha: context.onSha })
+        if ('merged' in answer) {
+          return {
+            verdict: 'passed',
+            evidence: `merged as ${answer.merged.slice(0, 7)}`,
+            findings: [],
+            // The same sha `evidence` already names, for `Integration.Integrated
+            // .mergeSha` — carried the way `worktree:`'s `head` is (`#466`).
+            merged: answer.merged,
+          }
         }
-      }
-      return {
-        // A judgement about the change, at a step the workflow lets refuse — and
-        // what it buys is a round the judge at `proposed` decides how to spend.
-        verdict: 'failed',
-        // The lane's words, and the whole of `detail` one layer up.
-        evidence: answer.notMerged.detail,
-        findings: [],
-        // The lane's own reason, travelling rather than being re-derived: it is
-        // what `directionOf` reads to tell a `conflict` from a `verify-failed`
-        // from the five a judge is never offered.
-        because: answer.notMerged.reason,
-        // The three fields a real conflict carries, threaded the way
-        // `interrupted` is (`#466`) — absent on every refusal but a conflict.
-        ...(answer.notMerged.conflict === undefined ? {} : { conflict: answer.notMerged.conflict }),
-        // The same for a base that moved on the branch's files (#593).
-        ...(answer.notMerged.baseMoved === undefined ? {} : { baseMoved: answer.notMerged.baseMoved }),
-      }
+        return {
+          // A judgement about the change, at a step the workflow lets refuse — and
+          // what it buys is a round the judge at `proposed` decides how to spend.
+          verdict: 'failed',
+          // The lane's words, and the whole of `detail` one layer up.
+          evidence: answer.notMerged.detail,
+          findings: [],
+          // The lane's own reason, travelling rather than being re-derived: it is
+          // what `directionOf` reads to tell a `conflict` from a `verify-failed`
+          // from the five a judge is never offered.
+          because: answer.notMerged.reason,
+          // The three fields a real conflict carries, threaded the way
+          // `interrupted` is (`#466`) — absent on every refusal but a conflict.
+          ...(answer.notMerged.conflict === undefined ? {} : { conflict: answer.notMerged.conflict }),
+          // The same for a base that moved on the branch's files (#593).
+          ...(answer.notMerged.baseMoved === undefined ? {} : { baseMoved: answer.notMerged.baseMoved }),
+        }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const mergePortDepsFrom = (deps: MergeActionDeps): MergePortDeps => ({
+  land: (spec) => liftPromise(() => deps.land(spec)),
+})
+
+export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps): Action {
+  return promiseAction(makeMergeAction(spec, mergePortDepsFrom(deps)))
 }
