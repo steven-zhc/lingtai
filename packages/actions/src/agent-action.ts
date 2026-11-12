@@ -236,54 +236,6 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
   return lifted
 }
 
-/**
- * One runtime dispatch as an Effect, aborted by the context's signal or by the
- * fiber's interruption, whichever comes first. A throw from the adapter is a
- * defect that is the thrown value itself, as `liftPromise`'s.
- */
-export const dispatchRuntime = (
-  runtime: Runtime,
-  signal: AbortSignal | undefined,
-  request: Omit<RunRequest, 'signal'>,
-): Effect.Effect<RunOutcome> =>
-  Effect.callback<RunOutcome>((resume) => {
-    const controller = new AbortController()
-    let settled = false
-    let onSettled: (() => void) | undefined
-    const settle = () => {
-      settled = true
-      onSettled?.()
-    }
-    new Promise<RunOutcome>((resolve) =>
-      resolve(
-        runtime.run({
-          ...request,
-          signal: signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal]),
-        }),
-      ),
-    ).then(
-      (outcome) => {
-        settle()
-        resume(Effect.succeed(outcome))
-      },
-      (error) => {
-        settle()
-        resume(Effect.die(error))
-      },
-    )
-    // An interruption aborts the run and then waits for it to settle: the
-    // adapter's own interruption waits for its process group, and a caller that
-    // cleans the tree after this returns relies on the agent no longer writing.
-    return Effect.suspend(() => {
-      if (settled) return Effect.void
-      controller.abort()
-      return Effect.callback<void>((done) => {
-        onSettled = () => done(Effect.void)
-        if (settled) done(Effect.void)
-      })
-    })
-  })
-
 const RUBRIC = `
 Severity is not a judgement call. Use this rubric exactly.
 
@@ -895,7 +847,8 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     const version = yield* runtimeVersionOfEffect(deps.runtime, context.env, context.cwd)
                     yield* liftPromise(() => context.prompted?.(`review@${prompt.length}`, composed, version))
                   }
-                  return yield* dispatchRuntime(deps.runtime, context.signal, {
+                  return yield* deps.runtime.run({
+                    ...(context.signal === undefined ? {} : { signal: context.signal }),
                     runId: reviewId,
                     cwd: context.cwd,
                     prompt,
@@ -1549,7 +1502,8 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           const version = yield* runtimeVersionOfEffect(deps.runtime, context.env, context.cwd)
           yield* liftPromise(() => context.prompted?.(`design@${prompt.length}`, composed, version))
         }
-        const outcome = yield* dispatchRuntime(deps.runtime, context.signal, {
+        const outcome = yield* deps.runtime.run({
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
           runId: draftId,
           cwd: context.cwd,
           prompt,

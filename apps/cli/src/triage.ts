@@ -12,7 +12,7 @@
  * test needs none of the real ones. `daemonTriagePorts` wires the production
  * ports for the daemon in this file.
  */
-import { createRuntime, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
+import { createRuntime, runtimeRun, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipe, loadProject, loadProjects } from '@lingtai/conductor/projects'
@@ -948,33 +948,31 @@ async function waitTriageWithin(
             log,
           )
           let threw = false
-          const outcome = await runtime
-            .run({
-              runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
-              cwd,
-              prompt,
-              ...(call.model === undefined ? {} : { model: call.model }),
-              settingsPath,
-              env: triageEnv,
-              limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
-              // The runtime enforces the bounds before it answers; `parseTriage`
-              // below stays the last check, and the route that cannot carry a
-              // schema keeps the brief's own sentence (#582).
-              ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
-              signal,
-            })
-            .catch((err: unknown): RunOutcome => {
-              threw = true
-              return {
-                exitCode: null,
-                turns: 0,
-                durationMs: 0,
-                costUsd: null,
-                failure: { kind: 'crash', detail: (err as Error).message },
-                text: null,
-                sessionId: '',
-              }
-            })
+          const outcome = await runtimeRun(runtime, {
+            runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
+            cwd,
+            prompt,
+            ...(call.model === undefined ? {} : { model: call.model }),
+            settingsPath,
+            env: triageEnv,
+            limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
+            // The runtime enforces the bounds before it answers; `parseTriage`
+            // below stays the last check, and the route that cannot carry a
+            // schema keeps the brief's own sentence (#582).
+            ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
+            signal,
+          }).catch((err: unknown): RunOutcome => {
+            threw = true
+            return {
+              exitCode: null,
+              turns: 0,
+              durationMs: 0,
+              costUsd: null,
+              failure: { kind: 'crash', detail: (err as Error).message },
+              text: null,
+              sessionId: '',
+            }
+          })
 
           if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
 

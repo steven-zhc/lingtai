@@ -37,7 +37,7 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
         method: 'apiKey',
         detail: 'explicit codex_text API key configured',
       }),
-    run: (request: RunRequest): Promise<RunOutcome> => runCodexText({ config, transport }, request),
+    run: (request: RunRequest) => codexTextRun({ config, transport }, request),
   }
 }
 
@@ -199,8 +199,3 @@ export const codexTextRun = Effect.fn('agent.run')(function* (
     }),
   )
 })
-
-/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
-export function runCodexText(options: CodexTextOptions, request: RunRequest): Promise<RunOutcome> {
-  return Effect.runPromise(codexTextRun(options, request))
-}

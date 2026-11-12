@@ -42,28 +42,16 @@
     "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
   },
   {
-    "file": "packages/agent/src/claude-code.ts",
-    "fn": "runClaudeCode",
-    "until": "#790",
-    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
-  },
-  {
-    "file": "packages/agent/src/codex-text.ts",
-    "fn": "runCodexText",
-    "until": "#790",
-    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
-  },
-  {
-    "file": "packages/agent/src/codex.ts",
-    "fn": "runCodex",
-    "until": "#790",
-    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
-  },
-  {
     "file": "packages/agent/src/run-log.ts",
     "fn": "openRunLog",
     "until": "#790",
     "why": "apps/cli/src/discuss.ts:377 awaits it"
+  },
+  {
+    "file": "packages/agent/src/runtime.ts",
+    "fn": "runtimeRun",
+    "until": "#790",
+    "why": "apps/cli/src/discuss.ts:265 (discussionAsk) and apps/cli/src/triage.ts:951 await it, until the apps/cli row"
   },
   {
     "file": "packages/agent/src/runtime.ts",

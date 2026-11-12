@@ -260,7 +260,7 @@ export interface AuthStatus {
 
 export interface Runtime {
   readonly capabilities: RuntimeCapabilities
-  run(request: RunRequest): Promise<RunOutcome>
+  run(request: RunRequest): Effect.Effect<RunOutcome>
   /**
    * How this request would be spawned, for the log to record before it is.
    *
@@ -302,6 +302,11 @@ export const runtimeVersionOfEffect = (
 /** The Effect above as a promise, for `apps/cli` (a listed face, #790). Never rejects. */
 export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>, cwd?: string): Promise<string | null> {
   return Effect.runPromise(runtimeVersionOfEffect(runtime, env, cwd))
+}
+
+/** `Runtime.run` as a promise, for `apps/cli` (a listed face, #790). */
+export function runtimeRun(runtime: Runtime, request: RunRequest): Promise<RunOutcome> {
+  return Effect.runPromise(runtime.run(request))
 }
 
 /**

@@ -1414,7 +1414,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       }
     },
 
-    run: (request: RunRequest): Promise<RunOutcome> => runCodex(options, request),
+    run: (request: RunRequest) => codexRun(options, request),
   }
 }
 
@@ -1786,8 +1786,3 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
     }),
   )
 })
-
-/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
-export function runCodex(options: CodexOptions, request: RunRequest): Promise<RunOutcome> {
-  return Effect.runPromise(codexRun(options, request))
-}

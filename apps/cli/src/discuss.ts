@@ -44,6 +44,7 @@ import {
   NO_RUN_LOG,
   openRunLog,
   RUN_LOG_BEAT_MS,
+  runtimeRun,
   runtimeVersionOf,
   type RunTrace,
   type Runtime,
@@ -262,7 +263,7 @@ export function discussionAsk(
 ): DiscussionPorts['ask'] {
   return async (prompt, round, call) => {
     const selected = typeof runtime === 'function' ? runtime() : runtime
-    return selected.run({
+    return runtimeRun(selected, {
       runId: await fixed.runId(round),
       cwd: fixed.cwd,
       prompt,
