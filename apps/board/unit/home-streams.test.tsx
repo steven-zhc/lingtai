@@ -172,11 +172,14 @@ describe('the boundaries', () => {
     allAnswer()
     reads.day.mockImplementation(never)
     reads.lag.mockImplementation(never)
-    reads.locks.mockImplementation(never)
     const html = await settled('b')
-    // the board, the register and the control answered: the counts, the cards and the paused slot are drawn
+    // the board, the register, the control and the locks answered: the counts, the cards and the paused slot are drawn
     expect(html).toContain('<span class="ct">0</span>')
-    expect(html).toContain('class="empty')
+    // a drawn empty line is `class="empty"` or `empty held`; the skeleton's label is `empty asking`
+    expect(html.match(/class="empty( held)?"/g)).toHaveLength(4)
+    expect(html).not.toContain('empty asking')
+    expect(html).not.toContain('reading the log…')
+    // Queued waits for the board and GitHub, not the day's spend: its empty line is drawn too, so all four columns count
     expect(html).not.toMatch(/<span class="rail"><span class="live"><\/span><span class="ct-pulse"/)
     // the day's spend and the lags did not answer: the footer is still its frame, never \$0
     expect(html).toMatch(
@@ -190,6 +193,8 @@ describe('the boundaries', () => {
     reads.locks.mockImplementation(never)
     const html = await settled('b')
     expect(html).toContain('class="home-at')
+    // the cards need the locks, so they are still skeletons
+    expect(html).toContain('empty asking')
     expect(html).not.toMatch(
       /<footer class="footer"><span class="spend"><span>Today<\/span><span class="figures"><span class="ct-pulse"/,
     )

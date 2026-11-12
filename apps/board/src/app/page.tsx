@@ -991,13 +991,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // inside its scope and every `timed` below lands in `/`'s timings.
   if (started === undefined) throw new Error('measure did not start the reads')
   const ctx: Ctx = { reads: started, locks: readProjectLocks(), measured, param }
-  // GitHub's half of the Queued column, asked only once `measured` has
-  // returned (#884): the page's own `measure` is then over, so these timings are
-  // not in the meta tag already sent — started inside it they would land in an
-  // array that has been serialised, and be lost silently. Started once and
+  // GitHub's half of the Queued column (#884). It needs the board's `askable`
+  // and nothing else, so it waits for `board` alone: the day's spend and the
+  // lags are not its reads. `.then` is registered here, outside `/`'s scope,
+  // and `measure` opens a scope of its own, so these timings land in the
+  // `/ queue` array and never in the one already serialised. Started once and
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
-  const queue: Promise<GithubQueue> = measured
-    .then(() => ctx.reads.board)
+  const queue: Promise<GithubQueue> = ctx.reads.board
     .then((board) =>
       measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }),
     )
