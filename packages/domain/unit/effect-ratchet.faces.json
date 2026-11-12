@@ -426,6 +426,48 @@
     "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
+    "file": "packages/recipe/src/files.ts",
+    "fn": "readFileFace",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/files.ts",
+    "fn": "replaceFileFace",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/local.ts",
+    "fn": "resolveLocalRecipe",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/resolve.ts",
+    "fn": "resolveRecipe",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/write.ts",
+    "fn": "readRecipeKey",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/write.ts",
+    "fn": "saveRecipeText",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
+    "file": "packages/recipe/src/write.ts",
+    "fn": "setRecipe",
+    "until": "#790",
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+  },
+  {
     "file": "packages/repo/src/git.ts",
     "fn": "git",
     "until": "#790",

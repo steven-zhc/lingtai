@@ -1,6 +1,6 @@
 /**
  * 0101 §6: every backend function that does IO is an Effect, and `Effect.run*`
- * runs only at a host's edge. #790 moves the ten packages below over one at a
+ * runs only at a host's edge. #790 moves the packages below over one at a
  * time; this holds each package's `async` functions and `Effect.run*`
  * references to only go down (#792).
  *
@@ -45,6 +45,7 @@ const PACKAGES = [
   'packages/conductor',
   'packages/daemon',
   'packages/setup',
+  'packages/recipe',
 ] as const
 
 /** Paths under a counted `src/` that are excluded, each with its reason. Empty today. */
@@ -304,7 +305,7 @@ export function checkFaces(
     }
     seen.add(key)
     if (!PACKAGES.some((p) => entry.file.startsWith(`${p}/src/`)) || skip.includes(entry.file)) {
-      refusals.push(`${who} is outside the ten packages the ratchet counts.`)
+      refusals.push(`${who} is outside the packages the ratchet counts.`)
       continue
     }
     const text = read(entry.file)
@@ -506,8 +507,10 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       expect(r.exempt.get(ok.file)?.size).toBe(1)
     })
     it('refuses, each by name, an outside-the-packages entry, a bad until, an empty why and a duplicate', () => {
-      expect(run([{ ...ok, file: 'packages/domain/src/z.ts' }])).toMatch(/z\.ts f is outside the ten packages/)
-      expect(run([{ ...ok, file: 'packages/telegram/src/z.ts' }])).toMatch(/outside the ten packages/)
+      expect(run([{ ...ok, file: 'packages/domain/src/z.ts' }])).toMatch(
+        /z\.ts f is outside the packages the ratchet counts/,
+      )
+      expect(run([{ ...ok, file: 'packages/telegram/src/z.ts' }])).toMatch(/outside the packages the ratchet counts/)
       expect(run([{ ...ok, until: '790' }])).toMatch(/`until` must be an issue/)
       expect(run([{ ...ok, why: ' ' }])).toMatch(/`why` is empty/)
       expect(run([ok, ok])).toMatch(/listed twice/)
@@ -519,7 +522,7 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     })
   })
 
-  it('has the ten packages of 0101 §6 as the baseline keys', () => {
+  it('has the counted packages as the baseline keys', () => {
     expect(Object.keys(baseline).sort()).toEqual([...PACKAGES].sort())
   })
 
