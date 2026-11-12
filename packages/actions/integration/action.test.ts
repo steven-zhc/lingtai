@@ -275,7 +275,11 @@ describe('the pipeline', () => {
     expect(result.ok).toBe(false)
     expect(result.failedAt).toBeNull()
     expect(result.heldAt).toBeNull()
-    expect(result.neverRanAt).toEqual({ action: 'review', detail: said })
+    expect(result.neverRanAt).toEqual({
+      action: 'review',
+      detail: said,
+      runtime: 'claude-code',
+    })
     expect(result.skipped).toEqual(['test'])
 
     // And the build's own verdict is untouched: one action did judge the diff.
