@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { text as readAll } from 'node:stream/consumers'
 
 import { currentRecipe, kindLabelOf, kindOf, loadProjects, type Tickets } from '@lingtai/conductor'
 import { dbTickets, type DbTickets } from '@lingtai/conductor/db-tickets'
@@ -26,8 +27,10 @@ import type { ProjectState } from '@lingtai/domain'
 import { processTicketSql } from '@lingtai/event-store'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
 import { heading, jsonDocument, jsonErrorDocument, symbol, table } from './output.ts'
+import { runEffect } from './project-pause.ts'
 
 /** `status.ts`'s own `oneLine`, copied rather than exported for one caller. */
 function oneLine(text: string, n = 140): string {
@@ -59,6 +62,8 @@ export interface TicketReading {
   ticketsFor?: (project: string) => Promise<DbTickets>
   env?: Record<string, string | undefined>
   edit?: (command: string, initial: string, name: string) => Promise<EditedForm>
+  /** What `--body -` reads; `process.stdin` by default. */
+  stdin?: NodeJS.ReadableStream & { isTTY?: boolean }
 }
 
 async function defaultTicketsFor(project: string): Promise<DbTickets> {
@@ -442,11 +447,7 @@ export function parseTicketForm(text: string): ParsedTicketForm {
   let labels: readonly string[] = []
   let afterLabels = rest
   if (rest[0]?.startsWith('labels:')) {
-    labels = rest[0]
-      .slice('labels:'.length)
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s !== '')
+    labels = splitLabels(rest[0].slice('labels:'.length))
     afterLabels = rest.slice(1)
   }
   if (afterLabels.length > 0) {
@@ -457,6 +458,14 @@ export function parseTicketForm(text: string): ParsedTicketForm {
   }
 
   return { ok: true, form: { title, labels, body: bodyLines.join('\n').trimEnd() } }
+}
+
+/** A comma-separated labels value as the form reads it; `--label` uses the same rule. */
+export function splitLabels(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
 }
 
 function sameLabels(a: readonly string[], b: readonly string[]): boolean {
@@ -508,13 +517,93 @@ function titleAndLabelsRoundTrip(ticket: { title: string; labels: readonly { nam
 
 export interface TicketNewOptions {
   project?: string
+  title?: string
+  /** Raw, comma-separated. */
+  label?: string
+  /** The body, or `-` for stdin. */
+  body?: string
 }
+
+/** `ticket new` from flags: no editor, no form file. Returns the exit code. */
+const newFromFlags = (
+  options: TicketNewOptions,
+  log: (line: string) => void,
+  reading: TicketReading,
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const projects = reading.projects ?? loadProjects
+    const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
+    const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+    const stdin = reading.stdin ?? process.stdin
+
+    if (options.title === undefined) {
+      const stray = options.label !== undefined ? '--label' : '--body'
+      log(`${stray} needs --title; without it the editor opens and these flags would be dropped`)
+      return 1
+    }
+    const title = options.title.trim()
+    if (title === '') {
+      log('a ticket needs a title')
+      return 1
+    }
+    const labels = splitLabels(options.label ?? '')
+    const unreadable = titleAndLabelsRoundTrip({ title, labels: labels.map((name) => ({ name })) })
+    if (unreadable !== null) {
+      log(`${unreadable} — ticket edit could not read it back`)
+      return 1
+    }
+
+    const project = yield* Effect.promise(() => pickProject(options.project, projects, log))
+    if (!project) return 1
+    const name = project.project!
+    const recipe = yield* Effect.promise(() => resolveDbRecipe(project, recipeFor, log))
+    if (!recipe) return 1
+    const kinds = queueOf(recipe).kinds
+
+    let body = options.body ?? ''
+    if (options.body === '-') {
+      if (stdin.isTTY) {
+        log('--body - reads stdin — pipe the body in')
+        return 1
+      }
+      const read = yield* Effect.tryPromise({ try: () => readAll(stdin), catch: (err) => err }).pipe(
+        Effect.map((t) => ({ ok: true as const, t })),
+        Effect.catch((err) => Effect.succeed({ ok: false as const, why: (err as Error).message })),
+      )
+      if (!read.ok) {
+        log(`could not read the body from stdin (--body -) — ${read.why}`)
+        return 1
+      }
+      body = read.t
+    }
+
+    const made = yield* Effect.tryPromise({
+      try: () => ticketsFor(name).then((tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
+      catch: (err) => err,
+    }).pipe(
+      Effect.map((created) => ({ ok: true as const, created })),
+      Effect.catch((err) => Effect.succeed({ ok: false as const, why: (err as Error).message })),
+    )
+    if (!made.ok) {
+      log(made.why)
+      return 1
+    }
+    const { created } = made
+    log(`${symbol.pass()} created #${created.number}  ${created.title}`)
+    if (kindOf(created, kinds) === null) {
+      log(`#${created.number} carries no kind label — the queue will not take it`)
+    }
+    return 0
+  })
 
 export async function ticketNew(
   options: TicketNewOptions = {},
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
 ): Promise<number> {
+  if (options.title !== undefined || options.label !== undefined || options.body !== undefined) {
+    return runEffect(newFromFlags(options, log, reading))
+  }
   const projects = reading.projects ?? loadProjects
   const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
   const ticketsFor = reading.ticketsFor ?? defaultTicketsFor

@@ -218,6 +218,9 @@ lingtai ticket new [--project <p>]
   the body. Quitting with the form unchanged does nothing. No kind
   label and the ticket is created with a warning the queue will
   not take it.
+lingtai ticket new --title <t> [--label <a,b>] [--body <t> | -]
+  No editor: creates the ticket from the flags. --body - reads the
+  body from stdin. --label and --body need --title.
 lingtai ticket edit <n> [--project <p>]
   The same form, started from the ticket; writes what changed.
 --project <p> is required with more than one project registered.
@@ -226,6 +229,7 @@ lingtai ticket edit <n> [--project <p>]
 ```sh
 lingtai ticket list --project lingtai
 lingtai ticket new --project lingtai
+lingtai ticket new --title "Fix the footer link" --label bug
 ```
 
 ### lingtai board

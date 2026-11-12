@@ -4,6 +4,8 @@
  * `ResolvedRecipe` parsed from a literal YAML string, and a literal project
  * list — nothing here touches the log, the filesystem or a process (0060 §1).
  */
+import { Readable } from 'node:stream'
+
 import { dbTickets } from '@lingtai/conductor/db-tickets'
 import { type ProjectState, emptyProject } from '@lingtai/domain'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
@@ -717,6 +719,116 @@ describe('lingtai ticket new / edit (#386)', () => {
 
     const after = await tickets.getIssue(opened.number)
     expect(after.title).toBe('had a title')
+  })
+})
+
+describe('lingtai ticket new --title (#1060)', () => {
+  const noEditor = (tickets: ReturnType<typeof dbTickets>, extra: Partial<TicketReading> = {}): TicketReading => ({
+    projects: async () => [project('p')],
+    recipeFor: async () => recipeFrom(DB_YAML),
+    ticketsFor: async () => tickets,
+    env: {},
+    edit: async () => {
+      throw new Error('the editor must not open')
+    },
+    ...extra,
+  })
+  const countingTickets = () => {
+    const real = dbTickets(freshSql(), 'p')
+    const state = { creates: 0 }
+    const wrapped = {
+      ...real,
+      createIssue: (...args: Parameters<typeof real.createIssue>) => {
+        state.creates += 1
+        return real.createIssue(...args)
+      },
+    } as typeof real
+    return { wrapped, state }
+  }
+
+  it('creates the ticket from flags with no editor', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const { log, lines } = sink()
+    const code = await ticketNew(
+      { project: 'p', title: ' Fix it ', label: 'bug, agent:hold', body: 'Steps.\n\n' },
+      log,
+      noEditor(tickets),
+    )
+    expect(code).toBe(0)
+    expect(lines[0]).toContain('created #1')
+    const created = await tickets.getIssue(1)
+    expect(created.title).toBe('Fix it')
+    expect(created.labels.map((l) => l.name).sort()).toEqual(['agent:hold', 'bug'])
+    expect(created.body).toBe('Steps.')
+  })
+
+  it('warns when no kind label is given, and still creates', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p', title: 'x' }, log, noEditor(tickets))).toBe(0)
+    expect(lines.join('\n')).toContain('carries no kind label')
+  })
+
+  it('--body - takes the body from the injected stdin', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const { log } = sink()
+    const stdin = Object.assign(Readable.from(['the body\n']), { isTTY: false })
+    expect(await ticketNew({ project: 'p', title: 'x', body: '-' }, log, noEditor(tickets, { stdin }))).toBe(0)
+    expect((await tickets.getIssue(1)).body).toBe('the body')
+  })
+
+  it('--body - on a terminal is refused', async () => {
+    const { wrapped, state } = countingTickets()
+    const { log, lines } = sink()
+    const stdin = Object.assign(Readable.from([]), { isTTY: true })
+    expect(await ticketNew({ project: 'p', title: 'x', body: '-' }, log, noEditor(wrapped, { stdin }))).toBe(1)
+    expect(lines[0]).toContain('--body - reads stdin')
+    expect(state.creates).toBe(0)
+  })
+
+  it('prints why createIssue failed, not a wrapper message', async () => {
+    const tickets = {
+      ...dbTickets(freshSql(), 'p'),
+      createIssue: async () => {
+        throw new Error('SQLITE_READONLY')
+      },
+    } as unknown as ReturnType<typeof dbTickets>
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p', title: 'x' }, log, noEditor(tickets))).toBe(1)
+    expect(lines.join('\n')).toContain('SQLITE_READONLY')
+  })
+
+  it('names the cause when the stdin read fails', async () => {
+    const { wrapped, state } = countingTickets()
+    const { log, lines } = sink()
+    const stdin = Object.assign(
+      new Readable({
+        read() {
+          this.destroy(new Error('EIO'))
+        },
+      }),
+      { isTTY: false },
+    )
+    expect(await ticketNew({ project: 'p', title: 'x', body: '-' }, log, noEditor(wrapped, { stdin }))).toBe(1)
+    expect(lines.join('\n')).toContain('--body -')
+    expect(lines.join('\n')).toContain('EIO')
+    expect(state.creates).toBe(0)
+  })
+
+  it.each([
+    ['--label without --title', { label: 'bug' }, '--label needs --title'],
+    ['--body without --title', { body: 'x' }, '--body needs --title'],
+    ['an empty title', { title: '' }, 'a ticket needs a title'],
+    ['a whitespace title', { title: '   ' }, 'a ticket needs a title'],
+    ['a title with a newline', { title: 'a\nb' }, 'ticket edit could not read it back'],
+    ['a title starting #!', { title: '#!x' }, 'ticket edit could not read it back'],
+    ['a label with a newline', { title: 'x', label: 'bug\nx' }, 'ticket edit could not read it back'],
+  ])('refuses %s and creates nothing', async (_name, flags, said) => {
+    const { wrapped, state } = countingTickets()
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p', ...flags }, log, noEditor(wrapped))).toBe(1)
+    expect(lines.join('\n')).toContain(said)
+    expect(state.creates).toBe(0)
   })
 })
 
