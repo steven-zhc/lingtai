@@ -54,6 +54,7 @@
  */
 import { runtimeVersionOf, type RunOutcome, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
+import type { RuntimeId } from '@lingtai/domain'
 import {
   composePrompt,
   REFUSED_ABOUT,
@@ -837,6 +838,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const result = {
         ...reviewAnswer(
           outcome,
+          deps.runtime.capabilities.id,
           diff,
           context.log,
           deltaHunks,
@@ -864,6 +866,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
  */
 function reviewAnswer(
   outcome: RunOutcome,
+  runtime: RuntimeId,
   diff: string,
   log: RunTrace | undefined,
   deltaHunks?: DiffHunks,
@@ -895,6 +898,7 @@ function reviewAnswer(
     if (outcome.failure.kind === 'never-started') {
       return {
         verdict: 'never-ran',
+        runtime,
         // The runtime's own words, whole. `conduct.ts` reads a reset time
         // out of them (0031 §4) and the board shows them as what they are:
         // evidence about the account, never about the diff.
@@ -1432,7 +1436,7 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         signal: context.signal,
       })
 
-      return { ...draftAnswer(outcome), spent: spentOf(outcome, deps.runtime) }
+      return { ...draftAnswer(outcome, deps.runtime.capabilities.id), spent: spentOf(outcome, deps.runtime) }
     },
   }
 }
@@ -1442,13 +1446,13 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
  * sake** (`#494`) — `reviewAnswer`'s reason, one function up. Moved
  * unchanged.
  */
-function draftAnswer(outcome: RunOutcome): ActionResult {
+function draftAnswer(outcome: RunOutcome, runtime: RuntimeId): ActionResult {
   if (outcome.failure) {
     // The adapter's classification and never a second reading of it
     // (0031 §1), exactly as the reviewer above: at most one turn, no cost
     // and an error is `never-started`, and everything else started.
     if (outcome.failure.kind === 'never-started') {
-      return { verdict: 'never-ran', evidence: boundedEvidence(outcome.failure.detail), findings: [] }
+      return { verdict: 'never-ran', runtime, evidence: boundedEvidence(outcome.failure.detail), findings: [] }
     }
     const cause = outcome.failure.kind
     return {

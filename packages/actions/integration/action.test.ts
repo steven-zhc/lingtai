@@ -259,7 +259,12 @@ describe('the pipeline', () => {
           name: 'review',
           kind: 'agent' as const,
           yields: 'verdict' as const,
-          run: async () => ({ verdict: 'never-ran' as const, evidence: said, findings: [] }),
+          run: async () => ({
+            verdict: 'never-ran' as const,
+            runtime: 'claude-code' as const,
+            evidence: said,
+            findings: [],
+          }),
         },
         processAction({ name: 'test', run: 'exit 0' }),
       ],

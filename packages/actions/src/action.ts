@@ -46,6 +46,7 @@ import type {
   ComposedPrompt,
   WaitId,
 } from '@lingtai/domain'
+import type { RuntimeId } from '@lingtai/domain'
 
 import { inSpan } from './spans.ts'
 
@@ -115,8 +116,7 @@ export type InterruptedCause = Interrupted['cause']
  */
 export type ActionSpent = Omit<PayloadOf<'RunSpent'>, 'for'>
 
-export interface ActionResult {
-  verdict: ActionVerdict
+interface ActionResultFields {
   /**
    * What the board shows. For a process action this is the log tail — enough to
    * act on without leaving the card, which is the whole point of the board.
@@ -337,6 +337,15 @@ export interface ActionResult {
    */
   spent?: ActionSpent
 }
+
+/**
+ * A `never-ran` result names the runtime that was dispatched and met the wall:
+ * the account's lock (0126 §2) is that runtime's, and a result without one is a
+ * type error rather than a default (#1011).
+ */
+export type ActionResult =
+  | (ActionResultFields & { verdict: Exclude<ActionVerdict, 'never-ran'> })
+  | (ActionResultFields & { verdict: 'never-ran'; runtime: RuntimeId })
 
 /**
  * **What `design` made, as the step after it sees it** (`#297`, deciding what
@@ -645,7 +654,7 @@ export interface PipelineResult {
    * ending that is about the account rather than about the diff, and the caller
    * has to be able to tell them apart without reading a sentence.
    */
-  neverRanAt: { action: string; detail: string } | null
+  neverRanAt: { action: string; detail: string; runtime: RuntimeId } | null
   /**
    * The action whose agent started and did not finish
    * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1).
@@ -1022,7 +1031,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         ok: false,
         failedAt: null,
         heldAt: null,
-        neverRanAt: { action: action.name, detail: result.evidence },
+        neverRanAt: { action: action.name, detail: result.evidence, runtime: result.runtime },
         didNotFinishAt: null,
         askedAt: null,
         results,

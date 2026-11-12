@@ -972,6 +972,7 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
     expect(walk(result)).toEqual(['admit:passed', 'prepared:passed', 'design:never-ran', 'end:passed'])
     expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
+      runtime: 'claude-code',
       // The action's name rather than the runtime's, which is what changed when
       // the work left the body: `endingOf` names what did not run.
       at: 'draft the design',

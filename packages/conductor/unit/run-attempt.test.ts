@@ -48,11 +48,12 @@ const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/no
 const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [] }
 
 /** An action that needs nothing and answers what it was told to answer. */
-const canned = (name: string, result: ActionResult): Action => ({
+// A `never-ran` names the runtime that met the wall (#1011); these tests are about the ending, not whose it was.
+const canned = (name: string, result: Omit<ActionResult, 'runtime'>): Action => ({
   name,
   kind: 'run',
   yields: 'verdict',
-  run: async () => result,
+  run: async () => ({ ...result, runtime: 'claude-code' }) as ActionResult,
 })
 
 /** A fixed sha standing in for a real agent's commit (`#469`). */
@@ -2512,6 +2513,7 @@ describe('a step that did not finish is not a step that refused', () => {
 
     expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
+      runtime: 'claude-code',
       at: 'review',
       detail: 'usage limit reached · resets 9pm',
     })

@@ -1558,7 +1558,7 @@ export const ConductorPaused = z.object({
    * `readControl` in `packages/daemon/src/control.ts`).
    *
    * `since`-scoped reads (0102 §3) exist so a signal aimed at one daemon is not
-   * the next one's to obey — true of every pause a person or `standDownConductor`
+   * the next one's to obey — true of every pause a person or `standDownAccount`
    * makes, because a restart starts fresh and that pause's reason no longer
    * applies. It is false of a refused dispatch: the setup a restart just loaded
    * is the same setup that could not provide the tier, so the new daemon must
