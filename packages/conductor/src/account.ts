@@ -5,6 +5,7 @@
  */
 import {
   type AccountState,
+  accountCheck,
   accountStream,
   liftTransition,
   reachTransition,
@@ -13,8 +14,13 @@ import {
   type RuntimeId,
   type ToAppend,
 } from '@lingtai/domain'
+import type { ProjectState } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import type { ResolvedRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
+
+import { currentRecipe } from './projects.ts'
+import { runtimesOf } from './runtimes-of.ts'
 
 export type ReachAnswer = { kind: 'appended' } | { kind: 'already'; until: Date }
 export type LiftAnswer = { kind: 'appended' } | { kind: 'not-limited' }
@@ -79,3 +85,40 @@ export const liftAccountLimit = (store: EventStore, runtime: RuntimeId, by: stri
     () => ({ kind: 'not-limited' }),
     { kind: 'appended' },
   )
+
+/**
+ * The guard's lift (0126 §4): appends `AccountLimitLifted` once `until` has
+ * passed, and nothing otherwise. Idempotent under a race: the loser re-reads,
+ * finds no limit, and appends nothing.
+ */
+export const liftPassedAccountLimit = (store: EventStore, runtime: RuntimeId, now: Date) =>
+  transitionAccount<void>(
+    store,
+    runtime,
+    (state) => accountCheck({ state, runtime, now })[0] ?? null,
+    () => undefined,
+    undefined,
+  )
+
+/**
+ * The state of each `acct-{runtime}` the project's recipe uses, and no other
+ * (0126 §5). **A recipe that does not resolve gives the empty map and not a
+ * failure**: the project is held by its refused recipe, which every start
+ * already meets, and a failure here would skip it before that refusal is
+ * recorded. A store read that fails is a failure.
+ */
+export const accountsFor = (
+  store: EventStore,
+  state: ProjectState,
+  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe> = currentRecipe,
+): Effect.Effect<ReadonlyMap<RuntimeId, AccountState>, Error> =>
+  Effect.gen(function* () {
+    const runtimes = yield* Effect.tryPromise({ try: () => recipeFor(state), catch: (e) => e }).pipe(
+      Effect.map((resolved) => runtimesOf(resolved.recipe)),
+      Effect.catch(() => Effect.succeed<readonly RuntimeId[]>([])),
+    )
+    const entries = yield* Effect.forEach(runtimes, (runtime) =>
+      readAccount(store, runtime).pipe(Effect.map((account) => [runtime, account] as const)),
+    )
+    return new Map(entries)
+  })

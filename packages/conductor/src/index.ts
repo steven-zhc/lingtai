@@ -159,4 +159,13 @@ export {
   type DayRow,
   type DaySpend,
 } from './day-ceiling.ts'
-export { liftAccountLimit, reachAccountLimit, readAccount, type LiftAnswer, type ReachAnswer } from './account.ts'
+export {
+  accountsFor,
+  liftAccountLimit,
+  liftPassedAccountLimit,
+  reachAccountLimit,
+  readAccount,
+  type LiftAnswer,
+  type ReachAnswer,
+} from './account.ts'
+export { runtimesOf } from './runtimes-of.ts'
