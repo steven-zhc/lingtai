@@ -49,8 +49,21 @@ choices in a local recipe; steps you did not configure keep their defaults.
 ## Hold every attempt for approval
 
 With `--land hold`, an attempt stops before it lands and waits for you.
-Otherwise nothing asks. Run `lingtai start` and `lingtai board` as in the
-tutorial. Lingtai takes the ticket, creates a separate worktree, runs Claude
+Otherwise nothing asks. The tutorial's `init` took the default, which lands
+unattended, and `init` does not change a project it has already added. So add
+the hold to that project's recipe, `~/.lingtai/chapter-garden/recipe.yml`: put
+this entry under `steps.proposed` (see [add a hold](recipe.md#make-one-change-add-a-hold)),
+and check it with `lingtai doctor`. A fresh machine can run the full `init`
+command above instead.
+
+```yaml
+  proposed:
+    - name: approve before landing
+      human: Land this?
+```
+
+Then run `lingtai start` and `lingtai board` as in the tutorial, and create
+the ticket as there. Lingtai takes the ticket, creates a separate worktree, runs Claude
 Code, then runs `npm run check` and `npm run build`.
 
 ![An attempt runs through claim, worktree setup, Claude Code implementation, checks and review, then stops at the landing hold.](img/pass.svg)
@@ -82,21 +95,12 @@ number `ticket new` printed.
 
 ## Watch a check refuse
 
-This ticket asks for a mistake on purpose, so you can watch a check catch it. With `lingtai start` and the Board still running, run `lingtai ticket new --project chapter-garden` and paste this, with a different story from the tutorial's:
+This ticket asks for a mistake on purpose, so you can watch a check catch it. With `lingtai start` and the Board still running, run this with a different story from the tutorial's:
 
-```text
-Add the next chapter to <a different story title>
-labels: feature
-
-This ticket demonstrates Lingtai's checks. Write one new chapter that
-continues the story, and in its front matter write order, the new
-chapter's number, as a quoted string (order: "2" for a second chapter),
-even though the schema wants a number: the point is to watch Lingtai's
-build refuse it. Do not run npm run check or npm run build, and do not
-correct the type before Lingtai's check has refused it. When the refusal
-comes back, fix what it names.
-Done when the new chapter's order is a number, not a string, after the
-refusal is fixed.
+```sh
+lingtai ticket new --project chapter-garden --label feature \
+  --title "Add the next chapter to <a different story title>" \
+  --body "This ticket demonstrates Lingtai's checks. Write one new chapter that continues the story, and in its front matter write order, the new chapter's number, as a quoted string (order: \"2\" for a second chapter), even though the schema wants a number: the point is to watch Lingtai's build refuse it. Do not run npm run check or npm run build, and do not correct the type before Lingtai's check has refused it. When the refusal comes back, fix what it names. Done when the new chapter's order is a number, not a string, after the refusal is fixed."
 ```
 
 Chapter Garden requires `order` to be a number, so the first build is refused. Lingtai buys one fix round inside the same attempt and sends the refusal back to the agent. On the ticket's task page:
