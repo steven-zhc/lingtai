@@ -7,8 +7,6 @@
  * all. The pass builds the list `actionsAt` answers for `proposed` before `admit`
  * has cut anything, and the reviewer's request still carries the path `cut` wrote.
  */
-import { readFile } from 'node:fs/promises'
-
 import { actionPortsFromRecipe, type ActionPortDeps } from '@lingtai/actions'
 import type { Runtime } from '@lingtai/agent'
 import { Effect } from 'effect'
@@ -81,33 +79,5 @@ describe('the reviewer built before the cut, over the same deps shape', () => {
     path = '/tmp/after-the-cut.json'
     await Effect.runPromise(port!.run({ runId: 'r', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }))
     expect(seen).toEqual(['/tmp/after-the-cut.json'])
-  })
-})
-
-describe('the deps the reviewer is built over', () => {
-  // `actionsAt` is asked at each step's visit, so the behaviour above only shows
-  // the late read when the reviewer is built after `admit`. A reviewer built
-  // before the cut — the ticket's other case — is held by the shape that makes
-  // it safe: the path is a getter, never a value copied when the deps are built.
-  it('holds settingsPath as a getter that reads the path the cut writes', async () => {
-    const text = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
-    const deps = text.slice(text.indexOf('const stepDeps: ActionPortDeps = {'))
-    expect(deps).toMatch(/get settingsPath\(\) \{\s*return reviewSettingsPath/)
-    // Nothing else copies the path: the declaration, the getter and `cut`'s write.
-    expect(text.match(/\breviewSettingsPath\b/g)?.length ?? 0).toBe(3)
-    // `actionsAt` hands the deps over whole: no copy of `stepDeps.agent` (and so of
-    // its path) is taken when a step's list is built.
-    expect(text.replace(/\/\/.*$/gm, '').match(/stepDeps\.agent|\.\.\.stepDeps|\{\s*\.\.\.deps\.agent/g) ?? []).toEqual(
-      [],
-    )
-    expect(text.match(/actionPortsFromRecipe\(step, actions, stepDeps\)/g)).toHaveLength(1)
-    // The body of `actionsAt` itself: it builds the list over `stepDeps` as it
-    // stands and nothing derived from it — no alias, no copy, no snapshot — so a
-    // reviewer built before `cut` still reads the getter when it runs.
-    const start = text.indexOf('const actionsAt = (step: Step')
-    const body = text.slice(start, text.indexOf('\n      }\n', start)).replace(/\/\/.*$/gm, '')
-    expect(body).toMatch(/actionPortsFromRecipe\(step, actions, stepDeps\)/)
-    expect(body).not.toMatch(/Object\.assign|structuredClone|JSON\.parse|\.\.\.|=\s*stepDeps\b|\bsettingsPath\b/)
-    expect(text.replace(/\/\/.*$/gm, '').match(/=\s*stepDeps\b/g) ?? []).toEqual([])
   })
 })

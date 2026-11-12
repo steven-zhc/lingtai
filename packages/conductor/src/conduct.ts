@@ -1481,9 +1481,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (recording !== null) {
           return recording.pipe(
             Effect.flatMap((merged) =>
-              merged || (unrecordedLanding && reason === 'the run was interrupted')
-                ? Effect.void
-                : releaseUnmerged(reason, cause),
+              // Merged work is never released, whatever the reason and whether or not
+              // the record landed: a landing that exists but is unrecorded stays put.
+              merged || unrecordedLanding ? Effect.void : releaseUnmerged(reason, cause),
             ),
           )
         }

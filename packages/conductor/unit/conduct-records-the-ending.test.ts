@@ -137,9 +137,9 @@ describe('the ending and its end actions', () => {
     // Neither the landing nor a word about `end`.
     expect(types).not.toContain('TicketLanded')
     expect(types).not.toContain('EndActionsResolved')
-    // The item is back in the queue, which is what the defect handler's release
-    // makes true — and the `landed` plan is not carried in on it.
-    expect(types).toContain('TicketReleased')
+    // The work is on the base, so the item is not given back (#1056): merged work
+    // is never released, and the `landed` plan is not carried in on it.
+    expect(types).not.toContain('TicketReleased')
     // So nothing was done to the issue on the strength of a landing nothing
     // recorded.
     expect(said).not.toContain('close #7')
