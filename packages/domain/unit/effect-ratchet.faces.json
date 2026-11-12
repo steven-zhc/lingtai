@@ -3,13 +3,25 @@
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
     "until": "#790",
-    "why": "every promise `Action` holder — `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` — until row 7 builds ports"
+    "why": "every promise `Action` holder \u2014 `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` \u2014 until row 7 builds ports"
   },
   {
     "file": "packages/actions/src/action.ts",
     "fn": "runActionPipeline",
     "until": "#790",
     "why": "packages/conductor/src/run-attempt.ts:1981 awaits it, and the tests in packages/actions, packages/conductor and packages/recipe, until row 7 runs the pipeline inside the pass"
+  },
+  {
+    "file": "packages/actions/src/command.ts",
+    "fn": "runCommand",
+    "until": "#790",
+    "why": "packages/conductor/src/conduct.ts:288 hands it to the base check, and packages/setup/src/trial-build.ts:57, :67 call it as a promise"
+  },
+  {
+    "file": "packages/actions/src/subscriber.ts",
+    "fn": "deliverFace",
+    "until": "#790",
+    "why": "packages/daemon/src/work-loop.ts:606 awaits `Subscriber.deliver`, built by apps/cli/src/subscribers.ts:233, until the daemon row"
   },
   {
     "file": "packages/agent/src/auth.ts",

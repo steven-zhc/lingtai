@@ -41,9 +41,8 @@
  * failure is a console line is a notifier that has silently stopped notifying —
  * the one failure mode a notifier must not have."*
  *
- * So the exit code is read in `startCommand`'s report — which that function's
- * own note calls the only place the event could come from — turned into a
- * rejection, and handed to the daemon's subscriber boundary, which appends
+ * So the exit code is read in `makeSubscriber` — the only place a subscriber's
+ * exit code is read — turned into a `SubscriberFailed`, which the face rejects with, and handed to the daemon's subscriber boundary, which appends
  * `PluginFailed` and carries on. Nothing else in the system can see it.
  *
  * The rejection is what carries it because `PluginFailed` is an append, and
@@ -55,8 +54,10 @@
  */
 import { type Envelope, ticketStream } from '@lingtai/domain'
 import { parseDuration, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
+import { Data, Effect } from 'effect'
 
-import { startCommand } from './command.ts'
+import { liftPromise } from './action.ts'
+import { commandEffect, type CommandOutcome, type RunCommandOptions } from './command.ts'
 
 /**
  * How long a subscriber's process may take before it is killed.
@@ -157,55 +158,105 @@ export interface SubscriberOptions {
    */
   env: Record<string, string> | (() => Promise<Record<string, string>>)
   board: string
+  /** The command runner; `commandEffect` unless a test supplies one. */
+  command?: (options: RunCommandOptions) => Effect.Effect<CommandOutcome>
 }
 
-export function createSubscriber(options: SubscriberOptions): Subscriber {
+type CommandRunner = (options: RunCommandOptions) => Effect.Effect<CommandOutcome>
+
+/**
+ * A subscriber's failure: its command could not start, refused or hung. An
+ * `Error` whose `message` is the command's evidence, because `work-loop.ts`
+ * records `err.message` in `PluginFailed`.
+ */
+export class SubscriberFailed extends Data.TaggedError('SubscriberFailed')<{ readonly message: string }> {}
+
+/** A subscriber whose `deliver` is an Effect. */
+export interface SubscriberPort {
+  readonly name: string
+  readonly project: string
+  deliver(event: Envelope): Effect.Effect<void, SubscriberFailed>
+}
+
+export interface SubscriberPortOptions {
+  project: string
+  spec: SubscriberSpec
+  subject: (event: Envelope) => Effect.Effect<EventSubject | null>
+  cwd: string
+  env: Effect.Effect<Record<string, string>>
+  board: string
+  /** The command runner; `commandEffect` unless a test supplies one. */
+  command?: CommandRunner
+}
+
+export function makeSubscriber(options: SubscriberPortOptions): SubscriberPort {
   const { spec } = options
   const on = new Set(spec.on)
+  const command = options.command ?? commandEffect
 
   return {
     name: spec.name,
     project: options.project,
 
-    async deliver(event) {
-      if (!on.has(event.type)) return
-      const ticket = await options.subject(event)
-      if (ticket === null || ticket.project !== options.project) return
+    deliver: (event) =>
+      Effect.gen(function* () {
+        if (!on.has(event.type)) return
+        const ticket = yield* options.subject(event)
+        if (ticket === null || ticket.project !== options.project) return
 
-      const payload: SubscriberPayload = {
-        event: {
-          seq: event.seq.toString(),
-          streamId: event.streamId,
-          version: event.version,
-          type: event.type,
-          schemaVer: event.schemaVer,
-          actor: event.actor,
-          causation: event.causation === null ? null : event.causation.toString(),
-          at: event.at.toISOString(),
-          data: event.data,
-        },
-        ticket,
-        board: options.board,
-      }
-      const env = typeof options.env === 'function' ? await options.env() : options.env
-
-      await new Promise<void>((resolve, reject) => {
-        startCommand(
-          {
-            run: spec.run,
-            timeoutMs: SUBSCRIBER_COMMAND_TIMEOUT_MS,
-            timeoutLabel: SUBSCRIBER_COMMAND_TIMEOUT,
-            cwd: options.cwd,
-            env,
-            payload,
+        const payload: SubscriberPayload = {
+          event: {
+            seq: event.seq.toString(),
+            streamId: event.streamId,
+            version: event.version,
+            type: event.type,
+            schemaVer: event.schemaVer,
+            actor: event.actor,
+            causation: event.causation === null ? null : event.causation.toString(),
+            at: event.at.toISOString(),
+            data: event.data,
           },
-          // Read here and acted on nowhere else. See the note on where the
-          // failure goes: this is the only reader of a subscriber's exit code
-          // in the system, and all it does is choose which way to settle.
-          (outcome) => (outcome.ok ? resolve() : reject(new Error(outcome.evidence))),
-        )
-      })
-    },
+          ticket,
+          board: options.board,
+        }
+        const env = yield* options.env
+
+        const outcome = yield* command({
+          run: spec.run,
+          timeoutMs: SUBSCRIBER_COMMAND_TIMEOUT_MS,
+          timeoutLabel: SUBSCRIBER_COMMAND_TIMEOUT,
+          cwd: options.cwd,
+          env,
+          payload,
+        })
+        // Read here and acted on nowhere else. See the note on where the
+        // failure goes: this is the only reader of a subscriber's exit code
+        // in the system, and all it does is choose which way to settle.
+        if (!outcome.ok) return yield* new SubscriberFailed({ message: outcome.evidence })
+      }),
+  }
+}
+
+/** Every promise `Subscriber` holder's way in. */
+export function deliverFace(port: SubscriberPort, event: Envelope): Promise<void> {
+  return Effect.runPromise(port.deliver(event))
+}
+
+export function createSubscriber(options: SubscriberOptions): Subscriber {
+  const { env } = options
+  const port = makeSubscriber({
+    project: options.project,
+    spec: options.spec,
+    subject: (event) => liftPromise(() => options.subject(event)),
+    cwd: options.cwd,
+    env: typeof env === 'function' ? liftPromise(env) : Effect.succeed(env),
+    board: options.board,
+    command: options.command,
+  })
+  return {
+    name: port.name,
+    project: port.project,
+    deliver: (event) => deliverFace(port, event),
   }
 }
 
