@@ -1,4 +1,12 @@
-import { ceilingFacts, NO_ACCOUNTS, emptyControl, locksOn, waitWords, type ControlState } from '@lingtai/domain'
+import {
+  ceilingFacts,
+  NO_ACCOUNTS,
+  emptyAccount,
+  emptyControl,
+  locksOn,
+  waitWords,
+  type ControlState,
+} from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
@@ -737,6 +745,24 @@ describe('what holds new work (#1005)', () => {
     )
     expect(out.match(/reached at 14:20/g)).toHaveLength(1)
     expect(out).toContain('nothing starts: ceiling')
+  })
+
+  it('shows a project waiting on a limited runtime the lock’s sentence in its Project section', () => {
+    const limit = {
+      until: new Date(2026, 10, 11, 23, 0),
+      untilFrom: 'message' as const,
+      said: 'limit',
+      since: new Date(2026, 10, 11, 18, 2),
+      seq: 1n,
+    }
+    const accounts = new Map([['claude-code' as const, { ...emptyAccount, runtime: 'claude-code' as const, limit }]])
+    const r = report(control({}))
+    r.projects[0]!.locks = locksOn({ control: control({}), accounts })
+    const out = text(r)
+    expect(out).toContain(
+      "lingtai waits for claude-code's usage limit until 23:00 (read from its message) — lingtai account lift claude-code once it is over",
+    )
+    expect(out).toContain('nothing starts: account')
   })
 
   it('says a passed ceiling lifts at the next look, and does not count it as stopping', () => {

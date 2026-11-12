@@ -2,7 +2,6 @@ import { accountsFor, liftPassedAccountLimit } from '@lingtai/conductor'
 import {
   CONTROL_STREAM,
   NO_ACCOUNTS,
-  type ProjectState,
   ceilingCheck,
   type ControlState,
   type Lock,
