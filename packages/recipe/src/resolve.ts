@@ -18,8 +18,10 @@
  */
 import { createHash } from 'node:crypto'
 
+import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
+import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
 import { PLUGINS, Recipe, discloseSteps } from './recipe.ts'
@@ -188,10 +190,17 @@ export function hashRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS)
  * an unreadable recipe is to stop, and a project that cannot be configured must
  * not be silently run with a default.
  */
-export async function resolveRecipe(read: ReadAtRef, ref: string): Promise<ResolvedRecipe> {
-  const source = await read(RECIPE_PATH, ref)
-  if (source === null) throw new RecipeMissingError(ref)
-  return resolveSource(source, ref, `${RECIPE_PATH} on ${ref}`)
+export const resolveRecipeEffect = Effect.fn('recipe.resolve-at-ref')(function* (read: ReadAtRef, ref: string) {
+  const source = yield* Effect.tryPromise({ try: () => read(RECIPE_PATH, ref), catch: failed('read-at-ref') })
+  if (source === null) return yield* Effect.fail(new RecipeMissingError(ref))
+  return yield* plainWhen(
+    () => resolveSource(source, ref, `${RECIPE_PATH} on ${ref}`),
+    (e): e is RecipeInvalidError => e instanceof RecipeInvalidError,
+  )
+})
+
+export function resolveRecipe(read: ReadAtRef, ref: string) {
+  return Effect.runPromise(resolveRecipeEffect(read, ref))
 }
 
 /**
