@@ -32,6 +32,7 @@ import {
 } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 import type { Judged, Judging } from './attempt-steps.ts'
 import { BUILT_IN_FOR } from './judge.ts'
@@ -145,33 +146,35 @@ function toReply(d: Destination, offer: RouteOffer, why: string): JudgeReply {
  * offer — the ticket's own *Watch out*: a judge is paid, so one that cannot
  * help is not asked, not even a built-in.
  */
-export async function replyFor(
+export function replyFor(
   offer: RouteOffer,
   arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
-  judge: ((on: Judging) => Promise<Judged>) | undefined,
-): Promise<JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }> {
-  if (offer.available.length < 2) return { _tag: 'NotAsked' }
+  judge: ((on: Judging) => Effect.Effect<Judged>) | undefined,
+): Effect.Effect<JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }> {
+  return Effect.gen(function* () {
+    if (offer.available.length < 2) return { _tag: 'NotAsked' as const }
 
-  const when = whenOf(offer.proposal)
-  const offering = offer.available.map((c) => destinationOf(c, offer.proposal))
-  const on: Judging = { when, offering, findings: arrived.findings, evidence: arrived.evidence }
-  const answer = judge === undefined ? { noJudge: true as const } : await judge(on)
+    const when = whenOf(offer.proposal)
+    const offering = offer.available.map((c) => destinationOf(c, offer.proposal))
+    const on: Judging = { when, offering, findings: arrived.findings, evidence: arrived.evidence }
+    const answer = judge === undefined ? { noJudge: true as const } : yield* judge(on)
 
-  if ('neverStarted' in answer) return { neverStarted: answer.neverStarted }
-  if ('unreadable' in answer) return { _tag: 'Unreadable', raw: answer.unreadable.raw }
+    if ('neverStarted' in answer) return { neverStarted: answer.neverStarted }
+    if ('unreadable' in answer) return { _tag: 'Unreadable', raw: answer.unreadable.raw }
 
-  if ('next' in answer) return toReply(answer.next, offer, answer.why)
+    if ('next' in answer) return toReply(answer.next, offer, answer.why)
 
-  // The recipe's own declaration for this direction, or — where it declared
-  // none — the mechanical default (`BUILT_IN_FOR`). Neither spends anything:
-  // the money is in `askTheAgent`, one layer below `judge`.
-  const built = 'built' in answer ? answer.built : BUILT_IN_FOR[when]
-  if (built === null) return { _tag: 'NotAsked' }
-  const why =
-    'built' in answer
-      ? `the "${answer.named}" judge: the recipe declares \`judge: ${built}\` for a "${when}"`
-      : `the "${built}" judge: a "${when}" is mechanical — the work is still there and the remedy is to fix it where it stands`
-  return toReply(MECHANICAL_WANTS[built], offer, why)
+    // The recipe's own declaration for this direction, or — where it declared
+    // none — the mechanical default (`BUILT_IN_FOR`). Neither spends anything:
+    // the money is in `askTheAgent`, one layer below `judge`.
+    const built = 'built' in answer ? answer.built : BUILT_IN_FOR[when]
+    if (built === null) return { _tag: 'NotAsked' }
+    const why =
+      'built' in answer
+        ? `the "${answer.named}" judge: the recipe declares \`judge: ${built}\` for a "${when}"`
+        : `the "${built}" judge: a "${when}" is mechanical — the work is still there and the remedy is to fix it where it stands`
+    return toReply(MECHANICAL_WANTS[built], offer, why)
+  })
 }
 
 /**

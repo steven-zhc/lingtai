@@ -1241,7 +1241,7 @@ describe('every step × kind cell runs or refuses', () => {
     const wiring = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
     expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/)
     expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/)
-    expect(wiring).toMatch(/runAttempt\(\{[\s\S]*actionsAt,/)
+    expect(wiring).toMatch(/runAttemptEffect\(\{[\s\S]*actionsAt/)
   })
 })
 

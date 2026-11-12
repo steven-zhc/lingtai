@@ -19,6 +19,7 @@ import {
   createQueueAction,
   createWorkAction,
   createWorktreeAction,
+  fromPromiseAction,
   runCommand,
 } from '@lingtai/actions'
 import { FAILED, inSpan, markFailed } from '@lingtai/actions/spans'
@@ -263,9 +264,9 @@ import {
   type AttemptOver,
   type StepReached,
   type StepReport,
-  claimStep,
+  claimStepEffect,
   outcomeOf,
-  runAttempt,
+  runAttemptEffect,
 } from './run-attempt.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
@@ -4360,9 +4361,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `#463` moved out here, never a defect: `queue:` answers `did-not-finish`
        * at this step, never `refused` (`claim` is not one of `REFUSING_STEPS`).
        */
-      const claimed = yield* Effect.promise(() =>
-        claimStep({ recipe, context: passContext, emit, actionsAt, bodies: passBodies, ceilings, judge }),
-      )
+      const claimed = yield* claimStepEffect({
+        recipe,
+        context: passContext,
+        emit,
+        actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
+        bodies: passBodies,
+        ceilings,
+        judge: (on) => Effect.promise(() => judge(on)),
+      })
       if (unappended !== null) {
         log(`the store refused an append during the claim: ${whyOf(unappended)}`)
         return yield* Effect.die(unappended)
@@ -4422,37 +4429,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } satisfies RunOnceResult
       }
 
-      const pass = yield* Effect.promise(() =>
-        runAttempt({
-          recipe,
-          context: passContext,
-          emit,
-          recordPrompt: (call) => recordPrompt(store, runId, call, log),
-          actionsAt,
-          bodies: passBodies,
-          ceilings,
-          judge,
-          mergeBase,
-          baseIsRed,
-          // **Where this walk jumps to, once `admit` and `prepared` have
-          // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
-          // every ordinary pass, which starts at `admit` and walks the
-          // whole spine as it always has.
-          ...(continuation !== null
-            ? {
-                from: {
-                  step: continuation.step,
-                  waive: continuation.waive,
-                  ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
-                  roundsSpent: continuation.roundsSpent,
-                  ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
-                  ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
-                  ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
-                },
-              }
-            : {}),
-        }),
-      )
+      const pass = yield* runAttemptEffect({
+        recipe,
+        context: passContext,
+        emit,
+        recordPrompt: (call) => recordPrompt(store, runId, call, log),
+        actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
+        bodies: passBodies,
+        ceilings,
+        judge: (on) => Effect.promise(() => judge(on)),
+        mergeBase: (toSha) => Effect.promise(() => mergeBase(toSha)),
+        baseIsRed: (asked) => Effect.promise(() => baseIsRed(asked)),
+        // **Where this walk jumps to, once `admit` and `prepared` have
+        // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
+        // every ordinary pass, which starts at `admit` and walks the
+        // whole spine as it always has.
+        ...(continuation !== null
+          ? {
+              from: {
+                step: continuation.step,
+                waive: continuation.waive,
+                ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
+                roundsSpent: continuation.roundsSpent,
+                ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
+                ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
+                ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
+              },
+            }
+          : {}),
+      })
       // An observer's own bug must not cost the ending: `runLog` is a trace,
       // not a record (its own header), so a throw here is noted and the
       // ending below still gets written.

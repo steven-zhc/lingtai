@@ -13,7 +13,10 @@
 import {
   NEEDS_INPUT,
   NO_DESIGN,
-  runActionPipeline,
+  fromPromiseAction,
+  promiseAction,
+  runActionPipelineEffect,
+  type ActionPort,
   type PipelineOptions,
   type Action,
   type ActionContext,
@@ -24,7 +27,7 @@ import {
   type SentBack,
   type TheDesign,
 } from '@lingtai/actions/action'
-import { inSpan } from '@lingtai/actions/spans'
+import { FAILED } from '@lingtai/actions/spans'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
@@ -119,6 +122,7 @@ import {
 import type { RuntimeId } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
+import { Cause, Effect, Exit } from 'effect'
 
 // `whatArrived`, `Judging`, `Judged`: `attempt-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -991,6 +995,56 @@ export interface AttemptOptions {
   }
 }
 
+/** What `AttemptOptions.mergeBase` answers. */
+type MergeBaseAnswer = { readonly head: string } | { readonly failed: string }
+/** What `AttemptOptions.baseIsRed` is asked, and what it answers. */
+type BaseIsRedAsked = Parameters<NonNullable<AttemptOptions['baseIsRed']>>[0]
+type BaseIsRedAnswer = Awaited<ReturnType<NonNullable<AttemptOptions['baseIsRed']>>>
+
+/**
+ * `AttemptOptions` with the ports that are Effects (#1053): the judge, the base
+ * merge and the base check, and `actionsAt` answering `ActionPort`s. **Each error
+ * channel is `never`, and a port's failure is a defect.** `emit`, `recordPrompt`,
+ * `bodies` and `ceilings` are the same as on `AttemptOptions`: `emit` stays a
+ * promise, so a refused append rejects and leaves the pipeline as a defect.
+ */
+export interface AttemptPortOptions {
+  readonly recipe: AttemptOptions['recipe']
+  readonly context: AttemptOptions['context']
+  readonly emit: AttemptOptions['emit']
+  readonly recordPrompt?: AttemptOptions['recordPrompt']
+  readonly bodies?: AttemptOptions['bodies']
+  readonly ceilings?: AttemptOptions['ceilings']
+  readonly from?: AttemptOptions['from']
+  readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly ActionPort[]
+  readonly judge?: (on: Judging) => Effect.Effect<Judged>
+  readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
+  readonly baseIsRed?: (asked: BaseIsRedAsked) => Effect.Effect<BaseIsRedAnswer>
+}
+
+/**
+ * The promise ports lifted to Effects with `Effect.promise`, the rest copied key
+ * by key (never spread: an `undefined` key would read as present).
+ */
+export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
+  const { judge, mergeBase, baseIsRed } = options
+  return {
+    recipe: options.recipe,
+    context: options.context,
+    emit: options.emit,
+    ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),
+    ...(options.bodies === undefined ? {} : { bodies: options.bodies }),
+    ...(options.ceilings === undefined ? {} : { ceilings: options.ceilings }),
+    ...(options.from === undefined ? {} : { from: options.from }),
+    actionsAt: (step, actions) => options.actionsAt(step, actions).map(fromPromiseAction),
+    ...(judge === undefined ? {} : { judge: (on: Judging) => Effect.promise(() => judge(on)) }),
+    ...(mergeBase === undefined ? {} : { mergeBase: (toSha: string) => Effect.promise(() => mergeBase(toSha)) }),
+    ...(baseIsRed === undefined
+      ? {}
+      : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
+  }
+}
+
 /**
  * One decision `proposed` made, in the order it made them — **and the log's own
  * shape for it** (`PassRouted`, `#271`).
@@ -1216,512 +1270,539 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
  * is refused. So the walk is at most `rounds + 1` laps long.
  */
-export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> {
-  const bodies = options.bodies ?? NOT_BUILT_YET
-  const ceilings = options.ceilings ?? NOTHING_SPARE
-  const steps: StepReached[] = []
-  const routes: RouteTaken[] = []
-  let stopped: AttemptOver['stopped'] = null
-  let unanswered = false
-  let end: AttemptEnd | null = null
-  /** The merge commit a `Landed` visit reported, read back once the walk is over. */
-  let landed: string | null = null
-  let roundsSpent = options.from?.roundsSpent ?? 0
-  /**
-   * The base merges the system made this pass (#593). **Not seeded from
-   * `options.from`**: the bound is per pass, and a continuation is a new pass —
-   * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
-   */
-  let baseMergesSpent = 0
-  /** The merge-conflict fix rounds this pass (#653), per pass for the same reason. */
-  let conflictRoundsSpent = 0
-  const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
-  // A restart is automatic fix routing too, and a bigger kind than a round: the lap
-  // that spends a human grant ends at a person rather than at a restart nobody
-  // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
-  const restartLimit = options.from?.grant !== undefined ? ceilings.restartsSpent : ceilings.restarts
+export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<AttemptOver> {
+  return Effect.gen(function* () {
+    const bodies = options.bodies ?? NOT_BUILT_YET
+    const ceilings = options.ceilings ?? NOTHING_SPARE
+    const steps: StepReached[] = []
+    const routes: RouteTaken[] = []
+    let stopped: AttemptOver['stopped'] = null
+    let unanswered = false
+    let end: AttemptEnd | null = null
+    /** The merge commit a `Landed` visit reported, read back once the walk is over. */
+    let landed: string | null = null
+    let roundsSpent = options.from?.roundsSpent ?? 0
+    /**
+     * The base merges the system made this pass (#593). **Not seeded from
+     * `options.from`**: the bound is per pass, and a continuation is a new pass —
+     * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
+     */
+    let baseMergesSpent = 0
+    /** The merge-conflict fix rounds this pass (#653), per pass for the same reason. */
+    let conflictRoundsSpent = 0
+    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
+    // A restart is automatic fix routing too, and a bigger kind than a round: the lap
+    // that spends a human grant ends at a person rather than at a restart nobody
+    // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
+    const restartLimit = options.from?.grant !== undefined ? ceilings.restartsSpent : ceilings.restarts
 
-  /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
-  let at: Step | null = 'admit'
+    /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
+    let at: Step | null = 'admit'
 
-  /**
-   * The step after this one — `after(step)` on an ordinary pass, and
-   * `options.from.step` the one time the walk leaves `prepared` on a
-   * continuation (`AttemptOptions.from`'s own doc). `prepared` is visited at
-   * most once a lap, so there is nothing to guard beyond asking which step
-   * is being left.
-   */
-  const nextStep = (from: Step): Step | null =>
-    from === 'prepared' && options.from !== undefined && options.from.step !== 'admit' ? options.from.step : after(from)
+    /**
+     * The step after this one — `after(step)` on an ordinary pass, and
+     * `options.from.step` the one time the walk leaves `prepared` on a
+     * continuation (`AttemptOptions.from`'s own doc). `prepared` is visited at
+     * most once a lap, so there is nothing to guard beyond asking which step
+     * is being left.
+     */
+    const nextStep = (from: Step): Step | null =>
+      from === 'prepared' && options.from !== undefined && options.from.step !== 'admit'
+        ? options.from.step
+        : after(from)
 
-  /**
-   * The three fields of the context that move while the pass runs, and the one
-   * place any of them is written.
-   *
-   * `onSha` is the head the tree stands at — the base the caller handed in until
-   * a step says it moved it. `roundsSpent` is `round`. `recheck` is what the
-   * round the pass is in was bought on, and is empty on the first lap because
-   * nothing has been refused yet.
-   */
-  let onSha = options.context.onSha
-  let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
-  /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
-  let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null =
-    options.from?.landedOnBase ?? null
-  /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
-  let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
-  /**
-   * The head the last review in this pass actually read (#671): set when a
-   * review visit ends having read it, cleared by a base merge, and passed on
-   * the context so the next review looks for new problems only in what changed
-   * since. Never shared between passes.
-   */
-  let reviewedSha: string | null = null
-  /**
-   * The head a person approved in this continuation, until the first base merge
-   * has used it (#671): that merge's review is of what came after the approval.
-   * A grant continuation is a fix round, and a wait before `proposed` was never
-   * reviewed.
-   */
-  let approvedAt: string | null =
-    options.from !== undefined &&
-    options.from.grant === undefined &&
-    // An approval to read the diff clipped is not a head that was read whole (#892).
-    options.from.readClipped === undefined &&
-    (options.from.step === 'proposed' || options.from.step === 'merge')
-      ? options.context.onSha
-      : null
-  /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
-  let lapStart = 0
+    /**
+     * The three fields of the context that move while the pass runs, and the one
+     * place any of them is written.
+     *
+     * `onSha` is the head the tree stands at — the base the caller handed in until
+     * a step says it moved it. `roundsSpent` is `round`. `recheck` is what the
+     * round the pass is in was bought on, and is empty on the first lap because
+     * nothing has been refused yet.
+     */
+    let onSha = options.context.onSha
+    let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
+    /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
+    let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null =
+      options.from?.landedOnBase ?? null
+    /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
+    let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
+    /**
+     * The head the last review in this pass actually read (#671): set when a
+     * review visit ends having read it, cleared by a base merge, and passed on
+     * the context so the next review looks for new problems only in what changed
+     * since. Never shared between passes.
+     */
+    let reviewedSha: string | null = null
+    /**
+     * The head a person approved in this continuation, until the first base merge
+     * has used it (#671): that merge's review is of what came after the approval.
+     * A grant continuation is a fix round, and a wait before `proposed` was never
+     * reviewed.
+     */
+    let approvedAt: string | null =
+      options.from !== undefined &&
+      options.from.grant === undefined &&
+      // An approval to read the diff clipped is not a head that was read whole (#892).
+      options.from.readClipped === undefined &&
+      (options.from.step === 'proposed' || options.from.step === 'merge')
+        ? options.context.onSha
+        : null
+    /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
+    let lapStart = 0
 
-  /**
-   * What this visit is judged against — rebuilt per visit, never shared.
-   *
-   * The same object goes to the step's plugins and to its body, because they are
-   * judging the same tree in the same round: a `review` handed a different
-   * `onSha` from the pipeline that just ran at `build` would be two verdicts
-   * about two commits on one card.
-   */
-  const contextFor = (): ActionContext => ({
-    ...options.context,
-    onSha,
-    round: roundsSpent,
-    recheck,
-    ...(landedOnBase === null ? {} : { landedOnBase }),
-    ...(mergedOnto === null ? {} : { mergedOnto }),
-    ...(reviewedSha === null ? {} : { reviewedSha }),
-  })
+    /**
+     * What this visit is judged against — rebuilt per visit, never shared.
+     *
+     * The same object goes to the step's plugins and to its body, because they are
+     * judging the same tree in the same round: a `review` handed a different
+     * `onSha` from the pipeline that just ran at `build` would be two verdicts
+     * about two commits on one card.
+     */
+    const contextFor = (): ActionContext => ({
+      ...options.context,
+      onSha,
+      round: roundsSpent,
+      recheck,
+      ...(landedOnBase === null ? {} : { landedOnBase }),
+      ...(mergedOnto === null ? {} : { mergedOnto }),
+      ...(reviewedSha === null ? {} : { reviewedSha }),
+    })
 
-  /**
-   * One visit, recorded — and the head it left the tree at, if it moved it.
-   *
-   * Read here rather than in `runStep`, because `onSha` is the walk's and not
-   * one visit's: what a step that committed changes is what **every** visit
-   * after it is judged against.
-   */
-  const record = (visit: StepReached): StepReached => {
-    steps.push(visit)
-    if (visit.ending.head !== undefined) onSha = visit.ending.head
-    return visit
-  }
+    /**
+     * One visit, recorded — and the head it left the tree at, if it moved it.
+     *
+     * Read here rather than in `runStep`, because `onSha` is the walk's and not
+     * one visit's: what a step that committed changes is what **every** visit
+     * after it is judged against.
+     */
+    const record = (visit: StepReached): StepReached => {
+      steps.push(visit)
+      if (visit.ending.head !== undefined) onSha = visit.ending.head
+      return visit
+    }
 
-  // The router's visit as a span (#791), so a judge dispatched inside it is its
-  // child: it is `ERROR` by that action alone, like any step.
-  const routing = (...args: Parameters<typeof routeProposal>): Promise<boolean> =>
-    inSpan('step proposed', { 'lingtai.round': contextFor().round ?? 0 }, () => routeProposal(...args))
-  /**
-   * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
-   * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
-   * `proposed-route.ts`) are called** (`#462`, 0120 §3). Records the
-   * `proposed` visit directly, the way `routedVisit`'s own doc explains —
-   * there is no body left to call for it — appends the `RouteTaken`, and
-   * applies what `routeNext` answered. `reported` is what a person should be
-   * shown if this escalates, and is null for the one case that produces a
-   * `Propose` with nothing to report: `review` passing on its own way through,
-   * carrying findings above the bar.
-   */
-  const routeProposal = async (
-    proposal: Proposal,
-    reported: { step: Step; ending: StepReport } | null,
-    arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
-    ended: RouteTaken['ended'],
-  ): Promise<boolean> => {
-    const offer = offerFor(
-      proposal,
-      { rounds: roundLimit, restarts: restartLimit },
-      {
-        rounds: roundsSpent,
-        restarts: ceilings.restartsSpent,
-        baseMerges: baseMergesSpent,
-        conflictRounds: conflictRoundsSpent,
-      },
-    )
-    // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
-    // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
-    if (
-      options.baseIsRed !== undefined &&
-      proposal._tag === 'BuildRed' &&
-      reported?.ending.ending === 'refused' &&
-      reported.ending.at !== null &&
-      offer.available.some((c) => c.id === 'fix-lines')
-    ) {
-      const asked = await options.baseIsRed({ action: reported.ending.at, mergedOnto })
-      if ('red' in asked) {
-        const because = { _tag: 'BaseRed' as const, ...asked.red }
-        const reply: JudgeReply = { _tag: 'NotAsked' }
+    // The router's visit as a span (#791), so a judge dispatched inside it is its
+    // child: it is `ERROR` by that action alone, like any step.
+    const routing = (...args: Parameters<typeof routeProposal>): Effect.Effect<boolean> =>
+      inStepSpan('step proposed', contextFor().round ?? 0, routeProposal(...args))
+    /**
+     * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
+     * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
+     * `proposed-route.ts`) are called** (`#462`, 0120 §3). Records the
+     * `proposed` visit directly, the way `routedVisit`'s own doc explains —
+     * there is no body left to call for it — appends the `RouteTaken`, and
+     * applies what `routeNext` answered. `reported` is what a person should be
+     * shown if this escalates, and is null for the one case that produces a
+     * `Propose` with nothing to report: `review` passing on its own way through,
+     * carrying findings above the bar.
+     */
+    const routeProposal = (
+      proposal: Proposal,
+      reported: { step: Step; ending: StepReport } | null,
+      arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
+      ended: RouteTaken['ended'],
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const offer = offerFor(
+          proposal,
+          { rounds: roundLimit, restarts: restartLimit },
+          {
+            rounds: roundsSpent,
+            restarts: ceilings.restartsSpent,
+            baseMerges: baseMergesSpent,
+            conflictRounds: conflictRoundsSpent,
+          },
+        )
+        // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
+        // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
+        if (
+          options.baseIsRed !== undefined &&
+          proposal._tag === 'BuildRed' &&
+          reported?.ending.ending === 'refused' &&
+          reported.ending.at !== null &&
+          offer.available.some((c) => c.id === 'fix-lines')
+        ) {
+          const asked = yield* options.baseIsRed({ action: reported.ending.at, mergedOnto })
+          if ('red' in asked) {
+            const because = { _tag: 'BaseRed' as const, ...asked.red }
+            const reply: JudgeReply = { _tag: 'NotAsked' }
+            const decision = decideRoute(offer, reply)
+            const routed = { ...routedVisit(offer, reply, decision), why: baseRedText(because) }
+            record({ step: 'proposed', ending: routed, results: [] })
+            routes.push({
+              from: reported.step,
+              chose: routed.chose ?? routed.to,
+              to: routed.to,
+              why: routed.why,
+              ceiling: ceilingOf(routed.chose ?? routed.to, offer),
+              offer,
+              reply,
+              decision,
+              ended,
+            })
+            stopped = reported
+            end = {
+              _tag: 'WaitOnPerson',
+              reason: {
+                _tag: 'ProposedEscalated',
+                run: { runId: options.context.runId },
+                proposal: offer.proposal,
+                because,
+              },
+            }
+            return false
+          }
+        }
+        const reply = yield* replyFor(offer, arrived, options.judge)
+        if ('neverStarted' in reply) {
+          // 0031 §3, at the third depth the same wall is met at: the judge
+          // itself is an agent, and an account-wide wall is the conductor's to
+          // answer, never a route.
+          const ending: StepNeverRan = {
+            ending: 'never-ran',
+            at: reply.neverStarted.agent,
+            runtime: reply.neverStarted.agent,
+            detail: reply.neverStarted.detail,
+          }
+          record({ step: 'proposed', ending, results: [] })
+          stopped = { step: 'proposed', ending }
+          end = { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } }
+          return false
+        }
         const decision = decideRoute(offer, reply)
-        const routed = { ...routedVisit(offer, reply, decision), why: baseRedText(because) }
-        record({ step: 'proposed', ending: routed, results: [] })
+        const routed = routedVisit(offer, reply, decision)
+        const next = routeNext(offer, reply, decision, { runId: options.context.runId })
+
+        // **The third mover of `onSha`** (#593), after `admit` and `implement`: the
+        // system merges the base in, here and not in a step, and the visit that
+        // records the route carries the merge commit as its `head` — `record` stays
+        // the one place `onSha` is written.
+        let merged: { readonly head: string } | { readonly failed: string } | null = null
+        if (next._tag === 'MergeBase') {
+          merged =
+            options.mergeBase === undefined
+              ? { failed: 'this attempt was handed no way to merge the base in' }
+              : yield* options.mergeBase(next.toSha)
+        }
+        // Read before `record` moves `onSha` to the merge commit (#671).
+        const approvedHeadStands = approvedAt !== null && onSha === approvedAt
+        record({
+          step: 'proposed',
+          ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
+          results: [],
+        })
+        const chose = routed.chose ?? routed.to
         routes.push({
-          from: reported.step,
-          chose: routed.chose ?? routed.to,
+          from: reported?.step ?? 'proposed',
+          chose,
           to: routed.to,
           why: routed.why,
-          ceiling: ceilingOf(routed.chose ?? routed.to, offer),
+          ceiling: ceilingOf(chose, offer),
           offer,
           reply,
           decision,
           ended,
         })
-        stopped = reported
-        end = {
-          _tag: 'WaitOnPerson',
-          reason: {
-            _tag: 'ProposedEscalated',
-            run: { runId: options.context.runId },
-            proposal: offer.proposal,
-            because,
-          },
+
+        switch (next._tag) {
+          case 'MergeBase':
+            if (merged === null || !('head' in merged)) {
+              // A clean merge that fails in a tree the lane just proved clean is a
+              // defect, and a person is the floor under it.
+              stopped = reported
+              end = {
+                _tag: 'WaitOnPerson',
+                reason: {
+                  _tag: 'ProposedEscalated',
+                  run: { runId: options.context.runId },
+                  proposal: offer.proposal,
+                  because: {
+                    _tag: 'JudgeHandedOver',
+                    why: `the base could not be merged in: ${merged === null ? 'no result' : merged.failed}`,
+                  },
+                },
+              }
+              return false
+            }
+            // Free: neither a round nor a restart. The next lap is judged against the
+            // merged tree, so `recheck` is left as it was and only the lap's start
+            // moves, to keep a later fix round's `recheck` to what the new lap found.
+            baseMergesSpent = next.merge
+            // Nothing to diff without the fork point and the paths: the review then
+            // falls back to the ordinary prompt. A second merge replaces the value.
+            mergedOnto = next.toSha
+            // Only a person's approval of the head the merge started from keeps the
+            // earlier read; any other base move is a full review.
+            reviewedSha = approvedHeadStands ? approvedAt : null
+            approvedAt = null
+            landedOnBase =
+              offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
+                ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
+                : null
+            lapStart = steps.length
+            at = 'build'
+            return true
+          case 'FixRound':
+            // The same bookkeeping `take` always did: the lap's own findings
+            // become the next lap's `recheck` (0038 §2), and a round is spent.
+            recheck = findingsIn(steps.slice(lapStart))
+            // Dropped once a review has had it; a build that failed first never
+            // reached the review, which is still owed the section.
+            if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
+            lapStart = steps.length
+            // A conflict round has its own counter and leaves `rounds` where it was (#653).
+            if (next.conflict === undefined) roundsSpent = next.round
+            else conflictRoundsSpent = next.conflict
+            at = next.to
+            return true
+          case 'Requeued':
+            stopped = reported
+            end = next
+            return false
+          case 'WaitOnPerson':
+            stopped = reported
+            end = next
+            return false
+          // `routeNext`'s own doc: `HandToPerson` never escapes it, so what it
+          // returns is never `Advance`, `Propose` or `Landed` — kept as a throw
+          // rather than a silent fallthrough, the same choice `nextOf`'s own
+          // `ImpossibleOutcomeError` makes.
+          case 'Advance':
+          case 'Propose':
+          case 'Landed':
+            throw new Error(`routeNext answered "${next._tag}", which 0120 §3's own doc says it never does`)
         }
-        return false
-      }
-    }
-    const reply = await replyFor(offer, arrived, options.judge)
-    if ('neverStarted' in reply) {
-      // 0031 §3, at the third depth the same wall is met at: the judge
-      // itself is an agent, and an account-wide wall is the conductor's to
-      // answer, never a route.
-      const ending: StepNeverRan = {
-        ending: 'never-ran',
-        at: reply.neverStarted.agent,
-        runtime: reply.neverStarted.agent,
-        detail: reply.neverStarted.detail,
-      }
-      record({ step: 'proposed', ending, results: [] })
-      stopped = { step: 'proposed', ending }
-      end = { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } }
-      return false
-    }
-    const decision = decideRoute(offer, reply)
-    const routed = routedVisit(offer, reply, decision)
-    const next = routeNext(offer, reply, decision, { runId: options.context.runId })
+      })
 
-    // **The third mover of `onSha`** (#593), after `admit` and `implement`: the
-    // system merges the base in, here and not in a step, and the visit that
-    // records the route carries the merge commit as its `head` — `record` stays
-    // the one place `onSha` is written.
-    let merged: { readonly head: string } | { readonly failed: string } | null = null
-    if (next._tag === 'MergeBase') {
-      merged =
-        options.mergeBase === undefined
-          ? { failed: 'this attempt was handed no way to merge the base in' }
-          : await options.mergeBase(next.toSha)
-    }
-    // Read before `record` moves `onSha` to the merge commit (#671).
-    const approvedHeadStands = approvedAt !== null && onSha === approvedAt
-    record({
-      step: 'proposed',
-      ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
-      results: [],
-    })
-    const chose = routed.chose ?? routed.to
-    routes.push({
-      from: reported?.step ?? 'proposed',
-      chose,
-      to: routed.to,
-      why: routed.why,
-      ceiling: ceilingOf(chose, offer),
-      offer,
-      reply,
-      decision,
-      ended,
-    })
-
-    switch (next._tag) {
-      case 'MergeBase':
-        if (merged === null || !('head' in merged)) {
-          // A clean merge that fails in a tree the lane just proved clean is a
-          // defect, and a person is the floor under it.
-          stopped = reported
-          end = {
-            _tag: 'WaitOnPerson',
-            reason: {
-              _tag: 'ProposedEscalated',
-              run: { runId: options.context.runId },
-              proposal: offer.proposal,
-              because: {
-                _tag: 'JudgeHandedOver',
-                why: `the base could not be merged in: ${merged === null ? 'no result' : merged.failed}`,
-              },
-            },
-          }
-          return false
-        }
-        // Free: neither a round nor a restart. The next lap is judged against the
-        // merged tree, so `recheck` is left as it was and only the lap's start
-        // moves, to keep a later fix round's `recheck` to what the new lap found.
-        baseMergesSpent = next.merge
-        // Nothing to diff without the fork point and the paths: the review then
-        // falls back to the ordinary prompt. A second merge replaces the value.
-        mergedOnto = next.toSha
-        // Only a person's approval of the head the merge started from keeps the
-        // earlier read; any other base move is a full review.
-        reviewedSha = approvedHeadStands ? approvedAt : null
-        approvedAt = null
-        landedOnBase =
-          offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
-            ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
-            : null
-        lapStart = steps.length
-        at = 'build'
-        return true
-      case 'FixRound':
-        // The same bookkeeping `take` always did: the lap's own findings
-        // become the next lap's `recheck` (0038 §2), and a round is spent.
-        recheck = findingsIn(steps.slice(lapStart))
-        // Dropped once a review has had it; a build that failed first never
-        // reached the review, which is still owed the section.
-        if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
-        lapStart = steps.length
-        // A conflict round has its own counter and leaves `rounds` where it was (#653).
-        if (next.conflict === undefined) roundsSpent = next.round
-        else conflictRoundsSpent = next.conflict
-        at = next.to
-        return true
-      case 'Requeued':
-        stopped = reported
-        end = next
-        return false
-      case 'WaitOnPerson':
-        stopped = reported
-        end = next
-        return false
-      // `routeNext`'s own doc: `HandToPerson` never escapes it, so what it
-      // returns is never `Advance`, `Propose` or `Landed` — kept as a throw
-      // rather than a silent fallthrough, the same choice `nextOf`'s own
-      // `ImpossibleOutcomeError` makes.
-      case 'Advance':
-      case 'Propose':
-      case 'Landed':
-        throw new Error(`routeNext answered "${next._tag}", which 0120 §3's own doc says it never does`)
-    }
-  }
-
-  while (at !== null && at !== 'end') {
-    const spec = SPEC[at]
-    const visitContext = contextFor()
-    /**
-     * **Once per spine visit, before the pipeline runs** (0120 §1,
-     * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
-     * loop (`claimStep`, `resolveEndActions`) and never reach here, and a
-     * routing visit is built directly by `routeProposal`'s own `record()`
-     * calls rather than through `runStep` — so neither gets one either.
-     */
-    const visiting = at
-    // The version this lap's `StepEnded` was appended at (#931), caught where it is emitted.
-    const endedAt: { version: number | null } = { version: null }
-    const reached = await runStep(
-      spec,
-      options,
-      bodies,
-      [...steps],
-      {
-        context: visitContext,
-        // Nothing but `end` is told the outcome, because nothing but `end` runs
-        // after it is known.
-        outcome: null,
-      },
-      // Inside the step's span, so its interval covers the `StepEnded` write
-      // and a refused append marks it (#791). **Exactly where the step's
-      // plugins ran a verdicts pipeline** (`events.ts`'s own rule for
-      // `StepEnded`) — `outcome` is `undefined` for a step with nothing
-      // declared to judge, which never opened one.
-      (visit) => {
-        const recorded = record(visit)
-        return Promise.resolve(
-          recorded.outcome === undefined
-            ? undefined
-            : options.emit({ type: 'StepEnded', data: { runId: options.context.runId, outcome: recorded.outcome } }),
-        ).then((version) => {
-          endedAt.version = typeof version === 'number' ? version : null
-          return recorded
-        })
-      },
-      // Inside the span too: the visit begins at the `StepStarted` write, and a
-      // store that is slow to take it or refuses it is the step's time and
-      // the step's failure (#791).
-      () =>
-        Promise.resolve(
-          options.emit({
-            type: 'StepStarted',
-            data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+    while (at !== null && at !== 'end') {
+      const spec = SPEC[at]
+      const visitContext = contextFor()
+      /**
+       * **Once per spine visit, before the pipeline runs** (0120 §1,
+       * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
+       * loop (`claimStep`, `resolveEndActions`) and never reach here, and a
+       * routing visit is built directly by `routeProposal`'s own `record()`
+       * calls rather than through `runStep` — so neither gets one either.
+       */
+      const visiting = at
+      // The version this lap's `StepEnded` was appended at (#931), caught where it is emitted.
+      const endedAt: { version: number | null } = { version: null }
+      const reached = yield* runStep(
+        spec,
+        options,
+        bodies,
+        [...steps],
+        {
+          context: visitContext,
+          // Nothing but `end` is told the outcome, because nothing but `end` runs
+          // after it is known.
+          outcome: null,
+        },
+        // Inside the step's span, so its interval covers the `StepEnded` write
+        // and a refused append marks it (#791). **Exactly where the step's
+        // plugins ran a verdicts pipeline** (`events.ts`'s own rule for
+        // `StepEnded`) — `outcome` is `undefined` for a step with nothing
+        // declared to judge, which never opened one.
+        (visit) =>
+          Effect.gen(function* () {
+            const recorded = record(visit)
+            const version = yield* Effect.promise(
+              () =>
+                new Promise<number | void>((resolve) =>
+                  resolve(
+                    recorded.outcome === undefined
+                      ? undefined
+                      : options.emit({
+                          type: 'StepEnded',
+                          data: { runId: options.context.runId, outcome: recorded.outcome },
+                        }),
+                  ),
+                ),
+            )
+            endedAt.version = typeof version === 'number' ? version : null
+            return recorded
           }),
-        ).then(() => undefined),
-    )
-    // Only a review that was actually read: an unreadable answer, a reviewer
-    // that never ran or did not finish, or an action skipped before the agent
-    // reached the head read nothing (#671). One reader is enough: a pipeline
-    // stops at its first failed verdict, so later reviewers may never run.
-    if (at === 'review') {
-      const listed = options.recipe.steps.review
-      const read = reached.results.some(
-        (r, i) =>
-          listed[i] !== undefined &&
-          kindOfAction(listed[i]) === 'agent' &&
-          (r.verdict === 'passed' || r.verdict === 'failed') &&
-          r.unreadable !== true,
+        // Inside the span too: the visit begins at the `StepStarted` write, and a
+        // store that is slow to take it or refuses it is the step's time and
+        // the step's failure (#791).
+        Effect.asVoid(
+          Effect.promise(
+            () =>
+              new Promise<unknown>((resolve) =>
+                resolve(
+                  options.emit({
+                    type: 'StepStarted',
+                    data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+                  }),
+                ),
+              ),
+          ),
+        ),
       )
-      // A clipped read covered the first part of the diff only (#892): the head is
-      // not one a later review may treat as read, or a defect in the unread tail
-      // would be demoted as lying outside the fix delta.
-      const clippedRead = reached.results.some((r) => r.clipped !== undefined)
-      if (read && !clippedRead) reviewedSha = visitContext.onSha
-    }
-    const ending = reached.ending
-    if (ending.ending === 'routed') {
-      // Unreachable: no body may answer `routed` any more (`theWorkflowsToSay`
-      // already throws for it at `runStep`). Narrows `StepRouted` out of
-      // `ending`'s type for the rest of the lap, the way `StepReport` is
-      // defined to exclude it.
-      throw new Error(`"${at}" answered "routed", which no body may do since #462`)
-    }
+      // Only a review that was actually read: an unreadable answer, a reviewer
+      // that never ran or did not finish, or an action skipped before the agent
+      // reached the head read nothing (#671). One reader is enough: a pipeline
+      // stops at its first failed verdict, so later reviewers may never run.
+      if (at === 'review') {
+        const listed = options.recipe.steps.review
+        const read = reached.results.some(
+          (r, i) =>
+            listed[i] !== undefined &&
+            kindOfAction(listed[i]) === 'agent' &&
+            (r.verdict === 'passed' || r.verdict === 'failed') &&
+            r.unreadable !== true,
+        )
+        // A clipped read covered the first part of the diff only (#892): the head is
+        // not one a later review may treat as read, or a defect in the unread tail
+        // would be demoted as lying outside the fix delta.
+        const clippedRead = reached.results.some((r) => r.clipped !== undefined)
+        if (read && !clippedRead) reviewedSha = visitContext.onSha
+      }
+      const ending = reached.ending
+      if (ending.ending === 'routed') {
+        // Unreachable: no body may answer `routed` any more (`theWorkflowsToSay`
+        // already throws for it at `runStep`). Narrows `StepRouted` out of
+        // `ending`'s type for the rest of the lap, the way `StepReport` is
+        // defined to exclude it.
+        throw new Error(`"${at}" answered "routed", which no body may do since #462`)
+      }
 
-    // **#467: the pass acts on `nextOf`'s answer** (0120 §4) rather than on
-    // `ARRIVE_AT_THE_ROUTER`/`goesToTheRouter`'s own branches — asked wherever
-    // asking it cannot throw by construction. `claim` is never `at` here (it
-    // ran before this walk started, through `claimStep`), and a `merge` whose
-    // plugins never reached a deciding action (`decidingAction === null`) is
-    // the one case `nextOf`'s own doc says throws (`attempt-next.ts:111-113`) —
-    // excluded here rather than caught, so an empty `merge:` list keeps
-    // today's ending too.
-    const outcome = reached.outcome
-    // Not `reported`: that is null when `review` passes carrying findings, whose
-    // `StepEnded` is still the one the proposal came from.
-    const decided = outcome === undefined ? null : decidingAction(outcome)
-    const ended =
-      endedAt.version !== null && decided !== null ? { version: endedAt.version, action: decided.name } : null
-    let next: AttemptNext | null = null
-    if (outcome !== undefined && decidingAction(outcome) !== null) {
-      try {
-        next = nextOf(outcome, { runId: options.context.runId })
-      } catch (error) {
-        // Any `ImpossibleOutcomeError` that still escapes takes `end` with it
-        // otherwise, and `end` is the one guarantee `threw` exists to keep —
-        // see `runStep`'s own catch, which this mirrors for the same reason.
-        stopped = { step: at, ending: threw(spec, error) }
-        unanswered = true
-        end = unansweredEnd(at, { runId: options.context.runId }, stopped.ending)
+      // **#467: the pass acts on `nextOf`'s answer** (0120 §4) rather than on
+      // `ARRIVE_AT_THE_ROUTER`/`goesToTheRouter`'s own branches — asked wherever
+      // asking it cannot throw by construction. `claim` is never `at` here (it
+      // ran before this walk started, through `claimStep`), and a `merge` whose
+      // plugins never reached a deciding action (`decidingAction === null`) is
+      // the one case `nextOf`'s own doc says throws (`attempt-next.ts:111-113`) —
+      // excluded here rather than caught, so an empty `merge:` list keeps
+      // today's ending too.
+      const outcome = reached.outcome
+      // Not `reported`: that is null when `review` passes carrying findings, whose
+      // `StepEnded` is still the one the proposal came from.
+      const decided = outcome === undefined ? null : decidingAction(outcome)
+      const ended =
+        endedAt.version !== null && decided !== null ? { version: endedAt.version, action: decided.name } : null
+      let next: AttemptNext | null = null
+      if (outcome !== undefined && decidingAction(outcome) !== null) {
+        try {
+          next = nextOf(outcome, { runId: options.context.runId })
+        } catch (error) {
+          // Any `ImpossibleOutcomeError` that still escapes takes `end` with it
+          // otherwise, and `end` is the one guarantee `threw` exists to keep —
+          // see `runStep`'s own catch, which this mirrors for the same reason.
+          stopped = { step: at, ending: threw(spec, error) }
+          unanswered = true
+          end = unansweredEnd(at, { runId: options.context.runId }, stopped.ending)
+          break
+        }
+      }
+
+      // **A body's own `asked`, built into a `Propose{InputNeeded}` by the shell
+      // itself** (`#462`): `design` and `implement` are the two bodies that can
+      // ask after plugins that cleared trivially (`next === null`, no deciding
+      // action to read) or cleared for real (`next._tag === 'Advance'`), and
+      // 0058 §3c's *that step again, stating its assumption* is still
+      // `proposed`'s to answer either way.
+      if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
+        const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
+        if (yield* routing(proposal, { step: at, ending }, whatArrived(reached), ended)) continue
         break
       }
-    }
 
-    // **A body's own `asked`, built into a `Propose{InputNeeded}` by the shell
-    // itself** (`#462`): `design` and `implement` are the two bodies that can
-    // ask after plugins that cleared trivially (`next === null`, no deciding
-    // action to read) or cleared for real (`next._tag === 'Advance'`), and
-    // 0058 §3c's *that step again, stating its assumption* is still
-    // `proposed`'s to answer either way.
-    if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
-      const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
-      if (await routing(proposal, { step: at, ending }, whatArrived(reached), ended)) continue
-      break
-    }
-
-    if (next === null) {
-      // Today's ending decides — a `merge` with no deciding action (an empty
-      // `merge:` list, which the pipeline always passes) is the one case this
-      // still reaches on the way through; anything that did not pass here has
-      // nothing for `nextOf` to read at all.
-      if (ending.ending === 'passed') {
-        at = nextStep(at)
-        continue
-      }
-      stopped = { step: at, ending }
-      unanswered = true
-      end = unansweredEnd(at, { runId: options.context.runId }, ending)
-      break
-    }
-
-    if (next._tag === 'Advance' || next._tag === 'Landed') {
-      // A body that threw or answered `never-ran` on its own (`proposed`'s
-      // judge) stops the pass exactly as it does today.
-      if (ending.ending !== 'passed') {
+      if (next === null) {
+        // Today's ending decides — a `merge` with no deciding action (an empty
+        // `merge:` list, which the pipeline always passes) is the one case this
+        // still reaches on the way through; anything that did not pass here has
+        // nothing for `nextOf` to read at all.
+        if (ending.ending === 'passed') {
+          at = nextStep(at)
+          continue
+        }
         stopped = { step: at, ending }
         unanswered = true
         end = unansweredEnd(at, { runId: options.context.runId }, ending)
         break
       }
-      if (next._tag === 'Landed') landed = next.integrated
-      at = nextStep(at)
-      continue
-    }
 
-    if (next._tag === 'Propose') {
-      // **Every `Propose` routes, whatever the visit's ending** (`#462`,
-      // deleting the old `ending.ending === 'passed'` walk-on that discarded
-      // `review`'s own `Propose` and re-derived it one step later). `reported`
-      // is null only for that one case — `review` passing on its own way
-      // through, carrying findings above the bar — which is the one `Propose`
-      // with nothing of its own to report (0058 §3b).
-      const reported = ending.ending === 'passed' ? null : { step: at, ending }
-      if (await routing(next.proposal, reported, whatArrived(reached), ended)) continue
-      break
-    }
+      if (next._tag === 'Advance' || next._tag === 'Landed') {
+        // A body that threw or answered `never-ran` on its own (`proposed`'s
+        // judge) stops the pass exactly as it does today.
+        if (ending.ending !== 'passed') {
+          stopped = { step: at, ending }
+          unanswered = true
+          end = unansweredEnd(at, { runId: options.context.runId }, ending)
+          break
+        }
+        if (next._tag === 'Landed') landed = next.integrated
+        at = nextStep(at)
+        continue
+      }
 
-    if (next._tag === 'WaitOnPerson') {
-      // `AgentCrashed` and `SignoffRequired` are the only two left here
-      // (`#472`): every other fall-short is a `Propose` now, handled by the
-      // branch above. No router visit for either — `conduct.ts` (`#466`) reads
-      // `next.reason` directly.
+      if (next._tag === 'Propose') {
+        // **Every `Propose` routes, whatever the visit's ending** (`#462`,
+        // deleting the old `ending.ending === 'passed'` walk-on that discarded
+        // `review`'s own `Propose` and re-derived it one step later). `reported`
+        // is null only for that one case — `review` passing on its own way
+        // through, carrying findings above the bar — which is the one `Propose`
+        // with nothing of its own to report (0058 §3b).
+        const reported = ending.ending === 'passed' ? null : { step: at, ending }
+        if (yield* routing(next.proposal, reported, whatArrived(reached), ended)) continue
+        break
+      }
+
+      if (next._tag === 'WaitOnPerson') {
+        // `AgentCrashed` and `SignoffRequired` are the only two left here
+        // (`#472`): every other fall-short is a `Propose` now, handled by the
+        // branch above. No router visit for either — `conduct.ts` (`#466`) reads
+        // `next.reason` directly.
+        stopped = { step: at, ending }
+        end = next
+        break
+      }
+
+      // `next._tag === 'Requeued'`. `NeverStarted` is the only cause `nextOf`
+      // gives a step's own ending — a `Restart` is a *route*'s to spend (0120
+      // §3), never a step's.
       stopped = { step: at, ending }
       end = next
       break
     }
 
-    // `next._tag === 'Requeued'`. `NeverStarted` is the only cause `nextOf`
-    // gives a step's own ending — a `Restart` is a *route*'s to spend (0120
-    // §3), never a step's.
-    stopped = { step: at, ending }
-    end = next
-    break
-  }
+    // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
+    // stopped once a merge has landed, and nothing can be left unfinished because
+    // the pass stopped early either. A point that fires on *any* terminal outcome
+    // cannot live on one of the paths that reaches one (`end-step.ts`), so it is
+    // here, once, after the walk, whichever of the four ways the walk ended.
+    //
+    // `end` is already set on every path that broke out of the loop; walking
+    // off the end of it (the spine passed every step) is the one case that
+    // still needs one built here, off whether `merge` actually landed something
+    // (`landed`, the last `Landed` visit's own `integrated`) or not — the row
+    // "a recipe that declares something *else* at `merge`" (`conduct.ts`) is
+    // exactly `landed === null` reaching this line.
+    const settled: AttemptEnd =
+      end ??
+      (landed === null
+        ? { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'work-item' } }
+        : { _tag: 'Landed', integrated: landed })
+    const outcome = outcomeOf(settled)
+    record(
+      yield* runStep(SPEC.end, options, bodies, [...steps], {
+        context: contextFor(),
+        outcome,
+      }),
+    )
 
-  // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
-  // stopped once a merge has landed, and nothing can be left unfinished because
-  // the pass stopped early either. A point that fires on *any* terminal outcome
-  // cannot live on one of the paths that reaches one (`end-step.ts`), so it is
-  // here, once, after the walk, whichever of the four ways the walk ended.
-  //
-  // `end` is already set on every path that broke out of the loop; walking
-  // off the end of it (the spine passed every step) is the one case that
-  // still needs one built here, off whether `merge` actually landed something
-  // (`landed`, the last `Landed` visit's own `integrated`) or not — the row
-  // "a recipe that declares something *else* at `merge`" (`conduct.ts`) is
-  // exactly `landed === null` reaching this line.
-  const settled: AttemptEnd =
-    end ??
-    (landed === null
-      ? { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'work-item' } }
-      : { _tag: 'Landed', integrated: landed })
-  const outcome = outcomeOf(settled)
-  record(
-    await runStep(SPEC.end, options, bodies, [...steps], {
-      context: contextFor(),
-      outcome,
-    }),
-  )
+    return { steps, stopped, unanswered, routes, end: settled }
+  })
+}
 
-  return { steps, stopped, unanswered, routes, end: settled }
+/**
+ * `runAttemptEffect` for a caller that holds promise ports (#1053): the tests,
+ * and nothing in production.
+ */
+export function runAttempt(options: AttemptOptions): Promise<AttemptOver> {
+  return Effect.runPromise(runAttemptEffect(attemptPortsFrom(options)))
 }
 
 /**
@@ -1737,12 +1818,17 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
  * walk's own first lap — `onSha` unmoved, `round: 0`, `recheck` from the
  * caller and nothing else, because nothing has been refused yet.
  */
-export async function claimStep(options: AttemptOptions): Promise<StepReached> {
+export function claimStepEffect(options: AttemptPortOptions): Effect.Effect<StepReached> {
   const bodies = options.bodies ?? NOT_BUILT_YET
   return runStep(SPEC.claim, options, bodies, [], {
     context: { ...options.context, round: 0, recheck: options.context.recheck ?? [] },
     outcome: null,
   })
+}
+
+/** `claimStepEffect` for a caller that holds promise ports (#1053): the tests, and nothing in production. */
+export function claimStep(options: AttemptOptions): Promise<StepReached> {
+  return Effect.runPromise(claimStepEffect(attemptPortsFrom(options)))
 }
 
 /**
@@ -1891,18 +1977,36 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
  */
 function runStep(
   spec: StepSpec,
-  options: AttemptOptions,
+  options: AttemptPortOptions,
   bodies: StepBodies,
   reached: readonly StepReached[],
   reaching: Reaching,
   /** Runs inside the span, after the body: the write that ends the visit. */
-  finish: (visit: StepReached) => Promise<StepReached> = (visit) => Promise.resolve(visit),
+  finish: (visit: StepReached) => Effect.Effect<StepReached> = (visit) => Effect.succeed(visit),
   /** Runs inside the span, before the body: the write that begins the visit. */
-  begin: () => Promise<void> = () => Promise.resolve(),
-): Promise<StepReached> {
-  if (spec.step === 'end') return runStepBody(spec, options, bodies, reached, reaching).then(finish)
-  return inSpan(`step ${spec.step}`, { 'lingtai.round': reaching.context.round ?? 0 }, () =>
-    begin().then(() => runStepBody(spec, options, bodies, reached, reaching).then(finish)),
+  begin: Effect.Effect<void> = Effect.void,
+): Effect.Effect<StepReached> {
+  if (spec.step === 'end') return Effect.flatMap(runStepBody(spec, options, bodies, reached, reaching), finish)
+  return inStepSpan(
+    `step ${spec.step}`,
+    reaching.context.round ?? 0,
+    Effect.gen(function* () {
+      yield* begin
+      const visit = yield* runStepBody(spec, options, bodies, reached, reaching)
+      return yield* finish(visit)
+    }),
+  )
+}
+
+/**
+ * An Effect span for a step's visit or the router's (#791). `onExit` comes before
+ * `withSpan` so the annotation lands on this span and not the one above it; a
+ * failed child reaches its parent through `telemetry.ts`.
+ */
+function inStepSpan<A>(name: string, round: number, body: Effect.Effect<A>): Effect.Effect<A> {
+  return body.pipe(
+    Effect.onExit((exit) => (Exit.isFailure(exit) ? Effect.annotateCurrentSpan(FAILED, true) : Effect.void)),
+    Effect.withSpan(name, { attributes: { 'lingtai.round': round } }, { captureStackTrace: false }),
   )
 }
 
@@ -1920,13 +2024,23 @@ function runStep(
  * survive every way a step can go wrong is the pass reaching `end` — see
  * `threw` below.
  */
-async function runStepBody(
+function runStepBody(
   spec: StepSpec,
-  options: AttemptOptions,
+  options: AttemptPortOptions,
   bodies: StepBodies,
   reached: readonly StepReached[],
   reaching: Reaching,
-): Promise<StepReached> {
+): Effect.Effect<StepReached> {
+  return Effect.suspend(() => runVisit(spec, options, bodies, reached, reaching))
+}
+
+function runVisit(
+  spec: StepSpec,
+  options: AttemptPortOptions,
+  bodies: StepBodies,
+  reached: readonly StepReached[],
+  reaching: Reaching,
+): Effect.Effect<StepReached> {
   const actions = options.recipe.steps[spec.step]
   let results: readonly ActionOutcome[] = []
   /**
@@ -1959,7 +2073,9 @@ async function runStepBody(
    */
   let wroteTheDesign: WroteTheDesign = {}
 
-  try {
+  // Declared outside the generator, so the catch below reports what the step had
+  // already learned (`outcome` above all) when the body then threw.
+  const visit = Effect.gen(function* () {
     // Every visit `runStep` runs is a spine visit since `#462` — a routing
     // visit is built directly by `runAttempt` and never reaches here.
     if (spec.plugins === 'verdicts') {
@@ -1978,7 +2094,8 @@ async function runStepBody(
       const waived = firstVisitOfFrom ? options.from?.waive : undefined
       const readClippedAt = firstVisitOfFrom ? options.from?.readClipped?.onSha : undefined
       const readClippedKept = firstVisitOfFrom ? options.from?.readClipped?.kept : undefined
-      const result = await runActionPipeline({
+      // Called here, inside the step's span, so the context it captures is this step's.
+      const result = yield* runActionPipelineEffect({
         step: spec.step,
         actions: pipelineActions,
         ...(waived === undefined ? {} : { waived }),
@@ -2022,7 +2139,13 @@ async function runStepBody(
       results = result.results
       leftTheTreeAt = headFrom(result)
       wroteTheDesign = designFrom(result)
-      outcome = stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result)
+      outcome = stepOutcomeOf(
+        spec.step,
+        reaching.context.round ?? 0,
+        reaching.context.onSha,
+        pipelineActions.map(promiseAction),
+        result,
+      )
       const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
@@ -2038,28 +2161,45 @@ async function runStepBody(
     // back is checked by `theWorkflowsToSay` on the line below rather than by
     // the compiler.
     const body = bodies[spec.step] as StepBody<Step>
-    const ending = await body({
-      step: spec.step,
-      actions,
-      refuses: spec.refuses,
-      reached,
-      // `StepWork<Step>`'s one conditional field distributes over the whole
-      // union, so it widens to both of its branches — `TerminalOutcome |
-      // null` — and `Reaching` carries a field assignable to it, so it needs
-      // no cast.
-      outcome: reaching.outcome,
-      context: reaching.context,
-      emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
-    })
+    // A step's body stays a promise (`StepBody`) until STEPS-1.
+    const ending = yield* Effect.promise(() =>
+      body({
+        step: spec.step,
+        actions,
+        refuses: spec.refuses,
+        reached,
+        // `StepWork<Step>`'s one conditional field distributes over the whole
+        // union, so it widens to both of its branches — `TerminalOutcome |
+        // null` — and `Reaching` carries a field assignable to it, so it needs
+        // no cast.
+        outcome: reaching.outcome,
+        context: reaching.context,
+        emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
+      }),
+    )
     return {
       step: spec.step,
       ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }),
       results,
       outcome,
     }
-  } catch (error) {
-    return { step: spec.step, ending: threw(spec, error), results, outcome }
-  }
+  })
+  // **A defect is a verdict and an interruption is not** (#1053). `Effect.catchDefect`
+  // would recover a cause that also carries an interrupt, turning a drain into
+  // *did-not-finish: threw*; so the interrupt is looked for first and passes through
+  // untouched. Every error channel here is `never`, so what is left is a defect.
+  return Effect.exit(visit).pipe(
+    Effect.flatMap((exit) => {
+      if (exit._tag === 'Success') return Effect.succeed(exit.value)
+      if (Cause.hasInterrupts(exit.cause)) return Effect.failCause(exit.cause)
+      return Effect.succeed<StepReached>({
+        step: spec.step,
+        ending: threw(spec, Cause.squash(exit.cause)),
+        results,
+        outcome,
+      })
+    }),
+  )
 }
 
 /**

@@ -19,8 +19,10 @@ import { Context, Exit, Layer, Option, Tracer } from 'effect'
  * Effect spans are parented from the Effect side, and an api span started inside
  * a promise an Effect fiber is running finds its parent through `context`,
  * below: the fiber makes its current span the active OpenTelemetry one for as
- * long as it runs an operation, which is how `Effect.promise(() => runAttempt(…))`
- * reaches `runAttempt` with the run span already active.
+ * long as it runs an operation, which is how a promise an Effect runs reaches the
+ * run span, and how a step's `Effect.withSpan` is the parent of the action spans
+ * its pipeline starts. A bridged span's failure reaches its bridged parent (a step
+ * marks the run), while a bare typed failure of an inner span marks only itself.
  */
 export const ATTRIBUTES: ReadonlySet<string> = new Set(['lingtai.ticket', 'lingtai.round', 'lingtai.index'])
 
@@ -42,6 +44,8 @@ class BridgedSpan implements Tracer.Span {
   readonly otel: OtelSpan
   /** What the spans started under this one report their failures to; this span ends `ERROR` if one did. */
   readonly sink = newSink()
+  /** Annotated `FAILED`: this span says it failed, and so does every bridged span above it. */
+  failed = false
   status: Tracer.SpanStatus
   readonly name: string
   readonly parent: Option.Option<Tracer.AnySpan>
@@ -75,7 +79,13 @@ class BridgedSpan implements Tracer.Span {
     this.status = { _tag: 'Ended', startTime: this.status.startTime, endTime, exit }
     // Never the cause: it carries free text — `unappended`'s message, a thrown
     // error's — and a status message is exported.
-    if (Exit.isFailure(exit) || this.sink.errored) this.otel.setStatus({ code: SpanStatusCode.ERROR })
+    if (Exit.isFailure(exit) || this.sink.errored || this.failed) this.otel.setStatus({ code: SpanStatusCode.ERROR })
+    // Status flows up (spans.ts): a child that failed by its own sink or by `FAILED` marks its
+    // parent. A bare Exit failure does not — typed failures of inner spans stay local.
+    if (this.sink.errored || this.failed) {
+      const parent = Option.getOrUndefined(this.parent)
+      if (parent instanceof BridgedSpan) parent.sink.errored = true
+    }
     this.otel.end(hrtime(endTime))
   }
 
@@ -84,7 +94,10 @@ class BridgedSpan implements Tracer.Span {
     // Not an attribute: a caught defect is a returned result, an Effect
     // *success*, and the span would otherwise export as unset (#791).
     if (key === FAILED) {
-      if (value === true) this.otel.setStatus({ code: SpanStatusCode.ERROR })
+      if (value === true) {
+        this.failed = true
+        this.otel.setStatus({ code: SpanStatusCode.ERROR })
+      }
       return
     }
     if (ATTRIBUTES.has(key) && (typeof value === 'number' || typeof value === 'string')) {

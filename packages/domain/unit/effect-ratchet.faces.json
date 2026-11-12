@@ -9,7 +9,7 @@
     "file": "packages/actions/src/action.ts",
     "fn": "runActionPipeline",
     "until": "#790",
-    "why": "packages/conductor/src/run-attempt.ts:1981 awaits it, and the tests in packages/actions, packages/conductor and packages/recipe, until row 7 runs the pipeline inside the pass"
+    "why": "the tests in packages/actions, packages/conductor and packages/recipe call it; no production caller since the pass runs the pipeline inside its own fiber (#1053)"
   },
   {
     "file": "packages/actions/src/command.ts",
@@ -70,6 +70,18 @@
     "fn": "openRunLog",
     "until": "#790",
     "why": "apps/cli/src/discuss.ts:377 awaits it"
+  },
+  {
+    "file": "packages/conductor/src/run-attempt.ts",
+    "fn": "claimStep",
+    "until": "#790",
+    "why": "the tests that run a pass with promise ports: packages/conductor/unit/run-attempt.test.ts, attempt-steps.test.ts, a-base-that-is-red-buys-no-round.test.ts, a-base-that-moved.test.ts, what-a-destination-costs.test.ts and test/a-url-destination.ts; no production caller"
+  },
+  {
+    "file": "packages/conductor/src/run-attempt.ts",
+    "fn": "runAttempt",
+    "until": "#790",
+    "why": "the tests that run a pass with promise ports: packages/conductor/unit/run-attempt.test.ts, attempt-steps.test.ts, a-base-that-is-red-buys-no-round.test.ts, a-base-that-moved.test.ts, what-a-destination-costs.test.ts and test/a-url-destination.ts; no production caller"
   },
   {
     "file": "packages/conductor/src/snapshot-state.ts",
