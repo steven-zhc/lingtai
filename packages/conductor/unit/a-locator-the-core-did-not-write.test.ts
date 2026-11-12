@@ -447,7 +447,7 @@ describe('a locator the core did not write', () => {
     expect(code).toMatch(/import \{ readWhatAFileKept \} from ["']\.\/file-port\.ts["']/)
 
     expect(code).toMatch(/const read = readWhatAFileKept\(cwd, \{ read: \(at\) => readFile\(at, ["']utf8["']\) \}\)/)
-    expect(code).toContain('fileBrief: { read },')
+    expect(code).toContain('fileBrief: { read: readPort },')
     expect(code.match(/readWhatAFileKept\(/g)).toHaveLength(1)
     expect(code.match(/readFile\(/g)).toHaveLength(1)
   })

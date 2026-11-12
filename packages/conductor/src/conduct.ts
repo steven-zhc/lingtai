@@ -4,8 +4,9 @@ import { dirname, join, resolve } from 'node:path'
 
 import {
   NO_DESIGN,
-  type Action,
   type ActionContext,
+  type ActionPort,
+  type ActionPortDeps,
   type CutAnswer,
   type DiffRead,
   type KeptAnswer,
@@ -13,14 +14,15 @@ import {
   type MergeStrategy,
   type TakeAnswer,
   type WorkDispatch,
-  actionsFromRecipe,
-  createHumanAction,
-  createMergeAction,
-  createQueueAction,
-  createWorkAction,
-  createWorktreeAction,
+  type WorkPortDeps,
+  actionPortsFromRecipe,
   dispatchRuntime,
-  fromPromiseAction,
+  keptRunPortDepsFrom,
+  makeHumanAction,
+  makeMergeAction,
+  makeQueueAction,
+  makeWorkAction,
+  makeWorktreeAction,
   runCommand,
 } from '@lingtai/actions'
 import { FAILED, markFailed } from '@lingtai/actions/spans'
@@ -1357,6 +1359,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
     let released = false
     /**
+     * Set once a landing exists: records `TicketLanded` for merged work and answers
+     * true when there was some. **`release` goes through it first** — merged work
+     * is never given back with a `TicketReleased`, whatever ended the pass (#1056).
+     */
+    let recordMergedWork: (() => Effect.Effect<boolean>) | null = null
+    /** Set when a landing exists and the store refused every try at recording it. */
+    let unrecordedLanding = false
+    /**
      * **The stream `end` resolves onto**, or null where this pass is about no item
      * (`#269`).
      *
@@ -1465,6 +1475,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * pass resolves whichever ending it actually reaches.
      */
     const release = (reason: string, cause: ReleaseCause | null = null): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        if (released) return Effect.void
+        const recording = onStream === null ? null : (recordMergedWork?.() ?? null)
+        if (recording !== null) {
+          return recording.pipe(
+            Effect.flatMap((merged) =>
+              // Merged work is never released, whatever the reason and whether or not
+              // the record landed: a landing that exists but is unrecorded stays put.
+              merged || unrecordedLanding ? Effect.void : releaseUnmerged(reason, cause),
+            ),
+          )
+        }
+        return releaseUnmerged(reason, cause)
+      })
+    const releaseUnmerged = (reason: string, cause: ReleaseCause | null): Effect.Effect<void> =>
       Effect.suspend(() => {
         if (released) return Effect.void
         /**
@@ -1766,15 +1791,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         },
       }
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
-      const openTheRunLog = async (): Promise<void> => {
-        opened = await Effect.runPromise(
-          host.runLog({ path: runLogPath(home, project, runId) }).pipe(
-            Effect.catch((err) =>
-              Effect.sync(() => {
-                log(`no run log: ${err.detail}`)
-                return NO_RUN_LOG satisfies RunLog
-              }),
-            ),
+      const openTheRunLog: Effect.Effect<void> = Effect.gen(function* () {
+        opened = yield* host.runLog({ path: runLogPath(home, project, runId) }).pipe(
+          Effect.catch((err) =>
+            Effect.sync(() => {
+              log(`no run log: ${err.detail}`)
+              return NO_RUN_LOG satisfies RunLog
+            }),
           ),
         )
         // The sentence that says which run this is, first — then what was written
@@ -1783,7 +1806,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const held = beforeTheOpen
         beforeTheOpen = []
         for (const { label, detail } of held) runLog.note(label, detail)
-      }
+      })
       /**
        * Released last, because it is registered first — the same ordering the
        * `acquireRelease` this replaces gave, and for the same reason: the fate
@@ -2459,6 +2482,61 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
       yield* Effect.addFinalizer(() => (didLand ? Effect.void : Effect.promise(publishWhatIsCommitted)))
 
+      /**
+       * **A landing that finished is recorded even when the pass was interrupted
+       * after it** (#1056). The lane makes the push and the merge uninterruptible,
+       * but the interruption then takes effect before the pass reaches its own
+       * `TicketLanded` append, and the outer finalizer would give back an item
+       * whose diff is already on the base. Runs on every exit of this scope; on a
+       * normal ending `released` is already true and it does nothing.
+       *
+       * **Registered after the publish and the run log's finalizers, so it runs
+       * before them**: the log's fate turns on `didLand`, which has to be true by
+       * then. **`release` goes through this first**, so a defect after the
+       * merge (a refused `StepEnded`) records the landing instead of returning
+       * merged work to the queue; only a landing the store refuses on every try
+       * falls through to the ordinary release.
+       */
+      const recordLanding = (): Effect.Effect<boolean> =>
+        Effect.suspend(() => {
+          const merged = mergeCommit
+          if (merged === null) return Effect.succeed(false)
+          if (released) return Effect.succeed(true)
+          return Effect.tryPromise(() =>
+            appendNow(ticketId, [
+              {
+                type: 'TicketLanded',
+                actor: 'conductor',
+                data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
+              },
+            ]),
+          ).pipe(
+            Effect.retry({ times: 2 }),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                released = true
+                didLand = true
+              }),
+            ),
+            // Recorded: the item is landed. Not recorded (the store refuses it on
+            // every try): the work is on the base all the same, so an interrupted
+            // pass does not give it back (`release`); a pass that died of the
+            // refusal itself still releases, as it always has.
+            Effect.as(true),
+            Effect.catchCause(() =>
+              Effect.sync(() => {
+                log(`could not record the landing of ${ticketId} at ${merged}`)
+                unrecordedLanding = true
+                return false
+              }),
+            ),
+          )
+        })
+      recordMergedWork = recordLanding
+      yield* Effect.addFinalizer((exit) =>
+        Exit.isFailure(exit) && onStream !== null ? Effect.asVoid(recordLanding()) : Effect.void,
+      )
+
       // ---- the ports ---------------------------------------------------------
       // Eight methods, and every one of them wraps rather than reimplements —
       // `attempt-steps.ts`'s own rule, read from this side.
@@ -2478,136 +2556,178 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * the pass stops with the item named and `end` resolves against the stream
        * it may be on.
        */
-      const take = async (queue: QueueSettings): Promise<TakeAnswer> => {
-        // **Before the answer, not after it** — the three ways this can decline
-        // set no item, and it was exactly those that would let `end` resolve onto
-        // the item the pass before had landed. It is here rather than in `claim`'s
-        // body because the action runs *before* the body: a reset written there
-        // would wipe what this had just taken (`attempt-steps.ts`).
-        took = null
-        onStream = null
-        // The four values off the action and never off `recipe` here, so that the
-        // ticket this takes is the one the reading of the recipe says it took
-        // (`queueOf`, and `defaultsAt` below where a recipe declares nothing).
-        // Discovery's own port (`#347`): the two reads a pass makes of a ticket
-        // source go through one value typed by it, not by the wider
-        // `GitHubClient` — swapping the source later is then a one-line change
-        // here rather than one at each call site.
-        const tickets: TicketSource = options.client
-        const found = await runnableNow({ client: tickets, queue, only: [options.issue] })
-        const runnable = found.runnable.find((r) => r.ref === String(options.issue))
-        if (!runnable) {
-          return {
-            passedOver: found.skipped.find((s) => s.ref === options.issue)?.reason ?? 'not runnable',
+      const take = (queue: QueueSettings): Effect.Effect<TakeAnswer> =>
+        Effect.gen(function* () {
+          // **Before the answer, not after it** — the three ways this can decline
+          // set no item, and it was exactly those that would let `end` resolve onto
+          // the item the pass before had landed. It is here rather than in `claim`'s
+          // body because the action runs *before* the body: a reset written there
+          // would wipe what this had just taken (`attempt-steps.ts`).
+          took = null
+          onStream = null
+          // The four values off the action and never off `recipe` here, so that the
+          // ticket this takes is the one the reading of the recipe says it took
+          // (`queueOf`, and `defaultsAt` below where a recipe declares nothing).
+          // Discovery's own port (`#347`): the two reads a pass makes of a ticket
+          // source go through one value typed by it, not by the wider
+          // `GitHubClient` — swapping the source later is then a one-line change
+          // here rather than one at each call site.
+          const tickets: TicketSource = options.client
+          // A read that rejects is a defect here, which the pipeline turns into
+          // `queue:`'s `failed` verdict as a rejection did.
+          const found = yield* Effect.promise(() => runnableNow({ client: tickets, queue, only: [options.issue] }))
+          const runnable = found.runnable.find((r) => r.ref === String(options.issue))
+          if (!runnable) {
+            return {
+              passedOver: found.skipped.find((s) => s.ref === options.issue)?.reason ?? 'not runnable',
+            }
           }
-        }
-        // The ticket, fetched once, before anything that reads it: the
-        // implementer's brief and the cold reviewer both want it, and a run still
-        // costs one call for it.
-        const issue = await tickets.getIssue(options.issue)
-        let claim
-        try {
-          // **A continuation reclaims the same run, never a fresh one**
-          // (#465, 0120 §6) — `continueTicket` is `claimTicket`'s
-          // sibling for the one state the latter refuses, `approved`, and
-          // `continuation` (above) is what makes this branch `null` rather
-          // than acted on wrongly when the request has gone stale.
-          claim =
-            options.continuing !== undefined && continuation !== null
-              ? await continueTicket(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
-              : // The claim carries what the task is, because it is now the
-                // only place a title enters the log at all.
-                await claimTicket(ticketId, {
-                  runId,
-                  store,
-                  ...ticketSnapshots,
-                  title: runnable.title,
-                  kind: runnable.kind,
-                  body: issue.body,
-                  children: options.client,
-                })
-        } catch (error) {
-          // The one decline that leaves a stream behind, and `end` resolves
-          // against it: the append may have committed, so the item may be held by
-          // this run and somebody has to be told about it.
-          onStream = ticketId
-          return { mayHold: { ticketId, detail: whyOf(error) } }
-        }
-        if (!claim.ok && claim.refusal.reason === 'split-done') {
-          // #604: every child the split recorded is closed, so there is nothing
-          // left to change. Closed here, with no run — `end` is what resolves
-          // the issue, as it does for `lingtai close`.
-          const done = claim.refusal
-          const closed = await closeHolding(
-            {
-              project: options.project.project!,
-              issue: options.issue,
-              by: 'conductor',
-              reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
-              state: options.project,
-              client: options.client,
-              recipe: async () => resolved,
-              ifVersion: done.version,
-            },
-            store,
-            ticketId,
+          // The ticket, fetched once, before anything that reads it: the
+          // implementer's brief and the cold reviewer both want it, and a run still
+          // costs one call for it.
+          const issue = yield* Effect.promise(() => tickets.getIssue(options.issue))
+          // **One uninterruptible region, from the claim call to the assignment of
+          // `onStream`** (#1056). The claim's append may have committed by the time
+          // the call returns, and `onStream` is the whole of *this run may hold the
+          // item* — which `release` is gated on. An interruption between the two
+          // would leave the item claimed with nothing willing to give it back.
+          // It stops short of `runnableNow` and `getIssue`, which hold nothing, and
+          // of `openTheRunLog` and `tellGitHubAbout`, which `release` reaches once
+          // `onStream` is set.
+          const region = yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              // **A continuation reclaims the same run, never a fresh one**
+              // (#465, 0120 §6) — `continueTicket` is `claimTicket`'s
+              // sibling for the one state the latter refuses, `approved`, and
+              // `continuation` (above) is what makes this branch `null` rather
+              // than acted on wrongly when the request has gone stale.
+              const attempting: Effect.Effect<
+                Awaited<ReturnType<typeof claimTicket>> | Awaited<ReturnType<typeof continueTicket>>,
+                unknown
+              > =
+                options.continuing !== undefined && continuation !== null
+                  ? Effect.tryPromise({
+                      try: () => continueTicket(ticketId, runId, { store, ...ticketSnapshots, body: issue.body }),
+                      catch: (error) => error,
+                    })
+                  : // The claim carries what the task is, because it is now the
+                    // only place a title enters the log at all.
+                    Effect.tryPromise({
+                      try: () =>
+                        claimTicket(ticketId, {
+                          runId,
+                          store,
+                          ...ticketSnapshots,
+                          title: runnable.title,
+                          kind: runnable.kind,
+                          body: issue.body,
+                          children: options.client,
+                        }),
+                      catch: (error) => error,
+                    })
+              const attempted = yield* Effect.result(attempting)
+              if (Result.isFailure(attempted)) {
+                // The one decline that leaves a stream behind, and `end` resolves
+                // against it: the append may have committed, so the item may be held by
+                // this run and somebody has to be told about it.
+                onStream = ticketId
+                return {
+                  kind: 'answer' as const,
+                  answer: { mayHold: { ticketId, detail: whyOf(attempted.failure) } } as TakeAnswer,
+                }
+              }
+              const claim = attempted.success
+              if (!claim.ok && claim.refusal.reason === 'split-done') {
+                // #604: every child the split recorded is closed, so there is nothing
+                // left to change. Closed here, with no run — `end` is what resolves
+                // the issue, as it does for `lingtai close`.
+                const done = claim.refusal
+                const closed = yield* Effect.promise(() =>
+                  closeHolding(
+                    {
+                      project: options.project.project!,
+                      issue: options.issue,
+                      by: 'conductor',
+                      reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
+                      state: options.project,
+                      client: options.client,
+                      recipe: async () => resolved,
+                      ifVersion: done.version,
+                    },
+                    store,
+                    ticketId,
+                  ),
+                )
+                if (closed.ok) {
+                  // The split's wait is over (`WaitResolved{Split}` is on the stream).
+                  // This path calls `tellGitHub` directly, so it edits here (#750).
+                  yield* Effect.promise(() =>
+                    editEndedWaits({ store, github: options.client, ticketId, ...ticketSnapshots }),
+                  )
+                  // Said before the close, not after it: the comment has no record of
+                  // its own to retry from, and a close that fails here is finished later
+                  // by reconciliation — which would close the issue without ever
+                  // having said why. A failed comment is `IssueUpdateFailed` on the log.
+                  yield* Effect.promise(() =>
+                    tellGitHub({
+                      store,
+                      github: options.client,
+                      ticketId,
+                      change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+                    }),
+                  )
+                  // The recipe's `end` may not close the issue (`end: []`, or a close
+                  // restricted to `when: landed`); a terminal event with the issue
+                  // still open would be announced and never finished.
+                  yield* Effect.promise(() =>
+                    tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } }),
+                  )
+                }
+              }
+              if (!claim.ok)
+                return { kind: 'answer' as const, answer: { notClaimed: JSON.stringify(claim.refusal) } as TakeAnswer }
+              // **Set on the line the append committed, and before anything that can
+              // fail** (`#269`). It is the whole of *this run may hold the item*, which
+              // is what `release` below is gated on — so a throw between here and the
+              // return must not be able to leave the item claimed with nothing willing
+              // to give it back.
+              onStream = ticketId
+              return { kind: 'claim' as const, claim }
+            }),
           )
-          if (closed.ok) {
-            // The split's wait is over (`WaitResolved{Split}` is on the stream).
-            // This path calls `tellGitHub` directly, so it edits here (#750).
-            await editEndedWaits({ store, github: options.client, ticketId, ...ticketSnapshots })
-            // Said before the close, not after it: the comment has no record of
-            // its own to retry from, and a close that fails here is finished later
-            // by reconciliation — which would close the issue without ever
-            // having said why. A failed comment is `IssueUpdateFailed` on the log.
-            await tellGitHub({
+          if (region.kind === 'answer') return region.answer
+          const claim = region.claim
+          log(`claimed ${ticketId} as ${runId}`)
+          // **The run's account starts here**, because until this line there is no
+          // run to account for: see `runLog`. A `passedOver` or a lost race above
+          // returns having opened nothing.
+          yield* openTheRunLog
+          took = {
+            ticketId,
+            kind: runnable.kind,
+            ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
+            // Both claims above were handed `body: issue.body`, so the event at this
+            // version holds exactly the string the prompts will paste (#927).
+            claimVersion: claim.claim.version,
+          }
+          // The issue says what the log says, from here on. Inline rather than
+          // queued (0022): a call that does not land is written down and converged
+          // later rather than retried.
+          yield* Effect.promise(() =>
+            tellGitHubAbout({
               store,
               github: options.client,
               ticketId,
-              change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-            })
-            // The recipe's `end` may not close the issue (`end: []`, or a close
-            // restricted to `when: landed`); a terminal event with the issue
-            // still open would be announced and never finished.
-            await tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } })
-          }
-        }
-        if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
-        // **Set on the line the append committed, and before anything that can
-        // fail** (`#269`). It is the whole of *this run may hold the item*, which
-        // is what `release` below is gated on — so a throw between here and the
-        // return must not be able to leave the item claimed with nothing willing
-        // to give it back.
-        onStream = ticketId
-        log(`claimed ${ticketId} as ${runId}`)
-        // **The run's account starts here**, because until this line there is no
-        // run to account for: see `runLog`. A `passedOver` or a lost race above
-        // returns having opened nothing.
-        await openTheRunLog()
-        took = {
-          ticketId,
-          kind: runnable.kind,
-          ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
-          // Both claims above were handed `body: issue.body`, so the event at this
-          // version holds exactly the string the prompts will paste (#927).
-          claimVersion: claim.claim.version,
-        }
-        // The issue says what the log says, from here on. Inline rather than
-        // queued (0022): a call that does not land is written down and converged
-        // later rather than retried.
-        await tellGitHubAbout({
-          store,
-          github: options.client,
-          ticketId,
-          ...ticketSnapshots,
-          labels: labelsFor('running'),
-          // A continuation is the same work going on: the landing, the next
-          // hold or the release edits that wait's comment with the real
-          // outcome. Editing it here would spend the one edit on *Approved*.
-          editEnded: !(options.continuing !== undefined && continuation !== null),
+              ...ticketSnapshots,
+              labels: labelsFor('running'),
+              // A continuation is the same work going on: the landing, the next
+              // hold or the release edits that wait's comment with the real
+              // outcome. Editing it here would spend the one edit on *Approved*.
+              editEnded: !(options.continuing !== undefined && continuation !== null),
+            }),
+          )
+          return { taken: { ticketId, kind: runnable.kind } }
         })
-        return { taken: { ticketId, kind: runnable.kind } }
-      }
 
       /**
        * `admit` — cut the worktree, at the base **the action names**.
@@ -2625,46 +2745,46 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * has been written yet — so it is `notCut`, which the action reports as
        * 0057's class rather than as a refusal buying a round to fix a repository.
        */
-      const cut = async (spec: { readonly base: string; readonly submodules: boolean }): Promise<CutAnswer> => {
-        /**
-         * The cold reviewer's own settings, with no hook in them. `wiring`'s
-         * settings and `wiring.env` are one thing and the `agent` gate had only
-         * the first, so the hook refused the reviewer's opening prompt and every
-         * review returned that refusal instead of findings.
-         *
-         * Through the port and not `writeUnhookedSettings` itself: it writes a
-         * file under `~/.lingtai`, and a conductor that wrote it here would put a
-         * disk under every test of a decision that reaches `review` (0060 §1,
-         * `AgentHostPort.unhookedSettings`).
-         *
-         * **Here, and not above the pass, because above the pass is before the
-         * claim.** It used to be `….pipe(Effect.orDie)` in this file's own scope,
-         * which is two faults in one line. A file under `~/.lingtai/runs/<runId>/`
-         * was written for every candidate the `claim` step then passed over or
-         * lost the race for, one per pass and never removed (`runLog`). And a
-         * write that failed — ENOSPC, `~/.lingtai` not writable after a
-         * permissions change — became a **defect**, which the handler at the
-         * bottom of `runOnce` answers with `release(…)`: `releaseTicket`
-         * appends whoever holds it (`claim.ts`), so a failure here appended
-         * `TicketReleased` to another conductor's live item and wrote
-         * `lingtai:queued` over its `lingtai:working` while its agent was still
-         * working. The `claim` branch guards declines the pass reports; a defect
-         * raised before the `claim` step reaches the handler with `released`
-         * still false.
-         *
-         * So it is asked for at the step that gets this pass's disk ready, on an
-         * item this run holds, and **before** the worktree: a failure is `notCut`
-         * with nothing cut, which is true, and the item is then blocked or
-         * released by the ending like any other machine fact.
-         */
-        const settings = await Effect.runPromise(Effect.result(host.unhookedSettings({ runId, label: 'review', home })))
-        if (Result.isFailure(settings)) {
-          return { notCut: `the cold reviewer had no settings: ${settings.failure.detail}` }
-        }
-        reviewSettingsPath = settings.success
+      const cut = (spec: { readonly base: string; readonly submodules: boolean }): Effect.Effect<CutAnswer> =>
+        Effect.gen(function* () {
+          /**
+           * The cold reviewer's own settings, with no hook in them. `wiring`'s
+           * settings and `wiring.env` are one thing and the `agent` gate had only
+           * the first, so the hook refused the reviewer's opening prompt and every
+           * review returned that refusal instead of findings.
+           *
+           * Through the port and not `writeUnhookedSettings` itself: it writes a
+           * file under `~/.lingtai`, and a conductor that wrote it here would put a
+           * disk under every test of a decision that reaches `review` (0060 §1,
+           * `AgentHostPort.unhookedSettings`).
+           *
+           * **Here, and not above the pass, because above the pass is before the
+           * claim.** It used to be `….pipe(Effect.orDie)` in this file's own scope,
+           * which is two faults in one line. A file under `~/.lingtai/runs/<runId>/`
+           * was written for every candidate the `claim` step then passed over or
+           * lost the race for, one per pass and never removed (`runLog`). And a
+           * write that failed — ENOSPC, `~/.lingtai` not writable after a
+           * permissions change — became a **defect**, which the handler at the
+           * bottom of `runOnce` answers with `release(…)`: `releaseTicket`
+           * appends whoever holds it (`claim.ts`), so a failure here appended
+           * `TicketReleased` to another conductor's live item and wrote
+           * `lingtai:queued` over its `lingtai:working` while its agent was still
+           * working. The `claim` branch guards declines the pass reports; a defect
+           * raised before the `claim` step reaches the handler with `released`
+           * still false.
+           *
+           * So it is asked for at the step that gets this pass's disk ready, on an
+           * item this run holds, and **before** the worktree: a failure is `notCut`
+           * with nothing cut, which is true, and the item is then blocked or
+           * released by the ending like any other machine fact.
+           */
+          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: 'review', home }))
+          if (Result.isFailure(settings)) {
+            return { notCut: `the cold reviewer had no settings: ${settings.failure.detail}` }
+          }
+          reviewSettingsPath = settings.success
 
-        const provisioned = await Effect.runPromise(
-          Effect.result(
+          const provisioned = yield* Effect.result(
             repo.provision({
               project,
               // '' when there is no owner: `remote` is always set then —
@@ -2694,17 +2814,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
                 : {}),
             }),
-          ),
-        )
-        if (Result.isFailure(provisioned)) return { notCut: provisioned.failure.detail }
-        worktree = provisioned.success
-        lease = provisioned.success.remoteHead
-        log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
-        // `head` is the whole of what moves `onSha`, and the action puts it on
-        // its result for the pass to read (`ActionResult.head`). The `Worktree`
-        // itself stays here, where the finalizer that removes it already is.
-        return { head: provisioned.success.baseSha, where: provisioned.success.path }
-      }
+          )
+          if (Result.isFailure(provisioned)) return { notCut: provisioned.failure.detail }
+          worktree = provisioned.success
+          lease = provisioned.success.remoteHead
+          log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
+          // `head` is the whole of what moves `onSha`, and the action puts it on
+          // its result for the pass to read (`ActionResult.head`). The `Worktree`
+          // itself stays here, where the finalizer that removes it already is.
+          return { head: provisioned.success.baseSha, where: provisioned.success.path }
+        })
 
       /**
        * **One `RunSpent` per paid call that returned a `RunOutcome`** (`#493`,
@@ -3052,44 +3171,44 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * reached only where every step before it passed, so a lane told otherwise
        * would be a lane told something the pass cannot be in a position to say.
        */
-      const landNow = async (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> => {
-        // Retried while origin cannot be reached (#1029). The waits run in this call and an
-        // interrupt does not reach them (`gitAsked` starts its own fiber), so a drain waits at
-        // most the tries' own bound: about 3 × git's timeout plus the waits.
-        // A lease that no longer matches may mean a push whose reply was lost landed after all:
-        // if origin already holds the sha being landed, the push is done. The check is part of
-        // each try, so a failed read is another try rather than an early exit.
-        const pushed = await gitAsked(
-          ['push', `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`, 'origin', `HEAD:refs/heads/${branch}`],
-          options.unreachableWaits ?? UNREACHABLE_WAITS,
-          (err) =>
-            /stale info/i.test(err.stderr ?? err.detail)
-              ? Effect.gen(function* () {
-                  const listed = yield* Effect.result(gitHere(['ls-remote', 'origin', `refs/heads/${branch}`]))
-                  if (Result.isFailure(listed))
-                    return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
-                  return listed.success.split(/\s/)[0] === on.onSha ? '' : yield* Effect.fail(err)
-                })
-              : Effect.fail(err),
-        )
-        if (Result.isFailure(pushed)) {
-          return {
-            notMerged: {
-              reason: isUnreachableFailure(pushed.failure) ? 'unreachable' : 'push-rejected',
-              detail: pushed.failure.detail,
-            },
+      const landNow = (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Effect.Effect<LandAnswer> =>
+        Effect.gen(function* () {
+          // Retried while origin cannot be reached (#1029), inside the lane's uninterruptible
+          // region: a drain waits at most the tries' own bound, about 3 × git's timeout plus the
+          // waits, and a landing that started is never cut in half.
+          // A lease that no longer matches may mean a push whose reply was lost landed after all:
+          // if origin already holds the sha being landed, the push is done. The check is part of
+          // each try, so a failed read is another try rather than an early exit.
+          const pushed = yield* gitAskedEffect(
+            ['push', `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`, 'origin', `HEAD:refs/heads/${branch}`],
+            options.unreachableWaits ?? UNREACHABLE_WAITS,
+            (err) =>
+              /stale info/i.test(err.stderr ?? err.detail)
+                ? Effect.gen(function* () {
+                    const listed = yield* Effect.result(gitHere(['ls-remote', 'origin', `refs/heads/${branch}`]))
+                    if (Result.isFailure(listed))
+                      return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
+                    return listed.success.split(/\s/)[0] === on.onSha ? '' : yield* Effect.fail(err)
+                  })
+                : Effect.fail(err),
+          )
+          if (Result.isFailure(pushed)) {
+            return {
+              notMerged: {
+                reason: isUnreachableFailure(pushed.failure) ? 'unreachable' : 'push-rejected',
+                detail: pushed.failure.detail,
+              },
+            }
           }
-        }
-        lease = on.onSha
-        // The branch and not the arm: the lane is about to merge this ref, and
-        // an arm written for a landing is one 0062 §4's sweep takes back off.
-        // A lane that refuses leaves the arm to the end-of-pass publish, which
-        // asks about `armPublished` and not only about this
-        // (`publishWhatIsCommitted`).
-        published = on.onSha
+          lease = on.onSha
+          // The branch and not the arm: the lane is about to merge this ref, and
+          // an arm written for a landing is one 0062 §4's sweep takes back off.
+          // A lane that refuses leaves the arm to the end-of-pass publish, which
+          // asks about `armPublished` and not only about this
+          // (`publishWhatIsCommitted`).
+          published = on.onSha
 
-        const result = await Effect.runPromise(
-          repo.integrate({
+          const result = yield* repo.integrate({
             project,
             // '' when there is no owner, for `provision`'s own reason above.
             owner: options.client.owner ?? '',
@@ -3106,39 +3225,45 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             gitEnv: options.gitEnv,
             store,
             unreachableWaits: options.unreachableWaits,
-          }),
-        )
-        if (result.ok) {
-          mergeCommit = result.mergeCommit
-          return { merged: result.mergeCommit }
-        }
-        return {
-          notMerged: {
-            reason: result.reason,
-            detail: result.detail,
-            ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
-            ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
-          },
-        }
-      }
+          })
+          if (result.ok) {
+            mergeCommit = result.mergeCommit
+            return { merged: result.mergeCommit } as LandAnswer
+          }
+          return {
+            notMerged: {
+              reason: result.reason,
+              detail: result.detail,
+              ...(result.conflict === undefined ? {} : { conflict: result.conflict }),
+              ...(result.baseMoved === undefined ? {} : { baseMoved: result.baseMoved }),
+            },
+          } as LandAnswer
+        })
 
-      const land = (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> =>
+      /**
+       * The lane is what makes `landNow` uninterruptible (`landing-lane.ts`), so
+       * this adds no `uninterruptible` of its own: once granted, the push and the
+       * merge run to their end and the answer is what the pass records.
+       */
+      const land = (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Effect.Effect<LandAnswer> =>
         (options.lane ?? landingLane).through(
           integrationStream(project, base),
           { runId, issue: options.issue },
           {
             onWait: (behind) =>
-              appendNow(runId, [
-                {
-                  type: 'MergeLaneWaited',
-                  actor: 'conductor',
-                  data: parsePayload('MergeLaneWaited', {
-                    behind: { runId: behind.runId, issue: String(behind.issue) },
-                  }),
-                },
-              ]).then(() => undefined),
+              Effect.promise(() =>
+                appendNow(runId, [
+                  {
+                    type: 'MergeLaneWaited',
+                    actor: 'conductor',
+                    data: parsePayload('MergeLaneWaited', {
+                      behind: { runId: behind.runId, issue: String(behind.issue) },
+                    }),
+                  },
+                ]),
+              ).pipe(Effect.asVoid),
           },
-          () => landNow(on),
+          landNow(on),
         )
 
       /**
@@ -3298,46 +3423,51 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * that then failed is `notKept`, because the evidence says *committed to the
        * branch* and that has to be true where it says it.
        */
-      const keep = async (spec: { readonly path: string; readonly document: string }): Promise<KeptAnswer> => {
-        const at = join(cwd, spec.path)
-        try {
-          await mkdir(dirname(at), { recursive: true })
-          await writeFile(at, spec.document.endsWith('\n') ? spec.document : `${spec.document}\n`, 'utf8')
-        } catch (error) {
-          return { notKept: (error as Error).message }
-        }
+      const keep = (spec: { readonly path: string; readonly document: string }): Effect.Effect<KeptAnswer> =>
+        Effect.gen(function* () {
+          const at = join(cwd, spec.path)
+          const written = yield* Effect.result(
+            Effect.tryPromise({
+              try: () =>
+                mkdir(dirname(at), { recursive: true }).then(() =>
+                  writeFile(at, spec.document.endsWith('\n') ? spec.document : `${spec.document}\n`, 'utf8'),
+                ),
+              catch: (error) => error as Error,
+            }),
+          )
+          if (Result.isFailure(written)) return { notKept: written.failure.message }
 
-        // `-f`, so a project whose own `.gitignore` covers the path it asked for
-        // is told by `git add` rather than by a note that silently never landed:
-        // a plain `git add --` answers *the following paths are ignored* and
-        // exits 0, and this keep would then report a commit it did not make.
-        // Narrow by construction — the argument is the one path just written,
-        // and `--only` below keeps the commit to it too.
-        const added = await gitAsked(['add', '-f', '--', spec.path])
-        if (Result.isFailure(added)) return { notKept: `git add refused it: ${added.failure.detail}` }
-        // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
-        // and a left is a difference to commit — the one place in this file where
-        // the failing branch is the ordinary one.
-        const staged = await gitAsked(['diff', '--cached', '--quiet', '--', spec.path])
-        if (Result.isFailure(staged)) {
-          // `--only`, so a commit at `design` cannot pick up anything else the
-          // worktree happens to be holding: what this action is answering for is
-          // the one path it wrote.
-          const committed = await gitAsked([
-            'commit',
-            '-m',
-            `docs(design): the shape for #${options.issue}`,
-            '--only',
-            '--',
-            spec.path,
-          ])
-          if (Result.isFailure(committed)) {
-            return { notKept: `git commit refused it: ${committed.failure.detail}` }
+          // `-f`, so a project whose own `.gitignore` covers the path it asked for
+          // is told by `git add` rather than by a note that silently never landed:
+          // a plain `git add --` answers *the following paths are ignored* and
+          // exits 0, and this keep would then report a commit it did not make.
+          // Narrow by construction — the argument is the one path just written,
+          // and `--only` below keeps the commit to it too.
+          const added = yield* gitAskedEffect(['add', '-f', '--', spec.path])
+          if (Result.isFailure(added)) return { notKept: `git add refused it: ${added.failure.detail}` }
+          // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
+          // and a left is a difference to commit — the one place in this file where
+          // the failing branch is the ordinary one.
+          const staged = yield* gitAskedEffect(['diff', '--cached', '--quiet', '--', spec.path])
+          if (Result.isFailure(staged)) {
+            // `--only`, so a commit at `design` cannot pick up anything else the
+            // worktree happens to be holding: what this action is answering for is
+            // the one path it wrote.
+            const committed = yield* gitAskedEffect([
+              'commit',
+              '-m',
+              `docs(design): the shape for #${options.issue}`,
+              '--only',
+              '--',
+              spec.path,
+            ])
+            if (Result.isFailure(committed)) {
+              return { notKept: `git commit refused it: ${committed.failure.detail}` }
+            }
           }
-        }
-        const head = await gitAsked(['rev-parse', 'HEAD'])
-        return Result.isFailure(head) ? { at: spec.path } : { at: spec.path, head: head.success }
-      }
+          const head = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+          return Result.isFailure(head) ? { at: spec.path } : { at: spec.path, head: head.success }
+        })
 
       /**
        * `keptRun` — the git a `run:` at `implement` needs, in its own module so
@@ -3346,6 +3476,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `task_view.head_sha` names this commit, and `RunProposedCompletion` so a
        * later attempt's `headOf` reads the same head.
        */
+      const restoreReview = restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt })
       const { clean, keep: keepRun } = keptRunPort({
         git: gitAsked,
         plantAt: recipe.env.plantAt,
@@ -3377,6 +3508,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * still `readFile` and nothing else.
        */
       const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, 'utf8') })
+      /** …as the Effect the action holds; `readWhatAFileKept` is still a promise (row 8). */
+      const readPort = (spec: Parameters<typeof read>[0]) => Effect.promise(() => read(spec))
+
+      /** `implement`'s dispatch, lifted until `work` is an Effect (CONDUCT-3). */
+      const workPort: WorkPortDeps = {
+        work: (spec: WorkDispatch, context: ActionContext) => Effect.promise(() => dispatch(spec, context)),
+      }
 
       /**
        * **The ticket, for every plugin that writes part of it down** — the one
@@ -3392,15 +3530,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * Read when the action runs and not here, so `took` is the claim this pass
        * made rather than whatever it was before `claim`.
        */
-      const issue = async () =>
-        took === null
-          ? { ref: String(options.issue), title: '', body: '' }
-          : {
-              ...took.ticket,
-              ...(took.claimVersion === undefined
-                ? {}
-                : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
-            }
+      const issue = () =>
+        Effect.sync(() =>
+          took === null
+            ? { ref: String(options.issue), title: '', body: '' }
+            : {
+                ...took.ticket,
+                ...(took.claimVersion === undefined
+                  ? {}
+                  : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+              },
+        )
 
       /**
        * What a declared plugin needs in order to run — the things only a caller
@@ -3411,27 +3551,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * runnable action is neither the sequence nor the outcome rules, so by 0058
        * §2b it is the caller's and not the pass's.
        */
-      const stepDeps = {
+      const stepDeps: ActionPortDeps = {
         env: envForExtension,
         agent: {
           runtime: options.runtime,
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksFromState(reduced),
-          diff: async (from?: string) => diffBetween(from ?? (await changeStart())),
+          // `diffBetween` and `changeStart` are still promises (CONDUCT-4), so lifted.
+          diff: (from?: string) =>
+            (from === undefined ? Effect.promise(() => changeStart()) : Effect.succeed(from)).pipe(
+              Effect.flatMap((start) => Effect.promise(() => diffBetween(start))),
+            ),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
           landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
-            Promise.all(
-              paths.map(async (path) => {
-                const got = await gitAsked(['diff', fromSha, toSha, '--', path])
-                return {
-                  path,
-                  diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success,
-                }
-              }),
+            Effect.forEach(
+              paths,
+              (path) =>
+                Effect.gen(function* () {
+                  const got = yield* gitAskedEffect(['diff', fromSha, toSha, '--', path])
+                  return {
+                    path,
+                    diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success,
+                  }
+                }),
+              { concurrency: 'unbounded' },
             ),
-          restore: restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt }),
+          restore: (onSha: string) => Effect.promise(() => restoreReview(onSha)),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always
@@ -3459,10 +3606,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `agent:` entry's own name.
         runtimeFor: runtimeNamed,
         watch: {
-          changedFiles: async () => {
-            const names = await gitOrDie(changedFilesArgs(await changeStart()))
-            return names.split('\n').filter(Boolean)
-          },
+          changedFiles: () =>
+            Effect.gen(function* () {
+              const start = yield* Effect.promise(() => changeStart())
+              const names = yield* gitOrDieEffect(changedFilesArgs(start))
+              return names.split('\n').filter(Boolean)
+            }),
         },
         // The fourth, and the one that makes rather than judges: `admit`'s
         // `worktree:` action cuts through this (0065 §2, `#268`).
@@ -3481,12 +3630,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         //
         // An arrow rather than `{ work: dispatch }`: `dispatch` is declared six
         // hundred lines down, and this object literal is evaluated here.
-        work: {
-          // `WorkDispatch` and not a written-out pair since `#314`: the spec
-          // carries `agent:` and `limits:` too, and a written-out type here would
-          // be the second place that decides what a dispatch is.
-          work: (spec: WorkDispatch, context: ActionContext) => dispatch(spec, context),
-        },
+        work: workPort,
         // The eighth, and the one that neither makes nor judges: `design`'s
         // `file:` action keeps the document through this (0066 §5, `#300`). It has
         // no `defaultsAt` row, because `design`'s default is nothing — so nothing
@@ -3503,14 +3647,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // back — and it has no `defaultsAt` row either: an unconfigured
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
-        fileBrief: { read },
+        fileBrief: { read: readPort },
         // The eleventh, and `implement`'s own rather than a field on `file` above:
         // a `run:` written after the agent there commits what it changed
         // through this (`#390`), using the same two git calls regardless of
         // what failed or passed — see `clean` and `keepRun` above for why
         // neither reads the tree before acting on it. No `defaultsAt` row,
         // because an unconfigured `implement` runs no command at all.
-        keptRun: { clean, keep: keepRun },
+        keptRun: keptRunPortDepsFrom({ clean, keep: keepRun }),
       }
 
       /**
@@ -3528,15 +3672,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * the old loop asked: the recipe's own actions run first and the flag holds
        * what they let past. `heldBeforeTheLane` is that placement.
        */
-      const alsoHeldAtMerge = (): Action[] => {
-        const held: Action[] = []
+      const alsoHeldAtMerge = (): ActionPort[] => {
+        const held: ActionPort[] = []
         // **Never re-asked on a continuation** (#465, 0120 §6's *Watch out*)
         // — `options.merge` belonged to the call that was asked, and the
         // approval this run is continuing from already answered the one
         // question `--no-merge` exists to hold.
         if (continuation === null && options.merge === false) {
           held.push(
-            createHumanAction({
+            makeHumanAction({
               name: 'no-merge',
               question: `Merge ${branch} into ${base}? Every step passed, and this run was asked not to merge.`,
             }),
@@ -3635,12 +3779,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * make. A recipe that wants checks *and* the merge declares both, which is
        * what the printed block is for.
        */
-      const defaultsAt = (step: Step): readonly Action[] => {
+      const defaultsAt = (step: Step): readonly ActionPort[] => {
         if (step === 'claim') {
-          return [createQueueAction({ name: DEFAULT_ACTION.claim, ...queueOf(recipe) }, { take })]
+          return [makeQueueAction({ name: DEFAULT_ACTION.claim, ...queueOf(recipe) }, { take })]
         }
         if (step === 'admit') {
-          return [createWorktreeAction({ name: DEFAULT_ACTION.admit, base, submodules: submodulesOf(recipe) }, { cut })]
+          return [makeWorktreeAction({ name: DEFAULT_ACTION.admit, base, submodules: submodulesOf(recipe) }, { cut })]
         }
         if (step === 'implement') {
           /**
@@ -3659,7 +3803,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * reviewer follows — so the default adding nothing is the default
            * changing nothing.
            */
-          return [createWorkAction({ name: DEFAULT_ACTION.implement, prompt: '' }, { work: dispatch })]
+          return [makeWorkAction({ name: DEFAULT_ACTION.implement, prompt: '' }, workPort)]
         }
         if (step === 'merge') {
           // The strategy `mergePlugin`'s schema defaults to, because `integrate`
@@ -3667,13 +3811,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // the base is one value that flows, and `land` above already has it, so
           // *the default merge* and *a pasted block that says what the default
           // did* cannot land onto different branches (0061 §4).
-          return [createMergeAction({ name: DEFAULT_ACTION.merge, strategy: 'merge-commit' }, { land })]
+          return [makeMergeAction({ name: DEFAULT_ACTION.merge, strategy: 'merge-commit' }, { land })]
         }
         return []
       }
 
-      const actionsAt = (step: Step, actions: readonly StepAction[]): readonly Action[] => {
-        const declared = actionsFromRecipe(step, actions, stepDeps)
+      const actionsAt = (step: Step, actions: readonly StepAction[]): readonly ActionPort[] => {
+        const declared = actionPortsFromRecipe(step, actions, stepDeps)
         // **A default replaces what would have run; a hold composes with it**
         // (0065 §3). That is why `alsoHeldAtMerge` stays outside the substitution
         // and composes either way: `--no-merge` holds a recipe that declares
@@ -3704,7 +3848,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * written after the lane (0065 §8), so the list this searches is checks and
        * then the lane, and the index it finds is the last entry or nothing.
        */
-      const heldBeforeTheLane = (running: readonly Action[]): readonly Action[] => {
+      const heldBeforeTheLane = (running: readonly ActionPort[]): readonly ActionPort[] => {
         const held = alsoHeldAtMerge()
         if (held.length === 0) return running
         const lands = running.findIndex((action) => action.kind === 'merge')
@@ -4389,7 +4533,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         recipe,
         context: passContext,
         emit,
-        actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
+        actionsAt,
         bodies: passBodies,
         ceilings,
         judge,
@@ -4458,7 +4602,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         context: passContext,
         emit,
         recordPrompt: (call) => recordPrompt(store, runId, call, log),
-        actionsAt: (s, a) => actionsAt(s, a).map(fromPromiseAction),
+        actionsAt,
         bodies: passBodies,
         ceilings,
         judge,

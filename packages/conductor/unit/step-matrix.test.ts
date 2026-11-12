@@ -1211,7 +1211,7 @@ describe('every step × kind cell runs or refuses', () => {
    * `actionsFromRecipe("end", …)` to say the `end` step is not one, and a count
    * that read comments would read that sentence as a second call site.
    */
-  it("builds every step's list through one `actionsFromRecipe` call, and it takes the step as a variable", async () => {
+  it("builds every step's list through one `actionPortsFromRecipe` call, and it takes the step as a variable", async () => {
     const src = new URL('../src/', import.meta.url)
     const files = (await readdir(src, { recursive: true })).filter((f) => f.endsWith('.ts'))
     let calls = 0
@@ -1223,15 +1223,15 @@ describe('every step × kind cell runs or refuses', () => {
 
     for (const file of files) {
       const text = code(await readFile(new URL(file, src), 'utf8'))
-      calls += text.match(/actionsFromRecipe\(/g)?.length ?? 0
-      literals += [...text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)].length
+      calls += text.match(/actionPortsFromRecipe\(/g)?.length ?? 0
+      literals += [...text.matchAll(/actionPortsFromRecipe\(\s*"([a-z]+)"/g)].length
       if (/export function resolveEndActions\b/.test(text)) end = true
     }
 
-    expect(calls, 'the conductor has more than one `actionsFromRecipe` call site').toBe(1)
+    expect(calls, 'the conductor has more than one `actionPortsFromRecipe` call site').toBe(1)
     // Zero literals is the seam: a call site that named a step would be a step
     // built differently from the other nine.
-    expect(literals, 'an `actionsFromRecipe` call site names its step literally').toBe(0)
+    expect(literals, 'an `actionPortsFromRecipe` call site names its step literally').toBe(0)
     // And `end`'s consumer, which is its resolver and never a pipeline.
     expect(end, '`end` has no `resolveEndActions` to carry its effects out').toBe(true)
   })
@@ -1240,7 +1240,7 @@ describe('every step × kind cell runs or refuses', () => {
   it('hands that call to the pass as `actionsAt`', async () => {
     const wiring = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
     expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/)
-    expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/)
+    expect(wiring).toMatch(/actionPortsFromRecipe\(step, actions, stepDeps\)/)
     expect(wiring).toMatch(/runAttemptEffect\(\{[\s\S]*actionsAt/)
   })
 })

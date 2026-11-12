@@ -9,9 +9,19 @@
  *
  * In process, because a conductor is one process holding the lock (0102): a
  * crash takes the lane with it and there is nothing to clean up. The hold is
- * one `land` call, released on every outcome — a rejection included — and the
+ * one `land` call, released on every outcome — a failure included — and the
  * key leaves the map when its chain drains.
+ *
+ * **An Effect, with the wait uninterruptible and the landing too.** The wait
+ * behind the tail is the acquire of `Effect.acquireUseRelease`, which is
+ * uninterruptible for `mirrorWrite`'s reason: an abandoned queued grant is never
+ * released and would wedge the lane. An interruption therefore takes effect at
+ * the waiter's grant, its `land` does not run, and the lane passes on at once.
+ * `land` is made uninterruptible here, by the lane, so that a push and its
+ * merge are never cut in half whoever calls.
  */
+import { Deferred, Effect } from 'effect'
+
 export interface LaneHolder {
   readonly runId: string
   readonly issue: number | string
@@ -26,39 +36,64 @@ export interface LandingLane {
   through<T>(
     key: string,
     holder: LaneHolder,
-    hooks: { onWait: (behind: LaneHolder) => Promise<void> },
-    land: () => Promise<T>,
-  ): Promise<T>
+    hooks: { onWait: (behind: LaneHolder) => Effect.Effect<void> },
+    land: Effect.Effect<T>,
+  ): Effect.Effect<T>
+}
+
+interface Tail {
+  readonly done: Deferred.Deferred<void>
+  readonly holder: LaneHolder
 }
 
 export function createLandingLane(): LandingLane {
-  const tails = new Map<string, { done: Promise<void>; holder: LaneHolder }>()
+  const tails = new Map<string, Tail>()
   /** Who is inside `land` now, which is not the tail of the queue once two wait. */
   const holding = new Map<string, LaneHolder>()
   return {
-    async through(key, holder, hooks, land) {
-      const before = tails.get(key)
-      let release!: () => void
-      const done = new Promise<void>((resolve) => (release = resolve))
-      const mine = { done, holder }
-      tails.set(key, mine)
-      try {
+    through(key, holder, hooks, land) {
+      const acquire = Effect.gen(function* () {
+        // Read and written in one synchronous step: a yield between `get` and
+        // `set` lets a second caller capture the same predecessor.
+        const { before, mine, done } = yield* Effect.sync(() => {
+          const before = tails.get(key)
+          const done = Deferred.makeUnsafe<void>()
+          const mine: Tail = { done, holder }
+          tails.set(key, mine)
+          return { before, mine, done }
+        })
         if (before !== undefined) {
-          try {
-            await hooks.onWait(holding.get(key) ?? before.holder)
-          } finally {
-            // A refused append must not strand the callers queued behind us,
-            // and must not let us land beside the holder either.
-            await before.done
-          }
+          // A refused append must not strand the callers queued behind us, and
+          // must not let us land beside the holder either: the predecessor is
+          // awaited whether or not `onWait` answered, and a failure settles
+          // our own tail before it propagates (`release` does not run when the
+          // acquire fails).
+          yield* hooks.onWait(holding.get(key) ?? before.holder).pipe(
+            Effect.ensuring(Deferred.await(before.done)),
+            Effect.onError(() =>
+              Deferred.succeed(done, undefined).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    if (tails.get(key) === mine) tails.delete(key)
+                  }),
+                ),
+              ),
+            ),
+          )
         }
         holding.set(key, holder)
-        return await land()
-      } finally {
-        if (holding.get(key) === holder) holding.delete(key)
-        release()
-        if (tails.get(key) === mine) tails.delete(key)
-      }
+        return mine
+      })
+      return Effect.acquireUseRelease(
+        acquire,
+        () => Effect.uninterruptible(land),
+        (mine) =>
+          Effect.suspend(() => {
+            if (holding.get(key) === holder) holding.delete(key)
+            if (tails.get(key) === mine) tails.delete(key)
+            return Deferred.succeed(mine.done, undefined)
+          }),
+      )
     },
   }
 }
