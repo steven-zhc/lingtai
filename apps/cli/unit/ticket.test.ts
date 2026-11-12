@@ -786,6 +786,35 @@ describe('lingtai ticket new --title (#1060)', () => {
     expect(state.creates).toBe(0)
   })
 
+  it('prints why createIssue failed, not a wrapper message', async () => {
+    const tickets = {
+      ...dbTickets(freshSql(), 'p'),
+      createIssue: async () => {
+        throw new Error('SQLITE_READONLY')
+      },
+    } as unknown as ReturnType<typeof dbTickets>
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p', title: 'x' }, log, noEditor(tickets))).toBe(1)
+    expect(lines.join('\n')).toContain('SQLITE_READONLY')
+  })
+
+  it('names the cause when the stdin read fails', async () => {
+    const { wrapped, state } = countingTickets()
+    const { log, lines } = sink()
+    const stdin = Object.assign(
+      new Readable({
+        read() {
+          this.destroy(new Error('EIO'))
+        },
+      }),
+      { isTTY: false },
+    )
+    expect(await ticketNew({ project: 'p', title: 'x', body: '-' }, log, noEditor(wrapped, { stdin }))).toBe(1)
+    expect(lines.join('\n')).toContain('--body -')
+    expect(lines.join('\n')).toContain('EIO')
+    expect(state.creates).toBe(0)
+  })
+
   it.each([
     ['--label without --title', { label: 'bug' }, '--label needs --title'],
     ['--body without --title', { body: 'x' }, '--body needs --title'],

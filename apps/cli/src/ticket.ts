@@ -566,7 +566,7 @@ const newFromFlags = (
         log('--body - reads stdin — pipe the body in')
         return 1
       }
-      const read = yield* Effect.tryPromise(() => readAll(stdin)).pipe(
+      const read = yield* Effect.tryPromise({ try: () => readAll(stdin), catch: (err) => err }).pipe(
         Effect.map((t) => ({ ok: true as const, t })),
         Effect.catch((err) => Effect.succeed({ ok: false as const, why: (err as Error).message })),
       )
@@ -577,9 +577,10 @@ const newFromFlags = (
       body = read.t
     }
 
-    const made = yield* Effect.tryPromise(() =>
-      ticketsFor(name).then((tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
-    ).pipe(
+    const made = yield* Effect.tryPromise({
+      try: () => ticketsFor(name).then((tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
+      catch: (err) => err,
+    }).pipe(
       Effect.map((created) => ({ ok: true as const, created })),
       Effect.catch((err) => Effect.succeed({ ok: false as const, why: (err as Error).message })),
     )
