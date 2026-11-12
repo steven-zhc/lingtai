@@ -563,7 +563,9 @@ export async function continueToday(input: { toUsd: number }): Promise<ActionRes
     const result = await Effect.runPromise(
       continueTodayWith({ store: eventStore, toUsd: input.toUsd, by: actor(), readSpend: () => readDayReading() }),
     )
-    revalidatePath('/', 'layout')
+    // Only a raise changes what the banner shows. A refusal leaves the row
+    // standing so the sentence beside its button is not unmounted with it.
+    if (result.ok) revalidatePath('/', 'layout')
     return result
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
