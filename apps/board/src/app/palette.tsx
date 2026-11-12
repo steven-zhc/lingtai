@@ -66,7 +66,7 @@ export function PaletteView({
           ))}
         </ul>
       ) : null}
-      {index === 'pending' ? <Skeleton shape="lines" count={3} label="reading the log…" /> : null}
+      {index === 'pending' ? <Skeleton shape="lines" count={3} /> : null}
       {index !== null && index !== 'pending' && results.length === 0 && query.trim() !== '' ? (
         <p className="empty">nothing matches “{query.trim()}”</p>
       ) : null}

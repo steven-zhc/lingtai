@@ -2107,7 +2107,7 @@ export async function loadAttemptTab(taskId: string, n: number): Promise<Attempt
  *
  * The layout starts it beside `loadTask`, in a `measure` of its own, and does
  * not await it: the page is sent when the log and the database have answered,
- * and each place that reads this draws *asking GitHub…* until it arrives.
+ * and each place that reads this draws its shape until it arrives (0111 §15).
  *
  * Asked only where it says anything, as it always was: `outgoing` where a next
  * attempt is possible (a run in flight has been handed its prompt already and a

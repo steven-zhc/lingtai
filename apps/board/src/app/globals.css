@@ -3224,7 +3224,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
    answer will go. The card outline matches `.card`'s box so that nothing
    moves when the real card replaces it. */
 .skeleton { display: grid; gap: 8px; }
-.skeleton .asking { font-size: 11px; margin: 0; }
 .sk-card {
   background: var(--surface);
   border: 1px solid var(--rule);

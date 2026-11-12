@@ -61,7 +61,7 @@ export function Ticket({ ticket, pending = false }: { ticket: TicketView; pendin
           GitHub was actually asked — `askedGitHub` — because a project whose
           tickets live in the database was never going to be (#384). */}
         {pending ? (
-          <Skeleton shape="lines" count={3} label="asking GitHub…" />
+          <Skeleton shape="lines" count={3} />
         ) : ticket.problem ? (
           <p className={ticket.askedGitHub ? 'refusal' : 'note'}>
             {ticket.askedGitHub ? `The issue could not be read from GitHub: ${ticket.problem}` : ticket.problem}

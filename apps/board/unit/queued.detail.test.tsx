@@ -537,7 +537,7 @@ describe('the queued panel', () => {
     expect(html).toContain('In line')
     // Four in the panel itself (the chip, the sentence, behind it, the plan list); other parts of the page wait for GitHub on their own.
     const band = html.slice(html.indexOf('triage-band'), html.indexOf('</section>', html.indexOf('triage-band')))
-    expect(band.match(/asking GitHub…/g)).toHaveLength(4)
+    expect(band.match(/class="skeleton"/g)).toHaveLength(4)
     expect(html).toContain('running now')
     expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
     expect(html).not.toContain('Nothing is needed from you')
@@ -551,7 +551,7 @@ describe('the queued panel', () => {
 
     const failed = panel({ ...QUEUED, position: null, problem: 'secondary rate limit' })
     expect(failed).toContain('Its place in the queue could not be read: secondary rate limit')
-    expect(failed).not.toContain('asking GitHub…')
+    expect(failed).not.toContain('class="skeleton"')
     expect(failed).not.toContain('Nothing is needed from you')
   })
 

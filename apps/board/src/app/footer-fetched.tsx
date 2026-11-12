@@ -38,11 +38,7 @@ export function FooterFetched() {
     return <Footer day={state.reading.day} lags={state.reading.lags} home={state.reading.home} />
   return (
     <footer className="footer">
-      {state.kind === 'asking' ? (
-        <Skeleton shape="lines" count={1} label="reading today's spend…" />
-      ) : (
-        <span>the footer could not be read</span>
-      )}
+      {state.kind === 'asking' ? <Skeleton shape="lines" count={1} /> : <span>the footer could not be read</span>}
     </footer>
   )
 }
