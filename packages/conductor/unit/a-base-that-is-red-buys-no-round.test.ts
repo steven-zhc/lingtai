@@ -1,24 +1,25 @@
+import type { Action, ActionContext, CommandOutcome } from '@lingtai/actions'
+import { STEPS, type Step } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { StepMap } from '@lingtai/recipe'
 /**
  * **A `build` refusal the base shares buys no round** (#744, 0108 §13): `runAttempt` asks
  * `baseIsRed` before `replyFor`, only when a round is on offer, and a `red` ends the pass at a
  * person with the base's own evidence. Over fake bodies and the memory store — the live wiring
  * in `conduct.ts` (the cut, the plant) is reached only by the integration half.
  */
-import type { Action, ActionContext, CommandOutcome } from '@lingtai/actions'
-import { STEPS, type Step } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { StepMap } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createBaseCheck } from '../src/base-check.ts'
-import { runAttempt, type AttemptOptions, type StepBodies } from '../src/run-attempt.ts'
+import { runAttempt, type AttemptOptions, type StepBodies, type StepEnding } from '../src/run-attempt.ts'
 
 const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
 const SHA = 'a'.repeat(40)
 const PASSED = { verdict: 'passed' as const, evidence: 'green', findings: [] }
 
 const bodies = Object.fromEntries(
-  STEPS.map((step) => [step, async () => ({ ending: 'passed' })]),
+  STEPS.map((step) => [step, (): Effect.Effect<StepEnding> => Effect.succeed<StepEnding>({ ending: 'passed' })]),
 ) as unknown as StepBodies
 
 const actionsAt =

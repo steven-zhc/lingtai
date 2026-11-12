@@ -1,3 +1,6 @@
+import type { Action, ActionContext, ActionResult } from '@lingtai/actions'
+import { STEPS } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
 /**
  * **A base that moved on the branch's own files is merged in by the system, and the
  * change is built and reviewed again** (#593).
@@ -12,9 +15,7 @@
  * round**; the third arrival ends at a person and the port is called exactly twice;
  * and a conflict is a conflict, never a `base-moved`.
  */
-import type { Action, ActionContext, ActionResult } from '@lingtai/actions'
-import { STEPS } from '@lingtai/domain'
-import { StepMap } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -31,7 +32,7 @@ const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [
 
 /** Every step's body simply passes: what is under test is the route, not the steps. */
 const bodies = Object.fromEntries(
-  STEPS.map((step) => [step, async (): Promise<StepEnding> => ({ ending: 'passed' })]),
+  STEPS.map((step) => [step, (): Effect.Effect<StepEnding> => Effect.succeed<StepEnding>({ ending: 'passed' })]),
 ) as unknown as StepBodies
 
 const recipe = {

@@ -26,7 +26,7 @@ describe('the catch in a step', () => {
         actionsAt: () => [],
         bodies: {
           ...NOT_BUILT_YET,
-          implement: () => Promise.reject(new Error('the agent runtime raised')),
+          implement: () => Effect.die(new Error('the agent runtime raised')),
         },
       }),
     )

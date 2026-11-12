@@ -61,13 +61,11 @@
  * hands `ports.judge` is `judgeDeclaredAt(recipe.steps.proposed, when)`. The port
  * did not change shape for it, which was the claim.
  *
- * **Why plain promises rather than [0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)'s
- * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
- * the conversion is at the boundary the *caller* stands on. `runAttempt` is plain,
- * its `actionsAt` and `emit` seams are plain, and a second calling convention
- * inside one file would be a thing to learn for no gain. The caller that builds
- * a live `AttemptPorts` from `Repo` and `AgentHost` runs the conversion there, once,
- * where it already has a runtime.
+ * **Why a body and the `end` ports are Effects** (#1055). `runAttempt` walks in the
+ * pass's own fiber, so a body is run there rather than lifted from a promise, and
+ * `readEnd` and `recordEnd` are Effects for the same reason. The other ports
+ * here are still plain promises, and the caller that builds a live `AttemptPorts`
+ * lifts them where it already has a runtime.
  *
  * ## What travels between the steps, and how
  *
@@ -132,6 +130,7 @@ import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
+import { Cause, Effect } from 'effect'
 
 import { resolveEndActions } from './end-step.ts'
 import {
@@ -508,7 +507,7 @@ export interface AttemptPorts {
    * does the append expect. The step is also the last thing a pass does, so a
    * stream read at the claim would be nine steps stale.
    */
-  readEnd(ticketId: string): Promise<readonly Envelope[]>
+  readEnd(ticketId: string): Effect.Effect<readonly Envelope[]>
   /**
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
@@ -548,7 +547,7 @@ export interface AttemptPorts {
    * is a fact and belongs on the log, and doing is I/O that must not be able to
    * undo it.
    */
-  recordEnd(ticketId: string, at: number, plan: readonly ToAppend[]): Promise<void>
+  recordEnd(ticketId: string, at: number, plan: readonly ToAppend[]): Effect.Effect<void>
 }
 
 /**
@@ -651,7 +650,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * clear in `#265` — it is read off `design`'s own visit, and a pass that has
      * not reached that step has no visit to read.
      */
-    claim: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    claim: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * Start work on it — **and this is the fourth of the ten whose body is
@@ -681,7 +680,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * `REFUSING_STEPS`, so a `failed` verdict here could not become a refusal
      * either.
      */
-    admit: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    admit: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * The tree is ready to be worked in — **and this is the one of the six whose
@@ -712,7 +711,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * no key for — this body gets a port and an ending, and the type already
      * permits the refusal: `prepared` is one of `REFUSING_STEPS`.
      */
-    prepared: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    prepared: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * A document, before any code — **or nothing, which is an answer** (0058 §3)
@@ -749,7 +748,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * §2), and `endingOf` reports each in the step's own terms without this body
      * being reached at all.
      */
-    design: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    design: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * One agent, in that worktree — **and this is the last of the ten whose body
@@ -786,7 +785,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * It cannot refuse, and that is 0058 §3b's rectangle: arriving at the router
      * and refusing are different things, and only one of them is charged for.
      */
-    implement: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    implement: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * **Its own step, and a red one skips `review`.**
@@ -812,7 +811,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * `runActionPipeline` before any body, and returns the pipeline's ending
      * without reaching the body when it did not pass.
      */
-    build: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    build: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * Reads the diff, returns findings — **and judges nothing** (0058 §3).
@@ -836,7 +835,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * nothing to the round it buys, and `carriesACriterion` is where that is now
      * answered instead.
      */
-    review: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    review: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * **Nothing beyond its plugins, since `#462`.**
@@ -849,7 +848,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * run by the time this is called, and this step's own work is nothing beyond
      * them.
      */
-    proposed: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    proposed: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * **Reports a `reason` and a `detail`, decides nothing — and this is the
@@ -885,7 +884,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * It reports no `head`. A merge commit is on the base branch and the worktree
      * did not move, and `LeftTheTreeAt` is a fact about the tree.
      */
-    merge: async (): Promise<StepPassed> => ({ ending: 'passed' }),
+    merge: () => Effect.succeed<StepPassed>({ ending: 'passed' }),
 
     /**
      * Runs on every ending and cannot refuse — **and the effects never decide
@@ -916,33 +915,47 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
      * records, and this outcome already resolved, which the item's own
      * `EndActionsResolved` records.
      */
-    end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
+    end: ({ actions, outcome }): Effect.Effect<StepPassed | StepDidNotFinish> => {
       const ticketId = ports.onStream()
-      if (ticketId === null) return { ending: 'passed' }
-      // Which of the step's three acts did not finish, for the person reading
-      // `detail`. The plan is empty until `resolveEndActions` has answered, so a
-      // `read` that threw cannot be mistaken for a recorded nothing.
-      let act = 'read'
-      try {
-        const events = await ports.readEnd(ticketId)
-        act = 'resolve'
-        const plan = resolveEndActions(events, actions, outcome)
-        if (plan.length === 0) return { ending: 'passed' }
-        act = 'record'
-        await ports.recordEnd(ticketId, events.length, plan)
-        return { ending: 'passed' }
-      } catch (error) {
-        return {
-          ending: 'did-not-finish',
-          because: END_UNRESOLVED,
-          // No action asked it: the step's own work did — the same reason
-          // `asking` and `noReceipt` above are `null` here.
-          at: null,
-          detail:
-            `${ticketId} reached \`${outcome}\` and its \`end\` effects were not resolved — ` +
-            `\`${act}\` threw: ${error instanceof Error ? error.message : String(error)}`,
-        }
-      }
+      if (ticketId === null) return Effect.succeed<StepPassed>({ ending: 'passed' })
+      const passed: StepPassed = { ending: 'passed' }
+      // `act` belongs to one run of the Effect, so it is made inside the suspend.
+      return Effect.suspend(() => {
+        // Which of the step's three acts did not finish, for the person reading
+        // `detail`. The plan is empty until `resolveEndActions` has answered, so a
+        // `read` that threw cannot be mistaken for a recorded nothing.
+        let act = 'read'
+        // **A defect is a verdict and an interruption is not** (#1053): so
+        // `Effect.exit` and a look for interrupts, never `catchDefect`, which
+        // would recover a cause that also carries one.
+        return Effect.exit(
+          Effect.gen(function* () {
+            const events = yield* ports.readEnd(ticketId)
+            act = 'resolve'
+            const plan = resolveEndActions(events, actions, outcome)
+            if (plan.length === 0) return passed
+            act = 'record'
+            yield* ports.recordEnd(ticketId, events.length, plan)
+            return passed
+          }),
+        ).pipe(
+          Effect.flatMap((exit) => {
+            if (exit._tag === 'Success') return Effect.succeed<StepPassed | StepDidNotFinish>(exit.value)
+            if (Cause.hasInterrupts(exit.cause)) return Effect.failCause(exit.cause)
+            const error = Cause.squash(exit.cause)
+            return Effect.succeed<StepPassed | StepDidNotFinish>({
+              ending: 'did-not-finish',
+              because: END_UNRESOLVED,
+              // No action asked it: the step's own work did — the same reason
+              // `asking` and `noReceipt` above are `null` here.
+              at: null,
+              detail:
+                `${ticketId} reached \`${outcome}\` and its \`end\` effects were not resolved — ` +
+                `\`${act}\` threw: ${error instanceof Error ? error.message : String(error)}`,
+            })
+          }),
+        )
+      })
     },
   }
 }

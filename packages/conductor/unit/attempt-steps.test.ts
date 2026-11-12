@@ -36,6 +36,7 @@ import type { RunOutcome, Runtime } from '@lingtai/agent'
 import type { Envelope, PayloadOf, ToAppend } from '@lingtai/domain'
 import { StepMap, type QueueSettings, type StepAction } from '@lingtai/recipe'
 import type { Worktree } from '@lingtai/repo'
+import { Cause, Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -374,15 +375,16 @@ function portsAnswering(answers: Answers = {}): {
 
   const ports: AttemptPorts = {
     onStream: () => onStream,
-    readEnd: async (ticketId) => {
-      asked.read.push(ticketId)
-      if (answers.readThrows) throw answers.readThrows
-      return answers.stream ?? []
-    },
-    recordEnd: async (ticketId, at, plan) => {
-      asked.record.push({ ticketId, at, plan })
-      if (answers.recordThrows) throw answers.recordThrows
-    },
+    readEnd: (ticketId) =>
+      Effect.suspend(() => {
+        asked.read.push(ticketId)
+        return answers.readThrows ? Effect.die(answers.readThrows) : Effect.succeed(answers.stream ?? [])
+      }),
+    recordEnd: (ticketId, at, plan) =>
+      Effect.suspend(() => {
+        asked.record.push({ ticketId, at, plan })
+        return answers.recordThrows ? Effect.die(answers.recordThrows) : Effect.void
+      }),
   }
   return { ports, judge, asked, taking, working }
 }
@@ -2504,6 +2506,8 @@ describe('end runs on every ending and cannot refuse', () => {
    */
   it.each([
     { act: 'read', answers: { readThrows: new Error('connection reset') } as Answers },
+    // A stream that is not one: `resolveEndActions` throws synchronously inside the generator.
+    { act: 'resolve', answers: { stream: {} } as unknown as Answers },
     {
       act: 'record',
       answers: { recordThrows: new Error('version 1 is taken') } as Answers,
@@ -2517,6 +2521,48 @@ describe('end runs on every ending and cannot refuse', () => {
     // The landing stands, and the pass reports it as one.
     expect(result.stopped).toBeNull()
     expect(outcomeOf(result.end)).toBe('landed')
+  })
+
+  describe('interrupted', () => {
+    const endOf = (readEnd: AttemptPorts['readEnd']) => {
+      const { ports } = portsAnswering()
+      return bodiesFor({ ...ports, onStream: () => 'ticket-1', readEnd }).end({
+        step: 'end',
+        actions: [CLOSE_ON_LANDED],
+        outcome: 'landed',
+      } as never)
+    }
+    it('is not a did-not-finish when a read is interrupted', async () => {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Effect.gen(function* () {
+            const fiber = yield* Effect.forkChild(endOf(() => Effect.never))
+            yield* Effect.yieldNow
+            yield* Fiber.interrupt(fiber)
+            return yield* Fiber.join(fiber)
+          }),
+        ),
+      )
+      expect(exit._tag).toBe('Failure')
+      expect(exit._tag === 'Failure' && Cause.hasInterrupts(exit.cause)).toBe(true)
+    })
+
+    it('is not a did-not-finish when a finalizer dies during the interrupt', async () => {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Effect.gen(function* () {
+            const fiber = yield* Effect.forkChild(
+              endOf(() => Effect.never.pipe(Effect.ensuring(Effect.die(new Error('finalizer'))))),
+            )
+            yield* Effect.yieldNow
+            yield* Fiber.interrupt(fiber)
+            return yield* Fiber.join(fiber)
+          }),
+        ),
+      )
+      expect(exit._tag).toBe('Failure')
+      expect(exit._tag === 'Failure' && Cause.hasInterrupts(exit.cause)).toBe(true)
+    })
   })
 
   /**
