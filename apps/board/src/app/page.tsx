@@ -1004,7 +1004,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     .then((board) =>
       measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }).then(
         (answered) => {
-          recordQueuedOffered(param, board.askable)
+          recordQueuedOffered(param, board.askable, answered[0].problems)
           return answered
         },
       ),

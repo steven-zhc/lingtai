@@ -1205,16 +1205,18 @@ export function queuedSkeletonCount(project: string | undefined): number {
  * Records what GitHub offered for a scope, once its queue has answered: the sum
  * of the offers of the projects that scope asked, written under its own key.
  */
-export function recordQueuedOffered(project: string | undefined, askable: readonly AskableFilter[]): void {
+export function recordQueuedOffered(
+  project: string | undefined,
+  askable: readonly AskableFilter[],
+  problems: readonly unknown[] = [],
+): void {
+  // A scope that did not wholly answer wrote nothing fresh, and `lastOffered`
+  // may hold another scope's older answer: keep the last good count.
+  if (problems.length > 0) return
   let sum = 0
-  let seen = false
-  for (const f of askable) {
-    const n = lastOffered.get(f.project)
-    if (n === undefined) continue
-    seen = true
-    sum += n
-  }
-  if (seen) lastScopeOffered.set(project ?? '', sum)
+  for (const f of askable) sum += lastOffered.get(f.project) ?? 0
+  // An empty askable list is an answer: nothing was offered.
+  lastScopeOffered.set(project ?? '', sum)
 }
 
 export interface HeldTicket {

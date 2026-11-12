@@ -377,3 +377,21 @@ describe('the skeletons each column waits in on a switch (#1038)', () => {
     forgetSkeletonCounts()
   })
 })
+
+describe('a scope keeps its last good GitHub count (#1038)', () => {
+  it('a failed read writes nothing, and an empty askable records zero', async () => {
+    forgetSkeletonCounts()
+    const f = resolvedFilter('lingtai', ['bug'])
+    await githubQueue([f], new Set(), async (x) => listed(x, ['1'], {}))
+    recordQueuedOffered(undefined, [f])
+    await githubQueue([f], new Set(), async (x) => listed(x, ['1', '2', '3', '4', '5'], {}))
+    recordQueuedOffered('lingtai', [f])
+    // all projects' read fails: lingtai's five must not leak in
+    recordQueuedOffered(undefined, [f], [{ project: 'lingtai', reason: 'down' }])
+    expect(queuedSkeletonCount(undefined)).toBe(1)
+    // the register emptied: nothing offered is an answer
+    recordQueuedOffered(undefined, [])
+    expect(queuedSkeletonCount(undefined)).toBe(0)
+    forgetSkeletonCounts()
+  })
+})
