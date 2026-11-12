@@ -18,8 +18,10 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
   it('waits for the batch to commit, and applies nothing after', async () => {
     const event = { seq: 1n, type: 'X', streamId: 's' } as unknown as Envelope
     const store = {
-      readAll: async (from: bigint) => (from < 1n ? [event] : []),
+      readAll: async (from: bigint) => (available && from < 1n ? [event] : []),
     } as unknown as EventStore
+    let available = false
+    let nudge: () => void = () => {}
     let release: () => void = () => {}
     const hold = new Promise<void>((resolve) => (release = resolve))
     const applied: bigint[] = []
@@ -43,12 +45,15 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
         into: createSqliteProjectionStore(db),
         waker: {
           open: (listener) => {
-            listener.nudge()
+            nudge = listener.nudge
             return { ready: Promise.resolve(), close: () => {} }
           },
         },
       })
+      // The catch-up drain finds nothing; the batch comes from a nudge after it.
       await runner.start()
+      available = true
+      nudge()
       await inApply
       let stopped = false
       const stopping = runner.stop().then(() => void (stopped = true))
