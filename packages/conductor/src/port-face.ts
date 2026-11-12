@@ -10,3 +10,9 @@ import { Effect } from 'effect'
 export function runPort<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
   return Effect.runPromise(effect)
 }
+
+/**
+ * The failure channel of a lifted promise: the rejection itself, unchanged, so a
+ * caller's `instanceof` and `.message` still hold on the far side of the face.
+ */
+export const asFailure = (error: unknown): Error => error as Error

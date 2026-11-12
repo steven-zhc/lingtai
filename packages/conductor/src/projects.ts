@@ -22,11 +22,13 @@ import type { Log, LogQueries } from '@lingtai/event-store/log'
 // should still load no store at all.
 import type { EventStore } from '@lingtai/event-store/store'
 import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
+
+import { asFailure } from './port-face.ts'
 
 /** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
-async function defaultLog(): Promise<Log> {
-  return (await import('@lingtai/event-store')).log
-}
+const defaultLog = (): Effect.Effect<Log> =>
+  Effect.promise(() => import('@lingtai/event-store')).pipe(Effect.map((m) => m.log))
 
 /**
  * Every project stream that has ever been written to.
@@ -35,17 +37,27 @@ async function defaultLog(): Promise<Log> {
  * the query `lingtai status` runs first, and a raw client here is a place the
  * init-time choice does not reach (0055 §1).
  */
-export async function listProjectStreams(queries?: LogQueries): Promise<string[]> {
-  const ask = queries ?? (await defaultLog()).queries
-  return ask.projectStreams(PROJECT_STREAM_PREFIX)
+export function listProjectStreamsEffect(queries?: LogQueries): Effect.Effect<string[]> {
+  return Effect.gen(function* () {
+    const ask = queries ?? (yield* defaultLog()).queries
+    return yield* Effect.promise(() => ask.projectStreams(PROJECT_STREAM_PREFIX))
+  })
 }
 
-export async function loadProject(project: string, store?: EventStore): Promise<ProjectState | null> {
-  const from = store ?? (await defaultLog()).store
-  const events = await from.read(projectStream(project))
-  if (events.length === 0) return null
-  const state = reduceProject(events)
-  return isRegistered(state) ? state : null
+/** A store that fails is a defect (0101 §6): through the face it rejects with the driver's own error. */
+export function loadProjectEffect(project: string, store?: EventStore): Effect.Effect<ProjectState | null> {
+  return Effect.gen(function* () {
+    const from = store ?? (yield* defaultLog()).store
+    const events = yield* Effect.promise(() => from.read(projectStream(project)))
+    if (events.length === 0) return null
+    const state = reduceProject(events)
+    return isRegistered(state) ? state : null
+  })
+}
+
+/** `loadProjectEffect` as the promise every CLI verb and board page awaits (a listed face, #790). */
+export function loadProject(project: string, store?: EventStore): Promise<ProjectState | null> {
+  return Effect.runPromise(loadProjectEffect(project, store))
 }
 
 /**
@@ -59,14 +71,25 @@ export async function loadProject(project: string, store?: EventStore): Promise<
  * nothing called would have been a test's idea of the board rather than the
  * board — one that keeps passing while the strip it is named for is broken.
  */
-export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
+export function loadAllProjectsEffect(log?: Log): Effect.Effect<ProjectState[]> {
   // A log rather than a store, because this is two questions of the same log
   // and they must not be able to come from different ones: it used to take an
   // `EventStore` and then ask `listProjectStreams()` — whose default was
   // Postgres whatever store it had been handed (#221).
-  const from = log ?? (await defaultLog())
-  const streams = await from.queries.projectStreams(PROJECT_STREAM_PREFIX)
-  return Promise.all(streams.map((s) => from.store.read(s).then(reduceProject)))
+  return Effect.gen(function* () {
+    const from = log ?? (yield* defaultLog())
+    const streams = yield* Effect.promise(() => from.queries.projectStreams(PROJECT_STREAM_PREFIX))
+    return yield* Effect.forEach(
+      streams,
+      (s) => Effect.promise(() => from.store.read(s)).pipe(Effect.map(reduceProject)),
+      { concurrency: 'unbounded' },
+    )
+  })
+}
+
+/** `loadAllProjectsEffect` as a promise (a listed face, #790). */
+export function loadAllProjects(log?: Log): Promise<ProjectState[]> {
+  return Effect.runPromise(loadAllProjectsEffect(log))
 }
 
 /**
@@ -78,8 +101,35 @@ export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
  * back from here — the daemon needs no new check, and `integration/projects.test.ts`
  * pins that rather than adding one.
  */
-export async function loadProjects(log?: Log): Promise<ProjectState[]> {
-  return (await loadAllProjects(log)).filter(isRegistered)
+export function loadProjectsEffect(log?: Log): Effect.Effect<ProjectState[]> {
+  return loadAllProjectsEffect(log).pipe(Effect.map((all) => all.filter(isRegistered)))
+}
+
+/** `loadProjectsEffect` as a promise (a listed face, #790). */
+export function loadProjects(log?: Log): Promise<ProjectState[]> {
+  return Effect.runPromise(loadProjectsEffect(log))
+}
+
+export function signedInIdsEffect(
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
+  env: Record<string, string>,
+): Effect.Effect<readonly RuntimeId[]> {
+  return Effect.forEach(
+    runtimes,
+    (r) =>
+      Effect.promise(() => Promise.resolve(r.checkAuth?.(env))).pipe(
+        Effect.map((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
+      ),
+    { concurrency: 'unbounded' },
+  ).pipe(Effect.map((found) => found.flat()))
+}
+
+/** `signedInIdsEffect` as the promise `@lingtai/recipe`'s `SignedIn` port is (a listed face, #790). */
+export function signedInIds(
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
+  env: Record<string, string>,
+): Promise<readonly RuntimeId[]> {
+  return Effect.runPromise(signedInIdsEffect(runtimes, env))
 }
 
 /**
@@ -106,9 +156,7 @@ export function signedInProbe(
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
       const env = runnableEnv({})
-      const ids = Promise.all(
-        runtimes.map(async (r) => ((await r.checkAuth?.(env))?.loggedIn ? [r.capabilities.id] : [])),
-      ).then((found) => found.flat())
+      const ids = signedInIds(runtimes, env)
       kept = { at: now(), ids }
     }
     return kept.ids
@@ -150,16 +198,32 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  * anywhere in `conductor`, `recipe` or `actions`, would be exactly that, and
  * `unit/recorded-recipe.test.ts` fails if anything does.
  */
-export async function currentRecipe(
+export function currentRecipeEffect(
   state: ProjectState,
   _client?: unknown,
   base?: string,
   options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
-): Promise<ResolvedRecipe> {
-  if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
-  return resolveLocalRecipe(state.project, {
-    ...options,
-    base: base ?? state.base ?? null,
-    signedIn: options.signedIn ?? signedInHere,
+): Effect.Effect<ResolvedRecipe, Error> {
+  const project = state.project
+  if (!project) return Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
+  // A recipe that is missing or invalid is a typed failure carrying today's message, never a defect.
+  return Effect.tryPromise({
+    try: () =>
+      resolveLocalRecipe(project, {
+        ...options,
+        base: base ?? state.base ?? null,
+        signedIn: options.signedIn ?? signedInHere,
+      }),
+    catch: asFailure,
   })
+}
+
+/** `currentRecipeEffect` as the promise the CLI and the board await (a listed face, #790). */
+export function currentRecipe(
+  state: ProjectState,
+  client?: unknown,
+  base?: string,
+  options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
+): Promise<ResolvedRecipe> {
+  return Effect.runPromise(currentRecipeEffect(state, client, base, options))
 }

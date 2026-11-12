@@ -27,8 +27,10 @@
  * being swept.
  */
 import { repoRoot } from '@lingtai/env'
-import { git } from '@lingtai/repo'
+import { gitEffect } from '@lingtai/repo'
+import { Effect } from 'effect'
 
+import { runPort } from './port-face.ts'
 import type { RefChannel } from './tell.ts'
 
 export interface GitRefChannelOptions {
@@ -47,31 +49,36 @@ export function gitRefChannel(options: GitRefChannelOptions): RefChannel {
   const run = { cwd: repoRoot(), env: options.gitEnv }
 
   return {
-    async matchingRefs(prefix) {
-      const out = await git(['ls-remote', '--heads', options.remote], run)
-      return out
-        .split('\n')
-        .map(refOf)
-        .filter((ref): ref is string => ref !== null && ref.startsWith(`refs/${prefix}`))
-        .map((ref) => ref.slice('refs/'.length))
-    },
-    async deleteRef(ref) {
-      await git(['push', options.remote, '--delete', `refs/${ref}`], run)
-    },
+    matchingRefs: (prefix) =>
+      runPort(
+        gitEffect(['ls-remote', '--heads', options.remote], run).pipe(
+          Effect.map((out) =>
+            out
+              .split('\n')
+              .map(refOf)
+              .filter((ref): ref is string => ref !== null && ref.startsWith(`refs/${prefix}`))
+              .map((ref) => ref.slice('refs/'.length)),
+          ),
+        ),
+      ),
+    deleteRef: (ref) =>
+      runPort(gitEffect(['push', options.remote, '--delete', `refs/${ref}`], run).pipe(Effect.asVoid)),
   }
 }
 
 /**
  * The sha behind one ref on a plain git remote — `refSha`'s contract
  * (`@lingtai/github`'s `GitHubClient.refSha`), which `approve()` leans on to
- * tell a moved branch from a deleted one. Rejects when the remote names no
+ * tell a moved branch from a deleted one. Fails when the remote names no
  * such ref, the same shape a 404 against GitHub's API answers.
  */
-export async function gitRefSha(remote: string, ref: string, gitEnv?: NodeJS.ProcessEnv): Promise<string> {
-  const out = await git(['ls-remote', remote, `refs/${ref}`], { cwd: repoRoot(), env: gitEnv })
-  const line = out.split('\n')[0]
-  if (!line) throw new Error(`refs/${ref} not found on ${remote}`)
-  const [sha] = line.split('\t')
-  if (!sha) throw new Error(`refs/${ref} not found on ${remote}`)
-  return sha
+export function gitRefShaEffect(remote: string, ref: string, gitEnv?: NodeJS.ProcessEnv) {
+  return Effect.gen(function* () {
+    const out = yield* gitEffect(['ls-remote', remote, `refs/${ref}`], { cwd: repoRoot(), env: gitEnv })
+    const line = out.split('\n')[0]
+    if (!line) return yield* Effect.fail(new Error(`refs/${ref} not found on ${remote}`))
+    const [sha] = line.split('\t')
+    if (!sha) return yield* Effect.fail(new Error(`refs/${ref} not found on ${remote}`))
+    return sha
+  })
 }

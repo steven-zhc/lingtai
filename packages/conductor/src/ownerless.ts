@@ -20,11 +20,14 @@
 import type { ProjectState } from '@lingtai/domain'
 import type { Recipe } from '@lingtai/recipe'
 import { remoteOf } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
-import { ownerlessRefusal } from './filter.ts'
-import { gitRefChannel, gitRefSha } from './git-refs.ts'
+import { ownerlessRefusal, ticketsOfSeam } from './filter.ts'
+import { gitRefChannel, gitRefShaEffect } from './git-refs.ts'
+import { runPort } from './port-face.ts'
 import type { RefChannel } from './tell.ts'
-import { ticketsFor, type Tickets } from './ticket-store.ts'
+import type { ticketsFor } from './ticket-store.ts'
+import { ticketsForEffect, type Tickets } from './ticket-store.ts'
 
 export interface OwnerlessClient {
   client: Tickets &
@@ -43,32 +46,43 @@ export interface OwnerlessClient {
  * `ticketsOf` is the seam a test needs: `ticketsFor`'s default reaches
  * `processTicketSql()`, which `HOME=/nonexistent pnpm test` cannot open.
  */
-export async function ownerlessClient(
+export function ownerlessClientEffect(
   state: ProjectState,
   recipe: Recipe,
-  ticketsOf: typeof ticketsFor = ticketsFor,
+  ticketsOf: typeof ticketsForEffect = ticketsForEffect,
+): Effect.Effect<OwnerlessClient, Error> {
+  return Effect.gen(function* () {
+    const project = state.project
+    if (!project) return yield* Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
+
+    const refusal = ownerlessRefusal(project, recipe)
+    if (refusal) return yield* Effect.fail(new Error(refusal))
+    // Non-null: `ownerlessRefusal` already refused a recipe naming no `repo.remote`.
+    const remote = remoteOf(recipe) as string
+
+    // Never read: the refusal above already requires `source.tickets: db`,
+    // `ticketsFor`'s only branch that does not pass its third argument straight
+    // through.
+    const tickets = yield* ticketsOf(state, recipe, undefined as unknown as Tickets)
+
+    return {
+      client: {
+        ...tickets,
+        ...gitRefChannel({ remote }),
+        refSha: (ref: string) => runPort(gitRefShaEffect(remote, ref)),
+        owner: null,
+        repo: project,
+      },
+      remote,
+    }
+  })
+}
+
+/** `ownerlessClientEffect` as the promise the CLI, the board and the daemon's converge await (a listed face, #790). */
+export function ownerlessClient(
+  state: ProjectState,
+  recipe: Recipe,
+  ticketsOf?: typeof ticketsFor,
 ): Promise<OwnerlessClient> {
-  const project = state.project
-  if (!project) throw new Error('no repository name recorded — re-run lingtai add')
-
-  const refusal = ownerlessRefusal(project, recipe)
-  if (refusal) throw new Error(refusal)
-  // Non-null: `ownerlessRefusal` already refused a recipe naming no `repo.remote`.
-  const remote = remoteOf(recipe) as string
-
-  // Never read: the refusal above already requires `source.tickets: db`,
-  // `ticketsFor`'s only branch that does not pass its third argument straight
-  // through.
-  const tickets = await ticketsOf(state, recipe, undefined as unknown as Tickets)
-
-  return {
-    client: {
-      ...tickets,
-      ...gitRefChannel({ remote }),
-      refSha: (ref: string) => gitRefSha(remote, ref),
-      owner: null,
-      repo: project,
-    },
-    remote,
-  }
+  return Effect.runPromise(ownerlessClientEffect(state, recipe, ticketsOfSeam(ticketsOf)))
 }

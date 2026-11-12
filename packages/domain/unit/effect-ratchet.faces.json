@@ -66,10 +66,76 @@
     "why": "apps/cli/src/discuss.ts:291 (discussionVersion) and apps/cli/src/triage.ts:945 await it, until the apps/cli row"
   },
   {
+    "file": "packages/conductor/src/filter.ts",
+    "fn": "githubClientFor",
+    "until": "#790",
+    "why": "apps/board (actions, lib/prompt, lib/task) and `add-from-page.ts:129` call it as a promise; 0101 §7 lets the board keep promises"
+  },
+  {
+    "file": "packages/conductor/src/filter.ts",
+    "fn": "projectClient",
+    "until": "#790",
+    "why": "apps/board actions and lib/task, and apps/cli (requeue, backlog, grant-fix-round, end, close, approve) await it until the apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/filter.ts",
+    "fn": "projectFilter",
+    "until": "#790",
+    "why": "apps/board lib/prompt, lib/queued and lib/task, and apps/cli status.ts await it; 0101 §7 lets the board keep promises"
+  },
+  {
+    "file": "packages/conductor/src/filter.ts",
+    "fn": "projectFilters",
+    "until": "#790",
+    "why": "apps/cli daemon.ts and doctor.ts await it until the apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/ownerless.ts",
+    "fn": "ownerlessClient",
+    "until": "#790",
+    "why": "apps/board actions and lib/task, apps/cli (requeue, grant-fix-round, conduct, approve, run) and `packages/daemon/src/converge.ts:165` await it until the daemon and apps/cli rows"
+  },
+  {
     "file": "packages/conductor/src/port-face.ts",
     "fn": "runPort",
     "until": "#790",
     "why": "the promise members of the `Tickets` this package builds (`dbTickets`), until `Tickets` is an Effect port"
+  },
+  {
+    "file": "packages/conductor/src/projects.ts",
+    "fn": "currentRecipe",
+    "until": "#790",
+    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs, `close.ts:176` (CONDUCT8-3) and `conduct.ts:813` (CONDUCT8-7) await it"
+  },
+  {
+    "file": "packages/conductor/src/projects.ts",
+    "fn": "loadAllProjects",
+    "until": "#790",
+    "why": "apps/board (actions, lib/board, setup pages), apps/cli init and first-project, and `repository-list.ts`/`add-from-page.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/projects.ts",
+    "fn": "loadProject",
+    "until": "#790",
+    "why": "apps/board (actions, lib/task, lib/prompt, lib/queued) and apps/cli verbs await it; 0101 §7 lets the board keep promises"
+  },
+  {
+    "file": "packages/conductor/src/projects.ts",
+    "fn": "loadProjects",
+    "until": "#790",
+    "why": "apps/board (search, landed, locks), apps/cli (rates, daemon, status, triage, conduct) and `packages/daemon/src/converge.ts:325` await it"
+  },
+  {
+    "file": "packages/conductor/src/projects.ts",
+    "fn": "signedInIds",
+    "until": "#790",
+    "why": "`@lingtai/recipe`'s promise `SignedIn` port, through `signedInProbe`"
+  },
+  {
+    "file": "packages/conductor/src/read-ticket.ts",
+    "fn": "readProjectTicket",
+    "until": "#790",
+    "why": "apps/board lib/task, apps/cli discuss.ts and triage.ts await it; 0101 §7 lets the board keep promises"
   },
   {
     "file": "packages/conductor/src/run-attempt.ts",
@@ -82,6 +148,18 @@
     "fn": "runAttempt",
     "until": "#790",
     "why": "the tests that run a pass with promise ports: packages/conductor/unit/run-attempt.test.ts, attempt-steps.test.ts, a-base-that-is-red-buys-no-round.test.ts, a-base-that-moved.test.ts, what-a-destination-costs.test.ts and test/a-url-destination.ts; no production caller"
+  },
+  {
+    "file": "packages/conductor/src/run-log.ts",
+    "fn": "findRunLog",
+    "until": "#790",
+    "why": "apps/board's run route and apps/cli attach.ts await it"
+  },
+  {
+    "file": "packages/conductor/src/run-log.ts",
+    "fn": "listRunLogs",
+    "until": "#790",
+    "why": "apps/cli attach.ts awaits it"
   },
   {
     "file": "packages/conductor/src/snapshot-state.ts",
@@ -99,7 +177,7 @@
     "file": "packages/conductor/src/ticket-store.ts",
     "fn": "ticketsFor",
     "until": "#790",
-    "why": "apps/cli (conduct, run, ticket), `packages/daemon/src/converge.ts:187`, and `filter.ts`/`read-ticket.ts` until CONDUCT8-2"
+    "why": "apps/cli (conduct, run, ticket) and `packages/daemon/src/converge.ts:187`"
   },
   {
     "file": "packages/event-store/src/choose.ts",
