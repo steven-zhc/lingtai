@@ -1780,13 +1780,18 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 
 `claude-code` · `codex`
 
-## integration refusal reason — 10
+## integration refusal reason — 14
 
-Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
+Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/vocabulary.ts:52`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
 `verify-failed` · `no-commits` · `push-rejected` · `lane-busy` ·
-`wip-commit` · `base-protected` · `unexpected`
+`wip-commit` · `base-protected` · `unexpected` · `base-moved` ·
+`base-checked-out` · `unreachable`
+
+`unreachable` is git failing to reach origin for the fetch or push after the
+lane's own tries: nothing about the branch was judged, and approve re-runs only
+the land (#1029).
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about
