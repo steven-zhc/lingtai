@@ -45,8 +45,16 @@
  * (`from-recipe.ts`).
  */
 import type { QueueSettings } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 /**
  * What the take answered — four branches, and the fourth is why there are not
@@ -102,38 +110,54 @@ export interface QueueActionSpec extends QueueSettings {
   name: string
 }
 
-export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps): Action {
+/** `QueueActionDeps` with the take an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface QueuePortDeps {
+  take(spec: QueueSettings): Effect.Effect<TakeAnswer>
+}
+
+export function makeQueueAction(spec: QueueActionSpec, deps: QueuePortDeps): ActionPort {
   const { name, ...queue } = spec
   return {
     name,
     kind: 'queue',
     yields: 'nothing',
 
-    async run(_context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.take(queue)
-      if ('taken' in answer) {
-        return {
-          verdict: 'passed',
-          evidence: `${answer.taken.ticketId} claimed as a ${answer.taken.kind}`,
-          findings: [],
+    run(_context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const answer = yield* deps.take(queue)
+        if ('taken' in answer) {
+          return {
+            verdict: 'passed',
+            evidence: `${answer.taken.ticketId} claimed as a ${answer.taken.kind}`,
+            findings: [],
+          }
         }
-      }
-      if ('mayHold' in answer) {
-        return {
-          verdict: 'failed',
-          // The item by name, because the caller has to be able to give back
-          // something this run may be holding, and `detail` one layer up is this.
-          evidence: `${answer.mayHold.ticketId} may be claimed by this run: ${answer.mayHold.detail}`,
-          findings: [],
-          because: 'claim-unconfirmed',
+        if ('mayHold' in answer) {
+          return {
+            verdict: 'failed',
+            // The item by name, because the caller has to be able to give back
+            // something this run may be holding, and `detail` one layer up is this.
+            evidence: `${answer.mayHold.ticketId} may be claimed by this run: ${answer.mayHold.detail}`,
+            findings: [],
+            because: 'claim-unconfirmed',
+          }
         }
-      }
-      // Two tokens rather than one, because they clear differently: an issue
-      // GitHub passed over comes back when a label or a blocker changes, and one
-      // somebody else holds comes back when that run ends.
-      return 'passedOver' in answer
-        ? { verdict: 'failed', evidence: answer.passedOver, findings: [], because: 'passed-over' }
-        : { verdict: 'failed', evidence: answer.notClaimed, findings: [], because: 'not-claimed' }
+        // Two tokens rather than one, because they clear differently: an issue
+        // GitHub passed over comes back when a label or a blocker changes, and one
+        // somebody else holds comes back when that run ends.
+        return 'passedOver' in answer
+          ? { verdict: 'failed', evidence: answer.passedOver, findings: [], because: 'passed-over' }
+          : { verdict: 'failed', evidence: answer.notClaimed, findings: [], because: 'not-claimed' }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const queuePortDepsFrom = (deps: QueueActionDeps): QueuePortDeps => ({
+  take: (spec) => liftPromise(() => deps.take(spec)),
+})
+
+export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps): Action {
+  return promiseAction(makeQueueAction(spec, queuePortDepsFrom(deps)))
 }

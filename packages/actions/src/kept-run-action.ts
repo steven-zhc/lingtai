@@ -36,7 +36,17 @@
  * supplied, rather than quietly falling back to a plain process action that
  * commits nothing.
  */
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import { Effect } from 'effect'
+
+import {
+  fromPromiseAction,
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 /** What `clean` answered. A failure here is said, never swallowed (`#390`). */
 export type CleanAnswer = { readonly ok: true } | { readonly failed: string }
@@ -68,70 +78,88 @@ export interface KeptRunActionDeps {
   keep(name: string): Promise<KeptRunAnswer>
 }
 
-export function createKeptRunAction(name: string, inner: Action, deps: KeptRunActionDeps): Action {
+/** `KeptRunActionDeps` with `clean` and `keep` Effects (#1041): their error channel is `never`, so a rejection is a defect. */
+export interface KeptRunPortDeps {
+  clean(): Effect.Effect<CleanAnswer>
+  keep(name: string): Effect.Effect<KeptRunAnswer>
+}
+
+export function makeKeptRunAction(name: string, inner: ActionPort, deps: KeptRunPortDeps): ActionPort {
   return {
     name,
     kind: 'run',
     yields: 'commit',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const cleaned = await deps.clean()
-      if ('failed' in cleaned) {
-        return {
-          verdict: 'failed',
-          evidence: `"${name}" did not run: the worktree could not be put back to HEAD first (${cleaned.failed})`,
-          findings: [],
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const cleaned = yield* deps.clean()
+        if ('failed' in cleaned) {
+          return {
+            verdict: 'failed',
+            evidence: `"${name}" did not run: the worktree could not be put back to HEAD first (${cleaned.failed})`,
+            findings: [],
+          }
         }
-      }
 
-      const ran = await inner.run(context)
+        const ran = yield* inner.run(context)
 
-      if (ran.verdict !== 'passed') {
-        const recleaned = await deps.clean()
+        if (ran.verdict !== 'passed') {
+          const recleaned = yield* deps.clean()
+          if ('failed' in recleaned) {
+            return {
+              verdict: 'failed',
+              evidence: `${ran.evidence} — and the tree could not be put back afterwards (${recleaned.failed}); build must not judge it`,
+              findings: [],
+            }
+          }
+          return {
+            verdict: 'passed',
+            evidence: `${ran.evidence} — nothing committed, \`build\` judges the agent's commit as it stands`,
+            findings: [],
+          }
+        }
+
+        const kept = yield* deps.keep(name)
+        if ('committed' in kept) {
+          return {
+            verdict: 'passed',
+            evidence: `${ran.evidence} — committed ${kept.committed.slice(0, 7)}`,
+            findings: [],
+            head: kept.committed,
+          }
+        }
+        if ('nothing' in kept) {
+          return { verdict: 'passed', evidence: `${ran.evidence} — nothing to commit`, findings: [] }
+        }
+
+        const recleaned = yield* deps.clean()
         if ('failed' in recleaned) {
           return {
             verdict: 'failed',
-            evidence: `${ran.evidence} — and the tree could not be put back afterwards (${recleaned.failed}); build must not judge it`,
+            evidence:
+              `${ran.evidence} — the commit was refused (${kept.failed}), and the tree could not be put back ` +
+              `(${recleaned.failed}); build must not judge it`,
             findings: [],
           }
         }
         return {
           verdict: 'passed',
-          evidence: `${ran.evidence} — nothing committed, \`build\` judges the agent's commit as it stands`,
-          findings: [],
-        }
-      }
-
-      const kept = await deps.keep(name)
-      if ('committed' in kept) {
-        return {
-          verdict: 'passed',
-          evidence: `${ran.evidence} — committed ${kept.committed.slice(0, 7)}`,
-          findings: [],
-          head: kept.committed,
-        }
-      }
-      if ('nothing' in kept) {
-        return { verdict: 'passed', evidence: `${ran.evidence} — nothing to commit`, findings: [] }
-      }
-
-      const recleaned = await deps.clean()
-      if ('failed' in recleaned) {
-        return {
-          verdict: 'failed',
           evidence:
-            `${ran.evidence} — the commit was refused (${kept.failed}), and the tree could not be put back ` +
-            `(${recleaned.failed}); build must not judge it`,
+            `${ran.evidence} — the commit was refused (${kept.failed}); nothing committed, \`build\` judges ` +
+            "the agent's commit as it stands",
           findings: [],
         }
-      }
-      return {
-        verdict: 'passed',
-        evidence:
-          `${ran.evidence} — the commit was refused (${kept.failed}); nothing committed, \`build\` judges ` +
-          "the agent's commit as it stands",
-        findings: [],
-      }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const keptRunPortDepsFrom = (deps: KeptRunActionDeps): KeptRunPortDeps => ({
+  clean: () => liftPromise(() => deps.clean()),
+  keep: (name) => liftPromise(() => deps.keep(name)),
+})
+
+export function createKeptRunAction(name: string, inner: Action, deps: KeptRunActionDeps): Action {
+  return promiseAction(makeKeptRunAction(name, fromPromiseAction(inner), keptRunPortDepsFrom(deps)))
 }

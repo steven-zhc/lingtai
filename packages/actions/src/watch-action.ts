@@ -25,8 +25,16 @@
  * that is the failure the board exists to remove.
  */
 import { compileWatch, type Watcher } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 export interface WatchActionSpec {
   name: string
@@ -52,7 +60,13 @@ const ADVICE: Record<string, string> = {
     'and a branch that lands ahead of its schema is the expensive kind of broken.',
 }
 
-export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps): Action {
+/** `WatchActionDeps` with the diff read an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface WatchPortDeps {
+  changedFiles(): Effect.Effect<string[]>
+  advice?: string
+}
+
+export function makeWatchAction(spec: WatchActionSpec, deps: WatchPortDeps): ActionPort {
   // Compiled once, when the action is built — which is also `lingtai doctor` time, so
   // a bad pattern is a configuration error rather than an action that silently
   // matches nothing.
@@ -75,28 +89,42 @@ export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps):
      */
     yields: spec.then === 'fail' ? 'verdict' : 'signoff',
 
-    async run(_context: ActionContext): Promise<ActionResult> {
-      const changed = await deps.changedFiles()
-      const hits = watcher.matches(changed)
+    run(_context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        const changed = yield* deps.changedFiles()
+        const hits = watcher.matches(changed)
 
-      if (hits.length === 0) {
+        if (hits.length === 0) {
+          return {
+            verdict: 'passed',
+            evidence: `nothing in the diff matches ${spec.watch.join(', ')}`,
+            findings: [],
+          }
+        }
+
+        const advice = deps.advice ?? ADVICE[spec.name] ?? 'Read these before approving.'
+        const listed = hits.slice(0, 20).join('\n')
+        const more = hits.length > 20 ? `\n…and ${hits.length - 20} more` : ''
+        const evidence = `${spec.name} matched ${hits.length} file(s):\n${listed}${more}\n\n${advice}`
+
         return {
-          verdict: 'passed',
-          evidence: `nothing in the diff matches ${spec.watch.join(', ')}`,
+          verdict: spec.then === 'fail' ? 'failed' : 'needs-approval',
+          evidence,
           findings: [],
         }
-      }
-
-      const advice = deps.advice ?? ADVICE[spec.name] ?? 'Read these before approving.'
-      const listed = hits.slice(0, 20).join('\n')
-      const more = hits.length > 20 ? `\n…and ${hits.length - 20} more` : ''
-      const evidence = `${spec.name} matched ${hits.length} file(s):\n${listed}${more}\n\n${advice}`
-
-      return {
-        verdict: spec.then === 'fail' ? 'failed' : 'needs-approval',
-        evidence,
-        findings: [],
-      }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Members are copied one by one, so a getter on `deps` is read when the action runs. */
+export const watchPortDepsFrom = (deps: WatchActionDeps): WatchPortDeps => ({
+  changedFiles: () => liftPromise(() => deps.changedFiles()),
+  get advice() {
+    return deps.advice
+  },
+})
+
+export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps): Action {
+  return promiseAction(makeWatchAction(spec, watchPortDepsFrom(deps)))
 }

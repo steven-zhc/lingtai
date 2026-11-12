@@ -15,7 +15,8 @@
     "@lingtai/recipe": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/agent": "workspace:*",
-    "@opentelemetry/api": "^1.10.0"
+    "@opentelemetry/api": "^1.10.0",
+    "effect": "^4.1.2"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

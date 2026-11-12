@@ -40,8 +40,18 @@
  * and refusing are different things and only one of them is charged for.
  */
 import type { RuntimeId } from '@lingtai/domain'
+import { Effect } from 'effect'
 
-import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult, type InterruptedCause } from './action.ts'
+import {
+  NEEDS_INPUT,
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+  type InterruptedCause,
+} from './action.ts'
 import { boundedEvidence } from './command.ts'
 
 /**
@@ -128,69 +138,85 @@ export interface WorkActionSpec {
   limits?: { readonly turns?: number; readonly wall?: string }
 }
 
-export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Action {
+/** `WorkActionDeps` with the dispatch an Effect (#1041): its error channel is `never`, so a rejection is a defect. */
+export interface WorkPortDeps {
+  work(spec: WorkDispatch, context: ActionContext): Effect.Effect<WorkedAnswer>
+}
+
+export function makeWorkAction(spec: WorkActionSpec, deps: WorkPortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'agent',
     yields: 'commit',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      // Spread rather than assigned, each of the three, because absent has to
-      // reach the dispatch as absent: an explicit `undefined` and no key are the
-      // same to the conductor's `??`, and not to a reader deciding whether this
-      // seam invents a default (`#245`, `#314`).
-      const answer = await deps.work(
-        {
-          name: spec.name,
-          prompt: spec.prompt,
-          ...(spec.model === undefined ? {} : { model: spec.model }),
-          ...(spec.agent === undefined ? {} : { agent: spec.agent }),
-          ...(spec.limits === undefined ? {} : { limits: spec.limits }),
-        },
-        context,
-      )
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        // Spread rather than assigned, each of the three, because absent has to
+        // reach the dispatch as absent: an explicit `undefined` and no key are the
+        // same to the conductor's `??`, and not to a reader deciding whether this
+        // seam invents a default (`#245`, `#314`).
+        const answer = yield* deps.work(
+          {
+            name: spec.name,
+            prompt: spec.prompt,
+            ...(spec.model === undefined ? {} : { model: spec.model }),
+            ...(spec.agent === undefined ? {} : { agent: spec.agent }),
+            ...(spec.limits === undefined ? {} : { limits: spec.limits }),
+          },
+          context,
+        )
 
-      if ('committed' in answer) {
-        return {
-          verdict: 'passed',
-          evidence: `committed ${answer.committed.slice(0, 7)}`,
-          findings: [],
-          head: answer.committed,
+        if ('committed' in answer) {
+          return {
+            verdict: 'passed',
+            evidence: `committed ${answer.committed.slice(0, 7)}`,
+            findings: [],
+            head: answer.committed,
+          }
         }
-      }
-      if ('asked' in answer) {
-        // **Not `needs-approval`**, which holds the item for a person. A question
-        // from the agent that writes the code is 0058 §3c's: it buys a decision at
-        // `proposed`, where there is a round to spend on the answer, and the token
-        // that gets it there is this one.
+        if ('asked' in answer) {
+          // **Not `needs-approval`**, which holds the item for a person. A question
+          // from the agent that writes the code is 0058 §3c's: it buys a decision at
+          // `proposed`, where there is a round to spend on the answer, and the token
+          // that gets it there is this one.
+          return {
+            verdict: 'did-not-finish',
+            because: NEEDS_INPUT,
+            evidence: boundedEvidence(answer.asked),
+            findings: [],
+          }
+        }
+        if ('neverStarted' in answer) {
+          // The wall's own words and nothing added, exactly as `createDraftAction`
+          // reports the same wall: `standDownAccount` writes the sentence a person
+          // reads, and this is the detail it quotes. The runtime rides beside it, as
+          // `spent.runtime` does for an agent action: since #314 a step names its own
+          // runtime, so which one met the wall is the dispatch's to say, not a
+          // default of the conductor's.
+          return {
+            verdict: 'never-ran',
+            runtime: answer.neverStarted.agent,
+            evidence: boundedEvidence(answer.neverStarted.detail),
+            findings: [],
+          }
+        }
         return {
           verdict: 'did-not-finish',
-          because: NEEDS_INPUT,
-          evidence: boundedEvidence(answer.asked),
+          evidence: boundedEvidence(answer.stopped),
           findings: [],
+          ...(answer.interrupted === undefined ? {} : { interrupted: answer.interrupted }),
+          ...(answer.committedNothing === undefined ? {} : { committedNothing: answer.committedNothing }),
         }
-      }
-      if ('neverStarted' in answer) {
-        // The wall's own words and nothing added, exactly as `createDraftAction`
-        // reports the same wall: `standDownAccount` writes the sentence a person
-        // reads, and this is the detail it quotes. The runtime rides beside it, as
-        // `spent.runtime` does for an agent action: since #314 a step names its own
-        // runtime, so which one met the wall is the dispatch's to say, not a
-        // default of the conductor's.
-        return {
-          verdict: 'never-ran',
-          runtime: answer.neverStarted.agent,
-          evidence: boundedEvidence(answer.neverStarted.detail),
-          findings: [],
-        }
-      }
-      return {
-        verdict: 'did-not-finish',
-        evidence: boundedEvidence(answer.stopped),
-        findings: [],
-        ...(answer.interrupted === undefined ? {} : { interrupted: answer.interrupted }),
-        ...(answer.committedNothing === undefined ? {} : { committedNothing: answer.committedNothing }),
-      }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const workPortDepsFrom = (deps: WorkActionDeps): WorkPortDeps => ({
+  work: (spec, context) => liftPromise(() => deps.work(spec, context)),
+})
+
+export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Action {
+  return promiseAction(makeWorkAction(spec, workPortDepsFrom(deps)))
 }

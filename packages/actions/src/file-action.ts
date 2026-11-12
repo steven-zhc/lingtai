@@ -86,8 +86,16 @@
  * through a check that had already said yes.
  */
 import { thePathForThisTicket } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
+import {
+  liftPromise,
+  promiseAction,
+  type Action,
+  type ActionContext,
+  type ActionPort,
+  type ActionResult,
+} from './action.ts'
 
 /**
  * What the keep answers — two branches, because a destination either kept the
@@ -197,88 +205,106 @@ function notThisTicketsPath(written: string, ref: string, why: string): string {
   )
 }
 
-export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Action {
+/** `FileActionDeps` with `keep` and `issue` Effects (#1041): their error channel is `never`, so a rejection is a defect. */
+export interface FilePortDeps {
+  keep(spec: { readonly path: string; readonly document: string }): Effect.Effect<KeptAnswer>
+  issue: () => Effect.Effect<{ readonly ref: string }>
+}
+
+export function makeFileAction(spec: FileActionSpec, deps: FilePortDeps): ActionPort {
   return {
     name: spec.name,
     kind: 'file',
     yields: 'design',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      // **First, so that every sentence below names the path the document
-      // actually goes to** and not the template a person wrote. The accessor is
-      // the ticket the pass already holds, so this costs nothing where there
-      // turns out to be nothing to keep.
-      const ref = (await deps.issue()).ref
-      const expanded = thePathForThisTicket(spec.path, ref)
-      if ('escapes' in expanded) {
-        // `did-not-finish` and never `refused`: `design` is not one of
-        // `REFUSING_STEPS` (0058 §3), and this action writes rather than judges.
-        return {
-          verdict: 'did-not-finish',
-          evidence: notThisTicketsPath(spec.path, ref, expanded.escapes),
-          findings: [],
+    run(context: ActionContext): Effect.Effect<ActionResult> {
+      return Effect.gen(function* () {
+        // **First, so that every sentence below names the path the document
+        // actually goes to** and not the template a person wrote. The accessor is
+        // the ticket the pass already holds, so this costs nothing where there
+        // turns out to be nothing to keep.
+        const ref = (yield* deps.issue()).ref
+        const expanded = thePathForThisTicket(spec.path, ref)
+        if ('escapes' in expanded) {
+          // `did-not-finish` and never `refused`: `design` is not one of
+          // `REFUSING_STEPS` (0058 §3), and this action writes rather than judges.
+          return {
+            verdict: 'did-not-finish',
+            evidence: notThisTicketsPath(spec.path, ref, expanded.escapes),
+            findings: [],
+          }
         }
-      }
-      const path = expanded.path
+        const path = expanded.path
 
-      const drafted = context.design
-      if (drafted === undefined) {
-        // A context nothing filled in, which is one built by hand: `runStep`
-        // sets `design` on every verdicts pipeline, and `runActionPipeline`
-        // advances it as the step's own list produces one. Reported rather than
-        // treated as an empty document, because *nobody drafted* and *the
-        // drafter answered that none was needed* are different facts and only
-        // the second is an answer (0058 §3).
-        return {
-          verdict: 'did-not-finish',
-          evidence:
-            `nothing handed "${spec.name}" a design to keep — a \`file:\` keeps what an earlier action ` +
-            'at the step made, and no pipeline filled `ActionContext.design` in',
-          findings: [],
+        const drafted = context.design
+        if (drafted === undefined) {
+          // A context nothing filled in, which is one built by hand: `runStep`
+          // sets `design` on every verdicts pipeline, and `runActionPipeline`
+          // advances it as the step's own list produces one. Reported rather than
+          // treated as an empty document, because *nobody drafted* and *the
+          // drafter answered that none was needed* are different facts and only
+          // the second is an answer (0058 §3).
+          return {
+            verdict: 'did-not-finish',
+            evidence:
+              `nothing handed "${spec.name}" a design to keep — a \`file:\` keeps what an earlier action ` +
+              'at the step made, and no pipeline filled `ActionContext.design` in',
+            findings: [],
+          }
         }
-      }
 
-      // **Silent where there was nothing to keep**, which is the rule on
-      // `designFrom` in `packages/conductor/src/run-attempt.ts` read from this side: an
-      // empty document is *the drafter answered that this change needs none*
-      // (0058 §3), and a file written for it would be an empty file in the diff
-      // and a locator pointing at nothing anybody wants. No `document` and no
-      // `locator` on the result, so the drafter's own answer is what crosses to
-      // `implement` — a destination that kept nothing says so on `evidence` and
-      // changes no fact.
-      if (drafted.document === '') {
+        // **Silent where there was nothing to keep**, which is the rule on
+        // `designFrom` in `packages/conductor/src/run-attempt.ts` read from this side: an
+        // empty document is *the drafter answered that this change needs none*
+        // (0058 §3), and a file written for it would be an empty file in the diff
+        // and a locator pointing at nothing anybody wants. No `document` and no
+        // `locator` on the result, so the drafter's own answer is what crosses to
+        // `implement` — a destination that kept nothing says so on `evidence` and
+        // changes no fact.
+        if (drafted.document === '') {
+          return {
+            verdict: 'passed',
+            evidence: `nothing to keep at \`${path}\` — the design step answered that none was needed`,
+            findings: [],
+          }
+        }
+
+        const answer = yield* deps.keep({ path, document: drafted.document })
+        if ('notKept' in answer) {
+          return {
+            verdict: 'did-not-finish',
+            evidence: `the design was not kept at \`${path}\`: ${answer.notKept}`,
+            findings: [],
+          }
+        }
+
         return {
           verdict: 'passed',
-          evidence: `nothing to keep at \`${path}\` — the design step answered that none was needed`,
+          // 0066 §3's own sentence: *wrote a 2.4 kB design to `doc/design/x.md`* —
+          // the fact a person reads off the card, in place of the document, on the
+          // event this action appends. Not on the drafter's, which still carries
+          // the document clipped (0066 §8) — the header says what that leaves open.
+          evidence: `wrote a ${sizeOf(drafted.document)} design to \`${answer.at}\`, committed to the branch`,
           findings: [],
+          // **Both, off one result**, which is what makes the pair readable: a
+          // locator whose document did not survive is a locator nothing carries
+          // (0069 §5), so the document is returned beside the path rather than
+          // left to the entry that drafted it.
+          document: drafted.document,
+          locator: answer.at,
+          ...(answer.head === undefined ? {} : { head: answer.head }),
         }
-      }
-
-      const answer = await deps.keep({ path, document: drafted.document })
-      if ('notKept' in answer) {
-        return {
-          verdict: 'did-not-finish',
-          evidence: `the design was not kept at \`${path}\`: ${answer.notKept}`,
-          findings: [],
-        }
-      }
-
-      return {
-        verdict: 'passed',
-        // 0066 §3's own sentence: *wrote a 2.4 kB design to `doc/design/x.md`* —
-        // the fact a person reads off the card, in place of the document, on the
-        // event this action appends. Not on the drafter's, which still carries
-        // the document clipped (0066 §8) — the header says what that leaves open.
-        evidence: `wrote a ${sizeOf(drafted.document)} design to \`${answer.at}\`, committed to the branch`,
-        findings: [],
-        // **Both, off one result**, which is what makes the pair readable: a
-        // locator whose document did not survive is a locator nothing carries
-        // (0069 §5), so the document is returned beside the path rather than
-        // left to the entry that drafted it.
-        document: drafted.document,
-        locator: answer.at,
-        ...(answer.head === undefined ? {} : { head: answer.head }),
-      }
+      })
     },
   }
+}
+
+/** Lifts promise deps. Methods are copied one by one, so a getter on `deps` is read when the action runs. */
+export const filePortDepsFrom = (deps: FileActionDeps): FilePortDeps => ({
+  keep: (spec) => liftPromise(() => deps.keep(spec)),
+  issue: () => liftPromise(() => deps.issue()),
+})
+
+export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Action {
+  return promiseAction(makeFileAction(spec, filePortDepsFrom(deps)))
 }
