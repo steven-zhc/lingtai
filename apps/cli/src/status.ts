@@ -20,6 +20,8 @@ import {
   waitsFor,
   type ClientFor,
   type RecipeFor,
+  accountsFor,
+  currentRecipe,
 } from '@lingtai/conductor'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { readControl } from '@lingtai/daemon'
@@ -31,7 +33,9 @@ import {
   locksOn,
   savedHeadOf,
   waitWords,
+  type AccountState,
   type CeilingFacts,
+  type RuntimeId,
   type ControlState,
   type Lock,
   type ProjectState,
@@ -48,6 +52,7 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 import { ceilingFactsJson, ceilingUnreadLine, lockJson, lockLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { daySpendLine } from './day-ceiling.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
+import { runEffect } from './project-pause.ts'
 import { waitCommand } from './wait-command.ts'
 
 /** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
@@ -206,6 +211,8 @@ export interface StatusReading {
   spendLine?: (
     control: ControlState | null,
   ) => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
+  /** The runtimes the project's recipe uses and their `acct-` state. Replaceable so a test need not own a log. */
+  accounts?: (project: ProjectState) => Promise<ReadonlyMap<RuntimeId, AccountState>>
   /** The control stream, whole. Replaceable so a test need not own a log. */
   control?: () => Promise<ControlState>
   /** The configured daily ceiling; throws where `limits.day_usd` does not parse. */
@@ -534,11 +541,21 @@ export async function readStatus(options: StatusOptions = {}, reading: StatusRea
       }
     }
 
+    // A read that fails is said, never shown as *not limited* (0126 §5).
+    const accounts = await (
+      reading.accounts ??
+      ((p) => runEffect(accountsFor(eventStore, p, (state) => (reading.recipeFor ?? currentRecipe)(state, undefined))))
+    )(project).then(
+      (a) => ({ accounts: a }),
+      (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+    )
     out.push({
       locks:
         controlState === null
           ? { unread: (control as { unread: string }).unread }
-          : locksOn({ project, control: controlState }),
+          : 'unread' in accounts
+            ? { unread: accounts.unread }
+            : locksOn({ project, control: controlState, accounts: accounts.accounts }),
       project: name,
       base: project.base ?? null,
       filter: view,

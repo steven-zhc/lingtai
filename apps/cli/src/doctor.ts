@@ -49,6 +49,8 @@ import {
   githubClientFor,
   loadProjects,
   attemptCeiling,
+  readAccount,
+  runtimesOf,
   projectFilters,
   signedInHere,
 } from '@lingtai/conductor'
@@ -71,11 +73,14 @@ import {
 } from '@lingtai/daemon'
 import {
   type ControlState,
+  type ProjectState,
   type RecordedRefusal,
   REDUCERS,
-  type RuntimeId,
+  RuntimeId,
   ceilingFacts,
   isEventType,
+  untilFromWords,
+  whenLabel,
   todaysCeiling,
 } from '@lingtai/domain'
 import {
@@ -100,7 +105,14 @@ import { badge, paint } from '@lingtai/env/colour'
 // opens nothing until something asks it a question. It is what the rows above
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
-import { createSqlSnapshotStore, log, logPredatesHold, type SnapshotCensusRow } from '@lingtai/event-store'
+import {
+  createSqlSnapshotStore,
+  eventStore,
+  log,
+  logPredatesHold,
+  type EventStore,
+  type SnapshotCensusRow,
+} from '@lingtai/event-store'
 // The submodule, not the barrel: these two checks run on the *direct*
 // connection, and the barrel's `log` is the pooled one. Through a pooler is
 // where the suite learned what a dropped connection costs (#157), and an audit
@@ -124,6 +136,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
+import type { ResolvedRecipe } from '@lingtai/recipe'
 import {
   UNBOUNDED,
   baseDivergence,
@@ -138,11 +151,13 @@ import {
 } from '@lingtai/recipe'
 import { git } from '@lingtai/repo'
 import { remedyFor } from '@lingtai/setup'
+import { Effect } from 'effect'
 import pg from 'pg'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { readDaySpend } from './day-ceiling.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
+import { runEffect } from './project-pause.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 import { versionFacts } from './version.ts'
@@ -1312,6 +1327,58 @@ function pausedRows(name: string, projects: Awaited<ReturnType<typeof loadProjec
   if (paused.length === 0) return []
   const detail = paused.map((p) => `${p.project} (by ${p.paused!.by} since ${p.paused!.at.toISOString()})`).join('; ')
   return [{ name, status: 'info', detail: `${detail} — lingtai resume <project> lifts it` }]
+}
+
+/**
+ * The runtimes whose account is at its usage limit (#1009): one row each,
+ * naming who waits and who takes work. A limit is a fact and not a failure, so
+ * the row is `info` and takes no part in the exit code; with none limited there
+ * is no row. A project whose recipe does not resolve is in neither list.
+ */
+export function accountLimits(
+  store: EventStore = eventStore,
+  load: typeof loadProjects = loadProjects,
+  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe> = currentRecipe,
+  now: () => Date = () => new Date(),
+): Promise<CheckResult[]> {
+  const name = (runtime: RuntimeId) => `account: ${runtime}`
+  const rows = Effect.gen(function* () {
+    const limited = yield* Effect.forEach(RuntimeId.options, (runtime) =>
+      readAccount(store, runtime).pipe(Effect.map((account) => [runtime, account] as const)),
+    )
+    const standing = limited.filter(([, account]) => account.limit !== null)
+    if (standing.length === 0) return [] as CheckResult[]
+    const projects = (yield* Effect.tryPromise({ try: () => load(), catch: (e) => e })).filter(
+      (p) => p.project !== null,
+    )
+    const uses = yield* Effect.forEach(projects, (p) =>
+      Effect.tryPromise({ try: () => recipeFor(p), catch: (e) => e }).pipe(
+        Effect.map((resolved) => ({ project: p.project!, runtimes: runtimesOf(resolved.recipe) }) as const),
+        Effect.catch(() => Effect.succeed(null)),
+      ),
+    )
+    const resolved = uses.filter((u): u is NonNullable<typeof u> => u !== null)
+    const at = now()
+    return standing.map(([runtime, account]): CheckResult => {
+      const limit = account.limit!
+      const until = whenLabel(limit.until, at)
+      const passed = limit.until.getTime() <= at.getTime()
+      const list = (names: string[]) => (names.length === 0 ? 'none' : names.join(', '))
+      const waits = resolved.filter((u) => u.runtimes.includes(runtime)).map((u) => u.project)
+      const takes = resolved.filter((u) => !u.runtimes.includes(runtime)).map((u) => u.project)
+      const detail = passed
+        ? `until ${until} — passed; lifts when the conductor next looks`
+        : `at its usage limit until ${until} (${untilFromWords(limit.untilFrom)}), since ${whenLabel(limit.since, at)} — lingtai waits: ${list(waits)}; takes work: ${list(takes)} — lingtai account lift ${runtime} once it is over`
+      return { name: name(runtime), status: 'info', detail }
+    })
+  })
+  return runEffect(rows).catch((err: unknown): CheckResult[] => [
+    {
+      name: 'account limits',
+      status: 'warn',
+      detail: `could not be read — ${err instanceof Error ? err.message : String(err)}`,
+    },
+  ])
 }
 
 /** The `spend` projection's lag right now; undefined where it cannot be read. */
@@ -3291,6 +3358,7 @@ export async function runDoctor(
     await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
     await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
     await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
+    await step('account limits', () => accountLimits(undefined, load).then((r) => void results.push(...r)))
     await step('spend', async () =>
       results.push(
         await spendToday(
@@ -3348,6 +3416,7 @@ export async function runDoctor(
     // for thirty-nine minutes only one of them was measured.
     await step('daemon currency', async () => results.push(await daemonCurrency()))
     await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
+    await step('account limits', () => accountLimits(undefined, load).then((r) => void results.push(...r)))
     await step('spend', async () => results.push(await spendToday(undefined, () => readControl())))
     await step('rates', async () => results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag()))))
     // What the conductor refused, from the log — not what this checkout would

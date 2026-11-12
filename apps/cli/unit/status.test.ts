@@ -1,4 +1,4 @@
-import { ceilingFacts, emptyControl, locksOn, waitWords, type ControlState } from '@lingtai/domain'
+import { ceilingFacts, NO_ACCOUNTS, emptyControl, locksOn, waitWords, type ControlState } from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
@@ -721,7 +721,10 @@ describe('what holds new work (#1005)', () => {
       projects: projects.map((name) => ({
         ...base,
         project: name,
-        locks: ok === null ? { unread: (state as { unread: string }).unread } : locksOn({ control: ok }),
+        locks:
+          ok === null
+            ? { unread: (state as { unread: string }).unread }
+            : locksOn({ control: ok, accounts: NO_ACCOUNTS }),
       })),
     }
   }
