@@ -190,10 +190,10 @@ import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type S
  * the four outcomes was reached (`outcomeOf`) and never writes it; the three
  * blocks below are where it is written, once each.
  *
- * **And one ending stops the conductor rather than the item.** A `never-ran` met
+ * **And one ending locks the account rather than backing the item off.** A `never-ran` met
  * something account-wide ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)),
- * so the item is released like any other failure and `ctl-conductor` is told to
- * take nothing at all until the limit lifts — per-item backoff answering an
+ * so the item is released like any other failure and `acct-{runtime}` is told to
+ * lock that runtime's projects until the limit lifts — per-item backoff answering an
  * account-wide condition is what eighty events in ninety-two seconds looked like.
  */
 import {
@@ -2907,8 +2907,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           await appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)])
         }
         /**
-         * **A quota wall is the account's, so it stops the conductor rather than
-         * this item** (0031 §3) — the third depth that wall is met at, after the
+         * **A quota wall is the account's, so it locks that account rather than
+         * backing off this item** (0031 §3) — the third depth that wall is met at, after the
          * step's own agent and the agent a refusal bought.
          *
          * `never-started` is the adapter's classification and is not re-derived
@@ -2922,13 +2922,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             neverStarted: {
               agent: runtime,
               // The runtime's own words, whole: `standDown` reads a reset time out
-              // of them (0031 §4) and the pause chip shows them as what they are.
+              // of them (0031 §4) and the log line shows them as what they are.
               detail: outcome.failure.detail,
             },
           }
         }
         if (outcome.failure) {
-          // #655: the judge's crash is the ticket's wait, and the account's wall is the conductor's.
+          // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
           const walled = outcome.failure.kind === 'crash' ? accountWallOf(outcome.failure.detail) : null
           if (walled !== null) {
             await Effect.runPromise(
@@ -4271,7 +4271,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // itself reports none.
         stoppedBy = fixed.failure ? fixed.failure.kind : null
         // #655: `committed` below drops the failure, so the blocked branch never sees
-        // the account's wall a fixer met after it had committed. Pause here instead.
+        // the account's wall a fixer met after it had committed. Lock the account here instead.
         const walled = fixed.failure?.kind === 'crash' ? accountWallOf(fixed.failure.detail) : null
         if (fixed.failure && walled !== null) {
           await Effect.runPromise(standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail))
@@ -5014,7 +5014,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }),
         )
         // #655: a run that started and met the account's limit. The wait above is
-        // the ticket's and is already written; this only stops the conductor.
+        // the ticket's and is already written; this only locks the account.
         const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? accountWallOf(reason.detail) : null
         if (reason._tag === 'AgentCrashed' && walled !== null) {
           yield* standDownAccount({ of: 'mid-run', step: reason.step }, walled, reason.detail)
@@ -5031,10 +5031,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       // ---- failed: the item goes back to the queue -----------------------------
-      // **And one ending stops the conductor rather than the item** (0031 §3). A
-      // `never-ran` met something account-wide, so every queued item would meet it
+      // **And one ending locks the account rather than backing the item off** (0031 §3). A
+      // `never-ran` met something account-wide, so every queued item on that runtime would meet it
       // identically: the item is released like any other failure and nothing else
-      // is taken until the pause lifts.
+      // on that runtime is taken until the lock lifts.
       if (stopped?.ending.ending === 'never-ran') {
         const at = stopped.ending.at
         const round = wallMetBy()

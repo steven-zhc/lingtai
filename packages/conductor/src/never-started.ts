@@ -49,7 +49,7 @@
  * the behaviour from before it existed. It never touches the ticket's wait.
  *
  * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
- * pause is written, and it is one call.
+ * lock is written, and it is one call.
  */
 import type { PayloadOf, RuntimeId } from '@lingtai/domain'
 
@@ -64,11 +64,12 @@ export type UntilFrom = PayloadOf<'AccountLimitReached'>['untilFrom']
  * a substring, because a fix round and a drafting agent wrap it in their own.
  */
 const ACCOUNT_WALLS: readonly { readonly runtime: RuntimeId; readonly pattern: RegExp }[] = [
+  // Codex, first: it says `You've hit your usage limit` as well as `You have hit …`,
+  // and Claude Code's looser pattern below would claim the first form.
+  { runtime: 'codex', pattern: /\bYou(?:(?:'|\u2019)ve| have) hit your usage limit\b/i },
   // Claude Code: `You've hit your monthly spend limit`, `…session limit`, `…weekly limit`.
-  { runtime: 'claude-code', pattern: /\bYou(?:'|\u2019)ve hit your [a-z ]{0,30}limit\b/i },
+  { runtime: 'claude-code', pattern: /\bYou(?:'|\u2019)ve hit your (?!usage limit)[a-z ]{0,30}limit\b/i },
   { runtime: 'claude-code', pattern: /\byour session limit resets\b/i },
-  // Codex.
-  { runtime: 'codex', pattern: /\bYou have hit your usage limit\b/i },
 ]
 
 /** The runtime whose own account-limit sentence `detail` holds, or null (#1011). */
@@ -298,7 +299,7 @@ export type NeverStarted =
   /**
    * An agent that **started** and met the account's limit part-way (#655). Unlike
    * every other variant the run is not released: the ticket keeps its crash
-   * wait, and this only stops the conductor.
+   * wait, and this only locks the account.
    */
   | { readonly of: 'mid-run'; readonly step: string }
 
@@ -343,10 +344,9 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
 }
 
 /**
- * When the conductor takes work again, and the sentence saying why.
+ * When the locked account's projects take work again, and the sentence saying why.
  *
- * The sentence is what the board's pause chip shows (#77) and what
- * `lingtai doctor` prints, so it has to carry three things a person woken by it
+ * The sentence is what the run's log line carries, so it has to carry three things a person woken by it
  * would ask: what happened, until when, and where the time came from. The
  * runtime's own words are quoted rather than summarised — they are the evidence
  * the classification refused to read, and dropping them here would leave the

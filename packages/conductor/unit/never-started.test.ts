@@ -430,8 +430,12 @@ describe('standDown: untilFrom and said', () => {
   })
 })
 
-/** #655: a run that started and met the account's limit pauses the conductor, and nothing looser does. */
+/** #655: a run that started and met the account's limit locks its runtime's account, and nothing looser does. */
 describe('accountWallOf', () => {
+  it("names Codex for Codex's own `You've hit your usage limit` form", () => {
+    expect(accountWallOf(CODEX_USAGE)).toBe('codex')
+  })
+
   const MONTHLY =
     "You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 12:50pm (America/Chicago)"
 
