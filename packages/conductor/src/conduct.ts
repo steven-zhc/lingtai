@@ -3468,10 +3468,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         baseSha: string,
       ): Effect.Effect<{ fromSha: string; overlap: readonly string[] } | null> =>
         Effect.gen(function* () {
-          const parents = yield* gitAskedEffect(['rev-list', '--parents', '-n', '1', 'HEAD'])
-          if (Result.isFailure(parents)) return null
-          const [, ours, theirs] = parents.success.trim().split(/\s+/)
-          if (ours === undefined || theirs === undefined) return null
+          // The merge commit need not be `HEAD`: the fixer or a formatter may have committed after
+          // it. It is the merge on the path from `baseSha` to `HEAD` that has `baseSha` as a parent.
+          const merges = yield* gitAskedEffect([
+            'rev-list',
+            '--merges',
+            '--parents',
+            '--ancestry-path',
+            `${baseSha}..HEAD`,
+          ])
+          if (Result.isFailure(merges)) return null
+          const line = merges.success
+            .split('\n')
+            .map((l) => l.trim().split(/\s+/))
+            .filter((parts) => parts.slice(1).includes(baseSha))
+            .at(-1)
+          const ours = line?.[1]
+          if (ours === undefined || ours === baseSha) return null
           const ancestor = yield* gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD'])
           if (Result.isFailure(ancestor)) return null
           const fork = yield* gitAskedEffect(['merge-base', ours, baseSha])

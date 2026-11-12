@@ -1699,7 +1699,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         ) {
           const asked = options.from.conflictResolved
           const found = yield* options.conflictEvidence(asked.baseSha)
-          if (found !== null) {
+          // Evidence that cannot be rebuilt is not evidence that nothing is owed: a review
+          // without the lost-changes question is a person's to decide.
+          if (found === null) {
+            stopped = null
+            end = conflictNotStarted(
+              {
+                _tag: 'MergeConflict',
+                output: '',
+                paths: [...asked.paths],
+                baseSha: asked.baseSha,
+                headSha: null,
+              },
+              `the committed merge of ${asked.baseSha.slice(0, 7)} could not be found in the history, so the review cannot be asked what it lost`,
+            )
+            break
+          } else {
             landedOnBase = {
               paths: [...new Set([...found.overlap, ...asked.paths])],
               conflicted: asked.paths,

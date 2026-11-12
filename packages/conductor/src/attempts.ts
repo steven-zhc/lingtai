@@ -304,7 +304,11 @@ export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: s
 
 function reviewerRanIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   return outcome.actions.some(
-    (a) => a.yields === 'verdict' && a.result._tag !== 'DiffTooLarge' && a.result._tag !== 'NeverStarted',
+    (a) =>
+      a.yields === 'verdict' &&
+      a.result._tag !== 'DiffTooLarge' &&
+      a.result._tag !== 'NeverStarted' &&
+      a.result._tag !== 'NotReached',
   )
 }
 
