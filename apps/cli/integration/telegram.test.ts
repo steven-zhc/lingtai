@@ -294,16 +294,18 @@ describe('the telegram subscriber this repository declares', () => {
 
   /**
    * Killed while its request is open: the `run:` line is the shipped one behind
-   * a shell that says its pid — `<&0` because `sh` gives a background job
-   * `/dev/null` for stdin, and the payload has to reach it — and the Bot API holds the first message until
-   * the test has killed the process sending it.
+   * a shell that says its pid and then `exec`s it. `exec` keeps the shell's pid
+   * and its stdin, so `$$` is the extension's pid and the payload reaches it under
+   * any POSIX `sh` (dash gives a background job `/dev/null` even with `<&0`); this
+   * assumes the shipped `run:` is one simple command. The Bot API holds the first
+   * message until the test has killed the process sending it.
    */
   it('records an extension killed mid-event, and goes on following the log', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'lingtai-telegram-kill-'))
     const pidFile = join(dir, 'pid')
     const api = await botApi(0, (text) => text.includes('kill me'))
     const before = (await failures()).length
-    await started(api.port, { run: `${shipped.run} <&0 & echo $! > ${pidFile}; wait $!` })
+    await started(api.port, { run: `echo $$ > ${pidFile}; exec ${shipped.run}` })
 
     const first = await anAttempt()
     await failed(first.runId, 'kill me')
