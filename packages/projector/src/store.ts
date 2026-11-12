@@ -30,6 +30,7 @@
  * interface is what made that a single edit rather than six.
  */
 import type { Envelope } from '@lingtai/domain'
+import { Context, Effect } from 'effect'
 
 // Type-only, both ways. `store.ts` names the row shapes the board reads and
 // `task-view.ts` names the context a reducer writes through; a cycle of types is
@@ -76,7 +77,7 @@ export class CheckpointRewoundError extends Error {
  * **It lives here rather than in `shape.ts` because the twins have to raise
  * it.** `shape.ts` reaches a store through `choose.ts`, which names
  * `postgres.ts`; a read path importing it from there would make `sqlite.ts`
- * load `pg`. This file imports nothing at runtime, so both twins can. The
+ * load `pg`. This file imports only `effect` at runtime, never `pg`, so both twins can. The
  * names are still exported from `shape.ts`, where every reader of them looks.
  */
 export class ProjectionShapeError extends Error {
@@ -369,4 +370,57 @@ export interface ProjectionStore {
 
   /** Releases whatever this store holds open. */
   close(): Promise<void>
+}
+
+/**
+ * `ProjectionContext` as Effects. A driver or SQLite error is a defect.
+ */
+export interface ProjectionContextPort {
+  query<T = ProjectionRow>(text: string, values?: readonly unknown[]): Effect.Effect<T[]>
+}
+
+/**
+ * `ProjectionStore` as Effects (0101 §7, #1046): the one implementation each
+ * twin has, and the promise `ProjectionStore` is a face over it
+ * (`store-face.ts`). A driver or SQLite error is a defect, so a face rejects
+ * with it as itself; the two typed failures keep their classes.
+ */
+export interface ProjectionsPort {
+  transact<A, E>(fn: (ctx: ProjectionContextPort) => Effect.Effect<A, E>): Effect.Effect<A, E>
+  checkpoint(name: string): Effect.Effect<bigint>
+  advance(
+    ctx: ProjectionContextPort,
+    name: string,
+    seq: bigint,
+    from?: bigint,
+  ): Effect.Effect<void, CheckpointRewoundError>
+  register(ctx: ProjectionContextPort, name: string): Effect.Effect<void>
+  rewind(ctx: ProjectionContextPort, name: string): Effect.Effect<void>
+  columnsOf(tables: readonly string[]): Effect.Effect<Map<string, ReadonlySet<string>>>
+  lag(name: string): Effect.Effect<ProjectionLag>
+  lags(): Effect.Effect<ProjectionLag[]>
+  tasks(query: TaskQuery): Effect.Effect<TaskCard[], ProjectionShapeError>
+  taskProjects(query: Pick<TaskQuery, 'retentionDays'>): Effect.Effect<string[]>
+  backlog(query: BacklogQuery): Effect.Effect<BacklogEntry[]>
+  spend(query: SpendQuery): Effect.Effect<SpendRow[]>
+  ticketReport(query: TicketReportQuery): Effect.Effect<TicketReportRow[]>
+  landed(query: TicketReportLandedQuery): Effect.Effect<TicketReportRow[], ProjectionShapeError>
+  close(): Effect.Effect<void>
+}
+
+export class Projections extends Context.Service<Projections, ProjectionsPort>()('@lingtai/projector/Projections') {}
+
+/**
+ * Runs a row mapping that may throw a `ProjectionShapeError`: that error is the
+ * failure and anything else a defect, unchanged from when the throw was a rejection.
+ */
+export function mapRows<A>(map: () => A): Effect.Effect<A, ProjectionShapeError> {
+  return Effect.suspend(() => {
+    try {
+      return Effect.succeed(map())
+    } catch (err) {
+      if (err instanceof ProjectionShapeError) return Effect.fail(err)
+      return Effect.die(err)
+    }
+  })
 }
