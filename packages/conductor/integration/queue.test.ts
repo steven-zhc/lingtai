@@ -198,7 +198,7 @@ describe('selectRunnable', () => {
         {
           type: 'TicketReleased',
           actor: 'conductor',
-          data: { runId, reason: 'the gate failed' },
+          data: { runId, reason: 'the gate failed', cause: null },
         },
       ])
       await build()

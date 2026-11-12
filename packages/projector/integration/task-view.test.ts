@@ -785,9 +785,9 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(describeArm(card(tasks, 2)!, null)).toBeNull()
     })
 
-    it('says why a task is waiting, in one line', async () => {
+    it('writes no note for a refusal at the lane, which is not a transition of the task (#845)', async () => {
       const tasks = await readTasks({ project: PROJECT })
-      expect(card(tasks, 4)!.note).toContain('dirty-base')
+      expect(card(tasks, 4)!.note).toBeNull()
     })
 
     /**
@@ -857,7 +857,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
      * conflicted, and the run was back to `gating`. Sitting in the column and
      * being asked a question are two facts, and the card now carries both.
      *
-     * **And the refusal reaches a person**, which since `#143` is the only place
+     * **And the conflict reaches a person as a judgement** (#502), which since `#143` is the only place
      * it can reach: no agent is bought, so the block and its diagnosis are the
      * whole outcome and the card has to carry a sentence rather than a control
      * that refuses.
@@ -870,13 +870,13 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       // Somebody's question, with the reason on it.
       expect(nine.state).toBe('waiting')
       expect(nine.wait !== null).toBe(true)
-      expect(hold(nine).needs).toBe('acknowledgement')
+      expect(hold(nine).needs).toBe('judgement')
       expect(hold(nine).diagnosis?.done).toContain('No agent was bought')
       expect(hold(nine).diagnosis?.recommendation?.action).toBe('requeue')
 
       // The lane holds more than questions: a refused dispatch with no block
       // after it leaves `state` alone — #406 — so card 4 is whatever
-      // `TicketDiscovered` wrote, with the refusal as its note.
+      // `TicketDiscovered` wrote, and the lane's refusal writes no note (#845).
       expect(card(tasks, 4)!.state).toBe('queued')
       expect(card(tasks, 4)!.wait !== null).toBe(false)
     })
