@@ -1544,6 +1544,41 @@ describe('what a conflict tells the fixer', () => {
     expect(withMinor).not.toContain('which is the acceptance criterion')
   })
 
+  describe('when the conductor already started the merge (#1120)', () => {
+    const merged = fixBrief({
+      refusal: {
+        on: 'conflict',
+        base: 'main',
+        paths: 'src/queue.ts',
+        findings: [{ file: 'a.ts', line: 3, claim: 'a stray name', failureScenario: 'x', severity: 'minor' }],
+        merged: { baseSha: 'b'.repeat(40), fromSha: 'f'.repeat(40), paths: ['src/queue.ts', 'src/events.ts'] },
+      },
+      round: 1,
+      of: 2,
+      action: 'merge',
+      diff: 'd',
+      diffBytes: 400_000,
+      checks: ['pnpm test'],
+      ticket: TICKET,
+    })
+
+    it('says the merge is standing, names the paths, and forbids aborting or merging again', () => {
+      expect(merged).toContain(`git merge --no-commit --no-ff ${'b'.repeat(40)}`)
+      expect(merged).toContain('`MERGE_HEAD` and the')
+      expect(merged).toMatch(/do not run `git merge --abort` and do not merge\s+again/i)
+      expect(merged).toContain('src/queue.ts\nsrc/events.ts')
+      expect(merged).toContain(`\`${'f'.repeat(7)}..${'b'.repeat(7)}\``)
+      expect(merged).not.toContain('is yours to do')
+      expect(merged).not.toContain('run git merge `main`')
+    })
+
+    it('keeps the side rules, the stop-and-ask rule and the open findings after the conflict', () => {
+      expect(merged).toMatch(/`--ours` and `--theirs` wholesale are not a resolution/)
+      expect(merged).toMatch(/stop and ask rather than choose/i)
+      expect(merged.indexOf('## What conflicts')).toBeLessThan(merged.indexOf('## Also open from the last review'))
+    })
+  })
+
   it('tells the agent to stop and ask rather than choose when the behaviours contradict', () => {
     expect(brief).toMatch(/stop and ask rather than choose/i)
     expect(brief).toMatch(/do not commit the merge/i)
