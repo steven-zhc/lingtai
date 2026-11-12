@@ -44,6 +44,8 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import type { Readable, Writable } from 'node:stream'
 
+import { Effect } from 'effect'
+
 /** How much of the output a card gets. Enough to act on, bounded. */
 export const EVIDENCE_LINES = 60
 export const EVIDENCE_BYTES = 8_000
@@ -228,63 +230,77 @@ export function boundedEvidence(text: string): string {
 }
 
 /**
- * Run the command and wait for it. An action's exit code is a verdict, so
- * this is the caller an action uses.
+ * Run the command and wait for it, as an Effect (#1042). An action's exit code
+ * is a verdict, so this is what an action uses. The error channel is `never`:
+ * a command that fails, times out or cannot be spawned is a `CommandOutcome`
+ * with `ok: false`.
+ *
+ * **Interrupting it does what aborting `options.signal` does, and completes
+ * only when that path's report would have gone out** — the child's `exit`, or
+ * the six-second bound — as the runtime adapters' interruption waits for its
+ * process group (`claude-code.ts`). A caller that cleans the tree right after
+ * this returns (`kept-run-action.ts`) relies on the command no longer writing.
  */
-export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
-  return new Promise<CommandOutcome>((resolve) => spawnCommand(options, resolve))
-}
+export const commandEffect = (options: RunCommandOptions): Effect.Effect<CommandOutcome> =>
+  Effect.gen(function* () {
+    const end = yield* Effect.callback<CommandEnd>((resume) => {
+      const handle = spawnCommand(options, (e) => resume(Effect.succeed(e)))
+      return Effect.suspend(() => {
+        if (handle.settled()) return Effect.void
+        handle.interrupt()
+        return Effect.callback<void>((done) => handle.onSettled(() => done(Effect.void)))
+      })
+    })
+    if (end.kind === 'outcome') return end.outcome
 
-/**
- * Run the command and do not wait for it — 0037 §3's other caller. *"The whole
- * taxonomy is: a command, and whether the core waits for it."* A subscriber's
- * exit code decides nothing, so the loop that started it goes on immediately.
- *
- * Not waiting is not the same as not looking. The timeout is enforced exactly
- * as it is for an action, because 0037 §6's point is that an ignored failure and a
- * bounded one are different guarantees and only the second keeps the loop
- * moving — and the outcome, when it arrives, is handed to `report`, which is
- * the only place a command's exit code can be read. `createSubscriber` in
- * `subscriber.ts` reads it there and rejects `deliver` on a non-zero one, and
- * `work-loop.ts`'s boundary turns that rejection into `PluginFailed` — once,
- * for every subscriber, in-process or command — for §7's reason: a subscriber
- * whose failure is a console line is a notifier that has silently stopped
- * notifying. So a `report` does not append a failure of its own, and a command
- * that exits 0 on failure is hiding one.
- *
- * It returns nothing to await, deliberately: a caller that could wait for this
- * is a caller a subscriber can stall.
- *
- * **`report` is held here, and that is a boundary rather than a courtesy.** It
- * is called from a `close` handler and from a timer, so a throw out of it is an
- * uncaught exception and a rejection out of it an unhandled one — in whichever
- * process started the command, which for a subscriber is the process that
- * follows the log. `work-loop.ts`'s `deliver` makes exactly this call for the
- * in-process subscribers and makes it for the same reason: a guarantee held by
- * the callee is one every future caller has to re-honour. What is lost is one
- * outcome nobody could be told about, by the thing whose job was to tell them —
- * there is no third place to put that, and the log's follower staying up is
- * worth more than it.
- */
-export function startCommand(
-  options: RunCommandOptions,
-  report?: (outcome: CommandOutcome) => void | Promise<void>,
-): void {
-  spawnCommand(options, (outcome) => {
-    try {
-      void Promise.resolve(report?.(outcome)).catch(() => {})
-    } catch {
-      // A `report` that throws before its promise exists. Same fate, one line
-      // earlier.
+    const { code, endedAt, started, run, out } = end
+    // Measured to when the process ended, so reading the result file is not billed to it.
+    const took = `${((endedAt - started) / 1000).toFixed(1)}s`
+    const { result, problem } = yield* readResultEffect(options.resultPath)
+    const note = problem ? `\n\n${problem}` : ''
+    const durationMs = endedAt - started
+    if (code === 0) {
+      return {
+        ok: true,
+        timedOut: false,
+        exitCode: 0,
+        result,
+        evidence: `${run} exited 0 in ${took}${note}`,
+        durationMs,
+      } satisfies CommandOutcome
     }
+    return {
+      ok: false,
+      timedOut: false,
+      exitCode: code,
+      result,
+      // stdout is still what a person reads, unchanged. The result file is the
+      // structured channel precisely so that taking one does not cost the other.
+      evidence: `${run} exited ${code} after ${took}${note}\n\n${tail(out)}`,
+      durationMs,
+    } satisfies CommandOutcome
   })
+
+/** Promise face of `commandEffect`. */
+export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
+  return Effect.runPromise(commandEffect(options))
 }
 
-/**
- * The spawning both callers share. Whether the core waits is the only
- * difference between them, so it is the only thing above this line.
- */
-function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutcome) => void): void {
+/** How `spawnCommand` ends: an exit code to be read, or an outcome already built. */
+type CommandEnd =
+  | { kind: 'exited'; code: number | null; endedAt: number; started: number; run: string; out: string }
+  | { kind: 'outcome'; outcome: CommandOutcome }
+
+interface SpawnHandle {
+  /** What aborting `options.signal` does. */
+  interrupt(): void
+  settled(): boolean
+  /** Calls back once the end has been reported (immediately if it already was). */
+  onSettled(cb: () => void): void
+}
+
+/** The spawning, reporting the raw end once. */
+function spawnCommand(options: RunCommandOptions, report: (end: CommandEnd) => void): SpawnHandle {
   const started = Date.now()
   const child = spawnChild(options)
 
@@ -299,13 +315,20 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
   child.stdout.on('data', collect)
   child.stderr.on('data', collect)
 
-  const finish = (outcome: Omit<CommandOutcome, 'durationMs'>) => {
+  const settledCallbacks: (() => void)[] = []
+  const settle = (end: () => CommandEnd) => {
     if (settled) return
     settled = true
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', onAbort)
-    report({ ...outcome, durationMs: (endedAt ?? Date.now()) - started })
+    report(end())
+    for (const cb of settledCallbacks.splice(0)) cb()
   }
+  const finish = (outcome: Omit<CommandOutcome, 'durationMs'>) =>
+    settle(() => ({
+      kind: 'outcome',
+      outcome: { ...outcome, durationMs: (endedAt ?? Date.now()) - started },
+    }))
 
   /**
    * **A timeout is reported once the command itself has exited, and never
@@ -387,31 +410,6 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
     }),
   )
 
-  const settleOnExit = async (code: number | null) => {
-    const took = `${(((endedAt ?? Date.now()) - started) / 1000).toFixed(1)}s`
-    const { result, problem } = await readResult(options.resultPath)
-    const note = problem ? `\n\n${problem}` : ''
-    if (code === 0) {
-      finish({
-        ok: true,
-        timedOut: false,
-        exitCode: 0,
-        result,
-        evidence: `${options.run} exited 0 in ${took}${note}`,
-      })
-      return
-    }
-    finish({
-      ok: false,
-      timedOut: false,
-      exitCode: code,
-      result,
-      // stdout is still what a person reads, unchanged. The result file is the
-      // structured channel precisely so that taking one does not cost the other.
-      evidence: `${options.run} exited ${code} after ${took}${note}\n\n${tail(out)}`,
-    })
-  }
-
   child.on('close', (code) => {
     if (settled) return
     endedAt = Date.now()
@@ -421,8 +419,18 @@ function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutco
       finish({ ok: false, timedOut: true, exitCode: null, evidence: timedOutEvidence })
       return
     }
-    void settleOnExit(code)
+    const ended = endedAt
+    settle(() => ({ kind: 'exited', code, endedAt: ended, started, run: options.run, out }))
   })
+
+  return {
+    interrupt: onAbort,
+    settled: () => settled,
+    onSettled: (cb) => {
+      if (settled) cb()
+      else settledCallbacks.push(cb)
+    },
+  }
 }
 
 /**
@@ -482,16 +490,7 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
  * is what keeps a broken writer from turning a passing command into a failing
  * one.
  */
-async function readResult(path?: string): Promise<{ result?: unknown; problem?: string }> {
-  if (!path) return {}
-
-  let text: string
-  try {
-    text = await readFile(path, 'utf8')
-  } catch {
-    // Never written is the normal case, not an error to report.
-    return {}
-  }
+export function parseResult(text: string, path: string): { result?: unknown; problem?: string } {
   if (!text.trim()) return {}
 
   try {
@@ -504,3 +503,12 @@ async function readResult(path?: string): Promise<{ result?: unknown; problem?: 
     }
   }
 }
+
+/** Never fails: a file never written is the normal case, and reads as `{}`. */
+export const readResultEffect = (path?: string): Effect.Effect<{ result?: unknown; problem?: string }> =>
+  path
+    ? Effect.tryPromise(() => readFile(path, 'utf8')).pipe(
+        Effect.map((text) => parseResult(text, path)),
+        Effect.orElseSucceed(() => ({})),
+      )
+    : Effect.succeed({})
