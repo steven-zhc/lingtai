@@ -29,14 +29,28 @@ echo fish
     expect(html).not.toContain('<p><strong>POSIX shell (bash, zsh)</strong></p>')
   })
 
-  it('groups both shell examples in the published tutorial', () => {
+  it('still renders a disclosure for the tutorial slug', () => {
+    const body = '<details>\n<summary>X</summary>\n\nhidden text\n\n</details>'
+    const html = renderToStaticMarkup(<Document slug="tutorial" source="tutorial.md" body={body} published={[]} />)
+    expect(html).toContain('<details>')
+    expect(html).toContain('<summary>X</summary>')
+    expect(html).not.toContain('&lt;details&gt;')
+  })
+
+  it('publishes the first tutorial with no shell pair and no disclosure', () => {
     const body = readFileSync(new URL('../../../doc/tutorial.md', import.meta.url), 'utf8')
     const html = renderToStaticMarkup(<Document slug="tutorial" source="tutorial.md" body={body} published={[]} />)
-    expect(html.match(/class="shell-tabs"/g)).toHaveLength(2)
-    expect(html).toContain('<details>')
-    expect(html).toContain('<summary>What did this command choose?</summary>')
-    expect(html).toContain('<table>')
+    expect(html).not.toContain('class="shell-tabs"')
     expect(html).not.toContain('&lt;details&gt;')
+  })
+
+  it('renders the second page with the diagram on the site build', () => {
+    const body = readFileSync(new URL('../../../doc/tutorial-more.md', import.meta.url), 'utf8')
+    const html = renderToStaticMarkup(
+      <Document slug="tutorial-more" source="tutorial-more.md" body={body} published={['tutorial-more.md']} />,
+    )
+    expect(html).not.toContain('&lt;details&gt;')
+    expect(html).toContain('/img/docs/recipe.svg')
   })
 })
 

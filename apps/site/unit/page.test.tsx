@@ -97,8 +97,10 @@ describe("the home page's argument", () => {
     expect(bar).toMatch(/<summary>Docs<\/summary>/)
     const menu = bar.slice(bar.indexOf('<details'), bar.indexOf('</details>'))
     const hrefs = [...menu.matchAll(/href="([^"]*)"/g)].map((m) => m[1])
-    expect(hrefs).toEqual(PUBLIC_SLUGS.map((s) => `/docs/${s}/`).sort((a, b) => hrefs.indexOf(a) - hrefs.indexOf(b)))
-    expect(new Set(hrefs)).toEqual(new Set(PUBLIC_SLUGS.map((s) => `/docs/${s}/`)))
+    // #1061: tutorial-more is public but is reached from the tutorial, not the menu.
+    const inMenu = PUBLIC_SLUGS.filter((s) => s !== 'tutorial-more')
+    expect(hrefs).toEqual(inMenu.map((s) => `/docs/${s}/`).sort((a, b) => hrefs.indexOf(a) - hrefs.indexOf(b)))
+    expect(new Set(hrefs)).toEqual(new Set(inMenu.map((s) => `/docs/${s}/`)))
     expect(DOCS_MENU.map((d) => d.label)).toEqual([
       'Tutorial',
       'Concepts',
@@ -120,6 +122,7 @@ describe("the home page's argument", () => {
     expect(DOCS_PUBLIC).toBe(false)
     expect(PUBLIC_SLUGS).toEqual([
       'tutorial',
+      'tutorial-more',
       'concepts',
       'recipe',
       'cli',

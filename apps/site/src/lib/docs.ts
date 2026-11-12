@@ -69,6 +69,7 @@ export const DOCS_PUBLIC = false
  */
 export const PUBLIC_SLUGS = [
   'tutorial',
+  'tutorial-more',
   'concepts',
   'recipe',
   'cli',
@@ -120,6 +121,7 @@ export const SECTIONS: Section[] = [
     note: 'Written to be read in order. Start at the tutorial.',
     files: [
       'tutorial.md',
+      'tutorial-more.md',
       'concepts.md',
       'recipe.md',
       'cli.md',
