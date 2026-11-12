@@ -36,6 +36,7 @@ import type { RunOutcome, Runtime } from '@lingtai/agent'
 import type { Envelope, PayloadOf, ToAppend } from '@lingtai/domain'
 import { StepMap, type QueueSettings, type StepAction } from '@lingtai/recipe'
 import type { Worktree } from '@lingtai/repo'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -374,15 +375,16 @@ function portsAnswering(answers: Answers = {}): {
 
   const ports: AttemptPorts = {
     onStream: () => onStream,
-    readEnd: async (ticketId) => {
-      asked.read.push(ticketId)
-      if (answers.readThrows) throw answers.readThrows
-      return answers.stream ?? []
-    },
-    recordEnd: async (ticketId, at, plan) => {
-      asked.record.push({ ticketId, at, plan })
-      if (answers.recordThrows) throw answers.recordThrows
-    },
+    readEnd: (ticketId) =>
+      Effect.suspend(() => {
+        asked.read.push(ticketId)
+        return answers.readThrows ? Effect.die(answers.readThrows) : Effect.succeed(answers.stream ?? [])
+      }),
+    recordEnd: (ticketId, at, plan) =>
+      Effect.suspend(() => {
+        asked.record.push({ ticketId, at, plan })
+        return answers.recordThrows ? Effect.die(answers.recordThrows) : Effect.void
+      }),
   }
   return { ports, judge, asked, taking, working }
 }

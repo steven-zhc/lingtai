@@ -1,3 +1,10 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { Action, ActionContext, ActionFinding, ActionResult } from '@lingtai/actions'
+import { STEPS, type Step } from '@lingtai/domain'
+import { StepMap, type StepAction } from '@lingtai/recipe'
 /**
  * The pass, read against the decision rather than against a diff.
  *
@@ -14,13 +21,7 @@
  * process is spawned, no agent is paid and no person is asked. That is why this
  * is in `unit/` and why the `build` point runs it (0060 §1).
  */
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-import type { Action, ActionContext, ActionFinding, ActionResult } from '@lingtai/actions'
-import { STEPS, type Step } from '@lingtai/domain'
-import { StepMap, type StepAction } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'
@@ -133,18 +134,20 @@ function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
   const bodies = Object.fromEntries(
     STEPS.map((step) => [
       step,
-      async (work: StepWork<Step>): Promise<StepEnding> => {
-        seen.push({
-          step: work.step,
-          actions: work.actions.map((a) => a.name),
-          outcome: work.outcome,
-          reached: work.reached,
-          context: work.context,
-        })
-        const override = overrides[step]
-        if (override) return await override(work)
-        return { ending: 'passed' }
-      },
+      (work: StepWork<Step>): Effect.Effect<StepEnding> =>
+        Effect.gen(function* () {
+          seen.push({
+            step: work.step,
+            actions: work.actions.map((a) => a.name),
+            outcome: work.outcome,
+            reached: work.reached,
+            context: work.context,
+          })
+          const override = overrides[step]
+          if (override) return yield* override(work)
+          const passed: StepEnding = { ending: 'passed' }
+          return passed
+        }),
     ]),
   ) as unknown as StepBodies
   return { bodies, seen }
@@ -273,11 +276,12 @@ const installFails = (evidence = 'pnpm install exited 1') => ({
  */
 const asked =
   (detail: string): StepBody<Step> =>
-  async () => ({
-    ending: 'asked',
-    at: null,
-    detail,
-  })
+  () =>
+    Effect.succeed({
+      ending: 'asked',
+      at: null,
+      detail,
+    })
 
 // -------------------------------------------------------------- the shape ----
 
@@ -438,22 +442,24 @@ describe('a step that was configured is never skipped', () => {
 
 describe('four steps may refuse, and the other six may not', () => {
   it('is the type rather than a comment', () => {
-    // @ts-expect-error `claim` is not one of the four (0058 §2), so `refused` is
-    // subtracted from what its body may hand back. If this stops being an error,
-    // `EndingAt` has stopped saying the thing the type exists to say.
-    const cannotRefuse: StepBody<'claim'> = async () => ({
-      ending: 'refused',
-      because: 'action-refused',
-      at: null,
-      detail: 'nope',
-    })
+    const cannotRefuse: StepBody<'claim'> = () =>
+      // @ts-expect-error `claim` is not one of the four (0058 §2), so `refused` is
+      // subtracted from what its body may hand back. If this stops being an error,
+      // `EndingAt` has stopped saying the thing the type exists to say.
+      Effect.succeed({
+        ending: 'refused',
+        because: 'action-refused',
+        at: null,
+        detail: 'nope',
+      })
     // And one of the four compiles with no cast at all.
-    const mayRefuse: StepBody<'prepared'> = async () => ({
-      ending: 'refused',
-      because: 'action-refused',
-      at: 'install',
-      detail: 'pnpm install exited 1',
-    })
+    const mayRefuse: StepBody<'prepared'> = () =>
+      Effect.succeed({
+        ending: 'refused',
+        because: 'action-refused',
+        at: 'install',
+        detail: 'pnpm install exited 1',
+      })
 
     expect(cannotRefuse).toBeTypeOf('function')
     expect(mayRefuse).toBeTypeOf('function')
@@ -461,18 +467,20 @@ describe('four steps may refuse, and the other six may not', () => {
 
   /** 0058 §3: and the same type says only `proposed` may route. */
   it('says only proposed may route, in the type too', () => {
-    // @ts-expect-error `routed` is `proposed`'s alone, because `waiting` has
-    // exactly one way in and it is the router's to choose.
-    const cannotRoute: StepBody<'merge'> = async () => ({
-      ending: 'routed',
-      to: 'implement',
-      why: 'the base moved',
-    })
-    const mayRoute: StepBody<'proposed'> = async () => ({
-      ending: 'routed',
-      to: 'implement',
-      why: 'the base moved',
-    })
+    const cannotRoute: StepBody<'merge'> = () =>
+      // @ts-expect-error `routed` is `proposed`'s alone, because `waiting` has
+      // exactly one way in and it is the router's to choose.
+      Effect.succeed({
+        ending: 'routed',
+        to: 'implement',
+        why: 'the base moved',
+      })
+    const mayRoute: StepBody<'proposed'> = () =>
+      Effect.succeed({
+        ending: 'routed',
+        to: 'implement',
+        why: 'the base moved',
+      })
 
     expect(cannotRoute).toBeTypeOf('function')
     expect(mayRoute).toBeTypeOf('function')
@@ -496,7 +504,7 @@ describe('four steps may refuse, and the other six may not', () => {
     // handed a misbehaving body for — `admit` makes the same point and stays
     // inside the walk this file is testing.
     const { bodies, seen } = watching({
-      admit: async () => ({ ending: 'refused', because: 'action-refused', at: null, detail: 'nope' }) as never,
+      admit: () => Effect.succeed({ ending: 'refused', because: 'action-refused', at: null, detail: 'nope' } as never),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -521,7 +529,7 @@ describe('four steps may refuse, and the other six may not', () => {
   /** And the same for a body that tries to route from somewhere else. */
   it("reports a body's route at a step that may not route", async () => {
     const { bodies } = watching({
-      merge: async () => ({ ending: 'routed', to: 'implement', why: 'the base moved' }) as never,
+      merge: () => Effect.succeed({ ending: 'routed', to: 'implement', why: 'the base moved' } as never),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -944,7 +952,7 @@ describe('every step that does not pass arrives at proposed', () => {
      * `watching` sends every pass to `waiting`, which is right for the router's
      * own tests and says nothing here.
      */
-    const THROUGH: StepBody<Step> = async () => ({ ending: 'passed' })
+    const THROUGH: StepBody<Step> = () => Effect.succeed({ ending: 'passed' })
 
     /** A recipe with a drafting agent at `design`, and one more to keep beside it. */
     const declaring = (names: readonly string[]) =>
@@ -1511,9 +1519,10 @@ describe('every step that does not pass arrives at proposed', () => {
   /** A crash is not a question, so 0057 §2's *the pass stops* is the rule. */
   it('does not route a step that threw', async () => {
     const { bodies } = watching({
-      implement: async () => {
-        throw new Error('the agent runtime raised: ECONNRESET')
-      },
+      implement: () =>
+        Effect.sync((): never => {
+          throw new Error('the agent runtime raised: ECONNRESET')
+        }),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -2256,7 +2265,7 @@ describe('a visit is judged against the head the walk has reached', () => {
    * stays load-bearing rather than coincidentally unreachable.
    */
   it("lets a body's own head win over what its own actions left", async () => {
-    const { bodies } = watching({ implement: async () => ({ ending: 'passed', head: 'bodyreported' }) })
+    const { bodies } = watching({ implement: () => Effect.succeed({ ending: 'passed', head: 'bodyreported' }) })
     const { actionsAt } = watchingActions({ implement: [committedSomething('write the change', 'actionreported')] })
     const { emit } = events()
 
@@ -2430,10 +2439,11 @@ describe('a body can read what the steps before it said', () => {
     const recipe = recipeWith({ prepared: [{ name: 'install', run: 'pnpm install' }] })
     let atProposed: readonly StepReached[] = []
     const { bodies } = watching({
-      proposed: async (work) => {
-        atProposed = work.reached
-        return { ending: 'passed' }
-      },
+      proposed: (work) =>
+        Effect.sync(() => {
+          atProposed = work.reached
+          return { ending: 'passed' }
+        }),
     })
     const { actionsAt } = watchingActions({
       // A finding on a pass, because a minor does not stop the run (#135) — and
@@ -2575,9 +2585,10 @@ describe('end runs on every ending and cannot refuse', () => {
    */
   it("runs after a body that threw, and the throw is the step's ending", async () => {
     const { bodies, seen } = watching({
-      implement: async () => {
-        throw new Error('the agent runtime raised: ECONNRESET')
-      },
+      implement: () =>
+        Effect.sync((): never => {
+          throw new Error('the agent runtime raised: ECONNRESET')
+        }),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -2622,12 +2633,13 @@ describe('end runs on every ending and cannot refuse', () => {
    */
   it('runs once when end itself is the step that did not pass', async () => {
     const { bodies, seen } = watching({
-      end: async () => ({
-        ending: 'did-not-finish',
-        because: NEEDS_INPUT,
-        at: null,
-        detail: 'who owns this?',
-      }),
+      end: () =>
+        Effect.succeed({
+          ending: 'did-not-finish',
+          because: NEEDS_INPUT,
+          at: null,
+          detail: 'who owns this?',
+        }),
     })
     const { actionsAt } = watchingActions()
     const { emit } = events()
@@ -2654,7 +2666,7 @@ describe('end runs on every ending and cannot refuse', () => {
    */
   it('does not report itself as where the pass stopped', async () => {
     const { bodies, seen } = watching({
-      end: async () => ({ ending: 'did-not-finish', because: 'threw', at: null, detail: 'tell.ts: 404' }),
+      end: () => Effect.succeed({ ending: 'did-not-finish', because: 'threw', at: null, detail: 'tell.ts: 404' }),
     })
     // A real `merge:` lane, so the pass lands for real rather than reading a
     // silent walk-through as a landing (`#463`).

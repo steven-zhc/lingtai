@@ -1,4 +1,6 @@
 import type { Action, ActionContext, ActionResult, TheDesign } from '@lingtai/actions'
+import { STEPS, type Step } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
 /**
  * **A second destination, whose locator is a URL** — the scaffolding, and no
  * test in it (`#303`).
@@ -70,8 +72,7 @@ import type { Action, ActionContext, ActionResult, TheDesign } from '@lingtai/ac
  * becomes runnable actions — are both replaced (0060 §1). That is the property
  * to check before adding to this file.
  */
-import { STEPS, type Step } from '@lingtai/domain'
-import { StepMap } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 import {
   outcomeOf,
@@ -270,7 +271,10 @@ export const landingBeside = (): Action => ({
  * this pass before the reading side ever ran.
  */
 const PASSING: StepBodies = Object.fromEntries(
-  STEPS.map((step) => [step, async (_work: StepWork<Step>): Promise<StepEnding> => ({ ending: 'passed' })]),
+  STEPS.map((step) => [
+    step,
+    (_work: StepWork<Step>): Effect.Effect<StepEnding> => Effect.succeed<StepEnding>({ ending: 'passed' }),
+  ]),
 ) as unknown as StepBodies
 
 /** One visit, flattened to the two facts a route is made of. */
