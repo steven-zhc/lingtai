@@ -26,7 +26,8 @@ import { join } from 'node:path'
 import { createSqliteEventStore, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { createSqliteProjectionStore, openSqliteProjections, translate } from '../src/sqlite.ts'
+import { makeSqliteProjections, openSqliteProjections, translate } from '../src/sqlite.ts'
+import { promiseProjectionStore } from '../src/store-face.ts'
 import { describeProjectionStoreContract, type ProjectionFixture } from '../test/contract.ts'
 
 const dirs: string[] = []
@@ -48,19 +49,22 @@ describeProjectionStoreContract('sqlite', async (): Promise<ProjectionFixture> =
   // Postgres. Two connections, because a store must never wait on the thread
   // (0009, and `openSqliteProjections`).
   const logDb = openSqliteLog(path)
-  const store = createSqliteProjectionStore(openSqliteProjections(path))
+  const port = makeSqliteProjections(openSqliteProjections(path))
+  const store = promiseProjectionStore(port)
   const seconds: { close(): Promise<void> }[] = []
   const project = `esctest-sqlite-${crypto.randomUUID().slice(0, 8)}`
 
   return {
     store,
+    port,
     events: createSqliteEventStore(logDb),
     project,
     stream: (kind, suffix) => (kind === 'wi' ? `ticket-${project}-${suffix}` : `pass-${project}-${suffix}`),
     async another() {
-      const s = createSqliteProjectionStore(openSqliteProjections(path))
+      const p = makeSqliteProjections(openSqliteProjections(path))
+      const s = promiseProjectionStore(p)
       seconds.push(s)
-      return s
+      return { store: s, port: p }
     },
     async close() {
       await store.close()

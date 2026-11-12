@@ -12,7 +12,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createProjectionRunner } from '../src/projection.ts'
-import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import type { Projection } from '../src/store.ts'
 
 describe('a runner stopped while a nudge-triggered batch is in flight', () => {
@@ -44,7 +44,7 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
       const runner = createProjectionRunner({
         projection,
         store,
-        into: createSqliteProjectionStore(db),
+        into: makeSqliteProjections(db),
         waker: {
           open: (listener) => {
             nudge = listener.nudge

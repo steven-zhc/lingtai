@@ -23,8 +23,10 @@ export {
   processEventStore,
   queriesLayer,
   snapshotsLayer,
+  processEvents,
   processLog,
   processTicketSql,
+  processWaker,
 } from './choose.ts'
 export {
   closableOnce,
@@ -108,6 +110,7 @@ export {
   fromPromiseQueries,
   fromPromiseSnapshots,
   fromPromiseStore,
+  fromPromiseWaker,
   logPredatesHold,
   promiseLogSql,
   promiseQueries,

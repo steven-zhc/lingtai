@@ -25,11 +25,13 @@ import {
   projectionShape,
   type Projection,
   type ProjectionRunner,
+  type ProjectionsPort,
   type ProjectionStore,
 } from '../src/index.ts'
 // Postgres by name, from its own module: the barrel hands out the store this
 // machine chose and names no implementation (#179).
-import { createPostgresProjectionStore } from '../src/postgres.ts'
+import { makePostgresProjections } from '../src/postgres.ts'
+import { promiseProjectionStore } from '../src/store-face.ts'
 import {
   CONTRACT_CHECKPOINTS,
   CONTRACT_TABLES,
@@ -199,13 +201,16 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
   describeProjectionStoreContract('postgres', async (): Promise<ProjectionFixture> => {
     const project = `esctest-pg-${crypto.randomUUID().slice(0, 8)}`
     const opened: ProjectionStore[] = []
-    const open = (): ProjectionStore => {
-      const s = createPostgresProjectionStore({ url: directPostgresUrl() })
+    const open = (): { store: ProjectionStore; port: ProjectionsPort } => {
+      const port = makePostgresProjections({ url: directPostgresUrl() })
+      const s = promiseProjectionStore(port)
       opened.push(s)
-      return s
+      return { store: s, port }
     }
+    const first = open()
     return {
-      store: open(),
+      store: first.store,
+      port: first.port,
       events: store,
       project,
       // Registered by hand rather than through `streamId()`, because the contract
