@@ -44,7 +44,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { RunFailureKind, TokenCounts, Usage } from '@lingtai/domain'
 import { Effect } from 'effect'
 
-import { claudeCodeAuth, runtimeVersion } from './auth.ts'
+import { claudeCodeAuth, runtimeVersionEffect } from './auth.ts'
 import { observedCall } from './hook-socket.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
@@ -417,8 +417,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
     capabilities: CLAUDE_CODE_CAPABILITIES,
 
     /** `claude auth status` — `auth.ts`, which loads nothing but `node:child_process`. */
-    version(env: Record<string, string>, cwd?: string): Promise<string | null> {
-      return runtimeVersion(binary, spawnEnvFor(env), spawnChild, cwd)
+    version(env: Record<string, string>, cwd?: string) {
+      return runtimeVersionEffect(binary, spawnEnvFor(env), spawnChild, cwd)
     },
     checkAuth(env: Record<string, string>): Promise<AuthStatus> {
       return claudeCodeAuth(binary, env)

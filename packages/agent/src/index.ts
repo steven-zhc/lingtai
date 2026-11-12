@@ -26,6 +26,7 @@ export {
   type RuntimeCapabilities,
   type Spawned,
   runtimeVersionOf,
+  runtimeVersionOfEffect,
 } from './runtime.ts'
 export {
   CLAUDE_CODE_CAPABILITIES,

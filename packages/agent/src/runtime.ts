@@ -1,3 +1,4 @@
+import type { RunFailureKind, RuntimeId, Tier, Usage } from '@lingtai/domain'
 /**
  * One interface, two implementations — **both of them real since `#313`.**
  *
@@ -19,7 +20,7 @@
  * and records `DispatchRefused` when the combination cannot meet the tier — it
  * never silently downgrades. See doc/decisions-archive/0007-dual-runtime.md.
  */
-import type { RunFailureKind, RuntimeId, Tier, Usage } from '@lingtai/domain'
+import { Effect } from 'effect'
 
 import type { RunTrace } from './run-log.ts'
 
@@ -278,17 +279,29 @@ export interface Runtime {
    * environment a call would spawn with (#929). Optional like `checkAuth`; a
    * runtime without it records `null`. Asked per call, never cached.
    */
-  version?(env: Record<string, string>, cwd?: string): Promise<string | null>
+  version?(env: Record<string, string>, cwd?: string): Effect.Effect<string | null>
 }
 
-/** A runtime's version for one call. Never rejects; `null` when it cannot be read or asked. */
+/**
+ * A runtime's version for one call, as an Effect. Never fails; `null` when it
+ * cannot be read or asked, and a defect (a throw included) is `null` too. An
+ * interruption is not: `catchDefect` lets it through.
+ */
+export const runtimeVersionOfEffect = (
+  runtime: Runtime,
+  env: Record<string, string>,
+  cwd?: string,
+): Effect.Effect<string | null> =>
+  runtime.version === undefined
+    ? Effect.succeed(null)
+    : Effect.suspend(() => runtime.version!(env, cwd)).pipe(
+        Effect.map((version) => version ?? null),
+        Effect.catchDefect(() => Effect.succeed(null)),
+      )
+
+/** The Effect above as a promise, for `apps/cli` (a listed face, #790). Never rejects. */
 export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>, cwd?: string): Promise<string | null> {
-  return Promise.resolve()
-    .then(() => runtime.version?.(env, cwd) ?? null)
-    .then(
-      (version) => version ?? null,
-      () => null,
-    )
+  return Effect.runPromise(runtimeVersionOfEffect(runtime, env, cwd))
 }
 
 /**

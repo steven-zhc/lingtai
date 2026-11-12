@@ -10,12 +10,14 @@ import type { Envelope, ToAppend } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { installTracing, type Tracing } from '../src/telemetry.ts'
 import { tellGitHubAbout } from '../src/tell.ts'
 import {
   HUMAN_BEFORE_THE_LANE,
+  JUDGED_BY_AN_AGENT,
   REVIEWED,
   fakeGitHub,
   fakePorts,
@@ -219,6 +221,21 @@ describe('with an endpoint', () => {
       expect(s.status.code, s.name).toBe(2)
       expect(s.status.message).toBeUndefined()
     }
+  })
+
+  it('a runtime version probe is a span of the step that asked, or of the judge action (#1064)', async () => {
+    const versioned = {
+      ...refusingRuntime,
+      version: () => Effect.succeed('fake 1').pipe(Effect.withSpan('agent.version')),
+    } as typeof refusingRuntime
+    const { spans } = await pass(JUDGED_BY_AN_AGENT, versioned)
+    const run = spans.find((s) => s.name === 'conductor.run')!
+    const probes = spans.filter((s) => s.name === 'agent.version')
+    expect(probes.length).toBeGreaterThan(1)
+    for (const probe of probes) expect(probe.spanContext().traceId).toBe(run.spanContext().traceId)
+    const parents = probes.map((probe) => spans.find((s) => idOf(s) === parentOf(probe))?.name)
+    expect(parents).toContain('action judge')
+    for (const name of parents) expect(name === 'action judge' || name?.startsWith('step '), String(name)).toBe(true)
   })
 
   it('a failing action exports ERROR with no message and no events', async () => {
