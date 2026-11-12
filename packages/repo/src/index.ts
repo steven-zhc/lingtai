@@ -20,7 +20,7 @@ export {
   isUnreachableFailure,
   retryUnreachable,
 } from './network.ts'
-export { mirrorWrite, withMirrorWrite } from './mirror-lock.ts'
+export { mirrorWrite } from './mirror-lock.ts'
 export {
   ensureMirrorEffect,
   provisionWorktree,

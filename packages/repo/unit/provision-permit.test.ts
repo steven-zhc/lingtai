@@ -33,7 +33,7 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(() => Promise.resolve()),
 }))
 
-import { withMirrorWrite } from '../src/mirror-lock.ts'
+import { mirrorWrite } from '../src/mirror-lock.ts'
 import { provisionWorktree } from '../src/worktree.ts'
 import { ensureMirrorEffect } from '../src/worktree.ts'
 
@@ -59,7 +59,12 @@ describe('provisionWorktree and the mirror permit', () => {
 
   it('waits for a write held on its own mirror, not on another', async () => {
     let release!: () => void
-    const held = withMirrorWrite('/h/repos/p.git', () => new Promise<void>((r) => (release = r)))
+    const held = Effect.runPromise(
+      mirrorWrite(
+        '/h/repos/p.git',
+        Effect.promise(() => new Promise<void>((r) => (release = r))),
+      ),
+    )
     const other = provisionWorktree(opts('q'))
     await other
     expect(calls.list.some((c) => c[0] === 'worktree')).toBe(true)
