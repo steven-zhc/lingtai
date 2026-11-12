@@ -31,6 +31,7 @@ import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 
 const SHA = 'a'.repeat(40)
@@ -335,8 +336,8 @@ async function reduce(evts: readonly Envelope[]): Promise<{ backlog: ProjectionR
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => backlogProjection.create(ctx))
-    await store.transact((ctx) => backlogProjection.reduce(evts, ctx))
+    await store.transact((ctx) => createFace(backlogProjection, ctx))
+    await store.transact((ctx) => reduceFace(backlogProjection, evts, ctx))
     return await store.transact(async (ctx) => ({
       backlog: await ctx.query('select * from finding_backlog order by project, key'),
       runs: await ctx.query('select * from finding_backlog_run order by run_id'),
@@ -350,9 +351,9 @@ async function projectInTwoBatches(mid: number): Promise<{ backlog: ProjectionRo
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => backlogProjection.create(ctx))
-    await store.transact((ctx) => backlogProjection.reduce(events.slice(0, mid), ctx))
-    await store.transact((ctx) => backlogProjection.reduce(events.slice(mid), ctx))
+    await store.transact((ctx) => createFace(backlogProjection, ctx))
+    await store.transact((ctx) => reduceFace(backlogProjection, events.slice(0, mid), ctx))
+    await store.transact((ctx) => reduceFace(backlogProjection, events.slice(mid), ctx))
     return await store.transact(async (ctx) => ({
       backlog: await ctx.query('select * from finding_backlog order by project, key'),
       runs: await ctx.query('select * from finding_backlog_run order by run_id'),
@@ -481,9 +482,9 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
       const db = openSqliteProjections(':memory:')
       try {
         const store = createSqliteProjectionStore(db)
-        await store.transact((ctx) => backlogProjection.create(ctx))
+        await store.transact((ctx) => createFace(backlogProjection, ctx))
         for (let i = 0; i < events.length; i += size) {
-          await store.transact((ctx) => backlogProjection.reduce(events.slice(i, i + size), ctx))
+          await store.transact((ctx) => reduceFace(backlogProjection, events.slice(i, i + size), ctx))
         }
         const backlog = await store.transact((ctx) => ctx.query('select * from finding_backlog order by project, key'))
         expect(backlog, `batches of ${size}`).toEqual(whole.backlog)
@@ -497,15 +498,15 @@ describe('finding_backlog rebuilds through findingsRaisedOf exactly as it did th
     const db = openSqliteProjections(':memory:')
     try {
       const store = createSqliteProjectionStore(db)
-      await store.transact((ctx) => backlogProjection.create(ctx))
-      await store.transact((ctx) => backlogProjection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(backlogProjection, ctx))
+      await store.transact((ctx) => reduceFace(backlogProjection, events, ctx))
       const later = acceptedStream('FindingDeclined', {
         project: PROJECT,
         key: acceptedKey,
         by: 'human:t',
         reason: 'changed my mind',
       })
-      await expect(store.transact((ctx) => backlogProjection.reduce([later], ctx))).rejects.toThrow(
+      await expect(store.transact((ctx) => reduceFace(backlogProjection, [later], ctx))).rejects.toThrow(
         backlogStream(PROJECT, acceptedKey),
       )
       const [row] = await store.transact((ctx) =>

@@ -38,6 +38,7 @@ import { describe, expect, it } from 'vitest'
 
 import { backlogProjection, type BacklogEntry } from '../src/backlog.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace } from '../src/store-face.ts'
 import { ProjectionShapeError, columnOf } from '../src/store.ts'
 import type { ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
@@ -53,7 +54,7 @@ const RECORDED = JSON.stringify({ [`${RUN}:proposed:build`]: 'failed' })
 async function storeWith(column: 'verdicts' | 'gates'): Promise<ProjectionStore> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   await store.transact(async (ctx) => {
-    await taskViewProjection.create(ctx)
+    await createFace(taskViewProjection, ctx)
     if (column === 'gates') {
       await ctx.query('alter table task_view rename column verdicts to gates')
     }
@@ -138,7 +139,7 @@ describe('the board, reading a task_view built before the rename', () => {
 async function storeWithReasonColumn(column: 'wait_reason' | 'old_reason'): Promise<ProjectionStore> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   await store.transact(async (ctx) => {
-    await taskViewProjection.create(ctx)
+    await createFace(taskViewProjection, ctx)
     if (column === 'old_reason') {
       await ctx.query('alter table task_view rename column wait_reason to old_reason')
     }
@@ -196,7 +197,7 @@ describe('the board, reading a task_view without wait_reason', () => {
 async function storeWithoutWaitColumns(): Promise<ProjectionStore> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   await store.transact(async (ctx) => {
-    await taskViewProjection.create(ctx)
+    await createFace(taskViewProjection, ctx)
     await ctx.query('alter table task_view drop column wait_id')
     await ctx.query('alter table task_view drop column wait_reason')
     await ctx.query(
@@ -255,7 +256,7 @@ async function withOneRaised(): Promise<ProjectionStore> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   const columns = Object.keys(RAISED)
   await store.transact(async (ctx) => {
-    await backlogProjection.create(ctx)
+    await createFace(backlogProjection, ctx)
     await ctx.query(
       `insert into finding_backlog (${columns.join(', ')})
        values (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,

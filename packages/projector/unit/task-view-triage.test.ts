@@ -5,6 +5,7 @@ import type { TriageResult } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
 const reason = { _tag: 'OwnQuestion', question: 'How should this proceed?', by: 'steven' } as const
@@ -21,8 +22,8 @@ async function inspect(events: Envelope[]) {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    await store.transact((ctx) => reduceFace(taskViewProjection, events, ctx))
     const rows = await store.transact((ctx) => ctx.query('select * from task_view'))
     const cards = await store.tasks({ retentionDays: 2 })
     return { row: rows[0], card: cards[0] }

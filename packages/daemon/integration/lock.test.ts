@@ -9,6 +9,7 @@
  * — or itself.
  */
 import { taskViewProjection } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { acquireDaemonLock, createFileLocker, startDaemon } from '../src/index.ts'
@@ -21,11 +22,9 @@ describe('the daemon lock', () => {
     const k = key()
     const broken = {
       name: `esctest_broken_${crypto.randomUUID().slice(0, 6)}`,
-      async create() {
-        throw new Error('no')
-      },
-      async reset() {},
-      async reduce() {},
+      create: () => Effect.die(new Error('no')),
+      reset: () => Effect.void,
+      reduce: () => Effect.void,
     }
 
     await expect(startDaemon({ projections: [broken], lockKey: k })).rejects.toThrow()

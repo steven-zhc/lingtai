@@ -51,6 +51,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -555,8 +556,8 @@ async function reduce(upTo: number): Promise<{ tasks: ProjectionRow[]; runs: Pro
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.reduce(events.slice(0, upTo), ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    await store.transact((ctx) => reduceFace(taskViewProjection, events.slice(0, upTo), ctx))
     return await store.transact(async (ctx) => ({
       // Every column but `ticket`: the stored reduce grows with `TicketState`, and a new field must not churn this pin (#834).
       tasks: (await ctx.query('select * from task_view order by task_id')).map(({ ticket: _ticket, ...row }) => row),

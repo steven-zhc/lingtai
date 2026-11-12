@@ -19,6 +19,7 @@ import { histories, lateHistories, scenarios } from '@lingtai/domain/test/histor
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 import { ticketReportProjectionWith } from '../src/ticket-report.ts'
 
@@ -33,8 +34,8 @@ async function projectAll(batches: readonly (readonly Envelope[])[], withState: 
   try {
     const store = createSqliteProjectionStore(db)
     const projection = ticketReportProjectionWith({ snapshot: () => [] })
-    await store.transact((ctx) => projection.create(ctx))
-    for (const batch of batches) await store.transact((ctx) => projection.reduce(batch, ctx))
+    await store.transact((ctx) => createFace(projection, ctx))
+    for (const batch of batches) await store.transact((ctx) => reduceFace(projection, batch, ctx))
     const rows = await store.transact((ctx) => ctx.query('select * from ticket_report order by ticket'))
     return withState ? rows : rows.map(({ ticket_state: _state, ...rest }) => rest)
   } finally {

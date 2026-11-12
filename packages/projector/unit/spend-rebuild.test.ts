@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest'
 
 import { spendProjection } from '../src/spend.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 
 const SHA = 'a'.repeat(40)
@@ -125,8 +126,8 @@ async function reduce(evts: readonly Envelope[]): Promise<{ spend: ProjectionRow
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => spendProjection.create(ctx))
-    await store.transact((ctx) => spendProjection.reduce(evts, ctx))
+    await store.transact((ctx) => createFace(spendProjection, ctx))
+    await store.transact((ctx) => reduceFace(spendProjection, evts, ctx))
     return await store.transact(async (ctx) => ({
       spend: await ctx.query('select * from spend order by seq'),
       links: await ctx.query('select * from spend_stream order by stream_id'),
@@ -140,9 +141,9 @@ async function projectInTwoBatches(mid: number): Promise<{ spend: ProjectionRow[
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => spendProjection.create(ctx))
-    await store.transact((ctx) => spendProjection.reduce(events.slice(0, mid), ctx))
-    await store.transact((ctx) => spendProjection.reduce(events.slice(mid), ctx))
+    await store.transact((ctx) => createFace(spendProjection, ctx))
+    await store.transact((ctx) => reduceFace(spendProjection, events.slice(0, mid), ctx))
+    await store.transact((ctx) => reduceFace(spendProjection, events.slice(mid), ctx))
     return await store.transact(async (ctx) => ({
       spend: await ctx.query('select * from spend order by seq'),
       links: await ctx.query('select * from spend_stream order by stream_id'),
@@ -254,8 +255,8 @@ describe('store.spend reads the reduced table, filtered and ordered the way read
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
-      await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(spendProjection, ctx))
+      await store.transact((ctx) => reduceFace(spendProjection, events, ctx))
 
       const rows = await store.spend({})
       expect(rows.map((r) => r.seq)).toEqual([...rows].sort((a, b) => Number(a.seq) - Number(b.seq)).map((r) => r.seq))
@@ -287,8 +288,8 @@ describe('store.spend reads the reduced table, filtered and ordered the way read
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
-      await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(spendProjection, ctx))
+      await store.transact((ctx) => reduceFace(spendProjection, events, ctx))
 
       const rows = await store.spend({ ticket: wi(1) })
       expect(rows.map((r) => r.seq).sort()).toEqual([actionSpent.seq.toString(), judgeSpent.seq.toString()].sort())
@@ -301,8 +302,8 @@ describe('store.spend reads the reduced table, filtered and ordered the way read
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
-      await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(spendProjection, ctx))
+      await store.transact((ctx) => reduceFace(spendProjection, events, ctx))
 
       const rows = await store.spend({ ticket: [wi(1), wi(2)] })
       expect(rows.map((r) => r.ticket).sort()).toEqual([wi(1), wi(1), wi(2)].sort())
@@ -315,8 +316,8 @@ describe('store.spend reads the reduced table, filtered and ordered the way read
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
-      await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(spendProjection, ctx))
+      await store.transact((ctx) => reduceFace(spendProjection, events, ctx))
 
       const rows = await store.spend({})
       expect(rows.find((r) => r.seq === nullCostSpent.seq.toString())?.costUsd).toBeNull()
@@ -348,8 +349,8 @@ describe('store.spend reads the grant a round was paid for with', () => {
     const db = openSqliteProjections(':memory:')
     const store = createSqliteProjectionStore(db)
     try {
-      await store.transact((ctx) => spendProjection.create(ctx))
-      await store.transact((ctx) => spendProjection.reduce(stream, ctx))
+      await store.transact((ctx) => createFace(spendProjection, ctx))
+      await store.transact((ctx) => reduceFace(spendProjection, stream, ctx))
       const rows = await store.spend({})
       const by = (purpose: string, round: number | null) =>
         rows.find((r) => r.purpose === purpose && r.round === round)!

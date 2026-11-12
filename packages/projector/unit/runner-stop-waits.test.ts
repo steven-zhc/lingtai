@@ -8,6 +8,7 @@
  */
 import type { Envelope } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createProjectionRunner } from '../src/projection.ts'
@@ -29,13 +30,14 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
     const inApply = new Promise<void>((resolve) => (entered = resolve))
     const projection: Projection = {
       name: 'probe',
-      create: async () => {},
-      reset: async () => {},
-      reduce: async (events) => {
-        entered()
-        await hold
-        applied.push(...events.map((e) => e.seq))
-      },
+      create: () => Effect.void,
+      reset: () => Effect.void,
+      reduce: (events) =>
+        Effect.gen(function* () {
+          entered()
+          yield* Effect.promise(() => hold)
+          applied.push(...events.map((e) => e.seq))
+        }),
     }
     const db = openSqliteProjections(':memory:')
     try {

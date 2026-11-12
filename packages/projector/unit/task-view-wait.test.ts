@@ -14,6 +14,7 @@ import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionStore } from '../src/store.ts'
 import type { TaskCard } from '../src/task-view.ts'
 import { splitLine, taskViewProjection, waitOf } from '../src/task-view.ts'
@@ -24,8 +25,8 @@ async function withFold<T>(events: Envelope[], use: (store: ProjectionStore) => 
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    await store.transact((ctx) => reduceFace(taskViewProjection, events, ctx))
     return await use(store)
   } finally {
     db.close()

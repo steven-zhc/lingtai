@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 
 const SHA = 'a'.repeat(40)
 const raise = (run: ReturnType<typeof anAttempt>, ticketId: string, claim: string): Envelope[] => [
@@ -44,9 +45,10 @@ describe('ProjectionStore.backlog taskIds', () => {
   it('reads only those tickets’ entries; empty reads nothing; absent reads all', async () => {
     const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
     try {
-      await store.transact((ctx) => backlogProjection.create(ctx))
+      await store.transact((ctx) => createFace(backlogProjection, ctx))
       await store.transact((ctx) =>
-        backlogProjection.reduce(
+        reduceFace(
+          backlogProjection,
           [
             ...raise(anAttempt('pass-ids-1'), 'ticket-ids-1', 'first claim'),
             ...raise(anAttempt('pass-ids-2'), 'ticket-ids-2', 'second claim'),

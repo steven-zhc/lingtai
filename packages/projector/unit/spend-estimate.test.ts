@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { spendProjectionWith } from '../src/spend.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 
 const PROJECT = 'pin'
 const wi = (n: number) => `ticket-${PROJECT}-${n}`
@@ -39,8 +40,8 @@ async function reduce(events: Envelope[], snapshot: RateRow[] = SNAPSHOT, calls 
         return snapshot
       },
     })
-    await store.transact((ctx) => projection.create(ctx))
-    await store.transact((ctx) => projection.reduce(events, ctx))
+    await store.transact((ctx) => createFace(projection, ctx))
+    await store.transact((ctx) => reduceFace(projection, events, ctx))
     return await store.spend({})
   } finally {
     await store.close()
@@ -122,8 +123,8 @@ describe('spend reduces TicketContinued as the old-form continuation (#684)', ()
     const store = createSqliteProjectionStore(db)
     try {
       const projection = spendProjectionWith({ snapshot: () => SNAPSHOT })
-      await store.transact((ctx) => projection.create(ctx))
-      await store.transact((ctx) => projection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(projection, ctx))
+      await store.transact((ctx) => reduceFace(projection, events, ctx))
       const spendKinds = (await store.spend({})).map((r) => r.kind)
       return await store.transact(async (ctx) => ({
         spend: spendKinds,

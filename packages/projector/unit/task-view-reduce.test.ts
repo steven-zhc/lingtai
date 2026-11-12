@@ -17,6 +17,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionContext, ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -30,8 +31,8 @@ async function withStore<T>(
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    return await store.transact(async (ctx) => fn((batch) => taskViewProjection.reduce(batch, ctx), ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    return await store.transact(async (ctx) => fn((batch) => reduceFace(taskViewProjection, batch, ctx), ctx))
   } finally {
     db.close()
   }
