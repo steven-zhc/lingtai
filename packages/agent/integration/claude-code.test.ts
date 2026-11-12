@@ -25,6 +25,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -924,7 +925,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
     try {
       const outcome = await createCodexRuntime({
         binary,
-        stopProcesses: () => Promise.reject(new Error('ps unavailable')),
+        stopProcesses: () => Effect.fail(new Error('ps unavailable')),
       }).run({
         runId: 'scan-throws',
         cwd,

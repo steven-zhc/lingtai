@@ -1,5 +1,6 @@
 /** A model-only Responses call. No CLI, local files, or executable tool channel. */
 import type { CodexTextConfig } from '@lingtai/env'
+import { Effect } from 'effect'
 
 import { NO_RUN_LOG } from './run-log.ts'
 import type { RunOutcome, RunRequest, Runtime } from './runtime.ts'
@@ -28,55 +29,96 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
       providesTier: 'sandboxed',
       enforces: ['turns', 'wall', 'usd'],
     },
-    async checkAuth() {
-      return { state: 'signed-in', loggedIn: true, method: 'apiKey', detail: 'explicit codex_text API key configured' }
-    },
-    async run(request: RunRequest): Promise<RunOutcome> {
-      const started = Date.now()
-      const bound = codexTextSpendBound(request.prompt, config)
-      const failure = (
-        kind: 'crash' | 'timeout' | 'aborted' | 'out-of-usd' | 'out-of-turns',
-        detail: string,
-      ): RunOutcome => ({
-        exitCode: null,
-        turns: 0,
-        durationMs: Date.now() - started,
-        costUsd: null,
-        text: null,
-        sessionId: '',
-        failure: { kind, detail },
-      })
-      if (request.model && request.model !== config.model)
-        return failure('crash', 'model differs from codex_text.model and its configured prices')
-      if (request.outputSchema) return failure('crash', 'model-only calls do not support outputSchema')
-      if (request.limits.turns !== undefined && request.limits.turns < 1)
-        return failure('out-of-turns', 'one model response requires one turn')
-      if (request.limits.wallMs <= 0) return failure('timeout', 'no wall time remains')
-      if (bound > config.maxUsd || (request.limits.usd !== undefined && bound > request.limits.usd)) {
-        return failure('out-of-usd', 'the conservative request bound exceeds the remaining USD limit')
-      }
-      if (request.signal?.aborted) return failure('aborted', 'cancelled before dispatch')
+    // A constant: no IO, so no Effect and no face.
+    checkAuth: () =>
+      Promise.resolve({
+        state: 'signed-in',
+        loggedIn: true,
+        method: 'apiKey',
+        detail: 'explicit codex_text API key configured',
+      }),
+    run: (request: RunRequest): Promise<RunOutcome> => runCodexText({ config, transport }, request),
+  }
+}
 
-      const controller = new AbortController()
-      const onAbort = () => controller.abort(request.signal?.reason)
-      request.signal?.addEventListener('abort', onAbort, { once: true })
-      const timer = setTimeout(() => controller.abort(new Error('wall limit reached')), request.limits.wallMs)
-      try {
-        const response = await transport('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: config.model,
-            input: request.prompt,
-            tools: [],
-            tool_choice: 'none',
-            max_output_tokens: config.maxOutputTokens,
-            store: false,
+/** One model-only call, as an Effect (#1023). Interrupting it aborts the request. */
+export const codexTextRun = Effect.fn('agent.run')(function* (
+  { config, transport = fetch }: CodexTextOptions,
+  request: RunRequest,
+) {
+  const started = Date.now()
+  const bound = codexTextSpendBound(request.prompt, config)
+  const failure = (
+    kind: 'crash' | 'timeout' | 'aborted' | 'out-of-usd' | 'out-of-turns',
+    detail: string,
+  ): RunOutcome => ({
+    exitCode: null,
+    turns: 0,
+    durationMs: Date.now() - started,
+    costUsd: null,
+    text: null,
+    sessionId: '',
+    failure: { kind, detail },
+  })
+  if (request.model && request.model !== config.model)
+    return failure('crash', 'model differs from codex_text.model and its configured prices')
+  if (request.outputSchema) return failure('crash', 'model-only calls do not support outputSchema')
+  if (request.limits.turns !== undefined && request.limits.turns < 1)
+    return failure('out-of-turns', 'one model response requires one turn')
+  if (request.limits.wallMs <= 0) return failure('timeout', 'no wall time remains')
+  if (bound > config.maxUsd || (request.limits.usd !== undefined && bound > request.limits.usd)) {
+    return failure('out-of-usd', 'the conservative request bound exceeds the remaining USD limit')
+  }
+  if (request.signal?.aborted) return failure('aborted', 'cancelled before dispatch')
+
+  const controller = new AbortController()
+  const onAbort = () => controller.abort(request.signal?.reason)
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          request.signal?.addEventListener('abort', onAbort, { once: true })
+          return setTimeout(() => controller.abort(new Error('wall limit reached')), request.limits.wallMs)
+        }),
+        (timer) =>
+          Effect.sync(() => {
+            clearTimeout(timer)
+            request.signal?.removeEventListener('abort', onAbort)
+            // Cancels the request when the fiber is interrupted; a finished one has nothing to cancel.
+            controller.abort()
           }),
+      )
+      const cancelled = (): RunOutcome | null =>
+        controller.signal.aborted
+          ? failure(request.signal?.aborted ? 'aborted' : 'timeout', 'Responses call cancelled')
+          : null
+      const crashed = (err: Error): RunOutcome =>
+        cancelled() ?? failure('crash', `Responses call failed: ${err.message}`)
+      const asError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)))
+      return yield* Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            transport('https://api.openai.com/v1/responses', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({
+                model: config.model,
+                input: request.prompt,
+                tools: [],
+                tool_choice: 'none',
+                max_output_tokens: config.maxOutputTokens,
+                store: false,
+              }),
+            }),
+          catch: asError,
         })
         if (!response.ok) return failure('crash', `Responses API returned HTTP ${response.status}`)
-        const result: unknown = await response.json()
+        const result = yield* Effect.tryPromise({ try: (): Promise<unknown> => response.json(), catch: asError })
+        return yield* Effect.try({ try: () => interpret(result), catch: asError })
+      }).pipe(Effect.catch((err) => Effect.succeed(crashed(err))))
+
+      function interpret(result: unknown): RunOutcome {
         if (!result || typeof result !== 'object') return failure('crash', 'invalid Responses receipt')
         const receipt = result as Record<string, unknown>
         const usage = receipt.usage as Record<string, unknown> | undefined
@@ -153,14 +195,12 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
           sessionId: typeof receipt.id === 'string' ? receipt.id : '',
           failure: null,
         }
-      } catch (err) {
-        if (controller.signal.aborted)
-          return failure(request.signal?.aborted ? 'aborted' : 'timeout', 'Responses call cancelled')
-        return failure('crash', `Responses call failed: ${(err as Error).message}`)
-      } finally {
-        clearTimeout(timer)
-        request.signal?.removeEventListener('abort', onAbort)
       }
-    },
-  }
+    }),
+  )
+})
+
+/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
+export function runCodexText(options: CodexTextOptions, request: RunRequest): Promise<RunOutcome> {
+  return Effect.runPromise(codexTextRun(options, request))
 }

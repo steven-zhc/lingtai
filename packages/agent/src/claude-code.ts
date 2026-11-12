@@ -42,6 +42,7 @@ import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 
 import type { RunFailureKind, TokenCounts, Usage } from '@lingtai/domain'
+import { Effect } from 'effect'
 
 import { claudeCodeAuth, runtimeVersion } from './auth.ts'
 import { observedCall } from './hook-socket.ts'
@@ -411,7 +412,6 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
   const binary = options.binary ?? 'claude'
   const permissionMode: PermissionMode = options.permissionMode ?? 'bypassPermissions'
   const spawnChild = options.spawn ?? spawn
-  const sendSignal = options.signal ?? ((pid, sig) => process.kill(pid, sig))
 
   return {
     capabilities: CLAUDE_CODE_CAPABILITIES,
@@ -432,240 +432,268 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
       }
     },
 
-    async run(request: RunRequest): Promise<RunOutcome> {
-      const sessionId = sessionIdFor(request.runId)
-      const started = Date.now()
-      // A run with no log writes to the one that is not there, so there is no
-      // `?.` on the hot path (0034 §1).
-      const trace = request.log ?? NO_RUN_LOG
-
-      const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode)
-
-      return new Promise<RunOutcome>((resolve) => {
-        const child = spawnChild(binary, args, {
-          cwd: request.cwd,
-          // Filtered, not inherited. The agent gets what the recipe allows plus
-          // the hook's wiring and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` set by
-          // `spawnEnvFor` (`#492`), and nothing else — one of the three real
-          // boundaries (doc/decisions-archive/0007).
-          env: spawnEnvFor(request.env) as NodeJS.ProcessEnv,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          // Its own process group
-          // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).
-          //
-          // Ctrl+C is delivered to the whole foreground group, so without this
-          // the signal that begins a shutdown killed the agent in the same
-          // instant — and every message about finishing the current ticket was
-          // a lie the code told. Detaching is what makes the drain true rather
-          // than reassuring.
-          //
-          // Not `unref`ed: this run is exactly what the conductor is waiting
-          // for. What detaching costs is that a conductor which dies anyway
-          // leaves the agent alive, which is why recovery kills the process a
-          // claim names before it releases it (§5, `daemon/reconcile.ts`).
-          detached: true,
-        })
-
-        /**
-         * The **end** of stdout, not all of it.
-         *
-         * Under `json` the whole output was one small object and holding it was
-         * free. A stream is the transcript: every message, every tool call and
-         * every tool result the agent read, which for one run is tens of
-         * megabytes and would sit in this process's heap for the length of it.
-         * What the ending needs is the last line, so that is what is kept —
-         * bounded, and cut from the front, which never touches it.
-         */
-        let stdout = ''
-        let stderr = ''
-        let settled = false
-
-        // Whole lines only. A chunk boundary falls anywhere, and half a JSON
-        // object traced as prose would be both unreadable and a lie about what
-        // the agent said. What is left when the process dies mid-line is
-        // dropped: it is the partial-stream case, and a fragment is not a fact.
-        const stream = lineReader((line) => {
-          for (const [label, detail] of traceOf(line, { tools: request.traceTools === true })) {
-            trace.note(label, detail)
-          }
-        })
-        const errors = lineReader((line) => trace.note('stderr', line))
-
-        // A chunk boundary can also fall inside a character. `c.toString()`
-        // would turn the halves into two replacement characters, which under
-        // `json` corrupted a receipt nobody read closely and now corrupts a
-        // sentence somebody does. The decoder holds the first half back until
-        // the second arrives.
-        const outText = new StringDecoder('utf8')
-        const errText = new StringDecoder('utf8')
-
-        child.stdout.on('data', (c: Buffer) => {
-          const text = outText.write(c)
-          stdout = (stdout + text).slice(-RECEIPT_TAIL_CHARS)
-          stream(text)
-        })
-        child.stderr.on('data', (c: Buffer) => {
-          const text = errText.write(c)
-          stderr += text
-          errors(text)
-        })
-
-        let hard: NodeJS.Timeout | undefined
-        let last: NodeJS.Timeout | undefined
-        let probe: NodeJS.Timeout | undefined
-
-        const finish = (outcome: RunOutcome) => {
-          if (settled) return
-          settled = true
-          clearTimeout(wall)
-          clearTimeout(hard)
-          clearTimeout(last)
-          clearInterval(probe)
-          request.signal?.removeEventListener('abort', onAbort)
-          resolve(outcome)
-        }
-
-        // Set when the run was killed: the outcome waits for the process group
-        // to be gone, because a caller that resolves on SIGTERM can restore the
-        // worktree (`#587`) while the agent is still writing to it.
-        let killed: RunOutcome | undefined
-
-        // Whether there is a group to signal and probe. Not on Windows, and not
-        // before the spawn gave a pid; there `close` and the bound decide.
-        const grouped = process.platform !== 'win32' && child.pid !== undefined
-
-        // `true` once the group is known gone (`ESRCH`). Any other error is
-        // swallowed, as codex's is: a throw must not escape the timer or the
-        // abort handler that called this, and the probe or the bound decides.
-        const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
-          try {
-            // Claude Code is spawned detached. Its tools inherit this group;
-            // signalling only the CLI leaves them running in the checkout.
-            if (!grouped) {
-              if (signal !== 0) child.kill(signal)
-              return false
-            }
-            sendSignal(-child.pid!, signal)
-            return false
-          } catch (err) {
-            return (err as NodeJS.ErrnoException).code === 'ESRCH'
-          }
-        }
-
-        const kill = (kind: 'timeout' | 'aborted', detail: string) => {
-          if (killed !== undefined || settled) return
-          const stopped: RunOutcome = {
-            exitCode: null,
-            turns: 0,
-            durationMs: Date.now() - started,
-            costUsd: null,
-            text: null,
-            failure: { kind, detail },
-            sessionId,
-          }
-          killed = stopped
-          if (signalGroup('SIGTERM')) return finish(stopped)
-          if (grouped) {
-            probe = setInterval(() => {
-              if (signalGroup(0)) finish(stopped)
-            }, PROBE_MS)
-          }
-          // A SIGTERM the agent ignores must not become a hang. The event is the
-          // point; a process that will not die is a detail for the next line.
-          // None of these timers is `unref`ed: once the CLI has closed they are
-          // all that keeps the process alive to send the SIGKILL and resolve,
-          // and `finish` clears every one of them.
-          hard = setTimeout(() => {
-            if (signalGroup('SIGKILL')) return finish(stopped)
-            // Not even SIGKILL ended the group (or produced a `close`): stop
-            // waiting, and say so when something in it is still alive.
-            last = setTimeout(() => {
-              const survived = grouped && !signalGroup(0)
-              finish(
-                survived
-                  ? {
-                      ...stopped,
-                      failure: {
-                        kind,
-                        detail: `${detail}; the process group was still alive after SIGKILL`,
-                      },
-                    }
-                  : stopped,
-              )
-            }, KILL_GRACE_MS)
-          }, 5_000)
-        }
-
-        const wall = setTimeout(
-          () => kill('timeout', `no result within ${request.limits.wallMs}ms`),
-          request.limits.wallMs,
-        )
-        const onAbort = () => kill('aborted', 'the conductor aborted the run')
-        request.signal?.addEventListener('abort', onAbort, { once: true })
-
-        child.on('error', (err) =>
-          finish({
-            exitCode: null,
-            turns: 0,
-            durationMs: Date.now() - started,
-            costUsd: null,
-            text: null,
-            // Includes "claude is not installed", which must be an event and not
-            // a stack trace nobody sees.
-            failure: { kind: 'crash', detail: err.message },
-            sessionId,
-          }),
-        )
-
-        child.on('close', (code) => {
-          // `close` only shows the CLI is gone, not a tool in its group that
-          // holds other stdio: for a grouped run the probe decides.
-          if (killed !== undefined) return grouped ? undefined : finish(killed)
-          const parsed = parseResult(stdout)
-          const durationMs = parsed?.duration_ms ?? Date.now() - started
-          const turns = parsed?.num_turns ?? 0
-          const costUsd = parsed?.total_cost_usd ?? null
-          const usage = usageFromModelUsage(parsed?.modelUsage)
-
-          // The last line of the log is how it ended, in the runtime's own
-          // words — `subtype` included, which only `claudeClose` reads out of
-          // (below). A log kept because the run did not land opens on what it
-          // was for and closes on this.
-          trace.note(
-            'receipt',
-            parsed
-              ? `${parsed.subtype ?? (parsed.is_error === true ? 'error' : 'result')} · ` +
-                  `${turns} turns · ${costUsd === null ? 'cost unrecorded' : `$${costUsd.toFixed(2)}`} · ` +
-                  `exit ${code}`
-              : `no receipt on the stream · exit ${code}`,
-          )
-
-          // The decision, made once and pure — `claudeClose`. Before this it
-          // was three branches inline here, where no unit test could reach any
-          // of them (`pnpm test` runs no process).
-          const failure = claudeClose(parsed, { exitCode: code, stderr, stdout }, request.limits)
-
-          finish({
-            exitCode: code,
-            turns,
-            durationMs,
-            costUsd,
-            text: parsed?.result ?? null,
-            failure,
-            sessionId,
-            usage,
-            // Only on a clean answer, and only where the flag was sent: the
-            // forced tool call's own argument, handed back on the receipt
-            // (`#369`). A failed run has nothing here either way —
-            // `parseFindings` reads `text` instead, as it always has.
-            ...(failure === null && parsed?.structured_output !== undefined
-              ? { structured: parsed.structured_output }
-              : {}),
-          })
-        })
-      })
-    },
+    run: (request: RunRequest): Promise<RunOutcome> => runClaudeCode(options, request),
   }
+}
+
+/**
+ * One run, as an Effect (#1023). Interrupting it does what aborting
+ * `request.signal` does, and the interruption completes only once the process
+ * group is gone (`#587`): the cleanup below waits on `finish`.
+ *
+ * Every failure of the agent, a spawn failure included, is a `RunOutcome.failure`:
+ * the error channel is `never`.
+ */
+export const claudeCodeRun = Effect.fn('agent.run')(function* (options: ClaudeCodeOptions, request: RunRequest) {
+  const binary = options.binary ?? 'claude'
+  const permissionMode: PermissionMode = options.permissionMode ?? 'bypassPermissions'
+  const spawnChild = options.spawn ?? spawn
+  const sendSignal = options.signal ?? ((pid, sig) => process.kill(pid, sig))
+  const sessionId = sessionIdFor(request.runId)
+  const started = Date.now()
+  // A run with no log writes to the one that is not there, so there is no
+  // `?.` on the hot path (0034 §1).
+  const trace = request.log ?? NO_RUN_LOG
+
+  const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode)
+
+  return yield* Effect.callback<RunOutcome>((resume) => {
+    const child = spawnChild(binary, args, {
+      cwd: request.cwd,
+      // Filtered, not inherited. The agent gets what the recipe allows plus
+      // the hook's wiring and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` set by
+      // `spawnEnvFor` (`#492`), and nothing else — one of the three real
+      // boundaries (doc/decisions-archive/0007).
+      env: spawnEnvFor(request.env) as NodeJS.ProcessEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Its own process group
+      // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).
+      //
+      // Ctrl+C is delivered to the whole foreground group, so without this
+      // the signal that begins a shutdown killed the agent in the same
+      // instant — and every message about finishing the current ticket was
+      // a lie the code told. Detaching is what makes the drain true rather
+      // than reassuring.
+      //
+      // Not `unref`ed: this run is exactly what the conductor is waiting
+      // for. What detaching costs is that a conductor which dies anyway
+      // leaves the agent alive, which is why recovery kills the process a
+      // claim names before it releases it (§5, `daemon/reconcile.ts`).
+      detached: true,
+    })
+
+    /**
+     * The **end** of stdout, not all of it.
+     *
+     * Under `json` the whole output was one small object and holding it was
+     * free. A stream is the transcript: every message, every tool call and
+     * every tool result the agent read, which for one run is tens of
+     * megabytes and would sit in this process's heap for the length of it.
+     * What the ending needs is the last line, so that is what is kept —
+     * bounded, and cut from the front, which never touches it.
+     */
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    let onSettled: (() => void) | undefined
+
+    // Whole lines only. A chunk boundary falls anywhere, and half a JSON
+    // object traced as prose would be both unreadable and a lie about what
+    // the agent said. What is left when the process dies mid-line is
+    // dropped: it is the partial-stream case, and a fragment is not a fact.
+    const stream = lineReader((line) => {
+      for (const [label, detail] of traceOf(line, { tools: request.traceTools === true })) {
+        trace.note(label, detail)
+      }
+    })
+    const errors = lineReader((line) => trace.note('stderr', line))
+
+    // A chunk boundary can also fall inside a character. `c.toString()`
+    // would turn the halves into two replacement characters, which under
+    // `json` corrupted a receipt nobody read closely and now corrupts a
+    // sentence somebody does. The decoder holds the first half back until
+    // the second arrives.
+    const outText = new StringDecoder('utf8')
+    const errText = new StringDecoder('utf8')
+
+    child.stdout.on('data', (c: Buffer) => {
+      const text = outText.write(c)
+      stdout = (stdout + text).slice(-RECEIPT_TAIL_CHARS)
+      stream(text)
+    })
+    child.stderr.on('data', (c: Buffer) => {
+      const text = errText.write(c)
+      stderr += text
+      errors(text)
+    })
+
+    let hard: NodeJS.Timeout | undefined
+    let last: NodeJS.Timeout | undefined
+    let probe: NodeJS.Timeout | undefined
+
+    const finish = (outcome: RunOutcome) => {
+      if (settled) return
+      settled = true
+      clearTimeout(wall)
+      clearTimeout(hard)
+      clearTimeout(last)
+      clearInterval(probe)
+      request.signal?.removeEventListener('abort', onAbort)
+      resume(Effect.succeed(outcome))
+      onSettled?.()
+    }
+
+    // Set when the run was killed: the outcome waits for the process group
+    // to be gone, because a caller that resolves on SIGTERM can restore the
+    // worktree (`#587`) while the agent is still writing to it.
+    let killed: RunOutcome | undefined
+
+    // Whether there is a group to signal and probe. Not on Windows, and not
+    // before the spawn gave a pid; there `close` and the bound decide.
+    const grouped = process.platform !== 'win32' && child.pid !== undefined
+
+    // `true` once the group is known gone (`ESRCH`). Any other error is
+    // swallowed, as codex's is: a throw must not escape the timer or the
+    // abort handler that called this, and the probe or the bound decides.
+    const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
+      try {
+        // Claude Code is spawned detached. Its tools inherit this group;
+        // signalling only the CLI leaves them running in the checkout.
+        if (!grouped) {
+          if (signal !== 0) child.kill(signal)
+          return false
+        }
+        sendSignal(-child.pid!, signal)
+        return false
+      } catch (err) {
+        return (err as NodeJS.ErrnoException).code === 'ESRCH'
+      }
+    }
+
+    const kill = (kind: 'timeout' | 'aborted', detail: string) => {
+      if (killed !== undefined || settled) return
+      const stopped: RunOutcome = {
+        exitCode: null,
+        turns: 0,
+        durationMs: Date.now() - started,
+        costUsd: null,
+        text: null,
+        failure: { kind, detail },
+        sessionId,
+      }
+      killed = stopped
+      if (signalGroup('SIGTERM')) return finish(stopped)
+      if (grouped) {
+        probe = setInterval(() => {
+          if (signalGroup(0)) finish(stopped)
+        }, PROBE_MS)
+      }
+      // A SIGTERM the agent ignores must not become a hang. The event is the
+      // point; a process that will not die is a detail for the next line.
+      // None of these timers is `unref`ed: once the CLI has closed they are
+      // all that keeps the process alive to send the SIGKILL and resolve,
+      // and `finish` clears every one of them.
+      hard = setTimeout(() => {
+        if (signalGroup('SIGKILL')) return finish(stopped)
+        // Not even SIGKILL ended the group (or produced a `close`): stop
+        // waiting, and say so when something in it is still alive.
+        last = setTimeout(() => {
+          const survived = grouped && !signalGroup(0)
+          finish(
+            survived
+              ? {
+                  ...stopped,
+                  failure: {
+                    kind,
+                    detail: `${detail}; the process group was still alive after SIGKILL`,
+                  },
+                }
+              : stopped,
+          )
+        }, KILL_GRACE_MS)
+      }, 5_000)
+    }
+
+    const wall = setTimeout(() => kill('timeout', `no result within ${request.limits.wallMs}ms`), request.limits.wallMs)
+    const onAbort = () => kill('aborted', 'the conductor aborted the run')
+    request.signal?.addEventListener('abort', onAbort, { once: true })
+
+    child.on('error', (err) =>
+      finish({
+        exitCode: null,
+        turns: 0,
+        durationMs: Date.now() - started,
+        costUsd: null,
+        text: null,
+        // Includes "claude is not installed", which must be an event and not
+        // a stack trace nobody sees.
+        failure: { kind: 'crash', detail: err.message },
+        sessionId,
+      }),
+    )
+
+    child.on('close', (code) => {
+      // `close` only shows the CLI is gone, not a tool in its group that
+      // holds other stdio: for a grouped run the probe decides.
+      if (killed !== undefined) return grouped ? undefined : finish(killed)
+      const parsed = parseResult(stdout)
+      const durationMs = parsed?.duration_ms ?? Date.now() - started
+      const turns = parsed?.num_turns ?? 0
+      const costUsd = parsed?.total_cost_usd ?? null
+      const usage = usageFromModelUsage(parsed?.modelUsage)
+
+      // The last line of the log is how it ended, in the runtime's own
+      // words — `subtype` included, which only `claudeClose` reads out of
+      // (below). A log kept because the run did not land opens on what it
+      // was for and closes on this.
+      trace.note(
+        'receipt',
+        parsed
+          ? `${parsed.subtype ?? (parsed.is_error === true ? 'error' : 'result')} · ` +
+              `${turns} turns · ${costUsd === null ? 'cost unrecorded' : `$${costUsd.toFixed(2)}`} · ` +
+              `exit ${code}`
+          : `no receipt on the stream · exit ${code}`,
+      )
+
+      // The decision, made once and pure — `claudeClose`. Before this it
+      // was three branches inline here, where no unit test could reach any
+      // of them (`pnpm test` runs no process).
+      const failure = claudeClose(parsed, { exitCode: code, stderr, stdout }, request.limits)
+
+      finish({
+        exitCode: code,
+        turns,
+        durationMs,
+        costUsd,
+        text: parsed?.result ?? null,
+        failure,
+        sessionId,
+        usage,
+        // Only on a clean answer, and only where the flag was sent: the
+        // forced tool call's own argument, handed back on the receipt
+        // (`#369`). A failed run has nothing here either way —
+        // `parseFindings` reads `text` instead, as it always has.
+        ...(failure === null && parsed?.structured_output !== undefined
+          ? { structured: parsed.structured_output }
+          : {}),
+      })
+    })
+
+    // Interruption kills as an abort does, and waits for `finish`: the
+    // group gone, or the bounded SIGKILL wait.
+    return Effect.suspend(() => {
+      onAbort()
+      if (settled) return Effect.void
+      return Effect.callback<void>((done) => {
+        onSettled = () => done(Effect.void)
+      })
+    })
+  })
+})
+
+/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
+export function runClaudeCode(options: ClaudeCodeOptions, request: RunRequest): Promise<RunOutcome> {
+  return Effect.runPromise(claudeCodeRun(options, request))
 }
 
 /**
