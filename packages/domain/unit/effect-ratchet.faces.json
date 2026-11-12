@@ -43,6 +43,12 @@
   },
   {
     "file": "packages/agent/src/run-log.ts",
+    "fn": "closeRunLogFile",
+    "until": "#790",
+    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts:1788 and :1823 (lifted until the conductor chain's conduct.ts-holds-no-async ticket) and apps/cli/src/discuss.ts:439 await it; until RunLog.close is an Effect"
+  },
+  {
+    "file": "packages/agent/src/run-log.ts",
     "fn": "openRunLog",
     "until": "#790",
     "why": "apps/cli/src/discuss.ts:377 awaits it"
