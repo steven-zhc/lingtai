@@ -84,6 +84,66 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
   })
 })
 
+describe("landed and settingsPath through actionsFromRecipe's review dispatch (#1044)", () => {
+  const moved = { paths: ['src/x.ts'], fromSha: 'b'.repeat(40), toSha: 'c'.repeat(40) }
+  const build = (runtime: Runtime, extra: Record<string, unknown>) =>
+    actionsFromRecipe('review', [{ name: 'review', agent: 'claude-code', prompt: '' }], {
+      agent: {
+        runtime,
+        issue: async () => ({ ref: '1', title: 't', body: '' }),
+        diff: async () => 'diff --git a/x b/x\n+1',
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
+        ...extra,
+      },
+    })[0]!
+
+  it('shows the block for the overlapping paths after a base move', async () => {
+    const runtime = reviewer()
+    const calls: unknown[] = []
+    const landed = async (m: typeof moved) => {
+      calls.push(m)
+      return [{ path: 'src/x.ts', diff: '+changed on base' }]
+    }
+    await build(runtime, { landed }).run({ ...context, landedOnBase: moved })
+
+    expect(calls).toEqual([moved])
+    expect(runtime.seen[0]!.prompt).toContain('## What landed on the base')
+    expect(runtime.seen[0]!.prompt).toContain('src/x.ts')
+  })
+
+  it('asks nothing where the base did not move', async () => {
+    const runtime = reviewer()
+    let called = 0
+    const landed = async () => {
+      called += 1
+      return []
+    }
+    await build(runtime, { landed }).run(context)
+
+    expect(called).toBe(0)
+    expect(runtime.seen[0]!.prompt).not.toContain('## What landed on the base')
+  })
+
+  it('still reads settingsPath when the action runs, not when it is built', async () => {
+    const runtime = reviewer()
+    const agent = {
+      runtime,
+      issue: async () => ({ ref: '1', title: 't', body: '' }),
+      diff: async () => 'diff --git a/x b/x\n+1',
+      restore: async () => ({ untouched: true as const }),
+      settingsPath: '/tmp/before.json',
+      limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
+    }
+    const [action] = actionsFromRecipe('review', [{ name: 'review', agent: 'claude-code', prompt: '' }], { agent })
+    agent.settingsPath = '/tmp/after.json'
+    await action!.run(context)
+
+    expect(JSON.stringify(runtime.seen[0])).toContain('/tmp/after.json')
+  })
+})
+
 /**
  * **`implement` wraps a `run:` and the other four steps do not** (`#390`).
  *
