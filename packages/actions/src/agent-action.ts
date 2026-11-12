@@ -241,9 +241,9 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
  * fiber's interruption, whichever comes first. A throw from the adapter is a
  * defect that is the thrown value itself, as `liftPromise`'s.
  */
-const dispatch = (
+export const dispatchRuntime = (
   runtime: Runtime,
-  context: ActionContext,
+  signal: AbortSignal | undefined,
   request: Omit<RunRequest, 'signal'>,
 ): Effect.Effect<RunOutcome> =>
   Effect.callback<RunOutcome>((resume) => {
@@ -258,8 +258,7 @@ const dispatch = (
       resolve(
         runtime.run({
           ...request,
-          signal:
-            context.signal === undefined ? controller.signal : AbortSignal.any([context.signal, controller.signal]),
+          signal: signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal]),
         }),
       ),
     ).then(
@@ -896,7 +895,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
                     yield* liftPromise(() => context.prompted?.(`review@${prompt.length}`, composed, version))
                   }
-                  return yield* dispatch(deps.runtime, context, {
+                  return yield* dispatchRuntime(deps.runtime, context.signal, {
                     runId: reviewId,
                     cwd: context.cwd,
                     prompt,
@@ -1550,7 +1549,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
           yield* liftPromise(() => context.prompted?.(`design@${prompt.length}`, composed, version))
         }
-        const outcome = yield* dispatch(deps.runtime, context, {
+        const outcome = yield* dispatchRuntime(deps.runtime, context.signal, {
           runId: draftId,
           cwd: context.cwd,
           prompt,

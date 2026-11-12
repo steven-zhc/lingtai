@@ -6,7 +6,7 @@
   "packages/repo": { "async": 0, "run": 0 },
   "packages/agent": { "async": 2, "run": 0 },
   "packages/actions": { "async": 0, "run": 0 },
-  "packages/conductor": { "async": 192, "run": 16 },
+  "packages/conductor": { "async": 185, "run": 12 },
   "packages/daemon": { "async": 56, "run": 0 },
   "packages/setup": { "async": 0, "run": 0 },
   "packages/recipe": { "async": 0, "run": 0 }
