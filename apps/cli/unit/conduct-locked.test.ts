@@ -3,8 +3,10 @@
  * pause still ends the whole pass.
  */
 import { loadProject } from '@lingtai/conductor'
-import { projectStream } from '@lingtai/domain'
+import { lockedBy, makeGuard } from '@lingtai/daemon'
+import { accountStream, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { conductProjects } from '../src/conduct.ts'
@@ -87,5 +89,46 @@ describe('a pass with one project locked', () => {
     })
     expect(entered).toEqual([])
     expect(lines).toEqual(['first: not looked at — paused by human:ops — migrating'])
+  })
+
+  it('skips the project that uses a limited runtime and looks at the other (#1009)', async () => {
+    const { store, projects } = await twoProjects()
+    await store.append(accountStream('claude-code'), 0, [
+      {
+        type: 'AccountLimitReached',
+        actor: 'conductor',
+        data: {
+          runtime: 'claude-code',
+          until: new Date(Date.now() + 3_600_000).toISOString(),
+          untilFrom: 'message',
+          said: 'limit',
+        },
+      },
+    ])
+    const guard = makeGuard({
+      store,
+      ceiling: {
+        configuredUsd: () => undefined,
+        todaysSpend: () => Effect.succeed({ reportedCents: 0, estimatedCents: 0 }),
+      },
+      recipeFor: async (state) =>
+        ({ recipe: { runtime: { agent: state.project === 'first' ? 'claude-code' : 'codex' }, steps: {} } }) as never,
+    })
+    const entered: string[] = []
+    const lines: string[] = []
+    await conductProjects({
+      projects: projects.slice(0, 2),
+      codeSha: null,
+      store,
+      outcome: { projects: 0, ran: 0, refused: [] },
+      log: (l) => lines.push(l),
+      locked: lockedBy(guard),
+      work: async (project) => {
+        entered.push(project.project!)
+        return 'looked-away'
+      },
+    })
+    expect(entered).toEqual(['second'])
+    expect(lines.find((l) => l.startsWith('first: not looked at'))).toContain("claude-code's usage limit")
   })
 })

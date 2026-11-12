@@ -1,5 +1,7 @@
+import { accountsFor, liftPassedAccountLimit } from '@lingtai/conductor'
 import {
   CONTROL_STREAM,
+  NO_ACCOUNTS,
   ceilingCheck,
   type ControlState,
   type Lock,
@@ -45,8 +47,13 @@ export interface CeilingPort {
   todaysSpend: (now: Date) => Effect.Effect<{ reportedCents: number; estimatedCents: number }, CeilingUnchecked>
 }
 
+/** An `acct-` read failed: the account's state is unknown, and unknown is not *not limited*. */
+export class AccountUnchecked extends Data.TaggedError('AccountUnchecked')<{ readonly why: string }> {}
+
 export interface GuardOptions {
   store: EventStore
+  /** The project's resolved recipe, for the runtimes it uses. Defaults to `currentRecipe`. */
+  recipeFor?: Parameters<typeof accountsFor>[2]
   /** Accepted for the checks that will fold a snapshotted stream; the Project aggregate is not one. */
   snapshots?: SnapshotStore
   /**
@@ -68,7 +75,7 @@ const asError = (err: unknown): Error => (err instanceof Error ? err : new Error
 /** A person's pause of this project: `prj-{project}`, read whole, fresh. */
 const projectPause: Check = ({ store }, project) =>
   Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: asError }).pipe(
-    Effect.map((events) => locksOn({ project: reduceProject(events) })),
+    Effect.map((events) => locksOn({ project: reduceProject(events), accounts: NO_ACCOUNTS })),
   )
 
 /**
@@ -81,7 +88,7 @@ const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
   Effect.gen(function* () {
     const readState = (): Effect.Effect<ControlState, Error> =>
       Effect.tryPromise({ try: () => readControl(store, 0, { snapshots }), catch: asError })
-    if (ceiling === 'not-the-holder') return locksOn({ control: yield* readState() })
+    if (ceiling === 'not-the-holder') return locksOn({ control: yield* readState(), accounts: NO_ACCOUNTS })
 
     const at = (now ?? (() => new Date()))()
     // Before anything is appended, so a figure or a spend that cannot be trusted
@@ -103,11 +110,37 @@ const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
     const state = yield* attempt.pipe(
       Effect.catch((err: Error) => (err instanceof ConcurrencyError ? attempt : Effect.fail(err))),
     )
-    return locksOn({ control: state })
+    return locksOn({ control: state, accounts: NO_ACCOUNTS })
   })
 
-// The order is 0126 §8's: the ceiling, then a person's pause.
-const CHECKS: readonly Check[] = [dayCeiling, projectPause]
+/**
+ * Each account limit the project's recipe uses (0126 §4, §5): bring each
+ * `acct-{runtime}` up to the present, appending `AccountLimitLifted` once its
+ * `until` has passed, and answer the locks that stand. A guard that is not the
+ * holder appends nothing, as the ceiling's does. A recipe that does not resolve
+ * gives no account lock (`accountsFor`).
+ */
+const accountLimits: Check = ({ store, recipeFor, ceiling, now }, project) =>
+  Effect.gen(function* () {
+    const events = yield* Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: asError })
+    const state = reduceProject(events)
+    const read = accountsFor(store, state, recipeFor).pipe(
+      Effect.mapError((err) => new AccountUnchecked({ why: err.message })),
+    )
+    if (ceiling !== 'not-the-holder') {
+      const at = (now ?? (() => new Date()))()
+      const before = yield* read
+      yield* Effect.forEach([...before.keys()], (runtime) =>
+        liftPassedAccountLimit(store, runtime, at).pipe(
+          Effect.mapError((err) => new AccountUnchecked({ why: `${runtime}: ${err.message}` })),
+        ),
+      )
+    }
+    return locksOn({ accounts: yield* read })
+  })
+
+// The order is 0126 §8's: the ceiling, each account limit, then a person's pause.
+const CHECKS: readonly Check[] = [dayCeiling, accountLimits, projectPause]
 
 export function makeGuard(options: GuardOptions): Guard {
   return {
@@ -123,7 +156,9 @@ const run = Effect.runPromiseWith(Context.empty())
 export const lockFailure = (project: string, err: Error): string =>
   err instanceof CeilingUnchecked
     ? `could not check the daily ceiling: ${err.why} — taking no work`
-    : `could not read whether ${project} is paused — ${err.message}`
+    : err instanceof AccountUnchecked
+      ? `could not read whether ${project} is locked — ${err.why}`
+      : `could not read whether ${project} is paused — ${err.message}`
 
 /**
  * A gate's `locked` callback: the sentence that stops a start, or null.

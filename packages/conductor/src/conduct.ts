@@ -268,6 +268,7 @@ import {
   runAttempt,
 } from './run-attempt.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
+import { runtimesOf } from './runtimes-of.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
@@ -843,14 +844,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * recipe did not use. Empty also means `agentRefusal`'s loop below never
      * reads the list, so the two facts stay one branch.
      */
-    const secondRuntimes = new Set<RuntimeId>()
-    for (const actions of Object.values(recipe.steps)) {
-      for (const action of actions) {
-        if ('agent' in action) secondRuntimes.add(action.agent)
-        else if ('judge' in action && !isBuiltInJudge(action.judge)) secondRuntimes.add(action.judge)
-      }
-    }
-    secondRuntimes.delete(options.runtime.capabilities.id as RuntimeId)
+    const ownRuntime = options.runtime.capabilities.id as RuntimeId
+    const secondRuntimes = new Set<RuntimeId>(runtimesOf(recipe).filter((r) => r !== ownRuntime))
     const dispatchable: readonly string[] =
       secondRuntimes.size === 0
         ? []

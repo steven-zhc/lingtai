@@ -79,6 +79,7 @@ const reach: DoctorReach = {
   snapshots: async () => [],
   titles: async () => [],
   settings: async () => null,
+  accounts: async () => [],
   runtimes: () => [signedInRuntime],
   // No store is opened: today is empty and no ceiling is set.
   spend: async () => ({

@@ -4,7 +4,7 @@
  * Pure: the facts come from `ceilingFacts`, the clock is handed in. Both
  * outputs say the same sentences, so they are written once.
  */
-import type { CeilingFacts, Lock } from '@lingtai/domain'
+import { type CeilingFacts, type Lock, lockSentence } from '@lingtai/domain'
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 const money = (n: number): string => n.toFixed(2)
@@ -37,6 +37,8 @@ export function lockLine(project: string, lock: Lock, now: Date): string | null 
       return `paused by ${lock.by} since ${sinceLabel(lock.since, now)} — lingtai resume ${project}`
     case 'ceiling':
       return null
+    case 'account':
+      return lockSentence(project, [lock], now) ?? null
     default: {
       const never: never = lock
       return never
@@ -58,6 +60,16 @@ export function lockJson(lock: Lock): Record<string, unknown> {
         estimatedUsd: lock.estimatedUsd,
         ceilingUsd: lock.ceilingUsd,
         until: lock.until.toISOString(),
+      }
+    case 'account':
+      return {
+        kind: 'account',
+        runtime: lock.runtime,
+        by: lock.by,
+        since: lock.since.toISOString(),
+        until: lock.until.toISOString(),
+        untilFrom: lock.untilFrom,
+        said: lock.said,
       }
     default: {
       const never: never = lock

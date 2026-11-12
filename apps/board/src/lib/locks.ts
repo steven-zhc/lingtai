@@ -9,10 +9,12 @@
  * never `[]` for a failure: a banner fed an empty list would say "nothing is
  * paused", which is the silence #77 was about.
  */
+import { accountsFor } from '@lingtai/conductor'
 import { loadProjects } from '@lingtai/conductor/projects'
 import { pauseProject, raiseDayCeiling, readControl, resumeProject } from '@lingtai/daemon/control'
 import {
   RAISE_REFUSALS,
+  NO_ACCOUNTS,
   ceilingFacts,
   isRegistered,
   lockSentence,
@@ -24,12 +26,14 @@ import {
   type Lock,
 } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
-import type { EventStore } from '@lingtai/event-store'
-import { Effect } from 'effect'
+import { type EventStore, eventStore } from '@lingtai/event-store'
+import { Context, Effect } from 'effect'
 import { cache } from 'react'
 
 import type { ActionResult } from './diff.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
+
+const run = Effect.runPromiseWith(Context.empty())
 
 /** The registered projects, read once however many places of one render ask. */
 export const readRegistered = cache(() => loadProjects())
@@ -77,7 +81,9 @@ export const readProjectLocks = cache(async (): Promise<ProjectLocks> => {
     const state = 'state' in control ? control.state : undefined
     const held: HeldProject[] = []
     for (const project of projects) {
-      const locks = locksOn({ project, control: state })
+      // A failed `acct-` read fails the whole read: unknown is never *not limited*.
+      const accounts = await run(accountsFor(eventStore, project))
+      const locks = locksOn({ project, control: state, accounts })
       if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
     }
     held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))
@@ -192,9 +198,12 @@ export const setProjectPaused = (
  * starts. `read` is the project's stream, or the error reading it failed with —
  * unknown is not unlocked.
  */
+// `NO_ACCOUNTS` below is deliberate: this is a synchronous, pause-only read, and its
+// remedy sentence (`resume it`) is wrong for an account lock. The daemon's `locked`
+// still stops the turn; the board's account rows are #1010.
 export function askRefusal(project: string, read: readonly Envelope[] | Error): string | null {
   if (read instanceof Error) return `could not read whether ${project} is paused — ${read.message}`
-  const sentence = lockSentence(project, locksOn({ project: reduceProject(read) }))
+  const sentence = lockSentence(project, locksOn({ project: reduceProject(read), accounts: NO_ACCOUNTS }))
   return sentence === null ? null : `${sentence} — resume it, then ask`
 }
 

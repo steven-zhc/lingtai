@@ -1,12 +1,12 @@
 import { makeGuard } from '@lingtai/daemon'
 /** `lingtai pause` / `resume` / `now` over a memory store (#992). */
 import { pauseConductor, readControl, requestShutdown } from '@lingtai/daemon/control'
-import { CONTROL_STREAM, projectStream, reduceProject } from '@lingtai/domain'
+import { CONTROL_STREAM, accountStream, projectStream, reduceProject } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { pausedProjects } from '../src/doctor.ts'
+import { accountLimits, pausedProjects } from '../src/doctor.ts'
 import { nowVerdict } from '../src/now.ts'
 import { pauseProjects, refuseIfLocked, resumeProjects } from '../src/project-pause.ts'
 
@@ -193,5 +193,60 @@ describe('lingtai doctor', () => {
     const rows = await pausedProjects(w.projects)
     expect(rows).toMatchObject([{ name: 'daemon: paused projects', status: 'info' }])
     expect(rows[0]!.detail).toContain('lingtai (by human:a since ')
+  })
+})
+
+describe('lingtai doctor: account limits (#1009)', () => {
+  const until = new Date(2026, 10, 11, 23, 0)
+  const recipeFor = async (state: { project: string | null }) => {
+    if (state.project === 'broken') throw new Error('schema error')
+    return { recipe: { runtime: { agent: state.project === 'lingtai' ? 'claude-code' : 'codex' }, steps: {} } } as never
+  }
+  const limit = (store: Awaited<ReturnType<typeof world>>['options']['store']) =>
+    store!.append(accountStream('claude-code'), 0, [
+      {
+        type: 'AccountLimitReached',
+        actor: 'conductor',
+        data: { runtime: 'claude-code', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+      },
+    ])
+
+  it('gives one row naming who waits and who takes work, and none when nothing is limited', async () => {
+    const w = await world()
+    const store = w.options.store!
+    expect(await accountLimits(store, w.projects, recipeFor)).toEqual([])
+    await limit(store)
+    const rows = await accountLimits(store, w.projects, recipeFor, () => new Date(2026, 10, 11, 20, 0))
+    expect(rows).toMatchObject([{ name: 'account: claude-code', status: 'info' }])
+    expect(rows[0]!.detail).toContain('at its usage limit until 23:00 (read from its message)')
+    expect(rows[0]!.detail).toContain('waits: lingtai')
+    expect(rows[0]!.detail).toContain('lingtai account lift claude-code once it is over')
+  })
+
+  it('does not list a paused project, or one held by another limited account, as taking work', async () => {
+    const w = await world(['lingtai', 'other', 'third'])
+    await limit(w.options.store!)
+    await Effect.runPromise(pauseProjects('other', 'human:a', w.options))
+    const rows = await accountLimits(w.options.store!, w.projects, recipeFor, () => new Date(2026, 10, 11, 20, 0))
+    expect(rows[0]!.detail).toContain('takes work: third')
+    expect(rows[0]!.detail).not.toContain('takes work: other')
+    expect(rows[0]!.detail).not.toMatch(/takes work:.*other/)
+    // codex limited too: the project that uses only codex waits as well.
+    await w.options.store!.append(accountStream('codex'), 0, [
+      {
+        type: 'AccountLimitReached',
+        actor: 'conductor',
+        data: { runtime: 'codex', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+      },
+    ])
+    const both = await accountLimits(w.options.store!, w.projects, recipeFor, () => new Date(2026, 10, 11, 20, 0))
+    expect(both.find((r) => r.name === 'account: claude-code')!.detail).toContain('takes work: none')
+  })
+
+  it('says a passed limit lifts when the conductor next looks', async () => {
+    const w = await world()
+    await limit(w.options.store!)
+    const rows = await accountLimits(w.options.store!, w.projects, recipeFor, () => new Date(2026, 10, 12, 1, 0))
+    expect(rows[0]!.detail).toBe('until 2026-11-11 23:00 — passed; lifts when the conductor next looks')
   })
 })
