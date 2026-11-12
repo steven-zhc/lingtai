@@ -31,6 +31,7 @@ import type { ProjectState } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
+import { RepoFailed } from '@lingtai/repo'
 import { Effect, Layer } from 'effect'
 
 import { runOnce } from '../src/conduct.ts'
@@ -748,6 +749,14 @@ export interface FakeTree {
    * paths. Absent, `integrate` always lands — every other test relies on that.
    */
   conflicts?: { paths: string[]; baseSha: string; headSha: string }
+  /**
+   * Opt-in (#1120): answers git the way a worktree with a conflicting base does, where the
+   * default answers every call with success. `merge --no-commit` fails and leaves a merge
+   * standing (`MERGE_HEAD` resolves until `merge --abort`) when `conflicts` is non-empty,
+   * `diff --diff-filter=U -z` answers the paths NUL-joined, and `merge-base --is-ancestor`
+   * fails when `ancestor` is false. Also makes `did` record each call's full arguments.
+   */
+  inTree?: { conflicts: string[]; ancestor: boolean; failing?: string }
 }
 
 export function fakePorts(
@@ -756,6 +765,8 @@ export function fakePorts(
   merges = false,
   tree: FakeTree = { at: 'a'.repeat(40), implementerCommits: true },
 ): RunPorts {
+  // Only read under `tree.inTree`: whether a `merge --no-commit` has left a merge standing.
+  let standing = false
   return {
     repo: {
       provision: (o) =>
@@ -777,7 +788,10 @@ export function fakePorts(
         }),
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
       git: (args) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
+          const refuse = (detail: string, exitCode = 1) =>
+            Effect.fail(new RepoFailed({ operation: `git ${args[0]}`, detail, command: args, exitCode }))
+          const inTree = tree.inTree
           // The refspecs too, for a push and only for a push: *which refs* is
           // the whole of what the restart path needs from it, since the branch
           // the next attempt is told to fetch and the branch this arm keeps
@@ -786,13 +800,43 @@ export function fakePorts(
           did.push(
             args[0] === 'push'
               ? `git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`
-              : `git ${args[0]}`,
+              : inTree !== undefined
+                ? `git ${args.join(' ')}`
+                : `git ${args[0]}`,
           )
+          if (inTree !== undefined) {
+            // A read that fails for a reason other than the answer being no (exit 128, not 1).
+            if (inTree.failing !== undefined && args.join(' ').includes(inTree.failing)) return refuse('injected', 128)
+            if (args[0] === 'merge' && args[1] === '--abort') {
+              standing = false
+              return Effect.succeed('')
+            }
+            if (args[0] === 'merge' && args.includes('--no-commit')) {
+              if (inTree.conflicts.length === 0) {
+                standing = true
+                return Effect.succeed('')
+              }
+              standing = true
+              return refuse(`CONFLICT in ${inTree.conflicts.join(', ')}`)
+            }
+            if (args[0] === 'rev-parse' && args.includes('MERGE_HEAD')) {
+              return standing ? Effect.succeed(tree.at) : refuse('not a valid ref')
+            }
+            if (args[0] === 'diff' && args.includes('--diff-filter=U') && args.includes('-z')) {
+              return Effect.succeed(inTree.conflicts.join('\0'))
+            }
+            if (args[0] === 'diff' && args.includes('--name-only') && args.includes('-z'))
+              return Effect.succeed('src/fix.ts\0')
+            if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+              return inTree.ancestor ? Effect.succeed('') : refuse('not an ancestor')
+            }
+            if (args[0] === 'merge-base') return Effect.succeed('e'.repeat(40))
+          }
           // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
           // is what the diff summary is counted from. See `FakeTree` for why this
           // is a variable rather than the constant it was.
-          if (args[0] === 'rev-parse') return tree.at
-          if (args[0] === 'diff' && args[1] === '--numstat') return '3\t1\tsrc/fix.ts\n'
+          if (args[0] === 'rev-parse') return Effect.succeed(tree.at)
+          if (args[0] === 'diff' && args[1] === '--numstat') return Effect.succeed('3\t1\tsrc/fix.ts\n')
           // Sha-aware, unlike the two below it: a `from...HEAD` range whose
           // `from` is the current head is an empty diff, same as real git —
           // which is exactly the range a continuation computes when it diffs
@@ -800,15 +844,17 @@ export function fakePorts(
           // (#465).
           if (args[0] === 'diff' && args[1] === '--name-only') {
             const [from] = (args.at(-1) ?? '').split('...')
-            return from === tree.at ? '' : 'src/fix.ts\n'
+            return Effect.succeed(from === tree.at ? '' : 'src/fix.ts\n')
           }
           // `base...HEAD`, which is what a reviewer is shown. Non-empty on
           // purpose: an `agent:` gate short-circuits to `passed` on an empty
           // diff, so a fake that answered "" would make every review pass and
           // the refusal under test unreachable.
           if (args[0] === 'diff')
-            return 'diff --git a/src/fix.ts b/src/fix.ts\n--- a/src/fix.ts\n+++ b/src/fix.ts\n@@ -10,3 +10,4 @@\n a\n b\n c\n+  return ok;\n'
-          return ''
+            return Effect.succeed(
+              'diff --git a/src/fix.ts b/src/fix.ts\n--- a/src/fix.ts\n+++ b/src/fix.ts\n@@ -10,3 +10,4 @@\n a\n b\n c\n+  return ok;\n',
+            )
+          return Effect.succeed('')
         }),
       integrate: () =>
         Effect.sync(() => {

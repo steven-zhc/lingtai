@@ -539,7 +539,19 @@ export interface ActionContext {
    * round — a finding about the interaction travels on `recheck` from then on.
    * On the context for the same reason `recheck` is: a fact about this run.
    */
-  landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
+  landedOnBase?: {
+    readonly paths: readonly string[]
+    readonly fromSha: string
+    readonly toSha: string
+    /** Set when the base was merged in by resolving a conflict (#1120): the marked paths, within `paths`. */
+    readonly conflicted?: readonly string[]
+  }
+  /**
+   * The merge the conductor started in the worktree before a conflict round's
+   * agent began (#1120): `MERGE_HEAD` and the markers are standing. Replaced or
+   * cleared by the next fix round or base merge. A fact about this run.
+   */
+  conflictMerge?: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] }
   /**
    * The commit a `base-moved` merge brought in (#594). Unlike `landedOnBase` it
    * is not dropped by a fix round: the original cut stays an ancestor of `HEAD`,

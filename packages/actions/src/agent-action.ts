@@ -160,6 +160,7 @@ export interface AgentActionDeps {
     paths: readonly string[]
     fromSha: string
     toSha: string
+    conflicted?: readonly string[]
   }) => Promise<{ path: string; diff: string }[]>
   /**
    * Puts the development worktree back at `onSha`, clean, if the reviewer left
@@ -203,6 +204,7 @@ export interface AgentPortDeps {
     paths: readonly string[]
     fromSha: string
     toSha: string
+    conflicted?: readonly string[]
   }): Effect.Effect<{ path: string; diff: string }[]>
   restore(onSha: string): Effect.Effect<RestoreAnswer>
   settingsPath: string
@@ -431,7 +433,7 @@ export const LANDED_DIFF_LINES = 400
  * the cap landed in marked cut and every path after it named as left out.
  */
 export function landedOnBaseBlock(
-  moved: { paths: readonly string[]; fromSha: string; toSha: string },
+  moved: { paths: readonly string[]; fromSha: string; toSha: string; conflicted?: readonly string[] },
   per: readonly { path: string; diff: string }[],
   capLines: number = LANDED_DIFF_LINES,
 ): string {
@@ -454,6 +456,21 @@ export function landedOnBaseBlock(
     cut.length > 0 ? `Cut at ${capLines} lines: ${cut.join(', ')}.` : '',
     omitted.length > 0 ? `Left out, past the ${capLines}-line cap: ${omitted.join(', ')}.` : '',
   ].filter(Boolean)
+  if (moved.conflicted !== undefined) {
+    const marked = moved.conflicted
+    return `## What landed on the base
+
+The base moved and conflicted with this change, and a fix round merged it in by
+resolving that conflict. The conflict was on: ${marked.join(', ')}. These paths were
+changed on both sides: ${moved.paths.map((p) => (marked.includes(p) ? `${p} (conflicted)` : p)).join(', ')}.
+
+What the base did to them, \`${moved.fromSha.slice(0, 7)}..${moved.toSha.slice(0, 7)}\` (the diff above is this
+change against the base it was merged with, so none of this is in it):
+
+${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}
+
+Did the resolution drop or undo any of these base changes? Name each one that is not in the merged result, with the line on each side. Report what you find through the findings below.`
+  }
   return `## What landed on the base
 
 While this change was being built the base moved, and it has been merged in. These

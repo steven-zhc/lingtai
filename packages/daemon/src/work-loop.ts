@@ -86,11 +86,12 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { type Envelope, SUBSCRIBER_STREAM, WAIT_EVENTS, parsePayload, ticketOf } from '@lingtai/domain'
-import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
+import { type Envelope, WAIT_EVENTS } from '@lingtai/domain'
+import { type EventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
 
 import { withDaemonStore } from './choose.ts'
-import { createInFlight } from './in-flight.ts'
+import { makeFailureRecorder, recordFailureFace } from './failure-recorder.ts'
+import { createInFlight, inFlightSettledFace } from './in-flight.ts'
 import type { DaemonStore } from './store.ts'
 
 /**
@@ -391,69 +392,11 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
 
   // ------------------------------------------------ the subscriber boundary --
 
-  const store = options.store ?? eventStore
   const subscribers = (): readonly EventSubscriber[] =>
     typeof options.subscribers === 'function' ? options.subscribers() : (options.subscribers ?? [])
   const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS
 
-  /**
-   * `ext-subscribers`'s version, as this process last left it.
-   *
-   * Held rather than re-read, because the alternative is quadratic exactly when
-   * it hurts: a subscriber that fails on every event appends once per event,
-   * and reading the whole stream to find its length each time would make a
-   * broken notifier progressively more expensive. Null means *ask the log* —
-   * which is what a conflict sets it back to.
-   */
-  let failuresAt: number | null = null
-
-  /**
-   * Appends serially, whatever order the failures arrive in.
-   *
-   * Two `deliver` calls can fail within the same tick — every subscriber and
-   * `discuss` are handed the same event — and each would otherwise read the
-   * same version and race the others for it.
-   */
-  let recording: Promise<void> = Promise.resolve()
-
-  function record(name: string, event: Envelope, reason: string, owner: string | undefined): void {
-    // The loop, closed. A `PluginFailed` is an append like any other, so the
-    // subscription hands it back to the subscribers, and a subscriber that is
-    // failing on everything would fail on this one too — appending another, for
-    // ever. The failure is still logged; what it does not do is write itself
-    // down again.
-    if (event.type === 'PluginFailed') return
-
-    // The subscriber's own project when it has one. Otherwise only what the
-    // event names *exactly* — its `ticket-` stream or its `ticketId` — and null
-    // rather than a guess: `parseTicketStream` cuts any id at its last dash,
-    // so `pass-3f2a…-0123` would be recorded as project `pass-3f2a…`.
-    const project = owner ?? ticketOf(event)?.project ?? null
-    const data = { name, eventType: event.type, project, reason }
-    recording = recording
-      .then(async () => {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          try {
-            failuresAt ??= (await store.read(SUBSCRIBER_STREAM)).length
-            await store.append(SUBSCRIBER_STREAM, failuresAt, [
-              { type: 'PluginFailed', actor: 'conductor', data: parsePayload('PluginFailed', data) },
-            ])
-            failuresAt += 1
-            return
-          } catch (err) {
-            // Somebody else moved the stream, or the log is unreachable. Ask it
-            // again; on the third refusal say so and stop, because a boundary
-            // that could throw is the boundary this file exists to remove.
-            failuresAt = null
-            if (attempt === 2) tell(`could not record ${name}'s failure: ${(err as Error).message}`)
-          }
-        }
-        // Nothing above can reject, and the chain is caught anyway. A rejected
-        // `recording` would poison every failure after it — and an unhandled
-        // rejection in this process is the whole of what #120 is about.
-      })
-      .catch(() => {})
-  }
+  const recorder = makeFailureRecorder({ store: options.store, tell })
 
   /**
    * Hands one event to one subscriber, and holds everything it does back.
@@ -476,7 +419,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       if (settled) return
       settled = true
       tell(`${name} failed on ${event.type}: ${reason}`)
-      record(name, event, reason, project)
+      void recordFailureFace(recorder, name, event, reason, project)
     }
 
     const timer = setTimeout(
@@ -644,7 +587,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // as `runtime.limits.wall`, and a wait that gave up after some minutes
       // would recreate the orphan this exists to prevent, silently, at the
       // moment it matters most. Whoever wants to accept that asks for it.
-      await passesInFlight.settled()
+      await inFlightSettledFace(passesInFlight)
     },
   }
 }

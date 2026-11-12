@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { openRunLog } from '@lingtai/agent'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -30,6 +31,7 @@ import {
   RUN_LOG_END,
   RUN_LOG_QUIET_MS,
   findRunLog,
+  findRunLogEffect,
   followRunLog,
   listRunLogs,
   runLogEnd,
@@ -273,5 +275,10 @@ describe('following one', () => {
     expect(lines.filter((l) => l.includes('agent'))).toHaveLength(3)
     expect(lines.some((l) => l.includes('日本語のプロンプト'.repeat(400)))).toBe(true)
     expect(lines.every((l) => !l.includes('�'))).toBe(true)
+  })
+
+  it('answers null and [] over a home with no runs/', async () => {
+    await expect(Effect.runPromise(findRunLogEffect('pass-nothing', home))).resolves.toBeNull()
+    await expect(listRunLogs(home)).resolves.toEqual([])
   })
 })

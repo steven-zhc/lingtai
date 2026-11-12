@@ -32,13 +32,16 @@ import {
   ticketSourceOf,
   type StepBound,
 } from '@lingtai/recipe/settings'
+import { Cause, Effect } from 'effect'
 
 import { attemptCeiling } from './ceiling.ts'
 import type { TicketSource } from './discover.ts'
-import { currentRecipe } from './projects.ts'
+import { asFailure } from './port-face.ts'
+import { currentRecipeEffect } from './projects.ts'
 import {
   ticketedClientOf,
-  ticketsFor,
+  ticketsForEffect,
+  type ticketsFor,
   type Tickets,
   type TicketedClient,
   type TicketsForOptions,
@@ -206,6 +209,9 @@ export type ProjectFilter =
 /** Builds a client for a project, or throws saying why it cannot. */
 export type ClientFor = (state: ProjectState) => Promise<GitHubClient>
 
+/** `ClientFor` as an Effect: the failure is the reason the project cannot be reached. */
+export type ClientForEffect = (state: ProjectState) => Effect.Effect<GitHubClient, Error>
+
 /**
  * Reads a project's recipe from its base branch.
  *
@@ -218,6 +224,30 @@ export type ClientFor = (state: ProjectState) => Promise<GitHubClient>
  */
 export type RecipeFor = (state: ProjectState, client: unknown) => Promise<ResolvedRecipe>
 
+/** `RecipeFor` as an Effect: a recipe that will not resolve is a typed failure carrying its message. */
+export type RecipeForEffect = (state: ProjectState, client: unknown) => Effect.Effect<ResolvedRecipe, Error>
+
+/**
+ * The three seams a test hands a face, lifted to the Effects the `…Effect`
+ * functions take: each is **one lift**, the rejection kept as the failure
+ * unchanged. Left out, each is the Effect default itself.
+ */
+export const clientForSeam = (clientFor: ClientFor | undefined): ClientForEffect =>
+  clientFor === undefined
+    ? (state) => githubClientForEffect(state)
+    : (state) => Effect.tryPromise({ try: () => clientFor(state), catch: asFailure })
+
+export const recipeForSeam = (recipeFor: RecipeFor | undefined): RecipeForEffect =>
+  recipeFor === undefined
+    ? (state, client) => currentRecipeEffect(state, client)
+    : (state, client) => Effect.tryPromise({ try: () => recipeFor(state, client), catch: asFailure })
+
+export const ticketsOfSeam = (ticketsOf: typeof ticketsFor | undefined): typeof ticketsForEffect =>
+  ticketsOf === undefined
+    ? ticketsForEffect
+    : (state, recipe, client, options) =>
+        Effect.tryPromise({ try: () => ticketsOf(state, recipe, client, options), catch: asFailure })
+
 /**
  * The `ClientFor` everything outside a test uses.
  *
@@ -227,22 +257,36 @@ export type RecipeFor = (state: ProjectState, client: unknown) => Promise<Resolv
  * road out, and none of the four callers has to remember a second branch. This
  * is where "an App that is misconfigured" stopped being an empty column.
  */
-export async function githubClientFor(
+export function githubClientForEffect(
   state: ProjectState,
   signal?: AbortSignal,
   /** The `gh` runner a test hands in; read only where the machine is on `gh`. */
   gh?: GhRun,
-): Promise<GitHubClient> {
-  if (!hasGitHubAuth()) throw new Error('no GitHub App configured, so GitHub cannot be asked about this project')
-  if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
-  if (!state.owner) throw new Error('no owner recorded — re-run lingtai add to record it')
-  return createGitHubClient({
-    auth: githubClientAuth(),
-    owner: state.owner,
-    repo: state.project,
-    signal,
-    ...(gh === undefined ? {} : { gh }),
+): Effect.Effect<GitHubClient, Error> {
+  return Effect.gen(function* () {
+    if (!hasGitHubAuth()) {
+      return yield* Effect.fail(new Error('no GitHub App configured, so GitHub cannot be asked about this project'))
+    }
+    if (!state.project) return yield* Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
+    if (!state.owner) return yield* Effect.fail(new Error('no owner recorded — re-run lingtai add to record it'))
+    const { owner, project } = { owner: state.owner, project: state.project }
+    return yield* Effect.tryPromise({
+      try: () =>
+        createGitHubClient({
+          auth: githubClientAuth(),
+          owner,
+          repo: project,
+          signal,
+          ...(gh === undefined ? {} : { gh }),
+        }),
+      catch: asFailure,
+    })
   })
+}
+
+/** `githubClientForEffect` as the promise the CLI and the board await (a listed face, #790). */
+export function githubClientFor(state: ProjectState, signal?: AbortSignal, gh?: GhRun): Promise<GitHubClient> {
+  return Effect.runPromise(githubClientForEffect(state, signal, gh))
 }
 
 /**
@@ -286,16 +330,32 @@ export function ownerlessRefusal(project: string, recipe: Recipe): string | null
  * a fake log, `ticketsFor` never reaches `processTicketSql()`'s default,
  * which `HOME=/nonexistent pnpm test` cannot open.
  */
-export async function projectClient(
+export function projectClientEffect(
+  state: ProjectState,
+  options: { clientFor?: ClientForEffect; recipeFor?: RecipeForEffect; tickets?: TicketsForOptions } = {},
+): Effect.Effect<{ client: TicketedClient; resolved: ResolvedRecipe }, Error> {
+  const clientFor = options.clientFor ?? ((s: ProjectState) => githubClientForEffect(s))
+  const recipeFor = options.recipeFor ?? ((s: ProjectState, c: unknown) => currentRecipeEffect(s, c))
+  return Effect.gen(function* () {
+    const client = yield* clientFor(state)
+    const resolved = yield* recipeFor(state, client)
+    const tickets = yield* ticketsForEffect(state, resolved.recipe, client, options.tickets)
+    return { client: ticketedClientOf(client, tickets), resolved }
+  })
+}
+
+/** `projectClientEffect` over promise seams, as the promise the CLI and the board await (a listed face, #790). */
+export function projectClient(
   state: ProjectState,
   options: { clientFor?: ClientFor; recipeFor?: RecipeFor; tickets?: TicketsForOptions } = {},
 ): Promise<{ client: TicketedClient; resolved: ResolvedRecipe }> {
-  const clientFor = options.clientFor ?? githubClientFor
-  const recipeFor = options.recipeFor ?? currentRecipe
-  const client = await clientFor(state)
-  const resolved = await recipeFor(state, client)
-  const tickets = await ticketsFor(state, resolved.recipe, client, options.tickets)
-  return { client: ticketedClientOf(client, tickets), resolved }
+  return Effect.runPromise(
+    projectClientEffect(state, {
+      clientFor: clientForSeam(options.clientFor),
+      recipeFor: recipeForSeam(options.recipeFor),
+      tickets: options.tickets,
+    }),
+  )
 }
 
 /**
@@ -315,36 +375,36 @@ export async function projectClient(
  * the same `ok: false` every other refusal here does) and, past that, with
  * `ticketsOf` — never asked for a `client` argument it does not have.
  */
-export async function projectFilter(
+export function projectFilterEffect(
   state: ProjectState,
-  clientFor: ClientFor = githubClientFor,
-  recipeFor: RecipeFor = currentRecipe,
-  ticketsOf: typeof ticketsFor = ticketsFor,
-): Promise<ProjectFilter> {
+  clientFor: ClientForEffect = (s) => githubClientForEffect(s),
+  recipeFor: RecipeForEffect = (s, c) => currentRecipeEffect(s, c),
+  ticketsOf: typeof ticketsForEffect = ticketsForEffect,
+): Effect.Effect<ProjectFilter> {
   const project = state.project ?? '(unnamed)'
-  try {
+  return Effect.gen(function* () {
     let resolved: ResolvedRecipe
     let client: TicketSource
     let tickets: TicketSource
     let links: Pick<GitHubClient, 'listBlockedBy' | 'owner' | 'repo'> | null = null
     if (state.owner === null) {
-      resolved = await recipeFor(state, undefined)
+      resolved = yield* recipeFor(state, undefined)
       const refusal = ownerlessRefusal(project, resolved.recipe)
-      if (refusal) throw new Error(refusal)
+      if (refusal) return yield* Effect.fail(new Error(refusal))
       // Never read: the refusal above already requires `source.tickets: db`,
       // `ticketsFor`'s only branch that does not pass its third argument
       // straight through.
-      const dbTickets = await ticketsOf(state, resolved.recipe, undefined as unknown as Tickets)
+      const dbTickets = yield* ticketsOf(state, resolved.recipe, undefined as unknown as Tickets)
       tickets = dbTickets
       client = dbTickets
     } else {
-      const ghClient = await clientFor(state)
-      resolved = await recipeFor(state, ghClient)
-      tickets = await ticketsOf(state, resolved.recipe, ghClient)
+      const ghClient = yield* clientFor(state)
+      resolved = yield* recipeFor(state, ghClient)
+      tickets = yield* ticketsOf(state, resolved.recipe, ghClient)
       client = ghClient
       links = tickets === ghClient ? ghClient : null
     }
-    return {
+    const filter: ProjectFilter = {
       project,
       ok: true,
       configHash: resolved.configHash,
@@ -371,17 +431,47 @@ export async function projectFilter(
       tickets,
       links,
     }
-  } catch (err) {
-    return { project, ok: false, problem: oneLine((err as Error).message) }
-  }
+    return filter
+  }).pipe(
+    // **The cause, not only the failure**: a throw in the store, the recipe
+    // seam or `parseDuration` is a defect, and it is still an answer (#64, #134).
+    Effect.catchCause((cause) =>
+      Effect.succeed<ProjectFilter>({
+        project,
+        ok: false,
+        problem: oneLine((Cause.squash(cause) as Error).message),
+      }),
+    ),
+  )
 }
 
-export async function projectFilters(
+/** `projectFilterEffect` over promise seams, as the promise the CLI and the board await (a listed face, #790). */
+export function projectFilter(
+  state: ProjectState,
+  clientFor?: ClientFor,
+  recipeFor?: RecipeFor,
+  ticketsOf?: typeof ticketsFor,
+): Promise<ProjectFilter> {
+  return Effect.runPromise(
+    projectFilterEffect(state, clientForSeam(clientFor), recipeForSeam(recipeFor), ticketsOfSeam(ticketsOf)),
+  )
+}
+
+export function projectFiltersEffect(
   projects: readonly ProjectState[],
-  clientFor: ClientFor = githubClientFor,
-  recipeFor: RecipeFor = currentRecipe,
+  clientFor: ClientForEffect = (s) => githubClientForEffect(s),
+  recipeFor: RecipeForEffect = (s, c) => currentRecipeEffect(s, c),
+): Effect.Effect<ProjectFilter[]> {
+  return Effect.forEach(projects, (p) => projectFilterEffect(p, clientFor, recipeFor), { concurrency: 'unbounded' })
+}
+
+/** `projectFiltersEffect` over promise seams, as a promise (a listed face, #790). */
+export function projectFilters(
+  projects: readonly ProjectState[],
+  clientFor?: ClientFor,
+  recipeFor?: RecipeFor,
 ): Promise<ProjectFilter[]> {
-  return Promise.all(projects.map((p) => projectFilter(p, clientFor, recipeFor)))
+  return Effect.runPromise(projectFiltersEffect(projects, clientForSeam(clientFor), recipeForSeam(recipeFor)))
 }
 
 /**

@@ -17,10 +17,12 @@
  */
 import type { ProjectState } from '@lingtai/domain'
 import { ticketSourceOf } from '@lingtai/recipe/settings'
+import { Cause, Effect } from 'effect'
 
-import { githubClientFor, type RecipeFor } from './filter.ts'
-import { currentRecipe } from './projects.ts'
-import { ticketsFor, type Ticket, type Tickets, type TicketsForOptions } from './ticket-store.ts'
+import { githubClientForEffect, recipeForSeam, type RecipeFor, type RecipeForEffect } from './filter.ts'
+import { asFailure } from './port-face.ts'
+import { currentRecipeEffect } from './projects.ts'
+import { ticketsForEffect, type Ticket, type Tickets, type TicketsForOptions } from './ticket-store.ts'
 
 export type TicketRead =
   | { ok: true; from: 'db' | 'github'; ticket: Ticket }
@@ -36,42 +38,77 @@ export interface ReadTicketOptions {
   tickets?: TicketsForOptions
 }
 
+/** `ReadTicketOptions` with its seams as Effects, which is what `readProjectTicketEffect` takes. */
+export interface ReadTicketEffectOptions {
+  signal?: AbortSignal
+  recipeFor?: RecipeForEffect
+  clientFor?: (state: ProjectState, signal?: AbortSignal) => Effect.Effect<Tickets, Error>
+  tickets?: TicketsForOptions
+}
+
 export type ReadProjectTicket = (
   state: ProjectState,
   number: number,
   options?: ReadTicketOptions,
 ) => Promise<TicketRead>
 
-/** Never throws: a failure is an answer, with the error as it was caught. */
-export const readProjectTicket: ReadProjectTicket = async (state, number, options = {}) => {
+/**
+ * Never fails and never dies: a failure **or a defect** is an answer, with the
+ * error as it was caught (`Cause.squash`, so a caller inspecting `error` sees
+ * the thing thrown and not a `Cause`).
+ */
+export function readProjectTicketEffect(
+  state: ProjectState,
+  number: number,
+  options: ReadTicketEffectOptions = {},
+): Effect.Effect<TicketRead> {
   const { signal } = options
-  const recipeFor = options.recipeFor ?? currentRecipe
-  const clientFor = options.clientFor ?? githubClientFor
+  const recipeFor = options.recipeFor ?? ((s: ProjectState, c: unknown) => currentRecipeEffect(s, c))
+  const clientFor = options.clientFor ?? githubClientForEffect
+  const failed =
+    (from: 'db' | 'github' | null) =>
+    (cause: Cause.Cause<unknown>): Effect.Effect<TicketRead> =>
+      Effect.succeed({ ok: false, from, error: Cause.squash(cause) })
 
-  let source: ReturnType<typeof ticketSourceOf>
-  let recipe: Awaited<ReturnType<RecipeFor>>['recipe']
-  try {
+  return Effect.gen(function* () {
     // `currentRecipe` ignores its second argument, so no client is built first.
-    recipe = (await recipeFor(state, undefined)).recipe
-    source = ticketSourceOf(recipe)
-  } catch (error) {
-    return { ok: false, from: null, error }
-  }
+    const read = yield* recipeFor(state, undefined).pipe(
+      Effect.map((resolved) => ({ recipe: resolved.recipe, source: ticketSourceOf(resolved.recipe) })),
+      Effect.map((found) => ({ found }) as const),
+      Effect.catchCause((cause) => Effect.map(failed(null)(cause), (answer) => ({ answer }) as const)),
+    )
+    if ('answer' in read) return read.answer
+    const { recipe, source } = read.found
 
-  if (source === 'db') {
-    try {
-      // Never read: `ticketsFor`'s `db` branch does not pass it through (`ownerless.ts`).
-      const tickets = await ticketsFor(state, recipe, undefined as unknown as Tickets, options.tickets)
-      return { ok: true, from: 'db', ticket: await tickets.getIssue(number, signal) }
-    } catch (error) {
-      return { ok: false, from: 'db', error }
+    if (source === 'db') {
+      return yield* Effect.gen(function* () {
+        // Never read: `ticketsFor`'s `db` branch does not pass it through (`ownerless.ts`).
+        const tickets = yield* ticketsForEffect(state, recipe, undefined as unknown as Tickets, options.tickets)
+        const ticket = yield* Effect.tryPromise({ try: () => tickets.getIssue(number, signal), catch: asFailure })
+        return { ok: true, from: 'db', ticket } as TicketRead
+      }).pipe(Effect.catchCause(failed('db')))
     }
-  }
 
-  try {
-    const client = await clientFor(state, signal)
-    return { ok: true, from: 'github', ticket: await client.getIssue(number, signal) }
-  } catch (error) {
-    return { ok: false, from: 'github', error }
-  }
+    return yield* Effect.gen(function* () {
+      const client = yield* clientFor(state, signal)
+      const ticket = yield* Effect.tryPromise({ try: () => client.getIssue(number, signal), catch: asFailure })
+      return { ok: true, from: 'github', ticket } as TicketRead
+    }).pipe(Effect.catchCause(failed('github')))
+  })
 }
+
+/** `readProjectTicketEffect` over promise seams, as the promise the board and the CLI await (a listed face, #790). */
+export const readProjectTicket: ReadProjectTicket = (state, number, options = {}) =>
+  Effect.runPromise(
+    readProjectTicketEffect(state, number, {
+      signal: options.signal,
+      recipeFor: recipeForSeam(options.recipeFor),
+      clientFor: clientForSeam(options.clientFor),
+      tickets: options.tickets,
+    }),
+  )
+
+const clientForSeam = (clientFor: ReadTicketOptions['clientFor']): NonNullable<ReadTicketEffectOptions['clientFor']> =>
+  clientFor === undefined
+    ? githubClientForEffect
+    : (state, signal) => Effect.tryPromise({ try: () => clientFor(state, signal), catch: asFailure })

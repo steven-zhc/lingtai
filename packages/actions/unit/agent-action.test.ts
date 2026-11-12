@@ -2078,6 +2078,27 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(runtime.seen[0]?.prompt ?? '').not.toContain(HEADING)
   })
 
+  it('after a conflict resolution, marks the conflicted paths and asks what the resolution lost (#1120)', () => {
+    const block = landedOnBaseBlock(
+      { paths: ['a.ts', 'b.ts'], fromSha: 'f'.repeat(40), toSha: 't'.repeat(40), conflicted: ['a.ts'] },
+      [
+        { path: 'a.ts', diff: '+one' },
+        { path: 'b.ts', diff: '+two' },
+      ],
+    )
+
+    expect(block).toContain('a.ts (conflicted), b.ts')
+    expect(block).toContain('resolving that conflict')
+    expect(block).toContain(`${'f'.repeat(7)}..${'t'.repeat(7)}`)
+    expect(block).toContain(
+      'Did the resolution drop or undo any of these base changes? Name each one that is not in the merged result, with the line on each side.',
+    )
+    // The ordinary section is untouched for a merge with no conflict.
+    const plain = landedOnBaseBlock({ paths: ['a.ts'], fromSha: 'f', toSha: 't' }, [{ path: 'a.ts', diff: '+one' }])
+    expect(plain).toContain('While this change was being built the base moved')
+    expect(plain).not.toContain('resolution')
+  })
+
   it('cuts a diff over the cap, and names the path it cut and the paths it left out', () => {
     const lines = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `+${tag}${i}`).join('\n')
     const moved = { paths: ['a.ts', 'b.ts', 'c.ts'], fromSha: 'f', toSha: 't' }

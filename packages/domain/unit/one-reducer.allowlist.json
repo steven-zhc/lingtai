@@ -136,7 +136,7 @@
     "reason": "The last refs resolved, a lookup beside item.github, which is already TicketState's (#832)."
   },
   {
-    "file": "packages/daemon/src/work-loop.ts",
+    "file": "packages/daemon/src/failure-recorder.ts",
     "function": "record",
     "type": "PluginFailed",
     "count": 1,
