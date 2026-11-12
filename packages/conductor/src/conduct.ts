@@ -215,6 +215,7 @@ import {
   isUnreachableFailure,
   mirrorPathFor,
   retryUnreachable,
+  type RepoFailed,
   withMirrorWrite,
   worktreePath,
   type TokenSource,
@@ -1840,8 +1841,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `retry` is the waits for a command that may not reach origin (#1029): the same single
        * run, with `retryUnreachable` inside it.
        */
-      const gitAsked = (args: string[], retry?: readonly Duration.Input[]) =>
-        Effect.runPromise(Effect.result(retry ? retryUnreachable(gitHere(args), retry) : gitHere(args)))
+      const gitAsked = (
+        args: string[],
+        retry?: readonly Duration.Input[],
+        recover?: (err: RepoFailed) => Effect.Effect<string, RepoFailed>,
+      ) => {
+        // `recover` runs inside each try, so what it reads is retried with the command.
+        const once = recover
+          ? Effect.gen(function* () {
+              const r = yield* Effect.result(gitHere(args))
+              return Result.isSuccess(r) ? r.success : yield* recover(r.failure)
+            })
+          : gitHere(args)
+        return Effect.runPromise(Effect.result(retry ? retryUnreachable(once, retry) : once))
+      }
       /**
        * …for a command that writes the mirror's refs or worktree metadata,
        * which a worktree shares with it: one at a time per mirror, for that
@@ -3054,29 +3067,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // Retried while origin cannot be reached (#1029). The waits run in this call and an
         // interrupt does not reach them (`gitAsked` starts its own fiber), so a drain waits at
         // most the tries' own bound: about 3 × git's timeout plus the waits.
+        // A lease that no longer matches may mean a push whose reply was lost landed after all:
+        // if origin already holds the sha being landed, the push is done. The check is part of
+        // each try, so a failed read is another try rather than an early exit.
         const pushed = await gitAsked(
           ['push', `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`, 'origin', `HEAD:refs/heads/${branch}`],
           options.unreachableWaits ?? UNREACHABLE_WAITS,
+          (err) =>
+            /stale info/i.test(err.stderr ?? err.detail)
+              ? Effect.gen(function* () {
+                  const listed = yield* Effect.result(gitHere(['ls-remote', 'origin', `refs/heads/${branch}`]))
+                  if (Result.isFailure(listed))
+                    return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
+                  return listed.success.split(/\s/)[0] === on.onSha ? '' : yield* Effect.fail(err)
+                })
+              : Effect.fail(err),
         )
         if (Result.isFailure(pushed)) {
-          if (isUnreachableFailure(pushed.failure)) {
-            return { notMerged: { reason: 'unreachable', detail: pushed.failure.detail } }
-          }
-          // A lease that no longer matches may mean a push whose reply was lost landed after all:
-          // if origin already holds the sha being landed, the push is done.
-          let landedAlready = false
-          if (/stale info/i.test(pushed.failure.stderr ?? pushed.failure.detail)) {
-            const listed = await gitAsked(['ls-remote', 'origin', `refs/heads/${branch}`])
-            if (Result.isFailure(listed)) {
-              if (isUnreachableFailure(listed.failure)) {
-                return { notMerged: { reason: 'unreachable', detail: listed.failure.detail } }
-              }
-            } else {
-              landedAlready = listed.success.split(/\s/)[0] === on.onSha
-            }
-          }
-          if (!landedAlready) {
-            return { notMerged: { reason: 'push-rejected', detail: pushed.failure.detail } }
+          return {
+            notMerged: {
+              reason: isUnreachableFailure(pushed.failure) ? 'unreachable' : 'push-rejected',
+              detail: pushed.failure.detail,
+            },
           }
         }
         lease = on.onSha

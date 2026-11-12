@@ -15,7 +15,7 @@ const TIMEOUT =
 const logOf = (store: ReturnType<typeof memoryStore>) =>
   JSON.stringify([...store.streams.values()].flat(), (_k, v) => (typeof v === 'bigint' ? Number(v) : v))
 
-async function land(pushDetail: string | undefined, failures: number) {
+async function land(pushDetail: string | undefined, failures: number, lsFailures = 0) {
   const store = memoryStore()
   const ports = fakePorts([], store, true)
   const pushes: string[][] = []
@@ -27,6 +27,11 @@ async function land(pushDetail: string | undefined, failures: number) {
     })
   const git = ports.repo.git
   ports.repo.git = (args, o) => {
+    if (args[0] === 'ls-remote' && lsFailures > 0) {
+      lsFailures -= 1
+      return Effect.fail(new RepoFailed({ operation: 'git ls-remote', detail: TIMEOUT }))
+    }
+    if (args[0] === 'ls-remote') return Effect.succeed('')
     if (args[0] !== 'push' || pushDetail === undefined) return git(args, o)
     return Effect.suspend(() => {
       pushes.push(args)
@@ -79,5 +84,14 @@ describe('the branch push in landNow', () => {
     expect(result.ok).not.toBe(true)
     expect(lane()).toBe(0)
     expect(logOf(store)).toContain('push-rejected')
+  })
+
+  it('retries a stale-info check whose ls-remote fails once, inside the same tries', async () => {
+    // Every push is stale; origin does not hold our sha, so it ends push-rejected — but only
+    // after the transient ls-remote failure was retried rather than held as unreachable.
+    const { result, pushes, store } = await land('! [rejected] HEAD -> agent/7 (stale info)', 99, 1)
+    expect(result.ok).not.toBe(true)
+    expect(pushes.length).toBeGreaterThanOrEqual(2)
+    expect(logOf(store)).not.toContain('unreachable')
   })
 })
