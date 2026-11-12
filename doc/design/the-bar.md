@@ -128,7 +128,11 @@ headline*.
 
 `paused` and `draining` are not objects either: they are chips, absent whenever
 there is nothing to say, which is the property that makes a chip affordable at
-all (below).
+all (below). `paused` is now the setup's alone — the conductor-wide pause a
+recipe asks for by naming a tier a runtime cannot provide — until the 0.14.0
+security epic (#676) makes that a refused recipe for one project; a project's
+pause, the day's ceiling and a runtime's usage limit are the banner's, not the
+bar's.
 
 `#216` made the argument by adding nothing to the count: a way to act on a list
 of things belongs to the list. The filter has been a list of projects since
@@ -136,6 +140,24 @@ of things belongs to the list. The filter has been a list of projects since
 example. It is the same act, a list gaining its own action, and it is not the
 same as a fourth object arriving on a row that is glanced at while you work on
 something else. That one still has to be argued for here.
+
+### After the locks (0126)
+
+**The project filter scopes more than the tickets.** It scopes the tickets, the
+banner and the project actions: with a project selected, the banner shows the
+locks that hold that project, and with none selected it shows them for every
+registered project.
+
+**The banner is the one place that says why a project's work does not start** —
+a project's pause, the day's ceiling, a runtime's usage limit — each with what
+lifts it. It is a band under the bar and not an object on it, so the row stays
+at filter, health and headline.
+
+**With one project selected, `Recipe` and `Pause` sit on the right, apart from
+`Report`.** `Report` is the window's reading and is there whatever the filter
+says; `Recipe` and `Pause` act on the selected project, so they appear with it
+and belong to it, as `recipe` on each row of the filter's menu does. Each menu
+row carries its own `recipe`.
 
 ## What it looks like now
 
@@ -156,8 +178,8 @@ Where the facts that left the bar went:
 | `<project>: rounds ×N` | `/recipe/<project>`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
 
-`paused` and `draining` are still chips and still amber-free, because both are
-already absent when there is nothing to say. `recipe` in the filter is the same
+`paused` (the setup's pause only) and `draining` are still chips and still
+amber-free, because both are already absent when there is nothing to say. `recipe` in the filter is the same
 property, and `#218` is the second ticket asked to make `#216`'s argument.
 
 **A destination that is not built is a fact deleted.** The row above was right

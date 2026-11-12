@@ -253,8 +253,10 @@ Green and silent is the whole of the ordinary case; when it is not, the sentence
 beside it carries the fault and the command that fixes it, drawn as code (#904).
 On the home page's bar, today's spend joins health in the fail colour once it
 passes 80 % of the ceiling (#907,
-[doc/design/the-bar.md](doc/design/the-bar.md)). A chip appears next
-to it while the conductor is paused, naming who and why with a Resume on it:
+[doc/design/the-bar.md](doc/design/the-bar.md)). A banner under the
+bar carries the locks that stop a project's work — a person's pause, the day's
+ceiling, a runtime's usage limit (ADR 0126). The `paused` chip appears only for
+the setup's conductor-wide pause, naming who and why with a Resume on it:
 being current and being stopped are independent facts, and for four days the
 board only said the first (#77).
 
@@ -331,7 +333,7 @@ waits as long as `runtime.limits.wall`, `1h` here, and both commands say so
 rather than looking hung. Ctrl+C does the same and tells you what a second one
 costs; during a `restart`'s wait it leaves the drain standing, the next
 `restart` by the same person picks that request up rather than refusing it, and
-`lingtai resume` lifts a request nothing acted on. An agent left behind by a
+a drain ends at the next start, not at `lingtai resume`. An agent left behind by a
 second Ctrl+C or a `--timeout` is killed by the next conductor before it
 releases the claim, guarded on the host and the process's own argv.
 
