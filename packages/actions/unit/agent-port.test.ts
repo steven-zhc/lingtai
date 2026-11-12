@@ -57,8 +57,11 @@ describe('the review as an Effect (#1043)', () => {
     let aborted = false
     const runtime = runtimeOf(
       (request) =>
-        new Promise<RunOutcome>(() => {
-          request.signal?.addEventListener('abort', () => (aborted = true))
+        new Promise<RunOutcome>((_, reject) => {
+          request.signal?.addEventListener('abort', () => {
+            aborted = true
+            reject(new Error('aborted'))
+          })
         }),
     )
     const restored: string[] = []
@@ -82,6 +85,60 @@ describe('the review as an Effect (#1043)', () => {
     expect(Exit.isFailure(exit)).toBe(true)
     expect(restored).toEqual([context.onSha])
     expect(aborted).toBe(true)
+  })
+
+  it('waits for the run to settle before it restores, and restores through the interruption', async () => {
+    const order: string[] = []
+    const runtime = runtimeOf(
+      (request) =>
+        new Promise<RunOutcome>((_, reject) => {
+          request.signal?.addEventListener('abort', () =>
+            setTimeout(() => {
+              order.push('run settled')
+              reject(new Error('killed'))
+            }, 30),
+          )
+        }),
+    )
+    const port = makeAgentAction(
+      { name: 'review', prompt: '' },
+      agentPortDepsFrom(
+        baseDeps(runtime, {
+          restore: async () => {
+            await new Promise((r) => setTimeout(r, 20))
+            order.push('restored')
+            return { untouched: true as const }
+          },
+        }),
+      ),
+    )
+    const fiber = Effect.runFork(port.run(context))
+    while (runtime.seen.length === 0) await new Promise((r) => setTimeout(r, 1))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(order).toEqual(['run settled', 'restored'])
+  })
+
+  it('keeps a restore that fails after an interruption', async () => {
+    const runtime = runtimeOf(
+      (request) =>
+        new Promise<RunOutcome>((_, reject) =>
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
+        ),
+    )
+    const port = makeAgentAction(
+      { name: 'review', prompt: '' },
+      agentPortDepsFrom(baseDeps(runtime, { restore: async () => ({ failed: 'git said no' }) })),
+    )
+    const fiber = Effect.runFork(port.run(context))
+    while (runtime.seen.length === 0) await new Promise((r) => setTimeout(r, 1))
+    const exit = await Effect.runPromise(Fiber.await(Effect.runFork(Fiber.interrupt(fiber)).pipe((f) => f)))
+    void exit
+    const done = await Effect.runPromise(Fiber.await(fiber))
+    expect(Exit.isFailure(done)).toBe(true)
+    if (Exit.isFailure(done)) {
+      const defects = done.cause.reasons.flatMap((r) => (r._tag === 'Die' ? [String((r.defect as Error).message)] : []))
+      expect(defects.join('\n')).toContain('git said no')
+    }
   })
 
   it('falls back to a full review when the fix delta cannot be read', async () => {
