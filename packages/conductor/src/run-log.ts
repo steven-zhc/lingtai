@@ -19,6 +19,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { stateDir } from '@lingtai/env'
+import { Effect } from 'effect'
 
 export {
   RUN_LOG_END,
@@ -79,16 +80,25 @@ export interface FoundRunLog {
  * log of a run that landed; the caller says which of the two it is looking at,
  * because only the caller knows what it asked for.
  */
-export async function findRunLog(runId: string, home: string = stateDir()): Promise<FoundRunLog | null> {
-  for (const project of await projectsIn(home)) {
-    const path = runLogPath(home, project, runId)
-    try {
-      if ((await stat(path)).isFile()) return { project, runId, path }
-    } catch {
-      // Not this project's.
+export function findRunLogEffect(runId: string, home?: string): Effect.Effect<FoundRunLog | null> {
+  return Effect.gen(function* () {
+    const at = home ?? stateDir()
+    for (const project of yield* projectsInEffect(at)) {
+      const path = runLogPath(at, project, runId)
+      // Not this project's: a stat that throws is an answer, `false`, defect or not.
+      const isFile = yield* Effect.promise(() => stat(path)).pipe(
+        Effect.map((s) => s.isFile()),
+        Effect.catchCause(() => Effect.succeed(false)),
+      )
+      if (isFile) return { project, runId, path }
     }
-  }
-  return null
+    return null
+  })
+}
+
+/** `findRunLogEffect` as the promise `lingtai attach` and the board's run route await (a listed face, #790). */
+export function findRunLog(runId: string, home?: string): Promise<FoundRunLog | null> {
+  return Effect.runPromise(findRunLogEffect(runId, home))
 }
 
 /**
@@ -100,39 +110,40 @@ export async function findRunLog(runId: string, home: string = stateDir()): Prom
  * its own reasons and is deliberately not shared with — it asks the event store
  * a question about every one of them, which is the half this must not do.
  */
-export async function listRunLogs(home: string = stateDir()): Promise<FoundRunLog[]> {
-  const found: (FoundRunLog & { at: number })[] = []
-  for (const project of await projectsIn(home)) {
-    let names: string[]
-    try {
+export function listRunLogsEffect(home?: string): Effect.Effect<FoundRunLog[]> {
+  return Effect.gen(function* () {
+    const at = home ?? stateDir()
+    const found: (FoundRunLog & { at: number })[] = []
+    for (const project of yield* projectsInEffect(at)) {
       // Only `<runId>.log`. `runs/` also holds `runs/<runId>/settings.json`,
       // which is a directory named for a run — the two shapes share a parent
       // and never each other's names.
-      names = (await readdir(join(home, 'runs', project), { withFileTypes: true }))
-        .filter((e) => e.isFile() && e.name.endsWith('.log'))
-        .map((e) => e.name)
-    } catch {
-      continue
-    }
-    for (const name of names) {
-      const path = join(home, 'runs', project, name)
-      const at = await stat(path).then(
-        (s) => s.mtimeMs,
-        () => 0,
+      const names = yield* Effect.promise(() => readdir(join(at, 'runs', project), { withFileTypes: true })).pipe(
+        Effect.map((entries) => entries.filter((e) => e.isFile() && e.name.endsWith('.log')).map((e) => e.name)),
+        Effect.catchCause(() => Effect.succeed<string[]>([])),
       )
-      found.push({ project, runId: name.slice(0, -'.log'.length), path, at })
+      for (const name of names) {
+        const path = join(at, 'runs', project, name)
+        const mtime = yield* Effect.promise(() => stat(path)).pipe(
+          Effect.map((s) => s.mtimeMs),
+          Effect.catchCause(() => Effect.succeed(0)),
+        )
+        found.push({ project, runId: name.slice(0, -'.log'.length), path, at: mtime })
+      }
     }
-  }
-  return found.sort((a, b) => b.at - a.at).map(({ at: _at, ...rest }) => rest)
+    return found.sort((a, b) => b.at - a.at).map(({ at: _at, ...rest }) => rest)
+  })
 }
 
-async function projectsIn(home: string): Promise<string[]> {
-  try {
-    return (await readdir(join(home, 'runs'), { withFileTypes: true }))
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-  } catch {
+/** `listRunLogsEffect` as the promise `lingtai attach` awaits (a listed face, #790). */
+export function listRunLogs(home?: string): Promise<FoundRunLog[]> {
+  return Effect.runPromise(listRunLogsEffect(home))
+}
+
+function projectsInEffect(home: string): Effect.Effect<string[]> {
+  return Effect.promise(() => readdir(join(home, 'runs'), { withFileTypes: true })).pipe(
+    Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
     // No run has ever left a log on this machine.
-    return []
-  }
+    Effect.catchCause(() => Effect.succeed<string[]>([])),
+  )
 }

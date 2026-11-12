@@ -19,9 +19,10 @@ import { promisify } from 'node:util'
  */
 import { ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { gitRefChannel, gitRefSha } from '../src/git-refs.ts'
+import { gitRefChannel, gitRefShaEffect } from '../src/git-refs.ts'
 import { sweepRefs } from '../src/tell.ts'
 
 const exec = promisify(execFile)
@@ -74,14 +75,14 @@ describe('gitRefChannel', () => {
   })
 })
 
-describe('gitRefSha', () => {
+describe('gitRefShaEffect', () => {
   it('answers the sha a plain git remote holds for a ref', async () => {
     const [local] = (await g(['rev-parse', 'refs/heads/agent/24-attempt-1'], work)).stdout.trim().split('\n')
-    await expect(gitRefSha(remote, 'heads/agent/24-attempt-1')).resolves.toBe(local)
+    await expect(Effect.runPromise(gitRefShaEffect(remote, 'heads/agent/24-attempt-1'))).resolves.toBe(local)
   })
 
   it('rejects a ref the remote does not have — the same shape a 404 against GitHub answers', async () => {
-    await expect(gitRefSha(remote, 'heads/no-such-branch')).rejects.toThrow()
+    await expect(Effect.runPromise(gitRefShaEffect(remote, 'heads/no-such-branch'))).rejects.toThrow()
   })
 })
 
