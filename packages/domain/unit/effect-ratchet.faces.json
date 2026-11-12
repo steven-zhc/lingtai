@@ -1,5 +1,11 @@
 [
   {
+    "file": "packages/agent/src/run-log.ts",
+    "fn": "openRunLog",
+    "until": "#790",
+    "why": "apps/cli/src/discuss.ts:377 awaits it"
+  },
+  {
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",

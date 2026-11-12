@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,17 +16,18 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
  * spawned as a process, which is exactly how a runtime invokes it.
  */
 import type { EventStore } from '@lingtai/event-store/store'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { Effect, Exit, Scope } from 'effect'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
-  createHookServer,
   type HookServer,
   renderSettings,
-  smokeTestFailClosed,
+  smokeTestFailClosedEffect,
   redact,
+  serveHookServer,
   socketPathFor,
   SUN_PATH_MAX,
-  writeHookWiring,
+  writeHookWiringEffect,
 } from '../src/index.ts'
 
 const exec = promisify(execFile)
@@ -36,6 +37,7 @@ const hookSource = resolve(here, '../../hook/src/lingtai-hook.ts')
 let root: string
 let binary: string
 let server: HookServer
+let scope: Scope.Closeable
 let store: EventStore
 let runId: string
 const lifecycle: string[] = []
@@ -81,14 +83,20 @@ beforeAll(async () => {
   store = createMemoryEventStore()
   runId = `pass-esctest-${crypto.randomUUID().slice(0, 8)}`
 
-  server = createHookServer({
-    socketPath: join(root, 'conductor.sock'),
-    store,
-    onLifecycle: (_runId, hook) => void lifecycle.push(hook),
-  })
-  await server.listen()
+  scope = await Effect.runPromise(Scope.make())
+  server = await Effect.runPromise(
+    serveHookServer({
+      socketPath: join(root, 'conductor.sock'),
+      store,
+      onLifecycle: (_runId, hook) => void lifecycle.push(hook),
+    }).pipe(Scope.provide(scope)),
+  )
   server.register(runId, 0)
 }, 180_000)
+
+afterAll(async () => {
+  await Effect.runPromise(Scope.close(scope, Exit.void))
+})
 
 const env = () => ({ LINGTAI_HOOK_SOCKET: server.socketPath, LINGTAI_HOOK_RUN_ID: runId })
 
@@ -99,7 +107,7 @@ describe('lingtai-hook fails closed', () => {
    * trusted.
    */
   it('denies when the socket is not there', async () => {
-    const result = await smokeTestFailClosed(binary, runHook)
+    const result = await Effect.runPromise(smokeTestFailClosedEffect(binary, runHook))
     expect(result.ok, result.detail).toBe(true)
     expect(result.detail).toContain('exit 2')
   })
@@ -348,7 +356,7 @@ describe('the lifecycle hooks', () => {
 describe('hook wiring', () => {
   it('is written outside the worktree', async () => {
     const home = join(root, 'home')
-    const wiring = await writeHookWiring({ runId: 'pass-w', hookBinary: binary, home })
+    const wiring = await Effect.runPromise(writeHookWiringEffect({ runId: 'pass-w', hookBinary: binary, home }))
 
     // An agent that can edit its own hook configuration has no hook
     // configuration, so the file is never inside the repository.
@@ -415,5 +423,57 @@ describe('socket paths', () => {
     expect(socketPathFor('pass-a', '/tmp/a')).not.toBe(socketPathFor('pass-b', '/tmp/a'))
     // Two conductors with different state directories must not collide.
     expect(socketPathFor('pass-a', '/tmp/a')).not.toBe(socketPathFor('pass-a', '/tmp/b'))
+  })
+})
+
+describe("the hook server's scope", () => {
+  /**
+   * A request is a fiber the serve scope owns. A store whose `append` never
+   * settles holds a `Notification` mid-`decide`; closing the scope must not
+   * wait on it, the hook sees the connection close with no reply (and exits 2,
+   * so the tool call is refused), and the socket file is gone.
+   */
+  it('closes without waiting on a request in flight, and the hook fails closed', async () => {
+    const hung = createMemoryEventStore()
+    let reached!: () => void
+    const inDecide = new Promise<void>((resolveReached) => (reached = resolveReached))
+    hung.append = () => {
+      reached()
+      return new Promise(() => {})
+    }
+    const socketPath = join(root, 'hung.sock')
+    const own = await Effect.runPromise(Scope.make())
+    const hungServer = await Effect.runPromise(serveHookServer({ socketPath, store: hung }).pipe(Scope.provide(own)))
+    hungServer.register('pass-hung', 0)
+
+    const hook = runHook(
+      binary,
+      { LINGTAI_HOOK_SOCKET: socketPath, LINGTAI_HOOK_RUN_ID: 'pass-hung' },
+      JSON.stringify({ hook_event_name: 'Notification', message: 'waiting' }),
+    )
+    await inDecide
+    await Effect.runPromise(Scope.close(own, Exit.void))
+
+    const { code } = await hook
+    expect(code).toBe(2)
+    await expect(stat(socketPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('flush appends one RunTouchedFile per touched file, in order', async () => {
+    const own = createMemoryEventStore()
+    const flushScope = await Effect.runPromise(Scope.make())
+    const flushServer = await Effect.runPromise(
+      serveHookServer({ socketPath: join(root, 'flush.sock'), store: own }).pipe(Scope.provide(flushScope)),
+    )
+    const run = flushServer.register('pass-flush', 0)
+    run.touched.push({ path: '/w/a.ts', op: 'write' }, { path: '/w/b.ts', op: 'edit' })
+    await flushServer.flush('pass-flush')
+    await Effect.runPromise(Scope.close(flushScope, Exit.void))
+
+    const touched = (await own.read('pass-flush')).filter((e) => e.type === 'RunTouchedFile').map((e) => e.data)
+    expect(touched).toEqual([
+      { path: '/w/a.ts', op: 'write' },
+      { path: '/w/b.ts', op: 'edit' },
+    ])
   })
 })

@@ -143,24 +143,21 @@ export function renderSettings(options: RenderOptions): unknown {
  * and the managed repository's own `.claude/settings.json` is the level that
  * decides what a run may do. This file exists to say *no hook*, and nothing else.
  */
-export async function writeUnhookedSettings(runId: string, label: string, home = stateDir()): Promise<string> {
-  const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 })
-  return path
-}
-
-export async function writeHookWiring(options: RenderOptions): Promise<HookWiring> {
+export const writeHookWiringEffect = Effect.fn('agent.wire')(function* (options: RenderOptions) {
+  const fail = (err: unknown) => new AgentHostFailed({ operation: 'wire', detail: (err as Error).message })
   const home = options.home ?? stateDir()
   const settingsPath = settingsPathFor(options.runId, home)
-  const socketPath = socketPathFor(options.runId, home)
+  // `socketPathFor` and `renderSettings` throw their sentences; here they are the failure.
+  const socketPath = yield* Effect.try({ try: () => socketPathFor(options.runId, home), catch: fail })
+  const rendered = yield* Effect.try({ try: () => renderSettings(options), catch: fail })
 
-  await mkdir(dirname(settingsPath), { recursive: true })
-  await writeFile(settingsPath, `${JSON.stringify(renderSettings(options), null, 2)}\n`, {
-    mode: 0o600,
+  yield* Effect.tryPromise({ try: () => mkdir(dirname(settingsPath), { recursive: true }), catch: fail })
+  yield* Effect.tryPromise({
+    try: () => writeFile(settingsPath, `${JSON.stringify(rendered, null, 2)}\n`, { mode: 0o600 }),
+    catch: fail,
   })
 
-  return {
+  const wiring: HookWiring = {
     settingsPath,
     socketPath,
     // `LINGTAI_`-prefixed since `#63`, both ends. These are Lingtai's own names
@@ -174,7 +171,8 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
       LINGTAI_HOOK_RUN_ID: options.runId,
     },
   }
-}
+  return wiring
+})
 
 /**
  * Proves the hook fails closed when the conductor is not there.
@@ -192,16 +190,20 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
  * against a socket path that does not exist and requires exit 2. The conductor
  * calls it before dispatching anything.
  */
-export async function smokeTestFailClosed(
+export const smokeTestFailClosedEffect = Effect.fn('agent.smokeTest')(function* (
   hookBinary: string,
   run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{ code: number | null; stderr: string }>,
-): Promise<{ ok: boolean; detail: string }> {
+) {
   const nowhere = join(stateDir(), 'sockets', `smoke-${Date.now()}.sock`)
-  const { code, stderr } = await run(
-    hookBinary,
-    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: attemptStream('smoke') },
-    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }),
-  )
+  const { code, stderr } = yield* Effect.tryPromise({
+    try: () =>
+      run(
+        hookBinary,
+        { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: attemptStream('smoke') },
+        JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }),
+      ),
+    catch: (err) => new AgentHostFailed({ operation: 'smokeTest', detail: (err as Error).message }),
+  })
 
   if (code === 2) {
     return { ok: true, detail: `denied with exit 2 when the socket was absent: ${stderr.trim()}` }
@@ -214,7 +216,7 @@ export async function smokeTestFailClosed(
       'continues and produces no events, and in a system whose whole claim is that ' +
       'the log is the answer, that is the failure with no symptom.',
   }
-}
+})
 
 /**
  * Anything the host could not do for a run, in a channel a caller can see.
@@ -230,28 +232,18 @@ export class AgentHostFailed extends Data.TaggedError('AgentHostFailed')<{
   readonly detail: string
 }> {}
 
-export const writeUnhookedSettingsEffect = (
+/** The unhooked settings file for an agent that is a step inside a run (see the note above `renderSettings`). */
+export const writeUnhookedSettingsEffect = Effect.fn('agent.unhookedSettings')(function* (
   runId: string,
   label: string,
-  home?: string,
-): Effect.Effect<string, AgentHostFailed> =>
-  Effect.tryPromise({
-    try: () => writeUnhookedSettings(runId, label, home),
-    catch: (err) => new AgentHostFailed({ operation: 'unhooked-settings', detail: (err as Error).message }),
+  home: string = stateDir(),
+) {
+  const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`)
+  const fail = (err: unknown) => new AgentHostFailed({ operation: 'unhooked-settings', detail: (err as Error).message })
+  yield* Effect.tryPromise({ try: () => mkdir(dirname(path), { recursive: true }), catch: fail })
+  yield* Effect.tryPromise({
+    try: () => writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 }),
+    catch: fail,
   })
-
-/** The two above, as `Effect`s. The promise faces stay for callers that are not. */
-export const writeHookWiringEffect = (options: RenderOptions): Effect.Effect<HookWiring, AgentHostFailed> =>
-  Effect.tryPromise({
-    try: () => writeHookWiring(options),
-    catch: (err) => new AgentHostFailed({ operation: 'wire', detail: (err as Error).message }),
-  })
-
-export const smokeTestFailClosedEffect = (
-  hookBinary: string,
-  run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{ code: number | null; stderr: string }>,
-): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed> =>
-  Effect.tryPromise({
-    try: () => smokeTestFailClosed(hookBinary, run),
-    catch: (err) => new AgentHostFailed({ operation: 'smokeTest', detail: (err as Error).message }),
-  })
+  return path
+})

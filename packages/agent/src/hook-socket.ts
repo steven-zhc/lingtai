@@ -1,5 +1,5 @@
 import { mkdir, rm } from 'node:fs/promises'
-import { type Server, createServer } from 'node:net'
+import { type Socket, createServer } from 'node:net'
 import { dirname } from 'node:path'
 
 /**
@@ -28,7 +28,7 @@ import { dirname } from 'node:path'
  */
 import { type PayloadOf, parsePayload } from '@lingtai/domain'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import { Effect, type Scope } from 'effect'
+import { Effect, FiberSet, type Fiber } from 'effect'
 
 import { AgentHostFailed } from './hook-config.ts'
 
@@ -161,8 +161,6 @@ export interface HookServer {
   get(runId: string): RegisteredRun | undefined
   /** Writes the counted-in-memory facts to the log. Called at the end of a run. */
   flush(runId: string): Promise<void>
-  listen(): Promise<void>
-  close(): Promise<void>
 }
 
 interface Request {
@@ -177,111 +175,133 @@ interface Request {
   }
 }
 
-export function createHookServer(options: HookServerOptions): HookServer {
+/** Forks an Effect into the serve scope's fiber set. */
+type Fork = (effect: Effect.Effect<void>) => Fiber.Fiber<void>
+type RunPromise = (effect: Effect.Effect<void>) => Promise<void>
+
+function createHookServer(options: HookServerOptions, runPromise: RunPromise) {
   const store = options.store ?? eventStore
   const runs = new Map<string, RegisteredRun>()
-  let server: Server | null = null
 
   /** Appends to a run's stream, keeping the expected version in step. */
-  async function append<T extends Parameters<typeof parsePayload>[0]>(
+  const append = <T extends Parameters<typeof parsePayload>[0]>(
     run: RegisteredRun,
     type: T,
     data: PayloadOf<T>,
-  ): Promise<void> {
-    const [written] = await store.append(run.runId, run.version, [
-      { type, actor: `agent:${run.runId}`, data: parsePayload(type, data) },
-    ])
-    run.version = written!.version
-  }
+  ): Effect.Effect<void> =>
+    Effect.promise(() =>
+      store
+        .append(run.runId, run.version, [{ type, actor: `agent:${run.runId}`, data: parsePayload(type, data) }])
+        .then(([written]) => {
+          run.version = written!.version
+        }),
+    )
 
-  async function decide(request: Request): Promise<{ allow: boolean; reason?: string }> {
-    const run = request.runId ? runs.get(request.runId) : undefined
-    if (!run) {
-      // Fail closed on an unknown run: the conductor renders the wiring, so this
-      // means the wiring is wrong, not that this call is exempt.
-      return { allow: false, reason: `lingtai-hook: run ${request.runId ?? '(none)'} is not registered` }
-    }
+  /** The store's rejection is a defect (0101 §6); the two lifecycle appends swallow it. */
+  const appendQuietly: typeof append = (run, type, data) =>
+    append(run, type, data).pipe(Effect.catchDefect(() => Effect.void))
 
-    const hook = (request.payload?.hook_event_name ?? 'PreToolUse') as HookName
-    const call: ToolCall = {
-      tool: request.payload?.tool_name ?? '',
-      input: request.payload?.tool_input ?? {},
-    }
+  const decide = (request: Request) =>
+    Effect.gen(function* () {
+      const run = request.runId ? runs.get(request.runId) : undefined
+      if (!run) {
+        // Fail closed on an unknown run: the conductor renders the wiring, so this
+        // means the wiring is wrong, not that this call is exempt.
+        return { allow: false, reason: `lingtai-hook: run ${request.runId ?? '(none)'} is not registered` }
+      }
 
-    // The lifecycle hooks. Each maps to the event design.md §5 says it should,
-    // except `SessionStart` — its event is `RunStarted`, and the conductor
-    // writes that at dispatch because it knows the work item, the model, the
-    // base sha and the config hash, none of which the hook is told.
-    if (hook === 'UserPromptSubmit') {
-      // **Nothing is appended here since #928.** The conductor records the
-      // implementer's prompt (`RunPrompted`, with its `for`) before it
-      // registers the run, whole or by reference; recording it here as well
-      // would be two records and `prompts: 2`.
-      options.onLifecycle?.(run.runId, hook, request.payload)
-      return { allow: true }
-    }
+      const hook = (request.payload?.hook_event_name ?? 'PreToolUse') as HookName
+      const call: ToolCall = {
+        tool: request.payload?.tool_name ?? '',
+        input: request.payload?.tool_input ?? {},
+      }
 
-    if (hook === 'PreCompact') {
-      // Compaction means the work item was scoped too large — a metric, not
-      // noise. The payload carries no turn number, so this records the
-      // conductor's own count of tool calls at the moment it happened; what the
-      // metric is *for* does not depend on which monotonic counter it is.
-      await append(run, 'RunContextExhausted', { turn: run.calls }).catch(() => {})
-      options.onLifecycle?.(run.runId, hook, request.payload)
-      return { allow: true }
-    }
+      // The lifecycle hooks. Each maps to the event design.md §5 says it should,
+      // except `SessionStart` — its event is `RunStarted`, and the conductor
+      // writes that at dispatch because it knows the work item, the model, the
+      // base sha and the config hash, none of which the hook is told.
+      if (hook === 'UserPromptSubmit') {
+        // **Nothing is appended here since #928.** The conductor records the
+        // implementer's prompt (`RunPrompted`, with its `for`) before it
+        // registers the run, whole or by reference; recording it here as well
+        // would be two records and `prompts: 2`.
+        options.onLifecycle?.(run.runId, hook, request.payload)
+        return { allow: true }
+      }
 
-    if (hook === 'Notification') {
-      // The board lights up instead of the run burning to the wall clock.
-      const prompt = request.payload?.message ?? request.payload?.prompt ?? 'waiting'
-      await append(run, 'RunAwaitingInput', { prompt: prompt.slice(0, 2_000) }).catch(() => {})
-      options.onLifecycle?.(run.runId, hook, request.payload)
-      return { allow: true }
-    }
+      if (hook === 'PreCompact') {
+        // Compaction means the work item was scoped too large — a metric, not
+        // noise. The payload carries no turn number, so this records the
+        // conductor's own count of tool calls at the moment it happened; what the
+        // metric is *for* does not depend on which monotonic counter it is.
+        yield* appendQuietly(run, 'RunContextExhausted', { turn: run.calls })
+        options.onLifecycle?.(run.runId, hook, request.payload)
+        return { allow: true }
+      }
 
-    if (hook === 'Stop' || hook === 'SessionStart' || hook === 'SessionEnd') {
-      // `Stop` is the moment the gate pipeline fires, and firing it needs a diff
-      // — git, not the hot path. `SessionEnd`'s event is `RunFinished`, which
-      // the adapter writes from the process outcome because that is where cost,
-      // turns and duration actually are.
-      options.onLifecycle?.(run.runId, hook, request.payload)
-      return { allow: true }
-    }
+      if (hook === 'Notification') {
+        // The board lights up instead of the run burning to the wall clock.
+        const prompt = request.payload?.message ?? request.payload?.prompt ?? 'waiting'
+        yield* appendQuietly(run, 'RunAwaitingInput', { prompt: prompt.slice(0, 2_000) })
+        options.onLifecycle?.(run.runId, hook, request.payload)
+        return { allow: true }
+      }
 
-    if (hook === 'PostToolUse') {
-      // Observation only. Counted, never blocking — the tool already ran.
+      if (hook === 'Stop' || hook === 'SessionStart' || hook === 'SessionEnd') {
+        // `Stop` is the moment the gate pipeline fires, and firing it needs a diff
+        // — git, not the hot path. `SessionEnd`'s event is `RunFinished`, which
+        // the adapter writes from the process outcome because that is where cost,
+        // turns and duration actually are.
+        options.onLifecycle?.(run.runId, hook, request.payload)
+        return { allow: true }
+      }
+
+      if (hook === 'PostToolUse') {
+        // Observation only. Counted, never blocking — the tool already ran.
+        //
+        // Only the tools that actually change a file. This used to record any
+        // call carrying a `file_path` and default the op to "write", which meant
+        // every `Read` was written down as a write. One run logged fifteen
+        // `RunTouchedFile` events with `op: "write"` for a worktree it had not
+        // modified at all — the board showed fifteen changed files, the diff
+        // showed none, and the log was the thing that was wrong. In a system
+        // whose whole claim is that the log is the answer, a plausible fiction is
+        // worse than a gap.
+        const op = MUTATIONS[call.tool]
+        const path = (call.input['file_path'] ?? call.input['path']) as string | undefined
+        if (op && path) run.touched.push({ path, op })
+        options.onDecision?.(run.runId, hook, 'allow', observedCall(call))
+        return { allow: true }
+      }
+
+      // Everything else, `PreToolUse` included. Lingtai refuses no tool call
+      // (ADR 0016 §6): tool restrictions are the runtime's own configuration. A
+      // whole-tool `permissions.deny` is enforced even under `bypassPermissions`,
+      // by removing the tool from the model's list; a path-scoped one refuses the
+      // call and covers no subprocess (doc/operating.md, #664).
       //
-      // Only the tools that actually change a file. This used to record any
-      // call carrying a `file_path` and default the op to "write", which meant
-      // every `Read` was written down as a write. One run logged fifteen
-      // `RunTouchedFile` events with `op: "write"` for a worktree it had not
-      // modified at all — the board showed fifteen changed files, the diff
-      // showed none, and the log was the thing that was wrong. In a system
-      // whose whole claim is that the log is the answer, a plausible fiction is
-      // worse than a gap.
-      const op = MUTATIONS[call.tool]
-      const path = (call.input['file_path'] ?? call.input['path']) as string | undefined
-      if (op && path) run.touched.push({ path, op })
+      // `PreToolUse` is not wired at all any more, so this is defensive rather
+      // than a path anything takes. It counts, because a run's tool-call count is
+      // what `RunContextExhausted` reports a turn number from.
+      run.calls += 1
+      run.allowed += 1
       options.onDecision?.(run.runId, hook, 'allow', observedCall(call))
       return { allow: true }
-    }
+    })
 
-    // Everything else, `PreToolUse` included. Lingtai refuses no tool call
-    // (ADR 0016 §6): tool restrictions are the runtime's own configuration. A
-    // whole-tool `permissions.deny` is enforced even under `bypassPermissions`,
-    // by removing the tool from the model's list; a path-scoped one refuses the
-    // call and covers no subprocess (doc/operating.md, #664).
-    //
-    // `PreToolUse` is not wired at all any more, so this is defensive rather
-    // than a path anything takes. It counts, because a run's tool-call count is
-    // what `RunContextExhausted` reports a turn number from.
-    run.calls += 1
-    run.allowed += 1
-    options.onDecision?.(run.runId, hook, 'allow', observedCall(call))
-    return { allow: true }
-  }
+  const flushEffect = (runId: string) =>
+    Effect.gen(function* () {
+      const run = runs.get(runId)
+      if (!run) return
+      // One append per touched file rather than one per tool call: the board
+      // wants to show what the agent changed, not every read it made.
+      const touched = run.touched.splice(0)
+      for (const t of touched) {
+        yield* append(run, 'RunTouchedFile', t)
+      }
+    }).pipe(Effect.withSpan('agent.flush'))
 
-  return {
+  const hook: HookServer = {
     socketPath: options.socketPath,
 
     register(runId, version) {
@@ -304,60 +324,10 @@ export function createHookServer(options: HookServerOptions): HookServer {
 
     get: (runId) => runs.get(runId),
 
-    async flush(runId) {
-      const run = runs.get(runId)
-      if (!run) return
-      // One append per touched file rather than one per tool call: the board
-      // wants to show what the agent changed, not every read it made.
-      const touched = run.touched.splice(0)
-      for (const t of touched) {
-        await append(run, 'RunTouchedFile', t)
-      }
-    },
-
-    async listen() {
-      await mkdir(dirname(options.socketPath), { recursive: true })
-      // A stale socket file from a killed conductor would make bind fail; there
-      // is nothing behind it to protect.
-      await rm(options.socketPath, { force: true })
-
-      server = createServer((socket) => {
-        let buffer = ''
-        socket.on('data', (chunk) => {
-          buffer += chunk.toString('utf8')
-          for (let nl = buffer.indexOf('\n'); nl !== -1; nl = buffer.indexOf('\n')) {
-            const line = buffer.slice(0, nl)
-            buffer = buffer.slice(nl + 1)
-            void (async () => {
-              let reply: { allow: boolean; reason?: string }
-              try {
-                reply = await decide(JSON.parse(line) as Request)
-              } catch (err) {
-                reply = { allow: false, reason: `lingtai-hook: ${redact(String(err))}` }
-              }
-              socket.write(`${JSON.stringify(reply)}\n`)
-            })()
-          }
-        })
-        socket.on('error', () => {
-          // A hook that hung up mid-question gets no answer, and its exit code
-          // is 2 either way.
-        })
-      })
-
-      await new Promise<void>((resolve, reject) => {
-        server!.once('error', reject)
-        server!.listen(options.socketPath, () => resolve())
-      })
-    },
-
-    async close() {
-      const s = server
-      server = null
-      if (s) await new Promise<void>((resolve) => s.close(() => resolve()))
-      await rm(options.socketPath, { force: true })
-    },
+    // Run on the serve scope's fiber set, so the scope closing interrupts it.
+    flush: (runId) => runPromise(flushEffect(runId)),
   }
+  return { hook, decide }
 }
 
 /**
@@ -372,16 +342,86 @@ export function createHookServer(options: HookServerOptions): HookServer {
  *
  * The release swallows its own failure, as the `.catch(() => {})` it replaces
  * did. A socket that will not close must not become the run's reported reason.
+ *
+ * The release also interrupts the requests in flight and destroys their sockets
+ * before it closes the server, so a hook still waiting on its answer sees the
+ * connection end with none and exits 2: it fails closed. `server.close` waits
+ * for open connections, so closing first would wait on a hook that is itself
+ * waiting on an answer nobody will now write.
  */
-export const serveHookServer = (options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope> =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const server = createHookServer(options)
-        await server.listen()
-        return server
-      },
-      catch: (err) => new AgentHostFailed({ operation: 'serve', detail: (err as Error).message }),
+export const serveHookServer = Effect.fn('agent.serve')(function* (options: HookServerOptions) {
+  const failed = (err: unknown) => new AgentHostFailed({ operation: 'serve', detail: (err as Error).message })
+  const set = yield* FiberSet.make<void, never>()
+  const fork: Fork = yield* FiberSet.runtime(set)<never>()
+  const runPromise: RunPromise = yield* FiberSet.runtimePromise(set)<never>()
+  const { hook, decide } = createHookServer(options, runPromise)
+  const sockets = new Set<Socket>()
+
+  yield* Effect.acquireRelease(
+    Effect.gen(function* () {
+      yield* Effect.tryPromise({ try: () => mkdir(dirname(options.socketPath), { recursive: true }), catch: failed })
+      // A stale socket file from a killed conductor would make bind fail; there
+      // is nothing behind it to protect.
+      yield* Effect.tryPromise({ try: () => rm(options.socketPath, { force: true }), catch: failed })
+
+      const server = createServer((socket) => {
+        sockets.add(socket)
+        socket.on('close', () => sockets.delete(socket))
+        let buffer = ''
+        socket.on('data', (chunk) => {
+          buffer += chunk.toString('utf8')
+          for (let nl = buffer.indexOf('\n'); nl !== -1; nl = buffer.indexOf('\n')) {
+            const line = buffer.slice(0, nl)
+            buffer = buffer.slice(nl + 1)
+            // A defect is answered fail-closed; an interruption is not answered
+            // at all, so a hook cut off by the scope sees no reply and exits 2.
+            fork(
+              Effect.sync(() => JSON.parse(line) as Request).pipe(
+                Effect.flatMap(decide),
+                Effect.catchDefect((err) =>
+                  Effect.succeed({ allow: false, reason: `lingtai-hook: ${redact(String(err))}` }),
+                ),
+                Effect.flatMap((reply) =>
+                  Effect.sync(() => {
+                    socket.write(`${JSON.stringify(reply)}\n`)
+                  }),
+                ),
+              ),
+            )
+          }
+        })
+        socket.on('error', () => {
+          // A hook that hung up mid-question gets no answer, and its exit code
+          // is 2 either way.
+        })
+      })
+
+      yield* Effect.callback<void, AgentHostFailed>((resume) => {
+        const onError = (err: Error) => resume(Effect.fail(failed(err)))
+        server.once('error', onError)
+        server.listen(options.socketPath, () => {
+          server.off('error', onError)
+          resume(Effect.void)
+        })
+      })
+      return server
     }),
-    (server) => Effect.promise(() => server.close().catch(() => {})),
+    (server) =>
+      Effect.gen(function* () {
+        // In this order, and each step on its own: a failed step skips none.
+        yield* FiberSet.clear(set).pipe(Effect.ignore)
+        yield* Effect.sync(() => {
+          for (const socket of sockets) socket.destroy()
+        }).pipe(Effect.ignore)
+        yield* Effect.callback<void>((resume) => {
+          try {
+            server.close(() => resume(Effect.void))
+          } catch {
+            resume(Effect.void)
+          }
+        })
+        yield* Effect.promise(() => rm(options.socketPath, { force: true }).catch(() => {}))
+      }),
   )
+  return hook
+})

@@ -64,18 +64,14 @@ export {
   SUN_PATH_MAX,
   renderSettings,
   settingsPathFor,
-  smokeTestFailClosed,
   smokeTestFailClosedEffect,
   socketPathFor,
-  writeHookWiring,
-  writeUnhookedSettings,
   writeUnhookedSettingsEffect,
   writeHookWiringEffect,
   type HookWiring,
   type RenderOptions,
 } from './hook-config.ts'
 export {
-  createHookServer,
   observedCall,
   redact,
   serveHookServer,
