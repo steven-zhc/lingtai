@@ -40,7 +40,7 @@
 import { chosenStore } from '@lingtai/env'
 import { Effect, Layer } from 'effect'
 
-import { closableOnce } from './closable.ts'
+import { closableOnceEffect } from './closable.ts'
 import { createDb } from './db.ts'
 import { Events, type EventStore, type EventsPort, makePostgresEvents } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
@@ -63,17 +63,7 @@ interface Opened {
   snapshots: SnapshotsPort
   tickets: TicketSql
   /** Ends the one connection this process holds, so the process can exit (#725). */
-  close(): Promise<void>
-}
-
-/**
- * Memoised on the promise and not on the value, so two callers racing the first
- * use open one of each between them; closed once, after which it refuses.
- */
-const process_ = closableOnce(open)
-
-function openOnce(): Promise<Opened> {
-  return process_.get()
+  close: Effect.Effect<void>
 }
 
 /**
@@ -81,21 +71,25 @@ function openOnce(): Promise<Opened> {
  * anything that asks for the log is refused with `ProcessLogClosedError`.
  */
 export function closeProcessLog(): Promise<void> {
-  return process_.close()
+  return Effect.runPromise(process_.close())
 }
 
 /**
  * The log this process runs: the store, the questions beside it and the waker
  * that goes with both (#221).
  */
-export async function processLog(): Promise<Log> {
-  return (await openOnce()).log
+export function processLog(): Promise<Log> {
+  return Effect.runPromise(processLogEffect())
 }
 
+const processLogEffect = () => Effect.map(process_.get(), (o) => o.log)
+
 /** Just the store, for the callers that append and read and ask nothing else. */
-export async function processEventStore(): Promise<EventStore> {
-  return (await processLog()).store
+export function processEventStore(): Promise<EventStore> {
+  return Effect.runPromise(processEventStoreEffect())
 }
+
+const processEventStoreEffect = () => Effect.map(process_.get(), (o) => o.log.store)
 
 /**
  * The ticket store this process runs — `tickets` and `ticket_comments`, in
@@ -103,11 +97,13 @@ export async function processEventStore(): Promise<EventStore> {
  * same call, so a SQLite machine shares the one handle rather than opening the
  * file twice.
  */
-export async function processTicketSql(): Promise<TicketSql> {
-  return (await openOnce()).tickets
+export function processTicketSql(): Promise<TicketSql> {
+  return Effect.runPromise(processTicketSqlEffect())
 }
 
-async function open(): Promise<Opened> {
+const processTicketSqlEffect = () => Effect.map(process_.get(), (o) => o.tickets)
+
+const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
   const choice = chosenStore()
   if (choice.store === 'postgres') {
     // **Both connections come out of the choice**, and the waker's is the one
@@ -144,10 +140,10 @@ async function open(): Promise<Opened> {
       logSql,
       snapshots,
       tickets: promiseLogSql(logSql),
-      close: () => db.close(),
+      close: Effect.promise(() => db.close()),
     }
   }
-  const sqlite = await import('./sqlite.ts')
+  const sqlite = yield* Effect.promise(() => import('./sqlite.ts'))
   const db = sqlite.openSqliteLog(choice.path)
   const events = sqlite.makeSqliteEvents(db)
   const queries = sqlite.makeSqliteQueries(db)
@@ -166,9 +162,16 @@ async function open(): Promise<Opened> {
     logSql,
     snapshots,
     tickets: promiseLogSql(logSql),
-    close: async () => db.close(),
+    close: Effect.sync(() => db.close()),
   }
-}
+})
+
+/**
+ * Memoised in a `Deferred` and not on the value, so two callers racing the first
+ * use open one of each between them; closed once, after which it refuses.
+ * Built here without running anything: the open happens at the first `get` run.
+ */
+const process_ = closableOnceEffect(openEffect, (o) => o.close)
 
 // ------------------------------------------------------------- deferred ----
 
@@ -203,7 +206,7 @@ export function deferredEvents(open: Effect.Effect<EventsPort>): EventsPort {
  * `ProcessLogClosedError` — is a defect, and reaches a face's caller as the
  * same error.
  */
-export const processEvents: Effect.Effect<EventsPort> = Effect.map(Effect.promise(openOnce), (o) => o.events)
+export const processEvents: Effect.Effect<EventsPort> = Effect.map(process_.get(), (o) => o.events)
 
 /** What a moved caller takes: `yield* Events`. Nothing opens until first use. */
 export const eventsLayer = Layer.succeed(Events, deferredEvents(processEvents))
@@ -220,7 +223,7 @@ function deferredQueries(open: Effect.Effect<QueriesPort>): QueriesPort {
 }
 
 /** The process's questions as Effects; a rejected open is a defect, as for `processEvents`. */
-export const processQueries: Effect.Effect<QueriesPort> = Effect.map(Effect.promise(openOnce), (o) => o.queries)
+export const processQueries: Effect.Effect<QueriesPort> = Effect.map(process_.get(), (o) => o.queries)
 
 /** What a moved caller takes: `yield* Queries`. Nothing opens until first use. */
 export const queriesLayer = Layer.succeed(Queries, deferredQueries(processQueries))
@@ -234,17 +237,17 @@ function deferredSnapshotsPort(open: Effect.Effect<SnapshotsPort>): SnapshotsPor
 }
 
 /** The process's ticket SQL as Effects; a rejected open is a defect, as for `processEvents`. */
-export const processLogSql: Effect.Effect<LogSqlPort> = Effect.map(Effect.promise(openOnce), (o) => o.logSql)
+export const processLogSql: Effect.Effect<LogSqlPort> = Effect.map(process_.get(), (o) => o.logSql)
 
 /**
  * What a moved caller takes: `yield* LogSql`. Unlike the other layers this one
  * opens when it is built, because `dialect` is a field and the choice is what
- * says which; the open is still the one `openOnce`.
+ * says which; the open is still the one `process_.get()`.
  */
 export const logSqlLayer = Layer.effect(LogSql, processLogSql)
 
 /** The process's snapshots as Effects; a rejected open is a defect. */
-export const processSnapshots: Effect.Effect<SnapshotsPort> = Effect.map(Effect.promise(openOnce), (o) => o.snapshots)
+export const processSnapshots: Effect.Effect<SnapshotsPort> = Effect.map(process_.get(), (o) => o.snapshots)
 
 /** What a moved caller takes: `yield* Snapshots`. Nothing opens until first use. */
 export const snapshotsLayer = Layer.succeed(Snapshots, deferredSnapshotsPort(processSnapshots))

@@ -27,7 +27,7 @@
     "file": "packages/agent/src/auth.ts",
     "fn": "codexAuth",
     "until": "#790",
-    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
+    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 \u00a77 lets the board keep a promise face"
   },
   {
     "file": "packages/agent/src/auth.ts",
@@ -64,6 +64,42 @@
     "fn": "readState",
     "until": "#790",
     "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (reconcile, control) and apps/board read a reducer's state as a promise"
+  },
+  {
+    "file": "packages/event-store/src/choose.ts",
+    "fn": "closeProcessLog",
+    "until": "#790",
+    "why": "apps/cli entry.ts awaits it at the host's edge"
+  },
+  {
+    "file": "packages/event-store/src/choose.ts",
+    "fn": "processEventStore",
+    "until": "#790",
+    "why": "integration tests in apps/cli, conductor, daemon, projector and repo await it"
+  },
+  {
+    "file": "packages/event-store/src/choose.ts",
+    "fn": "processLog",
+    "until": "#790",
+    "why": "apps/cli projector.ts and packages/daemon daemon.ts, work-loop.ts await it until their rows"
+  },
+  {
+    "file": "packages/event-store/src/choose.ts",
+    "fn": "processTicketSql",
+    "until": "#790",
+    "why": "apps/cli ticket.ts and conductor ticket-history.ts, ticket-store.ts await it"
+  },
+  {
+    "file": "packages/event-store/src/closable.ts",
+    "fn": "closableCloseFace",
+    "until": "#790",
+    "why": "the same, through closeProcessProjections"
+  },
+  {
+    "file": "packages/event-store/src/closable.ts",
+    "fn": "closableGetFace",
+    "until": "#790",
+    "why": "packages/projector choose.ts's shared store holds a promise closableOnce"
   },
   {
     "file": "packages/event-store/src/schema.ts",
@@ -213,7 +249,7 @@
     "file": "packages/repo/src/git.ts",
     "fn": "git",
     "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
+    "why": "apps/board (actions, expand-prompts) keeps it by 0101 \u00a77; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
   },
   {
     "file": "packages/repo/src/mirror.ts",
