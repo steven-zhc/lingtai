@@ -11,6 +11,7 @@
  * carrying it.
  */
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { actionsFromRecipe, ActionUnavailableError } from '../src/from-recipe.ts'
@@ -37,9 +38,9 @@ function reviewer(): Runtime & { seen: RunRequest[] } {
       providesTier: 'guarded',
       enforces: ['turns', 'wall', 'usd'],
     },
-    async run(request) {
+    run: (request) => {
       seen.push(request)
-      return outcome
+      return Effect.succeed(outcome)
     },
   }
 }

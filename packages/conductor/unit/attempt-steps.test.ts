@@ -160,15 +160,16 @@ const coldReviewerSaying = (text: string | null): Action =>
         },
         // `#269` attempt 3's receipt: `success · 61 turns · $8.97 · exit 0`. It is
         // what makes the loss expensive rather than merely wrong.
-        run: async () => ({
-          exitCode: 0,
-          turns: 61,
-          durationMs: 802_000,
-          costUsd: 8.97,
-          text,
-          failure: null,
-          sessionId: 's',
-        }),
+        run: () =>
+          Effect.succeed({
+            exitCode: 0,
+            turns: 61,
+            durationMs: 802_000,
+            costUsd: 8.97,
+            text,
+            failure: null,
+            sessionId: 's',
+          }),
       },
       issue: async () => ({ ref: '269', title: 'T5d', body: 'the queue is a plugin at `claim`' }),
       diff: async () =>
@@ -456,9 +457,9 @@ async function pass(
             providesTier: 'guarded',
             enforces: ['turns', 'wall'],
           },
-          run: async (request: { prompt: string }) => {
+          run: (request: { prompt: string }) => {
             asked.draft.push(request.prompt)
-            return {
+            return Effect.succeed({
               exitCode: 0,
               turns: 3,
               durationMs: 1,
@@ -467,7 +468,7 @@ async function pass(
               text: '',
               sessionId: 's-1',
               ...options.answers?.draft,
-            }
+            })
           },
         } as unknown as Runtime,
         issue: async () => ({ ...ITEM.ticket }),

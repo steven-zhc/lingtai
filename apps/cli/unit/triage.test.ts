@@ -11,6 +11,7 @@ import { Triage, triageCallFor } from '@lingtai/recipe'
  * `createMemoryEventStore()` and a stand-in `Runtime`, so no database, no
  * process and no agent (0060 §1).
  */
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { enqueueTriage, waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
@@ -93,12 +94,13 @@ function stubRuntime(respond: (request: RunRequest, call: number) => RunOutcome 
       providesTier: 'guarded',
       enforces: [],
     } as unknown as Runtime['capabilities'],
-    run: async (request: RunRequest) => {
-      requests.push(request)
-      const outcome = await respond(request, call)
-      call += 1
-      return outcome
-    },
+    run: (request: RunRequest) =>
+      Effect.promise(async () => {
+        requests.push(request)
+        const outcome = await respond(request, call)
+        call += 1
+        return outcome
+      }),
   }
   return { runtime, requests }
 }

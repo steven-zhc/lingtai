@@ -248,16 +248,17 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const store = memoryStore()
     const metered: Runtime = {
       ...runtime,
-      run: async () => ({
-        exitCode: 0,
-        turns: 3,
-        durationMs: 1234,
-        costUsd: 0.42,
-        failure: null,
-        text: 'done',
-        sessionId: 'sess-1',
-        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 100, output: 20 } }],
-      }),
+      run: () =>
+        Effect.succeed({
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          text: 'done',
+          sessionId: 'sess-1',
+          usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 100, output: 20 } }],
+        }),
     }
 
     const result = await once(
@@ -802,9 +803,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
 
     const fixerRuntime: Runtime = {
       ...runtime,
-      run: async (request) =>
+      run: (request) =>
         request.runId.includes(':fix:')
-          ? {
+          ? Effect.succeed({
               exitCode: 0,
               turns: 2,
               durationMs: 900,
@@ -812,7 +813,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
               failure: null,
               text: longSaid,
               sessionId: 'sess-fix',
-            }
+            })
           : runtime.run(request),
     }
 
@@ -891,21 +892,22 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     let fixRan = false
     const fixerRuntime: Runtime = {
       ...runtime,
-      run: async (request) => {
-        if (request.runId.includes(':fix:')) {
-          fixRan = true
-          return {
-            exitCode: 1,
-            turns: 60,
-            durationMs: 900,
-            costUsd: 5,
-            failure: { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' },
-            text: null,
-            sessionId: 'sess-fix',
+      run: (request) =>
+        Effect.gen(function* () {
+          if (request.runId.includes(':fix:')) {
+            fixRan = true
+            return {
+              exitCode: 1,
+              turns: 60,
+              durationMs: 900,
+              costUsd: 5,
+              failure: { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' },
+              text: null,
+              sessionId: 'sess-fix',
+            }
           }
-        }
-        return request.runId.includes(':review:') ? refusingRuntime.run(request) : runtime.run(request)
-      },
+          return yield* request.runId.includes(':review:') ? refusingRuntime.run(request) : runtime.run(request)
+        }),
     }
 
     const ports = fakePorts(did, store, true)
@@ -1208,20 +1210,21 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const prompts: { runId: string; prompt: string }[] = []
     const drafting: Runtime = {
       ...runtime,
-      run: async (request) => {
-        prompts.push({ runId: request.runId, prompt: request.prompt })
-        return {
-          exitCode: 0,
-          turns: 3,
-          durationMs: 1234,
-          costUsd: 0.42,
-          failure: null,
-          // The document at `design`, and the implementer's decline message
-          // everywhere else — one runtime, as `runOnce` has (`one-attempt.ts`).
-          text: 'Put it in `packages/recipe`, beside `whyNoKindAt`.',
-          sessionId: 'sess-1',
-        }
-      },
+      run: (request) =>
+        Effect.sync(() => {
+          prompts.push({ runId: request.runId, prompt: request.prompt })
+          return {
+            exitCode: 0,
+            turns: 3,
+            durationMs: 1234,
+            costUsd: 0.42,
+            failure: null,
+            // The document at `design`, and the implementer's decline message
+            // everywhere else — one runtime, as `runOnce` has (`one-attempt.ts`).
+            text: 'Put it in `packages/recipe`, beside `whyNoKindAt`.',
+            sessionId: 'sess-1',
+          }
+        }),
     }
 
     const result = await once(
@@ -1308,26 +1311,28 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     /** Answers a question at `design` and a document nowhere — `design` is all `DRAFTED` declares. */
     const asking: Runtime = {
       ...runtime,
-      run: async (request) =>
-        request.runId.includes(':design:')
-          ? {
-              exitCode: 0,
-              turns: 2,
-              durationMs: 1234,
-              costUsd: 0.21,
-              failure: null,
-              text: `\`\`\`question\n${asked}\n\`\`\``,
-              sessionId: 'sess-design',
-            }
-          : {
-              exitCode: 0,
-              turns: 3,
-              durationMs: 1234,
-              costUsd: 0.42,
-              failure: null,
-              text: 'done',
-              sessionId: 'sess-1',
-            },
+      run: (request) =>
+        Effect.succeed(
+          request.runId.includes(':design:')
+            ? {
+                exitCode: 0,
+                turns: 2,
+                durationMs: 1234,
+                costUsd: 0.21,
+                failure: null,
+                text: `\`\`\`question\n${asked}\n\`\`\``,
+                sessionId: 'sess-design',
+              }
+            : {
+                exitCode: 0,
+                turns: 3,
+                durationMs: 1234,
+                costUsd: 0.42,
+                failure: null,
+                text: 'done',
+                sessionId: 'sess-1',
+              },
+        ),
     }
 
     const result = await once(
@@ -1529,11 +1534,12 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ran = { implement: 0, review: 0 }
     const counting: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        const reviewing = request.runId.includes(':review:')
-        ran[reviewing ? 'review' : 'implement'] += 1
-        return refusingRuntime.run(request)
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          const reviewing = request.runId.includes(':review:')
+          ran[reviewing ? 'review' : 'implement'] += 1
+          return yield* refusingRuntime.run(request)
+        }),
     }
     // The round's agent has to commit something, or the pass stops at `implement`
     // with nothing to review: the fixture answers one sha for ever, and a round
@@ -1638,16 +1644,17 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        // The judge reads the findings and answers in the pass's own vocabulary;
-        // `implement` is *the lines*, which is the round the arrival can pay for.
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "implement", "why": "the seam is right, two of its lines are wrong"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          // The judge reads the findings and answers in the pass's own vocabulary;
+          // `implement` is *the lines*, which is the round the arrival can pay for.
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "implement", "why": "the seam is right, two of its lines are wrong"}\n```',
+          }
+        }),
     }
     // **A different head per round**, or the second one is a round with no diff
     // in it: `conduct.ts` only continues the loop where the fixing agent
@@ -1741,14 +1748,15 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "claim", "why": "restart it instead"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "claim", "why": "restart it instead"}\n```',
+          }
+        }),
     }
 
     const result = await once(
@@ -1797,15 +1805,16 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          failure: { kind: 'crash', detail: 'the sandbox died' },
-          text: null,
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            failure: { kind: 'crash', detail: 'the sandbox died' },
+            text: null,
+          }
+        }),
     }
 
     const result = await once(
@@ -1853,14 +1862,15 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: 'implement looks right to me, no json here',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: 'implement looks right to me, no json here',
+          }
+        }),
     }
 
     const result = await once(
@@ -1928,10 +1938,11 @@ runtime:
     const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        return refusingRuntime.run(request)
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          return yield* refusingRuntime.run(request)
+        }),
     }
 
     const result = await once(
@@ -1983,11 +1994,12 @@ runtime:
     })
     const emptyReview: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        ran.push(request.runId)
-        if (!request.runId.includes(':review:')) return refusingRuntime.run(request)
-        return { ...(await refusingRuntime.run(request)), text: opinion }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          ran.push(request.runId)
+          if (!request.runId.includes(':review:')) return yield* refusingRuntime.run(request)
+          return { ...(yield* refusingRuntime.run(request)), text: opinion }
+        }),
     }
 
     const result = await once(
@@ -2036,13 +2048,14 @@ runtime:
     const said: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "build", "why": "go fix it where it actually broke"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "build", "why": "go fix it where it actually broke"}\n```',
+          }
+        }),
     }
 
     const result = await once(
@@ -2094,13 +2107,14 @@ runtime:
     const said: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
-          ...(await refusingRuntime.run(request)),
-          text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
-        }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          return {
+            ...(yield* refusingRuntime.run(request)),
+            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+          }
+        }),
     }
 
     const result = await once(
@@ -2159,10 +2173,11 @@ runtime:
     const asked: { id: string; model: string | undefined; turns: number | undefined }[] = []
     const recording = (id: 'claude-code' | 'codex'): Runtime => ({
       capabilities: { ...runtime.capabilities, id },
-      run: async (request) => {
-        asked.push({ id, model: request.model, turns: request.limits.turns })
-        return runtime.run(request)
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          asked.push({ id, model: request.model, turns: request.limits.turns })
+          return yield* runtime.run(request)
+        }),
     })
     const claude = recording('claude-code')
     const codex = recording('codex')
@@ -2219,11 +2234,12 @@ runtime:
     const models: (string | undefined)[] = []
     const judging: Runtime = {
       ...refusingRuntime,
-      run: async (request) => {
-        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        models.push(request.model)
-        return { ...(await refusingRuntime.run(request)), text: 'implement — the lines are fixable' }
-      },
+      run: (request) =>
+        Effect.gen(function* () {
+          if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
+          models.push(request.model)
+          return { ...(yield* refusingRuntime.run(request)), text: 'implement — the lines are fixable' }
+        }),
     }
 
     const result = await once(

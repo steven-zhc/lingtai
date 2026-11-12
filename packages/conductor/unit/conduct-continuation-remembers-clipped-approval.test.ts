@@ -8,6 +8,7 @@
 import { waitsOf, ticketStream, stepOutcomesOf } from '@lingtai/domain'
 import { aResolution } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-attempt.ts'
@@ -34,9 +35,9 @@ runtime:
 const dispatched: string[] = []
 const reviewing = {
   ...runtime,
-  run: async (request: { runId: string }) => {
+  run: (request: { runId: string }) => {
     if (dispatched.includes(request.runId)) {
-      return {
+      return Effect.succeed({
         exitCode: 1,
         turns: 0,
         durationMs: 1,
@@ -44,10 +45,10 @@ const reviewing = {
         failure: { kind: 'crash' as const, detail: `Error: Session ID ${request.runId} is already in use.` },
         text: null,
         sessionId: 'sess-review',
-      }
+      })
     }
     dispatched.push(request.runId)
-    return {
+    return Effect.succeed({
       exitCode: 0,
       turns: 1,
       durationMs: 10,
@@ -57,7 +58,7 @@ const reviewing = {
         findings: [{ file: 'a.ts', line: 1, claim: 'a nit', failureScenario: 'reads oddly', severity: 'minor' }],
       }),
       sessionId: 'sess-review',
-    }
+    })
   },
 }
 

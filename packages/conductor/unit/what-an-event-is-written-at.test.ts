@@ -114,12 +114,12 @@ const PASSES: Record<string, () => Promise<ReturnType<typeof memoryStore>>> = {
     const seen = { n: 0 }
     const twoSided: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) => {
+      run: (request) => {
         if (!request.runId.includes(':review:')) return runtime.run(request)
         seen.n += 1
         return seen.n === 1
           ? refusingRuntime.run(request)
-          : { ...(await runtime.run(request)), text: JSON.stringify({ findings: [] }) }
+          : runtime.run(request).pipe(Effect.map((outcome) => ({ ...outcome, text: JSON.stringify({ findings: [] }) })))
       },
     }
     const ports = fakePorts([], store, true)
@@ -133,9 +133,14 @@ const PASSES: Record<string, () => Promise<ReturnType<typeof memoryStore>>> = {
     const store = memoryStore()
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
-      run: async (request) =>
+      run: (request) =>
         request.runId.includes(':judge:')
-          ? { ...(await refusingRuntime.run(request)), text: '```json\n{"next": "claim", "why": "restart it"}\n```' }
+          ? refusingRuntime.run(request).pipe(
+              Effect.map((outcome) => ({
+                ...outcome,
+                text: '```json\n{"next": "claim", "why": "restart it"}\n```',
+              })),
+            )
           : refusingRuntime.run(request),
     }
     await once(

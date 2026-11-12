@@ -315,15 +315,16 @@ describe('when an agent inside the pass produces no verdict', () => {
     const logged: string[] = []
     const codexAtTheWall: Runtime = {
       capabilities: { ...runtime.capabilities, id: 'codex' },
-      run: async () => ({
-        exitCode: 1,
-        turns: 0,
-        durationMs: 8_000,
-        costUsd: 0,
-        failure: { kind: 'never-started', detail: 'You have hit your usage limit.' },
-        text: null,
-        sessionId: 'sess-review',
-      }),
+      run: () =>
+        Effect.succeed({
+          exitCode: 1,
+          turns: 0,
+          durationMs: 8_000,
+          costUsd: 0,
+          failure: { kind: 'never-started', detail: 'You have hit your usage limit.' },
+          text: null,
+          sessionId: 'sess-review',
+        }),
     }
 
     const result = await once(
@@ -462,9 +463,9 @@ describe('when an agent inside the pass produces no verdict', () => {
     /** The implementer works and is paid; the agent the round buys never starts. */
     const fixerAtTheWall: Runtime = {
       ...runtime,
-      run: async (request) =>
+      run: (request) =>
         request.runId.includes(':fix:')
-          ? {
+          ? Effect.succeed({
               exitCode: 1,
               turns: 0,
               durationMs: 7_000,
@@ -475,8 +476,8 @@ describe('when an agent inside the pass produces no verdict', () => {
               },
               text: null,
               sessionId: 'sess-fix',
-            }
-          : {
+            })
+          : Effect.succeed({
               exitCode: 0,
               turns: 3,
               durationMs: 1234,
@@ -484,7 +485,7 @@ describe('when an agent inside the pass produces no verdict', () => {
               failure: null,
               text: 'done',
               sessionId: 'sess-1',
-            },
+            }),
     }
 
     const result = await once(
@@ -582,10 +583,10 @@ describe('when an agent inside the pass produces no verdict', () => {
     const ran: string[] = []
     const judgeAtTheWall = {
       ...refusingRuntime,
-      run: async (request: Parameters<typeof refusingRuntime.run>[0]) => {
+      run: (request: Parameters<typeof refusingRuntime.run>[0]) => {
         ran.push(request.runId)
         if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
-        return {
+        return Effect.succeed({
           exitCode: 1,
           turns: 0,
           durationMs: 5_000,
@@ -596,7 +597,7 @@ describe('when an agent inside the pass produces no verdict', () => {
           },
           text: null,
           sessionId: 'sess-judge',
-        }
+        })
       },
     }
 

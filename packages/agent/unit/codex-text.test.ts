@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createCodexTextRuntime } from '../src/codex-text.ts'
@@ -47,7 +48,7 @@ describe('Codex model-only route', () => {
       expect(JSON.stringify(body)).not.toContain('/host/settings')
       return receipt()
     })
-    const result = await createCodexTextRuntime({ config, transport }).run(request(prompt))
+    const result = await Effect.runPromise(createCodexTextRuntime({ config, transport }).run(request(prompt)))
     expect(result.failure).toBeNull()
     expect(result.text).toBe('Plain answer')
     expect(result.turns).toBe(1)
@@ -59,10 +60,10 @@ describe('Codex model-only route', () => {
   it('rejects a tool-bearing receipt and a budget too small to dispatch', async () => {
     const transport = vi.fn(async () => receipt([{ type: 'function_call', name: 'shell', arguments: '{}' }]))
     const runtime = createCodexTextRuntime({ config, transport })
-    expect((await runtime.run(request('call shell'))).failure?.kind).toBe('crash')
+    expect((await Effect.runPromise(runtime.run(request('call shell')))).failure?.kind).toBe('crash')
     const tooSmall = request('plain text')
     tooSmall.limits.usd = 0.000001
-    expect((await runtime.run(tooSmall)).failure?.kind).toBe('out-of-usd')
+    expect((await Effect.runPromise(runtime.run(tooSmall))).failure?.kind).toBe('out-of-usd')
     expect(transport).toHaveBeenCalledOnce()
   })
 
@@ -73,7 +74,7 @@ describe('Codex model-only route', () => {
         { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Plain answer' }] },
       ]),
     )
-    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    const result = await Effect.runPromise(createCodexTextRuntime({ config, transport }).run(request('say hello')))
     expect(result.text).toBe('Plain answer')
     expect(result.failure).toBeNull()
   })
@@ -91,7 +92,7 @@ describe('Codex model-only route', () => {
           }),
         ),
     )
-    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    const result = await Effect.runPromise(createCodexTextRuntime({ config, transport }).run(request('say hello')))
     expect(result.failure).toEqual({ kind: 'crash', detail: 'Responses status: incomplete' })
     expect(result.turns).toBe(1)
     expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 10, output: 64 } }])
@@ -112,7 +113,7 @@ describe('Codex model-only route', () => {
           }),
         ),
     )
-    const result = await createCodexTextRuntime({ config, transport }).run(request('say hello'))
+    const result = await Effect.runPromise(createCodexTextRuntime({ config, transport }).run(request('say hello')))
     expect(result.failure).toEqual({ kind: 'crash', detail: 'Responses receipt exceeded the preflight token bound' })
     expect(result.turns).toBe(1)
     expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 5000, output: 64 } }])
@@ -132,7 +133,7 @@ describe('Codex model-only route', () => {
           }),
         ),
     )
-    const result = await createCodexTextRuntime({ config, transport }).run(request('x'.repeat(6000)))
+    const result = await Effect.runPromise(createCodexTextRuntime({ config, transport }).run(request('x'.repeat(6000))))
     expect(result.failure).toBeNull()
     expect(result.usage).toEqual([{ model: 'test-model', tokens: { fresh: 2000, cacheRead: 8000, output: 3 } }])
   })

@@ -432,7 +432,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
       }
     },
 
-    run: (request: RunRequest): Promise<RunOutcome> => runClaudeCode(options, request),
+    run: (request: RunRequest) => claudeCodeRun(options, request),
   }
 }
 
@@ -690,11 +690,6 @@ export const claudeCodeRun = Effect.fn('agent.run')(function* (options: ClaudeCo
     })
   })
 })
-
-/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
-export function runClaudeCode(options: ClaudeCodeOptions, request: RunRequest): Promise<RunOutcome> {
-  return Effect.runPromise(claudeCodeRun(options, request))
-}
 
 /**
  * The receipt, if this line is one.

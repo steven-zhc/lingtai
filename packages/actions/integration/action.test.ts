@@ -23,6 +23,7 @@ import type { RunRequest, Runtime } from '@lingtai/agent'
  * is killed before it writes, and `build` goes red on a diff that never came
  * near `packages/actions`.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -457,9 +458,9 @@ describe('actionsFromRecipe', () => {
         providesTier: 'guarded',
         enforces: ['turns', 'wall'],
       },
-      async run(request) {
+      run: (request) => {
         seen.push(request)
-        return {
+        return Effect.succeed({
           exitCode: 0,
           turns: 1,
           durationMs: 1,
@@ -467,7 +468,7 @@ describe('actionsFromRecipe', () => {
           text: '{"findings":[]}',
           failure: null,
           sessionId: 's',
-        }
+        })
       },
     }
     const agent = {
