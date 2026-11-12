@@ -95,5 +95,11 @@ describe('the deps the reviewer is built over', () => {
     expect(deps).toMatch(/get settingsPath\(\) \{\s*return reviewSettingsPath/)
     // Nothing else copies the path: the declaration, the getter and `cut`'s write.
     expect(text.match(/\breviewSettingsPath\b/g)?.length ?? 0).toBe(3)
+    // `actionsAt` hands the deps over whole: no copy of `stepDeps.agent` (and so of
+    // its path) is taken when a step's list is built.
+    expect(text.replace(/\/\/.*$/gm, '').match(/stepDeps\.agent|\.\.\.stepDeps|\{\s*\.\.\.deps\.agent/g) ?? []).toEqual(
+      [],
+    )
+    expect(text.match(/actionPortsFromRecipe\(step, actions, stepDeps\)/g)).toHaveLength(1)
   })
 })

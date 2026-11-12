@@ -225,7 +225,7 @@ import {
   type TokenSource,
   type Worktree,
 } from '@lingtai/repo'
-import { Cause, type Duration, Effect, Exit, Result } from 'effect'
+import { type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
 import { armsOnOrigin } from './arms.ts'
@@ -1359,6 +1359,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
     let released = false
     /**
+     * Set once a landing exists: records `TicketLanded` for merged work and answers
+     * true when there was some. **`release` goes through it first** — merged work
+     * is never given back with a `TicketReleased`, whatever ended the pass (#1056).
+     */
+    let recordMergedWork: (() => Effect.Effect<boolean>) | null = null
+    /**
      * **The stream `end` resolves onto**, or null where this pass is about no item
      * (`#269`).
      *
@@ -1467,6 +1473,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * pass resolves whichever ending it actually reaches.
      */
     const release = (reason: string, cause: ReleaseCause | null = null): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        if (released) return Effect.void
+        const recording = onStream === null ? null : (recordMergedWork?.() ?? null)
+        if (recording !== null) {
+          return recording.pipe(Effect.flatMap((merged) => (merged ? Effect.void : releaseUnmerged(reason, cause))))
+        }
+        return releaseUnmerged(reason, cause)
+      })
+    const releaseUnmerged = (reason: string, cause: ReleaseCause | null): Effect.Effect<void> =>
       Effect.suspend(() => {
         if (released) return Effect.void
         /**
@@ -2469,19 +2484,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        *
        * **Registered after the publish and the run log's finalizers, so it runs
        * before them**: the log's fate turns on `didLand`, which has to be true by
-       * then. **A refused append does not give the item back**: the diff is on
-       * the base, and a `TicketReleased` would return merged work to the queue,
-       * so `released` stays true and the failure is the log's to say.
+       * then. **`release` goes through this first**, so a defect after the
+       * merge (a refused `StepEnded`) records the landing instead of returning
+       * merged work to the queue; only a landing the store refuses on every try
+       * falls through to the ordinary release.
        */
-      yield* Effect.addFinalizer((exit) =>
+      const recordLanding = (): Effect.Effect<boolean> =>
         Effect.suspend(() => {
           const merged = mergeCommit
-          // Only an interruption: any other ending reaches the pass's own append
-          // and its handler, which decide a refused `TicketLanded` themselves.
-          if (!Exit.isFailure(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void
-          if (merged === null || released || onStream === null) return Effect.void
-          released = true
-          return Effect.promise(() =>
+          if (merged === null) return Effect.succeed(false)
+          if (released) return Effect.succeed(true)
+          return Effect.tryPromise(() =>
             appendNow(ticketId, [
               {
                 type: 'TicketLanded',
@@ -2490,14 +2503,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               },
             ]),
           ).pipe(
+            Effect.retry({ times: 2 }),
             Effect.tap(() =>
               Effect.sync(() => {
+                released = true
                 didLand = true
               }),
             ),
-            Effect.catchCause(() => Effect.void),
+            // Recorded: the item is landed. Not recorded (the store refuses it on
+            // every try): nothing says it landed, so the ordinary release below
+            // answers, exactly as it does for a landing that was never reached.
+            Effect.as(true),
+            Effect.catchCause(() =>
+              Effect.sync(() => {
+                log(`could not record the landing of ${ticketId} at ${merged}`)
+                return false
+              }),
+            ),
           )
-        }),
+        })
+      recordMergedWork = recordLanding
+      yield* Effect.addFinalizer((exit) =>
+        Exit.isFailure(exit) && onStream !== null ? Effect.asVoid(recordLanding()) : Effect.void,
       )
 
       // ---- the ports ---------------------------------------------------------
