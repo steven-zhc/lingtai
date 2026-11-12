@@ -14,6 +14,7 @@ import { aClaim, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { TriageFacts, TriageResult, TriageStatus } from '@lingtai/domain/wait'
 import { triageStatus } from '@lingtai/domain/wait'
+import { createFace, reduceFace } from '@lingtai/projector'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
 import { taskViewProjection } from '@lingtai/projector/task-view'
 
@@ -395,8 +396,8 @@ export async function preview(name: CaseName) {
   let row
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((context) => taskViewProjection.create(context))
-    await store.transact((context) => taskViewProjection.reduce(fixture.events, context))
+    await store.transact((context) => createFace(taskViewProjection, context))
+    await store.transact((context) => reduceFace(taskViewProjection, fixture.events, context))
     row = (await store.tasks({ retentionDays: 2 })).find((item) => item.taskId === fixture.taskId)
   } finally {
     db.close()

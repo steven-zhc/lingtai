@@ -8,16 +8,17 @@ import { describe, expect, it } from 'vitest'
 
 import { spendProjection } from '../src/spend.ts'
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 
 const { kindThenTriage, kindedClaimAfterClosed } = lateHistories.ticket
 
 async function projectInBatches(events: readonly Envelope[], size: number): Promise<ProjectionRow[]> {
   const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
-  await store.transact((ctx) => spendProjection.create(ctx))
+  await store.transact((ctx) => createFace(spendProjection, ctx))
   for (let i = 0; i < events.length; i += size) {
     const batch = events.slice(i, i + size)
-    await store.transact((ctx) => spendProjection.reduce(batch, ctx))
+    await store.transact((ctx) => reduceFace(spendProjection, batch, ctx))
   }
   return store.transact((ctx) => ctx.query('select * from spend order by seq'))
 }

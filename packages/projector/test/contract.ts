@@ -2,6 +2,7 @@ import { waitWords, type Envelope, type Finding, type PayloadOf, type ToAppend }
 import { anAttempt, aRunFailure, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore, Waker } from '@lingtai/event-store'
+import { Effect } from 'effect'
 /**
  * What a `ProjectionStore` is, stated once and run against every implementation.
  *
@@ -33,6 +34,7 @@ import { describe, expect, it } from 'vitest'
 import { backlogProjection } from '../src/backlog.ts'
 import { createProjectionRunner } from '../src/projection.ts'
 import { spendProjection } from '../src/spend.ts'
+import { createFace, reduceFace, resetFace } from '../src/store-face.ts'
 import type { Projection, ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -60,33 +62,39 @@ export const CONTRACT_CHECKPOINTS = [CONTRACT_TABLE, 'projection_contract_ledger
 export const contractProjection: Projection = {
   name: CONTRACT_TABLE,
 
-  async create(ctx) {
-    await ctx.query(
-      `create table if not exists ${CONTRACT_TABLE} (
+  create(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(
+        `create table if not exists ${CONTRACT_TABLE} (
          seq     bigint primary key,
          run_id  text not null,
          path    text not null
        )`,
-    )
-  },
-
-  async reset(ctx) {
-    await ctx.query(`drop table if exists ${CONTRACT_TABLE}`)
-  },
-
-  async reduce(events, ctx) {
-    for (const event of events) {
-      if (event.type !== 'RunTouchedFile') continue
-      const d = event.data as { path: string }
-      // Keyed on `seq`, which is what makes a replay and a second projector
-      // land on the same table: `do nothing` is the cheap idempotence the
-      // interface asks every reduce for.
-      await ctx.query(
-        `insert into ${CONTRACT_TABLE} (seq, run_id, path) values ($1::bigint, $2, $3)
-         on conflict (seq) do nothing`,
-        [event.seq.toString(), event.streamId, d.path],
       )
-    }
+    })
+  },
+
+  reset(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(`drop table if exists ${CONTRACT_TABLE}`)
+    })
+  },
+
+  reduce(events, ctx) {
+    return Effect.gen(function* () {
+      for (const event of events) {
+        if (event.type !== 'RunTouchedFile') continue
+        const d = event.data as { path: string }
+        // Keyed on `seq`, which is what makes a replay and a second projector
+        // land on the same table: `do nothing` is the cheap idempotence the
+        // interface asks every reduce for.
+        yield* ctx.query(
+          `insert into ${CONTRACT_TABLE} (seq, run_id, path) values ($1::bigint, $2, $3)
+         on conflict (seq) do nothing`,
+          [event.seq.toString(), event.streamId, d.path],
+        )
+      }
+    })
   },
 }
 
@@ -233,8 +241,8 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
     )
 
   const made = async (f: ProjectionFixture, projection: Projection, events: readonly Envelope[]): Promise<void> => {
-    await f.store.transact((ctx) => projection.create(ctx))
-    await f.store.transact((ctx) => projection.reduce(events, ctx))
+    await f.store.transact((ctx) => createFace(projection, ctx))
+    await f.store.transact((ctx) => reduceFace(projection, events, ctx))
   }
 
   describe(`${name}: the projection store contract`, () => {
@@ -346,8 +354,8 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       try {
         const written = await f.events.append(run, 0, [touched('a.ts'), touched('b.ts')])
         await f.store.transact(async (ctx) => {
-          await contractProjection.create(ctx)
-          await contractProjection.reduce(written, ctx)
+          await createFace(contractProjection, ctx)
+          await reduceFace(contractProjection, written, ctx)
           await f.store.advance(ctx, CONTRACT_TABLE, written[1]!.seq)
         })
 
@@ -367,15 +375,15 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       try {
         const first = await f.events.append(run, 0, [touched('kept.ts')])
         await f.store.transact(async (ctx) => {
-          await contractProjection.create(ctx)
-          await contractProjection.reduce(first, ctx)
+          await createFace(contractProjection, ctx)
+          await reduceFace(contractProjection, first, ctx)
           await f.store.advance(ctx, CONTRACT_TABLE, first[0]!.seq)
         })
 
         const second = await f.events.append(run, 1, [touched('lost.ts')])
         await expect(
           f.store.transact(async (ctx) => {
-            await contractProjection.reduce(second, ctx)
+            await reduceFace(contractProjection, second, ctx)
             await f.store.advance(ctx, CONTRACT_TABLE, second[0]!.seq)
             throw new Error('the reducer changed its mind')
           }),
@@ -401,7 +409,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       const run = f.stream('run', 'uncommitted')
       try {
         const written = await f.events.append(task, 0, [claimed(run, 'a card that never commits')])
-        await f.store.transact((ctx) => taskViewProjection.create(ctx))
+        await f.store.transact((ctx) => createFace(taskViewProjection, ctx))
 
         let reduced = () => {}
         const applied = new Promise<void>((r) => {
@@ -412,7 +420,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
           release = r
         })
         const reducing = f.store.transact(async (ctx) => {
-          await taskViewProjection.reduce(written, ctx)
+          await reduceFace(taskViewProjection, written, ctx)
           reduced()
           await held
           throw new Error('the reducer changed its mind')
@@ -467,10 +475,10 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       // names nothing.
       const f = await make()
       try {
-        await f.store.transact((ctx) => contractProjection.create(ctx))
+        await f.store.transact((ctx) => createFace(contractProjection, ctx))
         expect((await f.store.columnsOf([CONTRACT_TABLE])).has(CONTRACT_TABLE)).toBe(true)
 
-        await f.store.transact((ctx) => contractProjection.reset(ctx))
+        await f.store.transact((ctx) => resetFace(contractProjection, ctx))
         expect((await f.store.columnsOf([CONTRACT_TABLE])).has(CONTRACT_TABLE)).toBe(false)
       } finally {
         await f.close()
@@ -482,7 +490,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       // rather than *drifted* about a table `create` has not made yet.
       const f = await make()
       try {
-        await f.store.transact((ctx) => contractProjection.create(ctx))
+        await f.store.transact((ctx) => createFace(contractProjection, ctx))
 
         const live = await f.store.columnsOf([CONTRACT_TABLE, 'projection_contract_absent'])
         expect([...(live.get(CONTRACT_TABLE) ?? [])].sort()).toEqual(['path', 'run_id', 'seq'])
@@ -836,7 +844,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         // thing on this path and not what converging means — what is under test
         // is two reduces and two checkpoints over one log.
         await f.store.transact(async (ctx) => {
-          await contractProjection.create(ctx)
+          await createFace(contractProjection, ctx)
           await f.store.register(ctx, CONTRACT_TABLE)
         })
 

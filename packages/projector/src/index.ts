@@ -45,6 +45,7 @@ export {
   type TaskQuery,
   type TicketReportQuery,
 } from './store.ts'
+export { createFace, reduceFace, resetFace } from './store-face.ts'
 export {
   closeProcessProjections,
   ProcessProjectionsClosedError,
@@ -59,6 +60,8 @@ export {
   describeDrift,
   describeShape,
   projectionShape,
+  projectionShapeEffect,
+  shapeInFace,
   type ProjectionDrift,
   type ProjectionShape,
 } from './shape.ts'

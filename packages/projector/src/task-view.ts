@@ -70,7 +70,7 @@ import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
-import type { Projection, ProjectionContext } from './store.ts'
+import type { Projection, ProjectionContextPort } from './store.ts'
 
 /**
  * Where a task is.
@@ -91,8 +91,9 @@ export const DEFAULT_RETENTION_DAYS = 2
 export const taskViewProjection: Projection = {
   name: 'task_view',
 
-  async create(ctx) {
-    await ctx.query(`
+  create(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(`
       create table if not exists task_view (
         task_id      text primary key,
         project      text not null,
@@ -218,12 +219,12 @@ export const taskViewProjection: Projection = {
         -- table built before this is refused by the shape check until rebuilt.
         ticket       jsonb not null
       )`)
-    await ctx.query('create index if not exists task_view_state_idx on task_view (project, state)')
-    await ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
+      yield* ctx.query('create index if not exists task_view_state_idx on task_view (project, state)')
+      yield* ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
 
-    // Which run belongs to which task. Run events arrive on their own stream and
-    // name the task only at TicketClaimed or RunStarted.
-    await ctx.query(`
+      // Which run belongs to which task. Run events arrive on their own stream and
+      // name the task only at TicketClaimed or RunStarted.
+      yield* ctx.query(`
       create table if not exists task_view_run (
         run_id  text primary key,
         task_id text,
@@ -231,32 +232,37 @@ export const taskViewProjection: Projection = {
         run     jsonb not null
       )`)
 
-    // A ticket's reduce while it has no task_view row (#834): a prompt edit on
-    // an untouched issue is not a card. The event that makes the row moves the
-    // state into it and deletes this one.
-    await ctx.query(`
+      // A ticket's reduce while it has no task_view row (#834): a prompt edit on
+      // an untouched issue is not a card. The event that makes the row moves the
+      // state into it and deletes this one.
+      yield* ctx.query(`
       create table if not exists task_view_ticket (
         task_id    text primary key,
         ticket     jsonb not null
       )`)
+    }).pipe(Effect.withSpan('projector.task_view.create'))
   },
 
-  async reset(ctx) {
-    // Dropped, not truncated. This table's shape is expected to change, and
-    // `create table if not exists` would silently keep the old columns.
-    await ctx.query('drop table if exists task_view')
-    await ctx.query('drop table if exists task_view_run')
-    await ctx.query('drop table if exists task_view_ticket')
+  reset(ctx) {
+    return Effect.gen(function* () {
+      // Dropped, not truncated. This table's shape is expected to change, and
+      // `create table if not exists` would silently keep the old columns.
+      yield* ctx.query('drop table if exists task_view')
+      yield* ctx.query('drop table if exists task_view_run')
+      yield* ctx.query('drop table if exists task_view_ticket')
+    }).pipe(Effect.withSpan('projector.task_view.reset'))
   },
 
-  async reduce(events, ctx) {
-    // One cache per call (#844): every read goes through it, every touched row is written once at the end.
-    const cache = new Cache(ctx)
-    for (const event of events) {
-      if (isTicketStream(event.streamId)) await projectTicketEvent(cache, event)
-      else if (isAttemptStream(event.streamId)) await projectRunEvent(cache, event)
-    }
-    await cache.flush()
+  reduce(events, ctx) {
+    return Effect.gen(function* () {
+      // One cache per call (#844): every read goes through it, every touched row is written once at the end.
+      const cache = new Cache(ctx)
+      for (const event of events) {
+        if (isTicketStream(event.streamId)) yield* projectTicketEvent(cache, event)
+        else if (isAttemptStream(event.streamId)) yield* projectRunEvent(cache, event)
+      }
+      yield* cache.flush()
+    }).pipe(Effect.withSpan('projector.task_view.reduce'))
   },
 }
 
@@ -490,74 +496,78 @@ class Cache {
   readonly runs = new Map<string, RunEntry>()
   private readonly missing = new Set<string>()
 
-  private readonly ctx: ProjectionContext
+  private readonly ctx: ProjectionContextPort
 
   // Not a parameter property: Node's strip-only TypeScript loader refuses that syntax.
-  constructor(ctx: ProjectionContext) {
+  constructor(ctx: ProjectionContextPort) {
     this.ctx = ctx
   }
 
-  async task(taskId: string): Promise<TaskEntry> {
-    const hit = this.tasks.get(taskId)
-    if (hit) return hit
-    const [row] = await this.ctx.query<Record<string, unknown>>(
-      'select ticket, note, updated_at, updated_seq from task_view where task_id = $1',
-      [taskId],
-    )
-    let entry: TaskEntry
-    if (row) {
-      entry = {
-        where: 'row',
-        ticket: decodeTicket(row.ticket, 'task_view', taskId),
-        note: (row.note as string | null) ?? null,
-        updatedAt: new Date(row.updated_at as string | Date),
-        updatedSeq: BigInt(String(row.updated_seq)),
-        wasStaged: false,
-        dirty: false,
-      }
-    } else {
-      const [staged] = await this.ctx.query<{ ticket: unknown }>(
-        'select ticket from task_view_ticket where task_id = $1',
+  task(taskId: string): Effect.Effect<TaskEntry> {
+    return Effect.gen({ self: this }, function* () {
+      const hit = this.tasks.get(taskId)
+      if (hit) return hit
+      const [row] = yield* this.ctx.query<Record<string, unknown>>(
+        'select ticket, note, updated_at, updated_seq from task_view where task_id = $1',
         [taskId],
       )
-      entry = {
-        where: staged ? 'staged' : 'none',
-        ticket: staged ? decodeTicket(staged.ticket, 'task_view', taskId) : emptyTicket,
-        note: null,
-        updatedAt: new Date(0),
-        updatedSeq: 0n,
-        wasStaged: false,
-        dirty: false,
+      let entry: TaskEntry
+      if (row) {
+        entry = {
+          where: 'row',
+          ticket: decodeTicket(row.ticket, 'task_view', taskId),
+          note: (row.note as string | null) ?? null,
+          updatedAt: new Date(row.updated_at as string | Date),
+          updatedSeq: BigInt(String(row.updated_seq)),
+          wasStaged: false,
+          dirty: false,
+        }
+      } else {
+        const [staged] = yield* this.ctx.query<{ ticket: unknown }>(
+          'select ticket from task_view_ticket where task_id = $1',
+          [taskId],
+        )
+        entry = {
+          where: staged ? 'staged' : 'none',
+          ticket: staged ? decodeTicket(staged.ticket, 'task_view', taskId) : emptyTicket,
+          note: null,
+          updatedAt: new Date(0),
+          updatedSeq: 0n,
+          wasStaged: false,
+          dirty: false,
+        }
       }
-    }
-    this.tasks.set(taskId, entry)
-    const latest = entry.ticket.runs.at(-1)
-    if (latest !== undefined) await this.run(latest, false)
-    return entry
+      this.tasks.set(taskId, entry)
+      const latest = entry.ticket.runs.at(-1)
+      if (latest !== undefined) yield* this.run(latest, false)
+      return entry
+    })
   }
 
   /** The run's entry, created from `emptyAttempt` when it has no row (`create`) or left absent (`peek`). */
-  run(runId: string, create: true): Promise<RunEntry>
-  run(runId: string, create: false): Promise<RunEntry | undefined>
-  async run(runId: string, create: boolean): Promise<RunEntry | undefined> {
-    const hit = this.runs.get(runId)
-    if (hit) return hit
-    if (!this.missing.has(runId)) {
-      const [row] = await this.ctx.query<{ task_id: string | null; run: unknown }>(
-        'select task_id, run from task_view_run where run_id = $1',
-        [runId],
-      )
-      if (row) {
-        const entry = { taskId: row.task_id, run: decodeRun(row.run, 'task_view', runId), dirty: false }
-        this.runs.set(runId, entry)
-        return entry
+  run(runId: string, create: true): Effect.Effect<RunEntry>
+  run(runId: string, create: false): Effect.Effect<RunEntry | undefined>
+  run(runId: string, create: boolean): Effect.Effect<RunEntry | undefined> {
+    return Effect.gen({ self: this }, function* () {
+      const hit = this.runs.get(runId)
+      if (hit) return hit
+      if (!this.missing.has(runId)) {
+        const [row] = yield* this.ctx.query<{ task_id: string | null; run: unknown }>(
+          'select task_id, run from task_view_run where run_id = $1',
+          [runId],
+        )
+        if (row) {
+          const entry = { taskId: row.task_id, run: decodeRun(row.run, 'task_view', runId), dirty: false }
+          this.runs.set(runId, entry)
+          return entry
+        }
+        this.missing.add(runId)
       }
-      this.missing.add(runId)
-    }
-    if (!create) return undefined
-    const entry = { taskId: null, run: emptyAttempt, dirty: true }
-    this.runs.set(runId, entry)
-    return entry
+      if (!create) return undefined
+      const entry = { taskId: null, run: emptyAttempt, dirty: true }
+      this.runs.set(runId, entry)
+      return entry
+    })
   }
 
   /** The row's whole column set as the cache holds it now, or null for a ticket that has no row. */
@@ -573,68 +583,70 @@ class Cache {
     return { ...derive(taskId, ticket), ...rowOf(ticket, run?.run ?? null) }
   }
 
-  async flush(): Promise<void> {
-    for (const [runId, e] of this.runs) {
-      if (!e.dirty) continue
-      await this.ctx.query(
-        `insert into task_view_run (run_id, task_id, run) values ($1, $2, $3::jsonb)
+  flush(): Effect.Effect<void> {
+    return Effect.gen({ self: this }, function* () {
+      for (const [runId, e] of this.runs) {
+        if (!e.dirty) continue
+        yield* this.ctx.query(
+          `insert into task_view_run (run_id, task_id, run) values ($1, $2, $3::jsonb)
          on conflict (run_id) do update set task_id = excluded.task_id, run = excluded.run`,
-        [runId, e.taskId, encodeRun(e.run)],
-      )
-    }
-    for (const [taskId, e] of this.tasks) {
-      if (!e.dirty) continue
-      const encoded = encodeTicket(e.ticket)
-      if (e.where === 'staged' || e.where === 'none') {
-        await this.ctx.query(
-          `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
-           on conflict (task_id) do update set ticket = excluded.ticket`,
-          [taskId, encoded],
+          [runId, e.taskId, encodeRun(e.run)],
         )
-        continue
       }
-      const cols = this.columns(taskId, e)
-      const c = cols!
-      const row: [string, unknown, string][] = [
-        ['project', c.project, '::text'],
-        ['issue', c.issue, '::text'],
-        ['title', c.title, '::text'],
-        ['kind', c.kind, '::text'],
-        ['state', c.state, '::text'],
-        ['note', e.note, '::text'],
-        ['run_id', c.run_id, '::text'],
-        ['turns', c.turns, '::int'],
-        ['base_sha', c.base_sha, '::text'],
-        ['head_sha', c.head_sha, '::text'],
-        ['files', c.files, '::int'],
-        ['insertions', c.insertions, '::int'],
-        ['deletions', c.deletions, '::int'],
-        ['verdicts', c.verdicts, '::jsonb'],
-        ['awaiting_sha', c.awaiting_sha, '::text'],
-        ['wait_id', c.wait_id, '::text'],
-        ['wait_reason', c.wait_reason, '::jsonb'],
-        ['triage_attempt', c.triage_attempt, '::int'],
-        ['triage_started_at', c.triage_started_at, '::timestamptz'],
-        ['triage_result', c.triage_result, '::jsonb'],
-        ['triage_head_sha', c.triage_head_sha, '::text'],
-        ['answer', c.answer, '::jsonb'],
-        ['split', c.split, '::jsonb'],
-        ['closed_at', c.closed_at, '::timestamptz'],
-        ['attempts', c.attempts, '::int'],
-        ['last_attempt_at', c.last_attempt_at, '::timestamptz'],
-        ['restarts', c.restarts, '::int'],
-        ['updated_at', e.updatedAt, '::timestamptz'],
-        ['updated_seq', e.updatedSeq.toString(), '::bigint'],
-        ['ticket', encoded, '::jsonb'],
-      ]
-      await this.ctx.query(
-        `insert into task_view (task_id, ${row.map(([n]) => n).join(', ')})
+      for (const [taskId, e] of this.tasks) {
+        if (!e.dirty) continue
+        const encoded = encodeTicket(e.ticket)
+        if (e.where === 'staged' || e.where === 'none') {
+          yield* this.ctx.query(
+            `insert into task_view_ticket (task_id, ticket) values ($1, $2::jsonb)
+           on conflict (task_id) do update set ticket = excluded.ticket`,
+            [taskId, encoded],
+          )
+          continue
+        }
+        const cols = this.columns(taskId, e)
+        const c = cols!
+        const row: [string, unknown, string][] = [
+          ['project', c.project, '::text'],
+          ['issue', c.issue, '::text'],
+          ['title', c.title, '::text'],
+          ['kind', c.kind, '::text'],
+          ['state', c.state, '::text'],
+          ['note', e.note, '::text'],
+          ['run_id', c.run_id, '::text'],
+          ['turns', c.turns, '::int'],
+          ['base_sha', c.base_sha, '::text'],
+          ['head_sha', c.head_sha, '::text'],
+          ['files', c.files, '::int'],
+          ['insertions', c.insertions, '::int'],
+          ['deletions', c.deletions, '::int'],
+          ['verdicts', c.verdicts, '::jsonb'],
+          ['awaiting_sha', c.awaiting_sha, '::text'],
+          ['wait_id', c.wait_id, '::text'],
+          ['wait_reason', c.wait_reason, '::jsonb'],
+          ['triage_attempt', c.triage_attempt, '::int'],
+          ['triage_started_at', c.triage_started_at, '::timestamptz'],
+          ['triage_result', c.triage_result, '::jsonb'],
+          ['triage_head_sha', c.triage_head_sha, '::text'],
+          ['answer', c.answer, '::jsonb'],
+          ['split', c.split, '::jsonb'],
+          ['closed_at', c.closed_at, '::timestamptz'],
+          ['attempts', c.attempts, '::int'],
+          ['last_attempt_at', c.last_attempt_at, '::timestamptz'],
+          ['restarts', c.restarts, '::int'],
+          ['updated_at', e.updatedAt, '::timestamptz'],
+          ['updated_seq', e.updatedSeq.toString(), '::bigint'],
+          ['ticket', encoded, '::jsonb'],
+        ]
+        yield* this.ctx.query(
+          `insert into task_view (task_id, ${row.map(([n]) => n).join(', ')})
          values ($1::text, ${row.map(([, , cast], i) => `$${i + 2}${cast}`).join(', ')})
          on conflict (task_id) do update set ${row.map(([n]) => `${n} = excluded.${n}`).join(', ')}`,
-        [taskId, ...row.map(([, v]) => v)],
-      )
-      if (e.wasStaged) await this.ctx.query('delete from task_view_ticket where task_id = $1', [taskId])
-    }
+          [taskId, ...row.map(([, v]) => v)],
+        )
+        if (e.wasStaged) yield* this.ctx.query('delete from task_view_ticket where task_id = $1', [taskId])
+      }
+    })
   }
 }
 
@@ -668,58 +680,62 @@ function touch(entry: TaskEntry, event: Envelope): void {
  * **One writer** (0100 §13, #860): the conductor-lock holder alone runs this projection, in `seq` order,
  * so there is no per-row `seq` guard and no lock ordering between the tables.
  */
-async function projectRunEvent(cache: Cache, event: Envelope): Promise<void> {
-  const runId = event.streamId
-  const entry = await cache.run(runId, true)
-  if (event.type === 'RunStarted') entry.taskId = (event.data as PayloadOf<'RunStarted'>).ticketId
-  const task = entry.taskId === null ? null : await cache.task(entry.taskId)
-  const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
+function projectRunEvent(cache: Cache, event: Envelope): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const runId = event.streamId
+    const entry = yield* cache.run(runId, true)
+    if (event.type === 'RunStarted') entry.taskId = (event.data as PayloadOf<'RunStarted'>).ticketId
+    const task = entry.taskId === null ? null : yield* cache.task(entry.taskId)
+    const was = task === null || entry.taskId === null ? null : cache.columns(entry.taskId, task)
 
-  const runBefore = entry.run
-  entry.run = reduceAttemptEvent(entry.run, event)
-  entry.dirty = true
+    const runBefore = entry.run
+    entry.run = reduceAttemptEvent(entry.run, event)
+    entry.dirty = true
 
-  if (task === null || entry.taskId === null || task.where !== 'row') return
-  const now = cache.columns(entry.taskId, task)
-  // Only the ticket's latest run speaks for the card.
-  const note = task.ticket.runs.at(-1) === runId ? runNoteOf(runBefore, entry.run) : null
-  if (note !== null) task.note = note
-  if (note !== null || JSON.stringify(was) !== JSON.stringify(now)) touch(task, event)
+    if (task === null || entry.taskId === null || task.where !== 'row') return
+    const now = cache.columns(entry.taskId, task)
+    // Only the ticket's latest run speaks for the card.
+    const note = task.ticket.runs.at(-1) === runId ? runNoteOf(runBefore, entry.run) : null
+    if (note !== null) task.note = note
+    if (note !== null || JSON.stringify(was) !== JSON.stringify(now)) touch(task, event)
+  })
 }
 
-async function projectTicketEvent(cache: Cache, event: Envelope): Promise<void> {
-  const taskId = event.streamId
-  const entry = await cache.task(taskId)
-  const before = entry.ticket
-  const was = cache.columns(taskId, entry)
-  if (event.type === 'TicketClaimed' || event.type === 'TicketContinued') {
-    const run = await cache.run((event.data as PayloadOf<'TicketClaimed'>).runId, true)
-    run.taskId = taskId
-    run.dirty = true
-  }
-  const after = reduceTicketEvent(before, event)
-  entry.ticket = after
-  entry.dirty = true
+function projectTicketEvent(cache: Cache, event: Envelope): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const taskId = event.streamId
+    const entry = yield* cache.task(taskId)
+    const before = entry.ticket
+    const was = cache.columns(taskId, entry)
+    if (event.type === 'TicketClaimed' || event.type === 'TicketContinued') {
+      const run = yield* cache.run((event.data as PayloadOf<'TicketClaimed'>).runId, true)
+      run.taskId = taskId
+      run.dirty = true
+    }
+    const after = reduceTicketEvent(before, event)
+    entry.ticket = after
+    entry.dirty = true
 
-  if (entry.where !== 'row' && !MAKES_THE_ROW.has(event.type)) {
-    entry.where = 'staged'
-    return
-  }
+    if (entry.where !== 'row' && !MAKES_THE_ROW.has(event.type)) {
+      entry.where = 'staged'
+      return
+    }
 
-  const now = cache.columnsOf(taskId, after)
-  const note = ticketNoteOf(before, after)
-  if (entry.where !== 'row') {
-    // The event that makes the row: it moves out of staging, whole, and the card's age starts here.
-    entry.wasStaged = entry.where === 'staged'
-    entry.where = 'row'
-    entry.note = note?.value ?? null
+    const now = cache.columnsOf(taskId, after)
+    const note = ticketNoteOf(before, after)
+    if (entry.where !== 'row') {
+      // The event that makes the row: it moves out of staging, whole, and the card's age starts here.
+      entry.wasStaged = entry.where === 'staged'
+      entry.where = 'row'
+      entry.note = note?.value ?? null
+      touch(entry, event)
+      return
+    }
+    const touched = JSON.stringify(was) !== JSON.stringify(now) || note !== null
+    if (!touched) return
+    if (note !== null) entry.note = note.value
     touch(entry, event)
-    return
-  }
-  const touched = JSON.stringify(was) !== JSON.stringify(now) || note !== null
-  if (!touched) return
-  if (note !== null) entry.note = note.value
-  touch(entry, event)
+  })
 }
 
 // ------------------------------------------------------------------ read ----

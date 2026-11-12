@@ -11,6 +11,7 @@ import { histories, lateHistories, lateScenarios, scenarios } from '@lingtai/dom
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -27,9 +28,9 @@ async function reduce(events: readonly Envelope[], batch = events.length): Promi
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
     for (let i = 0; i < events.length; i += Math.max(batch, 1)) {
-      await store.transact((ctx) => taskViewProjection.reduce(events.slice(i, i + batch), ctx))
+      await store.transact((ctx) => reduceFace(taskViewProjection, events.slice(i, i + batch), ctx))
     }
     return await store.transact(async (ctx) => ({
       tasks: await ctx.query('select * from task_view order by task_id'),

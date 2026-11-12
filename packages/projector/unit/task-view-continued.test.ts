@@ -13,6 +13,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import type { ProjectionRow } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
@@ -53,8 +54,8 @@ async function reduce(events: Envelope[], taskId: string) {
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.reduce(events, ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    await store.transact((ctx) => reduceFace(taskViewProjection, events, ctx))
     return await store.transact(async (ctx) => {
       const rows = await ctx.query<ProjectionRow>('select * from task_view')
       const runs = await ctx.query<ProjectionRow>('select * from task_view_run order by run_id')

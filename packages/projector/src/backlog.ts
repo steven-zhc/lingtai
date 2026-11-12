@@ -112,8 +112,9 @@ export interface BacklogEntry {
 export const backlogProjection: Projection = {
   name: BACKLOG_TABLE,
 
-  async create(ctx) {
-    await ctx.query(`
+  create(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(`
       create table if not exists finding_backlog (
         project          text not null,
         key              text not null,
@@ -140,138 +141,143 @@ export const backlogProjection: Projection = {
         reason           text,
         primary key (project, key)
       )`)
-    await ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
+      yield* ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
 
-    // Which ticket a run belongs to. `StepEnded` is on the run's stream and
-    // names only the run; `RunStarted` names the work item. Kept here rather
-    // than read from `task_view_run`, because another projection's table is
-    // at another projection's checkpoint.
-    await ctx.query(`
+      // Which ticket a run belongs to. `StepEnded` is on the run's stream and
+      // names only the run; `RunStarted` names the work item. Kept here rather
+      // than read from `task_view_run`, because another projection's table is
+      // at another projection's checkpoint.
+      yield* ctx.query(`
       create table if not exists finding_backlog_run (
         run_id  text primary key,
         task_id text not null
       )`)
+    }).pipe(Effect.withSpan('projector.backlog.create'))
   },
 
-  async reset(ctx) {
-    await ctx.query('drop table if exists finding_backlog')
-    await ctx.query('drop table if exists finding_backlog_run')
+  reset(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query('drop table if exists finding_backlog')
+      yield* ctx.query('drop table if exists finding_backlog_run')
+    }).pipe(Effect.withSpan('projector.backlog.reset'))
   },
 
-  async reduce(events, ctx) {
-    for (const event of events) {
-      const seq = event.seq.toString()
+  reduce(events, ctx) {
+    return Effect.gen(function* () {
+      for (const event of events) {
+        const seq = event.seq.toString()
 
-      if (isBacklogStream(event.streamId)) {
-        // Read the row again for every event: an earlier event of this batch
-        // has already updated it, and the reducer must see that.
-        const d = event.data as { project: string; key: string }
-        const [row] = await ctx.query<DecisionRow>(
-          `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
-          [d.project, d.key],
-        )
-        // A finding nothing raised has no row to be wrong about.
-        if (!row) continue
-        const before = findingOfRow(row, d)
-        const after = reduceFindingEvent(before, event)
-        if (before.status === 'open' && after.status === 'accepted') {
-          const a = event.data as PayloadOf<'FindingAccepted'>
-          await ctx.query(
-            `update finding_backlog
+        if (isBacklogStream(event.streamId)) {
+          // Read the row again for every event: an earlier event of this batch
+          // has already updated it, and the reducer must see that.
+          const d = event.data as { project: string; key: string }
+          const [row] = yield* ctx.query<DecisionRow>(
+            `select status, decided_seq, proposed_ref, proposed_url from finding_backlog where project = $1 and key = $2`,
+            [d.project, d.key],
+          )
+          // A finding nothing raised has no row to be wrong about.
+          if (!row) continue
+          const before = findingOfRow(row, d)
+          const after = reduceFindingEvent(before, event)
+          if (before.status === 'open' && after.status === 'accepted') {
+            const a = event.data as PayloadOf<'FindingAccepted'>
+            yield* ctx.query(
+              `update finding_backlog
              set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
            where project = $1 and key = $2`,
-            [a.project, a.key, a.by, event.at, seq, a.kind],
-          )
-        } else if (before.status === 'open' && after.status === 'declined') {
-          const x = event.data as PayloadOf<'FindingDeclined'>
-          await ctx.query(
-            `update finding_backlog
+              [a.project, a.key, a.by, event.at, seq, a.kind],
+            )
+          } else if (before.status === 'open' && after.status === 'declined') {
+            const x = event.data as PayloadOf<'FindingDeclined'>
+            yield* ctx.query(
+              `update finding_backlog
              set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
                  reason = $6
            where project = $1 and key = $2`,
-            [x.project, x.key, x.by, event.at, seq, x.reason],
-          )
-        } else if (after !== before) {
-          const p = event.data as PayloadOf<'FindingProposed'>
-          await ctx.query(
-            `update finding_backlog set proposed_ref = $3, proposed_url = $4
-           where project = $1 and key = $2`,
-            [p.project, p.key, p.externalRef, p.url],
-          )
-        }
-        continue
-      }
-
-      switch (event.type) {
-        case 'RunStarted': {
-          const d = event.data as PayloadOf<'RunStarted'>
-          await ctx.query(
-            `insert into finding_backlog_run (run_id, task_id) values ($1, $2)
-             on conflict (run_id) do nothing`,
-            [event.streamId, d.ticketId],
-          )
-          break
-        }
-
-        /**
-         * A passing gate's accepted assessment — the one event type 0120's
-         * appendix retires here (`StepPassed, StepFailed, … → StepEnded`).
-         * `findingsRaisedOf` (`@lingtai/domain`) is where that rule now lives,
-         * so #464's switch to the stored read model only has to change that
-         * function, leaving this file untouched (the design for #481).
-         */
-        default: {
-          // `findingsRaisedOf` answers an array since #502 (0120 phase 2): a
-          // `StepEnded` may carry more than one accepted verdict-yield action.
-          for (const raised of findingsRaisedOf(event)) {
-            const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
-            if (minors.length === 0) continue
-            const [link] = await ctx.query<{ task_id: string }>(
-              'select task_id from finding_backlog_run where run_id = $1',
-              [raised.runId],
+              [x.project, x.key, x.by, event.at, seq, x.reason],
             )
-            const task = link ? parseTicketStream(link.task_id) : null
-            // A pass on a run nothing started names no ticket, and an entry that
-            // cannot say which ticket it is about cannot open one that cites it.
-            if (!link || !task) continue
-            for (const f of minors) {
-              const key = findingKey({
-                issue: task.issue,
-                step: raised.step,
-                action: raised.action,
-                file: f.file,
-                claim: f.claim,
-              })
-              await ctx.query(
-                `insert into finding_backlog
+          } else if (after !== before) {
+            const p = event.data as PayloadOf<'FindingProposed'>
+            yield* ctx.query(
+              `update finding_backlog set proposed_ref = $3, proposed_url = $4
+           where project = $1 and key = $2`,
+              [p.project, p.key, p.externalRef, p.url],
+            )
+          }
+          continue
+        }
+
+        switch (event.type) {
+          case 'RunStarted': {
+            const d = event.data as PayloadOf<'RunStarted'>
+            yield* ctx.query(
+              `insert into finding_backlog_run (run_id, task_id) values ($1, $2)
+             on conflict (run_id) do nothing`,
+              [event.streamId, d.ticketId],
+            )
+            break
+          }
+
+          /**
+           * A passing gate's accepted assessment — the one event type 0120's
+           * appendix retires here (`StepPassed, StepFailed, … → StepEnded`).
+           * `findingsRaisedOf` (`@lingtai/domain`) is where that rule now lives,
+           * so #464's switch to the stored read model only has to change that
+           * function, leaving this file untouched (the design for #481).
+           */
+          default: {
+            // `findingsRaisedOf` answers an array since #502 (0120 phase 2): a
+            // `StepEnded` may carry more than one accepted verdict-yield action.
+            for (const raised of findingsRaisedOf(event)) {
+              const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
+              if (minors.length === 0) continue
+              const [link] = yield* ctx.query<{ task_id: string }>(
+                'select task_id from finding_backlog_run where run_id = $1',
+                [raised.runId],
+              )
+              const task = link ? parseTicketStream(link.task_id) : null
+              // A pass on a run nothing started names no ticket, and an entry that
+              // cannot say which ticket it is about cannot open one that cites it.
+              if (!link || !task) continue
+              for (const f of minors) {
+                const key = findingKey({
+                  issue: task.issue,
+                  step: raised.step,
+                  action: raised.action,
+                  file: f.file,
+                  claim: f.claim,
+                })
+                yield* ctx.query(
+                  `insert into finding_backlog
                    (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
                     severity, claim, failure_scenario, raised_seq, raised_at)
                  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                  on conflict (project, key) do nothing`,
-                [
-                  task.project,
-                  key,
-                  task.issue,
-                  link.task_id,
-                  raised.runId,
-                  raised.step,
-                  raised.action,
-                  raised.onSha,
-                  f.file,
-                  f.line,
-                  f.severity,
-                  f.claim,
-                  f.failureScenario,
-                  seq,
-                  event.at,
-                ],
-              )
+                  [
+                    task.project,
+                    key,
+                    task.issue,
+                    link.task_id,
+                    raised.runId,
+                    raised.step,
+                    raised.action,
+                    raised.onSha,
+                    f.file,
+                    f.line,
+                    f.severity,
+                    f.claim,
+                    f.failureScenario,
+                    seq,
+                    event.at,
+                  ],
+                )
+              }
             }
+            break
           }
-          break
         }
       }
-    }
+    }).pipe(Effect.withSpan('projector.backlog.reduce'))
   },
 }
 

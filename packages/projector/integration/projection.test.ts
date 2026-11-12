@@ -13,6 +13,7 @@ import { directPostgresUrl } from '@lingtai/env'
 import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
 import { cleanupStreams, created, streamId, waitFor } from '@lingtai/event-store/test-support'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { Effect } from 'effect'
 import pg from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
@@ -62,28 +63,34 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
 
   const testProjection: Projection = {
     name: TEST_TABLE,
-    async create(ctx) {
-      await ctx.query(
-        `create table if not exists ${TEST_TABLE} (
+    create(ctx) {
+      return Effect.gen(function* () {
+        yield* ctx.query(
+          `create table if not exists ${TEST_TABLE} (
          seq     bigint primary key,
          run_id  text not null,
          path    text not null
        )`,
-      )
-    },
-    async reset(ctx) {
-      await ctx.query(`drop table if exists ${TEST_TABLE}`)
-    },
-    async reduce(events, ctx) {
-      for (const event of events) {
-        if (event.type !== 'RunTouchedFile') continue
-        const d = event.data as { path: string }
-        await ctx.query(
-          `insert into ${TEST_TABLE} (seq, run_id, path) values ($1::bigint, $2, $3)
-         on conflict (seq) do nothing`,
-          [event.seq.toString(), event.streamId, d.path],
         )
-      }
+      })
+    },
+    reset(ctx) {
+      return Effect.gen(function* () {
+        yield* ctx.query(`drop table if exists ${TEST_TABLE}`)
+      })
+    },
+    reduce(events, ctx) {
+      return Effect.gen(function* () {
+        for (const event of events) {
+          if (event.type !== 'RunTouchedFile') continue
+          const d = event.data as { path: string }
+          yield* ctx.query(
+            `insert into ${TEST_TABLE} (seq, run_id, path) values ($1::bigint, $2, $3)
+         on conflict (seq) do nothing`,
+            [event.seq.toString(), event.streamId, d.path],
+          )
+        }
+      })
     },
   }
 
@@ -327,21 +334,27 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // one is unaffected.
       const boom: Projection = {
         name: 'lingtai_test_boom',
-        async create(ctx) {
-          await ctx.query('create table if not exists lingtai_test_boom (seq bigint primary key)')
+        create(ctx) {
+          return Effect.gen(function* () {
+            yield* ctx.query('create table if not exists lingtai_test_boom (seq bigint primary key)')
+          })
         },
-        async reset(ctx) {
-          await ctx.query('truncate table lingtai_test_boom')
+        reset(ctx) {
+          return Effect.gen(function* () {
+            yield* ctx.query('truncate table lingtai_test_boom')
+          })
         },
-        async reduce(events: readonly Envelope[], ctx) {
-          for (const e of events) {
-            if ((e.data as { path?: string }).path === 'poison') {
-              throw new Error('this projection cannot handle that')
+        reduce(events: readonly Envelope[], ctx) {
+          return Effect.gen(function* () {
+            for (const e of events) {
+              if ((e.data as { path?: string }).path === 'poison') {
+                throw new Error('this projection cannot handle that')
+              }
+              yield* ctx.query('insert into lingtai_test_boom (seq) values ($1) on conflict do nothing', [
+                e.seq.toString(),
+              ])
             }
-            await ctx.query('insert into lingtai_test_boom (seq) values ($1) on conflict do nothing', [
-              e.seq.toString(),
-            ])
-          }
+          })
         },
       }
 

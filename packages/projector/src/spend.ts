@@ -96,8 +96,9 @@ export interface SpendPorts {
 export const spendProjectionWith = (ports: SpendPorts): Projection => ({
   name: SPEND_TABLE,
 
-  async create(ctx) {
-    await ctx.query(`
+  create(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query(`
       create table if not exists spend (
         seq         bigint primary key,
         at          timestamptz not null,
@@ -119,171 +120,177 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
         estimate_fetched boolean,
         kind        text
       )`)
-    // `readSpend({ ticket })` and `readSpend({ project })` are both filters on
-    // a table that grows with the log's whole lifetime (0110 §10's six
-    // places, several per pass) — without these, every board render scans
-    // every row ever to bill the handful of cards on screen.
-    await ctx.query('create index if not exists spend_ticket_idx on spend (ticket)')
-    await ctx.query('create index if not exists spend_project_idx on spend (project)')
+      // `readSpend({ ticket })` and `readSpend({ project })` are both filters on
+      // a table that grows with the log's whole lifetime (0110 §10's six
+      // places, several per pass) — without these, every board render scans
+      // every row ever to bill the handful of cards on screen.
+      yield* ctx.query('create index if not exists spend_ticket_idx on spend (ticket)')
+      yield* ctx.query('create index if not exists spend_project_idx on spend (project)')
 
-    // Which ticket a stream `RunSpent` arrives on is about. Kept here and not
-    // read from another projection's run-link table, for `backlog.ts`'s
-    // reason: another projection's table is at another projection's
-    // checkpoint.
-    await ctx.query(`
+      // Which ticket a stream `RunSpent` arrives on is about. Kept here and not
+      // read from another projection's run-link table, for `backlog.ts`'s
+      // reason: another projection's table is at another projection's
+      // checkpoint.
+      yield* ctx.query(`
       create table if not exists spend_stream (
         stream_id text primary key,
         ticket    text not null,
         kind      text
       )`)
-    // The ticket's `TicketState`, reduced by `reduceTicketEvent`: a triage or discussion row's kind.
-    await ctx.query(`
+      // The ticket's `TicketState`, reduced by `reduceTicketEvent`: a triage or discussion row's kind.
+      yield* ctx.query(`
       create table if not exists spend_ticket (
         ticket text primary key,
         state  jsonb not null
       )`)
+    }).pipe(Effect.withSpan('projector.spend.create'))
   },
 
-  async reset(ctx) {
-    await ctx.query('drop table if exists spend')
-    await ctx.query('drop table if exists spend_stream')
-    await ctx.query('drop table if exists spend_ticket')
-    // The table this projection kept before the ticket reduce; a rebuild removes it.
-    await ctx.query('drop table if exists spend_kind')
+  reset(ctx) {
+    return Effect.gen(function* () {
+      yield* ctx.query('drop table if exists spend')
+      yield* ctx.query('drop table if exists spend_stream')
+      yield* ctx.query('drop table if exists spend_ticket')
+      // The table this projection kept before the ticket reduce; a rebuild removes it.
+      yield* ctx.query('drop table if exists spend_kind')
+    }).pipe(Effect.withSpan('projector.spend.reset'))
   },
 
-  async reduce(events, ctx) {
-    let snapshot: readonly RateRow[] | null = null
-    for (const event of events) {
-      const seq = event.seq.toString()
+  reduce(events, ctx) {
+    return Effect.gen(function* () {
+      let snapshot: readonly RateRow[] | null = null
+      for (const event of events) {
+        const seq = event.seq.toString()
 
-      switch (event.type) {
-        case 'RunStarted': {
-          const d = event.data as PayloadOf<'RunStarted'>
-          await ctx.query(
-            `insert into spend_stream (stream_id, ticket) values ($1, $2)
+        switch (event.type) {
+          case 'RunStarted': {
+            const d = event.data as PayloadOf<'RunStarted'>
+            yield* ctx.query(
+              `insert into spend_stream (stream_id, ticket) values ($1, $2)
              on conflict (stream_id) do nothing`,
-            [event.streamId, d.ticketId],
-          )
-          break
-        }
-
-        // `TicketContinued` is a continuation by type (domain `claims.ts`) and reduces
-        // as the old form does: a claim with a null kind. The stream insert is
-        // idempotent per run. The ticket's own kind is not decided here: the claim
-        // reaches it through the ticket reduce after the switch.
-        case 'TicketContinued':
-        case 'TicketClaimed': {
-          const d =
-            event.type === 'TicketContinued'
-              ? { ...(event.data as PayloadOf<'TicketContinued'>), kind: null }
-              : (event.data as PayloadOf<'TicketClaimed'>)
-          await ctx.query(
-            `insert into spend_stream (stream_id, ticket, kind) values ($1, $2, $3)
-             on conflict (stream_id) do update set kind = coalesce(spend_stream.kind, excluded.kind)`,
-            [d.runId, event.streamId, d.kind],
-          )
-          break
-        }
-
-        case 'DiscussionRequested': {
-          const d = event.data as PayloadOf<'DiscussionRequested'>
-          await ctx.query(
-            `insert into spend_stream (stream_id, ticket) values ($1, $2)
-             on conflict (stream_id) do nothing`,
-            [chatStream(d.chatId), d.ticketId],
-          )
-          break
-        }
-
-        case 'RunSpent': {
-          const d = event.data as PayloadOf<'RunSpent'>
-
-          let ticket: string | null
-          let kind: string | null = null
-          let fromTicket = true
-          if (isTicketStream(event.streamId)) {
-            ticket = event.streamId
-          } else {
-            const [link] = await ctx.query<{ ticket: string; kind: string | null }>(
-              'select ticket, kind from spend_stream where stream_id = $1',
-              [event.streamId],
+              [event.streamId, d.ticketId],
             )
-            ticket = link ? link.ticket : null
-            // A pass stream's kind is its own claim's, null included: it never borrows the ticket's.
-            if (isAttemptStream(event.streamId)) {
-              kind = link ? (link.kind ?? null) : null
-              fromTicket = false
-            }
+            break
           }
-          if (fromTicket && ticket !== null) {
-            const [latest] = await ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
-              ticket,
-            ])
-            kind = latest ? decodeTicket(latest.state, SPEND_TABLE, ticket).kind : null
-          }
-          let estimate: { usd: number; fetched: boolean } | null = null
-          if (d.costUsd === null) {
-            snapshot ??= ports.snapshot()
-            estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
-          }
-          const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
-          const pass = isAttemptStream(event.streamId) ? event.streamId : null
-          const step = d.for._tag === 'Action' ? d.for.step : null
-          const action = d.for._tag === 'Action' ? d.for.name : null
-          const round = d.for._tag === 'Action' ? d.for.round : null
 
-          await ctx.query(
-            `insert into spend
+          // `TicketContinued` is a continuation by type (domain `claims.ts`) and reduces
+          // as the old form does: a claim with a null kind. The stream insert is
+          // idempotent per run. The ticket's own kind is not decided here: the claim
+          // reaches it through the ticket reduce after the switch.
+          case 'TicketContinued':
+          case 'TicketClaimed': {
+            const d =
+              event.type === 'TicketContinued'
+                ? { ...(event.data as PayloadOf<'TicketContinued'>), kind: null }
+                : (event.data as PayloadOf<'TicketClaimed'>)
+            yield* ctx.query(
+              `insert into spend_stream (stream_id, ticket, kind) values ($1, $2, $3)
+             on conflict (stream_id) do update set kind = coalesce(spend_stream.kind, excluded.kind)`,
+              [d.runId, event.streamId, d.kind],
+            )
+            break
+          }
+
+          case 'DiscussionRequested': {
+            const d = event.data as PayloadOf<'DiscussionRequested'>
+            yield* ctx.query(
+              `insert into spend_stream (stream_id, ticket) values ($1, $2)
+             on conflict (stream_id) do nothing`,
+              [chatStream(d.chatId), d.ticketId],
+            )
+            break
+          }
+
+          case 'RunSpent': {
+            const d = event.data as PayloadOf<'RunSpent'>
+
+            let ticket: string | null
+            let kind: string | null = null
+            let fromTicket = true
+            if (isTicketStream(event.streamId)) {
+              ticket = event.streamId
+            } else {
+              const [link] = yield* ctx.query<{ ticket: string; kind: string | null }>(
+                'select ticket, kind from spend_stream where stream_id = $1',
+                [event.streamId],
+              )
+              ticket = link ? link.ticket : null
+              // A pass stream's kind is its own claim's, null included: it never borrows the ticket's.
+              if (isAttemptStream(event.streamId)) {
+                kind = link ? (link.kind ?? null) : null
+                fromTicket = false
+              }
+            }
+            if (fromTicket && ticket !== null) {
+              const [latest] = yield* ctx.query<{ state: unknown }>(
+                'select state from spend_ticket where ticket = $1',
+                [ticket],
+              )
+              kind = latest ? decodeTicket(latest.state, SPEND_TABLE, ticket).kind : null
+            }
+            let estimate: { usd: number; fetched: boolean } | null = null
+            if (d.costUsd === null) {
+              snapshot ??= ports.snapshot()
+              estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
+            }
+            const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
+            const pass = isAttemptStream(event.streamId) ? event.streamId : null
+            const step = d.for._tag === 'Action' ? d.for.step : null
+            const action = d.for._tag === 'Action' ? d.for.name : null
+            const round = d.for._tag === 'Action' ? d.for.round : null
+
+            yield* ctx.query(
+              `insert into spend
                (seq, at, stream_id, ticket, project, pass, purpose, step, action, round,
                 spent_for, runtime, turns, duration_ms, cost_usd, usage,
                 estimated_usd, estimate_fetched, kind)
              values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb,
                      $17, $18, $19)
              on conflict (seq) do nothing`,
-            [
-              seq,
-              event.at,
-              event.streamId,
-              ticket,
-              project,
-              pass,
-              d.for._tag,
-              step,
-              action,
-              round,
-              JSON.stringify(d.for),
-              d.runtime,
-              d.turns,
-              d.durationMs,
-              d.costUsd,
-              JSON.stringify(d.usage),
-              estimate === null ? null : estimate.usd,
-              estimate === null ? null : estimate.fetched,
-              kind,
-            ],
-          )
-          break
+              [
+                seq,
+                event.at,
+                event.streamId,
+                ticket,
+                project,
+                pass,
+                d.for._tag,
+                step,
+                action,
+                round,
+                JSON.stringify(d.for),
+                d.runtime,
+                d.turns,
+                d.durationMs,
+                d.costUsd,
+                JSON.stringify(d.usage),
+                estimate === null ? null : estimate.usd,
+                estimate === null ? null : estimate.fetched,
+                kind,
+              ],
+            )
+            break
+          }
+
+          default:
+            break
         }
 
-        default:
-          break
-      }
-
-      // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not.
-      // After the switch on purpose: a triage `RunSpent` reads the state as of the events before it.
-      if (isTicketStream(event.streamId)) {
-        const [row] = await ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
-          event.streamId,
-        ])
-        const reduced = reduceStoredTicket(row?.state, event, SPEND_TABLE)
-        await ctx.query(
-          `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
+        // Every event on a ticket stream goes through the ticket reduce, the ones the switch names or not.
+        // After the switch on purpose: a triage `RunSpent` reads the state as of the events before it.
+        if (isTicketStream(event.streamId)) {
+          const [row] = yield* ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
+            event.streamId,
+          ])
+          const reduced = reduceStoredTicket(row?.state, event, SPEND_TABLE)
+          yield* ctx.query(
+            `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
            on conflict (ticket) do update set state = excluded.state`,
-          [event.streamId, encodeTicket(reduced.after)],
-        )
+            [event.streamId, encodeTicket(reduced.after)],
+          )
+        }
       }
-    }
+    }).pipe(Effect.withSpan('projector.spend.reduce'))
   },
 })
 

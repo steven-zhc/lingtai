@@ -318,6 +318,12 @@
     "why": "apps/cli doctor.ts awaits it until its row"
   },
   {
+    "file": "packages/projector/src/shape.ts",
+    "fn": "shapeInFace",
+    "until": "#790",
+    "why": "the promise runner's `start`/`shape` (`projection.ts`) until the runner ticket"
+  },
+  {
     "file": "packages/projector/src/spend.ts",
     "fn": "readSpend",
     "until": "#790",
@@ -355,6 +361,12 @@
   },
   {
     "file": "packages/projector/src/store-face.ts",
+    "fn": "createFace",
+    "until": "#790",
+    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
     "fn": "lagFace",
     "until": "#790",
     "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
@@ -379,9 +391,21 @@
   },
   {
     "file": "packages/projector/src/store-face.ts",
+    "fn": "reduceFace",
+    "until": "#790",
+    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
     "fn": "registerFace",
     "until": "#790",
     "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+  },
+  {
+    "file": "packages/projector/src/store-face.ts",
+    "fn": "resetFace",
+    "until": "#790",
+    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
   },
   {
     "file": "packages/projector/src/store-face.ts",

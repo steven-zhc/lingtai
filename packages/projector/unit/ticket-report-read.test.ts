@@ -10,6 +10,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import { ProjectionShapeError } from '../src/store.ts'
 import { ticketReportProjectionWith } from '../src/ticket-report.ts'
 
@@ -23,9 +24,13 @@ describe('ProjectionStore.ticketReport', () => {
     try {
       const projection = ticketReportProjectionWith({ snapshot: () => [] })
       expect(await store.ticketReport({})).toEqual([])
-      await store.transact((ctx) => projection.create(ctx))
+      await store.transact((ctx) => createFace(projection, ctx))
       await store.transact((ctx) =>
-        projection.reduce([claim('ticket-b-2', 'pass-b-2', 'bug', 0), claim('ticket-a-1', 'pass-a-1', null, 1)], ctx),
+        reduceFace(
+          projection,
+          [claim('ticket-b-2', 'pass-b-2', 'bug', 0), claim('ticket-a-1', 'pass-a-1', null, 1)],
+          ctx,
+        ),
       )
       const all = await store.ticketReport({})
       expect(all.map((r) => r.ticket)).toEqual(['ticket-a-1', 'ticket-b-2'])
@@ -44,10 +49,11 @@ describe('ProjectionStore.ticketReport', () => {
     const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
     try {
       const projection = ticketReportProjectionWith({ snapshot: () => [] })
-      await store.transact((ctx) => projection.create(ctx))
+      await store.transact((ctx) => createFace(projection, ctx))
       const t = makeStream('ticket-a-3')
       await store.transact((ctx) =>
-        projection.reduce(
+        reduceFace(
+          projection,
           [
             t('TicketClaimed', { runId: 'pass-a-3', worker: 'local:1', title: null, kind: 'bug' }, { at: at(0) }),
             t('TicketLanded', { mergeCommit: 'abc', base: 'main' }, { at: at(5) }),
@@ -84,8 +90,8 @@ describe('ProjectionStore.landed (#894)', () => {
     const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
     try {
       const projection = ticketReportProjectionWith({ snapshot: () => [] })
-      await store.transact((ctx) => projection.create(ctx))
-      await store.transact((ctx) => projection.reduce(events, ctx))
+      await store.transact((ctx) => createFace(projection, ctx))
+      await store.transact((ctx) => reduceFace(projection, events, ctx))
       return await f(store)
     } finally {
       await store.close()

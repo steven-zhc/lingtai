@@ -9,6 +9,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { createFace, reduceFace } from '../src/store-face.ts'
 import { ticketReportProjectionWith } from '../src/ticket-report.ts'
 
 const T = 'ticket-pin-1'
@@ -61,8 +62,8 @@ async function reduce(batches: Envelope[][]) {
   const store = createSqliteProjectionStore(db)
   try {
     const projection = ticketReportProjectionWith({ snapshot: () => SNAPSHOT })
-    await store.transact((ctx) => projection.create(ctx))
-    for (const batch of batches) await store.transact((ctx) => projection.reduce(batch, ctx))
+    await store.transact((ctx) => createFace(projection, ctx))
+    for (const batch of batches) await store.transact((ctx) => reduceFace(projection, batch, ctx))
     const [row] = await store.transact((ctx) =>
       ctx.query<Record<string, unknown>>('select * from ticket_report where ticket = $1', [T]),
     )

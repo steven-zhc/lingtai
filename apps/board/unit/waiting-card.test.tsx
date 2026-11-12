@@ -17,6 +17,7 @@
  * unedited.
  */
 import { WaitReason } from '@lingtai/domain/wait'
+import { createFace, reduceFace } from '@lingtai/projector'
 import { createSqliteProjectionStore, openSqliteProjections } from '@lingtai/projector/sqlite'
 import { taskViewProjection, type TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -101,8 +102,8 @@ async function renderCard(fx: Fixture, options: { row?: Partial<TaskCard> } = {}
   const db = openSqliteProjections(':memory:')
   try {
     const store = createSqliteProjectionStore(db)
-    await store.transact((ctx) => taskViewProjection.create(ctx))
-    await store.transact((ctx) => taskViewProjection.reduce(fx.events, ctx))
+    await store.transact((ctx) => createFace(taskViewProjection, ctx))
+    await store.transact((ctx) => reduceFace(taskViewProjection, fx.events, ctx))
     const rows = await store.tasks({ retentionDays: 2 })
     const row = rows.find((r) => r.taskId === fx.taskId)
     if (row === undefined) throw new Error(`no task_view row for ${fx.taskId}`)
@@ -220,8 +221,8 @@ describe('a small conflict’s card (#652)', () => {
     const db = openSqliteProjections(':memory:')
     try {
       const store = createSqliteProjectionStore(db)
-      await store.transact((ctx) => taskViewProjection.create(ctx))
-      await store.transact((ctx) => taskViewProjection.reduce(fx.events, ctx))
+      await store.transact((ctx) => createFace(taskViewProjection, ctx))
+      await store.transact((ctx) => reduceFace(taskViewProjection, fx.events, ctx))
       const row = (await store.tasks({ retentionDays: 2 })).find((r) => r.taskId === fx.taskId)!
       const triage = {
         started: null,
