@@ -28,10 +28,16 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const PID = 4242
 
-// `pid` is undefined for Codex, which signals with `process.kill(-pid)` and has no injectable
-// sender: with no pid it falls back to the stand-in's `kill`, so no real signal is ever sent.
-const stubChild = (pid: number | undefined = PID) =>
-  Object.assign(new EventEmitter(), { pid, stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() })
+// `pid: null` is Codex's case: it signals with `process.kill(-pid)` and has no injectable
+// sender, so the stand-in has no pid and it falls back to the stand-in's `kill`: no real signal
+// is ever sent. (`null`, not `undefined`: `undefined` would activate the default.)
+const stubChild = (pid: number | null = PID) =>
+  Object.assign(new EventEmitter(), {
+    pid: pid ?? undefined,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(),
+  })
 
 const request = (over: Partial<RunRequest> = {}): RunRequest => ({
   runId: 'r1',
@@ -93,7 +99,7 @@ describe('a spawn error is an outcome, not a failure (#1023)', () => {
   })
 
   it('gives a crash outcome from codexRun as a successful Effect', async () => {
-    const child = stubChild(undefined)
+    const child = stubChild(null)
     const exit = Effect.runPromiseExit(
       codexRun({ spawn: (() => child) as unknown as typeof spawn, stopProcesses: () => Effect.void }, request()),
     )
@@ -107,7 +113,7 @@ describe('a spawn error is an outcome, not a failure (#1023)', () => {
 
 describe('codexRun interrupted (#1023)', () => {
   it('completes the interruption only once the process scan has settled', async () => {
-    const child = stubChild(undefined)
+    const child = stubChild(null)
     const release = Effect.runSync(Deferred.make<void, Error>())
     const fiber = Effect.runFork(
       codexRun(
