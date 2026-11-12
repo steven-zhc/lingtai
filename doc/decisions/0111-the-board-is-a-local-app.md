@@ -121,7 +121,9 @@ budget.
     place: skeleton cards in a column of cards, skeleton lines in a body of
     text, with a short label saying what is being asked (*asking GitHub…*). It
     is sized from the last answer seen, when there was one, so the page does not
-    jump when the answer arrives. What arrives fades in, and only what is new
+    jump when the answer arrives: on a project switch each column's cards are
+    skeletons, as many as that column held for that project the last time it was
+    drawn, and a default number when it has not been drawn before. What arrives fades in, and only what is new
     moves; a refresh that changes nothing moves nothing. A reader who asked for
     reduced motion gets the same placeholders, still. There is one placeholder
     component, and every waiting part uses it. A failure is said in the same
